@@ -28,7 +28,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   end
 
   test "offers the account's enabled SSO providers above the userpass form", %{conn: conn} do
-    # closes AUTH-007-T01 — enabled providers render as full-redirect buttons
+    # enabled providers render as full-redirect buttons
     # (begin is a controller bounce to the IdP, not live nav), and below them the
     # email+password form posts to the shared /sign_in with a hidden return_to
     # pinning this team.
@@ -48,7 +48,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   end
 
   test "the forgot-password and magic links thread this team's return_to", %{conn: conn} do
-    # closes AUTH-007-T03 — both secondary routes carry ?return_to=/app/<slug> so a
+    # both secondary routes carry ?return_to=/app/<slug> so a
     # password reset or magic link begun here lands back on the branded page, while
     # "different team" drops to the generic SSO picker.
     account = Emisar.Fixtures.account_fixture(%{name: "Threaded Co"})
@@ -61,7 +61,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   end
 
   test "an account with zero providers hides the SSO block, showing only userpass", %{conn: conn} do
-    # closes AUTH-007-T04 — with no enabled providers the `:if={@providers != []}`
+    # with no enabled providers the `:if={@providers != []}`
     # SSO section and its separator are absent; the email+password form is the only
     # offered path.
     account = Emisar.Fixtures.account_fixture(%{name: "Password Only Co"})
@@ -76,7 +76,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   test "an unknown slug is a 404 — and a soft-deleted account is the SAME 404 (no leak)", %{
     conn: conn
   } do
-    # closes AUTH-007-T05, AUTH-007-T06, AUTH-007-T08 — `fetch_account_by_id_or_slug`
+    # `fetch_account_by_id_or_slug`
     # reads `not_deleted()`, so a never-existed slug and a tombstoned account both
     # resolve `:not_found` and raise NotFoundError. A signed-out prober gets an
     # indistinguishable 404 either way and can't confirm a tenant exists.
@@ -91,7 +91,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   end
 
   test "an already-authenticated visitor is bounced off the branded page", %{conn: conn} do
-    # closes AUTH-007-T09 — the branded page lives under
+    # the branded page lives under
     # :redirect_if_user_is_authenticated, so a signed-in user is redirected to /app
     # before the LiveView mounts (they have no business on a sign-in page).
     {conn, _user, account} = register_and_log_in(conn)

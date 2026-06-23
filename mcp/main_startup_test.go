@@ -62,10 +62,9 @@ func runMain(t *testing.T, stdinData string, args []string, env map[string]strin
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-// BRG-006-T01 — `--version` / `-v` print `emisar-mcp <Version>` and exit 0. The
-// build is not ldflag-stamped here, so Version is its "dev" default (BRG-006-T04).
+// `--version` / `-v` print `emisar-mcp <Version>` and exit 0. The
+// build is not ldflag-stamped here, so Version is its "dev" default.
 func TestMain_VersionFlagPrintsVersionExitsZero(t *testing.T) {
-	// closes BRG-006-T01, BRG-006-T04
 	for _, flag := range []string{"--version", "-v"} {
 		stdout, stderr, code := runMain(t, "", []string{flag}, nil)
 		if code != 0 {
@@ -81,11 +80,10 @@ func TestMain_VersionFlagPrintsVersionExitsZero(t *testing.T) {
 	}
 }
 
-// BRG-006-T04 — Version defaults to "dev" when not stamped via
+// Version defaults to "dev" when not stamped via
 // `-ldflags -X main.Version=...`. The test binary is built without that flag, so
 // the version line must read exactly "emisar-mcp dev".
 func TestMain_VersionDefaultsToDev(t *testing.T) {
-	// closes BRG-006-T04
 	if Version != "dev" {
 		t.Skipf("Version is stamped (%q) in this build; the default-dev case can't be observed", Version)
 	}
@@ -98,11 +96,10 @@ func TestMain_VersionDefaultsToDev(t *testing.T) {
 	}
 }
 
-// BRG-006-T02 — `--help` / `-h` print the help text and exit 0. We assert the
+// `--help` / `-h` print the help text and exit 0. We assert the
 // exact helpText so the documented env-var contract (what the bridge actually
 // reads) can't silently drift from the help.
 func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
-	// closes BRG-006-T02
 	for _, flag := range []string{"--help", "-h"} {
 		stdout, stderr, code := runMain(t, "", []string{flag}, nil)
 		if code != 0 {
@@ -117,11 +114,10 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 	}
 }
 
-// BRG-006-T03 — an unknown flag is rejected: stderr names the argument and the
+// an unknown flag is rejected: stderr names the argument and the
 // process exits 2 (distinct from the env-fatal exit 1). The bridge takes no
 // positional args or unknown flags.
 func TestMain_UnknownFlagExitsTwo(t *testing.T) {
-	// closes BRG-006-T03
 	stdout, stderr, code := runMain(t, "", []string{"--bogus"}, nil)
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2", code)
@@ -134,11 +130,10 @@ func TestMain_UnknownFlagExitsTwo(t *testing.T) {
 	}
 }
 
-// BRG-006-T06 / BRG-006-T07 / BRG-006-T08 — a missing EMISAR_URL or
+// / / — a missing EMISAR_URL or
 // EMISAR_API_KEY (or both) is fatal: fatalln to stderr, exit 1. The check is
 // "both must be set", so url-only and key-only both fail the same way.
 func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
-	// closes BRG-006-T06, BRG-006-T07, BRG-006-T08
 	cases := []struct {
 		name string
 		env  map[string]string
@@ -163,13 +158,12 @@ func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 	}
 }
 
-// BRG-007-T13 — a failed endpoint-scheme check is fatal at startup: a cleartext
+// a failed endpoint-scheme check is fatal at startup: a cleartext
 // http:// URL to a public host (no EMISAR_ALLOW_INSECURE override) makes main()
 // fatalln and exit 1. The bridge never silently downgrades to shipping the
 // Bearer key over plaintext. (The pure checkEndpointScheme logic is covered by
 // TestCheckEndpointScheme; this pins that main wires the failure to a fatal.)
 func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
-	// closes BRG-007-T13
 	stdout, stderr, code := runMain(t, "", nil, map[string]string{
 		"EMISAR_URL":     "http://emisar.dev",
 		"EMISAR_API_KEY": "emk-x",
@@ -185,11 +179,10 @@ func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
 	}
 }
 
-// BRG-007-T13 (override half) — the EMISAR_ALLOW_INSECURE=1 opt-in lets the same
+// (override half) — the EMISAR_ALLOW_INSECURE=1 opt-in lets the same
 // cleartext public endpoint through: main() proceeds past the scheme check, the
 // bridge serves, and an empty stdin yields a clean (exit 0) shutdown — no fatal.
 func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
-	// closes BRG-007-T13
 	stdout, stderr, code := runMain(t, "", nil, map[string]string{
 		"EMISAR_URL":            "http://emisar.dev",
 		"EMISAR_API_KEY":        "emk-x",
@@ -203,12 +196,12 @@ func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
 	}
 }
 
-// BRG-004-T10/T11 wired to startup — a malformed signing-key configuration
+// /T11 wired to startup — a malformed signing-key configuration
 // (only one of the pair, or a non-hex / wrong-length seed) is fatal at startup:
 // newSigner's error is surfaced via fatalln, exit 1. (newSigner's pure cases are
 // covered by TestNewSigner; this pins that main treats the error as fatal.)
 func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
-	// closes BRG-006-T19 (the signing-key branch of the startup glue)
+	// (the signing-key branch of the startup glue)
 	base := map[string]string{"EMISAR_URL": "https://emisar.dev", "EMISAR_API_KEY": "emk-x"}
 	cases := []struct {
 		name string
@@ -241,14 +234,13 @@ func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 	}
 }
 
-// BRG-006-T09 / BRG-006-T10 — the endpoint is composed as `base + /api/mcp/rpc`,
+// / — the endpoint is composed as `base + /api/mcp/rpc`,
 // and a trailing slash on EMISAR_URL is trimmed first (so `https://x/` and
 // `https://x` produce the same endpoint). We point a started bridge at a real
 // capture server, feed one notification frame, and assert the POST landed on
 // exactly `/api/mcp/rpc`. The server answers 202 so the bridge writes nothing
 // and exits clean on EOF.
 func TestMain_EndpointComposedAndTrailingSlashTrimmed(t *testing.T) {
-	// closes BRG-006-T09, BRG-006-T10
 	for _, urlSuffix := range []string{"", "/"} {
 		name := "no trailing slash"
 		if urlSuffix == "/" {
@@ -285,12 +277,11 @@ func TestMain_EndpointComposedAndTrailingSlashTrimmed(t *testing.T) {
 	}
 }
 
-// BRG-006-T16 — the API key value is NOT format-checked by the bridge: any
+// the API key value is NOT format-checked by the bridge: any
 // non-empty string is accepted at startup (the portal enforces key validity
 // server-side). An arbitrary "not-a-real-key" still lets main() start and serve,
 // exiting clean on EOF.
 func TestMain_APIKeyNotFormatChecked(t *testing.T) {
-	// closes BRG-006-T16
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
@@ -305,11 +296,10 @@ func TestMain_APIKeyNotFormatChecked(t *testing.T) {
 	}
 }
 
-// BRG-006-T18 — secrets arrive via env, never as a CLI flag/argv. There is no
+// secrets arrive via env, never as a CLI flag/argv. There is no
 // `--api-key` / `--signing-key` flag: passing one is rejected as an unknown
 // argument (exit 2), so a credential can't land in a process's visible arg list.
 func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
-	// closes BRG-006-T18
 	for _, arg := range []string{"--api-key=emk-secret", "--signing-key=deadbeef", "--token", "emk-secret"} {
 		stdout, stderr, code := runMain(t, "", []string{arg}, map[string]string{
 			"EMISAR_URL":     "https://emisar.dev",
@@ -327,7 +317,7 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 	}
 }
 
-// BRG-008-T12 / BRG-002-T15 (transport-error half) — on a transport failure
+// / (transport-error half) — on a transport failure
 // (connection refused), the client-facing JSON-RPC frame on STDOUT is the
 // generic `-32603 upstream transport error`, while the detailed error (including
 // the resolved host:port) lands on STDERR only. The API key never appears on
@@ -336,7 +326,6 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 // (TestServe_5xxBodyAndKeyNeverReachClientFrame), exercised end-to-end through
 // main()'s real os.Stdout / os.Stderr split.
 func TestMain_TransportErrorDetailOnStderrNotClientFrame(t *testing.T) {
-	// closes BRG-008-T12
 	// A server we start then immediately close, so the bridge's connect is
 	// refused — a loopback host, so it passes the scheme check and reaches the
 	// transport-error path (not a startup fatal).

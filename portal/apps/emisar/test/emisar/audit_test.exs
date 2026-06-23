@@ -67,7 +67,7 @@ defmodule Emisar.AuditTest do
       assert String.length(event.user_agent) == 255
     end
 
-    # closes ENG-009-T04 — normalize/1 uses String.to_existing_atom (IL-14): an
+    # normalize/1 uses String.to_existing_atom (IL-14): an
     # invented field name blows up LOUDLY rather than minting an atom from input
     # (the atom table never GCs; an attacker-influenced key set would be a DoS).
     test "an invented string field key raises rather than minting an atom (IL-14)" do
@@ -83,7 +83,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "log_for_user/3 without a membership" do
-    # closes ENG-009-T08 — a user with no active membership can't be scoped to an
+    # a user with no active membership can't be scoped to an
     # account_id, so the event is silently skipped (returns :ok, writes nothing)
     # rather than raising or writing an account-less row.
     test "no-ops (returns :ok) and writes no row when the user has no membership" do
@@ -96,7 +96,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "run_event_changeset/1" do
-    # closes ENG-009-T05 — request_id + mcp_session_id are promoted to first-class
+    # request_id + mcp_session_id are promoted to first-class
     # fields (not buried in payload), and nil payload keys are compacted so a
     # freshly-created run's row doesn't bloat with still-empty fields.
     test "promotes request_id + mcp_session_id and drops nil payload keys" do
@@ -129,7 +129,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "system/engine-origin builders carry no request metadata" do
-    # closes ENG-009-T03 (builder half) — a system-actor builder passes no
+    # (builder half) — a system-actor builder passes no
     # :context, so the changeset defaults to an all-nil RequestContext. Engine
     # rows never inherit a caller's ip/ua (the runner-UA-bleed class of bug).
     test "policy_evaluated has nil ip/ua/request_id/mcp_session" do
@@ -413,7 +413,7 @@ defmodule Emisar.AuditTest do
       assert Audit.Event.Query.outcome(42) == :neutral
     end
 
-    # closes AUD-005-T05 — the row dot tone (web) and the "Outcome" filter both
+    # the row dot tone (web) and the "Outcome" filter both
     # read the SAME outcome/1 classifier, so they can never disagree. Drive the
     # filter end-to-end through list_events: log one known type of each tone and
     # assert the filter keeps exactly the rows outcome/1 calls danger/warn — i.e.
@@ -442,7 +442,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "the event taxonomy (known types, kinds, noisy set, builders)" do
-    # closes AUD-005-T06 — the Actor-type dropdown exposes exactly the six actor
+    # the Actor-type dropdown exposes exactly the six actor
     # kinds and the Subject filter the ten subject kinds the catalog enumerates;
     # both lists are read straight from the LiveTable %Filter{} values so a
     # silently-added/dropped kind is caught.
@@ -455,7 +455,7 @@ defmodule Emisar.AuditTest do
                   approval_grant runbook policy]
     end
 
-    # closes AUD-005-T09 — the "Hide noisy events" set is exactly the three
+    # the "Hide noisy events" set is exactly the three
     # auto-fired-by-traffic types; widening it would silently hide
     # operator-facing rows.
     test "the noisy set is exactly the three traffic-byproduct types" do
@@ -463,7 +463,7 @@ defmodule Emisar.AuditTest do
                ~w[policy.evaluated runner.connected runner.disconnected]
     end
 
-    # closes AUD-005-T08 — `runbook.dispatched` is DECLARED (known list + grouped
+    # `runbook.dispatched` is DECLARED (known list + grouped
     # dropdown) but NEVER EMITTED: no `Audit.Events` builder produces it, so the
     # dropdown option matches zero rows. We ground "never emitted" in the builder
     # source itself — every event_type string literal in events.ex — so the test
@@ -897,7 +897,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "non-terminal run states are not audited" do
-    # closes AUD-005-T10 — driving a run through its NON-terminal lifecycle
+    # driving a run through its NON-terminal lifecycle
     # (pending → sent → running) writes ZERO audit rows: only terminal outcomes
     # + policy denials leave a row (`Runs.@audited_run_statuses`). The
     # pending/sent/running labels exist in the known list for the Type dropdown
@@ -927,8 +927,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "builder-vs-known event-type drift (AUD-005-T07)" do
-    # closes AUD-005-T07 — several types are EMITTED by a builder but are NOT in
+  describe "builder-vs-known event-type drift" do
+    # several types are EMITTED by a builder but are NOT in
     # `known_event_type_values/0` / `grouped_event_type_values/0`, so they render
     # + humanize + pass filters, yet can't be picked from the Type dropdown. We
     # ground both halves in source: the emitted set (every literal a builder
@@ -957,7 +957,7 @@ defmodule Emisar.AuditTest do
       end
     end
 
-    # closes AUD-005-T07 (humanization half) — a drift type still renders a
+    # (humanization half) — a drift type still renders a
     # human label via format_event_type/1's fallback humanizer, so a row of one
     # isn't a blank/raw machine code even though the dropdown can't offer it.
     test "a drift type still humanizes for the row label" do
@@ -969,8 +969,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "directory_sync is a distinct actor class (AUD-005-T11)" do
-    # closes AUD-005-T11 — an inbound-SCIM event stamps the actor as
+  describe "directory_sync is a distinct actor class" do
+    # an inbound-SCIM event stamps the actor as
     # `directory_sync` + the provider id (so an auditor sees WHICH directory
     # acted), not a generic `system`. Build a struct-literal provider scoped to a
     # real account and run it through the real builder → changeset → insert.
@@ -999,7 +999,7 @@ defmodule Emisar.AuditTest do
       assert event.payload[:provider_id] == provider.id
     end
 
-    # closes AUD-005-T11 (taxonomy half) — `directory_sync` is deliberately NOT
+    # (taxonomy half) — `directory_sync` is deliberately NOT
     # one of the six Actor-type dropdown values (you filter SCIM events by Type),
     # so it can't be collapsed into `system` by the picker either.
     test "directory_sync is not an Actor-type filter value" do
@@ -1010,8 +1010,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "the From/To window is inclusive on both bounds (AUD-001-T17)" do
-    # closes AUD-001-T17 — From == an event's exact occurred_at INCLUDES it
+  describe "the From/To window is inclusive on both bounds" do
+    # From == an event's exact occurred_at INCLUDES it
     # (`occurred_at >= ts`), and To == an event's exact occurred_at INCLUDES it
     # (`occurred_at <= ts`); the boundary row is never silently dropped.
     test "an event at the exact From bound and at the exact To bound are both kept" do
@@ -1038,8 +1038,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "keyset pagination: empty / last page yields no further cursor (AUD-009-T05)" do
-    # closes AUD-009-T05 — an empty account returns a nil next cursor, and the
+  describe "keyset pagination: empty / last page yields no further cursor" do
+    # an empty account returns a nil next cursor, and the
     # final page of a multi-page walk also returns nil (nothing further to fetch),
     # which is what pairs with the empty-state copy in the LV.
     test "an empty log returns no next-page cursor" do
@@ -1063,7 +1063,7 @@ defmodule Emisar.AuditTest do
                Audit.list_events(subject, page: [cursor: cursor, limit: 3])
     end
 
-    # closes AUD-009-T04 — a row committed mid-walk must not shift a page
+    # a row committed mid-walk must not shift a page
     # boundary into a skip or a duplicate. The feed is keyset (cursor on
     # `(occurred_at desc, id asc)`), not offset: the cursor anchors on page 1's
     # last row, so resuming continues strictly past it regardless of inserts.
@@ -1114,7 +1114,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "list_subject_options/2 (the dynamic subject picker)" do
-    # closes AUD-007-T07 — the picker read enforces view_audit BEFORE any DB
+    # the picker read enforces view_audit BEFORE any DB
     # touch; a runner subject (the websocket caller — no view_audit) is denied,
     # never handed options. A real `Subject.for_runner` carries the runner role's
     # empty audit permission (a user `:runner` string would degrade to :viewer,
@@ -1127,7 +1127,7 @@ defmodule Emisar.AuditTest do
       assert {:error, :unauthorized} = Audit.list_subject_options("user", subject)
     end
 
-    # closes AUD-007-T08 — a subject id that only resolves in account A never
+    # a subject id that only resolves in account A never
     # surfaces in account B's picker: the distinct-id query is for_subject-scoped
     # to B, so A's row isn't even a candidate.
     test "a subject only resolvable in another account yields no options (cross-account)" do
@@ -1143,7 +1143,7 @@ defmodule Emisar.AuditTest do
       assert {:ok, []} = Audit.list_subject_options("user", subject_b)
     end
 
-    # closes AUD-007-T04 (context half) — `policy` and `approval_grant` have no
+    # (context half) — `policy` and `approval_grant` have no
     # label resolver in resolve_labels/2, so every distinct id resolves to a nil
     # label and is dropped → the picker has zero options (intentional).
     test "a resolver-less subject kind yields no options" do
@@ -1161,8 +1161,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_actor_options/2 authorization (AUD-006-T10)" do
-    # closes AUD-006-T10 — the actor picker enforces view_audit before any DB
+  describe "list_actor_options/2 authorization" do
+    # the actor picker enforces view_audit before any DB
     # touch; a runner (websocket) subject — no view_audit — is denied.
     test "a runner subject is denied" do
       account = account_fixture()
@@ -1173,8 +1173,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_for_export/2 role gate (AUD-003-T09)" do
-    # closes AUD-003-T09 — a subject whose role carries no `view_audit` is
+  describe "list_for_export/2 role gate" do
+    # a subject whose role carries no `view_audit` is
     # rejected from INSIDE list_for_export with {:error, :unauthorized} (the
     # controller turns that into a 403), never a 500 or a leaked export. The
     # runner (websocket) role is the no-`view_audit` role; an API-key role DOES
@@ -1190,8 +1190,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_subject_options/2 drops an option whose row is gone (AUD-007-T05)" do
-    # closes AUD-007-T05 — a subject id that WAS resolvable when the event was
+  describe "list_subject_options/2 drops an option whose row is gone" do
+    # a subject id that WAS resolvable when the event was
     # written but whose row has since gone unresolvable resolves to a nil label
     # and is rejected, so the picker doesn't offer a dead option. Here the user's
     # membership is removed after the event, so the user-label resolver (scoped
@@ -1225,8 +1225,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "the audit log is append-only by construction (AUD-001-T20)" do
-    # closes AUD-001-T20 / ENG-009-T10 — "tamper-evident" here means there is NO
+  describe "the audit log is append-only by construction" do
+    # "tamper-evident" here means there is NO
     # public API path that mutates or deletes a recorded event: the Audit context
     # exposes only inserts/reads (log / record / changeset / *_changeset / list_* /
     # fetch_* / resolve_references), and the Event.Changeset module exposes only
@@ -1261,7 +1261,7 @@ defmodule Emisar.AuditTest do
       refute "delete" in transitions
     end
 
-    # closes ENG-009-T14 — the accepted trade-off (NOT a defect): the cloud audit
+    # the accepted trade-off (NOT a defect): the cloud audit
     # log is append-only by construction but carries NO cryptographic hash chain
     # (the runner-side chain is the RSEC anchor). Asserting the documented design,
     # not a missing feature.

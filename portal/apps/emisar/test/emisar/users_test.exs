@@ -36,7 +36,7 @@ defmodule Emisar.UsersTest do
       assert "has already been taken" in errors_on(changeset).email
     end
 
-    # closes AUTH-001-T05 / AUTH-001-T06 — the 12..128 password bounds are
+    # the 12..128 password bounds are
     # inclusive at registration (User.Changeset.registration).
     test "accepts a 12-char and a 128-char password" do
       for length <- [12, 128] do
@@ -51,7 +51,7 @@ defmodule Emisar.UsersTest do
       end
     end
 
-    # closes AUTH-001-T09 (11) / AUTH-001-T10 (129) — just-outside lengths are
+    # (11) / (129) — just-outside lengths are
     # rejected and nothing is written.
     test "rejects an 11-char and a 129-char password with no user written" do
       for length <- [11, 129] do
@@ -69,7 +69,7 @@ defmodule Emisar.UsersTest do
       end
     end
 
-    # closes AUTH-001-T08 — the email length cap (160) is inclusive: a 160-char
+    # the email length cap (160) is inclusive: a 160-char
     # otherwise-valid address registers.
     test "accepts an email exactly 160 chars long" do
       email = String.duplicate("a", 160 - String.length("@example.test")) <> "@example.test"
@@ -83,7 +83,7 @@ defmodule Emisar.UsersTest do
                })
     end
 
-    # closes AUTH-001-T12 — one char over the 160 cap is rejected and nothing is
+    # one char over the 160 cap is rejected and nothing is
     # written.
     test "rejects an email over 160 chars with no user written" do
       email = String.duplicate("a", 161 - String.length("@example.test")) <> "@example.test"
@@ -100,7 +100,7 @@ defmodule Emisar.UsersTest do
       assert {:error, :not_found} = Users.fetch_user_by_email(email)
     end
 
-    # closes AUTH-001-T11 — the email format rule (`^[^\s]+@[^\s]+$`) rejects an
+    # the email format rule (`^[^\s]+@[^\s]+$`) rejects an
     # address with a space or no @, server-side (not just the form's type=email).
     test "rejects a malformed email (space, or no @)" do
       for bad <- ["foo bar@example.test", "nodomain"] do
@@ -157,7 +157,6 @@ defmodule Emisar.UsersTest do
                Users.update_user_email("not-an-email", password, subject)
     end
 
-    # closes TEAM-017-T04
     test "accepts an email of exactly 160 characters" do
       password = "right-password-12-chars"
       user = user_fixture(password: password)
@@ -172,7 +171,6 @@ defmodule Emisar.UsersTest do
       assert updated.email == email
     end
 
-    # closes TEAM-017-T03
     test "rejects an email of 161 characters (over the max)" do
       password = "right-password-12-chars"
       user = user_fixture(password: password)
@@ -263,7 +261,6 @@ defmodule Emisar.UsersTest do
                Users.change_user_password("wrong-current-xxxx", "a-new-password-5678", subject)
     end
 
-    # closes TEAM-018-T04
     test "accepts a new password of exactly 12 characters", %{
       user: user,
       subject: subject,
@@ -275,7 +272,6 @@ defmodule Emisar.UsersTest do
       assert User.valid_password?(Repo.reload!(user), new)
     end
 
-    # closes TEAM-018-T05
     test "rejects a new password of 129 characters (over the max)", %{
       user: user,
       subject: subject,
@@ -301,7 +297,6 @@ defmodule Emisar.UsersTest do
                Users.update_user_profile(%{"full_name" => "Renamed Person"}, subject)
     end
 
-    # closes TEAM-016-T03
     test "casts only full_name — smuggled email/password are dropped by the whitelist" do
       account = account_fixture()
       user = user_fixture(email: "keep-me@example.test")
@@ -326,7 +321,6 @@ defmodule Emisar.UsersTest do
       assert updated.hashed_password == user.hashed_password
     end
 
-    # closes TEAM-016-T05
     test "writes against the freshly-fetched row, not the (possibly stale) subject snapshot" do
       account = account_fixture()
       user = user_fixture(email: "before@example.test")

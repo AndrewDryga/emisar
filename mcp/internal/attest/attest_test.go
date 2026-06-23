@@ -152,7 +152,7 @@ func TestVerifyMalformedSignature(t *testing.T) {
 	}
 }
 
-// BRG-005-T12 — numeric args normalize across the portal jsonb round-trip. The
+// numeric args normalize across the portal jsonb round-trip. The
 // portal stores args as jsonb and re-decodes JSON numbers as float64; the bridge
 // signs the same logical args as a Go int literal. Both must canonicalize to the
 // same JSON number form ("15") so the digest — and therefore the signature —
@@ -189,7 +189,7 @@ func TestSigningBytes_NumericArgsNormalizeAcrossJSONBRoundTrip(t *testing.T) {
 	}
 }
 
-// BRG-005-T14 — the args digest defeats delimiter smuggling. SigningBytes is a
+// the args digest defeats delimiter smuggling. SigningBytes is a
 // newline-delimited string; the args are reduced to a sha256 hex digest precisely
 // so a value containing a "\n" (or the whole "Version\nActionID\n…" framing)
 // cannot inject a fake field boundary into the signing string. We assert the
@@ -229,7 +229,7 @@ func TestSigningBytes_ArgsDigestDefeatsDelimiterSmuggling(t *testing.T) {
 	}
 }
 
-// BRG-005-T15 — an un-marshalable Args value is an error, not a partial encoding.
+// an un-marshalable Args value is an error, not a partial encoding.
 // A channel cannot be JSON-marshaled; SigningBytes must surface that rather than
 // signing over a truncated/empty digest.
 func TestSigningBytes_MarshalFailureIsError(t *testing.T) {
@@ -250,7 +250,7 @@ func TestSigningBytes_MarshalFailureIsError(t *testing.T) {
 	}
 }
 
-// BRG-005-T18 — the attest package is stdlib-only (no external deps). The
+// the attest package is stdlib-only (no external deps). The
 // cross-impl contract relies on this: each module ships its own verbatim copy, so
 // a third-party import would couple them and is forbidden. Parse attest.go's own
 // import block and assert every import is one of the four expected stdlib paths.

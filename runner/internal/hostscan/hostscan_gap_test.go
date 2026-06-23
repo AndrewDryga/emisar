@@ -12,7 +12,7 @@ import (
 // SystemdPresent stat gate, and the lowercase/trim/dedup of probed binary
 // names (hostscan.go:150-199).
 
-// TestFirstExecutable_RequiresRegularExecutableFile (RSEC-015-T08) — a name
+// TestFirstExecutable_RequiresRegularExecutableFile — a name
 // resolves only to a REGULAR file with an execute bit set. A directory of that
 // name, or a present-but-non-executable file, must not count as the binary.
 func TestFirstExecutable_RequiresRegularExecutableFile(t *testing.T) {
@@ -52,7 +52,7 @@ func TestFirstExecutable_RequiresRegularExecutableFile(t *testing.T) {
 	}
 }
 
-// TestSystemdPresent_MatchesStat (RSEC-015-T16) — SystemdPresent is exactly
+// TestSystemdPresent_MatchesStat — SystemdPresent is exactly
 // "is /run/systemd/system a directory?". It must never panic and must agree
 // with a direct stat of that path on whatever host the test runs on.
 func TestSystemdPresent_MatchesStat(t *testing.T) {
@@ -65,7 +65,7 @@ func TestSystemdPresent_MatchesStat(t *testing.T) {
 	}
 }
 
-// TestScanBinaries_NamesNormalizedAndDeduped (RSEC-015-T17) — probed names are
+// TestScanBinaries_NamesNormalizedAndDeduped — probed names are
 // lowercased, trimmed, and de-duplicated: ["GO"," go ","go"] probes a single
 // "go", and the result is keyed by the normalized lowercase name.
 func TestScanBinaries_NamesNormalizedAndDeduped(t *testing.T) {
@@ -94,7 +94,7 @@ func TestScanBinaries_NamesNormalizedAndDeduped(t *testing.T) {
 	}
 }
 
-// BenchmarkDetect (RSEC-015-T18) — Detect is a bounded read-only scan (PATH +
+// BenchmarkDetect — Detect is a bounded read-only scan (PATH +
 // standard dirs for the probed names, plus /proc when present); it never execs.
 // Measures the scan cost over a realistic set of probe names on the build host.
 func BenchmarkDetect(b *testing.B) {

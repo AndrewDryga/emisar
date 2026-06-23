@@ -257,8 +257,6 @@ func TestEngine_Reload_SwapsRegistry(t *testing.T) {
 	}
 }
 
-// closes RUN-010-T05
-//
 // An in-flight run keeps the registry pointer it captured at start across a
 // SIGHUP atomic swap. The engine holds the registry behind an atomic.Pointer
 // (engine.go) and a run reads it once at startup; Reload() stores a brand-new

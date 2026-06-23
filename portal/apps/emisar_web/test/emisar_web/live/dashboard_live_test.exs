@@ -118,7 +118,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html2 =~ "Dispatch your first action"
     end
 
-    # closes CON-001-T08 — every sub-read on the dashboard flows through
+    # every sub-read on the dashboard flows through
     # `current_subject`, so the board is account-scoped: A's operator sees A's
     # recent run + pending approval and never B's, even though both accounts have
     # both. (The foreign-slug 404 lives in account_slug_authz_test; this is the
@@ -163,7 +163,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "linux.bravo_dash"
     end
 
-    # closes CON-001-T09 — the dashboard is a read-only triage screen: its
+    # the dashboard is a read-only triage screen: its
     # quick-action cards (onboarding checklist + the three stat tiles) are plain
     # `<.link navigate>`s to real routes, not server-driven actions. A fresh
     # account renders the two onboarding cards linking to install + agents; the
@@ -262,7 +262,7 @@ defmodule EmisarWeb.DashboardLiveTest do
   end
 
   describe "plan / packs headroom banners" do
-    # closes CON-001-T06 — at the plan's runner cap the dashboard renders the
+    # at the plan's runner cap the dashboard renders the
     # rose at-limit banner (the next register would 402). The free plan caps at
     # 3 runners; fill all three.
     test "at the runner limit, the at-limit banner renders", %{conn: conn} do
@@ -274,7 +274,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "You&#39;re at your runner limit (3 of 3)."
     end
 
-    # closes CON-001-T06 (the near-limit half) — one slot short of the cap shows
+    # (the near-limit half) — one slot short of the cap shows
     # the softer amber "one slot left" variant, not the at-limit rose one.
     test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -286,7 +286,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "at your runner limit"
     end
 
-    # closes CON-001-T07 — when a runner advertises a pack version no operator
+    # when a runner advertises a pack version no operator
     # has trusted yet (`count_pending_pack_versions > 0`), the dashboard surfaces
     # the amber packs-pending-trust banner linking to the Packs page (dispatch is
     # blocked against those packs until an admin trusts the new hash).

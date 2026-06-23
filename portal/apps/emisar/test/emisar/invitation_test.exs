@@ -114,7 +114,7 @@ defmodule Emisar.InvitationTest do
     end
 
     test "returns :not_found for nil / empty token (no leaky scan)" do
-      # closes AUTH-012-T08 — the lookup's head requires a non-empty binary
+      # the lookup's head requires a non-empty binary
       # (`is_binary(token) and byte_size(token) > 0`); a nil or "" token falls to
       # the catch-all `:not_found` clause rather than scanning. So an empty token
       # param can never resolve an invite — the accept LV mount turns that
@@ -132,7 +132,7 @@ defmodule Emisar.InvitationTest do
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
     end
 
-    # closes AUTH-012-T04 — the 7-day window (Membership.Query.invitation_not_expired).
+    # the 7-day window (Membership.Query.invitation_not_expired).
     test "an invite just inside 7 days still resolves", %{membership: membership, token: token} do
       almost_seven = DateTime.add(DateTime.utc_now(), -(7 * 24 * 3600 - 3600), :second)
       {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: almost_seven) |> Repo.update()
@@ -187,7 +187,7 @@ defmodule Emisar.InvitationTest do
                })
     end
 
-    # closes AUTH-012-T05 — the 12..128 bounds are inclusive on the
+    # the 12..128 bounds are inclusive on the
     # invite-accept path (register_invited_user -> User.Changeset.password).
     # Each boundary needs its own pending invite: a successful accept burns
     # the token, so 12 and 128 are tested against fresh memberships.

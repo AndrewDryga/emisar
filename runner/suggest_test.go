@@ -40,8 +40,6 @@ func runSuggest(t *testing.T, catalog, packsDir string, extraArgs ...string) (er
 	return err, out
 }
 
-// closes RUN-022-T01 / RUN-022-T07
-//
 // Offline against a --catalog file, the read-only baseline (linux-core,
 // debugging) is always recommended on a matching-OS host, with no detect signal
 // needed (suggest.go baselineSuggestions). The catalog's service pack is given
@@ -73,8 +71,6 @@ func TestPackSuggest_BaselineRecommended(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T02
-//
 // `--names-only` prints just the ids, one per line, for scripting
 // (suggest.go:82-85) — no headers, no evidence, no install lines.
 func TestPackSuggest_NamesOnly(t *testing.T) {
@@ -97,8 +93,6 @@ func TestPackSuggest_NamesOnly(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T03
-//
 // With nothing to suggest, `--json` emits {"suggestions": []} — a non-nil empty
 // slice, not null (suggest.go combineSuggestions seeds out := []Suggestion{}).
 // A null here would break a consumer doing `.suggestions | length`. Everything
@@ -148,8 +142,6 @@ func TestPackSuggest_JSONEmitsEmptyArrayNotNull(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T04
-//
 // `pack suggest --catalog <dir>` derives detection metadata from a local pack
 // directory (catalogFromPackDir) instead of fetching the registry — fully
 // offline. A baseline pack (linux-core) present in the dir is recommended on a
@@ -157,7 +149,6 @@ func TestPackSuggest_JSONEmitsEmptyArrayNotNull(t *testing.T) {
 // dir built through the production loader, and use an empty --packs-dir so it
 // isn't excluded as already-installed.
 func TestPackSuggest_OfflineCatalogDir(t *testing.T) {
-	// closes RUN-022-T04
 	catalogDir := t.TempDir()
 	// A baseline pack id (no detect signal needed — baselineSuggestions adds it)
 	// built through the same loader the runner uses, with an empty OS list so it
@@ -176,14 +167,11 @@ func TestPackSuggest_OfflineCatalogDir(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T05
-//
 // Already-installed packs are excluded from the suggestions: a baseline pack
 // present in the catalog but also already installed (in the --packs-dir) is
 // de-duped out, so a re-run doesn't recommend reinstalling it
 // (combineSuggestions drops anything in `installed`).
 func TestPackSuggest_AlreadyInstalledExcluded(t *testing.T) {
-	// closes RUN-022-T05
 	catalog := writeCatalogFile(t, `
 		{"id":"linux-core","name":"Linux core","os":[],"detect":{}},
 		{"id":"debugging","name":"Debugging","os":[],"detect":{}}
@@ -207,8 +195,6 @@ func TestPackSuggest_AlreadyInstalledExcluded(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T06
-//
 // When the host is already covered (everything excluded), the human output is
 // the "already cover this host" message plus a catalog link (suggest.go
 // writeSuggestions) — not a blank screen.
@@ -230,8 +216,6 @@ func TestPackSuggest_NothingToSuggestMessage(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T08
-//
 // With no --catalog and an unreachable/erroring registry, suggest surfaces a
 // hard error rather than silently recommending nothing (suggest.go fetchCatalog
 // → loadCatalog). The fake registry 500s /packs/suggest.json.
@@ -258,8 +242,6 @@ func TestPackSuggest_RegistryFetchFailureErrors(t *testing.T) {
 	}
 }
 
-// closes RUN-022-T11
-//
 // `pack suggest` takes no positional args (cobra.NoArgs) — an extra arg is a
 // usage error, not silently ignored.
 func TestPackSuggest_NoArgs(t *testing.T) {

@@ -131,7 +131,7 @@ defmodule Emisar.PoliciesScopesTest do
       refute account_reason =~ "policy override"
     end
 
-    # closes ENG-006-T12 — the catalog hands risk as an Ecto.Enum atom (:high),
+    # the catalog hands risk as an Ecto.Enum atom (:high),
     # but the rules key their tiers by string ("high"). evaluate_with_policy
     # bridges via to_string, so the atom and the string must reach the SAME tier.
     test "an atom risk and its string form select the same tier decision" do
@@ -258,7 +258,7 @@ defmodule Emisar.PoliciesScopesTest do
       assert length(scoped) == 2
     end
 
-    # closes GOV-008-T08 — deleting a runner ruleset SOFT-deletes it (`deleted_at`
+    # deleting a runner ruleset SOFT-deletes it (`deleted_at`
     # set), and the unique index is partial (`WHERE deleted_at IS NULL`). So the
     # same scope can be claimed again by a fresh save: the upsert's conflict target
     # repeats that predicate, the tombstoned row is invisible to it, and a NEW live
@@ -288,7 +288,7 @@ defmodule Emisar.PoliciesScopesTest do
   end
 
   describe "cross-account write isolation (a subject only ever writes its OWN account)" do
-    # closes GOV-007-T08 — the account/default policy WRITE derives account_id
+    # the account/default policy WRITE derives account_id
     # from the subject, so account B's owner saving rules lands on B's policy and
     # can NEVER touch account A's. (Cross-account READ/DELETE return :not_found —
     # see fetch/delete tests above; the WRITE path's isolation is the row scoping.)
@@ -311,7 +311,7 @@ defmodule Emisar.PoliciesScopesTest do
       assert reloaded_a.account_id == account_a.id
     end
 
-    # closes GOV-018-T05 / GOV-019-T06 — a SCOPED (runner/group) ruleset WRITE is
+    # a SCOPED (runner/group) ruleset WRITE is
     # likewise account-bound. B saving a "runner-1" / "prod" override creates B's
     # own scoped row; A's same-named override is untouched, even though the
     # scope_value strings collide.

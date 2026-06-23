@@ -25,8 +25,6 @@ func sendRunActionUnsignedWithHash(t *testing.T, c *fakeConn, requestID, actionI
 	c.in <- raw
 }
 
-// closes RUN-033-T06 / RUN-034-T09
-//
 // Dispatch gate ORDERING: the signature gate runs before the trust
 // (pack-hash) gate. An enforcing runner gets a request that is BOTH
 // unsigned AND carries a mismatched expected_pack_hash. The result must be
@@ -53,8 +51,6 @@ func TestClient_GateOrder_SignatureBeforeTrust(t *testing.T) {
 	}
 }
 
-// closes RUN-008-T04
-//
 // Under outbox pressure the run RESULT is never dropped. enqueue
 // (client.go:634-643) applies dropOldestProgress only to progress chunks;
 // the terminal result uses the `never` policy (client.go:625-628), which

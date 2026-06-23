@@ -116,7 +116,7 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "Runs"
   end
 
-  # closes CON-005-T09 — the `filter` event is pure URL reshaping
+  # the `filter` event is pure URL reshaping
   # (`LiveTable.apply_filter` push_patches the chosen filter into the query
   # string); it performs no mutation and so needs no authz gate. Selecting a
   # status patches the URL to `?status=…` and re-renders from the patched
@@ -148,7 +148,7 @@ defmodule EmisarWeb.RunsLiveTest do
     refute html =~ "You don&#39;t have permission to do that."
   end
 
-  # closes CON-005-T08 — the feed is scoped to the caller's account via
+  # the feed is scoped to the caller's account via
   # `for_subject/2`: A's operator sees A's runs and never B's, even though both
   # accounts have runs. (The foreign-account slug 404 lives in
   # account_slug_authz_test; this is the in-account data scoping.)

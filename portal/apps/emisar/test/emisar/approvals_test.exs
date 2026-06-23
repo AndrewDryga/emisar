@@ -365,7 +365,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, viewer_subject, "no rights")
     end
 
-    # closes GOV-004-T11 (context half) — a finalizing deny writes BOTH a per-vote
+    # (context half) — a finalizing deny writes BOTH a per-vote
     # `approval.decision_recorded` (the running count) AND the finalizing
     # `approval.denied` row, inside the same transaction as the run.cancelled. The
     # decision_recorded step is decision-agnostic (not approve-only), so the deny
@@ -647,7 +647,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:error, :not_found} = Approvals.revoke_grant(g_a, subject_b)
     end
 
-    # closes GOV-005-T03 — `manage_grants` = owner/admin, so an ADMIN (not just an
+    # `manage_grants` = owner/admin, so an ADMIN (not just an
     # owner) can revoke a grant. Mirrors the operator-denial test above with the
     # laxest role that still holds the permission.
     test "an admin (manage_grants holder) can revoke a grant" do
@@ -666,7 +666,7 @@ defmodule Emisar.ApprovalsTest do
       assert revoked_by == admin.id
     end
 
-    # closes GOV-005-T09 — re-revoking an already-revoked grant is benign. The
+    # re-revoking an already-revoked grant is benign. The
     # revoke read is status-agnostic (`Grant.Query.all() |> by_id`, no
     # `not_revoked` filter), so the revoked row is still fetchable and
     # `Grant.Changeset.revoke` simply re-stamps `revoked_at`/`revoked_by_id`. No
@@ -807,7 +807,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "a windowed duration on an operator-sourced run mints no grant" do
-      # closes GOV-003-T06 — a grant only exists to let an LLM's IDENTICAL
+      # a grant only exists to let an LLM's IDENTICAL
       # follow-up api-key call skip the gate. An operator-sourced run has no
       # api_key (`api_key_id: nil`), so `mint_grant/4`'s nil-key clause returns
       # `{:ok, nil}` even for a windowed duration: there's no key for a grant to
@@ -1296,7 +1296,7 @@ defmodule Emisar.ApprovalsTest do
       assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
     end
 
-    # closes GOV-003-T21 — there is deliberately NO indefinite grant. `expires_at_for/2`
+    # there is deliberately NO indefinite grant. `expires_at_for/2`
     # has no catch-all, so a duration atom outside the five whitelisted windows
     # CRASHES on a finalizing api-key approve rather than minting a grant with a
     # nil (never-expiring) horizon. The web layer parses operator input down to
@@ -1426,7 +1426,7 @@ defmodule Emisar.ApprovalsTest do
       refute_receive {:cloud_to_runner, _}, 100
     end
 
-    # closes GOV-004-T03 — deny is `:decide`-gated only; it is NOT self-gated.
+    # deny is `:decide`-gated only; it is NOT self-gated.
     # `check_self_approval` blocks an APPROVE by the recorded requester (when the
     # snapshot forbids self-approval) but lets a deny fall through. So the
     # requester denying their OWN request is allowed even under
@@ -1480,7 +1480,7 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
     end
 
-    # closes ENG-007-T07 — a nil requester has no "self" to block (vacuous, not a
+    # a nil requester has no "self" to block (vacuous, not a
     # bypass): even with allow_self_approval: false the self-check can't match, so
     # the gate is min_approvals alone — N distinct deciders still required.
     test "a nil requester is vacuously non-self; min_approvals still requires N distinct" do
@@ -1522,8 +1522,8 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "pack re-trust before approve (closes ENG-005-T12 at the approve gate)" do
-    # closes ENG-007-T14 — the approve path re-gates pack trust (recheck_trust)
+  describe "pack re-trust before approve (at the approve gate)" do
+    # the approve path re-gates pack trust (recheck_trust)
     # before re-dispatching. A pack that drifted to :pending while the run was
     # parked makes the approve fail CLOSED — a tampered re-advertisement is never
     # shipped just because an approval window was open.
@@ -1572,7 +1572,7 @@ defmodule Emisar.ApprovalsTest do
       assert %Request{status: :pending} = Repo.reload!(request)
     end
 
-    # closes GOV-004-T06 — only APPROVE re-gates pack trust (recheck_trust(:approve)
+    # only APPROVE re-gates pack trust (recheck_trust(:approve)
     # → recheck_run_pack_trust; recheck_trust(:deny) is a flat :ok). Deny cancels the
     # run, it never ships bytes, so a drifted-to-:pending pack must NOT block the
     # operator from denying — the same drift that fails the approve closed lets the
@@ -1725,7 +1725,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, b, "two")
     end
 
-    # closes GOV-003-T11 — the allow_self_approval posture is snapshotted onto the
+    # the allow_self_approval posture is snapshotted onto the
     # request at CREATION (mirrors the min_approvals snapshot above). Flipping the
     # account policy to forbid self-approval AFTER the request exists must NOT
     # retroactively block the requester from approving this in-flight run: the
@@ -1787,7 +1787,7 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "MCP self-approval (closes the api-key bypass)" do
-    # closes ENG-007-T06 — an MCP run's requested_by_id is nil, so
+    # an MCP run's requested_by_id is nil, so
     # effective_requester resolves "self" to the api-key OWNER; the owner can't
     # launder a self-approval through their own key under allow_self_approval:
     # false, while a different operator still approves.
@@ -1951,7 +1951,7 @@ defmodule Emisar.ApprovalsTest do
       assert %Request{status: :cancelled} = Repo.reload!(request)
     end
 
-    # closes ENG-007-T09 — cancelling a :pending_approval run flips its request
+    # cancelling a :pending_approval run flips its request
     # to :cancelled in the SAME transaction, so a stale approve that lands after
     # finds a :cancelled request and is refused (:run_cancelled) — it can never
     # resurrect + dispatch the cancelled run.

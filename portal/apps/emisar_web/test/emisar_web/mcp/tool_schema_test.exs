@@ -197,7 +197,6 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
     end
 
     test "the schema is a client-facing HINT, carried verbatim — not the dispatch gate" do
-      # closes MCP-010-T13
       # The moduledoc's contract: emisar's own arg types are widened to a JSON
       # primitive + a carried constraint, and "the runner re-validates with the
       # original spec on dispatch — the schema is a hint to the LLM, not the

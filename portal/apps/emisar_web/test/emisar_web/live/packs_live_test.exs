@@ -176,7 +176,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a no-baseline (TOFU) pending pack shows the 'no baseline' block copy", %{conn: conn} do
-      # closes GOV-009-T03 — a custom pack we ship no baseline for pins pending with
+      # a custom pack we ship no baseline for pins pending with
       # a NIL trusted hash (`hash == nil`), so the banner reads the TOFU copy ("a
       # pack we don't ship a baseline for. Dispatch is blocked until you approve its
       # contents.") rather than the hash-drift copy. `observe_pending_pack!` lands
@@ -196,7 +196,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a trusted version advertising no actions shows the empty View-contents copy", %{
       conn: conn
     } do
-      # closes GOV-021-T03 — opening the disclosure for a trusted version that
+      # opening the disclosure for a trusted version that
       # advertises zero actions caches `[]` and renders the empty-set copy ("No
       # actions advertised for this version right now."), not a blank panel or a
       # crash. The runner pinned the pack with an empty actions list, then trust it.
@@ -400,7 +400,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "an operator sees the pending banner but no Trust/Reject controls", %{conn: conn} do
-      # closes GOV-009-T07 — operator holds `view_catalog` (the pending banner that
+      # operator holds `view_catalog` (the pending banner that
       # explains WHY dispatch is blocked renders) but not `manage_catalog`, so the
       # Trust / Reject buttons are hidden (`subject_can_manage_packs?`).
       {_owner_conn, _owner, account} = register_and_log_in(conn)
@@ -429,7 +429,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "another account's packs never appear on this page", %{conn: conn} do
-      # closes GOV-009-T08 — `list_pack_versions` scopes to the subject's account
+      # `list_pack_versions` scopes to the subject's account
       # via `for_subject`, so a foreign account's pending pack is invisible here.
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -455,7 +455,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "a runner-advertised action title containing HTML renders escaped, not as raw markup",
          %{conn: conn} do
-      # closes GOV-009-T09 — `action_id`/`title` are attacker-influenced (a runner
+      # `action_id`/`title` are attacker-influenced (a runner
       # advertises them). The pending card renders them through escaped HEEx
       # (IL-16), so a <script> title shows up as literal text, never live markup.
       {conn, _user, account} = register_and_log_in(conn)
@@ -489,7 +489,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "an operator's crafted trust event is denied — nothing trusted", %{conn: conn} do
-      # closes GOV-010-T04 — the Trust button is hidden for an operator, but a
+      # the Trust button is hidden for an operator, but a
       # crafted `trust` event still hits the handler. `trust_pack_version` requires
       # `manage_catalog` → {:error,:unauthorized} → "Admin required to trust packs."
       # The pending row is untouched.
@@ -516,7 +516,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a viewer's crafted trust event is denied", %{conn: conn} do
-      # closes GOV-010-T05 (crafted form) — same `manage_catalog` gate, laxest role.
+      # (crafted form) — same `manage_catalog` gate, laxest role.
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
@@ -541,7 +541,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a pending version offers no View-contents disclosure (only trusted rows do)", %{
       conn: conn
     } do
-      # closes GOV-021-T07 — "View contents" is gated `:if={v.trust_state ==
+      # "View contents" is gated `:if={v.trust_state ==
       # :trusted}`. A pending version already renders its full advertised action
       # set inline, so the disclosure must NOT appear on it (it's the trusted
       # row's after-the-fact re-inspection affordance).
@@ -560,7 +560,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "reopening the reject dialog on a second version overwrites the target", %{conn: conn} do
-      # closes GOV-022-T05 — `open_reject` overwrites `@reject_target` and
+      # `open_reject` overwrites `@reject_target` and
       # `confirm_reset` clears the typed value, so opening v1, resetting, then
       # opening v2 leaves the dialog naming v2's token (not the stale v1).
       {conn, _user, account} = register_and_log_in(conn)
@@ -646,7 +646,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "trust/reject of an already-resolved row flashes 'Nothing pending'", %{conn: conn} do
-      # closes GOV-010-T03, GOV-011-T04 — once the row is trusted (no longer
+      # once the row is trusted (no longer
       # pending), a crafted `trust`/`reject` event (e.g. a stale tab, or the loser
       # of a race the locked re-read already serialized) returns `:not_pending`.
       # The LV handlers map that to "Nothing pending on that pack." rather than

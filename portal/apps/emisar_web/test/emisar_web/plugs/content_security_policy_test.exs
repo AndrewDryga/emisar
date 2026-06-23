@@ -59,7 +59,6 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
 
   describe "csp_extra opt-in" do
     test "additively merges a page's extra directives onto the base policy", %{conn: conn} do
-      # closes CFG-003-T10
       # A page that needs an extra origin (e.g. Paddle checkout) assigns
       # conn.assigns[:csp_extra]; the plug appends those directives WITHOUT
       # dropping any base directive. Driven through the plug directly so the

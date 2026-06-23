@@ -98,10 +98,11 @@ func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
 
 // TestValidate_Signing covers the client-attested-dispatch config gate
 // (config.go validateSigning):
-//   - RUN-031-T07: enforce_signatures with no trusted_keys is a footgun (the
-//     runner would refuse EVERY dispatch) and is rejected.
-//   - RUN-031-T08: two trusted keys sharing a key_id are rejected.
-//   - RUN-031-T09: a trusted key missing key_id or public_key is rejected.
+//
+//	-: enforce_signatures with no trusted_keys is a footgun (the
+//	  runner would refuse EVERY dispatch) and is rejected.
+//	-: two trusted keys sharing a key_id are rejected.
+//	-: a trusted key missing key_id or public_key is rejected.
 //
 // Each case starts from a config that validates and changes only the signing
 // block, so a failure pins the rejection to the signing rule under test.
@@ -116,7 +117,6 @@ func TestValidate_Signing(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			// RUN-031-T07
 			name:    "enforce with empty trusted_keys rejected",
 			signing: Signing{EnforceSignatures: true},
 			wantErr: true,
@@ -134,7 +134,6 @@ func TestValidate_Signing(t *testing.T) {
 			signing: Signing{},
 		},
 		{
-			// RUN-031-T08
 			name: "duplicate key_id rejected",
 			signing: Signing{
 				TrustedKeys: []TrustedKey{
@@ -145,19 +144,19 @@ func TestValidate_Signing(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// RUN-031-T09 — key_id missing.
+			// key_id missing.
 			name:    "missing key_id rejected",
 			signing: Signing{TrustedKeys: []TrustedKey{{PublicKey: keyA}}},
 			wantErr: true,
 		},
 		{
-			// RUN-031-T09 — key_id present but whitespace-only.
+			// key_id present but whitespace-only.
 			name:    "blank key_id rejected",
 			signing: Signing{TrustedKeys: []TrustedKey{{KeyID: "  ", PublicKey: keyA}}},
 			wantErr: true,
 		},
 		{
-			// RUN-031-T09 — public_key missing.
+			// public_key missing.
 			name:    "missing public_key rejected",
 			signing: Signing{TrustedKeys: []TrustedKey{{KeyID: "prod"}}},
 			wantErr: true,
@@ -191,7 +190,7 @@ func TestValidate_MaxAttestationAgeDefault(t *testing.T) {
 	}
 }
 
-// TestValidate_RejectsWrongSchemaVersion covers RUN-031-T11: schema_version
+// TestValidate_RejectsWrongSchemaVersion covers: schema_version
 // must equal the supported version (config.go:145-147). Zero (the field unset)
 // and any other value are both rejected.
 func TestValidate_RejectsWrongSchemaVersion(t *testing.T) {
@@ -207,8 +206,9 @@ func TestValidate_RejectsWrongSchemaVersion(t *testing.T) {
 // TestCheckEndpointScheme exercises the shared transport-security gate
 // (config.go CheckEndpointScheme) directly — the function reused by both
 // cloud.url validation and the pack fetch:
-//   - RUN-032-T06: an unknown scheme passes this gate (left for the dialer).
-//   - RUN-032-T07: localhost is matched case-insensitively as loopback.
+//
+//	-: an unknown scheme passes this gate (left for the dialer).
+//	-: localhost is matched case-insensitively as loopback.
 //
 // https/wss, loopback cleartext, and the allow_insecure opt-in are also
 // asserted here at the exported-function level (the wrapper is covered by
@@ -222,10 +222,10 @@ func TestCheckEndpointScheme(t *testing.T) {
 	}{
 		{"https passes", "https://cloud.emisar.dev/runner", false, false},
 		{"wss passes", "wss://cloud.emisar.dev/runner", false, false},
-		// RUN-032-T06: schemes other than http/ws are not this gate's concern.
+		// schemes other than http/ws are not this gate's concern.
 		{"unknown scheme passes", "foo://prod-host", false, false},
 		{"empty url passes", "", false, false},
-		// RUN-032-T07: any casing of localhost is loopback.
+		// any casing of localhost is loopback.
 		{"ws LOCALHOST loopback", "ws://LOCALHOST:4000", false, false},
 		{"http LocalHost loopback", "http://LocalHost:4000", false, false},
 		{"http 127.0.0.1 loopback", "http://127.0.0.1:4000", false, false},

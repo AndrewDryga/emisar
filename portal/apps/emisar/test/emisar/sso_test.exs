@@ -167,7 +167,6 @@ defmodule Emisar.SSOTest do
       assert "must be an https URL" in errors_on(changeset).issuer
     end
 
-    # closes TEAM-026-T07
     test "an https issuer with no host is rejected" do
       {_user, _account, subject} = enterprise_owner()
 
@@ -180,7 +179,6 @@ defmodule Emisar.SSOTest do
       assert "must be an https URL" in errors_on(changeset).issuer
     end
 
-    # closes TEAM-026-T05
     test "allowed_email_domain is normalized — leading @ stripped, trimmed (casing kept for citext)" do
       {_user, _account, subject} = enterprise_owner()
 
@@ -201,7 +199,6 @@ defmodule Emisar.SSOTest do
                )
     end
 
-    # closes TEAM-026-T05
     test "a blank allowed_email_domain normalizes to nil (no domain gate)" do
       {_user, _account, subject} = enterprise_owner()
 
@@ -219,7 +216,6 @@ defmodule Emisar.SSOTest do
                )
     end
 
-    # closes TEAM-026-T10
     test "a second ENABLED provider of the same kind hits the unique (account, kind) index" do
       {_user, account, subject} = enterprise_owner()
       _first = provider_fixture(account, %{kind: :okta, enabled: true})
@@ -242,7 +238,6 @@ defmodule Emisar.SSOTest do
       assert "has already been taken" in errors_on(changeset).account_id
     end
 
-    # closes TEAM-026-T11
     test "two ENABLED providers with the same allowed_email_domain hit the unique index" do
       {_user, account, subject} = enterprise_owner()
       _first = provider_fixture(account, %{kind: :okta, allowed_email_domain: "acme.test"})
@@ -264,7 +259,6 @@ defmodule Emisar.SSOTest do
       assert errors_on(changeset).allowed_email_domain != []
     end
 
-    # closes TEAM-026-T08
     test "omitting kind / name / issuer / client_id surfaces the required-field errors" do
       {_user, _account, subject} = enterprise_owner()
 
@@ -277,7 +271,6 @@ defmodule Emisar.SSOTest do
       assert "can't be blank" in errors.client_id
     end
 
-    # closes TEAM-026-T04
     test "a blank client_secret is not stored (an empty secret never persists)" do
       {_user, _account, subject} = enterprise_owner()
 
@@ -297,7 +290,6 @@ defmodule Emisar.SSOTest do
                )
     end
 
-    # closes TEAM-026-T15
     test "a create always lands in the SUBJECT's account — never a foreign one" do
       {_ua, _account_a, _sa} = enterprise_owner()
       {_ub, account_b, sb} = enterprise_owner()
@@ -381,7 +373,6 @@ defmodule Emisar.SSOTest do
   end
 
   describe "update_provider/3 edit-path validation + gating" do
-    # closes TEAM-027-T06
     test "changing the issuer to a non-https URL is rejected on update" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -394,7 +385,6 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).issuer == "https://idp.test"
     end
 
-    # closes TEAM-027-T07
     test "setting :owner as the default_role is rejected on update" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -406,7 +396,6 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).default_role == :viewer
     end
 
-    # closes TEAM-027-T02
     test "a new client_secret rotates the stored value" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "old-secret"})
@@ -415,7 +404,6 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).client_secret == "rotated-secret"
     end
 
-    # closes TEAM-027-T03
     test "an update with no client_secret key keeps the stored secret (never wiped)" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "keep-this-secret"})
@@ -430,7 +418,6 @@ defmodule Emisar.SSOTest do
       assert reloaded.client_secret == "keep-this-secret"
     end
 
-    # closes TEAM-027-T05
     test "disabling one of two enabled providers is allowed (not the last)" do
       {_user, account, subject} = enterprise_owner()
       account |> Ecto.Changeset.change(require_sso: true) |> Repo.update!()
@@ -444,7 +431,6 @@ defmodule Emisar.SSOTest do
                SSO.update_provider(extra, %{enabled: false}, subject)
     end
 
-    # closes TEAM-027-T08
     test "kind is immutable on edit — a kind change in attrs is ignored" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{kind: :okta})
@@ -460,7 +446,6 @@ defmodule Emisar.SSOTest do
       assert reloaded.name == "Renamed"
     end
 
-    # closes TEAM-027-T10
     test "a free plan is denied on update (:sso_not_available)" do
       # The row exists (built via the fixture, bypassing the gate), but the plan
       # gate (`ensure_can_configure_sso`) fires before any row touch.
@@ -475,7 +460,6 @@ defmodule Emisar.SSOTest do
   end
 
   describe "delete_provider/3 gating" do
-    # closes TEAM-028-T05
     test "a free plan is denied on delete (:sso_not_available)" do
       {_user, account, subject} = owner_subject_fixture(%{})
       provider = provider_fixture(account)
@@ -486,7 +470,7 @@ defmodule Emisar.SSOTest do
   end
 
   describe "enable_scim/2 gating" do
-    # closes TEAM-029-T07 — SCIM is Enterprise-only, even though OIDC is Team+.
+    # SCIM is Enterprise-only, even though OIDC is Team+.
     test "a Team plan can configure OIDC but is denied SCIM enable (:directory_sync_not_available)" do
       {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
       provider = provider_fixture(account)
@@ -495,7 +479,6 @@ defmodule Emisar.SSOTest do
       refute Repo.reload!(provider).scim_enabled
     end
 
-    # closes TEAM-029-T05
     test "the SCIM token prefix is unique across providers (partial index)" do
       {_user, account, subject} = enterprise_owner()
       first = provider_fixture(account, %{kind: :okta})
@@ -721,7 +704,6 @@ defmodule Emisar.SSOTest do
       assert [_still_pending] = link_requests(provider.id)
     end
 
-    # closes TEAM-031-T09
     test "approve_link_request denies a free plan (:sso_not_available)", %{
       provider: provider
     } do

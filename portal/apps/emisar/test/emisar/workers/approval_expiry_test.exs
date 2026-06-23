@@ -104,7 +104,7 @@ defmodule Emisar.Workers.ApprovalExpiryLogTest do
     :ok
   end
 
-  # closes ENG-023-T05 — the swept-count line is logged ONLY when at least one
+  # the swept-count line is logged ONLY when at least one
   # request expired (the `if expired > 0` guard). A zero-result sweep (every
   # cron tick when the queue is empty) stays silent, so the log isn't drowned
   # in "swept 0" noise; a sweep that expires a row logs the count.

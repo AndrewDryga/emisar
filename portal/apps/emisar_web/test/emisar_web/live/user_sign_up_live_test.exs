@@ -32,7 +32,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "the registration form carries a CSRF token for its POST to /sign_in", %{conn: conn} do
-    # closes AUTH-001-T19 — the form's hidden auto-login POST rides the
+    # the form's hidden auto-login POST rides the
     # CSRF-protected :browser pipeline. Because it renders with an
     # `action`+`method=post`, `<.form>` emits the hidden `_csrf_token` input, so
     # the legitimate browser submit is accepted and a forged cross-site one is not.
@@ -43,7 +43,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "an already-authenticated visitor is bounced off /sign_up to /app", %{conn: conn} do
-    # closes AUTH-001-T17 — /sign_up lives under :redirect_if_user_is_authenticated,
+    # /sign_up lives under :redirect_if_user_is_authenticated,
     # so a signed-in user is redirected to the app before the LiveView mounts —
     # they have no business on the registration page.
     {conn, _user, _account} = register_and_log_in(conn)
@@ -161,7 +161,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "a malformed email surfaces the regex error inline via phx-change", %{conn: conn} do
-    # closes AUTH-001-T11 — the email changeset enforces `^[^\s]+@[^\s]+$`, so an
+    # the email changeset enforces `^[^\s]+@[^\s]+$`, so an
     # address with a space (or no @) re-renders with the inline field error and
     # never submits. The message matches the reset/sign-in forms' copy.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
@@ -177,7 +177,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "an email over 160 chars inline-errors on the length cap", %{conn: conn} do
-    # closes AUTH-001-T12 — the email changeset caps length at 160; a 161-char
+    # the email changeset caps length at 160; a 161-char
     # (otherwise well-formed) address re-renders with the inline max error.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     long_email = String.duplicate("a", 161 - length(~c"@example.com")) <> "@example.com"
@@ -192,7 +192,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "the validate (phx-change) path writes nothing to the DB", %{conn: conn} do
-    # closes AUTH-001-T16 — the strength-tick `validate` event runs a pure
+    # the strength-tick `validate` event runs a pure
     # `change_user` changeset (action :validate, hash_password: false) — no insert,
     # no bcrypt round-trip. Streaming the password while typing must never create a
     # user.
@@ -207,7 +207,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   test "an empty full_name is accepted server-side (only the form marks it required)", %{
     conn: conn
   } do
-    # closes AUTH-001-T18 — `full_name` is cast but NOT validated required in the
+    # `full_name` is cast but NOT validated required in the
     # registration changeset, so a client that strips the `required` attr and
     # submits a blank name still registers (no 500, no inline name error). The
     # form-level `required` is the only guard; this documents that gap explicitly.

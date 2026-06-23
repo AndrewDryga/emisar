@@ -849,7 +849,7 @@ defmodule Emisar.RunsTest do
                })
     end
 
-    # closes ENG-001-T05 — an unrecognized result-status string defaults to
+    # an unrecognized result-status string defaults to
     # :failed rather than crashing or inventing a status (the mapping table's
     # fail-safe fallback; a compromised/buggy runner can't mint a new state).
     test "an unrecognized result status defaults to :failed" do
@@ -866,7 +866,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "dispatch decision-before-outcome atomicity" do
-    # closes ENG-001-T09 — the run row + its policy.evaluated decision audit
+    # the run row + its policy.evaluated decision audit
     # commit in ONE Multi. When the :run insert fails (oversized args), the
     # whole transaction rolls back: no orphan run row, no orphan audit row, and
     # no broadcast — a dispatched action can never exist without its decision.
@@ -898,7 +898,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "reason / reason_text / error_message stay distinct" do
-    # closes ENG-001-T18 — three fields with three jobs that must not bleed:
+    # three fields with three jobs that must not bleed:
     #   reason       — the operator's "why", shipped on the wire envelope
     #   reason_text  — the CANCEL cause
     #   error_message — the FAILURE/refusal cause
@@ -1080,7 +1080,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "run status state machine" do
-    # closes ENG-001-T01 (state-machine half) — the valid forward path
+    # (state-machine half) — the valid forward path
     # pending → sent → running → success, each transition stamping its own
     # timestamp. The terminal flip is the only one that's final.
     test "walks the valid sequence pending → sent → running → success" do
@@ -1103,7 +1103,7 @@ defmodule Emisar.RunsTest do
       assert ActionRun.terminal?(:success)
     end
 
-    # closes ENG-001-T15 — once terminal, every further transition is a benign
+    # once terminal, every further transition is a benign
     # no-op that keeps the run final (the locked re-read in transition/3 treats
     # an already-terminal row as `:already_terminal`). A second finalize, a
     # mark_sent, and a mark_running all leave :success in place.
@@ -1128,7 +1128,7 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :success
     end
 
-    # closes ENG-001-T01 (cancel-from-each-cancelable-state half) — cancel is
+    # (cancel-from-each-cancelable-state half) — cancel is
     # legal from each NON-terminal state the run can sit in: :pending (created,
     # not yet sent) and :running (mid-flight). Both land :cancelled.
     test "cancel is accepted from :pending and from :running" do
@@ -1151,11 +1151,11 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: :cancelled}} = Runs.cancel_run(running, subject, "stop")
     end
 
-    # closes ENG-001-T01 (cancel-from-pending_approval half) — cancelling a
+    # (cancel-from-pending_approval half) — cancelling a
     # :pending_approval run (parked, never sent) flips it to :cancelled and the
     # cancel is composed atomically with cancelling its still-pending request
     # (cancel_run_for_status's pending_approval clause). A later stale approve
-    # then finds a :cancelled request (see approvals ENG-007-T09).
+    # then finds a :cancelled request (see approvals).
     test "cancel is accepted from :pending_approval and cancels the parked run" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
@@ -1200,7 +1200,7 @@ defmodule Emisar.RunsTest do
       {subject, attrs}
     end
 
-    # closes ENG-011-T07 (deny half) — replaying a previously-DENIED dispatch
+    # (deny half) — replaying a previously-DENIED dispatch
     # (same api_key + idempotency_key) re-shapes the cached :denied row back into
     # the deny tuple via replay_outcome, not a running run. The deny is logged
     # exactly once (the replay path runs no audit).
@@ -1231,7 +1231,7 @@ defmodule Emisar.RunsTest do
       assert length(evaluated) == 1
     end
 
-    # closes ENG-011-T07 (pending_approval half) — replaying a previously-PARKED
+    # (pending_approval half) — replaying a previously-PARKED
     # dispatch re-shapes the cached :pending_approval row to the same
     # {:ok, :pending_approval, run} (the request to long-poll), and never files a
     # second request or pushes a second envelope.
@@ -1264,7 +1264,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "append_event after terminal" do
-    # closes ENG-010-T07 — a progress chunk that arrives AFTER the run reached a
+    # a progress chunk that arrives AFTER the run reached a
     # terminal state is persisted as a benign event but never resurrects the run:
     # the :sent → :running flip in append_event/2 only fires from :sent, so a
     # finished run stays finished. No error, no resurrection.
@@ -1756,7 +1756,7 @@ defmodule Emisar.RunsTest do
       assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
     end
 
-    # closes ENG-005-T13 — when the runner no longer advertises the action mid
+    # when the runner no longer advertises the action mid
     # approval-window (offline / pack unloaded), recheck returns :ok: there is
     # nothing live to ship the wrong bytes to, so the gate doesn't block. The
     # drift-to-:pending threat is the OTHER clause above; the dispatch itself

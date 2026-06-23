@@ -19,13 +19,12 @@ defmodule EmisarWeb.AdminGateTest do
   @dev_routes Application.compile_env(:emisar_web, :dev_routes)
 
   # `is_admin` has no production write path (set via console/migration
-  # only — CFG-005-T08), so the test grants it out-of-band, the same shape
+  # only), so the test grants it out-of-band, the same shape
   # require_sso_test uses for its account flag.
   defp make_admin(user), do: user |> Ecto.Changeset.change(is_admin: true) |> Repo.update!()
 
   describe "the /admin/live admin gate" do
     test "an is_admin user reaches the LiveDashboard", %{conn: conn} do
-      # closes CFG-005-T01
       {conn, user, _account} = register_and_log_in(conn)
       make_admin(user)
 
@@ -39,7 +38,7 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
-      # closes CFG-005-T01/T02
+      # /T02
       {conn, _user, _account} = register_and_log_in(conn)
 
       conn = get(conn, "/admin/live")
@@ -50,7 +49,6 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "an account owner who is not is_admin is still denied", %{conn: conn} do
-      # closes CFG-005-T05
       # register_and_log_in makes the user the account OWNER; platform admin
       # is independent of tenant role, so the owner is denied just the same.
       {conn, user, _account} = register_and_log_in(conn)
@@ -63,7 +61,7 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "an anonymous user is bounced to sign-in before the admin gate", %{conn: conn} do
-      # closes CFG-005-T03/T06
+      # /T06
       conn = get(conn, "/admin/live")
 
       # :require_authenticated_user runs before :require_admin, so an
@@ -77,7 +75,6 @@ defmodule EmisarWeb.AdminGateTest do
 
     test "the admin mount rides the :noindex pipeline (platform observability isn't crawled)",
          %{conn: conn} do
-      # closes CFG-005-T07
       # /admin/live pipes through :noindex, which sets the conn assign the root
       # layout turns into `<meta name="robots" content="noindex,nofollow">`.
       # The assign is set before the dashboard 302s, so it's observable here.
@@ -90,7 +87,6 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "a session that asserts is_admin: true does NOT bypass the gate", %{conn: conn} do
-      # closes CFG-005-T09
       # The gate reads `current_user.is_admin`, which fetch_current_user loads
       # from the DB by the session token — a forged/extra `is_admin` session key
       # is never consulted, so a non-admin stays denied even after stuffing it in.
@@ -108,7 +104,6 @@ defmodule EmisarWeb.AdminGateTest do
 
   describe "the is_admin flag" do
     test "defaults to false for a freshly registered user (closed by default)", %{conn: _conn} do
-      # closes CFG-005-T04
       {:ok, user} =
         Emisar.Users.register_user(%{
           email: "fresh-#{System.unique_integer([:positive])}@example.com",
@@ -122,14 +117,13 @@ defmodule EmisarWeb.AdminGateTest do
 
   describe "the dev-only routes" do
     test "the :dev_routes flag is off in the test env" do
-      # closes CFG-006-T03
       # The /dev mount is compiled in only under `:dev_routes` (dev.exs).
       # Confirm it's falsy here before asserting the routes are absent.
       refute @dev_routes
     end
 
     test "/dev/dashboard is not mounted — the branded 404, not a 403", %{conn: conn} do
-      # closes CFG-006-T01/T02
+      # /T02
       # Compiled out, so it matches no route and falls to the :browser
       # catch-all → the branded 404 page (NOT a 403 — the route doesn't
       # exist to be forbidden), exactly like any other unrouted path.
@@ -138,7 +132,6 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "/dev/mailbox is not mounted — the branded 404", %{conn: conn} do
-      # closes CFG-006-T02
       conn = get(conn, "/dev/mailbox")
       assert html_response(conn, 404) =~ "Page not found"
     end

@@ -11,7 +11,7 @@ import (
 // runtime.Version), so they're deterministic in-process — the VCS lines
 // (commit/built/dirty) only appear in a git-built binary and aren't asserted
 // here. Driven through the real cobra command; the RunE returns nil and prints
-// to os.Stdout, so we capture the process's stdout. closes RUN-030-T01.
+// to os.Stdout, so we capture the process's stdout.
 func TestVersionCmd_PrintsVersionAndGoLine(t *testing.T) {
 	var err error
 	out := captureStdout(t, func() {
@@ -38,8 +38,8 @@ func TestVersionCmd_PrintsVersionAndGoLine(t *testing.T) {
 
 // `version` does not branch on --json: the human lines are printed whether or
 // not the global flag is set (it carries no machine-readable mode). This pins
-// the RUN-001-T07 boundary that --json is honored only where a command
-// consumes it. closes RUN-030-T04.
+// the boundary that --json is honored only where a command
+// consumes it.
 func TestVersionCmd_IgnoresJSONFlag(t *testing.T) {
 	withJSONOut(t, true)
 	var err error

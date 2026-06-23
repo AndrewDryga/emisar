@@ -58,12 +58,6 @@ defmodule EmisarWeb.MarketingTest do
     # One loop closes the "Security: Indexable + CSP" row on MKT-001…025
     # and the legal pages MKT-034…036.
     #
-    # closes MKT-001-T12 MKT-001-T13 MKT-002-T08 MKT-003-T09 MKT-004-T10
-    # closes MKT-005-T07 MKT-006-T07 MKT-007-T07 MKT-008-T07 MKT-009-T07
-    # closes MKT-010-T07 MKT-011-T06 MKT-012-T06 MKT-013-T08 MKT-014-T06
-    # closes MKT-015-T06 MKT-016-T06 MKT-017-T08 MKT-018-T05 MKT-019-T06
-    # closes MKT-020-T07 MKT-021-T07 MKT-022-T06 MKT-023-T06 MKT-024-T07
-    # closes MKT-034-T09 MKT-035-T10 MKT-036-T10
     for route <- @routes do
       test "GET #{route} carries the CSP header with a script-src nonce", %{conn: conn} do
         conn = get(conn, unquote(route))
@@ -354,13 +348,11 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   test "healthz carries cache-control: no-store so a 200 is never cached", %{conn: conn} do
-    # closes CFG-004-T03
     conn = get(conn, ~p"/healthz")
     assert get_resp_header(conn, "cache-control") == ["no-store"]
   end
 
   test "healthz is reachable with no session/auth/CSRF", %{conn: conn} do
-    # closes CFG-004-T05
     # The route rides the bare :api pipeline (no fetch_session / fetch_current_user
     # / protect_from_forgery), so a probe with no cookies still answers 200 — Fly's
     # health checker carries no session.
@@ -371,7 +363,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   test "healthz only answers GET — POST hits no route and parses no input", %{conn: conn} do
-    # closes CFG-004-T09
     # The route is `get "/healthz"` only, so a POST matches nothing and falls to
     # the not-found path (404) — the probe handler never runs, no body is parsed.
     conn = post(conn, "/healthz")
@@ -443,7 +434,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "outbound link safety" do
-    # closes MKT-004-T08 MKT-004-T09
     test "the /security page links the disclosure mailbox and tab-safe external links",
          %{conn: conn} do
       html = conn |> get(~p"/security") |> html_response(200)
@@ -463,7 +453,6 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-025-T09
     test "the /zero-trust page's external framework PDF carries the safe-rel pair", %{conn: conn} do
       html = conn |> get(~p"/zero-trust") |> html_response(200)
 
@@ -481,7 +470,6 @@ defmodule EmisarWeb.MarketingTest do
     # must open in a new tab AND carry rel="noopener noreferrer", or a
     # `target="_blank"` is a reverse-tabnabbing hole.
     #
-    # closes MKT-006-T06 MKT-007-T06 MKT-013-T07 MKT-022-T05
     for route <- ~w(/changelog /about /docs/publishing-packs /use-cases/csi-data-loss) do
       test "GET #{route} external links carry the safe-rel pair", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)
@@ -498,7 +486,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "docs hub" do
-    # closes MKT-005-T02
     test "every doc-card target on the docs index resolves to a 200 page", %{conn: conn} do
       index = conn |> get(~p"/docs") |> html_response(200)
 
@@ -526,7 +513,6 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-005-T08
     test "the docs hub offers a support mailbox", %{conn: conn} do
       html = conn |> get(~p"/docs") |> html_response(200)
       assert html =~ ~s(mailto:support@emisar.dev)
@@ -540,7 +526,6 @@ defmodule EmisarWeb.MarketingTest do
     # surfaces — without pinning brittle full sentences a copy tweak would
     # break.
 
-    # closes MKT-004-T02 MKT-004-T03 MKT-004-T06
     test "the security page renders the trust-boundary diagram, key claims, and disclosures",
          %{conn: conn} do
       html = conn |> get(~p"/security") |> html_response(200)
@@ -562,7 +547,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Not affiliated with or endorsed by Anthropic"
     end
 
-    # closes MKT-025-T02
     test "the zero-trust page maps concrete controls and stays honest about scope",
          %{conn: conn} do
       html = conn |> get(~p"/zero-trust") |> html_response(200)
@@ -581,7 +565,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "One pillar, not the whole framework"
     end
 
-    # closes MKT-025-T05
     test "the zero-trust page carries its CTAs and the framework PDF link", %{conn: conn} do
       html = conn |> get(~p"/zero-trust") |> html_response(200)
 
@@ -594,7 +577,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Claude-eBook-Zero-Trust-for-AI-Agents"
     end
 
-    # closes MKT-009-T03
     test "the connect-an-llm page renders every client config block", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
@@ -606,7 +588,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "mcp_servers.emisar"
     end
 
-    # closes MKT-006-T02 MKT-006-T03
     test "the changelog renders its entries and the feed links", %{conn: conn} do
       html = conn |> get(~p"/changelog") |> html_response(200)
 
@@ -624,7 +605,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "See all releases on GitHub"
     end
 
-    # closes MKT-007-T02 MKT-007-T03
     test "the about page renders its values, founder note, and CTAs", %{conn: conn} do
       html = conn |> get(~p"/about") |> html_response(200)
 
@@ -644,7 +624,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://github.com/andrewdryga/emisar"
     end
 
-    # closes MKT-009-T02
     test "the connect-an-llm page renders the verbatim endpoint references", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
@@ -660,7 +639,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "POST /api/mcp/tools/:action_id"
     end
 
-    # closes MKT-010-T02 MKT-010-T08
     test "the quickstart renders the install command pinned to the TLS endpoint", %{conn: conn} do
       html = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
@@ -675,7 +653,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/install.sh")
     end
 
-    # closes MKT-011-T02 MKT-011-T03
     test "the action-packs reference renders the YAML sections and registry links",
          %{conn: conn} do
       html = conn |> get(~p"/docs/action-packs") |> html_response(200)
@@ -691,7 +668,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/publishing-packs")
     end
 
-    # closes MKT-012-T02
     test "the security-model page renders the control mechanisms", %{conn: conn} do
       html = conn |> get(~p"/docs/security-model") |> html_response(200)
 
@@ -732,7 +708,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "unknown_key"
     end
 
-    # closes MKT-013-T03
     test "the publishing-packs guide renders the operator commands", %{conn: conn} do
       html = conn |> get(~p"/docs/publishing-packs") |> html_response(200)
 
@@ -742,7 +717,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "--hash"
     end
 
-    # closes MKT-014-T02
     test "the policies-and-approvals page renders the approval TTL and standing grants",
          %{conn: conn} do
       html = conn |> get(~p"/docs/policies-and-approvals") |> html_response(200)
@@ -753,14 +727,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Standing grants"
     end
 
-    # closes MKT-015-T02
     test "the runbooks page names the LLM tools it exposes", %{conn: conn} do
       html = conn |> get(~p"/docs/runbooks") |> html_response(200)
       assert html =~ "list_runbooks"
       assert html =~ "get_runbook"
     end
 
-    # closes MKT-016-T02
     test "the teams-and-access page renders all four roles", %{conn: conn} do
       html = conn |> get(~p"/docs/teams-and-access") |> html_response(200)
       assert html =~ "Owner"
@@ -771,7 +743,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "audit:read"
     end
 
-    # closes MKT-018-T02
     test "the runners page renders the host CLI and uninstall flags", %{conn: conn} do
       html = conn |> get(~p"/docs/runners") |> html_response(200)
 
@@ -782,7 +753,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://emisar.dev/install.sh"
     end
 
-    # closes MKT-019-T02 MKT-019-T03
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
 
@@ -798,7 +768,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar audit verify --all"
     end
 
-    # closes MKT-020-T02
     test "the cassandra use case renders its incident narrative sections", %{conn: conn} do
       html = conn |> get(~p"/use-cases/cassandra-ops") |> html_response(200)
 
@@ -807,7 +776,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The risk model"
     end
 
-    # closes MKT-021-T02
     test "the postgres use case renders its incident narrative sections", %{conn: conn} do
       html = conn |> get(~p"/use-cases/postgres-ops") |> html_response(200)
 
@@ -816,7 +784,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Sweep the stragglers"
     end
 
-    # closes MKT-022-T02
     test "the CSI data-loss use case renders its incident narrative and CTAs", %{conn: conn} do
       html = conn |> get(~p"/use-cases/csi-data-loss") |> html_response(200)
 
@@ -827,7 +794,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/action-packs")
     end
 
-    # closes MKT-023-T02
     test "the raw-SSH comparison renders both the desktop table and the mobile cards",
          %{conn: conn} do
       html = conn |> get(~p"/compare/raw-ssh-for-ai") |> html_response(200)
@@ -841,7 +807,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Recovery story?"
     end
 
-    # closes MKT-024-T02
     test "the custom-MCP comparison renders both the desktop table and the mobile cards",
          %{conn: conn} do
       html = conn |> get(~p"/compare/custom-mcp-server") |> html_response(200)
@@ -859,8 +824,6 @@ defmodule EmisarWeb.MarketingTest do
     # page AND the target resolves. (Off-site mailtos/GitHub aren't here —
     # those are covered by the outbound-link-safety tests.)
     #
-    # closes MKT-012-T03 MKT-013-T04 MKT-014-T03 MKT-015-T03 MKT-016-T03
-    # closes MKT-020-T02 MKT-021-T02 MKT-022-T02
     @cross_links %{
       "/docs/security-model" =>
         ~w(/security /docs/action-packs /docs/connect-an-llm /docs/signed-dispatch),
@@ -895,7 +858,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "home conversion + structured data" do
-    # closes MKT-001-T10
     test "the final CTA forwards an optional email into the sign-up flow", %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
 
@@ -907,7 +869,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(name="email")
     end
 
-    # closes MKT-001-T03
     test "the home JSON-LD graph carries Organization + SoftwareApplication + FAQPage",
          %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
@@ -929,7 +890,6 @@ defmodule EmisarWeb.MarketingTest do
       assert Enum.all?(faq["mainEntity"], &(&1["@type"] == "Question"))
     end
 
-    # closes MKT-003-T03
     test "the pricing JSON-LD graph carries a Product with two Offers + a FAQPage",
          %{conn: conn} do
       html = conn |> get(~p"/pricing") |> html_response(200)
@@ -947,7 +907,6 @@ defmodule EmisarWeb.MarketingTest do
       assert Enum.any?(graph, &(&1["@type"] == "FAQPage"))
     end
 
-    # closes MKT-003-T04
     test "the pricing tier CTAs target sign-up and sales", %{conn: conn} do
       html = conn |> get(~p"/pricing") |> html_response(200)
 
@@ -958,7 +917,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "legal pages content" do
-    # closes MKT-008-T03 MKT-034-T04 MKT-035-T04 MKT-036-T04
     test "every legal-page TOC anchor resolves to a matching section id", %{conn: conn} do
       # The shared legal_page/1 contract: each {anchor, label} in the page's
       # TOC must have a matching <h2 id="anchor"> in the body, or the
@@ -980,7 +938,6 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-008-T02 MKT-034-T03 MKT-035-T03 MKT-036-T03
     test "each legal page carries its own title-suffix and last-updated date", %{conn: conn} do
       # {route, title, date} — the title suffix proves the right head, and
       # the date pins the right page (Refund is the only one on June 5).
@@ -995,7 +952,6 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-008-T04 MKT-034-T06 MKT-035-T07 MKT-036-T07
     test "each legal page exposes its documented contact mailboxes", %{conn: conn} do
       privacy = conn |> get(~p"/privacy") |> html_response(200)
       terms = conn |> get(~p"/terms") |> html_response(200)
@@ -1011,7 +967,6 @@ defmodule EmisarWeb.MarketingTest do
       assert refund =~ "mailto:sales@emisar.dev"
     end
 
-    # closes MKT-008-T06 MKT-034-T05
     test "the privacy page names only the real subprocessors", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
@@ -1021,7 +976,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Fly.io"
     end
 
-    # closes MKT-034-T10
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
@@ -1034,7 +988,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "do not use your data to train AI"
     end
 
-    # closes MKT-035-T05 MKT-035-T06 MKT-035-T11
     test "the terms page states the liability cap, governing law, and license characterization",
          %{conn: conn} do
       html = conn |> get(~p"/terms") |> html_response(200)
@@ -1047,7 +1000,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "source-available license that is not an OSI-approved"
     end
 
-    # closes MKT-036-T05 MKT-036-T06
     test "the refund page links terms + pricing and states the Paddle MoR + no-pro-rate posture",
          %{conn: conn} do
       html = conn |> get(~p"/refund-policy") |> html_response(200)
@@ -1063,7 +1015,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "sitemap.xml hygiene" do
-    # closes MKT-028-T07
     test "lists no private app, auth, or machine-API routes", %{conn: conn} do
       body = conn |> get(~p"/sitemap.xml") |> response(200)
 
@@ -1075,7 +1026,6 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-028-T06
     test "every <loc> is an absolute https://emisar.dev URL", %{conn: conn} do
       body = conn |> get(~p"/sitemap.xml") |> response(200)
 
@@ -1087,20 +1037,17 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
-    # closes MKT-028-T04
     test "marks every URL changefreq weekly with no lastmod", %{conn: conn} do
       body = conn |> get(~p"/sitemap.xml") |> response(200)
       assert body =~ "<changefreq>weekly</changefreq>"
       refute body =~ "<lastmod>"
     end
 
-    # closes MKT-025-T07
     test "lists the /zero-trust page", %{conn: conn} do
       body = conn |> get(~p"/sitemap.xml") |> response(200)
       assert body =~ "https://emisar.dev/zero-trust</loc>"
     end
 
-    # closes MKT-028-T08
     test "ignores junk query params and returns the same XML", %{conn: conn} do
       clean = conn |> get(~p"/sitemap.xml") |> response(200)
       junked = conn |> get("/sitemap.xml?utm_source=x&foo=1") |> response(200)
@@ -1109,7 +1056,6 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "install scripts match their documented endpoints" do
-    # closes MKT-033-T05
     test "the install-mcp.sh URL quoted on /docs/connect-an-llm is the live endpoint",
          %{conn: conn} do
       # The docs page tells operators to `curl … /install-mcp.sh | sudo bash`;

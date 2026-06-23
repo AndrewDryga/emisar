@@ -82,7 +82,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-025-T08
       # No provider is seeded here, yet the branded sign-in link card still
       # renders — it's unconditional (email sign-in works without SSO), not gated
       # on having a connection.
@@ -180,7 +179,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-026-T14
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       # The redirect/callback URI the operator registers at their IdP is a fixed,
@@ -196,7 +194,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-027-T03
       provider = insert_provider(account, %{client_secret: "stored-secret-value"})
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
       _ = render_hook(lv, "start_edit", %{"id" => provider.id})
@@ -225,7 +222,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-026-T06
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       html =
@@ -247,7 +243,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-026-T02
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       lv
@@ -282,7 +277,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-026-T03
       # Mount on Enterprise (can_configure? is true, cached at mount), then drop
       # the account to the free tier by removing its subscription — exactly the
       # mid-form downgrade the row describes. The cached gate lets the event
@@ -320,7 +314,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       user: user
     } do
-      # closes TEAM-026-T12
       # The viewer never sees the form (locked upsell), but the create handler is
       # gated server-side — a forged event is a no-op.
       _ = make_viewer(user)
@@ -346,7 +339,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       user: user
     } do
-      # closes TEAM-027-T09
       provider = insert_provider(account, %{name: "Untouchable"})
       _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
@@ -369,7 +361,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-028-T03
       # The delete dialog requires the operator to type the connection's exact
       # name before Confirm activates — pure UX friction in front of the
       # server-gated `delete`. A blank or wrong name keeps Confirm disabled, so
@@ -399,7 +390,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-031-T06
       # A request the admin already actioned (or that a second tab consumed) is
       # gone from the loaded list, so with_request finds nothing and both handlers
       # short-circuit — no flash, no crash.
@@ -428,7 +418,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # closes TEAM-030-T04
       # Group→role mappings are a SCIM feature — the create/edit forms (and the
       # "Group → role mapping" panel) render only when `scim_enabled`. A freshly
       # created connection is SCIM-off (enable_scim turns it on), so it must not
@@ -540,7 +529,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user,
       provider: provider
     } do
-      # closes TEAM-029-T06
       # SCIM is enabled by an admin first, then the role is dropped to viewer —
       # the rotate/disable handlers are Permissions.gated AND the context re-checks
       # `manage_sso` + Enterprise, so a forged event leaves the token untouched.
@@ -610,7 +598,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
-      # closes TEAM-030-T02
       {:ok, mapping} =
         SSO.create_group_mapping(
           provider,
@@ -703,7 +690,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
-      # closes TEAM-030-T10
       # The admin seeds a mapping; after the role drops to viewer the update and
       # delete handlers (Permissions.gated + context `manage_sso`) refuse forged
       # events — the mapping keeps its role and is never soft-deleted.

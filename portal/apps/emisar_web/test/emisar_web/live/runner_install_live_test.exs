@@ -21,7 +21,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert html =~ ~s(data-copy-text=" curl -sSL)
     end
 
-    # closes CON-004-T02 — an operator (not just an admin) can open the wizard
+    # an operator (not just an admin) can open the wizard
     # and gets a live install command: `issue_install_key` is owner/admin/operator,
     # so `mint_install_key` succeeds and the one-liner renders with a real key.
     test "an operator can mint the install key and gets a live command", %{conn: conn} do
@@ -38,7 +38,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       refute html =~ "couldn't mint a bootstrap auth key"
     end
 
-    # closes CON-004-T07 / CON-013-T03 — a viewer lacks `issue_install_key`, so
+    # a viewer lacks `issue_install_key`, so
     # `mint_install_key` returns {:error, :unauthorized} and the LV renders the
     # `:mint_failed` failure path (pointing at the auth-keys page) instead of a
     # command. The page is reachable (it has no view gate) — the mint is the gate.
@@ -59,7 +59,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert Repo.all(AuthKey) == []
     end
 
-    # closes CON-004-T08 / CON-013-T04 — the connected mount mints exactly one
+    # the connected mount mints exactly one
     # bootstrap key, and it belongs to the current account (no cross-account id).
     test "the minted install key belongs to the current account only", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -72,7 +72,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert key.auto_generated_at != nil
     end
 
-    # closes CON-004-T05 / CON-013-T06 — the dead/pre-connect (static) render
+    # the dead/pre-connect (static) render
     # mints no key and shows no command: minting is deferred to the connected
     # mount, so a bare GET can't burn an enrollment secret.
     test "the dead render mints nothing and shows no command", %{conn: conn} do

@@ -383,7 +383,6 @@ defmodule Emisar.OAuthTest do
       %{account: account, client: client, tokens: tokens}
     end
 
-    # closes OAUTH-008-T05
     test "an expired access token (past its TTL) resolves to :invalid", %{tokens: tokens} do
       # A live token resolves; backdating its access_expires_at past `now`
       # makes `live?/1` false, so resolution must fail closed rather than
@@ -397,7 +396,6 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
     end
 
-    # closes OAUTH-008-T06
     test "an access token whose pair was rotation-revoked by a refresh resolves to :invalid",
          %{client: client, tokens: tokens} do
       # Rotating the refresh token revokes the original token ROW (it holds
@@ -414,7 +412,6 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
     end
 
-    # closes OAUTH-008-T07
     test "a token whose backing api-key is revoked after issuance resolves to :invalid",
          %{tokens: tokens} do
       # Revoking the backing key is the operator's OAuth off-switch. The
@@ -430,7 +427,6 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
     end
 
-    # closes OAUTH-008-T08
     test "a token whose account is soft-deleted resolves to :invalid",
          %{account: account, tokens: tokens} do
       # `fetch_account_by_id` scopes by `not_deleted()`, so soft-deleting the
@@ -445,7 +441,6 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
     end
 
-    # closes OAUTH-008-T09
     test "cross-account isolation rides the backing key — a token only ever resolves to its own account",
          %{account: account, tokens: tokens} do
       # Stand up a SECOND account with its own consented token. Each token's
@@ -478,7 +473,6 @@ defmodule Emisar.OAuthTest do
       assert key_b.account_id == account_b.id
     end
 
-    # closes OAUTH-008-T10
     test "the stored `resource` is NOT enforced as an audience at resolve time", %{tokens: tokens} do
       # Documented self-limit (OAuth moduledoc): the RFC 8707 `resource` is
       # accepted + stored but not yet enforced as an audience binding — there

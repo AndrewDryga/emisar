@@ -19,13 +19,11 @@ defmodule EmisarWeb.InstallControllersTest do
     assert "#!/" <> _ = response(conn, 200)
   end
 
-  # closes MKT-032-T03
   test "GET /install.sh is byte-identical to the repo-root install.sh", %{conn: conn} do
     body = conn |> get(~p"/install.sh") |> response(200)
     assert body == File.read!(Path.join(@repo_root, "install.sh"))
   end
 
-  # closes MKT-032-T04
   test "GET /install.sh ignores junk query params", %{conn: conn} do
     body = conn |> get(~p"/install.sh?x=1") |> response(200)
     assert body == File.read!(Path.join(@repo_root, "install.sh"))
@@ -38,13 +36,11 @@ defmodule EmisarWeb.InstallControllersTest do
     assert "#!/" <> _ = response(conn, 200)
   end
 
-  # closes MKT-033-T03
   test "GET /install-mcp.sh is byte-identical to the repo-root install-mcp.sh", %{conn: conn} do
     body = conn |> get(~p"/install-mcp.sh") |> response(200)
     assert body == File.read!(Path.join(@repo_root, "install-mcp.sh"))
   end
 
-  # closes MKT-033-T04
   test "GET /install-mcp.sh ignores junk query params", %{conn: conn} do
     body = conn |> get(~p"/install-mcp.sh?x=1") |> response(200)
     assert body == File.read!(Path.join(@repo_root, "install-mcp.sh"))

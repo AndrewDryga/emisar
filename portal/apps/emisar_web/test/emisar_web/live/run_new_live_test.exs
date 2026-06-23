@@ -82,7 +82,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute html =~ "Invalid:"
   end
 
-  # closes CON-007-T02 — the action-context panel (title + description) and the
+  # the action-context panel (title + description) and the
   # meta strip (risk / kind / pack) render, with one arg input per declared arg
   # plus the reason textarea.
   test "renders the action context panel + meta strip + an input per arg", %{conn: conn} do
@@ -128,7 +128,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert has_element?(lv, "textarea[name=\"reason\"]")
   end
 
-  # closes CON-007-T03 — an action declaring side-effects renders the loud
+  # an action declaring side-effects renders the loud
   # "Side effects" warning panel listing each effect.
   test "renders the side-effects warning when the action declares any", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -377,7 +377,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     |> render_submit()
   end
 
-  # closes CON-007-T17 / CON-025-T08 / CON-007-T05 / CON-025-T02 — a runner that
+  # a runner that
   # no longer resolves in the account (soft-deleted between mount and submit, the
   # same `runner_in_account` path a cross-account/unresolvable id takes) →
   # :runner_not_found flash, no run. That gate runs before the action/pack checks,
@@ -401,7 +401,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T06 / CON-025-T03 — an action de-advertised between mount and
+  # an action de-advertised between mount and
   # submit (its catalog row dropped — the runner stays registered) → :action_not_found
   # flash, no run. `require_runner`/`runner_in_account` pass (the runner still
   # exists), so `fetch_advertised_action` is the gate that fires; the flash points
@@ -423,7 +423,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T18 / CON-025-T09 — an operator whose membership is scoped
+  # an operator whose membership is scoped
   # to a DIFFERENT runner group → :runner_out_of_scope flash, no run. The scope
   # is re-checked at dispatch (`requested_by_membership_id`), so a grant revoked
   # mid-session still bites.
@@ -456,7 +456,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(owner, account), limit: 50)
   end
 
-  # closes CON-007-T19 / CON-025-T10 — an action from an untrusted (pending)
+  # an action from an untrusted (pending)
   # pack version → :pack_untrusted flash directing to Packs, no run. The action
   # is advertised so mount loads; `check_pack_trust` refuses at dispatch.
   test "an untrusted pack → :pack_untrusted flash, no run", %{conn: conn} do
@@ -493,7 +493,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-025-T11 — an enforcing (signed-only) runner hides the Dispatch
+  # an enforcing (signed-only) runner hides the Dispatch
   # button, but a FORCED submit must still be refused server-side with the
   # :runner_requires_attestation flash (the portal can't sign).
   test "a forced submit to a signed-only runner → :runner_requires_attestation flash", %{
@@ -517,7 +517,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T21 — a policy deny is a flash AND the engine records the
+  # a policy deny is a flash AND the engine records the
   # attempt as a :denied run (so operators see it in audit); the form does not
   # navigate to a run page.
   test "a policy deny flashes and the run is recorded as :denied (no navigate)", %{conn: conn} do
@@ -553,7 +553,7 @@ defmodule EmisarWeb.RunNewLiveTest do
              Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T22 / CON-025-T14 — an approval-required action creates a
+  # an approval-required action creates a
   # :pending_approval run and navigates to its run page (the approval banner
   # lives there), unlike the deny path which stays on the form.
   test "an approval-required action creates a :pending_approval run and navigates", %{conn: conn} do
@@ -590,7 +590,7 @@ defmodule EmisarWeb.RunNewLiveTest do
              Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T23 — `dispatch_run_permission` is owner/admin/operator/api_client;
+  # `dispatch_run_permission` is owner/admin/operator/api_client;
   # a `:runner` subject (the runner socket's identity) holds only view_runs, so it
   # can never dispatch. The form only ever builds a user subject, so this asserts
   # the underlying capability predicate the gate relies on.
@@ -603,7 +603,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute Runs.subject_can_dispatch_run?(runner_subject)
   end
 
-  # closes CON-007-T13 / CON-025-T06 — a non-numeric integer arg renders an
+  # a non-numeric integer arg renders an
   # inline parse error on the field ("not an integer"), not a flash, and no run
   # is dispatched.
   test "a bad integer arg renders an inline error on the field, no run", %{conn: conn} do
@@ -626,7 +626,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # closes CON-007-T14 / CON-024-T04 — several bad args are collected and
+  # several bad args are collected and
   # rendered inline in ONE pass, not just the first: a blank required `pid`
   # ("pid is required") AND a non-numeric `signal` ("not an integer") both show.
   test "every bad arg is reported at once, not just the first", %{conn: conn} do
@@ -649,7 +649,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "not an integer"
   end
 
-  # closes CON-024-T05 — a zero-arg action's phx-change payload has no "args"
+  # a zero-arg action's phx-change payload has no "args"
   # key; validate must default to the existing params, not FunctionClauseError.
   test "validate on a zero-arg action (no args key) doesn't crash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -667,7 +667,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "Reason (required"
   end
 
-  # closes CON-007-T15 / CON-024-T06 (IL-14) — the schemaless arg form is backed
+  # (IL-14) — the schemaless arg form is backed
   # by raw string-keyed params (`to_form(params, as: "args")`), so an arbitrary
   # runner/pack-advertised arg name never becomes an atom. Asserting on a name
   # that is NOT an existing atom proves no atom is created on the form path.

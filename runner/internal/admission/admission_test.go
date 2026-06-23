@@ -132,7 +132,7 @@ func TestActive(t *testing.T) {
 	}
 }
 
-// TestAdmit_DotIsNotPathSeparator covers RSEC-004-T08: action ids are globbed
+// TestAdmit_DotIsNotPathSeparator covers: action ids are globbed
 // as opaque whole strings — the dot in `pack.action` is an ordinary character,
 // not a path separator. So `cassandra.*` matches every action in the pack and
 // `*.restart` matches any pack's restart action (even multi-level ids).
@@ -176,7 +176,7 @@ func TestAdmit_DotIsNotPathSeparator(t *testing.T) {
 	}
 }
 
-// TestAdmit_FailsClosedOnMatchError covers RSEC-004-T11: New rejects malformed
+// TestAdmit_FailsClosedOnMatchError covers: New rejects malformed
 // globs so a runtime filepath.Match error is unreachable through the public
 // API. This white-box test bypasses New to plant a malformed pattern directly
 // in the (unexported) policy and asserts the defensive `err == nil` branches in
@@ -210,7 +210,7 @@ func TestAdmit_FailsClosedOnMatchError(t *testing.T) {
 	})
 }
 
-// TestNew_StoresDefensiveCopies covers RSEC-004-T14: New copies the caller's
+// TestNew_StoresDefensiveCopies covers: New copies the caller's
 // allow/deny slices, so mutating the originals after construction cannot alter
 // a compiled policy's decisions (the policy is immutable post-boot).
 func TestNew_StoresDefensiveCopies(t *testing.T) {
@@ -234,7 +234,7 @@ func TestNew_StoresDefensiveCopies(t *testing.T) {
 	}
 }
 
-// BenchmarkAdmit_LargeRuleSet covers RSEC-004-T16: Admit is linear in the rule
+// BenchmarkAdmit_LargeRuleSet covers: Admit is linear in the rule
 // count and compiled once at boot — no per-call recompile. The id matches the
 // last allow pattern and no deny pattern (the worst case: every allow scanned).
 func BenchmarkAdmit_LargeRuleSet(b *testing.B) {

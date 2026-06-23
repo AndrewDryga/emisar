@@ -246,7 +246,6 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 // still reports who it is (id/version/hostname/group/labels) with zero actions
 // and no packs, so the cloud sees a connected-but-empty runner rather than a
 // malformed or dropped state. Covers both no-GetRegistry and GetRegistry→nil.
-// closes RUN-035-T05.
 func TestStateBuilder_Build_EmptyRegistryIsIdentityOnly(t *testing.T) {
 	cases := map[string]*StateBuilder{
 		"nil GetRegistry": {
@@ -292,7 +291,7 @@ func TestStateBuilder_Build_EmptyRegistryIsIdentityOnly(t *testing.T) {
 // Hostname resolution: an explicit StateBuilder.Hostname is advertised verbatim
 // (the os.Hostname() fallback is only consulted when it's empty). When empty,
 // Build falls back to os.Hostname(); if that ever fails the field is simply
-// omitted (omitempty) rather than crashing the advertisement. closes RUN-035-T07.
+// omitted (omitempty) rather than crashing the advertisement.
 func TestStateBuilder_Build_HostnameFallback(t *testing.T) {
 	reg := setupRegistry(t)
 

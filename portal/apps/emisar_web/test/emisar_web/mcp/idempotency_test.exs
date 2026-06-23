@@ -41,14 +41,12 @@ defmodule EmisarWeb.MCP.IdempotencyTest do
     end
 
     test "a key of exactly 200 bytes is accepted (the cap is inclusive)" do
-      # closes MCP-014-T06
       conn = conn_without_header()
       exactly_max = String.duplicate("x", 200)
       assert Idempotency.resolve(conn, %{"idempotency_key" => exactly_max}) == exactly_max
     end
 
     test "201 bytes is rejected — the boundary is exactly 200" do
-      # closes MCP-014-T06
       conn = conn_without_header()
       one_over = String.duplicate("x", 201)
       assert Idempotency.resolve(conn, %{"idempotency_key" => one_over}) == nil

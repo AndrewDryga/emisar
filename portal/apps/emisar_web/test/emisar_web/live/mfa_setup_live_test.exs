@@ -93,7 +93,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   end
 
   test "the secret is minted once on the connected mount and the QR matches it", %{conn: conn} do
-    # closes AUTH-010-T02 — the secret MUST be generated on the connected mount
+    # the secret MUST be generated on the connected mount
     # (the static render runs in a separate process, so a QR generated there
     # would differ from the one the form verifies against). The connected render
     # carries a provisioning URI whose `secret=` is a real base32 secret, and a
@@ -112,7 +112,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   test "the disconnected (static) render shows the preparing placeholder, no secret yet", %{
     conn: conn
   } do
-    # closes AUTH-010-T03 — before the LiveSocket connects, the static mount runs
+    # before the LiveSocket connects, the static mount runs
     # the `connected?(socket)` == false branch: no secret is minted (it can't be,
     # the dead render is a throwaway process) and the page shows the "preparing"
     # placeholder rather than a QR a user might scan into a code that can never
@@ -125,7 +125,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   end
 
   test "the QR is a server-generated SVG, never attacker-influenced markup (IL-16)", %{conn: conn} do
-    # closes AUTH-010-T12 — the only `raw/1` on this page renders `MfaQr.svg/1`,
+    # the only `raw/1` on this page renders `MfaQr.svg/1`,
     # whose input is the server-minted provisioning URI (issuer + the operator's
     # own email + a server-generated secret) — never runner/LLM/operator-supplied
     # content. The rendered QR is the EQRCode inline <svg>, so the `raw` is safe by
@@ -146,7 +146,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     user: user,
     account: account
   } do
-    # closes AUTH-010-T09 — the interstitial exists only to enforce `require_mfa`.
+    # the interstitial exists only to enforce `require_mfa`.
     # If the account drops the requirement while a member sits on this page, a
     # remount must NOT strand them in enrollment: the mount's first cond branch
     # (`not account.require_mfa`) sends them straight to /app.
@@ -161,7 +161,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       conn: conn,
       user: user
     } do
-      # closes AUTH-023-T02 — the gate only funnels when the account enforces MFA.
+      # the gate only funnels when the account enforces MFA.
       # A member who hasn't enrolled, mounting a NON-enforcing account's page, takes
       # the `not account.require_mfa` cond branch and continues — no detour to setup.
       no_mfa = Emisar.Fixtures.account_fixture(%{name: "Open Team"})
@@ -176,7 +176,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       conn: conn,
       account: account
     } do
-      # closes AUTH-023-T06 — the profile page is the gate's one exception
+      # the profile page is the gate's one exception
       # (`socket.view == EmisarWeb.ProfileLive` → continue): an un-enrolled member of
       # a require_mfa account must be able to LOAD it, since the voluntary MFA setup UI
       # lives there. Every OTHER page funnels to /app/mfa_setup; profile does not.
@@ -188,7 +188,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       user: user,
       account: account
     } do
-      # closes AUTH-023-T08 — the gate's exemptions (enrolled / SSO-satisfies /
+      # the gate's exemptions (enrolled / SSO-satisfies /
       # un-required) match MfaSetupLive.mount's. For an ENROLLED member the two agree:
       # the gate lets them onto a normal page (no funnel) AND the setup page itself
       # short-circuits them to /app (nothing to enroll) — neither strands them.
@@ -213,7 +213,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       user: user,
       account: account
     } do
-      # closes AUTH-006-T10 — a magic-link sign-in records `mfa: false` (the link
+      # a magic-link sign-in records `mfa: false` (the link
       # proves email control, not a second factor). So on a require_mfa account the
       # member is still un-enrolled, and the first /app mount's :ensure_mfa_compliant
       # gate funnels them into TOTP setup — the magic link is not an MFA bypass.

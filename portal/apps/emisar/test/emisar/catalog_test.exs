@@ -295,7 +295,7 @@ defmodule Emisar.CatalogTest do
       assert reloaded.labels == %{"env" => "prod"}
     end
 
-    # closes ENG-004-T05 — a descriptor naming a pack_id NOT in the packs map
+    # a descriptor naming a pack_id NOT in the packs map
     # gets pack_version: nil defensively (vs. raising), and the row still upserts
     # so one missing pack reference doesn't drop the action from the catalog.
     test "an action referencing an unknown pack_id upserts with pack_version nil" do
@@ -514,7 +514,7 @@ defmodule Emisar.CatalogTest do
                Catalog.fetch_action_by_id("linux.uptime", runner.id, subject_b)
     end
 
-    # closes ENG-005-T06 — fail-CLOSED on a MISSING pin row. `runner_actions`
+    # fail-CLOSED on a MISSING pin row. `runner_actions`
     # reference (pack_id, version) by string with no FK, so an action carrying a
     # version that has no pack_versions pin row must read as untrusted (:no_pin),
     # never fall open to trusted (the old design deleted the row on reject).
@@ -683,7 +683,7 @@ defmodule Emisar.CatalogTest do
                Catalog.reject_pack_version(pack_version.id, viewer_subject)
     end
 
-    # closes ENG-005-T11 — Trust/Reject serialize on the FOR-NO-KEY-UPDATE lock;
+    # Trust/Reject serialize on the FOR-NO-KEY-UPDATE lock;
     # once a row is no longer pending the loser gets :not_pending. Asserted
     # sequentially: a second decision on an already-trusted row is the loser's view.
     test "a second trust/reject on an already-decided row is :not_pending" do
@@ -704,7 +704,7 @@ defmodule Emisar.CatalogTest do
       assert {:error, :not_pending} = Catalog.reject_pack_version(pack_version.id, subject)
     end
 
-    # closes ENG-005-T16 — Trust/Reject are account-scoped via the locked re-read's
+    # Trust/Reject are account-scoped via the locked re-read's
     # Authorizer.for_subject; another account's owner can't touch this pin. The
     # two-gate model resolves a cross-account id to :not_found (404), not :unauthorized.
     test "trust/reject of another account's pin is :not_found (cross-account)" do
@@ -730,7 +730,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "trust / reject write an audit row" do
-    # closes GOV-010-T10 — trusting a pending pack version writes a
+    # trusting a pending pack version writes a
     # `pack_trust_adopted` audit event attributing the decision to the operator,
     # subject-keyed to the pack_version, with the previous→new hash in the payload.
     test "trust writes a pack_trust_adopted audit event (actor + subject + hashes)" do
@@ -761,7 +761,7 @@ defmodule Emisar.CatalogTest do
       assert audit.payload["pack_id"] == "p"
     end
 
-    # closes GOV-011-T10 — rejecting a pending pack version writes a
+    # rejecting a pending pack version writes a
     # `pack_trust_rejected` audit event, same operator attribution + pack_version
     # subject, carrying the rejected hash.
     test "reject writes a pack_trust_rejected audit event (actor + subject + hash)" do

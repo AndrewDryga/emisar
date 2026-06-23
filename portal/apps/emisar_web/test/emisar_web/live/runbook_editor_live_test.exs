@@ -183,7 +183,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     test "a non-existent (well-formed) id flashes not-found and redirects to the library", %{
       conn: conn
     } do
-      # closes RBK-004-T05
       {conn, _user, account} = register_and_log_in(conn)
 
       missing = Emisar.Repo.generate_id()
@@ -196,7 +195,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a garbage (non-uuid) id flashes not-found and redirects to the library", %{conn: conn} do
-      # closes RBK-002-T03
       {conn, _user, account} = register_and_log_in(conn)
 
       to = ~p"/app/#{account}/runbooks"
@@ -265,7 +263,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "an 81-character title is rejected inline (length 1–80)", %{conn: conn} do
-      # closes RBK-003-T10 RBK-018-T06
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -370,7 +367,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     test "a structural definition error surfaces on the Steps panel, not as a flash", %{
       conn: conn
     } do
-      # closes RBK-003-T11
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -400,7 +396,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "the success flash names the new version saved", %{conn: conn} do
-      # closes RBK-004-T03
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
 
@@ -429,7 +424,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     test "editing a published runbook shows the immutability note in the version aside", %{
       conn: conn
     } do
-      # closes RBK-004-T04
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
 
@@ -464,7 +458,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "there is no unpublish — a published runbook offers only save/publish", %{conn: conn} do
-      # closes RBK-006-T10
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
 
@@ -586,7 +579,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "add a step (RBK-011)" do
     test "add appends a BLANK card with an auto-derivable placeholder id", %{conn: conn} do
-      # closes RBK-011-T01 RBK-011-T02
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -606,7 +598,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "two added steps never collide on id", %{conn: conn} do
-      # closes RBK-011-T03
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -621,7 +612,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a blank added step saves as a draft (completeness deferred to publish)", %{conn: conn} do
-      # closes RBK-011-T04
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -639,7 +629,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "adding from an empty list replaces the empty-state", %{conn: conn} do
-      # closes RBK-011-T05
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -657,7 +646,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "remove a step (RBK-012)" do
     test "the trash button carries a confirm", %{conn: conn} do
-      # closes RBK-012-T02
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -665,7 +653,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "removing the only step returns the empty-state", %{conn: conn} do
-      # closes RBK-012-T04
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -679,7 +666,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   describe "reorder a step (RBK-013)" do
     test "move-up at the first / move-down at the last are no-ops with the end buttons disabled",
          %{conn: conn} do
-      # closes RBK-013-T02
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -721,7 +707,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a single-step list disables both move buttons", %{conn: conn} do
-      # closes RBK-013-T03
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -737,7 +722,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "edit a step's action (RBK-014)" do
     test "the action datalist lists the COMPLETE catalog with no truncation", %{conn: conn} do
-      # closes RBK-014-T03
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
@@ -761,7 +745,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "an uncataloged typed action shows no risk pill", %{conn: conn} do
-      # closes RBK-014-T04
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
@@ -789,7 +772,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a blank/unknown action is allowed in a draft save", %{conn: conn} do
-      # closes RBK-014-T05
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -815,7 +797,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "edit a step's id (RBK-015)" do
     test "a blank action does not auto-derive the step id", %{conn: conn} do
-      # closes RBK-015-T03
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -836,7 +817,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "the auto-derived step id is capped at 40 chars", %{conn: conn} do
-      # closes RBK-015-T04
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -859,7 +839,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "typing `step5` is treated as not-customized and still auto-derives", %{conn: conn} do
-      # closes RBK-015-T05
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -878,7 +857,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "the step_id form key remaps to the canonical id key", %{conn: conn} do
-      # closes RBK-015-T07
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -904,7 +882,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "edit a step's args (RBK-016)" do
     test "per-action arg suggestions render in a datalist", %{conn: conn} do
-      # closes RBK-016-T02
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
@@ -927,7 +904,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "an action with no advertised args hides the \"Known for\" hint", %{conn: conn} do
-      # closes RBK-016-T04
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
@@ -958,7 +934,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     test "step add/remove are socket-only — nothing persists, no audit row, until Save", %{
       conn: conn
     } do
-      # closes RBK-011-T06 RBK-012-T05
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
 
@@ -978,7 +953,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "blank arg-key pairs are dropped on flatten; values are stored as strings", %{conn: conn} do
-      # closes RBK-005-T04 RBK-016-T03 RBK-016-T08
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -1024,7 +998,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "set a step's target (RBK-017)" do
     test "a kind switch clears stale selected values", %{conn: conn} do
-      # closes RBK-017-T03
       {conn, _user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
 
@@ -1055,7 +1028,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "an empty multi-select posts nothing and defaults values to []", %{conn: conn} do
-      # closes RBK-017-T05
       {conn, _user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
 
@@ -1091,7 +1063,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "no runners/groups yet → the picker shows guidance", %{conn: conn} do
-      # closes RBK-017-T07
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -1112,7 +1083,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a selected-but-now-absent target is preserved in the options", %{conn: conn} do
-      # closes RBK-017-T08
       {conn, _user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
 
@@ -1144,7 +1114,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "edit metadata (RBK-018)" do
     test "a blank slug surfaces no slug error (nilified for auto-derive)", %{conn: conn} do
-      # closes RBK-018-T05
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -1158,7 +1127,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "the metadata form posts FLAT keys, not runbook[...] keys", %{conn: conn} do
-      # closes RBK-018-T07
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -1172,7 +1140,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "the metadata changeset never validates the step definition", %{conn: conn} do
-      # closes RBK-018-T08
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 

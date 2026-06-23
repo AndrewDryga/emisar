@@ -72,8 +72,6 @@ func TestGenerateSigningKeyIsRandom(t *testing.T) {
 	}
 }
 
-// closes RUN-028-T04
-//
 // `keygen --json` emits exactly {key_id, public_key, private_key} as a JSON
 // object (keygen.go:56-64) — the machine-readable shape a setup script parses.
 // Driven through the real command with the global --json flag set, so the
@@ -111,8 +109,6 @@ func TestKeygenCmd_JSONShape(t *testing.T) {
 	}
 }
 
-// closes RUN-028-T06
-//
 // `keygen` (no --json) prints a complete, copy-pasteable operator guide: the
 // runner `signing:` block with the PUBLIC key and enforce_signatures: true, the
 // MCP client's PRIVATE-key env vars, and the SIGHUP-to-apply / keep-secret notes
@@ -144,8 +140,6 @@ func TestKeygenCmd_HumanGuideComplete(t *testing.T) {
 	}
 }
 
-// closes RUN-028-T08
-//
 // The `signing:` block keygen prints is a VALID enforcing config: applying the
 // emitted public key under enforce_signatures: true passes config validation
 // (config.go validateSigning), where enforce-with-no-keys is rejected (RUN-031).

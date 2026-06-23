@@ -120,7 +120,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
     test "the stashed redirect_uri is the fixed registered callback, not an attacker-supplied one",
          %{conn: conn} do
-      # closes AUTH-025-T05 — `begin/2` always computes `redirect_uri` as
+      # `begin/2` always computes `redirect_uri` as
       # `url(~p"/sign_in/sso/callback")`; it is NOT read from the request. A query
       # param trying to inject a phishing callback is ignored — the stash (which the
       # callback later trusts) carries the fixed registered URI, so there is no
@@ -136,7 +136,7 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "begin emits no sign-in audit — the user isn't authenticated yet", %{conn: conn} do
-      # closes AUTH-025-T08 — begin only redirects to the IdP and stashes the
+      # begin only redirects to the IdP and stashes the
       # transaction secrets; authentication happens at the callback. So no
       # `user.signed_in` (or other sign-in) audit row is written on the provider's
       # account at this step — attribution waits until an identity is actually proven.
@@ -156,7 +156,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
     test "a provider whose begin_auth fails (misconfig) gets the same generic error, no stash",
          %{conn: conn} do
-      # closes AUTH-025-T03 — the provider is real and enabled, but `begin_auth`
+      # the provider is real and enabled, but `begin_auth`
       # fails (e.g. its IdP discovery document is unreachable). The `with` else maps
       # ANY such failure to the one generic "no longer available" copy — never the
       # raw reason — redirects to /sign_in, and leaves no half-built login stash
@@ -212,7 +212,7 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "a successful callback records the user.signed_in audit with method sso", %{conn: conn} do
-      # closes AUTH-026-T02 — the callback calls `record_sign_in(user, "sso", …)`
+      # the callback calls `record_sign_in(user, "sso", …)`
       # before `log_in_user` renews the session, so the sign-in is attributable to
       # the freshly-provisioned user with the SSO method. The observable contract: a
       # `user.signed_in` audit row on the provider's account naming the user, carrying
@@ -313,7 +313,7 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "an unmapped complete_auth error gets the generic fallback copy", %{conn: conn} do
-      # closes AUTH-026-T07 — every recognised failure (`:email_taken`,
+      # every recognised failure (`:email_taken`,
       # `:identity_pending_approval`, `:email_domain_not_allowed`, missing stash)
       # has tailored copy; anything else (here an IdP/transport failure surfaced by
       # `complete_auth`) falls to one generic "try again, or contact your admin"

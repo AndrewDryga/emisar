@@ -26,7 +26,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     assert Repo.reload(fresh)
   end
 
-  # closes ENG-024-T01, BILL-006-T02 (plan-window) — the cutoff follows the
+  # (plan-window) — the cutoff follows the
   # account's PLAN, not a fixed 7 days: a 10-day-old row survives on Team (90-day
   # retention), whereas the free-plan test above prunes the same-age row. Proves
   # the window is plan-derived (audit_retention_days), not hard-coded.
@@ -43,7 +43,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     assert Repo.reload(within_team_window)
   end
 
-  # closes ENG-024-T05 — an account whose subscription carries an unknown /
+  # an account whose subscription carries an unknown /
   # renamed plan name resolves to the "free" window rather than crashing, so a
   # legacy plan string can't wedge the nightly prune.
   test "falls back to the free window when the plan is unresolvable" do
@@ -63,7 +63,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     refute Repo.reload(stale)
   end
 
-  # closes ENG-024-T04 — the sweep pages accounts via `Account.Query.all()`, not
+  # the sweep pages accounts via `Account.Query.all`, not
   # `not_deleted()`, on purpose: a soft-deleted (closed) account's old audit rows
   # still occupy space and must age out of its plan window all the same. A
   # regression to `not_deleted()` would strand them forever.
@@ -103,7 +103,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     for event <- stale, do: refute(Repo.reload(event))
   end
 
-  # closes ENG-024-T03 — `maybe_continue` enqueues a cursor follow-up ONLY when a
+  # `maybe_continue` enqueues a cursor follow-up ONLY when a
   # page comes back FULL (more accounts may be behind it). A short page means the
   # account set is drained, so NO follow-up is enqueued. Run under `:manual`
   # testing mode (instead of the suite's `:inline`) so a follow-up `Oban.insert`

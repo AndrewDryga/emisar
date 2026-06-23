@@ -144,7 +144,6 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "a hand-edited bogus status filter is dropped, not crashed on", %{conn: conn} do
-    # closes RBK-001-T10
     {conn, user, account} = register_and_log_in(conn)
     published = create_runbook!(user, account, "Deploy check", published?: true)
 

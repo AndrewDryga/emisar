@@ -35,7 +35,7 @@ func writeChain(t *testing.T, path string, n int) {
 // `emisar audit verify` on an intact chain (no path → the configured
 // events.jsonl) prints "chain intact" and returns nil (exit 0). Driven through
 // the real command with a temp config whose journal we pre-fill with a valid
-// chain. closes RUN-027-T01.
+// chain.
 func TestAuditVerifyCmd_IntactChainNoPath(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -59,7 +59,7 @@ func TestAuditVerifyCmd_IntactChainNoPath(t *testing.T) {
 }
 
 // `audit verify <path>` verifies a specific file (a path arg short-circuits
-// config resolution — no boot needed). closes RUN-027-T05.
+// config resolution — no boot needed).
 func TestAuditVerifyCmd_ExplicitPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rotated.1")
 	writeChain(t, path, 4)
@@ -81,7 +81,7 @@ func TestAuditVerifyCmd_ExplicitPath(t *testing.T) {
 
 // `audit verify <missing>` is a hard error (the open failure is NOT a
 // *VerifyError, so it propagates as a returned error rather than the exit-1
-// chain-break path). closes RUN-027-T06.
+// chain-break path).
 func TestAuditVerifyCmd_MissingFileErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist.jsonl")
 
@@ -100,9 +100,8 @@ func TestAuditVerifyCmd_MissingFileErrors(t *testing.T) {
 
 // `audit verify --all` with no rotated siblings verifies just the active file:
 // discoverRotated returns only the active path, so the command checks it and
-// (intact) returns nil with a single chain-intact line. closes RUN-027-T11.
+// (intact) returns nil with a single chain-intact line.
 func TestAuditVerifyCmd_AllWithNoRotatedSiblings(t *testing.T) {
-	// closes RUN-027-T11
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
@@ -131,7 +130,7 @@ func TestAuditVerifyCmd_AllWithNoRotatedSiblings(t *testing.T) {
 }
 
 // `audit verify` enforces MaximumNArgs(1): two positional paths is a cobra
-// arg-count error. closes RUN-027-T10.
+// arg-count error.
 func TestAuditVerifyCmd_MaximumNArgs(t *testing.T) {
 	cmd := auditVerifyCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true

@@ -36,12 +36,11 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
   test "an unconfirmed user reaches the app (soft nudge, not a hard gate) and can resend", %{
     conn: conn
   } do
-    # closes AUTH-024-T02, AUTH-024-T05, AUTH-030-T01, AUTH-030-T04, AUTH-030-T05 —
     # the unconfirmed user is NOT bounced from the dashboard (no confirmation gate);
     # firing the universally-attached `resend_confirmation` event re-sends the
     # confirmation email and flashes a confirmation naming their address. The
     # dashboard defines NO `resend_confirmation` handler of its own — the
-    # `:email_confirmation` on_mount hook owns it on every authed LV (AUTH-030-T04).
+    # `:email_confirmation` on_mount hook owns it on every authed LV.
     {conn, user, account} = unconfirmed_member(conn)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
@@ -53,7 +52,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
   end
 
   test "resending while already confirmed sends nothing and says so", %{conn: conn} do
-    # closes AUTH-024-T03, AUTH-030-T02 — once confirmed, the same handler is a
+    # once confirmed, the same handler is a
     # no-op on the mail side: it flashes "already confirmed" and delivers no email
     # (firing it from a stale banner can't spam the inbox).
     {conn, _user, account} = register_and_log_in(conn)

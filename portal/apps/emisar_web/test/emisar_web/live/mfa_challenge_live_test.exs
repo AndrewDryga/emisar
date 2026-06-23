@@ -40,7 +40,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   test "an expired pending marker bounces back to /sign_in (refreshed an old tab)", %{conn: conn} do
-    # closes AUTH-004-T05 — `get_pending_mfa/1` treats a marker past its 5-min TTL
+    # `get_pending_mfa/1` treats a marker past its 5-min TTL
     # as absent (the `expires_at <= now` branch), so mounting the challenge with a
     # stashed user_id but a past `pending_mfa_expires_at` (the operator left the tab
     # open and refreshed) gets the same expired bounce as no marker at all — a stale
@@ -60,7 +60,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   test "the OTP input enforces a 6-digit numeric code (boundary)", %{conn: conn} do
-    # closes AUTH-004-T06 — the authenticator field bounds the code to exactly 6
+    # the authenticator field bounds the code to exactly 6
     # numeric digits client-side (`minlength`/`maxlength` 6 + `pattern="[0-9]*"`),
     # matching the TOTP shape. (A 6-digit code's actual verification + finalize is
     # the happy path covered by auth_flow_test's "OTP against a valid marker".)
@@ -107,7 +107,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   test "the MFA form posts only the second factor — never the password again", %{conn: conn} do
-    # closes AUTH-004-T12 — the password step already verified credentials and
+    # the password step already verified credentials and
     # stashed the pending marker, so the challenge form (`#mfa_form`) carries ONLY
     # the OTP/recovery field. The password is never re-sent: no password input
     # exists to capture or replay it, on either the authenticator or recovery view.
@@ -133,7 +133,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   test "a wrong recovery code is rejected and audited, the pending step re-stashed", %{
     conn: conn
   } do
-    # closes AUTH-004-T10 — the recovery toggle posts `user[recovery_code]` back to
+    # the recovery toggle posts `user[recovery_code]` back to
     # POST /sign_in, which (holding the pending marker) runs
     # `Auth.consume_mfa_recovery_code`. An unknown code returns `{:error, :invalid}`:
     # the controller bounces back to /sign_in/mfa with "didn't match", consumes no

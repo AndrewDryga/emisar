@@ -114,7 +114,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert Runs.peek_run_by_id(run.id).status == :running
   end
 
-  # closes ENG-022-T08 — a running run on an offline runner whose
+  # a running run on an offline runner whose
   # last_disconnected_at is nil is an inconsistent state (a run can't have
   # started without the runner connecting). offline_past_grace? treats nil as
   # "past grace" → expire, rather than leaving the run wedged forever.
@@ -130,7 +130,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert Runs.peek_run_by_id(run.id).status == :error
   end
 
-  # closes ENG-022-T10 — each terminal branch stamps its OWN error_message so
+  # each terminal branch stamps its OWN error_message so
   # the operator sees WHY a run died (offline-at-dispatch vs disabled vs wedged
   # vs runner-removed), not a generic "errored". Here: an offline runner whose
   # stale dispatch never reached it.
@@ -146,7 +146,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert reloaded.error_message =~ "never reached it"
   end
 
-  # closes ENG-022-T10 — the disabled-runner branch names "disabled", distinct
+  # the disabled-runner branch names "disabled", distinct
   # from the offline copy above.
   test "a disabled runner's stale dispatch is errored with a 'disabled' message" do
     {account, _user, subject} = owner_with_subject()

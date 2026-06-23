@@ -25,7 +25,7 @@ func withPacksDir(t *testing.T, dirs ...string) {
 
 // `emisar pack list` renders installed packs as a table: id, version, action
 // count, short hash, description. Driven read-only through --packs-dir (no
-// config / boot) against one valid pack. closes RUN-016-T01.
+// config / boot) against one valid pack.
 func TestPackListCmd_Table(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -50,7 +50,6 @@ func TestPackListCmd_Table(t *testing.T) {
 
 // `pack list --json` prints the full pack structs; we decode back into the
 // real packspec.Pack type so the check is field-tag agnostic.
-// closes RUN-016-T02.
 func TestPackListCmd_JSON(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -77,7 +76,7 @@ func TestPackListCmd_JSON(t *testing.T) {
 
 // `pack list --packs-dir` works without any config (read-only path). Pointing
 // at an empty dir yields just the header row, no pack rows.
-// closes RUN-016-T03 (no-config read) and RUN-016-T05 (empty dir).
+// (no-config read) and (empty dir).
 func TestPackListCmd_EmptyDirNoConfig(t *testing.T) {
 	empty := t.TempDir()
 	withPacksDir(t, empty)
@@ -103,7 +102,7 @@ func TestPackListCmd_EmptyDirNoConfig(t *testing.T) {
 
 // `pack list` with neither --packs-dir nor a resolvable config is a hard
 // error that wraps the config-resolution failure (so the operator knows to
-// pass --packs-dir or --config). closes RUN-016-T04.
+// pass --packs-dir or --config).
 func TestPackListCmd_NoDirNoConfigErrors(t *testing.T) {
 	origPacks, origConfig := flagPacksDir, flagConfig
 	t.Cleanup(func() { flagPacksDir, flagConfig = origPacks, origConfig })
@@ -125,9 +124,8 @@ func TestPackListCmd_NoDirNoConfigErrors(t *testing.T) {
 
 // `pack list` surfaces a load error when the packs dir holds a malformed pack:
 // LoadAll fails and the command returns that error (exit 1) rather than
-// silently listing nothing. closes RUN-016-T06.
+// silently listing nothing.
 func TestPackListCmd_MalformedPackErrors(t *testing.T) {
-	// closes RUN-016-T06
 	root := t.TempDir()
 	// A pack dir with a pack.yaml that references an action file declaring a
 	// single-segment id (no pack prefix) — LoadAll rejects it.
@@ -158,7 +156,7 @@ func TestPackListCmd_MalformedPackErrors(t *testing.T) {
 // `pack info <id>` prints the operator summary: header line with id/name/
 // version, the action+risk profile, and — for a pack with no setup block —
 // the honest "no credentials needed" line. Read-only via --packs-dir.
-// closes RUN-017-T01 (summary) and RUN-017-T06 (no-setup message).
+// (summary) and (no-setup message).
 func TestPackInfoCmd_Summary(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -183,7 +181,7 @@ func TestPackInfoCmd_Summary(t *testing.T) {
 }
 
 // `pack info <id> --json` prints the full pack struct instead of the human
-// summary. closes RUN-017-T02.
+// summary.
 func TestPackInfoCmd_JSON(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -210,7 +208,6 @@ func TestPackInfoCmd_JSON(t *testing.T) {
 }
 
 // `pack info <unknown>` errors, naming the id and where it looked.
-// closes RUN-017-T03.
 func TestPackInfoCmd_NotInstalled(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -233,9 +230,8 @@ func TestPackInfoCmd_NotInstalled(t *testing.T) {
 // the "missing from inherit_env" cross-check entirely (that check needs a
 // config to know the runner's inherit_env). The env block still prints, but
 // the "! Required vars not in this config's inherit_env" warning does not, even
-// for a required var. closes RUN-017-T05.
+// for a required var.
 func TestPackInfoCmd_NoConfigSkipsInheritEnvCrossCheck(t *testing.T) {
-	// closes RUN-017-T05
 	root := t.TempDir()
 	// A pack whose setup declares a REQUIRED env var. With a config, an empty
 	// inherit_env would flag PGHOST; without one, the cross-check is skipped.
@@ -281,9 +277,8 @@ func TestPackInfoCmd_NoConfigSkipsInheritEnvCrossCheck(t *testing.T) {
 }
 
 // `pack info` enforces ExactArgs(1): zero or two positional args is a cobra
-// arg-count error, surfaced before any pack load. closes RUN-017-T08.
+// arg-count error, surfaced before any pack load.
 func TestPackInfoCmd_ExactArgs(t *testing.T) {
-	// closes RUN-017-T08
 	for _, args := range [][]string{{}, {"a", "b"}} {
 		cmd := packInfoCmd()
 		cmd.SilenceUsage, cmd.SilenceErrors = true, true
@@ -296,7 +291,7 @@ func TestPackInfoCmd_ExactArgs(t *testing.T) {
 
 // `emisar pack validate ./pack` prints a machine-parseable OK line and the
 // content hash to stdout for a valid pack. Driven on a path from t.TempDir(),
-// no config/network. closes RUN-018-T01.
+// no config/network.
 func TestPackValidateCmd_OK(t *testing.T) {
 	src := writeValidPack(t, t.TempDir(), "redis")
 
@@ -320,7 +315,7 @@ func TestPackValidateCmd_OK(t *testing.T) {
 
 // `pack validate` on a schema-broken pack errors (exit 1) with the loader's
 // reason. Here: an action whose id is a single segment (no pack prefix),
-// which LoadOne rejects. closes RUN-018-T02.
+// which LoadOne rejects.
 func TestPackValidateCmd_InvalidPackErrors(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "broken")
 	if err := os.MkdirAll(filepath.Join(root, "actions"), 0o755); err != nil {
@@ -348,7 +343,7 @@ func TestPackValidateCmd_InvalidPackErrors(t *testing.T) {
 }
 
 // `pack validate` enforces ExactArgs(1): zero or two paths is a cobra
-// arg-count error. closes RUN-018-T05.
+// arg-count error.
 func TestPackValidateCmd_ExactArgs(t *testing.T) {
 	for _, args := range [][]string{{}, {"a", "b"}} {
 		cmd := packValidateCmd()

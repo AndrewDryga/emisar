@@ -95,7 +95,7 @@ defmodule EmisarWeb.RequireSSOTest do
     test "require_sso ON — a magic-link session is bounced (only :sso provenance passes)", %{
       conn: conn
     } do
-      # closes AUTH-022-T05 — `ensure_sso_compliant` admits ONLY an `:sso` session
+      # `ensure_sso_compliant` admits ONLY an `:sso` session
       # for this account. A magic-link session (auth_method :magic_link) is no more
       # SSO than a password one, so it's bounced to the step-up shim even though the
       # operator authenticated — the account demands the IdP specifically.
@@ -135,7 +135,7 @@ defmodule EmisarWeb.RequireSSOTest do
     end
 
     test "the shim flashes the SSO-required explanation", %{conn: conn} do
-      # closes AUTH-022-T08 — the step-up shim doesn't bounce silently: it logs out
+      # the step-up shim doesn't bounce silently: it logs out
       # with a flash naming the cause, so the operator understands why they were
       # signed out and what to do (sign in with the IdP) rather than seeing a bare
       # sign-in page.

@@ -12,7 +12,7 @@ import (
 // `emisar action list` renders the loaded registry as a table by default.
 // Driven through the real command (boot → registry().Actions() → tabwriter)
 // against a temp config + one-action pack; the header and the single action's
-// id/pack/risk land in the output. closes RUN-013-T01.
+// id/pack/risk land in the output.
 func TestActionListCmd_Table(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, false)
@@ -38,7 +38,7 @@ func TestActionListCmd_Table(t *testing.T) {
 
 // `action list --json` (global flag) prints the full action structs as a JSON
 // array. We decode back into the real actionspec.Action type so the assertion
-// is independent of field-tag naming. closes RUN-013-T02.
+// is independent of field-tag naming.
 func TestActionListCmd_JSON(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, true)
@@ -66,7 +66,6 @@ func TestActionListCmd_JSON(t *testing.T) {
 
 // Empty registry: with a packs dir that holds no packs, `action list` prints
 // only the header row (and the JSON form an empty array) — no panic, no rows.
-// closes RUN-013-T03.
 func TestActionListCmd_EmptyRegistry(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -117,9 +116,8 @@ func TestActionListCmd_EmptyRegistry(t *testing.T) {
 // catalog: an action denied by runner admission still appears in `action list`
 // (admission only hides actions from the catalog advertised to cloud, RUN-035;
 // the local command shows what's installed so an operator can see a denied
-// action exists). closes RUN-013-T05.
+// action exists).
 func TestActionListCmd_ShowsAdmissionDeniedAction(t *testing.T) {
-	// closes RUN-013-T05
 	withFlags(t)
 	withJSONOut(t, false)
 	dir := t.TempDir()
@@ -154,7 +152,6 @@ func TestActionListCmd_ShowsAdmissionDeniedAction(t *testing.T) {
 
 // `action describe <id>` prints the full action as indented JSON for a known
 // id — always JSON, regardless of the --json flag (the wrapper ignores it).
-// closes RUN-014-T01.
 func TestActionDescribeCmd_KnownID(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, false) // describe ignores this and prints JSON anyway
@@ -182,7 +179,7 @@ func TestActionDescribeCmd_KnownID(t *testing.T) {
 }
 
 // `action describe <unknown>` errors with the id named, exit non-zero (the
-// RunE returns the error; cobra surfaces it). closes RUN-014-T02.
+// RunE returns the error; cobra surfaces it).
 func TestActionDescribeCmd_UnknownID(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -202,7 +199,7 @@ func TestActionDescribeCmd_UnknownID(t *testing.T) {
 }
 
 // `action describe` enforces ExactArgs(1): zero or two positional args is a
-// cobra arg-count error before any boot/registry work. closes RUN-014-T03.
+// cobra arg-count error before any boot/registry work.
 func TestActionDescribeCmd_ExactArgs(t *testing.T) {
 	for _, args := range [][]string{{}, {"a", "b"}} {
 		cmd := actionDescribeCmd()

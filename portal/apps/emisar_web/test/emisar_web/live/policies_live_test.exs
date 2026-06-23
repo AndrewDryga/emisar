@@ -169,7 +169,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "removing an override then saving persists the removal and audits it as removed", %{
       conn: conn
     } do
-      # closes GOV-015-T06 — `remove_override` is an in-memory edit; the removal
+      # `remove_override` is an in-memory edit; the removal
       # only takes effect on the next Save. After saving, the persisted rules drop
       # the override AND the `policy.updated` audit diff records it under
       # `changes.overrides.removed` (the LV mutation reaches the same context write
@@ -370,7 +370,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
       conn: conn
     } do
-      # closes GOV-006-T05 — operator holds `view` (page renders) but not `manage`,
+      # operator holds `view` (page renders) but not `manage`,
       # so it reads identically to the viewer case: the read-only notice, no Add /
       # Save controls, and a crafted save re-checks `subject_can_manage_policies?`
       # and is denied.
@@ -398,7 +398,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "a viewer's default-policy card is fully inert — no add/trash, inputs disabled", %{
       conn: conn
     } do
-      # closes GOV-014-T04, GOV-015-T05, GOV-016-T06, GOV-017-T05 — for a
+      # for a
       # non-manager every editing affordance on the (default) policy card is
       # removed or disabled: no "Add override" button, the existing override row's
       # trash is hidden, every tier <select> is `disabled`, and the approval gate's
@@ -440,16 +440,16 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # The override row is shown (read-only)…
       assert html =~ ~s(value="block-drops")
-      # GOV-014-T04: no "Add override" button anywhere.
+      # no "Add override" button anywhere.
       refute html =~ "Add override"
-      # GOV-015-T05: no per-row trash (its phx-click handler is absent).
+      # no per-row trash (its phx-click handler is absent).
       refute html =~ ~s(phx-click="remove_override")
-      # GOV-016-T06: every risk-tier <select> element is disabled.
+      # every risk-tier <select> element is disabled.
       for tier <- ["low", "medium", "high", "critical"] do
         assert html =~ ~r/<select[^>]*name="policy\[defaults\]\[#{tier}\]"[^>]*disabled/
       end
 
-      # GOV-017-T05: the approval-gate inputs are disabled (attribute order varies,
+      # the approval-gate inputs are disabled (attribute order varies,
       # so match the tag with order-agnostic lookaheads).
       assert html =~
                ~r/<input(?=[^>]*\bname="policy\[approval\]\[min_approvals\]")(?=[^>]*\bdisabled)[^>]*>/
@@ -459,7 +459,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "another account's default policy + rulesets never appear on this page", %{conn: conn} do
-      # closes GOV-006-T06 — `fetch_policy` / `list_scoped_policies` scope to the
+      # `fetch_policy` / `list_scoped_policies` scope to the
       # subject's account via `for_subject`, so a foreign account's saved default
       # and runner ruleset are invisible here.
       {conn, _user, account} = register_and_log_in(conn)
@@ -485,7 +485,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "remove_override with a non-integer index is a no-op", %{conn: conn} do
-      # closes GOV-015-T03 — `Integer.parse("abc")` is `:error`, so the handler
+      # `Integer.parse("abc")` is `:error`, so the handler
       # returns the socket unchanged. The existing override row survives.
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -510,7 +510,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "remove_override with an out-of-range index is safe", %{conn: conn} do
-      # closes GOV-015-T04 — `List.delete_at/2` past the end returns the list
+      # `List.delete_at/2` past the end returns the list
       # unchanged, so removing index 5 of a single-row list is a no-op, no crash.
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -535,7 +535,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "raising a lower tier auto-bumps the higher tiers (monotonic enforcement)", %{conn: conn} do
-      # closes GOV-016-T02 — posting low=deny runs `enforce_monotonic_defaults`,
+      # posting low=deny runs `enforce_monotonic_defaults`,
       # lifting medium/high/critical up to at least deny. The rendered selects all
       # reflect deny, and the would-be-invalid combo never reaches the operator.
       {conn, _user, account} = register_and_log_in(conn)
@@ -556,7 +556,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "an unknown tier decision keeps the prior value (merge_defaults whitelist)", %{
       conn: conn
     } do
-      # closes GOV-016-T05 — `merge_defaults/2` only accepts a value in
+      # `merge_defaults/2` only accepts a value in
       # `@decisions`; a junk POST for a tier falls back to the editor's current
       # value. The seeded high default is require_approval and stays that way.
       {conn, _user, account} = register_and_log_in(conn)
@@ -575,7 +575,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "the client mirror equals the server check — an auto-bumped combo saves clean", %{
       conn: conn
     } do
-      # closes GOV-016-T07 — the LV's `decision_at_rank/1` uses the same
+      # the LV's `decision_at_rank/1` uses the same
       # `Policies.decision_rank/1` as the changeset's monotonicity check. Posting
       # low=deny, high=allow is auto-monotonized client-side to all-deny, so the
       # rendered form carries no rules error and the result the client produced
@@ -606,7 +606,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a non-numeric min_approvals falls back to the prior value", %{conn: conn} do
-      # closes GOV-017-T02 (LV half) — `parse_min_approvals/2` keeps the prior
+      # (LV half) — `parse_min_approvals/2` keeps the prior
       # editor value when the posted string isn't a parseable integer ≥ 1. The
       # seeded default is 1, so a junk post leaves the number input at 1.
       {conn, _user, account} = register_and_log_in(conn)
@@ -653,7 +653,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-006-T11 — `runner_name/2` resolves the saved ruleset's runner id
+      # `runner_name/2` resolves the saved ruleset's runner id
       # against the live (non-deleted) runner list; a since-deleted runner isn't in
       # it, so the card falls back to the raw id rather than crashing — the ruleset
       # stays identifiable so an operator can remove the now-dangling override.
@@ -680,7 +680,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       conn: conn,
       account: account
     } do
-      # closes GOV-008-T03 — `find_ruleset/2` returns nil for a uid that matches no
+      # `find_ruleset/2` returns nil for a uid that matches no
       # card, so the handler short-circuits to `{:noreply, socket}` — no DB call, no
       # crash, the page is unchanged.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -873,7 +873,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-008-T05 — removing a SAVED ruleset is a real mutation, so the
+      # removing a SAVED ruleset is a real mutation, so the
       # handler runs `Permissions.gated` on `subject_can_manage_policies?`. An
       # operator (view-only) is refused with a flash; the ruleset is not deleted.
       runner =
@@ -904,7 +904,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-008-T05 (viewer half) — same gate, the laxest role.
+      # (viewer half) — same gate, the laxest role.
       runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-2", group: "db")
 
@@ -931,7 +931,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "an operator's crafted add_ruleset is a no-op — no card added", %{
       account: account
     } do
-      # closes GOV-012-T03 — `add_ruleset` re-checks `subject_can_manage_policies?`
+      # `add_ruleset` re-checks `subject_can_manage_policies?`
       # and, for a non-manager, returns the socket unchanged (a silent no-op — it
       # only appends an in-memory card, so there's nothing to flash). No "Save
       # ruleset" card appears.
@@ -959,7 +959,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-019-T04 — after the first save, `replace_saved/3` swaps the
+      # after the first save, `replace_saved/3` swaps the
       # card's `new-…` uid for the persisted policy id, so the second save's
       # editor resolves to the existing scope and upserts it. Exactly one
       # runner-scoped policy remains.
@@ -992,7 +992,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       conn: conn,
       account: account
     } do
-      # closes GOV-012-T05 — each add stamps a fresh `new-<unique_integer>` uid,
+      # each add stamps a fresh `new-<unique_integer>` uid,
       # so the editor-discriminated forms don't collide. Two adds → two distinct
       # `policy-form-new-…` ids (after each picks a target to reveal its form).
       _r1 = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
@@ -1014,7 +1014,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-012-T04 — `addable_any?/3` gates the button: a runner is one
+      # `addable_any?/3` gates the button: a runner is one
       # runner target AND one group target, so saving a ruleset for both leaves
       # nothing free. The button renders disabled-but-visible.
       runner =
@@ -1034,7 +1034,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-012-T02 — the live default carries a deny-override; a new card
+      # the live default carries a deny-override; a new card
       # seeds from that editor (replace-semantics safety), so the deny-override
       # rides into the new card rather than starting from a blank, wider posture.
       {:ok, _} =
@@ -1068,7 +1068,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       conn: conn,
       account: account
     } do
-      # closes GOV-013-T03 — the picker form stays on an unsaved card, so picking
+      # the picker form stays on an unsaved card, so picking
       # a second target rewrites scope_type/scope_value to the latest choice.
       runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "prod")
@@ -1095,7 +1095,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       conn: conn,
       account: account
     } do
-      # closes GOV-013-T05 — a target string without a `runner:`/`group:` prefix
+      # a target string without a `runner:`/`group:` prefix
       # → `parse_target/1` returns `{nil, ""}`, so the card reverts to its
       # "Pick a runner or group above" prompt and hides the rules editor.
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
@@ -1125,7 +1125,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a malformed set_target event (no keys) is a no-op", %{conn: conn, account: account} do
-      # closes GOV-013-T06 — the `set_target/2` catch-all clause handles an event
+      # the `set_target/2` catch-all clause handles an event
       # missing `uid`/`target`: the socket is returned unchanged, no crash.
       _runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
@@ -1144,7 +1144,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-014-T02, GOV-014-T06 — the `editor` discriminator routes the
+      # the `editor` discriminator routes the
       # append to the saved ruleset's card; the new row carries the empty-override
       # shape (decision "allow") and is scoped to that card, not the account one.
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
@@ -1173,7 +1173,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      # closes GOV-015-T02 — removing an override on a saved ruleset card targets
+      # removing an override on a saved ruleset card targets
       # that editor via the `editor` discriminator; the row is gone from its form.
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
 

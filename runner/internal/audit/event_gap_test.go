@@ -15,7 +15,7 @@ import (
 // (event.go:54-73) and the "audit log must never become world-readable, even
 // across rotation" invariant (jsonl.go:48-55,229-244).
 
-// TestJSONLSink_PermsNeverDowngraded (RSEC-012-T13) — the directory is created
+// TestJSONLSink_PermsNeverDowngraded — the directory is created
 // 0o750 and the file 0o600; rotation must reopen the active file at 0o600 and
 // must not loosen the directory. The log can carry redacted-but-sensitive
 // metadata, so it must never become group/world-readable mid-life.
@@ -72,7 +72,7 @@ func TestJSONLSink_PermsNeverDowngraded(t *testing.T) {
 	}
 }
 
-// TestEvent_AllTypesSerializeAndVerify (RSEC-012-T14) — every EventType,
+// TestEvent_AllTypesSerializeAndVerify — every EventType,
 // including action_blocked_by_admission (the SIEM-targetable host trail), must
 // serialize one-per-line and chain-verify. A new event type that breaks the
 // chain would fail here.
@@ -117,7 +117,7 @@ func TestEvent_AllTypesSerializeAndVerify(t *testing.T) {
 	}
 }
 
-// TestEvent_RawSecretInArgvButMaskedCommand (RSEC-012-T15 / RSEC-012-T16) —
+// TestEvent_RawSecretInArgvButMaskedCommand —
 // documented trade-off: Execution.Argv keeps the RAW argv (including secret
 // values) for on-host forensics, while ExecutedCommand is the masked
 // human-readable form. Confidentiality of the raw bytes rests only on the

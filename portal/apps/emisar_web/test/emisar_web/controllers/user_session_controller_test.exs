@@ -7,7 +7,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
   describe "POST /sign_in (password verify security)" do
     test "an unknown email gets the SAME generic denial as a wrong password (no enumeration)",
          %{conn: conn} do
-      # closes AUTH-003-T12 — an attacker probing for valid emails must not be
+      # an attacker probing for valid emails must not be
       # able to tell "no such user" from "wrong password": identical flash,
       # identical redirect, no :email-exists oracle.
       {_logged_in, user, _account} = register_and_log_in(conn)
@@ -38,7 +38,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "an empty password is rejected by the byte-size guard with no bcrypt and a generic deny",
          %{conn: conn} do
-      # closes AUTH-003-T09 — "" is still a binary, so it reaches the password
+      # "" is still a binary, so it reaches the password
       # check, but `User.valid_password?/2`'s `byte_size(password) > 0` guard
       # routes it to `Bcrypt.no_user_verify/0` (constant-time, never the user's
       # hash). The operator-visible result is the same generic denial, never a
@@ -58,7 +58,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "a failed sign-in slices an over-long email to 160 chars in the re-prefill flash",
          %{conn: _conn} do
-      # closes AUTH-003-T10 — on a failed attempt the typed email is stashed in an
+      # on a failed attempt the typed email is stashed in an
       # `:email` flash to pre-fill the form, but it's `String.slice(_, 0, 160)`'d
       # first so a pathological 300-char value can't bloat the session/flash. Same
       # generic denial as any wrong credential.
@@ -76,7 +76,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "the user record vanishing between password and MFA aborts to the expired bounce",
          %{conn: conn} do
-      # closes AUTH-003-T06 — the password step stashes a pending-MFA marker keyed by
+      # the password step stashes a pending-MFA marker keyed by
       # user id; if that user is soft-deleted before the code is entered,
       # `do_finish_mfa`'s `fetch_user_by_id` returns `:not_found` and the controller
       # clears the marker and bounces to /sign_in with the expired message rather
@@ -117,7 +117,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "a whitelisted return_to lands the member on that team after sign-in", %{conn: conn} do
-      # closes AUTH-003-T04 — a sign-in begun on a team's branded page posts a
+      # a sign-in begun on a team's branded page posts a
       # `user[return_to]=/app/<slug>`; `ReturnTo.app_path` whitelists it to the bare
       # local landing, the controller stashes it as `:user_return_to`, and
       # `log_in_user` honors it over the default `/app`. The member IS in that team,
@@ -140,7 +140,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "a user suspended in every account can finalize sign-in but is logged out downstream",
          %{conn: conn} do
-      # closes AUTH-003-T17 — password verify is identity, not membership: a
+      # password verify is identity, not membership: a
       # suspended-everywhere user still passes `fetch_user_by_email_and_password`
       # and the controller signs them in (a token is minted, they're redirected to
       # /app). The lock-out is enforced one layer down — the very next /app request
@@ -172,7 +172,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "a successful sign-in renews the session id and drops any pre-login session data",
          %{conn: conn} do
-      # closes AUTH-003-T16 — session-fixation defence: `log_in_user` calls
+      # session-fixation defence: `log_in_user` calls
       # `configure_session(renew: true)` + `clear_session`, so a value an
       # attacker planted in the pre-auth session can't survive into the
       # authenticated session, and a fresh token is what authenticates.
@@ -199,7 +199,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
   describe "GET /sign_in/magic/:token (token security)" do
     test "a reset/confirm token presented at the magic endpoint is uniformly invalid (wrong context)",
          %{conn: conn} do
-      # closes AUTH-006-T06 — tokens are bound to a `context` and the magic
+      # tokens are bound to a `context` and the magic
       # consumer matches on `context == "magic_link"`. A perfectly valid reset
       # token (different context) is indistinguishable from an expired one: no
       # cross-endpoint reuse, no sign-in.
@@ -214,7 +214,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "a non-decodable token is uniformly invalid (base64 decode fails first)", %{conn: conn} do
-      # closes AUTH-006-T05 — a token that isn't even valid base64 can't resolve to
+      # a token that isn't even valid base64 can't resolve to
       # a row, so the consumer returns the same `:invalid_or_expired` as an expired
       # or used one: one cause-neutral error, redirect to /sign_in/magic, no sign-in.
       conn = get(conn, ~p"/sign_in/magic/!!!not-base64!!!")
@@ -226,7 +226,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "a tampered token is uniformly invalid, indistinguishable from expired (no oracle)",
          %{conn: conn} do
-      # closes AUTH-006-T08 — flipping bytes in a real, live token makes its hash
+      # flipping bytes in a real, live token makes its hash
       # miss every stored token, so the response is byte-identical to the expired/
       # used case: same flash, same redirect, no signal that a token "almost" worked.
       user = Emisar.Fixtures.user_fixture()
@@ -241,7 +241,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "a soft-deleted user cannot consume their own magic link", %{conn: conn} do
-      # closes AUTH-006-T09 — the token may still be live, but it resolves to no
+      # the token may still be live, but it resolves to no
       # LIVE user (`fetch_user_by_id` skips soft-deleted rows), so the consume
       # returns the same uniform invalid-or-expired error and signs no one in.
       user = Emisar.Fixtures.user_fixture()
@@ -278,7 +278,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "audits user.signed_out attributed to the signed-out user", %{conn: conn} do
-      # closes AUTH-015-T03 — the sign-out event must be attributable, which is why
+      # the sign-out event must be attributable, which is why
       # `log_out_user` resolves the actor from `conn.assigns.current_user` and audits
       # BEFORE dropping the token (dropping it first would lose the only id). The
       # observable proof: after sign-out a `user.signed_out` row exists on the user's
@@ -300,7 +300,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "is CSRF-protected — a sign-out without a token is rejected by the browser pipeline",
          %{conn: conn} do
-      # closes AUTH-015-T05 — /sign_out runs the :browser pipeline (`protect_from_forgery`),
+      # /sign_out runs the :browser pipeline (`protect_from_forgery`),
       # so a cross-site forced logout (a DELETE with no CSRF token) is blocked. The
       # test conn defaults to `plug_skip_csrf_protection: true`; clearing it exercises
       # the real protection, which raises InvalidCSRFTokenError → a 403.

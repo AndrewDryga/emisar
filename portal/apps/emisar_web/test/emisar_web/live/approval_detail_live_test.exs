@@ -200,7 +200,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a nonexistent request id redirects to the approvals list with a flash", %{conn: conn} do
-    # closes GOV-002-T05 — `fetch_approval_request_by_id` returns {:error,:not_found}
+    # `fetch_approval_request_by_id` returns {:error,:not_found}
     # for an unknown id; mount redirects to /approvals rather than rendering a
     # half-empty detail page.
     {conn, _user, account} = register_and_log_in(conn)
@@ -214,7 +214,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "another account's request id is a 404 (redirect), not a 403", %{conn: conn} do
-    # closes GOV-002-T06 — the URL carries account A's slug (the member is in A),
+    # the URL carries account A's slug (the member is in A),
     # but the request id belongs to account B. `for_subject` scopes the fetch to A
     # → {:error,:not_found} → the same "Approval not found." redirect as a
     # nonexistent id (no tenant-existence leak, 404 not 403).
@@ -234,7 +234,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a multi-approver request shows the N-of-M tally and the per-vote Decisions card", %{
     conn: conn
   } do
-    # closes GOV-002-T02 (multi side) — a request needing 2 distinct approvals
+    # (multi side) — a request needing 2 distinct approvals
     # surfaces the "Approvals" meta tally AND, once a vote is recorded, the
     # per-vote Decisions card (both gated on `min_approvals > 1`). A first
     # sub-threshold approve by a distinct operator leaves it pending with one vote.
@@ -272,7 +272,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "an approval_updated broadcast for THIS request re-assigns its tally + Decisions live", %{
     conn: conn
   } do
-    # closes GOV-002-T04 — the detail page subscribes to the account approval feed
+    # the detail page subscribes to the account approval feed
     # on connect; an {:approval_updated, %{id}} for THIS request re-assigns the
     # request + its decisions in place (no reload). A distinct operator records the
     # first of two votes through the real context (which broadcasts), and the open
@@ -310,7 +310,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a single-approver request hides the multi-approver tally and Decisions card", %{
     conn: conn
   } do
-    # closes GOV-002-T02 (single side) — a `min_approvals = 1` request reads no
+    # (single side) — a `min_approvals = 1` request reads no
     # differently than the plain single-approver flow: no "Approvals" tally, no
     # Decisions card (both are `min_approvals > 1` only).
     {conn, user, account} = register_and_log_in(conn)
@@ -323,7 +323,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a soft-deleted target runner degrades to the truncated runner-id fallback", %{conn: conn} do
-    # closes GOV-002-T08 — the run preloads its runner via a LEFT join scoped to
+    # the run preloads its runner via a LEFT join scoped to
     # `not_deleted()`, so a soft-deleted runner makes `@run.runner` nil. The meta
     # strip falls back to the request's context runner_id (truncated UUID) instead
     # of the runner name + link, and the page renders without crashing. (The same
@@ -352,7 +352,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a removed requester falls back to a short UUID label, still renders", %{conn: conn} do
-    # closes GOV-002-T10 — the requester user is soft-deleted, so `lookup_user/1`
+    # the requester user is soft-deleted, so `lookup_user/1`
     # (which scopes to not_deleted) returns nil while `requested_by_id` stays set.
     # The "Requested by" field falls back to the short-UUID slice of the recorded
     # id (then em-dash), and the page still renders. (A HARD delete instead nilifies

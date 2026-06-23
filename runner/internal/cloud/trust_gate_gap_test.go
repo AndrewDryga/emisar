@@ -31,7 +31,7 @@ import (
 
 // --- Pack-hash trust gate ---------------------------------------------------
 
-// closes RSEC-008-T08 / closes RUN-033-T04
+// /
 //
 // The cloud may not have a trusted hash on file yet (a very early observation,
 // or a runner that pre-dates pack-hash pinning). When the run_action carries NO
@@ -67,7 +67,7 @@ func TestClient_TrustGate_AbsentHashSkipsGateAndProceeds(t *testing.T) {
 	}
 }
 
-// closes RSEC-008-T12 / closes RUN-033-T04
+// /
 //
 // When the cloud DOES pin a hash but the action id is unknown to this runner's
 // registry, the trust gate has nothing to gate: passesTrustGate returns true on
@@ -99,8 +99,6 @@ func TestClient_TrustGate_UnknownActionSkipsGate(t *testing.T) {
 	}
 }
 
-// closes RUN-033-T07
-//
 // A trust-gate refusal is terminal and idempotent: emitPackMismatch caches the
 // pack_hash_mismatch result in the dedup ring (client.go:619), so a cloud retry
 // of the SAME request_id replays the cached refusal via startRun's dedup path
@@ -164,7 +162,7 @@ func TestClient_TrustGate_MismatchRefusalIsCachedForReplay(t *testing.T) {
 
 // --- Registry hot-swap (SIGHUP) observed by a new dispatch ------------------
 
-// closes RSEC-010-T06 / closes RUN-010-T05
+// /
 //
 // A SIGHUP atomically swaps the engine's registry (engine.Reload stores a fresh
 // *packs.Registry behind an atomic.Pointer). A NEW dispatch routed through the
@@ -221,8 +219,6 @@ func TestClient_RegistrySwap_NewDispatchSeesReloadedPacks(t *testing.T) {
 
 // --- Admission precedence over signature + trust ----------------------------
 
-// closes RSEC-004-T15
-//
 // Admission is the host operator's gate and runs unconditionally at the engine,
 // BEFORE the registry lookup (engine.go:220-236) — and the engine runs only
 // after handleRun's signature + trust gates have already passed. So a dispatch

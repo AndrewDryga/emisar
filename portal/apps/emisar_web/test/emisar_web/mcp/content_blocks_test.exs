@@ -123,7 +123,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
 
   describe "from_runs/1 — policy denial" do
     test "denied_by_policy renders the verbatim reason and flags isError" do
-      # closes MCP-021-T08
       {blocks, is_error} =
         ContentBlocks.from_runs([
           %{
@@ -139,7 +138,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
     end
 
     test "a denial prefers the policy.reason over the top-level reason" do
-      # closes MCP-021-T08
       {blocks, true} =
         ContentBlocks.from_runs([
           %{
@@ -155,7 +153,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
 
   describe "from_runs/1 — empty + multi-run" do
     test "an empty runs list renders (no output)" do
-      # closes MCP-021-T09
       {blocks, is_error} = ContentBlocks.from_runs([])
 
       assert text(blocks) == "(no output)"
@@ -163,7 +160,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
     end
 
     test "a fan-out prefixes each run's blocks with [runner_name]" do
-      # closes MCP-021-T10
       {blocks, _} =
         ContentBlocks.from_runs([
           %{id: "run-a", status: "success", exit_code: 0, stdout: "alpha", runner: "web-1"},
@@ -176,7 +172,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
     end
 
     test "a single run is NOT prefixed (multi is false for one run)" do
-      # closes MCP-021-T10
       {blocks, _} =
         ContentBlocks.from_runs([
           %{id: "run-a", status: "success", exit_code: 0, stdout: "alpha", runner: "web-1"}
@@ -188,7 +183,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
 
   describe "from_runs/1 — generic unknown-error payload (no internal leak)" do
     test "the Service `error: \"unknown\"` payload renders a generic message + isError" do
-      # closes MCP-028-T12
       # When Service.dispatch_tool can't map an internal error term, it emits a
       # static `unknown` payload (the raw term is logged server-side, never put
       # here). The renderer must surface only that human message and flag the
@@ -217,7 +211,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
 
   describe "from_runs/1 — IL-14 unknown-key safety" do
     test "a novel string key never raises and never grows the atom table" do
-      # closes MCP-021-T11
       # A made-up key that has no existing atom — string_field/numeric_field
       # resolve fields via String.to_existing_atom, which must be rescued so an
       # attacker-influenced payload can't mint atoms or crash the renderer.

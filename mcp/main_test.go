@@ -468,7 +468,7 @@ func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 
 // -- idempotencyKey: cross-process + odd ids ------------------------
 
-// BRG-003-T09 — the session prefix namespaces idempotency keys across processes:
+// the session prefix namespaces idempotency keys across processes:
 // two bridges with different session ids derive different keys for the same
 // JSON-RPC id, so one process's id:1 never aliases another's run at the portal.
 func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
@@ -482,7 +482,7 @@ func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
 	}
 }
 
-// BRG-003-T11 — large / odd-shaped ids decode safely. The envelope id is read as
+// large / odd-shaped ids decode safely. The envelope id is read as
 // a RawMessage and only surrounding quotes are trimmed: a spaced id, a big int
 // past 2^53, and a hyphen/underscore string id all produce a deterministic key
 // with no panic and no precision loss (a float-parse of the big int would mangle
@@ -507,7 +507,7 @@ func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 
 // -- checkEndpointScheme: case-insensitive loopback -----------------
 
-// BRG-007-T12 — the loopback allowance for cleartext http is case-insensitive on
+// the loopback allowance for cleartext http is case-insensitive on
 // the host: http://LOCALHOST is accepted exactly like http://localhost
 // (isLoopbackHost uses strings.EqualFold), so casing can't accidentally trip the
 // cleartext refusal for a legit local dev endpoint.
@@ -521,7 +521,7 @@ func TestCheckEndpointScheme_LoopbackCaseInsensitive(t *testing.T) {
 
 // -- forward: method / content-type / body handling ----------------
 
-// BRG-002-T02 — every forwarded frame is a POST with Content-Type:
+// every forwarded frame is a POST with Content-Type:
 // application/json (the portal's RPC endpoint only accepts POSTed JSON).
 func TestForward_UsesPostAndJSONContentType(t *testing.T) {
 	var gotMethod, gotCT string
@@ -544,7 +544,7 @@ func TestForward_UsesPostAndJSONContentType(t *testing.T) {
 	}
 }
 
-// BRG-002-T09 — a 202 with a non-empty body still yields a nil body: the body is
+// a 202 with a non-empty body still yields a nil body: the body is
 // read (and capped) then dropped, because 202 means "notification accepted, no
 // response" regardless of what the portal wrote.
 func TestForward_202WithBodyStillDiscarded(t *testing.T) {
@@ -564,7 +564,7 @@ func TestForward_202WithBodyStillDiscarded(t *testing.T) {
 	}
 }
 
-// BRG-002-T12 — a stale/expired token produces a portal 4xx JSON-RPC error frame,
+// a stale/expired token produces a portal 4xx JSON-RPC error frame,
 // which is relayed VERBATIM (not masked as a generic -32603). The bridge does no
 // auth logic; the portal shapes the structured error and the client sees it whole.
 func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
@@ -586,7 +586,7 @@ func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
 	}
 }
 
-// BRG-002-T13 — a request-build failure (http.NewRequest) is surfaced to the
+// a request-build failure (http.NewRequest) is surfaced to the
 // caller (serve then maps it to -32603). An endpoint with an embedded control
 // character fails url.Parse inside http.NewRequest. (forward is exercised in
 // isolation here; the startup checkEndpointScheme would normally reject such a
@@ -604,7 +604,7 @@ func TestForward_RequestBuildErrorSurfaced(t *testing.T) {
 	}
 }
 
-// BRG-002-T15 / BRG-002-T16 — on a 5xx, the client-facing JSON-RPC frame written
+// / — on a 5xx, the client-facing JSON-RPC frame written
 // to stdout is the GENERIC `upstream transport error` and never carries the
 // secret-ish 5xx body or the API key. The detailed portal body goes to stderr
 // only (not the LLM transcript). We assert the security-critical half: the
@@ -636,7 +636,7 @@ func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	}
 }
 
-// BRG-002-T17 — an OAuth `emo-*` bearer is carried identically to any other key:
+// an OAuth `emo-*` bearer is carried identically to any other key:
 // the bridge does no token-type logic, it just attaches `Authorization: Bearer
 // <key>` verbatim.
 func TestForward_OAuthBearerCarriedVerbatim(t *testing.T) {
@@ -657,7 +657,7 @@ func TestForward_OAuthBearerCarriedVerbatim(t *testing.T) {
 	}
 }
 
-// BRG-002-T18 — a non-JSON 200 body is relayed without validation: the bridge
+// a non-JSON 200 body is relayed without validation: the bridge
 // never asserts the response is well-formed JSON (all semantics are portal-side).
 func TestForward_NonJSONResponseRelayedVerbatim(t *testing.T) {
 	raw := []byte("this is not json at all <<>>")
@@ -676,7 +676,7 @@ func TestForward_NonJSONResponseRelayedVerbatim(t *testing.T) {
 	}
 }
 
-// BRG-002-T19 — an empty 200 body is returned as an empty (non-nil-distinct)
+// an empty 200 body is returned as an empty (non-nil-distinct)
 // body; serve then writes nothing spurious for it.
 func TestForward_Empty200BodyReturnedEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -706,7 +706,7 @@ func TestForward_Empty200BodyReturnedEmpty(t *testing.T) {
 	}
 }
 
-// BRG-002-T20 / BRG-001-T14 — the relay is buffered, not streamed: forward reads
+// / — the relay is buffered, not streamed: forward reads
 // the COMPLETE (capped) body before returning one slice, even when the portal
 // writes it in chunks with flushes between them. (No partial/streamed frame is
 // emitted.)
@@ -738,7 +738,7 @@ func TestForward_BuffersChunkedBodyBeforeReturning(t *testing.T) {
 
 // -- serve: framing, ordering, write errors ------------------------
 
-// BRG-001-T02 — a portal body that already ends in "\n" is not double-terminated:
+// a portal body that already ends in "\n" is not double-terminated:
 // serve appends a newline only when the body lacks one, so the client never sees
 // "\n\n".
 func TestServe_BodyAlreadyNewlineTerminatedNotDoubled(t *testing.T) {
@@ -760,7 +760,7 @@ func TestServe_BodyAlreadyNewlineTerminatedNotDoubled(t *testing.T) {
 	}
 }
 
-// BRG-001-T03 — multiple frames over one session are relayed in input order, each
+// multiple frames over one session are relayed in input order, each
 // newline-delimited. The portal echoes each request's id so we can assert order.
 func TestServe_MultipleFramesRelayedInOrder(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -794,7 +794,7 @@ func TestServe_MultipleFramesRelayedInOrder(t *testing.T) {
 	}
 }
 
-// BRG-001-T06 — a write failure to stdout is fatal: serve returns the write
+// a write failure to stdout is fatal: serve returns the write
 // error (main then surfaces it and the process exits non-zero). A torn pipe to
 // the client must not be silently swallowed.
 func TestServe_WriteErrorIsFatal(t *testing.T) {
@@ -813,7 +813,7 @@ func TestServe_WriteErrorIsFatal(t *testing.T) {
 	}
 }
 
-// BRG-001-T07 — EOF on stdin is a clean exit: serve returns nil (io.EOF mapped to
+// EOF on stdin is a clean exit: serve returns nil (io.EOF mapped to
 // a graceful return) when input ends without a terminating newline.
 func TestServe_EOFWithoutNewlineExitsClean(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -832,7 +832,7 @@ func TestServe_EOFWithoutNewlineExitsClean(t *testing.T) {
 	}
 }
 
-// BRG-001-T08 — bare blank / whitespace-only lines forward nothing; a real frame
+// bare blank / whitespace-only lines forward nothing; a real frame
 // after them is still relayed. (serve trims each line and skips empties.)
 func TestServe_BlankAndWhitespaceLinesAreNoOps(t *testing.T) {
 	var hits int
@@ -856,7 +856,7 @@ func TestServe_BlankAndWhitespaceLinesAreNoOps(t *testing.T) {
 	}
 }
 
-// BRG-001-T10 / BRG-001-T13 — a malformed (non-JSON) frame, and a frame naming an
+// / — a malformed (non-JSON) frame, and a frame naming an
 // unknown/synthetic tool, are both POSTed VERBATIM. The bridge does no JSON-RPC
 // validation and synthesizes no tool descriptors/content — every semantic is
 // portal-side; it relays exactly the bytes it received (within the size cap).
@@ -893,7 +893,7 @@ func TestServe_RelaysFramesVerbatimWithoutProtocolLogic(t *testing.T) {
 
 // -- readFrameLine / readCappedBody: bounds at the real constants --
 
-// BRG-008-T08 — a long newline-free chunk that is UNDER the frame cap but spans
+// a long newline-free chunk that is UNDER the frame cap but spans
 // several of bufio.Reader's internal buffer fills (ErrBufferFull) is accumulated
 // in full and forwarded — the drain loop keeps appending, it does not stop early
 // or spuriously flag oversize.
@@ -916,7 +916,7 @@ func TestReadFrameLine_BufferFullKeepsAccumulating(t *testing.T) {
 	}
 }
 
-// BRG-008-T09 — readCappedBody at the REAL maxResponseBytes: a body of exactly
+// readCappedBody at the REAL maxResponseBytes: a body of exactly
 // the limit is returned in full; one byte over is an error. (TestReadCappedBody
 // pins the logic with a small limit; this pins it at the production constant.)
 func TestReadCappedBody_AtMaxResponseBytesBoundary(t *testing.T) {
@@ -933,7 +933,7 @@ func TestReadCappedBody_AtMaxResponseBytesBoundary(t *testing.T) {
 	}
 }
 
-// BRG-008-T14 — an unbounded hostile response stream is bounded by readCappedBody
+// an unbounded hostile response stream is bounded by readCappedBody
 // (io.LimitReader): forward errors out (→ -32603 in serve) instead of consuming
 // memory without limit. We model the infinite stream with an endless reader and
 // assert forward returns the capped-body error rather than reading forever.
@@ -957,13 +957,12 @@ func TestForward_UnboundedResponseStreamIsBounded(t *testing.T) {
 	}
 }
 
-// BRG-008-T15 — the transport bounds are fixed in code, not operator-tunable:
+// the transport bounds are fixed in code, not operator-tunable:
 // there is intentionally NO env override for the request timeout, the response
 // cap, or the inbound-frame cap (a hostile launcher config can't widen them to
 // hang the bridge or lift the OOM guard). Pin the exact values so a change is a
 // deliberate, reviewed edit to the constants.
 func TestTransportConstantsAreFixed(t *testing.T) {
-	// closes BRG-008-T15
 	if httpTimeout != 120*time.Second {
 		t.Errorf("httpTimeout = %v, want 120s", httpTimeout)
 	}
@@ -975,14 +974,13 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	}
 }
 
-// BRG-008-T10 — a stalled portal that never responds is bounded by the client
+// a stalled portal that never responds is bounded by the client
 // timeout: client.Do returns a timeout error, forward surfaces it, and serve
 // maps it to a synthetic -32603 rather than hanging forever. We exercise the
 // MECHANISM with a short-timeout client against a handler that blocks until the
 // client gives up (the production cap is 120s, asserted separately by
 // TestTransportConstantsAreFixed — we don't wait two minutes here).
 func TestForward_ClientTimeoutBecomesError(t *testing.T) {
-	// closes BRG-008-T10
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// Block until the client disconnects (its timeout fires) or the test

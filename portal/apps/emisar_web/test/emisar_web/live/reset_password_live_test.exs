@@ -27,7 +27,7 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
     test "the email field is required (a blank email is blocked client-side, no mint)", %{
       conn: conn
     } do
-      # closes AUTH-008-T06 — like the magic-link send, the reset-request handler has
+      # like the magic-link send, the reset-request handler has
       # no `else` and never server-validates a blank email (it falls through to the
       # same anti-enumeration panel). A blank submit is blocked by the `required` HTML
       # attribute on the email input — the gate is the browser attr, not a changeset.
@@ -124,7 +124,7 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
 
   describe "token security" do
     test "a reused reset token is uniformly invalid on the second use", %{conn: conn} do
-      # closes AUTH-009-T10 — the reset deletes the token in the same txn, so a
+      # the reset deletes the token in the same txn, so a
       # replayed token (double-clicked link, reused link) finds no row and the
       # second attempt fails with the same uniform invalid-or-expired error.
       user = Emisar.Fixtures.user_fixture()
@@ -160,7 +160,7 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
 
     test "a confirm/magic token presented at the reset endpoint is uniformly invalid (wrong context)",
          %{conn: conn} do
-      # closes AUTH-009-T11 — tokens are bound to a `context`; the reset consumer
+      # tokens are bound to a `context`; the reset consumer
       # matches `context == "reset_password"`. A valid (but wrong-context)
       # confirmation token can't be used to rotate a password — same uniform
       # error as an expired one.
@@ -186,7 +186,7 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
     end
 
     test "a soft-deleted user can't reset their password", %{conn: conn} do
-      # closes AUTH-009-T12 — the reset token resolves to no LIVE user once the
+      # the reset token resolves to no LIVE user once the
       # row is soft-deleted, so the consume returns the same uniform invalid
       # error rather than rotating a tombstoned account's password.
       user = Emisar.Fixtures.user_fixture()

@@ -138,7 +138,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     # → nil), distinct from the too-short fast path. Every failure shape lands
     # on the same JSON-RPC -32001 envelope + the RFC 9728 challenge header.
     test "a hash-miss emk- secret is unauthorized", %{conn: conn} do
-      # closes MCP-001-T08
       bogus = "emk-" <> String.duplicate("0", 40)
 
       conn =
@@ -152,7 +151,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a revoked emk- key is unauthorized", %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T06
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
       {:ok, raw, key} = ApiKeys.create_key(%{name: "to-revoke-#{unique()}"}, subject)
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
@@ -167,7 +165,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a literal `Bearer` with no token is unauthorized", %{conn: conn} do
-      # closes MCP-001-T12
       body =
         conn
         # No trailing space/token — never the `"Bearer " <> raw` shape.
@@ -179,7 +176,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "an empty `Bearer ` token is unauthorized", %{conn: conn} do
-      # closes MCP-001-T12
       body =
         conn
         |> put_req_header("authorization", "Bearer ")
@@ -191,7 +187,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-Bearer scheme (Basic / Token) is unauthorized",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T05
       raw = make_api_key!(account, user)
 
       for scheme <- ["Basic " <> raw, "Token " <> raw, "bearer " <> raw] do
@@ -207,7 +202,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a key for a soft-deleted account is unauthorized",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T09
       raw = make_api_key!(account, user)
 
       # The key still resolves, but fetch_account_by_id uses not_deleted() —
@@ -228,7 +222,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "every 401 carries the RFC 9728 WWW-Authenticate challenge",
          %{conn: conn} do
-      # closes MCP-001-T10
       # The challenge points an unauthenticated MCP client at the protected-
       # resource metadata so it can discover the AS and start the OAuth flow.
       # MCP.Auth sets it on the conn for ANY resolve failure — assert it's
@@ -245,7 +238,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "OAuth (emo-) token edges" do
     test "emk- and emo- dispatch with identical attribution (no path branches on bearer kind)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T03
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       subject = subject_for(account, user)
@@ -299,7 +291,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an expired emo- token is unauthorized",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T07
       {emo, key} = mint_oauth_token!(account, user)
 
       # Push access_expires_at into the past — resolve_access_token's
@@ -320,7 +311,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an emo- token whose backing key was revoked is unauthorized",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-001-T13
       subject = subject_for(account, user)
       {emo, key} = mint_oauth_token!(account, user)
 
@@ -342,13 +332,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "scope guard edge (NULL scopes)" do
     test "the scopes column is NOT NULL — the NULL precondition can't exist",
          %{account: account, user: user} do
-      # closes MCP-002-T16
       # The spec row posits a key row with NULL scopes reaching the
       # `key.scopes || []` guard. That precondition is UNREACHABLE: the DB
       # enforces NOT NULL on api_keys.scopes (column default []), so a NULL can
       # never be persisted — the `|| []` in require_scope is dead-but-defensive.
       # We pin the actual guarantee: the constraint rejects a NULL write, so the
-      # only reachable fail-closed path is the empty-array case (MCP-002-T14).
+      # only reachable fail-closed path is the empty-array case.
       subject = subject_for(account, user)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "null-scopes-#{unique()}"}, subject)
 
@@ -364,7 +353,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "ping scope + auth" do
     test "ping works with a read-only key (no scope check on ping)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-005-T02
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
       body =
@@ -377,7 +365,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "an unauthenticated ping is 401 (the auth plug runs first)", %{conn: conn} do
-      # closes MCP-005-T03
       body =
         conn
         |> rpc("ping", %{}, 7)
@@ -391,7 +378,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "notifications (silent drop)" do
     test "an unknown notification name is still a 202 silent drop (not -32601)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-006-T02, MCP-007-T10
       raw = make_api_key!(account, user)
       # The prefix match on "notifications/" wins over the unknown-method clause,
       # so a never-heard-of notification is dropped, never a method-not-found error.
@@ -406,7 +392,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a notification carrying an id is still dropped (prefix match wins)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-006-T03
       raw = make_api_key!(account, user)
       # An id on a notifications/* frame doesn't promote it to a request — the
       # method prefix decides, so it's a no-reply 202 with an empty body.
@@ -429,7 +414,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     # the MCP controllers wire — the per-bearer "mcp"-style bucket — to pin the
     # over-limit boundary + per-bearer grain that protects the MCP surface.
     test "over the limit returns 429 + Retry-After, keyed per bearer", %{conn: conn} do
-      # closes MCP-003-T02, MCP-003-T08
       previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
       Application.put_env(:emisar_web, :rate_limit_enabled, true)
       on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
@@ -541,7 +525,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "initialize is NOT scope-gated — both read-only and execute-only keys handshake",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-004-T03
       # The handshake precedes capability negotiation, so it carries no scope
       # gate (only the auth plug). A key of EITHER single scope completes it.
       for scopes <- [["actions:read"], ["actions:execute"]] do
@@ -559,14 +542,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "initialize still requires a valid bearer (auth plug runs first)", %{conn: conn} do
-      # closes MCP-004-T04
       body = conn |> rpc("initialize") |> json_response(401)
       assert body["error"]["code"] == -32001
     end
 
     test "a blank client-sent Mcp-Session-Id is replaced with a freshly minted one",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-004-T07
       raw = make_api_key!(account, user)
 
       conn =
@@ -584,7 +565,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "initialize with no clientInfo records nothing and still handshakes",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-004-T10
       subject = subject_for(account, user)
       {:ok, raw, key} = ApiKeys.create_key(%{name: "no-ci-#{unique()}"}, subject)
 
@@ -1305,7 +1285,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a whitespace-only reason is rejected with reason_required",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-013-T03
       raw = make_api_key!(account, user)
 
       body =
@@ -1323,7 +1302,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-string reason is rejected with reason_required",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-013-T04
       raw = make_api_key!(account, user)
 
       body =
@@ -1341,7 +1319,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a reason-denied dispatch leaves no orphan run row",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-013-T07
       raw = make_api_key!(account, user)
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -1362,7 +1339,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "cross-account isolation" do
     test "a key cannot tools/call an action that exists only in another account",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-011-T11
       other = setup_other_account()
       make_runner!(other.account, name: "b-host") |> advertise_action!(action_id: "b.only.action")
 
@@ -1387,7 +1363,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "wait_for_run on a foreign-account run id reads as not found",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-016-T06
       other = setup_other_account()
       b_runner = make_runner!(other.account, name: "b-host")
 
@@ -1417,7 +1392,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "recent_runs scope:account never returns another account's runs",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T12
       other = setup_other_account()
       b_runner = make_runner!(other.account, name: "b-host")
 
@@ -1447,7 +1421,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "scope denial matrix (read verbs)" do
     test "an execute-only key is denied list_runbooks (needs actions:read)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-002-T06
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
@@ -1459,7 +1432,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an execute-only key is denied get_runbook (needs actions:read)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-002-T07
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
@@ -1474,7 +1446,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an empty scopes:[] key fails closed on every gated verb",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-002-T14
       raw = make_api_key!(account, user, scopes: [])
 
       for {name, args, required} <- [
@@ -1507,7 +1478,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   describe "tools/list ordering" do
     test "tools are sorted alphabetically by name", %{conn: conn, account: account, user: user} do
-      # closes MCP-009-T03
       runner = make_runner!(account, name: "host-1")
       # Advertise out of alphabetical order so a non-sorting impl would leak it.
       advertise_action!(runner, action_id: "zzz.last", title: "Z")
@@ -1532,7 +1502,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "runner fan-out boundary (exactly 16 vs 17)" do
     test "exactly 16 runners dispatches all 16 (the cap is inclusive)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T06
       names = for i <- 1..16, do: "fan-#{i}"
 
       for name <- names do
@@ -1561,7 +1530,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "17 runners is rejected with too_many_runners and creates no runs",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T05, MCP-012-T06
       names = for i <- 1..17, do: "fan-#{i}"
 
       for name <- names do
@@ -1597,7 +1565,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-numeric limit is rejected, not silently coerced",
          %{conn: conn, raw: raw} do
-      # closes MCP-020-T04
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1609,7 +1576,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "limit 0 is rejected (non-positive)", %{conn: conn, raw: raw} do
-      # closes MCP-020-T04
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1621,7 +1587,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "limit -1 is rejected (non-positive)", %{conn: conn, raw: raw} do
-      # closes MCP-020-T04
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1633,7 +1598,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a limit above 100 is clamped, not rejected", %{conn: conn, raw: raw} do
-      # closes MCP-020-T05
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1645,7 +1609,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "the documented minimum of 1 is accepted", %{conn: conn, raw: raw} do
-      # closes MCP-020-T05
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1659,7 +1622,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "recent_runs summary fields" do
     test "a returned run carries run_id, action_id, runner, status, exit_code, reason, finished_at",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T13
       runner = make_runner!(account, name: "host-1")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -1700,7 +1662,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "idempotency per-api_key isolation" do
     test "two keys sharing the same idempotency string get two distinct runs",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-014-T13
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
 
@@ -1737,7 +1698,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "idempotency replay preserves the original outcome" do
     test "a replayed denied run surfaces denied_by_policy again",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-014-T14
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
@@ -1791,7 +1751,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a replayed pending_approval run routes back to wait_for_run",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-014-T15
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
@@ -1870,7 +1829,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "clientInfo with no name records nothing and preserves a prior value",
          %{conn: conn, raw: raw, key: key, subject: subject} do
-      # closes MCP-026-T02, MCP-026-T05
       # Establish a good prior value.
       init_with_client_info(conn, raw, %{"name" => "Claude Code", "version" => "1.0"})
       {:ok, after_first} = ApiKeys.fetch_api_key_by_id(key.id, subject)
@@ -1886,7 +1844,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an oversized field is clipped to 200 chars",
          %{conn: conn, raw: raw, key: key, subject: subject} do
-      # closes MCP-026-T03
       init_with_client_info(conn, raw, %{"name" => String.duplicate("n", 300)})
 
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
@@ -1895,7 +1852,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-map clientInfo records nothing and never breaks the handshake",
          %{conn: conn, raw: raw, key: key, subject: subject} do
-      # closes MCP-026-T04
       body = init_with_client_info(conn, raw, "not-a-map")
 
       # Handshake still succeeds.
@@ -1910,7 +1866,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "cross-account read isolation (runbook verbs)" do
     test "list_runbooks never surfaces another account's published runbook",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-018-T06
       other = setup_other_account()
       publish_runbook!(other.account, other.user, slug: "b-secret-runbook")
 
@@ -1931,7 +1886,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "get_runbook on another account's slug reads as not found",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T09
       other = setup_other_account()
       publish_runbook!(other.account, other.user, slug: "b-cross-acct")
 
@@ -1954,7 +1908,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "get_runbook resolution (id + draft)" do
     test "resolves a published runbook by its id when the slug doesn't match",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T02
       runbook = publish_runbook!(account, user, slug: "by-id-lookup")
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
@@ -1974,7 +1927,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a draft runbook is not resolvable (only published) → not found",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T08
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
       {:ok, draft} =
@@ -2012,7 +1964,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "recent_runs scope isolation + filters" do
     test "scope=own isolates per api_key — key B never sees key A's runs",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T09
       runner = make_runner!(account, name: "host-1")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -2054,7 +2005,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "scope=account widens to a sibling key's runs (same tenant)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T10
       runner = make_runner!(account, name: "host-1")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -2087,7 +2037,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an unknown runner filter reports runner_not_found, not an empty list",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T07
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
       body =
@@ -2103,7 +2052,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "no matching runs renders the friendly empty intro",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T11
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
       body =
@@ -2120,7 +2068,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "per-call scope re-check (IL-15)" do
     test "initialize is ungated but the later tools/call still re-checks execute",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-002-T15
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user, scopes: ["actions:read"])
@@ -2156,7 +2103,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "denied_by_policy renders the override reason verbatim + isError",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-028-T10
       raw = make_api_key!(account, user)
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -2198,7 +2144,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "pending_approval is a tip, not an error (isError=false)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-028-T14
       raw = make_api_key!(account, user)
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -2234,7 +2179,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an args changeset failure surfaces invalid_args with the offending field",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-028-T07
       # The portal doesn't re-validate args against the runner's arg spec (the
       # runner does that) — the reachable changeset failure is the size guard.
       # Oversized args fail `validate_args_size` → `{:error, changeset}` →
@@ -2267,7 +2211,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "error taxonomy — pack trust + attestation (RPC, end-to-end)" do
     test "pack_untrusted renders the directing block + isError, no run created",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-028-T06
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
       # A custom (no-baseline) pack lands :pending — untrusted — so dispatch
@@ -2298,7 +2241,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "runner_requires_attestation renders + the run isn't created",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-028-T08, MCP-015-T05
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
       runner = make_runner!(account, name: "signed-host")
@@ -2326,7 +2268,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an extra attestation key is stripped by Map.take; the 4 valid fields are kept",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-015-T04
       # The spec row's premise ("extra keys → nil") doesn't match the real
       # code: `normalize_attestation` does `Map.take(att, [4 keys])` FIRST,
       # so a 5th key is discarded before the `map_size == 4` check — the
@@ -2373,7 +2314,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "JSON-RPC frame edges" do
     test "a frame missing `method` is an invalid request (-32600 @ 400)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-007-T03
       raw = make_api_key!(account, user)
 
       # jsonrpc 2.0 but no `method` — the catch-all `handle/2` clause rejects it
@@ -2389,7 +2329,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a malformed JSON body is a JSON-RPC parse error (-32700)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-007-T06
       # The controller moduledoc promises "Parse errors → -32700", but a malformed
       # body is consumed by Plug.Parsers (endpoint-level) BEFORE the controller —
       # it raises Plug.Parsers.ParseError, which Phoenix renders as a plain 400, not
@@ -2409,7 +2348,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-1 `id` is echoed back verbatim",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-007-T08
       raw = make_api_key!(account, user)
 
       # The id is opaque to the server — a string id round-trips unchanged so the
@@ -2425,7 +2363,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "omitting `params` defaults to an empty map (no crash)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-007-T09
       raw = make_api_key!(account, user)
 
       # `initialize` reads clientInfo out of params; a frame with NO params key at
@@ -2442,7 +2379,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a scope-denied tools/call returns the error body at HTTP 200, not 4xx",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-007-T07
       # Only a malformed frame (400) or an auth failure (401, the plug) leave 200.
       # An in-band scope denial is a normal JSON-RPC error envelope at HTTP 200 so
       # the transport stays a single happy status and the client reads `error`.
@@ -2468,7 +2404,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "tools/list descriptor body" do
     test "a tool's description carries side-effects, live runner status, and a Risk line",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-009-T08
       runner = make_runner!(account, name: "only-host")
 
       advertise_action!(runner,
@@ -2504,7 +2439,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "clientInfo capture (title + dispatch propagation)" do
     test "the optional `title` field is captured alongside name + version",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-026-T08
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
@@ -2535,7 +2469,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a run dispatched after initialize carries the captured client_info",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-026-T06
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
@@ -2571,7 +2504,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "tools/list visibility (creator scope + catalog completeness)" do
     test "an action only an out-of-creator-scope runner advertises is hidden",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-009-T06
       # Two runners in different groups; the key-creator's membership is scoped to
       # only the `allowed` group. The action on the out-of-scope runner must be
       # absent from tools/list — the per-user scope layer hides it even though the
@@ -2598,7 +2530,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "the complete catalog is returned unpaginated (hundreds of actions)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-009-T10
       # The MCP reads the COMPLETE catalog (Service uses page: [limit: 1000]+);
       # there is no MCP-side pagination. Seed well past a default page size and
       # assert every distinct action tool comes back in one tools/list.
@@ -2623,7 +2554,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "the catalog is re-fetched per call — a runner added between calls shows up",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T13
       # Resolution reads the live catalog + runner set on EVERY call (no caching),
       # so inventory mutated between two tools/list calls is reflected immediately.
       raw = make_api_key!(account, user)
@@ -2662,7 +2592,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "the dispatched run carries source/api_key_id/session/membership/client_info",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-011-T09, MCP-011-T13
       subject = subject_for(account, user)
 
       {:ok, raw, key} =
@@ -2703,7 +2632,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "control keys are stripped from the action args the runner sees",
          %{conn: conn, account: account, user: user, runner: runner} do
-      # closes MCP-011-T06
       # Advertise an action with a real arg so it's distinguishable from the
       # reserved control keys in the stored args map.
       advertise_action!(runner,
@@ -2745,7 +2673,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a missing reason is a per-runner reason_required, not a crash",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-011-T12
       raw = make_api_key!(account, user)
       subject = subject_for(account, user)
 
@@ -2766,7 +2693,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a valid reason is stored verbatim on the run",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-013-T06
       raw = make_api_key!(account, user)
       subject = subject_for(account, user)
 
@@ -2790,7 +2716,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "dispatch deny matrix (RPC, runner resolution)" do
     test "a disabled named runner is runner_not_allowed with the disabled reason",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T09
       runner = make_runner!(account, name: "soon-disabled")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       subject = subject_for(account, user)
@@ -2815,7 +2740,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a named runner outside the creator's user scope is runner_not_allowed (scope reason)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T10
       allowed = make_runner!(account, name: "in-scope", group: "allowed")
       blocked = make_runner!(account, name: "out-scope", group: "blocked")
       advertise_action!(allowed, action_id: "linux.uptime", risk: "low")
@@ -2842,7 +2766,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "scope_blocked never reveals the unreachable runner's name",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-012-T12
       # An action exists in the account but only on a runner outside the creator
       # scope. Auto-pick (no `runners` arg) → scope_blocked. The message must say
       # it exists somewhere unreachable WITHOUT naming the runner that has it.
@@ -2884,7 +2807,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a non-enforcing runner ignores an absent attestation and dispatches",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-015-T06
       # The shared-setup runner does NOT enforce signatures, so a call with no
       # attestation dispatches normally — the run is created with attestation nil.
       raw = make_api_key!(account, user)
@@ -2906,7 +2828,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "the portal relays a well-formed attestation verbatim without verifying it",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-015-T07
       # The portal can't verify Ed25519 — the runner does. So even a signature
       # the portal has no way to check is stored byte-for-byte on the run (for
       # audit + relay), never forged or rejected portal-side. We give a
@@ -2943,7 +2864,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "wait_for_run argument + cap edges (RPC)" do
     test "a blank run_id is a bad-arguments error block",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-016-T03
       raw = make_api_key!(account, user)
 
       body =
@@ -2960,7 +2880,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "the wait_for_run timeout clamps any over-cap duration to the 90s server cap" do
-      # closes MCP-016-T07
       # The wait_for_run descriptor copy says "5m", but the server caps at
       # @max_get_run_wait_ms (90s) so a long-poll can't pin a request process for
       # five minutes. Assert the cap CONSTANT + clamp BRANCH rather than sleeping:
@@ -2984,7 +2903,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test ~s|an explicit wait:"0" is fire-and-forget — returns immediately with a run_id|,
          %{conn: conn, account: account, user: user} do
-      # closes MCP-017-T03
       # A wait:"0" dispatch must return immediately with the dispatched run's id
       # + a wait_for_run tip so the LLM can poll — never a dead-end bare status.
       # The run IS created (status :sent), but the RPC content renders it as
@@ -3013,7 +2931,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "an unparseable wait is rejected by parse_wait (the handler then uses the full window)" do
-      # closes MCP-017-T05
       # The RPC handle_tool_call maps an invalid `wait` to the full max_wait_ms
       # (60s), NOT to 0 (fire-and-forget) — the LLM fumbling `wait` should still
       # block for output. Assert the two halves of that fallback as CONSTANTS (no
@@ -3028,8 +2945,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "cross-account run never reaches the rendered payload (RPC wait_for_run)" do
     test "a foreign-account run id is not_found before full_run_payload is built",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-029-T07
-      # Distinct from the REST get_run 404 path (MCP-025-T08): here the RPC
+      # Distinct from the REST get_run 404 path: here the RPC
       # wait_for_run → Service.fetch_run subject-scopes the lookup, so a foreign
       # run id returns {:error, :not_found} and full_run_payload (the output/hash/
       # policy renderer) is NEVER reached — no payload field leaks across tenants.
@@ -3069,7 +2985,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "list_runbooks read edges (RPC)" do
     test "an execute-only key is denied list_runbooks (needs actions:read)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-018-T02
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
@@ -3081,7 +2996,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "no published runbooks renders the friendly empty intro",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-018-T03
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
       body =
@@ -3096,7 +3010,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a draft runbook is excluded — only published are listed",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-018-T05
       subject = subject_for(account, user)
 
       # A published one (shows) ...
@@ -3131,7 +3044,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "get_runbook read edges (RPC)" do
     test "an execute-only key is denied get_runbook (needs actions:read)",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T03
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
@@ -3143,7 +3055,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a blank runbook arg is a bad-arguments error block",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T05
       raw = make_api_key!(account, user, scopes: ["actions:read"])
 
       body =
@@ -3158,7 +3069,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a step selector matching no live runner resolves to an empty target.runners",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-019-T07
       # Publish a runbook whose step targets a group with NO connected runner. The
       # detail still resolves, but target.runners is empty and the guidance tells
       # the LLM to pick a runner from tools/list.
@@ -3208,7 +3118,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "recent_runs runner + action filters (RPC)" do
     test "runner and action filters narrow the returned runs",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-020-T08
       subject = subject_for(account, user)
       web = make_runner!(account, name: "web1")
       db = make_runner!(account, name: "db1")
@@ -3256,7 +3165,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "initialize capabilities (no server-push)" do
     test "advertises tools.listChanged=false — the client must re-list, never a push",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-004-T11
       # The server has no `notifications/tools/list_changed` channel: tools/list is
       # a point-in-time snapshot the client re-polls. The handshake pins that by
       # advertising listChanged=false, so a conformant client never waits for a push.
@@ -3276,7 +3184,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "tools/list with an orphaned action (no live runner)" do
     test "an action whose only runner row is gone is still listed, with empty runners",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-009-T07
       # The catalog (RunnerAction rows) outlives the runner row: soft-deleting the
       # runner drops it from list_all_runners_for_account (not_deleted), but its
       # advertised action persists. The descriptor still appears so the LLM sees the
@@ -3312,7 +3219,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "reason gate lives at the context layer (IL)" do
     test "Runs.dispatch_run rejects a missing reason before any run row exists",
          %{account: account, user: user} do
-      # closes MCP-013-T05
       # The MCP per-runner reason_required block (covered elsewhere) is downstream
       # of the real gate: `Runs.dispatch_run` runs `require_reason` in its `with`
       # chain BEFORE creating the run, so the rejection holds even when a caller
@@ -3343,7 +3249,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "inline wait does not block on a pending_approval run" do
     test "a require_approval dispatch with a long wait returns immediately with the tip",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-017-T07
       # maybe_poll_to_terminal only polls runs that came back `:running`; a
       # `:pending_approval` run is never inline-waited (a human gate could take
       # minutes). So even a full-window `wait` returns at once with the wait_for_run
@@ -3391,7 +3296,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   describe "inline wait clamp (RPC tools/call)" do
     test "an over-cap inline wait clamps to the 60s max_wait_ms" do
-      # closes MCP-017-T09
       # handle_tool_call runs `parse_wait(wait, max_wait_ms())`, so any duration past
       # the inline cap is clamped to 60s — a tools/call can't pin a request process
       # longer than the dispatch window. Assert the cap CONSTANT + clamp branch (no
@@ -3408,7 +3312,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "wait_for_run recheck timer (missed-broadcast safety net)" do
     test "a terminal transition with no broadcast is still caught by the ~2s recheck",
          %{conn: conn, account: account, user: user} do
-      # closes MCP-016-T11
       # The long-poll is event-driven (wakes on the run's `{:run_updated, _}`
       # broadcast) with a ~2s recheck timer as the safety net. Here we transition
       # the run to terminal via a RAW update_all — which does NOT broadcast — so the
@@ -3458,7 +3361,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # terminal block — proven by the exit code surfacing despite no broadcast ever
       # arriving. (The `status=` word is absent here because full_run_payload carries
       # the status as the Ecto.Enum atom :success and ContentBlocks reads only binary
-      # status values — the separate MCP-017-T03 render bug; the numeric exit_code is
+      # status values — the separate render bug; the numeric exit_code is
       # unaffected and is the unambiguous proof the terminal payload was reached.)
       assert content_text(body) =~ "exit_code=0"
     end
@@ -3477,7 +3380,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "every call under the limit passes (no throttle)", %{conn: conn} do
-      # closes MCP-003-T01
       opts =
         RateLimit.init(bucket: "mcp-under-#{unique()}", limit: 5, window_ms: 60_000, by: :bearer)
 
@@ -3488,7 +3390,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a no-bearer flood is capped on the IP fallback before auth can run", %{conn: conn} do
-      # closes MCP-003-T04, MCP-003-T06
       # `by: :bearer` falls back to the client IP when no bearer is present, and the
       # limiter plug sits BEFORE :authenticate — so an unauthenticated hammer is
       # throttled on its IP bucket without ever reaching the auth plug. Same conn

@@ -184,7 +184,7 @@ defmodule EmisarWeb.AuthFlowTest do
       conn: conn,
       user: user
     } do
-      # closes AUTH-003-T07 — the pending-MFA marker has a 5-min TTL. `get_pending_mfa`
+      # the pending-MFA marker has a 5-min TTL. `get_pending_mfa`
       # returns nil once `pending_mfa_expires_at <= now`, so an otp-only POST that
       # arrives after the window (the operator stepped away) is no longer a valid
       # step-up: it falls through to branch (c) — the pending state is cleared and

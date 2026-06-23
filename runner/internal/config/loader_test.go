@@ -189,7 +189,7 @@ execution:
 	}
 }
 
-// TestLoad_EMISAR_URLOverride covers RUN-031-T14: $EMISAR_URL overrides
+// TestLoad_EMISAR_URLOverride covers: $EMISAR_URL overrides
 // cloud.url from the file (loader.go:36-40), so the same baked-in config can
 // target dev/prod control planes without re-templating. The override lands
 // before Validate, so the env value is the one that's transport-checked.
@@ -229,7 +229,7 @@ func TestLoad_EmptyEMISAR_URLLeavesConfig(t *testing.T) {
 	}
 }
 
-// TestLoad_MalformedAndUnreadable covers RUN-031-T15: a parse error on broken
+// TestLoad_MalformedAndUnreadable covers: a parse error on broken
 // YAML and a read error on a missing file are both surfaced as wrapped errors
 // (loader.go). No defaults are silently applied over a file that can't be read.
 func TestLoad_MalformedAndUnreadable(t *testing.T) {

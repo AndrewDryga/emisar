@@ -226,7 +226,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a runbook whose resolved fan-out exceeds the cap" do
-      # closes RBK-007-T09 (resolve_plan half) RBK-008-T13
+      # (resolve_plan half)
       {_account, subject, _runner} = account_with_runner()
 
       # 21 steps × 50 runner targets = 1050 resolved runs, over the 1000 cap. The
@@ -251,7 +251,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a step whose policy requires approval queues a pending-approval run, not a hard error" do
-      # closes RBK-008-T07
       {_user, account, subject} = owner_subject_fixture()
 
       # The same per-step policy/approval gate a normal run hits: require_approval
@@ -287,7 +286,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an api_client without a membership is refused with :membership_required" do
-      # closes RBK-008-T20
       {_user, account, owner} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
@@ -308,7 +306,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "dispatching to an offline in-account runner queues the run rather than erroring" do
-      # closes RBK-008-T10
       {_user, account, subject} = owner_subject_fixture()
       _ = policy_fixture(account_id: account.id)
       # An offline runner that still advertises the action. A runner-id selector
@@ -332,7 +329,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a single-step runbook that can't dispatch at all returns the bare reason" do
-      # closes RBK-008-T11
       {_user, account, subject} = owner_subject_fixture()
       _ = policy_fixture(account_id: account.id)
       # A runner in the account that NEVER advertised the action → its sole slot
@@ -350,7 +346,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "dispatch_runbook requires the reason to be a binary (function-head guard)" do
-      # closes RBK-008-T17
       {_account, subject, runner} = account_with_runner()
 
       runbook =
@@ -368,7 +363,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "reordering steps changes which step fans out into the first wave" do
-      # closes RBK-013-T05
       {account, subject, runner} = account_with_runner()
 
       # 3 runners in one group + a 2-step runbook = 6 work-list items across 2
@@ -407,7 +401,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "duplicate auto-derived step ids pass a draft save but are refused at dispatch" do
-      # closes RBK-015-T06
       {_account, subject, runner} = account_with_runner()
       target = runner_target(runner)
 
@@ -474,7 +467,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "args count toward the serialized definition byte cap" do
-      # closes RBK-016-T06
       {_user, _account, subject} = owner_subject_fixture()
 
       # No single arg/step is oversized and the step count (10) is well under 100 —
@@ -493,7 +485,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a step with exactly 50 targets is accepted (the selector boundary)" do
-      # closes RBK-017-T04
       {_user, _account, subject} = owner_subject_fixture()
 
       # @max_selector_values is 50 — exactly 50 saves (the 51-rejected half is the
@@ -557,7 +548,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an operator (dispatch_run but not manage_runbooks) can resolve the plan" do
-      # closes RBK-007-T13
       {account, owner, runner} = account_with_runner()
       runbook = published_runbook!(owner, "operable", uptime_steps(1, runner_target(runner)))
 
@@ -829,7 +819,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "the execution deleted between waves halts the continuation" do
-      # closes RBK-009-T09
       {account, owner, runner} = account_with_runner()
       {_membership, operator} = operator_in(account)
 
@@ -853,7 +842,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a frozen work-list index with no matching step is dropped; the rest rehydrate" do
-      # closes RBK-009-T10
       {account, owner, runner} = account_with_runner()
       {_membership, operator} = operator_in(account)
 
@@ -947,7 +935,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "fetch_runbook_by_id excludes a soft-deleted runbook" do
-      # closes RBK-002-T07
       {_user, _account, subject} = owner_subject_fixture()
       runbook = draft_runbook!(subject, "tombstoned-book")
 
@@ -961,7 +948,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "fetch_runbook_by_id without view_runbooks is :unauthorized before any DB scope" do
-      # closes RBK-002-T06
       {_user, account, subject} = owner_subject_fixture()
       runbook = draft_runbook!(subject, "guarded-book")
 
@@ -1011,7 +997,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a new version re-checks the definition step cap" do
-      # closes RBK-004-T06
       {_user, _account, subject} = owner_subject_fixture()
       v1 = draft_runbook!(subject, "bounds-book")
 
@@ -1028,7 +1013,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a new version re-runs the same metadata validation as create" do
-      # closes RBK-004-T08
       {_user, _account, subject} = owner_subject_fixture()
       v1 = draft_runbook!(subject, "meta-book")
 
@@ -1042,7 +1026,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a new version writes a runbook.updated audit row carrying from/to version" do
-      # closes RBK-004-T11
       {_user, account, subject} = owner_subject_fixture()
       v1 = draft_runbook!(subject, "audited-version-book")
 
@@ -1084,7 +1067,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an operator (view-only, no manage_runbooks) cannot create a runbook" do
-      # closes RBK-003-T13
       {_user, account, _owner} = owner_subject_fixture()
       operator = subject_for(user_fixture(), account, role: :operator)
 
@@ -1094,7 +1076,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a duplicate (account, slug, version) is rejected by the unique constraint" do
-      # closes RBK-003-T04
       {_user, _account, subject} = owner_subject_fixture()
 
       attrs = %{
@@ -1118,7 +1099,6 @@ defmodule Emisar.RunbooksTest do
 
   describe "create_runbook audit + broadcast" do
     test "create writes a runbook.created audit row and broadcasts to the list feed" do
-      # closes RBK-003-T03
       {_user, account, subject} = owner_subject_fixture()
 
       # The runbook list LV subscribes to this topic to live-refresh; the create
@@ -1240,7 +1220,6 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a non-manager (viewer or operator) cannot publish" do
-      # closes RBK-006-T09
       {_user, account, owner} = owner_subject_fixture()
 
       draft =

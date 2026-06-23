@@ -163,7 +163,7 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.create_key(%{name: "ci", scopes: ["actions:read"]}, subject)
     end
 
-    # closes AUD-004-T01 (audit half), AUD-010-T01 (audit half) — minting a SIEM
+    # (audit half), (audit half) — minting a SIEM
     # export token (the audit:read bucket) writes an `api_key.created` audit row
     # in the SAME transaction (create_key's Multi.insert(:audit, …)), stamped with
     # the new key as subject + its scopes in the payload. The mint of a
@@ -339,7 +339,7 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.reload!(key_a).revoked_at
     end
 
-    # closes AUD-011-T02 (context half) — revoking an already-revoked key
+    # (context half) — revoking an already-revoked key
     # succeeds again rather than erroring: the fetch_and_update re-reads the
     # (still not_deleted) row and re-stamps revoked_at. The affordance is gated
     # in the UI (the Revoke button only renders for non-revoked keys), but a

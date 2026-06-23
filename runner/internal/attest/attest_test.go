@@ -150,7 +150,7 @@ func TestVerifyMalformedSignature(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T08: args that cannot be JSON-marshaled surface as a (false,
+// args that cannot be JSON-marshaled surface as a (false,
 // error) from both Sign and Verify — never a silent false that a caller might
 // read as "validly signed but mismatched". A channel value is the simplest
 // unmarshalable type.
@@ -170,7 +170,7 @@ func TestSignVerifyUnmarshalableArgs(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T09: a raw secret in an arg value flows verbatim into the
+// a raw secret in an arg value flows verbatim into the
 // signing pre-image (it is part of the args digest's input). This pins the
 // accepted runner trade-off — args, including secret-bearing ones, are bound by
 // the signature; confidentiality of the persisted claim rests elsewhere (0o600
@@ -210,7 +210,7 @@ func TestSigningBytesIncludesRawSecretInDigestPreimage(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T10: a hostile arg value cannot smuggle in the newline
+// a hostile arg value cannot smuggle in the newline
 // delimiter or a field name to forge a different claim, because the args are
 // reduced to a fixed-width SHA-256 digest BEFORE being placed in the
 // newline-delimited layout. An arg whose value embeds "\n...Version..." and an
@@ -260,7 +260,7 @@ func TestDelimiterCannotBeSmuggledViaArgValue(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T11: the Version constant is the first signed line, so a
+// the Version constant is the first signed line, so a
 // signature made under one format revision cannot be replayed as another. A
 // verifier whose layout is built with a different version yields different
 // signing bytes and rejects the signature — preventing format-confusion across
@@ -294,7 +294,7 @@ func TestVersionPrefixPreventsFormatConfusion(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T12: canonical JSON sorts map keys at every level, so two
+// canonical JSON sorts map keys at every level, so two
 // claims whose Args differ only by Go map iteration / declared key order produce
 // the same digest and the same signature. This is what lets the control plane
 // round-trip args through jsonb without breaking the signature.
@@ -330,7 +330,7 @@ func TestCanonicalJSONKeyOrderNormalized(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T13: empty Args produces a stable, deterministic digest that
+// empty Args produces a stable, deterministic digest that
 // matches the "empty args" cross-impl vector — and nil Args must canonicalize
 // identically, because a no-argument action signed by the MCP (which always
 // signs over an empty map, mcp/sign.go) is verified by the runner with whatever
@@ -369,7 +369,7 @@ func TestEmptyAndNilArgsStableDigest(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T14: the two-copy drift guard. attest.go is duplicated VERBATIM
+// the two-copy drift guard. attest.go is duplicated VERBATIM
 // in the runner and mcp modules; the cross-impl vectors (vectorSeedHex/vectorPubHex
 // and each claim's bytes/sig) are the contract, IDENTICAL on both sides. The
 // per-vector TestSigningBytesVectors/TestSignVectors already fail if THIS copy's
@@ -409,7 +409,7 @@ func TestVersionIsTheCrossImplWireContract(t *testing.T) {
 	}
 }
 
-// closes RSEC-003-T15: Sign + Verify cost is the deterministic RFC 8032 Ed25519
+// Sign + Verify cost is the deterministic RFC 8032 Ed25519
 // cost plus one SHA-256 over the canonical args — the perf baseline for the
 // signing contract.
 func BenchmarkSignVerify(b *testing.B) {

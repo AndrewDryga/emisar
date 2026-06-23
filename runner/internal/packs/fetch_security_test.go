@@ -53,7 +53,7 @@ func writeReg(t *testing.T, tw *tar.Writer, name string, size int) {
 	}
 }
 
-// RSEC-011-T04 — loopback http is allowed for a local dev registry (the
+// loopback http is allowed for a local dev registry (the
 // accepted cleartext exception). httptest serves on 127.0.0.1, so a
 // successful Fetch over its plain-http URL proves the loopback carve-out.
 func TestFetch_AllowsLoopbackHTTP(t *testing.T) {
@@ -75,7 +75,7 @@ func TestFetch_AllowsLoopbackHTTP(t *testing.T) {
 	_ = dir
 }
 
-// RSEC-011-T06 — an absolute / leading-slash entry name is rejected by
+// an absolute / leading-slash entry name is rejected by
 // safeJoin before anything is written. The tar writer normalizes some
 // absolute names, so assert safeJoin directly for the leading-slash forms
 // and via a full extract for a clearly-absolute name.
@@ -95,7 +95,7 @@ func TestExtractTarGz_RejectsAbsoluteEntry(t *testing.T) {
 	}
 }
 
-// RSEC-011-T07 — an empty entry name is rejected. The tar writer refuses to
+// an empty entry name is rejected. The tar writer refuses to
 // emit an empty Name, so this exercises safeJoin (the function extractTarGz
 // calls for every header) directly.
 func TestSafeJoin_RejectsEmptyName(t *testing.T) {
@@ -104,7 +104,7 @@ func TestSafeJoin_RejectsEmptyName(t *testing.T) {
 	}
 }
 
-// RSEC-011-T09 — a single entry larger than maxSingleBytes (8 MiB) is
+// a single entry larger than maxSingleBytes (8 MiB) is
 // rejected. (Tested via an honest oversized header; the streaming
 // LimitReader/n>max guard for a header that lies smaller is unreachable from
 // an archive/tar-built fixture — see writeReg.)
@@ -118,7 +118,7 @@ func TestExtractTarGz_PerFileSizeCap(t *testing.T) {
 	}
 }
 
-// RSEC-011-T16 — an entry exactly at the per-file limit is accepted (only
+// an entry exactly at the per-file limit is accepted (only
 // strictly-greater is rejected). Boundary partner of T09.
 func TestExtractTarGz_PerFileSizeAtLimitAccepted(t *testing.T) {
 	dest := t.TempDir()
@@ -137,7 +137,7 @@ func TestExtractTarGz_PerFileSizeAtLimitAccepted(t *testing.T) {
 	}
 }
 
-// RSEC-011-T10 — the running total uncompressed cap (32 MiB) is enforced
+// the running total uncompressed cap (32 MiB) is enforced
 // across entries even when each entry is individually under the per-file
 // cap. The decompression-bomb guard.
 func TestExtractTarGz_TotalSizeCap(t *testing.T) {
@@ -155,7 +155,7 @@ func TestExtractTarGz_TotalSizeCap(t *testing.T) {
 	}
 }
 
-// RSEC-011-T11 — the entry-count cap (4000) is enforced. Build an archive of
+// the entry-count cap (4000) is enforced. Build an archive of
 // many tiny entries; extraction must abort past maxPackFiles.
 func TestExtractTarGz_EntryCountCap(t *testing.T) {
 	data := gzipTar(t, func(tw *tar.Writer) {
@@ -169,7 +169,7 @@ func TestExtractTarGz_EntryCountCap(t *testing.T) {
 	}
 }
 
-// RSEC-011-T13 — a non-200, non-404 status (e.g. 500) surfaces as an error
+// a non-200, non-404 status (e.g. 500) surfaces as an error
 // distinct from the 404 path.
 func TestFetch_Non200IsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +186,7 @@ func TestFetch_Non200IsError(t *testing.T) {
 	}
 }
 
-// RSEC-011-T14 — a corrupt gzip body surfaces as a wrapped error and the temp
+// a corrupt gzip body surfaces as a wrapped error and the temp
 // dir is removed (no half-extracted tree left behind). The cleanup closure is
 // internal, so assert no leak by counting emisar-pack-* temp dirs before/after.
 func TestFetch_CorruptGzipErrorsAndCleansTemp(t *testing.T) {
@@ -208,7 +208,7 @@ func TestFetch_CorruptGzipErrorsAndCleansTemp(t *testing.T) {
 	}
 }
 
-// RSEC-011-T15 — a nil HTTP client is accepted and Fetch falls back to its
+// a nil HTTP client is accepted and Fetch falls back to its
 // 30s-timeout default. Against a loopback server the request still succeeds,
 // proving the nil path constructs a working client rather than panicking.
 func TestFetch_NilClientUsesDefault(t *testing.T) {

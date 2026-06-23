@@ -26,7 +26,7 @@ func reRule(t *testing.T, name, pattern, repl string) Rule {
 	return r
 }
 
-// RSEC-006-T03 — Extend with empty extra returns the receiver unchanged (same
+// Extend with empty extra returns the receiver unchanged (same
 // instance, no copy), when the receiver has rules (redact.go:22-24).
 func TestEngine_ExtendEmptyExtraReturnsReceiver(t *testing.T) {
 	base := New([]Rule{litRule(t, "b", "B", "[b]")})
@@ -40,7 +40,7 @@ func TestEngine_ExtendEmptyExtraReturnsReceiver(t *testing.T) {
 	}
 }
 
-// RSEC-006-T04 — Extend on a nil or empty receiver yields a fresh engine of the
+// Extend on a nil or empty receiver yields a fresh engine of the
 // extra rules (redact.go:19-21).
 func TestEngine_ExtendNilOrEmptyReceiver(t *testing.T) {
 	extra := []Rule{litRule(t, "x", "SECRET", "[x]")}
@@ -66,7 +66,7 @@ func TestEngine_ExtendNilOrEmptyReceiver(t *testing.T) {
 	})
 }
 
-// RSEC-006-T05 — Apply reports per-rule hit counts only for rules that fired,
+// Apply reports per-rule hit counts only for rules that fired,
 // with the correct count, and omits rules that matched nothing (redact.go:45-55).
 func TestEngine_ApplyHitsOnlyFiredRules(t *testing.T) {
 	e := New([]Rule{
@@ -85,7 +85,7 @@ func TestEngine_ApplyHitsOnlyFiredRules(t *testing.T) {
 	}
 }
 
-// RSEC-006-T06 — the Hit.Type label is derived from which field the rule set:
+// the Hit.Type label is derived from which field the rule set:
 // "regex" for a regex rule, "literal" for a literal rule (redact.go:48-51).
 func TestEngine_HitTypeLabel(t *testing.T) {
 	e := New([]Rule{
@@ -108,7 +108,7 @@ func TestEngine_HitTypeLabel(t *testing.T) {
 	}
 }
 
-// RSEC-006-T07 — MergeHits sums counts by rule name across multiple streams
+// MergeHits sums counts by rule name across multiple streams
 // (e.g. stdout + stderr) and preserves first-seen order (redact.go:61-80).
 func TestMergeHits_SumsByNamePreservingOrder(t *testing.T) {
 	stdout := []Hit{
@@ -135,7 +135,7 @@ func TestMergeHits_SumsByNamePreservingOrder(t *testing.T) {
 	}
 }
 
-// RSEC-006-T09 — declaration order is the contract: a broad rule that rewrites a
+// declaration order is the contract: a broad rule that rewrites a
 // token earlier in the list changes whether a later, narrower rule can match.
 // This documents that ordering is intentional and load-bearing (redact.go:38-39).
 func TestEngine_OrderSensitivityIsIntentional(t *testing.T) {
@@ -165,7 +165,7 @@ func TestEngine_OrderSensitivityIsIntentional(t *testing.T) {
 	}
 }
 
-// RSEC-006-T10 — Apply scales linearly with rule count and does no per-call
+// Apply scales linearly with rule count and does no per-call
 // recompilation. Throughput baseline; no functional assertion.
 func BenchmarkEngine_ApplyRuleCount(b *testing.B) {
 	rules := make([]Rule, 0, 64)

@@ -105,9 +105,8 @@ func TestCheckPackDirs(t *testing.T) {
 // checkPacks caps the pack sample at maxPackSample (12): with 13 packs loaded
 // it reports the true count, lists 12 `id@version` entries, and summarizes the
 // rest as "+1 more" so the doctor line stays scannable (`pack list` has the
-// full set). closes RUN-023-T06.
+// full set).
 func TestCheckPacks_SampleCappedAtTwelve(t *testing.T) {
-	// closes RUN-023-T06
 	root := t.TempDir()
 	const n = maxPackSample + 1 // 13
 	for i := 0; i < n; i++ {
@@ -284,7 +283,6 @@ func hostOf(rawURL string) string {
 // we point it at a loopback httptest server (loopback cleartext is allowed).
 // The one-action pack runs /bin/true, which resolves. Driven through the real
 // command; RunE returns nil and reportDoctor prints to os.Stdout.
-// closes RUN-023-T01.
 func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 	withFlags(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -319,7 +317,7 @@ func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 
 // When the config itself can't load, doctor short-circuits: only the config
 // check is reported (its dependents are skipped) and the command returns a
-// non-nil error so the exit status is non-zero. closes RUN-023-T02.
+// non-nil error so the exit status is non-zero.
 func TestDoctorCmd_ConfigFailShortCircuits(t *testing.T) {
 	withFlags(t)
 	bad := filepath.Join(t.TempDir(), "broken.yaml")

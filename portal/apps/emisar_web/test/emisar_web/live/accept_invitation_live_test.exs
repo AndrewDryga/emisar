@@ -46,7 +46,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     test "a blank (whitespace-only) token resolves to nothing and bounces to sign-in", %{
       conn: _conn
     } do
-      # closes AUTH-012-T08 — the route carries the token as a path segment, so the
+      # the route carries the token as a path segment, so the
       # empty case is a whitespace-only token: `fetch_invitation_by_token` requires a
       # real (non-empty) binary and never matches one, so the mount bounces to
       # /sign_in with the same cause-neutral "isn't valid" copy — no invite is
@@ -92,7 +92,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     test "a tampered hidden email is ignored — the server keeps the invited address", %{
       conn: conn
     } do
-      # closes AUTH-012-T11 — the anonymous form shows the invited email as a
+      # the anonymous form shows the invited email as a
       # read-only hidden field, but the `accept` handler builds its attrs from ONLY
       # full_name + password (never `user[email]`), so a client that rewrites the
       # hidden value can't redirect the invitation onto a different address: the

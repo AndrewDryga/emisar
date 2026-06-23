@@ -90,7 +90,6 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "usage meter + plan display" do
     test "a Free account at the runner ceiling colours the meter rose (≥100%)", %{conn: conn} do
-      # closes BILL-001-T07
       # 3/3 billable runners on Free is 100% utilisation → the runners bar uses
       # the rose `usage_class`. (count_billable_runners is presence-agnostic, so
       # unconnected fixtures still count toward the cap.)
@@ -109,7 +108,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a Team account at 80% of its runner cap colours the meter amber", %{conn: conn} do
-      # closes BILL-001-T06
       # 80/100 billable runners on Team is 80% utilisation → the runners bar uses
       # the amber `usage_class` (≥80% and <100%), the pre-ceiling warning colour.
       {conn, _user, account} = register_and_log_in(conn)
@@ -128,7 +126,6 @@ defmodule EmisarWeb.BillingLiveTest do
     test "the hero CTA offers only the next priced tier, never an enterprise upgrade", %{
       conn: conn
     } do
-      # closes BILL-002-T03
       # On Free the only checkoutable step up is Team, so the hero CTA reads
       # "Upgrade to Team" — never "Upgrade to Enterprise" (enterprise is
       # contact-sales, surfaced by its own card, not a checkout CTA).
@@ -141,7 +138,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a legacy/unknown plan name degrades to free-tier display", %{conn: conn} do
-      # closes BILL-001-T09
       # `plan("legacy-pro")` is nil → plan_def falls back to plan("free"), so the
       # strip shows the Free name + the three plan cards still render. A dropped
       # plan must never 500 the billing page.
@@ -160,7 +156,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an enterprise account shows a Custom total and Unlimited meters", %{conn: conn} do
-      # closes BILL-001-T03
       # Enterprise has monthly_price_cents nil → monthly_total_cents nil →
       # format_total(nil) renders "Custom" (not a cents figure). Runner + member
       # limits are :unlimited → limit_label "Unlimited" and usage_pct nil, so the
@@ -182,7 +177,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "dead cycle-note fields (cancel_at/trial_end) render nothing", %{conn: conn} do
-      # closes BILL-001-T10
       # No prod path writes cancel_at_period_end/trial_end, and the apply path
       # leaves current_period_start null. With status set but those columns at
       # their defaults, none of the cycle-note chips render.
@@ -200,7 +194,6 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "manage subscription" do
     test "an owner with a Paddle customer is redirected to the portal", %{conn: conn} do
-      # closes BILL-004-T01
       # With a customer attached and no Paddle key configured (test default),
       # open_billing_portal returns the stub portal URL and the LV redirects to it.
       {conn, _user, account} = register_and_log_in(conn)
@@ -220,7 +213,6 @@ defmodule EmisarWeb.BillingLiveTest do
     test "a manage event on a no-customer account flashes :no_customer, no redirect", %{
       conn: conn
     } do
-      # closes BILL-004-T07
       # On an account with no paddle_customer_id, open_billing_portal short-circuits
       # to {:error, :no_customer} BEFORE any PaddleClient call, so the handler shows
       # the "upgrade first" flash and stays on the page (no redirect). The flash —
@@ -237,7 +229,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an admin pushing a crafted manage event is refused — flash, no redirect", %{conn: conn} do
-      # closes BILL-004-T08
       # manage_billing is owner-only. An admin (who can VIEW billing) crafting the
       # manage_billing event is double-gated: Permissions.gated denies it in the LV
       # before the context is even called, so the result is a permission flash and
@@ -254,7 +245,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "the Manage control is hidden for a viewer even with a customer attached", %{conn: conn} do
-      # closes BILL-004-T10
       # The Manage-subscription button is gated on subject_can_manage_billing? AND a
       # customer being present. A viewer has a customer but not the permission, so
       # the button is suppressed (the owner-only affordance never renders for them).
@@ -336,7 +326,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a paused subscription shows the amber paused banner", %{conn: conn} do
-      # closes BILL-008-T03
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "paused")
 
@@ -349,7 +338,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an unknown/unmodeled status shows no banner (don't alarm)", %{conn: conn} do
-      # closes BILL-008-T07
       # subscription_alert/1 only models past_due/paused/canceled; anything else
       # → nil → no banner. Paddle owns the status value space, so a state we can't
       # explain must not raise a scary banner.
@@ -366,7 +354,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "the banner copy nudges to fix payment, never implying lost access", %{conn: _conn} do
-      # closes BILL-008-T04
       # emisar never gates features on subscription status, so each modeled status
       # gets an advisory payment/resubscribe nudge ONLY — the copy must never imply
       # access is lost (a promise the code doesn't keep). Assert the known advisory
@@ -396,7 +383,6 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a viewer on a past_due account sees the banner without the manage CTA", %{conn: conn} do
-      # closes BILL-008-T08
       # The banner renders for everyone who can view billing, but its :cta slot is
       # gated on subject_can_manage_billing? — a viewer sees the nudge with no
       # Manage-billing button to act on.

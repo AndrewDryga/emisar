@@ -11,7 +11,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
-// RSEC-008-T01 — an untouched pack re-hashes to exactly its load-time cached
+// an untouched pack re-hashes to exactly its load-time cached
 // PackHash, so the dispatch gate proceeds. (The mutation half lives in the
 // existing TestRecomputePackHash_DetectsTampering; this asserts the
 // equal-when-clean direction in isolation.)
@@ -39,7 +39,7 @@ func TestRecomputePackHash_EqualsCachedWhenUntouched(t *testing.T) {
 	}
 }
 
-// RSEC-008-T05 — a pack present in the index but with no cached hash inputs
+// a pack present in the index but with no cached hash inputs
 // errors rather than returning a hash over an empty set (which would let a
 // gutted pack masquerade as a valid-but-tiny one).
 func TestRecomputePackHash_EmptyInputsErrors(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRecomputePackHash_EmptyInputsErrors(t *testing.T) {
 	}
 }
 
-// RSEC-008-T07 — the content hash is deterministic, order-independent, and
+// the content hash is deterministic, order-independent, and
 // injection-resistant: it is sha256 over relpath-sorted `rel\x00data\x00`
 // entries, rendered as "sha256:"+hex. This recomputes the digest by hand from
 // a known entry set and asserts byte-for-byte equality, and that input order
@@ -89,7 +89,7 @@ func TestComputePackHash_LayoutAndOrderIndependence(t *testing.T) {
 	}
 }
 
-// RSEC-008-T07 (companion) — the NUL delimiter prevents a rel/data boundary
+// (companion) — the NUL delimiter prevents a rel/data boundary
 // from being smuggled: an entry {rel:"ab", data:"cd"} must hash differently
 // from {rel:"a", data:"bcd"} even though the concatenated bytes are equal.
 func TestComputePackHash_DelimiterPreventsBoundaryInjection(t *testing.T) {
@@ -100,7 +100,7 @@ func TestComputePackHash_DelimiterPreventsBoundaryInjection(t *testing.T) {
 	}
 }
 
-// RSEC-008-T09 — a file ADDED to the pack dir after load (outside the recorded
+// a file ADDED to the pack dir after load (outside the recorded
 // relpath set) does NOT change the re-hash. This is the documented pin
 // boundary: the pin covers exactly the load-time relpath set, matching the
 // cloud's trust boundary. (Paired with T10 below, which proves mutation of a
@@ -129,7 +129,7 @@ func TestRecomputePackHash_AddedFileDoesNotChangeHash(t *testing.T) {
 	}
 }
 
-// RSEC-008-T10 — mutating any RECORDED file IS caught. Pairs with T09 to bound
+// mutating any RECORDED file IS caught. Pairs with T09 to bound
 // exactly what the pin covers. Uses pack.yaml (a recorded entry distinct from
 // the action file the existing tampering test mutates).
 func TestRecomputePackHash_MutatingRecordedFileCaught(t *testing.T) {
@@ -156,7 +156,7 @@ func TestRecomputePackHash_MutatingRecordedFileCaught(t *testing.T) {
 	}
 }
 
-// RSEC-010-T02 — unknown-id lookups miss cleanly across every accessor (the
+// unknown-id lookups miss cleanly across every accessor (the
 // engine maps these misses to unknown_action; they must never panic or
 // return a stale entry).
 func TestRegistry_UnknownIDLookupsMissCleanly(t *testing.T) {
@@ -182,7 +182,7 @@ func TestRegistry_UnknownIDLookupsMissCleanly(t *testing.T) {
 	}
 }
 
-// RSEC-010-T03 — Packs() and Actions() return id-sorted slices for stable
+// Packs and Actions return id-sorted slices for stable
 // advertisement, independent of map iteration / insertion order.
 func TestRegistry_PacksAndActionsSorted(t *testing.T) {
 	tmp := t.TempDir()
@@ -227,7 +227,7 @@ func TestRegistry_PacksAndActionsSorted(t *testing.T) {
 	}
 }
 
-// RSEC-010-T05 — the registry is read-only after load: many concurrent
+// the registry is read-only after load: many concurrent
 // readers across every accessor are race-free (run under `go test -race`).
 // The only mutation point is loader build / SIGHUP swap, never per-request.
 func TestRegistry_ConcurrentReadsAreRaceFree(t *testing.T) {

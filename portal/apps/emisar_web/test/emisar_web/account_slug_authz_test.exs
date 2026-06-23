@@ -33,7 +33,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     test "a signed-out mount of a slug LV redirects to sign-in BEFORE slug resolution", %{
       conn: conn
     } do
-      # closes AUTH-021-T06 — `:ensure_account_slug` is composed AFTER
+      # `:ensure_account_slug` is composed AFTER
       # `:ensure_authenticated`, so a signed-out visitor is bounced to /sign_in (with
       # a return_to) before the slug is ever resolved. The result is a sign-in
       # redirect, NOT the 404 a signed-in non-member would get — the gate order
@@ -81,7 +81,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     test "a same-account live_patch by the id form continues — the alternate ref matches", %{
       conn: conn
     } do
-      # closes AUTH-032-T01 (id branch) — `ensure_slug_unchanged` accepts the ref
+      # (id branch) — `ensure_slug_unchanged` accepts the ref
       # whether it's the account slug OR its id (`ref == account.id or
       # account.slug`). Mount by slug, patch to the id form of the SAME account:
       # the guard's `account.id` branch matches, so the patch continues, no 404.
@@ -93,7 +93,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     end
 
     test "the subject is re-scoped to the URL account, not the session-pinned one", %{conn: conn} do
-      # closes AUTH-021-T04 — the slug gate re-resolves the tenant from the URL on
+      # the slug gate re-resolves the tenant from the URL on
       # every mount and OVERWRITES the session-pinned account/subject. A session
       # pinned to A but a URL for held B mounts under B; the URL is the tenant key,
       # the session pin is never trusted as authorization.
@@ -116,7 +116,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     end
 
     test "a suspended membership on the URL slug 404s", %{conn: conn} do
-      # closes AUTH-021-T05 — `fetch_membership_by_account_id_or_slug` requires a
+      # `fetch_membership_by_account_id_or_slug` requires a
       # non-suspended membership (`not_disabled`), so once the member is suspended
       # their own slug 404s just like a stranger's: no redirect, no leak.
       {conn, user, account} = register_and_log_in(conn)
@@ -132,7 +132,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     test "slug refs are re-authorized every request — revoking access mid-session 404s", %{
       conn: conn
     } do
-      # closes AUTH-019-T10 — the gate runs on every request, not once at sign-in.
+      # the gate runs on every request, not once at sign-in.
       # The first request to the member's own slug succeeds; after their
       # membership is revoked the very next request to the same URL 404s.
       {conn, user, account} = register_and_log_in(conn)
@@ -153,7 +153,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
   describe "require_authenticated_user plug (non-slug branches)" do
     test "a no-membership user is redirected to onboarding (not locked out)", %{conn: conn} do
-      # closes AUTH-019-T06 — the controller plug for the bare `/app` route, where
+      # the controller plug for the bare `/app` route, where
       # the ref is nil: a user with no membership at all isn't a 404 and isn't
       # logged out — they're steered to /onboarding to create their first
       # workspace. (The on_mount counterpart is covered in dashboard_live_test.)
@@ -166,7 +166,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
     end
 
     test "a user whose every membership is suspended is force-logged-out", %{conn: conn} do
-      # closes AUTH-019-T07 — when the ref is nil AND every membership is
+      # when the ref is nil AND every membership is
       # suspended, the plug logs the session out with a flash rather than send the
       # user to onboarding (their access was revoked, not never-granted). (The
       # on_mount counterpart is covered in dashboard_live_test.)
@@ -186,7 +186,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
     test "a session pinned to a now-suspended account is silently refreshed to the live primary",
          %{conn: conn} do
-      # closes AUTH-019-T08 — the session caches the active account id. If that
+      # the session caches the active account id. If that
       # membership is suspended out-of-band, `fetch_membership_for_session` falls
       # back to the user's latest live membership and `maybe_refresh_account_session`
       # OVERWRITES the dead session pointer with the resolved one — so subsequent

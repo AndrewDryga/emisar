@@ -162,8 +162,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "an empty members set empties the group and renders members:[]", %{conn: conn} do
-      # closes SCIM-014-T05
-      # closes SCIM-020-T06
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -231,8 +229,8 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # -- PATCH /Groups/:id -----------------------------------------------
 
   describe "PATCH /Groups/:id" do
-    # closes SCIM-016-T01 (add+remove delta) — the remove leg below uses the Okta
-    # filtered-path `members[value eq "X"]` shape, so this also covers SCIM-016-T03.
+    # (add+remove delta) — the remove leg below uses the Okta
+    # filtered-path `members[value eq "X"]` shape, so this also covers.
     test "add then remove members recomputes the affected roles", %{conn: conn} do
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
@@ -284,7 +282,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "a whole-set `replace` of members short-circuits to a full upsert", %{conn: conn} do
-      # closes SCIM-016-T02
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -324,7 +321,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "a pathless add op carries the member ids in `value`", %{conn: conn} do
-      # closes SCIM-016-T04
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -345,7 +341,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "the op keyword is matched case-insensitively (`Add`)", %{conn: conn} do
-      # closes SCIM-016-T05
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -367,7 +362,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "ops that resolve to an empty net delta → 400 invalidPath", %{conn: conn} do
-      # closes SCIM-016-T06
       %{token: token} = scim_provider()
 
       # An add op whose members array is empty resolves to {:delta, [], []} —
@@ -383,7 +377,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "a remove of a member not in the group is a no-op (200)", %{conn: conn} do
-      # closes SCIM-016-T07
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -416,7 +409,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "a non-list `Operations` → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-016-T09
       %{token: token} = scim_provider()
 
       body =
@@ -429,7 +421,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn} do
-      # closes SCIM-016-T10
       %{token: token} = scim_provider()
 
       body =
@@ -441,7 +432,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "an account-A token's group PATCH only affects account A", %{conn: conn} do
-      # closes SCIM-016-T11
       %{token: token_a, provider: provider_a, subject: subject_a, account: account_a} =
         scim_provider()
 
@@ -529,7 +519,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "PUT with no externalId in the body keys on the path :id", %{conn: conn} do
-      # closes SCIM-014-T06
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -556,7 +545,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "DELETE of an unknown/never-pushed group → 204 no-op", %{conn: conn} do
-      # closes SCIM-017-T04
       %{token: token} = scim_provider()
 
       # Upsert-to-empty on a group that was never pushed is a harmless no-op; the
@@ -566,7 +554,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
     test "DELETE; a member also in another mapped group recomputes to the remaining highest",
          %{conn: conn} do
-      # closes SCIM-017-T03
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
@@ -612,7 +599,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "GET /Groups stays empty even after a group was pushed (no group read)", %{conn: conn} do
-      # closes SCIM-018-T03
       %{token: token, provider: provider} = scim_provider()
 
       provision(provider, "okta|x")
@@ -638,7 +624,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     end
 
     test "an account-A token's group DELETE only affects account A", %{conn: conn} do
-      # closes SCIM-017-T05
       %{token: token_a, provider: provider_a, subject: subject_a, account: account_a} =
         scim_provider()
 
@@ -665,7 +650,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   describe "POST /Groups best-effort recompute" do
     @tag capture_log: true
     test "a per-member recompute refusal is held — the push still returns 201", %{conn: conn} do
-      # closes SCIM-014-T08
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =

@@ -42,7 +42,7 @@ output:
   max_stderr_bytes: 1024
 `
 
-// RSEC-009-T04 — an absolute or empty action `rel` is rejected up front by
+// an absolute or empty action `rel` is rejected up front by
 // resolveInsidePack, before any file read.
 func TestLoad_AbsoluteOrEmptyActionPathRejected(t *testing.T) {
 	t.Run("absolute path", func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestLoad_AbsoluteOrEmptyActionPathRejected(t *testing.T) {
 	})
 }
 
-// RSEC-009-T05 — a `..`-traversal action relpath is rejected lexically by
+// a `..`-traversal action relpath is rejected lexically by
 // isUnder, even before EvalSymlinks.
 func TestLoad_TraversalActionPathRejected(t *testing.T) {
 	// The escape target genuinely exists outside the pack so the failure is
@@ -85,7 +85,7 @@ func TestLoad_TraversalActionPathRejected(t *testing.T) {
 	}
 }
 
-// RSEC-009-T06 — a symlink *inside* the pack whose target resolves *outside*
+// a symlink *inside* the pack whose target resolves *outside*
 // the root passes the lexical isUnder check but is rejected by the
 // post-EvalSymlinks containment re-check. allow_symlinks:true is set so the
 // earlier Lstat "is a symlink" guard is skipped, isolating the EvalSymlinks
@@ -115,7 +115,7 @@ func TestLoad_SymlinkEscapingRootRejectedAfterEvalSymlinks(t *testing.T) {
 	}
 }
 
-// RSEC-009-T08 — symlinks ABOVE the pack root are not scanned. A pack reached
+// symlinks ABOVE the pack root are not scanned. A pack reached
 // through a symlinked parent directory (mirroring macOS's /var → /private/var)
 // loads fine; only symlinks *between* root and the resolved file are rejected.
 func TestLoad_SymlinkAboveRootIgnored(t *testing.T) {
@@ -142,7 +142,7 @@ func TestLoad_SymlinkAboveRootIgnored(t *testing.T) {
 	}
 }
 
-// RSEC-009-T10 — two pack directories declaring the same pack id abort the
+// two pack directories declaring the same pack id abort the
 // load (fail closed), the pack-level analogue of duplicate action ids.
 func TestLoad_DuplicatePackIDsAbort(t *testing.T) {
 	tmp := t.TempDir()
@@ -160,7 +160,7 @@ func TestLoad_DuplicatePackIDsAbort(t *testing.T) {
 	}
 }
 
-// RSEC-009-T15 — discovery handles both shapes: a configured path that *is* a
+// discovery handles both shapes: a configured path that *is* a
 // pack (contains pack.yaml), and a parent path whose immediate children are
 // packs.
 func TestLoad_DiscoveryDirectVsParentScan(t *testing.T) {
@@ -201,7 +201,7 @@ func TestLoad_DiscoveryDirectVsParentScan(t *testing.T) {
 	})
 }
 
-// RSEC-009-T16 — a configured path that is a regular file errors; a
+// a configured path that is a regular file errors; a
 // non-existent path is silently skipped (not every configured dir need exist).
 func TestLoad_NonDirErrorsAndMissingSkipped(t *testing.T) {
 	t.Run("file path errors", func(t *testing.T) {
@@ -227,7 +227,7 @@ func TestLoad_NonDirErrorsAndMissingSkipped(t *testing.T) {
 	})
 }
 
-// RSEC-009-T17 — pack.yaml and action structs are Validate()'d after parse;
+// pack.yaml and action structs are Validate'd after parse;
 // a structurally-malformed manifest/action fails the load.
 func TestLoad_StructsValidatedAfterParse(t *testing.T) {
 	t.Run("pack missing required field", func(t *testing.T) {
@@ -257,7 +257,7 @@ func TestLoad_StructsValidatedAfterParse(t *testing.T) {
 	})
 }
 
-// RSEC-009-T18 — a script-kind action gets its script SHA256 stamped at load,
+// a script-kind action gets its script SHA256 stamped at load,
 // unless SkipScriptChecksum is set (used by tests where script bytes vary).
 func TestLoad_ScriptChecksumStampedUnlessSkipped(t *testing.T) {
 	files := map[string]string{

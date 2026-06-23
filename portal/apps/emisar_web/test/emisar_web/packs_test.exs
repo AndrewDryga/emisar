@@ -41,7 +41,6 @@ defmodule EmisarWeb.PacksTest do
       assert html_response(conn, 404) =~ "Page not found"
     end
 
-    # closes MKT-027-T03 MKT-027-T04
     test "the detail page pins the install hash and sets the meta description", %{conn: conn} do
       pack = PacksRegistry.get("cassandra")
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
@@ -57,7 +56,6 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ ~s(<meta name="description" content="#{pack.description}")
     end
 
-    # closes MKT-027-T05
     test "the required-binaries banner shows only when the pack needs binaries", %{conn: conn} do
       with_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries != []))
       without_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries == []))
@@ -72,7 +70,6 @@ defmodule EmisarWeb.PacksTest do
       refute hidden =~ "Required binaries"
     end
 
-    # closes MKT-027-T06
     test "the use-case CTA appears only on the cassandra and postgres detail pages",
          %{conn: conn} do
       # The footer links the use-case pages on every page, so assert the
@@ -90,7 +87,6 @@ defmodule EmisarWeb.PacksTest do
       refute other =~ "Postgres use case"
     end
 
-    # closes MKT-027-T10
     test "every external link on a pack detail page carries the safe-rel pair", %{conn: conn} do
       # Each action id + the "View on GitHub"/"Source" links open off-site,
       # so a missing rel="noopener" is a reverse-tabnabbing hole.
@@ -102,7 +98,6 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
-    # closes MKT-027-T09
     test "a path-traversal-ish id is a clean branded 404, never a 500", %{conn: conn} do
       # `..%2F..%2Fetc` decodes to the single segment `../../etc`, so it
       # binds to :id and resolves through PacksRegistry.get/1 like any
@@ -112,7 +107,6 @@ defmodule EmisarWeb.PacksTest do
       assert html_response(conn, 404) =~ "Page not found"
     end
 
-    # closes MKT-027-T11
     test "a known pack detail page stays indexable and carries the CSP header", %{conn: conn} do
       pack = hd(PacksRegistry.list())
       conn = get(conn, ~p"/packs/#{pack.id}")
@@ -123,7 +117,6 @@ defmodule EmisarWeb.PacksTest do
       assert csp =~ "script-src 'self' 'nonce-"
     end
 
-    # closes MKT-026-T09
     test "the packs index stays indexable and carries the CSP header", %{conn: conn} do
       conn = get(conn, ~p"/packs")
       html = html_response(conn, 200)
@@ -133,7 +126,6 @@ defmodule EmisarWeb.PacksTest do
       assert csp =~ "script-src 'self' 'nonce-"
     end
 
-    # closes MKT-026-T03 MKT-026-T08
     test "each pack card shows version, vendor, action count, and a safe-rel source link",
          %{conn: conn} do
       html = conn |> get(~p"/packs") |> html_response(200)
@@ -154,7 +146,6 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
-    # closes MKT-026-T05 MKT-026-T06
     test "the packs index hero carries the authoring CTA and the live pack count",
          %{conn: conn} do
       html = conn |> get(~p"/packs") |> html_response(200)
@@ -315,7 +306,6 @@ defmodule EmisarWeb.PacksTest do
       refute Map.has_key?(grafana, "tarball")
     end
 
-    # closes MKT-030-T05 MKT-030-T07
     test "GET /packs/suggest.json strips generic binaries and carries only the lean keys",
          %{conn: conn} do
       body = conn |> get(~p"/packs/suggest.json") |> json_response(200)
@@ -354,7 +344,6 @@ defmodule EmisarWeb.PacksTest do
     # HTML MarketingController.pack_detail (which would 404 ".json" / serve
     # an HTML page). conn.private[:phoenix_controller] is the proof.
     #
-    # closes MKT-027-T08 MKT-029-T06 MKT-030-T06 MKT-031-T06
     test "the literal machine routes win over /packs/:id (route precedence)", %{conn: conn} do
       for {path, action} <- [
             {~p"/packs.json", :index},
@@ -372,7 +361,6 @@ defmodule EmisarWeb.PacksTest do
       assert detail.private[:phoenix_action] == :pack_detail
     end
 
-    # closes MKT-029-T03 MKT-029-T07
     test "GET /packs.json entries carry exactly the public catalog keys", %{conn: conn} do
       body = conn |> get(~p"/packs.json") |> json_response(200)
       entry = Enum.find(body["packs"], &(&1["id"] == "redis"))
@@ -389,7 +377,6 @@ defmodule EmisarWeb.PacksTest do
       assert entry["tarball"] =~ "/packs/redis/pack.tar.gz"
     end
 
-    # closes MKT-031-T02 MKT-031-T03
     test "GET /packs/:id/pack.tar.gz sets attachment filename + a short cache window",
          %{conn: conn} do
       conn = get(conn, ~p"/packs/redis/pack.tar.gz")
@@ -401,7 +388,6 @@ defmodule EmisarWeb.PacksTest do
       assert get_resp_header(conn, "cache-control") == ["public, max-age=300"]
     end
 
-    # closes MKT-031-T04 MKT-031-T07
     test "the served tarball re-hashes to the advertised content_hash", %{conn: conn} do
       # The install-integrity contract: a runner downloads the tarball,
       # extracts the flat pack files, and recomputes the hash exactly the

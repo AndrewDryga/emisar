@@ -220,7 +220,7 @@ func TestNoncePruning(t *testing.T) {
 	}
 }
 
-// closes RSEC-001-T17: a non-positive freshness window is a misconfiguration —
+// a non-positive freshness window is a misconfiguration —
 // the constructor refuses it rather than booting a verifier that accepts
 // nothing (age > 0 always fails) or everything.
 func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
@@ -237,7 +237,7 @@ func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
 	}
 }
 
-// closes RSEC-001-T18: freshness is inclusive at the edge (`age > maxAge`, not
+// freshness is inclusive at the edge (`age > maxAge`, not
 // `>=`), so an attestation issued exactly maxAge ago — and exactly maxAge in the
 // future — is still accepted, symmetric about now.
 func TestCheckIssuedAtAtWindowEdgeAccepted(t *testing.T) {
@@ -259,7 +259,7 @@ func TestCheckIssuedAtAtWindowEdgeAccepted(t *testing.T) {
 	}
 }
 
-// closes RSEC-001-T21: the signature covers the EXACT issued_at string the
+// the signature covers the EXACT issued_at string the
 // signer sent; the parse is only for the freshness comparison. Re-displaying the
 // same instant in a different RFC3339 form (here, an explicit +00:00 offset
 // instead of Z) without re-signing breaks verification — you cannot massage the
@@ -286,7 +286,7 @@ func TestCheckTimestampReformattedWithoutResigningRefused(t *testing.T) {
 	}
 }
 
-// closes RSEC-002-T05: the nonce cache is mutex-guarded, so firing the same
+// the nonce cache is mutex-guarded, so firing the same
 // valid attestation from many goroutines admits it exactly once; every other
 // caller is refused "replayed". Run under -race, this also asserts the cache has
 // no data race.
@@ -332,7 +332,7 @@ func TestCheckConcurrentReplayExactlyOneWins(t *testing.T) {
 	}
 }
 
-// closes RSEC-002-T06: a nonce string becomes reusable only once its recorded
+// a nonce string becomes reusable only once its recorded
 // issued_at has aged past the window (so the prune pass evicts it) — AND the new
 // presentation must carry an issued_at that itself passes freshness. The
 // practical replay window is therefore bounded by maxAge, never the nonce
@@ -366,7 +366,7 @@ func TestCheckSameNonceReusableOnlyAfterIssuedAtAgesOut(t *testing.T) {
 	}
 }
 
-// closes RSEC-002-T07, RSEC-002-T08: the replay cache is process-local (an
+// the replay cache is process-local (an
 // in-memory map, no external store), so a runner restart clears it. A fresh
 // verifier with the same keys will re-allow a nonce it never saw — but only if
 // that nonce's issued_at is still inside the freshness window. Once it ages out,
@@ -402,7 +402,7 @@ func TestCheckReplayAcrossRestartBoundedByFreshness(t *testing.T) {
 	}
 }
 
-// closes RSEC-002-T09: pruning runs on every consume, so over a window the cache
+// pruning runs on every consume, so over a window the cache
 // is bounded by the number of distinct in-window nonces, not by the total ever
 // seen. Drive many distinct nonces while advancing the clock past the window and
 // assert the cache never accumulates the aged-out ones.
@@ -432,7 +432,7 @@ func TestNonceCacheBoundedByWindow(t *testing.T) {
 	}
 }
 
-// closes RSEC-002-T10: the cache key is the raw nonce string — no normalization.
+// the cache key is the raw nonce string — no normalization.
 // Two nonces differing only by case or surrounding whitespace are distinct
 // entries, so neither replays the other.
 func TestNonceCacheKeyIsRawString(t *testing.T) {
@@ -459,7 +459,7 @@ func TestNonceCacheKeyIsRawString(t *testing.T) {
 	}
 }
 
-// closes RSEC-001-T22: the enforcement gate's per-call cost is one Ed25519
+// the enforcement gate's per-call cost is one Ed25519
 // verify plus a bounded prune — no unbounded growth across a window of distinct
 // nonces. This is the perf baseline for the dispatch hot path.
 func BenchmarkCheck(b *testing.B) {

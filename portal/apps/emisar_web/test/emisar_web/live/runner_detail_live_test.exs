@@ -26,7 +26,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.hostname
   end
 
-  # closes CON-003-T05 — a runner that has reported no catalog renders the
+  # a runner that has reported no catalog renders the
   # "No actions yet" empty state in the advertised-actions card.
   test "a runner with no advertised actions shows the empty catalog state", %{
     conn: conn,
@@ -39,7 +39,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "hasn&#39;t reported a catalog yet"
   end
 
-  # closes CON-003-T06 — a runner never dispatched to renders the
+  # a runner never dispatched to renders the
   # "Nothing dispatched yet." empty state in the recent-runs sidebar.
   test "a runner with no recent runs shows the empty recent-runs state", %{
     conn: conn,
@@ -170,7 +170,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).disabled_at
   end
 
-  # closes CON-010-T02 — disabling an ONLINE runner is allowed (a soft "stop",
+  # disabling an ONLINE runner is allowed (a soft "stop",
   # distinct from delete which requires the runner be offline first).
   test "disabling a connected runner is allowed (soft-stop)", %{conn: conn, account: account} do
     runner = Fixtures.runner_fixture(account_id: account.id, connected?: true)
@@ -181,7 +181,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert Emisar.Repo.reload!(runner).disabled_at
   end
 
-  # closes CON-012-T05 — a connected runner's Delete zone (and its typed-confirm
+  # a connected runner's Delete zone (and its typed-confirm
   # modal) are not rendered; you must disable it first. Disable + Enable zones
   # gate on disabled_at, not online state, so the Disable zone still shows.
   test "the delete zone is hidden while the runner is online", %{conn: conn, account: account} do
@@ -227,9 +227,9 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).disabled_at
   end
 
-  # closes CON-012-T03 — `delete` is manage-gated; an operator (view-only on
+  # `delete` is manage-gated; an operator (view-only on
   # runners) who forces the event past the hidden danger zone gets the gated
-  # flash and the runner is NOT soft-deleted. (CON-012-T04, a cross-account
+  # flash and the runner is NOT soft-deleted. (, a cross-account
   # delete, is already unreachable: mount redirects "Runner not found." before
   # any event — see "a cross-account runner reads as not-found" above.)
   test "an operator cannot delete — forced event gated, runner untouched", %{
@@ -303,7 +303,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert render(lv) =~ connected_badge
   end
 
-  # closes CON-003-T12 — an operator (view-only on runners) opens the detail
+  # an operator (view-only on runners) opens the detail
   # page: it renders, but `subject_can_manage_runners?` is false so none of the
   # lifecycle zones (disable / enable / delete) are present. The danger surface
   # is admin+ only.
@@ -327,7 +327,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute html =~ "Delete this runner"
   end
 
-  # closes CON-010-T05 — once a runner is disabled the Disable zone is replaced
+  # once a runner is disabled the Disable zone is replaced
   # by the Enable zone (the two gate on `disabled_at`, not online state), so the
   # UI is idempotent: you can't disable an already-disabled runner.
   test "the disable zone is hidden once the runner is disabled (enable zone shows)", %{
@@ -344,7 +344,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "Enable this runner"
   end
 
-  # closes CON-011-T05 — the inverse: an enabled runner shows no Enable zone
+  # the inverse: an enabled runner shows no Enable zone
   # (it's the disabled-only restore affordance). setup's runner is enabled.
   test "the enable zone is hidden while the runner is enabled", %{
     conn: conn,
@@ -357,7 +357,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "Disable this runner"
   end
 
-  # closes CON-011-T04 — `enable` is manage-gated; an operator who forces the
+  # `enable` is manage-gated; an operator who forces the
   # event (the zone is hidden for them) gets the gated flash and the runner stays
   # disabled.
   test "an operator cannot enable — forced event gated, runner stays disabled", %{
@@ -379,7 +379,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert Emisar.Repo.reload!(runner).disabled_at
   end
 
-  # closes CON-011-T03 — a non-limit enable failure flashes the generic
+  # a non-limit enable failure flashes the generic
   # "Could not enable runner." A disabled runner (under the plan limit) is
   # soft-deleted out from under the page after mount; `enable_runner`'s gates
   # pass on the stale struct, but the locked re-read (`not_deleted`) misses →

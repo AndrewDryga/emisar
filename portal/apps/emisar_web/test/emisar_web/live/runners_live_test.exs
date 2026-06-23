@@ -98,7 +98,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ ~r/·\slast seen/
     end
 
-    # closes CON-002-T11 — the list is scoped to the caller's account via
+    # the list is scoped to the caller's account via
     # `for_subject/2`: account A's operator sees A's runners and never B's, even
     # though both exist. (The slug gate's foreign-account 404 is covered in
     # account_slug_authz_test; this asserts the in-account data scoping.)
@@ -115,7 +115,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "bravo-runner"
     end
 
-    # closes CON-002-T10 — a viewer holds `view_runners`, so the list page
+    # a viewer holds `view_runners`, so the list page
     # renders for them (it's not manage-gated). The "Add a runner" affordance is
     # a plain link to the install wizard, present on the page header.
     test "a viewer can view the runners list; 'Add a runner' links to install", %{conn: conn} do
@@ -143,7 +143,7 @@ defmodule EmisarWeb.RunnersLiveTest do
              )
     end
 
-    # closes CON-002-T08 — a hand-edited page cursor makes the runner list read
+    # a hand-edited page cursor makes the runner list read
     # return {:error, …} with non-empty params; `load/1` retries once with clean
     # params (first page) rather than recursing forever or rendering the
     # load-error/empty state. With a runner present, the retry shows it.
@@ -159,7 +159,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "Couldn't load your fleet"
     end
 
-    # closes CON-002-T12 / CON-002-T09 — the list ROWS are scope-filtered to a
+    # the list ROWS are scope-filtered to a
     # per-membership runner ACL (operators may have one): an operator scoped to one
     # runner sees only that row and never the out-of-scope runner (T12). But the
     # group sidebar + fleet-health strip are deliberately NOT scope-filtered —

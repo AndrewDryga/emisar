@@ -178,7 +178,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ ~r/<div[^>]*whitespace-pre-wrap/
   end
 
-  # closes CON-006-T12 (IL-16) — runner output is attacker-influenced; a chunk
+  # (IL-16) — runner output is attacker-influenced; a chunk
   # carrying HTML must render ESCAPED via the `event_chunk` span interpolation,
   # never `raw/1`. Asserting the literal `<script>` is absent and the escaped
   # entity is present proves no stored XSS.
@@ -202,7 +202,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "&lt;script&gt;"
   end
 
-  # closes CON-006-T07 — the output panel renders a BOUNDED, streamed slice
+  # the output panel renders a BOUNDED, streamed slice
   # (`phx-update="stream"`, IL-18), never an unbounded assign of every event. The
   # mount requests `page: [limit: 500]`, but `Repo.list` hard-caps the page at
   # @max_limit (100), so the effective render cap is the first 100 events: seq-100
@@ -274,7 +274,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Cancel sent to runner."
   end
 
-  # closes CON-014-T02 — when cancel_run returns a non-:ok (here the run row
+  # when cancel_run returns a non-:ok (here the run row
   # vanished between render and the cancel click), the handler flashes "Unable
   # to cancel." instead of crashing.
   test "a cancel that fails surfaces an 'Unable to cancel.' flash", %{conn: conn} do

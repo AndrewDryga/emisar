@@ -102,7 +102,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
 
-  # closes ENG-025-T05 — an account whose subscription carries an unknown /
+  # an account whose subscription carries an unknown /
   # renamed plan name resolves to the free window rather than crashing, so the
   # run-event prune (which keys on the SAME plan lookup as audit retention)
   # degrades gracefully on a legacy plan string.
@@ -119,7 +119,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     assert event_ids(account.id) == MapSet.new()
   end
 
-  # closes ENG-025-T04 — the sweep pages accounts via `Account.Query.all()`, not
+  # the sweep pages accounts via `Account.Query.all`, not
   # `not_deleted()`, on purpose: a soft-deleted (closed) account's run events
   # still occupy space and age past the plan window all the same. A regression to
   # `not_deleted()` would leave a closed tenant's chunks growing forever.

@@ -187,7 +187,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "lists each session and marks the current device", %{conn: conn} do
-      # closes TEAM-022-T01
       {conn, user, account} = register_and_log_in(conn)
 
       # A second device with recognizable metadata so its row renders distinctly
@@ -212,7 +211,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "revoking one non-current session removes exactly that row", %{conn: conn} do
-      # closes TEAM-023-T01
       {conn, user, account} = register_and_log_in(conn)
 
       # A second device — the row we'll revoke. Its session is found by being the
@@ -235,7 +233,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "the current device row offers no Revoke control", %{conn: conn} do
-      # closes TEAM-023-T05
       {conn, user, account} = register_and_log_in(conn)
 
       # Two devices: one current, one other. The other carries a Revoke button;
@@ -267,7 +264,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "the session list is capped at 100 — the bound the page passes", %{conn: conn} do
-      # closes TEAM-022-T04
       # The page reads sessions with `page: [limit: 100]`, so even a user with
       # more than 100 active sessions can never blow up the assigns/DOM. Prove
       # the cap with the SAME opts the LV uses (seeding 101 and reading back).
@@ -290,7 +286,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "the disconnected (dead) render reads no sessions and shows the empty state", %{
       conn: conn
     } do
-      # closes TEAM-022-T07
       # IL-18: the session list is the only DB read on this page, gated behind
       # connected?/1 — so the dead render a plain GET produces must show "No
       # active sessions." with no rows, even though a real session exists. A
@@ -322,7 +317,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "the rendered session rows never surface the raw token (only id + metadata)", %{
       conn: conn
     } do
-      # closes TEAM-022-T05
       {conn, user, account} = register_and_log_in(conn)
 
       # A second session minted with a recognizable device (the metadata DOES
@@ -392,7 +386,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "the enrollment QR is a server-rendered inline SVG, not a third-party image", %{
       conn: conn
     } do
-      # closes TEAM-019-T12
       # The otpauth URI carries the TOTP secret, so it must never be handed to an
       # external QR-image service. EmisarWeb.MfaQr renders the code as an inline
       # SVG server-side; `raw/1` on that markup is the documented IL-16 exception
@@ -448,7 +441,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a non-numeric OTP is rejected and MFA stays off", %{conn: conn} do
-      # closes TEAM-019-T08
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -467,7 +459,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a code from a prior 30s bucket is rejected (no leeway)", %{conn: conn} do
-      # closes TEAM-019-T07
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -490,7 +481,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "dismissing the recovery-codes reveal hides them and they're not re-shown", %{conn: conn} do
-      # closes TEAM-021-T04
       {conn, user, account} = register_and_log_in(conn)
 
       secret = Auth.generate_mfa_secret()
@@ -534,7 +524,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "disabling MFA when it's already off is a graceful no-op, not an error", %{conn: conn} do
-      # closes TEAM-020-T02
       # The disable control is only rendered with MFA on, but a stale client could
       # still push the event. Auth.disable_mfa writes nil/[] unconditionally on the
       # locked row, so a no-MFA user gets the success path (no crash, no error

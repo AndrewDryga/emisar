@@ -544,7 +544,7 @@ defmodule Emisar.RunnersTest do
       assert Runners.connection_state(%Runner{online?: true, disabled_at: now}) == :disabled
     end
 
-    # closes ENG-003-T06 — there is NO heartbeat-age `:stale` state by design.
+    # there is NO heartbeat-age `:stale` state by design.
     # Liveness is enforced only at the socket (the 90s heartbeat-timeout watcher),
     # never re-derived from `last_heartbeat_at`: an `online?` runner reads :online
     # no matter how old its last heartbeat looks. The binary stays honest because
@@ -954,7 +954,6 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a past_due account keeps full plan limits — status never gates registration" do
-      # closes BILL-006-T14
       # account_plan/1 is status-agnostic, so a Team account whose subscription
       # lapsed to past_due still resolves to the Team cap (100) and registers a
       # runner under it. Billing status is advisory (banners), never an entitlement
@@ -977,7 +976,6 @@ defmodule Emisar.RunnersTest do
     end
 
     test "member invites are uncapped — inviting past members_limit succeeds" do
-      # closes BILL-006-T13
       # Free caps members at 1, but the invite path has NO Billing.check_limit(:members)
       # (accounts.ex:1176) — seats are a deliberate growth lever, the meter is advisory.
       # The account starts at its 1-member ceiling (the owner); inviting still succeeds.
@@ -1000,7 +998,6 @@ defmodule Emisar.RunnersTest do
     end
 
     test "check_limit/2 is account-scoped with no Subject (pre-auth bootstrap contract)" do
-      # closes BILL-006-T12
       # The runner-bootstrap path (register_via_auth_key/2) calls check_limit
       # BEFORE any Subject exists, so the contract is `(account, resource)` —
       # account-scoped, no Subject argument. Driving it with just an account proves
@@ -1014,7 +1011,6 @@ defmodule Emisar.RunnersTest do
     end
 
     test "count_billable_runners/1 is a COUNT (an integer), not a fetch of rows" do
-      # closes BILL-006-T15
       # count_billable_runners/1 (and count_memberships/1) return a single integer
       # from a SELECT count(*) aggregate — never a list of loaded rows into memory.
       # Adding a billable runner moves the count by exactly one.

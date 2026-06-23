@@ -84,7 +84,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("y@example.com")
   end
 
-  # closes OAUTH-009-T08 — an event type the webhook doesn't act on (Delivery,
+  # an event type the webhook doesn't act on (Delivery,
   # Open, Click, …) is acknowledged and changes nothing.
   test "an unknown RecordType is a 200 no-op", %{conn: conn} do
     conn =
@@ -96,7 +96,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("delivered@example.com")
   end
 
-  # closes OAUTH-009-T03 — bounce_detail formats the stored `detail` as
+  # bounce_detail formats the stored `detail` as
   # "Type: Description" when both are present, "Type" when only Type is, and nil
   # when neither is (each a separate guarded clause).
   test "bounce_detail formats Type/Description into the stored detail", %{conn: conn} do
@@ -138,7 +138,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert Repo.get_by!(Suppression, email: "neither@example.com").detail == nil
   end
 
-  # closes OAUTH-009-T07 — replaying the same permanent bounce is idempotent: both
+  # replaying the same permanent bounce is idempotent: both
   # POSTs are 200, and the address ends up suppressed in exactly one row (suppress/3
   # upserts on the email).
   test "a replayed permanent bounce is idempotent", %{conn: conn} do
@@ -157,7 +157,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert Repo.aggregate(Suppression.Query.by_email("dup@example.com"), :count) == 1
   end
 
-  # closes OAUTH-009-T09 — a permanent bounce with no Email falls through the
+  # a permanent bounce with no Email falls through the
   # guarded clause (the `Email` pattern requires a binary): 200 no-op, nothing
   # suppressed.
   test "a bounce missing Email is a 200 no-op", %{conn: conn} do
@@ -169,7 +169,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert json_response(conn, 200) == %{"received" => true}
   end
 
-  # closes OAUTH-009-T10 — an arbitrary/malformed JSON payload doesn't match any
+  # an arbitrary/malformed JSON payload doesn't match any
   # event clause: 200 no-op, no crash, no suppression.
   test "a malformed payload is a 200 no-op", %{conn: conn} do
     conn =
@@ -180,7 +180,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert json_response(conn, 200) == %{"received" => true}
   end
 
-  # closes OAUTH-009-T14 — only the password is part of the shared secret; a
+  # only the password is part of the shared secret; a
   # different Basic-Auth username with the correct password still verifies (200).
   test "the Basic-Auth username is ignored, only the password matters", %{conn: conn} do
     conn =
@@ -192,7 +192,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert Mail.suppressed?("user@example.com")
   end
 
-  # closes OAUTH-009-T04 — with no shared secret configured the endpoint is
+  # with no shared secret configured the endpoint is
   # disabled: every request is 503, nothing is suppressed. Tests within a module
   # run sequentially, so deleting+restoring the env here can't race the others.
   test "the webhook is disabled (503) when no secret is configured", %{conn: conn} do
@@ -209,7 +209,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("x@example.com")
   end
 
-  # closes OAUTH-009-T05 — a failed suppression write is a 500 so Postmark
+  # a failed suppression write is a 500 so Postmark
   # retries. Force the changeset to fail with a >1000-char detail (the bounce
   # Description flows into `detail`, which the Suppression changeset caps at
   # 1000) — no production code change needed.
@@ -230,7 +230,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("fails@example.com")
   end
 
-  # closes OAUTH-009-T15 — the 500 suppress-failure log line carries `reason=`
+  # the 500 suppress-failure log line carries `reason=`
   # only: the email address (PII) and the changeset are kept OUT of the drain.
   # Same forced-failure path as the 500 test (an over-1000-char detail).
   test "the suppress-failure log keeps the email address out of the drain", %{conn: conn} do
@@ -257,7 +257,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute log =~ "changeset"
   end
 
-  # closes OAUTH-009-T16 — the webhook rides the CSRF-free `:api` pipeline:
+  # the webhook rides the CSRF-free `:api` pipeline:
   # Postmark POSTs cross-origin and doesn't sign, so the Basic-Auth shared secret
   # is the only authenticity guarantee — a valid-secret POST with no CSRF token
   # succeeds. We clear `plug_skip_csrf_protection` (ConnTest sets it) to run the

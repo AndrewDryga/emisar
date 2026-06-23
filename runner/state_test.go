@@ -10,7 +10,7 @@ import (
 // loaded registry + admission and prints it as JSON. This drives the real
 // command (boot → StateBuilder → printJSON) against a temp config + a
 // one-action pack and asserts the advertised shape: identity from config,
-// the loaded pack and its action present. closes RUN-029-T01.
+// the loaded pack and its action present.
 func TestStateCmd_PrintsAdvertisedState(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -52,9 +52,8 @@ func TestStateCmd_PrintsAdvertisedState(t *testing.T) {
 // Empty registry: with a packs dir holding no packs, `state` still builds a
 // valid runner_state — identity + group present, but the actions list empty and
 // the packs map empty/absent. A runner with nothing installed advertises an
-// identity-only catalog, not an error. closes RUN-029-T03.
+// identity-only catalog, not an error.
 func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
-	// closes RUN-029-T03
 	withFlags(t)
 	dir := t.TempDir()
 	emptyPacks := dir + "/packs"
@@ -95,7 +94,6 @@ func TestStateCmd_EmptyRegistryIdentityOnly(t *testing.T) {
 // uses) and never wires GetVerifier, so even with enforcing signing in config
 // the printed state OMITS the enforcement fields. This pins that `state` is a
 // config-only preview, not a faithful mirror of what `connect` sends.
-// closes RUN-029-T04.
 func TestStateCmd_DivergesConfigOnlyIDNoVerifier(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()

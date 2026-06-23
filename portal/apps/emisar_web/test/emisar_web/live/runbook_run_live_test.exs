@@ -512,7 +512,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
   describe "preflight plan (RBK-007)" do
     test "a runner_id-targeted step resolves its runner ids to names in the plan", %{conn: conn} do
-      # closes RBK-007-T04
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "edge-eu-1")
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
@@ -529,7 +528,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "the idle plan warns that an offline target will queue until it reconnects", %{
       conn: conn
     } do
-      # closes RBK-007-T06
       {conn, user, account} = register_and_log_in(conn)
       # An offline runner targeted by id stays in the plan (a runner-id selector
       # passes offline members through; a group selector would skip them). Before
@@ -549,7 +547,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "a fan-out beyond the cap is refused with a humanized flash, not a raw atom", %{
       conn: conn
     } do
-      # closes RBK-007-T09 (LV half)
+      # (LV half)
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
@@ -590,7 +588,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "a stepless runbook shows the empty-state nudge to the editor, not a dispatch", %{
       conn: conn
     } do
-      # closes RBK-007-T08
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
@@ -617,7 +614,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
   describe "live progress (RBK-010)" do
     test "the header shows finished/total and the failed count as runs settle", %{conn: conn} do
-      # closes RBK-010-T02
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
@@ -647,7 +643,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a run_updated for a DIFFERENT execution is ignored", %{conn: conn} do
-      # closes RBK-010-T13
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
@@ -678,7 +673,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "an unrelated forwarded broadcast is swallowed by the catch-all", %{conn: conn} do
-      # closes RBK-010-T14
       {conn, user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
@@ -696,7 +690,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
     test "on refresh, a dispatched run whose plan slot no longer resolves is appended, not dropped",
          %{conn: conn} do
-      # closes RBK-010-T11
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
@@ -737,7 +730,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "markup in a run's output is escaped, never rendered as raw HTML", %{conn: conn} do
-      # closes RBK-010-T16
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")

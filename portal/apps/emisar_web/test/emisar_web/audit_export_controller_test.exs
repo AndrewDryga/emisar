@@ -229,7 +229,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert json_response(conn, 400)["error"] == "invalid_params"
     end
 
-    # closes AUD-003-T20 — a non-ISO8601 `since` is a 400 invalid_params, not a
+    # a non-ISO8601 `since` is a 400 invalid_params, not a
     # 500 and never a silent fall-through to the whole-history scan. A SIEM that
     # sends a bad first-call bound is told to fix it, not handed everything.
     test "malformed since (non-ISO8601) returns 400, not a silent full scan", %{
@@ -323,7 +323,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert hd(events)["account_id"] == own_account.id
     end
 
-    # closes AUD-003-T23 — a forged `x-forwarded-for` is advisory request
+    # a forged `x-forwarded-for` is advisory request
     # metadata only: it never feeds authz or scoping. The export stays scoped to
     # the key's own account (`for_subject/2`), so spoofing the header can't widen
     # the result set or reach another tenant's events. (Plug.RemoteIp isn't in
@@ -354,7 +354,6 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "serialized row shape" do
-    # closes AUD-003-T05
     test "omits mcp_session_id / auth_method / mfa / user_identity_id from the feed", %{
       conn: conn,
       account: account,
@@ -387,7 +386,6 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "scope independence" do
-    # closes AUD-003-T21
     test "an audit:read-only key can export but cannot dispatch MCP / actions", %{
       conn: conn,
       account: account,

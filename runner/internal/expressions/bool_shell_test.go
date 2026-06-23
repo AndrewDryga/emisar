@@ -2,7 +2,7 @@ package expressions
 
 import "testing"
 
-// closes PCK-003-T19 — a boolean arg interpolated into a /bin/sh -c pipeline
+// a boolean arg interpolated into a /bin/sh -c pipeline
 // renders to a literal, NON-EMPTY token ("true" or "false"), never to the
 // empty string. The gotcha: in shell, both tokens are truthy — `[ -n "false" ]`
 // and `if [ "$flag" ]` both succeed — so an action that gates behaviour on a

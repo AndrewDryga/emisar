@@ -131,7 +131,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-020-T03 — an owner who signed up without a name is greeted
+    # an owner who signed up without a name is greeted
     # by email rather than rendering a blank salutation.
     test "falls back to the email when the owner has no full name" do
       user = user_fixture(full_name: nil)
@@ -146,7 +146,7 @@ defmodule Emisar.MailTest do
   end
 
   describe "confirmation email" do
-    # closes ENG-016-T01 — the sign-up confirmation carries its subject, the
+    # the sign-up confirmation carries its subject, the
     # absolute /confirm/<token> link, and the "ignore if you didn't sign up" line.
     test "carries the subject, confirm link, and reassurance line" do
       user = user_fixture()
@@ -160,7 +160,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-016-T04 — a suppressed address is skipped with the shared
+    # a suppressed address is skipped with the shared
     # {:ok, %{suppressed: true}} contract; no email is built.
     test "skips a suppressed recipient" do
       user = user_fixture()
@@ -172,10 +172,10 @@ defmodule Emisar.MailTest do
   end
 
   describe "magic-link email content" do
-    # closes ENG-017-T01 + ENG-017-T02 — the magic-link subject, the
+    # + — the magic-link subject, the
     # /sign_in/magic/<token> link, and the body copy "15 minutes" which
     # AGREES with the enforced @magic_link_validity_in_minutes (unlike the
-    # reset email, see ENG-018-T02).
+    # reset email, see).
     test "carries the subject, link, and a 15-minute expiry that matches enforcement" do
       user = user_fixture()
       UserNotifier.deliver_magic_link(user, "tok-magic")
@@ -190,7 +190,7 @@ defmodule Emisar.MailTest do
   end
 
   describe "password-reset email content" do
-    # closes ENG-018-T01 — the reset subject, the /reset_password/<token>
+    # the reset subject, the /reset_password/<token>
     # link, and the "won't change unless someone clicks" reassurance.
     test "carries the subject, reset link, and reassurance line" do
       user = user_fixture()
@@ -204,7 +204,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-018-T02 — DOCUMENTED DEFECT CANDIDATE. The body promises the
+    # DOCUMENTED DEFECT CANDIDATE. The body promises the
     # link is "valid for 1 hour", but the enforced reset-token TTL is
     # @reset_validity_in_days = 1 (≈24h) at the Auth layer. This test pins the
     # current copy so the mismatch is visible; once a product decision picks
@@ -225,7 +225,7 @@ defmodule Emisar.MailTest do
   end
 
   describe "invitation email" do
-    # closes ENG-019-T01 — the invite subject names the workspace, the body
+    # the invite subject names the workspace, the body
     # names the inviter + workspace, carries the /accept_invitation/<token>
     # link and the "what is emisar?" pitch.
     test "names the inviter and workspace and carries the accept link" do
@@ -245,7 +245,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-019-T03 — an inviter with no full_name is shown by email.
+    # an inviter with no full_name is shown by email.
     test "falls back to the inviter's email when they have no full name" do
       inviter = user_fixture(full_name: nil)
       invitee = user_fixture()
@@ -256,7 +256,7 @@ defmodule Emisar.MailTest do
       assert_email_sent(&(&1.text_body =~ inviter.email))
     end
 
-    # closes ENG-019-T04 — a suppressed invitee is skipped (the membership row
+    # a suppressed invitee is skipped (the membership row
     # is created elsewhere; here only the send is suppressed).
     test "skips a suppressed invitee" do
       inviter = user_fixture()
@@ -270,7 +270,7 @@ defmodule Emisar.MailTest do
   end
 
   describe "approval-needed email content" do
-    # closes ENG-021-T01 (body content) — the approval email surfaces enough
+    # (body content) — the approval email surfaces enough
     # to decide from the inbox: subject with the action_id, the runner NAME
     # (not the opaque id), the operator's reason, an args preview, and the
     # /app/approvals/<id> link. (Recipient targeting is covered in approvals_test.)
@@ -300,7 +300,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-021-T06 — a run on a runner with no name falls back to a
+    # a run on a runner with no name falls back to a
     # truncated-id label, never a blank or the raw full id.
     test "labels an unnamed runner by a truncated id" do
       approver = user_fixture()
@@ -324,7 +324,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # closes ENG-021-T10 — a suppressed decider is skipped via the same
+    # a suppressed decider is skipped via the same
     # shared deliver/3; other recipients are unaffected (covered elsewhere).
     test "skips a suppressed decider" do
       approver = user_fixture()

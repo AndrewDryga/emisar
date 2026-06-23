@@ -42,7 +42,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   test "the email field is required (a blank email is blocked client-side, no mint)", %{
     conn: conn
   } do
-    # closes AUTH-005-T06 — the magic-link send handler has no `else` and never
+    # the magic-link send handler has no `else` and never
     # server-validates the email (a throttled/unknown email falls through to the
     # same anti-enumeration "sent" panel). So a blank submission is blocked the only
     # place it can be: the `required` HTML attribute on the email input — there's no

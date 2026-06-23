@@ -9,7 +9,7 @@ defmodule EmisarWeb.UserSignInLiveTest do
   use EmisarWeb.ConnCase, async: true
 
   test "the form renders with every sign-in path offered", %{conn: conn} do
-    # closes AUTH-002-T01 — the password form posts to /sign_in (phx-update=ignore
+    # the password form posts to /sign_in (phx-update=ignore
     # so LiveView never reclaims the browser-managed inputs), and the page surfaces
     # the remember-me checkbox plus the forgot-password, magic-link and SSO routes.
     {:ok, _lv, html} = live(conn, ~p"/sign_in")
@@ -31,7 +31,7 @@ defmodule EmisarWeb.UserSignInLiveTest do
   end
 
   test "the email field is pre-filled from a failed-attempt flash", %{conn: conn} do
-    # closes AUTH-002-T02 (LV side) — the controller stashes the typed email in an
+    # (LV side) — the controller stashes the typed email in an
     # `:email` flash on a failed POST; the LV reads it back into the form so the
     # operator doesn't retype it after a wrong password.
     conn = Phoenix.ConnTest.init_test_session(conn, %{})
@@ -47,7 +47,7 @@ defmodule EmisarWeb.UserSignInLiveTest do
   test "the page carries no client-side event handler — it's a controller-backed form", %{
     conn: conn
   } do
-    # closes AUTH-002-T03 — the form is submitted server-side through the controller
+    # the form is submitted server-side through the controller
     # (`action="/sign_in"` + `phx-update="ignore"`), not over the socket: the
     # `#login_form` binds no `phx-submit`/`phx-change`, so there is no live handler
     # to intercept or replay the credentials over the channel.

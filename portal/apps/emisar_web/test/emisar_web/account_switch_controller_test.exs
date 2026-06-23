@@ -78,7 +78,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
     end
 
     test "a signed-out switch is bounced by require_authenticated_user", %{conn: conn} do
-      # closes AUTH-013-T07 — switching tenant is an authenticated-only action;
+      # switching tenant is an authenticated-only action;
       # a signed-out POST never reaches the controller (no current_user to read),
       # it's halted at the plug and redirected to sign-in.
       conn = post(conn, ~p"/app/accounts/switch", account_id: Ecto.UUID.generate())

@@ -563,14 +563,14 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
-    # closes ENG-029-T05 — a progress chunk with a nil request_id is dropped at
+    # a progress chunk with a nil request_id is dropped at
     # the `fetch_run_id(nil, _)` guard before any DB touch; the socket stays up.
     test "progress with a nil request_id is dropped quietly", %{state: state} do
       raw = Jason.encode!(%{"type" => "action_progress", "seq" => 1, "chunk" => "x"})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
-    # closes ENG-029-T06 — the historical fix: `chunk`/`stream` are persisted
+    # the historical fix: `chunk`/`stream` are persisted
     # NESTED under `payload` (what `action_run_events` stores), never top-level
     # where Ecto silently dropped them. Guards against that regression.
     test "the chunk/stream land under payload, not as top-level event fields", %{
@@ -609,7 +609,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 — cross-runner scoping (same-account, untrusted runner)" do
     setup [:connected_socket, :dispatched_run]
 
-    # closes ENG-029-T02 (same-account branch) — runner B, sharing A's account,
+    # (same-account branch) — runner B, sharing A's account,
     # cannot append a progress chunk to A's run: `fetch_run_id` scopes by the
     # authenticated socket's runner_id, so B's frame finds no run and is dropped.
     test "runner B can't write progress against runner A's run", %{
@@ -640,7 +640,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       refute Enum.any?(events, &(&1.kind == :progress))
     end
 
-    # closes ENG-030-T04, ENG-030-T05 (same-account branch) — runner B can't
+    # (same-account branch) — runner B can't
     # finalize A's run: `finalize_from_result` is runner-scoped, so to B the
     # request_id is unknown → acked + remembered (terminal), and A's run stays
     # un-finalized (still :sent).
@@ -670,7 +670,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 — action_result, unknown/foreign request_id" do
     setup [:connected_socket]
 
-    # closes ENG-030-T04 — a result for a request_id with no matching run is
+    # a result for a request_id with no matching run is
     # genuinely terminal: acked AND remembered so a retry never re-runs the
     # unknown-request lookup/log. (The same-account scoping variant is above.)
     test "an unknown request_id is acked and remembered (no reprocess on retry)", %{state: state} do
@@ -686,7 +686,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 — runner_state ingress (catalog observe)" do
     setup [:connected_socket]
 
-    # closes ENG-028-T01, ENG-028-T03 — a valid runner_state advertising packs +
+    # a valid runner_state advertising packs +
     # actions syncs the catalog (the runner's catalog rows appear) and is scoped
     # to THIS socket's runner by construction (the handler passes
     # `state.runner_id`, never a runner id from the wire), so a runner can only
@@ -716,7 +716,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert Enum.any?(observed, &(&1.action_id == "linux.df"))
     end
 
-    # closes ENG-028-T03 (IL-14) — advertised pack/action names are runner input
+    # (IL-14) — advertised pack/action names are runner input
     # and must never be turned into atoms (atom table never GCs → DoS). A
     # never-before-seen, otherwise-valid name is accepted and persisted as a
     # STRING; it does not exist as an atom afterward.
@@ -738,7 +738,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert_raise ArgumentError, fn -> String.to_existing_atom(novel) end
     end
 
-    # closes ENG-028-T04 — runner_state is a REFRESH path, not the connect path:
+    # runner_state is a REFRESH path, not the connect path:
     # `connect_runner` already fired at init, so the runner is online before any
     # runner_state arrives, and stays online across one.
     test "runner_state is a refresh — the runner is already online before it arrives", %{
@@ -758,7 +758,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 — heartbeat resilience + scoping" do
     setup [:connected_socket]
 
-    # closes ENG-031-T04 — a garbage (here: nil) action_load is carried into
+    # a garbage (here: nil) action_load is carried into
     # ephemeral presence metadata as-is (ENG-003 trusts the runner-declared
     # load); the handler never crashes on it. A nil keeps the prior value.
     test "a heartbeat with a missing action_load is carried as-is, no crash", %{
@@ -780,7 +780,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert meta.action_load == 5
     end
 
-    # closes ENG-031-T05 — heartbeat is scoped to the authenticated socket's
+    # heartbeat is scoped to the authenticated socket's
     # OWN account/runner: it updates only this runner's presence meta, never
     # another runner sharing the account. The handler reads
     # `state.account_id`/`state.runner_id` only.
@@ -807,7 +807,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 — error envelope audit" do
     setup [:connected_socket]
 
-    # closes ENG-032-T01, ENG-032-T02 — an `error` envelope writes a
+    # an `error` envelope writes a
     # runner.error audit row AND that row carries the runner's CONNECT
     # request_context (the IP/UA captured at socket init), which is the only
     # place that connect metadata is allowed to surface.
@@ -848,7 +848,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert row.user_agent == "emisar-runner/9.9.9"
     end
 
-    # closes ENG-032-T05 — an error envelope missing code/message still records
+    # an error envelope missing code/message still records
     # the row; the absent fields are carried into the payload as nil rather than
     # dropping the audit.
     test "an error envelope missing code/message still records a row (nils carried)", %{
@@ -881,7 +881,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "handle_in/2 + handle_info/2 — protocol_version stamped at egress" do
     setup [:connected_socket, :dispatched_run]
 
-    # closes ENG-033-T08 — the cloud→runner envelope as the CONTEXT builds it
+    # the cloud→runner envelope as the CONTEXT builds it
     # carries no protocol_version; the socket adds it on push. Same delivery
     # path a dispatched run_action takes.
     test "a context-built cloud_to_runner envelope gains protocol_version only at egress", %{
@@ -900,7 +900,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert pushed["request_id"] == "req_egress"
     end
 
-    # closes ENG-034-T06 — all three socket-pushed frame types stamp
+    # all three socket-pushed frame types stamp
     # protocol_version: 1 at egress: ack_result (on a result), error (on a bad
     # envelope), and shutdown (on drain).
     test "ack_result, error, and shutdown frames all carry protocol_version: 1", %{

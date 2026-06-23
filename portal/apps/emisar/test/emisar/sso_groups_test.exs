@@ -98,7 +98,6 @@ defmodule Emisar.SSOGroupsTest do
   # -- Config: required + uniqueness -----------------------------------
 
   describe "group→role mapping config — required fields + uniqueness" do
-    # closes TEAM-030-T08
     test "a create missing external_group_id or role is rejected" do
       %{provider: provider, subject: subject} = scim_provider()
 
@@ -113,7 +112,6 @@ defmodule Emisar.SSOGroupsTest do
       assert "can't be blank" in errors_on(changeset).role
     end
 
-    # closes TEAM-030-T09
     test "a duplicate (provider, external_group_id) hits the unique index" do
       %{provider: provider, subject: subject} = scim_provider()
 
@@ -322,7 +320,6 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)" do
-      # closes SCIM-017-T03
       %{provider: provider, subject: subject, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|multi")
 
@@ -415,7 +412,6 @@ defmodule Emisar.SSOGroupsTest do
 
     @tag capture_log: true
     test "a refused/failed per-member recompute is logged, not fatal — the push still succeeds" do
-      # closes SCIM-015-T07
       %{provider: provider, subject: subject, account: account} = scim_provider()
       %{identity: kept_identity} = provision(provider, "okta|kept")
       %{identity: gone_identity, membership: gone_membership} = provision(provider, "okta|gone")
@@ -485,7 +481,6 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "recompute_role_for_identity resets an elevated member in no mapped group to default_role" do
-      # closes SCIM-015-T03
       %{provider: provider, subject: subject, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|demote")
 

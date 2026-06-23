@@ -41,7 +41,7 @@ func goodGapAction() *Action {
 	}
 }
 
-// closes PCK-002-T17 — a read-action description NOT leading with a
+// a read-action description NOT leading with a
 // searchable verb (List/Show/Tail/Dump/Count/Check) still validates. The
 // verb-leading convention is enforced by review of the MCP catalog text,
 // not by the schema.
@@ -55,7 +55,7 @@ func TestConventionGap_DescriptionWithoutVerbValidates(t *testing.T) {
 	}
 }
 
-// closes PCK-003-T17 — a free-form string arg with NO max_length (and no
+// a free-form string arg with NO max_length (and no
 // pattern/enum) loads clean. An unbounded string is a DoS hole, but bounding
 // it is a convention, not a schema requirement.
 func TestConventionGap_UnboundedStringArgValidates(t *testing.T) {
@@ -71,7 +71,7 @@ func TestConventionGap_UnboundedStringArgValidates(t *testing.T) {
 	}
 }
 
-// closes PCK-004-T09 — a mutating/destructive action mislabeled `risk: low`
+// a mutating/destructive action mislabeled `risk: low`
 // passes Validate(): the schema only checks the risk enum is one of the four
 // valid values, never whether the label is HONEST. Mislabeling a mutator as
 // low bypasses the approval gate — the single most dangerous authoring error,
@@ -90,7 +90,7 @@ func TestConventionGap_MislabeledMutatorRiskValidates(t *testing.T) {
 	}
 }
 
-// closes PCK-005-T08 — an absolute, non-/bin/sh binary path validates. The
+// an absolute, non-/bin/sh binary path validates. The
 // "bare PATH-resolved names; /bin/sh is the sole absolute exception"
 // convention is enforced by review, not the schema, which never inspects the
 // binary string's shape.
@@ -102,7 +102,7 @@ func TestConventionGap_AbsoluteBinaryPathValidates(t *testing.T) {
 	}
 }
 
-// closes PCK-004-T02 (part 1) — there is NO approval field on the Action
+// (part 1) — there is NO approval field on the Action
 // schema. Approval is derived from risk × the portal policy; the struct has
 // no `approval`/`requires_approval`/`requires_approval`-shaped field, so a
 // manifest declaring one is just ignored YAML. Pin it by reflection so a
@@ -128,7 +128,7 @@ func TestSchema_NoApprovalField(t *testing.T) {
 	}
 }
 
-// closes PCK-004-T02 (part 2) — a YAML action carrying an `approval` /
+// (part 2) — a YAML action carrying an `approval` /
 // `requires_approval` key is ACCEPTED: the unknown field is silently
 // ignored by the lenient yaml.v3 decode the loader uses, and Validate()
 // passes. The key has no effect — it is not a real field — but it does not

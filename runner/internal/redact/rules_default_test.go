@@ -18,7 +18,7 @@ func defaultApply(t *testing.T, s string) (string, []Hit) {
 	return New(rules).Apply(s)
 }
 
-// RSEC-005-T04 — every emisar credential prefix is masked by the always-on
+// every emisar credential prefix is masked by the always-on
 // emisar-token rule (rules.go:82-94). The rule must keep pace with the portal
 // credential format; this pins the exact prefix family and its marker, and
 // asserts a near-miss prefix that is NOT in the format does not falsely match.
@@ -69,7 +69,7 @@ func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
 	})
 }
 
-// RSEC-005-T05 — a PEM private-key block is masked as a whole via the
+// a PEM private-key block is masked as a whole via the
 // non-greedy [\s\S]*? rule, on a single whole-buffer Apply (the streaming path
 // is covered separately in stream_test.go). Both the generic PRIVATE KEY rule
 // (rules.go:159) and the PGP block rule (rules.go:165) are exercised.
@@ -111,7 +111,7 @@ func TestDefaultRules_PEMAndPGPPrivateKeyBlock(t *testing.T) {
 	}
 }
 
-// RSEC-005-T06 — URL inline credentials and both Cookie and Set-Cookie headers
+// URL inline credentials and both Cookie and Set-Cookie headers
 // are masked. The existing common-secrets test covers url-credentials and
 // Set-Cookie; this adds the plain "Cookie:" request header (the cookie-header
 // rule matches both directions, rules.go:177) and asserts the URL scheme/host
@@ -154,7 +154,7 @@ func TestDefaultRules_URLCredentialsAndCookieHeaders(t *testing.T) {
 	})
 }
 
-// RSEC-005-T07 — the generic secret-assignment and json-secret-field rules mask
+// the generic secret-assignment and json-secret-field rules mask
 // the value, match the field name case-insensitively, and tolerate the
 // (?:[A-Za-z0-9]+[._-])* / (?:[._-][A-Za-z0-9]+)* affixes around the core
 // secret word (rules.go:59-60,181-190).
@@ -184,7 +184,7 @@ func TestDefaultRules_SecretFieldAndAssignment(t *testing.T) {
 	}
 }
 
-// RSEC-005-T08 — a rule with an empty Name is rejected at compile.
+// a rule with an empty Name is rejected at compile.
 func TestCompileRule_MissingName(t *testing.T) {
 	_, err := CompileRule(actionspec.RedactionRule{Type: "regex", Pattern: "x"})
 	if err == nil {
@@ -192,7 +192,7 @@ func TestCompileRule_MissingName(t *testing.T) {
 	}
 }
 
-// RSEC-005-T09 — a regex rule without a Pattern, and a literal rule without a
+// a regex rule without a Pattern, and a literal rule without a
 // Literal, are each rejected at compile (rules.go:31,43).
 func TestCompileRule_MissingPatternOrLiteral(t *testing.T) {
 	if _, err := CompileRule(actionspec.RedactionRule{Name: "r", Type: "regex"}); err == nil {
@@ -203,14 +203,14 @@ func TestCompileRule_MissingPatternOrLiteral(t *testing.T) {
 	}
 }
 
-// RSEC-005-T10 — an unknown rule Type is rejected at compile (rules.go:52).
+// an unknown rule Type is rejected at compile (rules.go:52).
 func TestCompileRule_UnknownType(t *testing.T) {
 	if _, err := CompileRule(actionspec.RedactionRule{Name: "r", Type: "glob", Pattern: "x"}); err == nil {
 		t.Fatal("expected compile error for unknown rule type")
 	}
 }
 
-// RSEC-005-T12 — a credential whose shape matches none of the default patterns
+// a credential whose shape matches none of the default patterns
 // passes through unredacted. This is the documented best-effort limitation:
 // default redaction is a last-resort net, not a guarantee — action authors must
 // declare action-local rules for novel secret shapes (rules.go notes).
@@ -227,7 +227,7 @@ func TestDefaultRules_NovelSecretShapePassesThrough(t *testing.T) {
 	}
 }
 
-// RSEC-005-T13 — a rule with an empty Replacement defaults to [REDACTED] for
+// a rule with an empty Replacement defaults to [REDACTED] for
 // both regex and literal rules (rules.go:38,47).
 func TestCompileRule_EmptyReplacementDefaults(t *testing.T) {
 	reRule, err := CompileRule(actionspec.RedactionRule{Name: "re", Type: "regex", Pattern: "[0-9]+"})
@@ -245,7 +245,7 @@ func TestCompileRule_EmptyReplacementDefaults(t *testing.T) {
 	}
 }
 
-// RSEC-005-T15 — the always-on default set covers the documented secret
+// the always-on default set covers the documented secret
 // families and every rule compiles. Pins the count so a rule cannot be dropped
 // silently, and checks each family is present by name (rules.go:55-57,62-191).
 func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
@@ -282,7 +282,7 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 	}
 }
 
-// RSEC-005-T17 — redaction throughput baseline over a large buffer with the
+// redaction throughput baseline over a large buffer with the
 // full default rule set. No assertion beyond "completes"; guards against an
 // accidental super-linear blowup in the rule set.
 func BenchmarkDefaultRules_ApplyLargeBuffer(b *testing.B) {

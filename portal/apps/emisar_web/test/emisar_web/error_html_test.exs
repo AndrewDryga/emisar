@@ -28,7 +28,6 @@ defmodule EmisarWeb.ErrorHTMLTest do
     end
 
     test "leaks no stacktrace or struct detail to the visitor" do
-      # closes CFG-013-T02
       # The renderer takes `_assigns`, so even a caller that passed a reason /
       # stacktrace can't surface one — the prod 500 (debug_errors off) shows the
       # bare branded copy only, never internal detail.
@@ -48,7 +47,6 @@ defmodule EmisarWeb.ErrorHTMLTest do
     end
 
     test "an unknown status code still renders a branded page via the catch-all" do
-      # closes CFG-013-T06
       # A status with no explicit clause (e.g. 418) falls to `render(template, _)`,
       # which derives the number + the standard message ("I'm a teapot") rather
       # than emitting a blank/raw 418.

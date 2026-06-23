@@ -276,7 +276,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-005-T07
       %{token: token} = scim_provider()
 
       # externalId is present (passes the blank gate), but the email carries a
@@ -369,7 +368,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a case-insensitive op keyword (`Replace`) still flips active", %{conn: conn} do
-      # closes SCIM-009-T04
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -390,7 +388,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH whose ops never touch `active` → 400 invalidPath", %{conn: conn} do
-      # closes SCIM-009-T06
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -411,7 +408,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a non-list `Operations` → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-009-T07
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -427,7 +423,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn} do
-      # closes SCIM-009-T08
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -442,7 +437,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH active:false on an unknown externalId → 404", %{conn: conn} do
-      # closes SCIM-009-T10
       %{token: token} = scim_provider(%{default_role: :admin})
 
       body =
@@ -528,7 +522,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a re-DELETE of an already-suspended user is idempotent (204 again)", %{conn: conn} do
-      # closes SCIM-011-T03
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -545,7 +538,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH active op whose value can't be parsed → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-009-T09
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -567,7 +559,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
     test "a PATCH active:true on an already-active member is idempotent (200, still active)",
          %{conn: conn} do
-      # closes SCIM-012-T04
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -587,7 +578,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH active:true on an unknown externalId → 404", %{conn: conn} do
-      # closes SCIM-012-T05
       %{token: token} = scim_provider(%{default_role: :admin})
 
       body =
@@ -599,8 +589,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a soft-deleted identity is excluded — GET/PATCH/DELETE → 404", %{conn: conn} do
-      # closes SCIM-007-T04
-      # closes SCIM-019-T07
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, %{identity: identity}} =
@@ -629,7 +617,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   describe "PUT /Users/:id" do
     test "PUT active:false suspends the membership", %{conn: conn} do
-      # closes SCIM-010-T01
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -657,7 +644,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT active:true reactivates a suspended membership", %{conn: conn} do
-      # closes SCIM-010-T02
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -678,7 +664,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT with the Entra string `\"False\"` suspends the membership", %{conn: conn} do
-      # closes SCIM-010-T03
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -700,7 +685,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT acts on `active` only — other body attributes are ignored", %{conn: conn} do
-      # closes SCIM-010-T04
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -732,7 +716,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT with no `active` → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-010-T05
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -749,7 +732,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT with an unparseable `active` → 400 invalidValue", %{conn: conn} do
-      # closes SCIM-010-T05
       %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
 
       {:ok, _} =
@@ -764,7 +746,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT on an unknown externalId → 404 SCIM error", %{conn: conn} do
-      # closes SCIM-010-T06
       %{token: token} = scim_provider()
 
       body =
@@ -777,7 +758,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT active:false on the sole active owner → 409 mutability, untouched", %{conn: conn} do
-      # closes SCIM-010-T07
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :viewer})
 
@@ -806,7 +786,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   describe "cross-provider isolation (a foreign externalId is 404, never a leak)" do
     test "DELETE of an account-B externalId → 404; B untouched", %{conn: conn} do
-      # closes SCIM-011-T06
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
 
@@ -825,7 +804,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PUT active:true on an account-B externalId → 404; B's suspension stands", %{conn: conn} do
-      # closes SCIM-012-T06
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
 
@@ -845,7 +823,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     test "PATCH active:true on an account-B externalId → 404; B's suspension stands", %{
       conn: conn
     } do
-      # closes SCIM-012-T06
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
 
@@ -863,7 +840,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
     test "PATCH active:false on an account-B externalId → 404; B's member stays active",
          %{conn: conn} do
-      # closes SCIM-019-T06
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
 
@@ -884,8 +860,6 @@ defmodule EmisarWeb.SCIMControllerTest do
   describe "provisioning lifecycle" do
     test "POST → PATCH active:false → PATCH active:true → DELETE, asserting state at each step",
          %{conn: conn} do
-      # closes SCIM-013-T01
-      # closes SCIM-013-T02
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -933,7 +907,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{conn: conn} do
-      # closes SCIM-013-T05
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :admin})
 
@@ -986,7 +959,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     test "GET /Users/:id matches scim_external_id only — not the provider_identifier fallback", %{
       conn: conn
     } do
-      # closes SCIM-007-T02 (asserts the REAL behavior, which differs from the
+      # (asserts the REAL behavior, which differs from the
       # test-plan's optimistic claim). The list filter `externalId eq` coalesces
       # scim_external_id → provider_identifier (UserIdentity.Query.by_external_id),
       # but the single-fetch `GET /Users/:id` (scim_fetch_user →
@@ -1116,7 +1089,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "an UNQUOTED filter value is accepted (regex allows quoted or unquoted)", %{conn: conn} do
-      # closes SCIM-008-T05
       %{token: token, provider: provider} = scim_provider()
 
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "a@acme.test"})
@@ -1135,7 +1107,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "an UNFILTERED list past the page cap returns a partial (≤100) list", %{conn: conn} do
-      # closes SCIM-008-T06
       %{token: token, provider: provider} = scim_provider()
 
       # One real provisioned identity, then push the directory well past the 100
@@ -1159,8 +1130,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   describe "discovery" do
     test "GET /ServiceProviderConfig is 200 behind auth and declares our support", %{conn: conn} do
-      # closes SCIM-002-T01
-      # closes SCIM-002-T03
       %{token: token} = scim_provider()
 
       body = conn |> auth(token) |> get(~p"/scim/v2/ServiceProviderConfig") |> json_response(200)
@@ -1183,7 +1152,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "the config is identical regardless of which provider's bearer fetches it", %{conn: conn} do
-      # closes SCIM-002-T02
       %{token: token_a} = scim_provider()
       %{token: token_b} = scim_provider()
 
@@ -1199,9 +1167,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     test "GET /ResourceTypes lists exactly the User descriptor (Group is push-only)", %{
       conn: conn
     } do
-      # closes SCIM-003-T01
-      # closes SCIM-003-T02
-      # closes SCIM-003-T03
       %{token: token} = scim_provider()
 
       body = conn |> auth(token) |> get(~p"/scim/v2/ResourceTypes") |> json_response(200)
@@ -1222,8 +1187,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "GET /Schemas declares the User schema's three attributes", %{conn: conn} do
-      # closes SCIM-004-T01
-      # closes SCIM-004-T02
       %{token: token} = scim_provider()
 
       body = conn |> auth(token) |> get(~p"/scim/v2/Schemas") |> json_response(200)
@@ -1263,7 +1226,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     test "the outbound content-type is `application/json`, not `application/scim+json`", %{
       conn: conn
     } do
-      # closes SCIM-020-T10
       %{token: token} = scim_provider()
 
       conn = conn |> auth(token) |> get(~p"/scim/v2/ServiceProviderConfig")
@@ -1281,18 +1243,15 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   describe "Resource.parse_user/1" do
     test "externalId is taken directly when present" do
-      # closes SCIM-006-T01
       assert %{external_id: "okta|direct"} = Resource.parse_user(%{"externalId" => "okta|direct"})
     end
 
     test "externalId falls back to userName when absent" do
-      # closes SCIM-006-T02
       assert %{external_id: "user@acme.test"} =
                Resource.parse_user(%{"userName" => "user@acme.test"})
     end
 
     test "the primary email is chosen over the others" do
-      # closes SCIM-006-T03
       params = %{
         "externalId" => "okta|p",
         "emails" => [
@@ -1305,7 +1264,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "with no primary flag, the first non-empty email value wins" do
-      # closes SCIM-006-T04
       params = %{
         "externalId" => "okta|f",
         "emails" => [%{"value" => ""}, %{"value" => "first@acme.test"}]
@@ -1315,7 +1273,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "an email-like userName is used as the email when no emails are sent" do
-      # closes SCIM-006-T05
       assert %{email: "handle@acme.test"} =
                Resource.parse_user(%{"externalId" => "okta|h", "userName" => "handle@acme.test"})
 
@@ -1325,7 +1282,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "full_name resolves formatted → assembled → displayName, in that order" do
-      # closes SCIM-006-T06
       formatted = %{
         "externalId" => "okta|n1",
         "name" => %{"formatted" => "Ada Lovelace", "givenName" => "Ada", "familyName" => "L"},
@@ -1349,7 +1305,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     test ~s|Entra's string `"True"`/`"False"` active is parsed case-insensitively|, %{
       conn: _conn
     } do
-      # closes SCIM-006-T07
       assert %{active: true} =
                Resource.parse_user(%{"externalId" => "okta|a1", "active" => "True"})
 
@@ -1364,20 +1319,17 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "an unparseable present active → nil (no active change)" do
-      # closes SCIM-006-T09
       assert %{active: nil} =
                Resource.parse_user(%{"externalId" => "okta|a5", "active" => "maybe"})
     end
 
     test "non-string fields are dropped without crashing" do
-      # closes SCIM-006-T12
       params = %{"externalId" => "okta|drop", "userName" => 123, "emails" => "not-a-list"}
 
       assert %{external_id: "okta|drop", email: nil, full_name: nil} = Resource.parse_user(params)
     end
 
     test "with no name or email, full_name and email are nil (still provisionable)" do
-      # closes SCIM-006-T10
       # Only an externalId — no emails, no name, no displayName, no userName. The
       # user is still identifiable by externalId; email/full_name are just nil.
       assert %{external_id: "okta|bare", email: nil, full_name: nil, active: true} =
@@ -1385,8 +1337,6 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "arbitrary input keys never grow the atom table (no String.to_atom)" do
-      # closes SCIM-006-T11
-      # closes SCIM-020-T12
       # The parser reads only fixed string-literal keys (IL-14), so feeding it a
       # payload full of never-before-seen string keys must not mint a single atom.
       payload =

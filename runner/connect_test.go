@@ -57,7 +57,7 @@ func TestResolveExternalIDPrefersConfiguredID(t *testing.T) {
 
 // A persisted runner_id file that is blank (or only whitespace) is treated as
 // absent — the runner mints a fresh id and overwrites the stale file, rather
-// than advertising an empty id forever. closes RUN-004-T04.
+// than advertising an empty id forever.
 func TestResolveExternalIDBlankFileMintsFresh(t *testing.T) {
 	for _, blank := range []string{"", "   ", "\n\t\n"} {
 		dir := t.TempDir()
@@ -88,7 +88,7 @@ func TestResolveExternalIDBlankFileMintsFresh(t *testing.T) {
 // Minting persists the id atomically with tight permissions: the data dir is
 // 0o750 and the id file is 0o600, so a co-tenant user can't read or swap the
 // runner's durable identity, and a crash mid-write can't leave a torn file
-// (write-tmp + rename). closes RUN-004-T06.
+// (write-tmp + rename).
 func TestResolveExternalIDMintWritesTightPerms(t *testing.T) {
 	parent := t.TempDir()
 	// data_dir does not exist yet — resolveExternalID must MkdirAll it 0o750.

@@ -140,8 +140,6 @@ func TestCopyTree_NormalizesModesForServiceUser(t *testing.T) {
 	}
 }
 
-// closes RUN-019-T04
-//
 // `pack install --hash`: a matching hash installs, a mismatch aborts with
 // nothing copied. The --hash flag pins the install to the exact bytes the
 // portal advertised (pack.go:223-229): the pack is loaded and content-hashed,
@@ -187,8 +185,6 @@ func TestPackInstall_HashGate(t *testing.T) {
 	})
 }
 
-// closes RUN-021-T03
-//
 // `pack uninstall` refuses a directory that has no pack.yaml ("not a pack"),
 // so a misconfigured packs dir can't make it RemoveAll an unrelated tree
 // (pack.go:362-367). The id passes the safe-segment guard and the target
@@ -224,8 +220,6 @@ func TestPackUninstall_RefusesNonPackDir(t *testing.T) {
 	}
 }
 
-// closes RUN-019-T02
-//
 // `pack install ./local-dir`: a local path is used as-is (no fetch),
 // validated, and copied to <dest>/<id> (pack.go:280-311 resolvePackSource →
 // LoadOne → copyTree). The whole install gate runs without a registry or
@@ -256,13 +250,13 @@ func TestPackInstall_FromLocalPath(t *testing.T) {
 	}
 }
 
-// closes RUN-019-T02 (tarball variant) / RUN-019-T03
+// (tarball variant) /
 //
 // `pack install <url>` over a loopback registry: the runner does NOT install a
 // local tarball *path* (LoadOne requires a directory), so the realistic
 // tarball path is a fetch — packs.Fetch downloads + extracts the .tar.gz, then
 // LoadOne/copyTree run. A loopback http:// URL passes the cleartext gate
-// (RUN-032-T04), so an httptest server stands in for the registry with no
+// , so an httptest server stands in for the registry with no
 // production change.
 func TestPackInstall_FromTarballURL(t *testing.T) {
 	src := writeValidPack(t, t.TempDir(), "redis")
@@ -293,8 +287,6 @@ func TestPackInstall_FromTarballURL(t *testing.T) {
 	}
 }
 
-// closes RUN-019-T05
-//
 // Re-installing an already-present pack id is refused unless --force is given;
 // with --force the old install is RemoveAll'd and replaced (pack.go:246-254).
 // This stops a silent overwrite of a trusted pack while still letting an
@@ -347,8 +339,6 @@ func TestPackInstall_AlreadyInstalledNeedsForce(t *testing.T) {
 	}
 }
 
-// closes RUN-019-T06
-//
 // `pack install` with neither --dest nor a resolvable config errors rather than
 // silently choosing a default packs dir (pack.go:235-244) — installing into the
 // wrong place silently is worse than asking. The pack still validates (a local
@@ -373,8 +363,6 @@ func TestPackInstall_NoDestNoConfigErrors(t *testing.T) {
 	}
 }
 
-// closes RUN-021-T01
-//
 // `pack uninstall <id>` RemoveAll's the installed pack dir and prints the
 // reload reminder (pack.go:369-374). The pack has a pack.yaml so it clears the
 // not-a-pack guard, and the safe-segment guard, so the happy path runs to the
@@ -403,8 +391,6 @@ func TestPackUninstall_RemovesAndReminds(t *testing.T) {
 	}
 }
 
-// closes RUN-021-T04
-//
 // Uninstalling an id that isn't present reports "is not installed" rather than
 // failing opaquely (pack.go:351-356) — the operator learns the pack was already
 // gone (or mistyped), not that something broke.
@@ -423,8 +409,6 @@ func TestPackUninstall_NotInstalled(t *testing.T) {
 	}
 }
 
-// closes RUN-021-T05
-//
 // A plain file (not a directory) where the pack dir would be is refused as "not
 // a pack directory" (pack.go:358-360) — uninstall only ever RemoveAll's a real
 // pack directory, never an arbitrary file at that path.
@@ -450,8 +434,6 @@ func TestPackUninstall_FileAtPathRefused(t *testing.T) {
 	}
 }
 
-// closes RUN-021-T06
-//
 // `pack uninstall` with neither --dest nor a resolvable config errors — the
 // destination is resolved exactly like install, with no silent default
 // (pack.go:339-348). The safe-name guard passes first, so the failure is
@@ -474,8 +456,6 @@ func TestPackUninstall_NoDestNoConfigErrors(t *testing.T) {
 	}
 }
 
-// closes RUN-021-T07
-//
 // `pack remove`/`rm`/`delete` are aliases for uninstall (pack.go Aliases) — an
 // operator's muscle memory ("remove") routes to the same RunE. Verified by
 // resolving each alias off the parent `pack` command and confirming it lands on

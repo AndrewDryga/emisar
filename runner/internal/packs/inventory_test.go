@@ -36,7 +36,7 @@ func loadRealLibrary(t *testing.T) *Registry {
 	return reg
 }
 
-// closes PCK-004-T04 — the risk distribution across the WHOLE library is a
+// the risk distribution across the WHOLE library is a
 // regression guard. The counts are PINNED to the measured current values, so
 // any future risk relabel (or an added destructive action) trips this test
 // and forces a deliberate re-pin + a look at whether the new label is honest.
@@ -182,7 +182,7 @@ func TestLibrary_NamedDestructiveActionRisk(t *testing.T) {
 	}
 }
 
-// closes PCK-007-T07 / PCK-007-T08 — the `shell` break-glass pack manifest
+// the `shell` break-glass pack manifest
 // has NO detect block (so `emisar pack suggest` never auto-suggests it) and
 // its setup.notes advise keeping it human-gated (require_approval). These are
 // the containment promises the staging-only break-glass rests on, read from
@@ -195,12 +195,12 @@ func TestShellPack_BreakGlassContainment(t *testing.T) {
 		t.Fatal("shell pack must load")
 	}
 
-	// PCK-007-T07: no detect signals at all — never auto-suggested.
+	// no detect signals at all — never auto-suggested.
 	if len(pack.Detect.Binaries) != 0 || len(pack.Detect.Processes) != 0 || len(pack.Detect.Ports) != 0 {
 		t.Errorf("shell pack must declare NO detect block (it must never be auto-suggested), got %+v", pack.Detect)
 	}
 
-	// PCK-007-T08: setup.notes must advise keeping it human-gated.
+	// setup.notes must advise keeping it human-gated.
 	joined := strings.ToLower(strings.Join(pack.Setup.Notes, "\n"))
 	for _, want := range []string{"require_approval", "staging only"} {
 		if !strings.Contains(joined, want) {

@@ -11,7 +11,6 @@ defmodule EmisarWeb.ErrorJSONTest do
   end
 
   test "an unrouted JSON request yields the structured 404 through the endpoint", %{conn: conn} do
-    # closes CFG-013-T03
     # Not just the renderer in isolation: a real request whose Accept is
     # application/json must come back as the structured error shape (never
     # the HTML page, never a struct/stacktrace), proving the endpoint wires

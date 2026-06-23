@@ -14,7 +14,7 @@ import (
 // corrupt-file parse error, max<=0 default, perms, and sorted snapshot
 // (cursor.go).
 
-// TestCursor_MarkAckedIdempotent (RSEC-014-T05) — acking the same id twice is a
+// TestCursor_MarkAckedIdempotent — acking the same id twice is a
 // no-op on the second call: size unchanged and (since the early-return skips
 // persist) the second call cannot fail on a write.
 func TestCursor_MarkAckedIdempotent(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCursor_MarkAckedIdempotent(t *testing.T) {
 	}
 }
 
-// TestCursor_AtomicWriteThenRename (RSEC-014-T06) — persist writes to a .tmp
+// TestCursor_AtomicWriteThenRename — persist writes to a .tmp
 // then renames into place, leaving no stray temp file and a valid final file
 // the reopen path can parse. (Crash-mid-write durability is the reason for the
 // rename; we assert its observable result.)
@@ -66,7 +66,7 @@ func TestCursor_AtomicWriteThenRename(t *testing.T) {
 	}
 }
 
-// TestCursor_DiskFailureAdvancesMemory (RSEC-014-T07) — when persist fails,
+// TestCursor_DiskFailureAdvancesMemory — when persist fails,
 // MarkAcked returns the error BUT the in-memory state has already advanced, so
 // IsAcked still reports true. The cursor opens cleanly; the write is then
 // failed by stripping write permission from the parent dir so the .tmp staging
@@ -102,7 +102,7 @@ func TestCursor_DiskFailureAdvancesMemory(t *testing.T) {
 	}
 }
 
-// TestCursor_CorruptFileParseError (RSEC-014-T08) — opening a malformed JSON
+// TestCursor_CorruptFileParseError — opening a malformed JSON
 // sidecar surfaces a parse error rather than silently starting empty.
 func TestCursor_CorruptFileParseError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ack.json")
@@ -114,7 +114,7 @@ func TestCursor_CorruptFileParseError(t *testing.T) {
 	}
 }
 
-// TestCursor_MaxDefaults (RSEC-014-T09) — max <= 0 falls back to 4096, so a
+// TestCursor_MaxDefaults — max <= 0 falls back to 4096, so a
 // non-positive bound never means "retain nothing".
 func TestCursor_MaxDefaults(t *testing.T) {
 	for _, max := range []int{0, -7} {
@@ -134,7 +134,7 @@ func TestCursor_MaxDefaults(t *testing.T) {
 	}
 }
 
-// TestCursor_PersistPerms (RSEC-014-T10) — the sidecar file is 0o600 and the
+// TestCursor_PersistPerms — the sidecar file is 0o600 and the
 // directory the cursor creates is 0o750, matching the audit log's posture
 // (the cursor records which event ids were acked — still host metadata).
 func TestCursor_PersistPerms(t *testing.T) {
@@ -169,7 +169,7 @@ func TestCursor_PersistPerms(t *testing.T) {
 	}
 }
 
-// TestCursor_SnapshotSortedOnDisk (RSEC-014-T11) — acking out of order yields a
+// TestCursor_SnapshotSortedOnDisk — acking out of order yields a
 // sorted acked_event_ids array on disk, so the file is stable / diff-friendly.
 func TestCursor_SnapshotSortedOnDisk(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ack.json")

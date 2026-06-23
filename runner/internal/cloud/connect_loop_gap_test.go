@@ -16,18 +16,16 @@ import (
 // existing fake-cloud harness (gate_test.go / client_test.go) can reach without
 // any production-code change:
 //
-//   - Dispatch/ack routing edge cases (RUN-007-T06/T07/T08)
-//   - Outbox/sender accounting (RUN-008-T03/T08/T10)
-//   - Heartbeat defaults + load tracking (RUN-009-T03/T06)
-//   - Reconnect/backoff + NewClient defaults (RUN-006-T06/T07/T08)
+//   - Dispatch/ack routing edge cases (/T07/T08)
+//   - Outbox/sender accounting (/T08/T10)
+//   - Heartbeat defaults + load tracking (/T06)
+//   - Reconnect/backoff + NewClient defaults (/T07/T08)
 //
 // The harness pieces reused here: newFakeConn, queuedDialer, buildClient,
 // sendRunAction, waitForResult, waitUntil, backoffCapture (client_test.go).
 
 // --- Dispatch / ack routing -------------------------------------------------
 
-// closes RUN-007-T06
-//
 // A premature ack — one that arrives while the run is still in flight (not
 // finished, or finished but its tail not yet drained) — must be ignored:
 // ackRun logs cloud.premature_ack and returns WITHOUT evicting the run from the
@@ -74,8 +72,6 @@ func TestClient_AckRun_PrematureAckIgnored(t *testing.T) {
 	})
 }
 
-// closes RUN-007-T07
-//
 // An ack for a run that has ALREADY been evicted from the in-flight map (the
 // legitimate reconnect dance: the result was delivered + acked, the run
 // removed, then a duplicate ack lands) must still advance the audit cursor and
@@ -104,8 +100,6 @@ func TestClient_AckRun_EvictedRunStillAdvancesCursor(t *testing.T) {
 	}
 }
 
-// closes RUN-007-T08
-//
 // A cancel for a request_id the runner has no in-flight state for is a no-op:
 // cancelRun looks it up, finds nothing, and returns without error or panic.
 // The cloud can legitimately send a stale cancel after the run already
@@ -122,8 +116,6 @@ func TestClient_CancelRun_UnknownRequestIsNoOp(t *testing.T) {
 
 // --- Outbox / sender accounting ---------------------------------------------
 
-// closes RUN-008-T03
-//
 // When the per-run outbox overflows with progress chunks (the disconnected
 // case: the sender isn't draining, so progress piles up past MaxPendingPerRun),
 // each overflow drops the oldest chunk and bumps s.dropped — and that lost
@@ -174,8 +166,6 @@ func TestClient_Outbox_ProgressDropCountSurfacedOnReason(t *testing.T) {
 	}
 }
 
-// closes RUN-008-T08
-//
 // A send error mid-drain must requeue the unsent tail and stop, so the next
 // session's sender resumes from exactly the same point rather than losing
 // messages. drainOnce sends in order; the conn here accepts the first message
@@ -224,8 +214,6 @@ func TestClient_DrainOnce_SendErrorMidDrainRequeues(t *testing.T) {
 	}
 }
 
-// closes RUN-008-T10
-//
 // The terminal result envelope must NOT repeat stdout/stderr CONTENT — the
 // cloud already has the bytes from the streamed progress chunks; the result
 // carries only integrity metadata (sha256 + byte counts). Repeating output here
@@ -279,8 +267,6 @@ func TestClient_Result_OmitsStdoutStderrContent(t *testing.T) {
 
 // --- Heartbeat --------------------------------------------------------------
 
-// closes RUN-009-T03
-//
 // Constructing a client with no heartbeat interval defaults it to 30s, so an
 // operator who omits the knob still gets the fast dead-socket probe rather than
 // a heartbeat that never fires (or a divide-by-zero ticker panic).
@@ -291,8 +277,6 @@ func TestClient_Heartbeat_DefaultIntervalWhenUnset(t *testing.T) {
 	}
 }
 
-// closes RUN-009-T06
-//
 // The heartbeat carries action_load = the live in-flight count, so the cloud's
 // scheduler can avoid piling work onto a busy runner. With a long action in
 // flight, at least one heartbeat must report action_load >= 1; the field tracks
@@ -335,8 +319,6 @@ func TestClient_Heartbeat_CarriesActionLoad(t *testing.T) {
 
 // --- Reconnect / backoff / NewClient defaults -------------------------------
 
-// closes RUN-006-T06
-//
 // A dial failure must NOT exit Run — the runner reconnects forever (the host
 // runner has no other long-running mode). Run keeps looping over failed dials,
 // backing off, and only returns when the PARENT context is cancelled. A bug
@@ -376,8 +358,6 @@ func TestClient_Run_DialFailureContinuesWithBackoff(t *testing.T) {
 	}
 }
 
-// closes RUN-006-T07
-//
 // A connected session that then fails its runner_state send returns
 // connected=true, which RESETS the reconnect backoff to the floor — the dial
 // succeeded, so any prior backoff escalation (from earlier failed dials) was a
@@ -419,8 +399,6 @@ func TestClient_Run_SendStateFailureResetsBackoff(t *testing.T) {
 	}
 }
 
-// closes RUN-006-T08
-//
 // NewClient fills every zero-valued knob with its documented default, so a
 // caller can pass an almost-empty Options and still get a sane client: heartbeat
 // 30s, reconnect 1s..60s, 8 concurrent runs, 2048 buffered per run, dedup ring

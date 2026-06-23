@@ -180,7 +180,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "recent decisions list the decided requests but not the still-pending one", %{conn: conn} do
-    # closes GOV-001-T03 — "Recent decisions" = all_recent minus the rows already
+    # "Recent decisions" = all_recent minus the rows already
     # shown in Pending, so a decided request appears there while a pending one
     # shows only at the top, never duplicated below.
     {conn, user, account} = register_and_log_in(conn)
@@ -201,7 +201,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "a viewer sees pending + recent but no standing-grants rows", %{conn: conn} do
-    # closes GOV-001-T06 — a viewer holds `view` (pending + recent render) but not
+    # a viewer holds `view` (pending + recent render) but not
     # `manage_grants`, so `list_grants_for_account` errors → collapsed to [] → the
     # grants section shows its empty-state, never a grant row or a Revoke button.
     {_owner_conn, owner, account} = register_and_log_in(conn)
@@ -224,7 +224,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "an operator sees no standing-grants rows either (manage_grants is admin+)", %{conn: conn} do
-    # closes GOV-001-T07 — operator holds `decide` (so the Revoke button's UI
+    # operator holds `decide` (so the Revoke button's UI
     # predicate would pass) but NOT `manage_grants`, and grant rows only load with
     # manage_grants. The list errors → [], so the section is empty regardless of
     # the predicate (the GOV-005 visibility/context split never collides).
@@ -245,7 +245,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "another account's pending requests and grants never leak onto the page", %{conn: conn} do
-    # closes GOV-001-T08 — `for_subject` scopes pending / grants / decided to the
+    # `for_subject` scopes pending / grants / decided to the
     # subject's account, so a foreign account's held action and standing grant are
     # invisible here even though they exist in the same DB.
     {conn, _user, account} = register_and_log_in(conn)
@@ -267,7 +267,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "a pending-load error renders the danger empty-state, not 'Nothing waiting'", %{conn: conn} do
-    # closes GOV-001-T09 — a crafted `?pending_after=` cursor makes
+    # a crafted `?pending_after=` cursor makes
     # `list_pending_approval_requests` → `Repo.list` return {:error,:invalid_cursor}.
     # That collapses to [] but sets `pending_error?`, so the section must warn "a
     # held action may be waiting", NOT reassure with "Nothing waiting".
@@ -282,7 +282,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "an empty queue shows the reassuring empty-state linking to policies", %{conn: conn} do
-    # closes GOV-001-T11 — zero pending and no load error: the Pending section
+    # zero pending and no load error: the Pending section
     # renders the reassuring "Nothing waiting." empty-state (not the danger one),
     # with the link to /policies that explains where approvals come from.
     {conn, _user, account} = register_and_log_in(conn)
@@ -298,7 +298,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   test "empty grants and empty decided sections each show their explanatory empty-state", %{
     conn: conn
   } do
-    # closes GOV-001-T12 — an owner (holds manage_grants, so grants DO load) with
+    # an owner (holds manage_grants, so grants DO load) with
     # zero grants and zero decided requests sees the explanatory empty-state for
     # each secondary section, not a blank gap.
     {conn, _user, account} = register_and_log_in(conn)
@@ -312,7 +312,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   test "grants and decided load errors collapse to empty silently — no danger banner", %{
     conn: conn
   } do
-    # closes GOV-001-T10 — crafted `grants_after`/`decided_after` cursors make
+    # crafted `grants_after`/`decided_after` cursors make
     # both reads return {:error,_}. Unlike Pending, these historical sections run
     # through `list_or_empty/1`, so they render their normal empty-states with NO
     # danger banner (a stale grant/decision isn't the held-action hazard pending is).
@@ -331,7 +331,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do
-    # closes GOV-005-T04 — BUG. The Revoke button's UI predicate is
+    # BUG. The Revoke button's UI predicate is
     # `subject_can_decide_approval?` (operator+), but `fetch_grant_by_id` requires
     # `manage_grants` (admin+) and returns {:error,:unauthorized} for an operator.
     # `ApprovalsLive.handle_event("revoke_grant", …)` only matches {:error,:not_found}

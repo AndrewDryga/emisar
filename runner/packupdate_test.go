@@ -211,8 +211,6 @@ func runUpdate(t *testing.T, dest, registry string, extraArgs ...string) (error,
 	return err, out
 }
 
-// closes RUN-020-T02
-//
 // A pack whose installed hash equals the registry's is reported "up to date"
 // and left untouched (packupdate.go:98-103) — update never rewrites bytes that
 // already match, so a reload isn't forced for nothing.
@@ -235,8 +233,6 @@ func TestPackUpdate_UpToDateSkipped(t *testing.T) {
 	}
 }
 
-// closes RUN-020-T03
-//
 // A locally-authored pack absent from the registry index is left as-is, not
 // treated as an error (packupdate.go:91-96) — update only manages packs the
 // registry knows about, so a private pack survives an update run.
@@ -259,8 +255,6 @@ func TestPackUpdate_NotInRegistryLeftAsIs(t *testing.T) {
 	}
 }
 
-// closes RUN-020-T06 / RUN-020-T13
-//
 // `pack update --dry-run` reports the available move (vX → vY) but touches
 // nothing on disk (packupdate.go:105-109), and leaves no staging dir behind.
 // The installed hash differs from the index's, so a real run would update — the
@@ -290,8 +284,6 @@ func TestPackUpdate_DryRunTouchesNothing(t *testing.T) {
 	}
 }
 
-// closes RUN-020-T07
-//
 // A requested id that isn't installed anywhere is surfaced as "not installed"
 // rather than a silent no-op (packupdate.go:122-127), so an operator's typo is
 // visible instead of looking like "nothing to do".
@@ -310,8 +302,6 @@ func TestPackUpdate_TypoReportedNotInstalled(t *testing.T) {
 	}
 }
 
-// closes RUN-020-T09
-//
 // With an empty packs dir, update prints "No packs installed in <dir>" and
 // exits cleanly (packupdate.go:129-132) — there's nothing to do and that's not
 // an error.
@@ -328,8 +318,6 @@ func TestPackUpdate_NoPacksInstalled(t *testing.T) {
 	}
 }
 
-// closes RUN-020-T10
-//
 // When one pack updates and another fails (the registry serves a tarball whose
 // hash doesn't match its index entry), update tallies the result and returns a
 // non-zero error so a CI/automation caller sees the partial failure

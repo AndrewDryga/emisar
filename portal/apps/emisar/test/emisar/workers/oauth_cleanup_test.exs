@@ -118,7 +118,7 @@ defmodule Emisar.Workers.OAuthCleanupLogTest do
     :ok
   end
 
-  # closes ENG-026-T05 — the swept-count lines are logged ONLY when something was
+  # the swept-count lines are logged ONLY when something was
   # deleted (each guarded by `if n > 0`). A no-op sweep over an empty/fresh table
   # (every daily tick when nothing aged out) stays silent rather than logging
   # "codes_swept 0 / unused_clients_swept 0"; a sweep that prunes a code logs it.

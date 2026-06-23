@@ -31,7 +31,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
-    # closes CON-008-T05 / CON-019-T05 — before any client is picked the connect
+    # before any client is picked the connect
     # body is the "Pick a client above" empty state (no mint, no snippet).
     test "no client picked → 'Pick a client above' empty connect body", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -324,10 +324,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
-    # closes CON-016-T01 (partial) — a custom create persists an MCP-shaped key
+    # (partial) — a custom create persists an MCP-shaped key
     # (`actions:read` + `actions:execute`, nothing else), resets the form, and
     # reloads the list so the new key is visible. (The "raw secret shown once"
-    # half of CON-016-T01 is broken on the custom tab — see the skipped test
+    # half of is broken on the custom tab — see the skipped test
     # below and the agent report.)
     test "custom create persists an MCP-shaped key and reloads the list", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
@@ -355,10 +355,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ ~s(value="my-custom-bot")
     end
 
-    # closes CON-016-T03 — a `datetime-local` expiry on the custom-create form
+    # a `datetime-local` expiry on the custom-create form
     # (no seconds, no zone) is stored as UTC: `parse_expires_at` appends ":00Z"
     # before parsing, so "2030-12-25 at 10:30" persists as 10:30:00 UTC. (The
-    # auth-keys form has the parallel CON-021-T04; this is the agents path.)
+    # auth-keys form has the parallel; this is the agents path.)
     test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
@@ -379,7 +379,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
     end
 
-    # closes CON-016-T01 (the secret-reveal half) — BUG: the custom tab renders
+    # (the secret-reveal half) — BUG: the custom tab renders
     # only the key-builder form, never the `@quick_secret` reveal, so a
     # custom-created key's one-time raw secret is minted but never shown to the
     # operator (no "New key minted", no emk- secret in the DOM). They can't copy
@@ -399,7 +399,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
     end
 
-    # closes CON-017-T02 — picking a real client mints + shows a quick_secret;
+    # picking a real client mints + shows a quick_secret;
     # switching to the Custom tab clears that shown secret (one-time-secret
     # hygiene), and re-picking a real client re-enters the quick-mint clause.
     test "switching to Custom clears a previously-shown quick secret", %{conn: conn} do
@@ -420,7 +420,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert again =~ ~r/EMISAR_API_KEY=emk-[A-Za-z0-9_-]+/
     end
 
-    # closes CON-020-T03 — with no runners registered, the scope picker (rendered
+    # with no runners registered, the scope picker (rendered
     # once a client is picked) shows its empty state.
     test "scope picker shows an empty state when no runners are registered", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -431,7 +431,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "No runners registered yet."
     end
 
-    # closes CON-020-T01 — ticking a runner adds its id to the scope selection,
+    # ticking a runner adds its id to the scope selection,
     # and the selection survives a client-tab switch (it's not reset by
     # select_client), so the next mint carries it.
     test "scope selection persists across client-tab switches", %{conn: conn} do
@@ -457,7 +457,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert scoped.runner_filter == [runner.id]
     end
 
-    # closes CON-020-T02 — a forged/foreign runner id in the scope post is
+    # a forged/foreign runner id in the scope post is
     # allowlisted out (only the account's real runners pass), so it never reaches
     # the mint.
     test "a foreign runner id in the scope post is dropped", %{conn: conn} do
@@ -512,7 +512,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "globally, not per-server"
     end
 
-    # closes CON-008-T09 — the agents list is account-scoped: A's admin sees A's
+    # the agents list is account-scoped: A's admin sees A's
     # keys and never B's, even with both present. (The foreign-slug 404 lives in
     # account_slug_authz_test; this asserts the in-account data scoping.)
     test "cross-account — A's admin sees only A's keys, never B's", %{conn: conn} do
@@ -540,7 +540,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "bravo-bot"
     end
 
-    # closes CON-018-T02 — quick-mint/create/revoke are manage-gated (admin+); an
+    # quick-mint/create/revoke are manage-gated (admin+); an
     # operator who forces the `revoke` event gets the gated flash and the key is
     # NOT revoked.
     test "an operator cannot revoke — forced event gated, key untouched", %{conn: conn} do
@@ -572,7 +572,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
-    # closes CON-018-T01 — the happy path: an admin clicks Revoke (the button
+    # the happy path: an admin clicks Revoke (the button
     # carries a 401-warning data-confirm), the account-scoped fetch resolves the
     # key, `revoke_api_key` retires it, a "API key revoked." flash shows, and the
     # list reloads (the now-revoked key drops out of the default live view).
@@ -597,7 +597,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "doomed-bot"
     end
 
-    # closes CON-008-T08 / CON-015-T03 / CON-016-T04 — an operator holds
+    # an operator holds
     # view_api_keys (the page renders) and issue_quick_key, but the agents page
     # gates ALL mints + create + revoke on the stricter manage_api_keys (admin+).
     # So every forced mutating event — select_client (quick-mint), create, revoke —
@@ -643,7 +643,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
-    # closes CON-016-T05 — a forged/foreign runner id posted into the custom-create
+    # a forged/foreign runner id posted into the custom-create
     # form's hidden scope inputs is allowlisted out (`selected_runner_ids/2` keeps
     # only the account's real runners) before it reaches `create_key`, so the
     # persisted key is unscoped rather than carrying a cross-account id.
@@ -672,7 +672,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert key.runner_filter == []
     end
 
-    # closes CON-017-T01 — picking the "Custom" pseudo-client swaps the per-client
+    # picking the "Custom" pseudo-client swaps the per-client
     # snippet for the key-builder form (selected_client="custom") and mints
     # nothing: it's a pure UI-state toggle, so the DB stays empty until the form
     # is actually submitted.
@@ -689,7 +689,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
-    # closes CON-018-T03 — a forged/foreign key id revoke is a quiet no-op: the
+    # a forged/foreign key id revoke is a quiet no-op: the
     # account-scoped `fetch_api_key_by_id` returns not-found, so nothing is
     # revoked and no error leaks the foreign key's existence.
     test "a forged/foreign key id revoke is a quiet no-op", %{conn: conn} do

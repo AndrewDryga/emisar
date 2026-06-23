@@ -41,7 +41,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
     end
 
     test "a non-decodable token is uniformly invalid (base64 decode fails first)", %{conn: conn} do
-      # closes AUTH-016-T05 — a token that isn't valid base64 can't resolve to a
+      # a token that isn't valid base64 can't resolve to a
       # row, so `confirm_user_by_token` returns the same `:invalid_or_expired` as a
       # bad/expired one: one cause-neutral message, no confirmation.
       conn = get(conn, ~p"/confirm/!!!not-base64!!!")
@@ -53,7 +53,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
     test "a reset/magic token presented at the confirm endpoint is uniformly invalid", %{
       conn: conn
     } do
-      # closes AUTH-016-T06 — tokens carry a `context`; the confirm consumer
+      # tokens carry a `context`; the confirm consumer
       # matches `context == "confirm"`. A valid (but wrong-context) reset token
       # confirms nothing — same uniform error as a bad token, and the user stays
       # unconfirmed. No cross-endpoint token reuse.
@@ -68,7 +68,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
     end
 
     test "a soft-deleted user cannot confirm", %{conn: conn} do
-      # closes AUTH-016-T09 — the confirm token resolves to no LIVE user once the
+      # the confirm token resolves to no LIVE user once the
       # row is soft-deleted, so the link returns the same uniform invalid error
       # rather than flipping `confirmed_at` on a tombstoned account.
       user = unconfirmed_user()

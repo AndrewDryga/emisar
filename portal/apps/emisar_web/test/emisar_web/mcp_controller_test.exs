@@ -1144,7 +1144,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-025-T02, MCP-002-T11
       runner = make_runner!(account, name: "runner-1")
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
@@ -1172,7 +1171,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-025-T08
       other = setup_other_account()
       b_runner = make_runner!(other.account, name: "b-runner")
 
@@ -1206,7 +1204,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-002-T09, MCP-023-T02
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       body =
@@ -1223,7 +1220,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-002-T10, MCP-022-T02
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       body =
@@ -1240,7 +1236,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-002-T14
       runner = make_runner!(account, name: "runner-1")
       advertise_action!(runner, action_id: "linux.uptime")
       raw = make_api_key!(account, user, scopes: [])
@@ -1272,7 +1267,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-022-T08
       active = make_runner!(account, name: "active-host")
       disabled = make_runner!(account, name: "disabled-host")
       advertise_action!(active, action_id: "x")
@@ -1299,7 +1293,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-022-T12
       mine = make_runner!(account, name: "mine-host")
       advertise_action!(mine, action_id: "x")
 
@@ -1324,7 +1317,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-022-T10
       _bare = make_runner!(account, name: "bare-host")
       raw = make_api_key!(account, user)
 
@@ -1344,7 +1336,7 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-023-T04 (cross-account variant)
+      # (cross-account variant)
       mine = make_runner!(account, name: "mine-host")
       advertise_action!(mine, action_id: "mine.action")
 
@@ -1371,7 +1363,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-023-T05
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime")
       raw = make_api_key!(account, user)
@@ -1413,7 +1404,6 @@ defmodule EmisarWeb.MCPControllerTest do
       user: user,
       runner: runner
     } do
-      # closes MCP-024-T17
       raw = make_api_key!(account, user)
 
       body =
@@ -1451,7 +1441,6 @@ defmodule EmisarWeb.MCPControllerTest do
       user: user,
       runner: runner
     } do
-      # closes MCP-015-T08, MCP-024-T18
       # F3 asymmetry: REST's Map.drop omits `attestation`, so (unlike JSON-RPC,
       # which extracts it onto the run) it is forwarded as an ordinary action
       # arg. The run row's `attestation` column stays nil; `attestation` lands
@@ -1496,7 +1485,6 @@ defmodule EmisarWeb.MCPControllerTest do
 
   describe "GET /api/mcp/runs/:id state edges" do
     test "an unknown run id is a 404 not_found", %{conn: conn, account: account, user: user} do
-      # closes MCP-025-T09
       raw = make_api_key!(account, user)
 
       body =
@@ -1513,7 +1501,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-025-T10
       runner = make_runner!(account, name: "runner-1")
       raw = make_api_key!(account, user)
 
@@ -1547,7 +1534,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-029-T02, MCP-029-T08
       runner = make_runner!(account, name: "chatty-host")
       raw = make_api_key!(account, user)
 
@@ -1618,7 +1604,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-029-T10
       runner = make_runner!(account, name: "policy-host")
       raw = make_api_key!(account, user)
 
@@ -1656,7 +1641,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-029-T06
       runner = make_runner!(account, name: "approval-host")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
@@ -1705,7 +1689,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-027-T01, MCP-027-T08
       # A default-minted key has empty runner_filter/group_filter AND its creator
       # membership holds no per-user runner-scope grants — so neither the key-filter
       # layer nor the creator-scope layer narrows anything: all account runners show.
@@ -1735,10 +1718,9 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-022-T11
       # Three reachable connection states map to the pre-presence wire words MCP
       # clients expect. (`disabled` is omitted from /runners entirely — covered
-      # by MCP-022-T08 — so it can't appear here.)
+      # by — so it can't appear here.)
       _online = make_runner!(account, name: "online-host")
 
       # Offline = was connected once but isn't tracked in Presence now. Create it
@@ -1778,7 +1760,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-024-T15, MCP-025-T06
       # The two REST long-poll budgets differ by endpoint and are both enforced via
       # parse_wait's clamp (the descriptor copy's "300s"/"5m" never overrides them).
       # Assert the clamp CONSTANTS (no sleeping):
@@ -1822,7 +1803,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-027-T05
       # Both layers are AND-combined: the key's runner_filter allows BOTH runners,
       # but the key-creator's membership is scoped to only the `allowed` group, so
       # the runner in `blocked` is hidden from /runners despite passing the filter.
@@ -1850,7 +1830,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-027-T06
       # Mint the key first (unrestricted membership → sees both), then narrow the
       # creator's scope and re-list on the SAME key: it loses the now-out-of-scope
       # runner. The scope is resolved per-request via created_by_membership_id, so
@@ -1884,7 +1863,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-027-T11
       # The spec row posits a key with NULL runner_group_filter hitting the
       # `(api_key.runner_group_filter || [])` guards. That precondition is
       # UNREACHABLE: the column is NOT NULL (default []), so the `|| []` is
@@ -1909,7 +1887,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-024-T21
       # REST POST /tools/:id and RPC tools/call both route dispatch through the
       # shared Service.dispatch_tool, so a scope denial lands the same way on each:
       # the REST 403 missing_scope and the RPC -32002 both name actions:execute.
@@ -1956,7 +1933,6 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # closes MCP-027-T09
       # The outermost gate is the Subject's account (IL-4): regardless of key
       # filter or creator scope, another tenant's inventory is never reachable.
       mine = make_runner!(account, name: "mine-host")

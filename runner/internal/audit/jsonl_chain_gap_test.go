@@ -17,7 +17,7 @@ import (
 // truncation and a wholesale consistent rewrite are NOT (no external anchor —
 // the cloud is the system of record). These tests lock both halves in.
 
-// TestChain_DetectsReordering (RSEC-012-T07) — swapping two adjacent lines
+// TestChain_DetectsReordering — swapping two adjacent lines
 // breaks the chain: each event's prev_hash is bound to the *bytes* of the
 // line before it, so a reorder leaves the first swapped line carrying a
 // prev_hash that no longer matches its new predecessor.
@@ -51,7 +51,7 @@ func TestChain_DetectsReordering(t *testing.T) {
 	}
 }
 
-// TestChain_ConsistentRewriteNotDetected (RSEC-012-T09) — a forger who drops
+// TestChain_ConsistentRewriteNotDetected — a forger who drops
 // an event and then RE-CHAINS the whole file from scratch produces an
 // internally consistent chain that VerifyChain cannot flag. This is the same
 // accepted limitation as tail truncation (TestChain_TailTruncationIsNotDetected):
@@ -102,7 +102,7 @@ func TestChain_ConsistentRewriteNotDetected(t *testing.T) {
 	}
 }
 
-// TestVerifyReader_MatchesVerifyChain (RSEC-012-T17) — the io.Reader form must
+// TestVerifyReader_MatchesVerifyChain — the io.Reader form must
 // reach the identical verdict (and the identical break point) as the path form
 // on the same bytes, so `audit verify` can read from gzip / a pipe / a buffer.
 func TestVerifyReader_MatchesVerifyChain(t *testing.T) {
@@ -153,7 +153,7 @@ func TestVerifyReader_MatchesVerifyChain(t *testing.T) {
 	})
 }
 
-// TestChain_LastHashHoldsWhenWriteFails (RSEC-012-T04) — the chain head
+// TestChain_LastHashHoldsWhenWriteFails — the chain head
 // (lastHash) advances ONLY after the line is durably on disk. jsonl.go:191-196
 // computes the new head after s.f.Write + s.f.Sync both succeed; a failure at
 // either leaves lastHash untouched, so the next attempt re-chains from the same
@@ -237,7 +237,7 @@ func TestChain_LastHashHoldsWhenWriteFails(t *testing.T) {
 	}
 }
 
-// BenchmarkChainWrite (RSEC-012-T18) — per-event chain write cost, dominated by
+// BenchmarkChainWrite — per-event chain write cost, dominated by
 // the fsync in JSONLSink.Write. Establishes a throughput baseline; growth here
 // flags a regression in the hot append path.
 func BenchmarkChainWrite(b *testing.B) {
@@ -256,7 +256,7 @@ func BenchmarkChainWrite(b *testing.B) {
 	}
 }
 
-// BenchmarkVerifyChain (RSEC-012-T19) — VerifyChain is a linear scan with one
+// BenchmarkVerifyChain — VerifyChain is a linear scan with one
 // sha256 per line; this measures verify cost over a fixed-size journal.
 func BenchmarkVerifyChain(b *testing.B) {
 	path := filepath.Join(b.TempDir(), "events.jsonl")

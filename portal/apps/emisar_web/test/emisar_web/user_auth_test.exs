@@ -22,7 +22,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   describe "on_mount :mount_current_user" do
     test "with no token, assigns a nil user + @no_auth provenance and never halts" do
-      # closes AUTH-029-T02, AUTH-024-T04, AUTH-029-T05 — the bundle hook is NOT a
+      # the bundle hook is NOT a
       # gate: a signed-out mount continues with `current_user: nil` and the
       # anonymous `@no_auth` provenance, so a public/signed-out LiveView mounts
       # cleanly (the actual gating is :ensure_authenticated, AUTH-021).
@@ -34,7 +34,7 @@ defmodule EmisarWeb.UserAuthTest do
     end
 
     test "with an undecodable/forged token, treats it as a miss — nil user, no raise" do
-      # closes AUTH-029-T03 — a stale or tampered `user_token` resolves to no live
+      # a stale or tampered `user_token` resolves to no live
       # session (the `with` falls to its else clause); the hook swallows it into the
       # same anonymous default rather than crashing the mount.
       socket = %Phoenix.LiveView.Socket{}
@@ -54,7 +54,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   describe "on_mount :assign_app_bundle" do
     test "is a pure bundle flag — always {:cont} with app_js? true, no auth dependence" do
-      # closes AUTH-031-T03 — the hook that flags "this render needs the full app.js"
+      # the hook that flags "this render needs the full app.js"
       # is NOT a gate and reads no session/user: a signed-out mount (empty session)
       # gets the exact same `{:cont}` + `app_js?: true` as a signed-in one. Every
       # LiveView render carries the flag up to root.html.heex; only controller-
@@ -73,7 +73,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   describe "on_mount :assign_app_bundle drives the root-layout JS bundle" do
     test "a LiveView page loads the full app.js bundle (LiveSocket + hooks)", %{conn: conn} do
-      # closes AUTH-031-T01 — `:assign_app_bundle` (attached to every LiveView via
+      # `:assign_app_bundle` (attached to every LiveView via
       # EmisarWeb.live_view/0) sets `@app_js?`, which the root layout reads to load the
       # full `/assets/app.js`. The dead render of an authed LV route carries that
       # script tag — the LiveSocket + hooks the interactive page needs.
@@ -86,7 +86,7 @@ defmodule EmisarWeb.UserAuthTest do
     end
 
     test "a controller-rendered marketing page loads only the lean marketing.js", %{conn: conn} do
-      # closes AUTH-031-T02 — a marketing page is a plain controller render that never
+      # a marketing page is a plain controller render that never
       # runs the LiveView on_mount, so `@app_js?` is absent and the root layout falls
       # to the lean `/assets/marketing.js` — no LiveSocket weight on a static page.
       html = conn |> get(~p"/") |> html_response(200)
@@ -100,7 +100,7 @@ defmodule EmisarWeb.UserAuthTest do
     test "an already-signed-in visitor is bounced off EVERY guarded auth page to /app", %{
       conn: conn
     } do
-      # closes AUTH-020-T04, AUTH-001-T17 — the gate guards the full signed-out
+      # the gate guards the full signed-out
       # auth surface, not just /sign_in: sign_up, the magic-link + MFA steps, the
       # branded per-account page, and reset all live under
       # :redirect_if_user_is_authenticated, so a signed-in user GETting any of them
@@ -120,7 +120,7 @@ defmodule EmisarWeb.UserAuthTest do
     end
 
     test "the auth POST endpoints bounce a signed-in visitor too", %{conn: conn} do
-      # closes AUTH-020-T04 (POST half) — POST /sign_in is in the same guarded
+      # (POST half) — POST /sign_in is in the same guarded
       # scope, so a signed-in user can't re-drive the password verify; the gate
       # halts before the controller runs.
       {conn, user, _account} = register_and_log_in(conn)
@@ -136,7 +136,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   describe "sign-in form CSRF posture" do
     test "the sign-in form carries a CSRF token for its POST to /sign_in", %{conn: conn} do
-      # closes AUTH-002-T05 — the userpass form posts over the CSRF-protected
+      # the userpass form posts over the CSRF-protected
       # :browser pipeline (`protect_from_forgery`). Because it renders with an
       # `action`+`method=post`, `<.form>` emits the hidden `_csrf_token` input, so
       # a legitimate browser submit is accepted and a forged cross-site one isn't.
@@ -149,7 +149,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   describe "require_authenticated_user return_to" do
     test "a signed-out GET stores return_to but a signed-out POST does not", %{conn: _conn} do
-      # closes AUTH-019-T03 — the plug remembers where to send the user back ONLY
+      # the plug remembers where to send the user back ONLY
       # for a GET (a navigable destination). A POST to a protected path while
       # signed-out still redirects to /sign_in, but stores no `:user_return_to` —
       # re-running the POST blindly after login would be wrong, so there's nothing
@@ -172,7 +172,7 @@ defmodule EmisarWeb.UserAuthTest do
     test "remember_me writes a persistent signed cookie alongside the session token", %{
       conn: conn
     } do
-      # closes AUTH-003-T03 — `remember_me: "true"` writes the persistent token
+      # `remember_me: "true"` writes the persistent token
       # cookie (alongside the session token) with the documented 60-DAY max-age, so
       # the operator stays signed in across browser restarts for exactly that window.
       conn =

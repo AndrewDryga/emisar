@@ -112,9 +112,8 @@ func writeRunnableConfig(t *testing.T, dir string, denyPing bool) string {
 // `emisar --version` / `-v` print the version line and exit 0. Cobra's default
 // version template renders `emisar version <Version>` (Use + "version" + the
 // Version field). The flag short-circuits before any command runs, so stderr
-// stays clean. closes RUN-001-T03.
+// stays clean.
 func TestCLI_VersionFlagPrintsVersionExitsZero(t *testing.T) {
-	// closes RUN-001-T03
 	for _, flag := range []string{"--version", "-v"} {
 		stdout, stderr, code := runCLI(t, []string{flag}, nil)
 		if code != 0 {
@@ -131,9 +130,8 @@ func TestCLI_VersionFlagPrintsVersionExitsZero(t *testing.T) {
 
 // `emisar` with no subcommand prints the root help (the root has no RunE) and
 // exits 0; `--help`/`-h` do the same. The help lists the command tree, so the
-// commands an operator can reach can't silently drift. closes RUN-001-T02.
+// commands an operator can reach can't silently drift.
 func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
-	// closes RUN-001-T02
 	for _, args := range [][]string{nil, {"--help"}, {"-h"}} {
 		name := "no args"
 		if len(args) > 0 {
@@ -157,9 +155,8 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 // An unknown subcommand is rejected: cobra writes `error: unknown command ...`
 // to stderr exactly once (SilenceUsage + SilenceErrors keep main's single print
 // from being doubled, main.go:37-58) and the process exits 1. closes
-// RUN-001-T04, RUN-001-T05.
+// ,.
 func TestCLI_UnknownCommandExitsOneSingleError(t *testing.T) {
-	// closes RUN-001-T04, RUN-001-T05
 	stdout, stderr, code := runCLI(t, []string{"frobnicate"}, nil)
 	if code != 1 {
 		t.Errorf("exit = %d, want 1", code)
@@ -176,9 +173,7 @@ func TestCLI_UnknownCommandExitsOneSingleError(t *testing.T) {
 }
 
 // An unknown global flag is rejected with a single error on stderr, exit 1.
-// closes RUN-001-T06.
 func TestCLI_UnknownGlobalFlagRejected(t *testing.T) {
-	// closes RUN-001-T06
 	// On the root and on a subcommand: both reject the unknown flag.
 	for _, args := range [][]string{{"--bogus"}, {"version", "--bogus"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -204,9 +199,8 @@ func TestCLI_UnknownGlobalFlagRejected(t *testing.T) {
 // Every read-only subcommand routes through main()'s cobra tree to its own
 // RunE and exits 0 on success. This drives the real binary (not an isolated
 // sub-command) so the AddCommand wiring + arg routing can't silently drift —
-// each command produces output recognizably its own. closes RUN-001-T01.
+// each command produces output recognizably its own.
 func TestCLI_EachSubcommandDispatches(t *testing.T) {
-	// closes RUN-001-T01
 	dir := t.TempDir()
 	cfg := writeRunnableConfig(t, dir, false) // a one-action linux.ping pack
 	// Seed a 1-event chain so `audit verify` has a real intact log to walk.
@@ -254,13 +248,11 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 	}
 }
 
-// RUN-001-T07 — the global `--json` flag is honored only by commands that
+// the global `--json` flag is honored only by commands that
 // branch on it. Driven through main() so the real persistent-flag parsing is
 // exercised: `version --json` ignores it (still the human text line, no JSON),
 // while `action list --json` honors it (a JSON array, not the table header).
-// closes RUN-001-T07.
 func TestCLI_JSONFlagHonoredOnlyWhereBranched(t *testing.T) {
-	// closes RUN-001-T07
 	cfg := writeRunnableConfig(t, t.TempDir(), false)
 
 	t.Run("version ignores --json", func(t *testing.T) {
@@ -300,9 +292,8 @@ func TestCLI_JSONFlagHonoredOnlyWhereBranched(t *testing.T) {
 
 // A read-only command (`action list`, `action describe`) over an unresolvable
 // config is a hard error: boot() fails, main prints `error: …` to stderr and
-// exits 1. closes RUN-013-T04, RUN-014-T04.
+// exits 1.
 func TestCLI_ReadCommandBootFailureExitsOne(t *testing.T) {
-	// closes RUN-013-T04, RUN-014-T04
 	cases := []struct {
 		name string
 		args []string
@@ -333,9 +324,8 @@ func TestCLI_ReadCommandBootFailureExitsOne(t *testing.T) {
 // first connect with no auth key + no cached token, and a malformed signing key
 // each produce a clear `error: …` on stderr and exit 1. None of these reach the
 // network (the assertions return immediately, proving the fatal is hit at the
-// CLI boundary, not after a dial). closes RUN-003-T03, RUN-003-T04, RUN-003-T07.
+// CLI boundary, not after a dial).
 func TestCLI_ConnectConfigFatals(t *testing.T) {
-	// closes RUN-003-T03, RUN-003-T04, RUN-003-T07
 	base := func(t *testing.T, extra string) string {
 		t.Helper()
 		dir := t.TempDir()
@@ -353,7 +343,6 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 	}
 
 	t.Run("no cloud.url is fatal", func(t *testing.T) {
-		// closes RUN-003-T03
 		cfg := base(t, "")
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, nil)
 		if code != 1 {
@@ -368,7 +357,7 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 	})
 
 	t.Run("first connect needs the auth key", func(t *testing.T) {
-		// closes RUN-003-T04 — a loopback URL passes the transport-security gate,
+		// a loopback URL passes the transport-security gate,
 		// so the failure is the missing-credential fatal, not a scheme refusal.
 		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  auth_key_env: EMISAR_AUTH_KEY\n")
 		// EMISAR_AUTH_KEY deliberately unset; no token file exists yet.
@@ -385,7 +374,7 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 	})
 
 	t.Run("malformed signing key is fatal", func(t *testing.T) {
-		// closes RUN-003-T07 — enforce + a non-hex public key makes buildVerifier
+		// enforce + a non-hex public key makes buildVerifier
 		// fail; connect surfaces it as `signing: …` and exits 1.
 		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  auth_key_env: EMISAR_AUTH_KEY\n"+
 			"signing:\n  enforce_signatures: true\n  trusted_keys:\n    - key_id: k1\n      public_key: zzzznothex\n")
@@ -408,13 +397,11 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 // `action run <id> --arg k=v --reason …` builds an engine.Request, runs the
 // full local pipeline, and prints the Result JSON (exit 0). A second run with
 // --stream interleaves live output before the final Result. closes
-// RUN-015-T01, RUN-015-T04.
+// ,.
 func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
-	// closes RUN-015-T01, RUN-015-T04
 	cfg := writeRunnableConfig(t, t.TempDir(), false)
 
 	t.Run("success prints Result JSON", func(t *testing.T) {
-		// closes RUN-015-T01
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why"}, nil)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
@@ -427,7 +414,6 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 	})
 
 	t.Run("--stream interleaves live output then Result", func(t *testing.T) {
-		// closes RUN-015-T04
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why", "--stream"}, nil)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
@@ -444,11 +430,9 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 // `action run` is a LOCAL bypass: validation failures and admission denials come
 // back as engine *results* (the command itself exits 0 — the action failed, the
 // command ran fine), and a `--arg` without `=` is the only CLI-level error
-// (exit 1, parsed before the engine). closes RUN-015-T02, RUN-015-T05,
-// RUN-015-T06.
+// (exit 1, parsed before the engine). ,
 func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 	t.Run("empty reason → validation_failed result, exit 0", func(t *testing.T) {
-		// closes RUN-015-T02
 		cfg := writeRunnableConfig(t, t.TempDir(), false)
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping"}, nil)
 		if code != 0 {
@@ -460,7 +444,6 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 	})
 
 	t.Run("admission-denied → blocked_by_admission result, exit 0", func(t *testing.T) {
-		// closes RUN-015-T05, RUN-015-T08
 		cfg := writeRunnableConfig(t, t.TempDir(), true) // deny linux.ping
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why"}, nil)
 		if code != 0 {
@@ -469,7 +452,7 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 		if !strings.Contains(stdout, `"status": "blocked_by_admission"`) {
 			t.Errorf("expected a blocked_by_admission result:\n%s", stdout)
 		}
-		// RUN-015-T08: a local run still enforces admission — the denylist applies
+		// a local run still enforces admission — the denylist applies
 		// here exactly as it would for cloud dispatch (this is not an unguarded shell).
 		if !strings.Contains(stdout, "denylist") {
 			t.Errorf("the denial reason should name the runner denylist:\n%s", stdout)
@@ -477,7 +460,6 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 	})
 
 	t.Run("--arg without = is a CLI error, exit 1", func(t *testing.T) {
-		// closes RUN-015-T06
 		cfg := writeRunnableConfig(t, t.TempDir(), false)
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why", "--arg", "novalue"}, nil)
 		if code != 1 {
@@ -492,15 +474,14 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 	})
 }
 
-// RUN-015-T07/T08 — the local-run trust boundary. With ENFORCING signing
+// /T08 — the local-run trust boundary. With ENFORCING signing
 // configured, a cloud dispatch would require a valid attestation (RUN-034); but
 // `action run` is the documented local bypass — the host OS user is the trust
 // boundary — so it runs WITHOUT any signature or pack-hash pin and still
 // produces a success result, while a real event is journaled to the JSONL log
 // (admission/validation/redaction/journal all still apply, RUN-012). closes
-// RUN-015-T07, RUN-015-T08.
+// ,.
 func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
-	// closes RUN-015-T07, RUN-015-T08
 	dir := t.TempDir()
 	cfg := writeRunnableConfig(t, dir, false)
 	// Turn on enforcing signing with a real (well-formed) trusted key. A cloud
@@ -518,7 +499,7 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the local bypass must run despite enforcing signing; exit=%d stderr=%q", code, stderr)
 	}
-	// RUN-015-T07: it ran (success) with no attestation — the signature gate is
+	// it ran (success) with no attestation — the signature gate is
 	// for cloud dispatch only.
 	if !strings.Contains(stdout, `"status": "success"`) {
 		t.Errorf("local run under enforcing signing should still succeed:\n%s", stdout)
@@ -526,7 +507,7 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	if strings.Contains(stdout, "signature") || strings.Contains(stdout, "refused") {
 		t.Errorf("the local path must not apply the signature gate:\n%s", stdout)
 	}
-	// RUN-015-T08: a genuine event was journaled.
+	// a genuine event was journaled.
 	data, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
 		t.Fatalf("read journal: %v", err)
@@ -541,9 +522,8 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 // `audit verify` on a tampered/deleted chain exits 1 and names the break (file +
 // line + event id) on stderr — the os.Exit(1) path (audit.go:78) that can't be
 // observed in-process. An intact chain exits 0 with the chain-intact line on
-// stdout, as a control. closes RUN-027-T02, RUN-027-T03.
+// stdout, as a control.
 func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
-	// closes RUN-027-T02, RUN-027-T03
 	dir := t.TempDir()
 	cfg := writeRunnableConfig(t, dir, false)
 	jsonl := filepath.Join(dir, "events.jsonl")
@@ -566,7 +546,6 @@ func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
 	}
 
 	t.Run("byte mutation in a middle line", func(t *testing.T) {
-		// closes RUN-027-T02
 		mutate(t, jsonl, func(lines [][]byte) [][]byte {
 			// Flip the recorded reason on the FIRST event; that changes its
 			// serialized bytes, so the SECOND event's prev_hash no longer matches.
@@ -586,7 +565,7 @@ func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
 	})
 
 	t.Run("deleted line", func(t *testing.T) {
-		// closes RUN-027-T03 — re-seed a clean chain first (the prior subtest
+		// re-seed a clean chain first (the prior subtest
 		// left the file tampered).
 		if err := os.Remove(jsonl); err != nil {
 			t.Fatalf("remove jsonl: %v", err)
@@ -616,9 +595,8 @@ func TestCLI_AuditVerifyChainBreakExitsOne(t *testing.T) {
 // A binary built with -buildvcs=false carries no VCS settings, so `version`
 // prints only the `emisar <Version>` and `go: …` lines — no commit/built/dirty.
 // A `go test` binary already omits VCS info, but building the real runner with
-// the flag explicit pins the documented contract. closes RUN-030-T02.
+// the flag explicit pins the documented contract.
 func TestCLI_VersionOmitsVCSWhenBuiltWithoutBuildVCS(t *testing.T) {
-	// closes RUN-030-T02
 	bin := buildRunner(t, buildOpts{buildVCS: "false"})
 	stdout := runBuilt(t, bin, "version")
 	if !strings.Contains(stdout, "emisar "+Version) {
@@ -638,9 +616,8 @@ func TestCLI_VersionOmitsVCSWhenBuiltWithoutBuildVCS(t *testing.T) {
 // `version` surfaces as the `vcs: dirty (uncommitted changes)` line alongside
 // commit/built. We build from a throwaway git repo seeded with the runner
 // sources and then dirtied, so the result is deterministic regardless of the
-// developer's working-tree state. closes RUN-030-T03.
+// developer's working-tree state.
 func TestCLI_VersionShowsDirtyFlagFromDirtyTree(t *testing.T) {
-	// closes RUN-030-T03
 	bin := buildRunner(t, buildOpts{buildVCS: "true", dirtyGitRepo: true})
 	stdout := runBuilt(t, bin, "version")
 	if !strings.Contains(stdout, "commit:") || !strings.Contains(stdout, "built:") {

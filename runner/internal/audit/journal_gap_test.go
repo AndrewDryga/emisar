@@ -50,7 +50,7 @@ func (m *memSink) recorded() []Event {
 	return append([]Event(nil), m.events...)
 }
 
-// TestJournal_AssignsPrefixedEventID (RSEC-013-T02) — an event recorded with
+// TestJournal_AssignsPrefixedEventID — an event recorded with
 // an empty EventID gets a fresh "evt"-prefixed ULID; a caller-supplied EventID
 // is left untouched.
 func TestJournal_AssignsPrefixedEventID(t *testing.T) {
@@ -79,7 +79,7 @@ func TestJournal_AssignsPrefixedEventID(t *testing.T) {
 	}
 }
 
-// TestJournal_FansOutToEverySink (RSEC-013-T03) — one Record reaches every
+// TestJournal_FansOutToEverySink — one Record reaches every
 // configured sink, each carrying the same stamped event.
 func TestJournal_FansOutToEverySink(t *testing.T) {
 	a, b := &memSink{}, &memSink{}
@@ -100,7 +100,7 @@ func TestJournal_FansOutToEverySink(t *testing.T) {
 	}
 }
 
-// TestJournal_OneSinkFailsOthersStillGetIt (RSEC-013-T04) — when one sink's
+// TestJournal_OneSinkFailsOthersStillGetIt — when one sink's
 // Write errors, the other sinks still receive the event, the joined error is
 // returned, and the stamped event is still returned to the caller.
 func TestJournal_OneSinkFailsOthersStillGetIt(t *testing.T) {
@@ -126,7 +126,7 @@ func TestJournal_OneSinkFailsOthersStillGetIt(t *testing.T) {
 	}
 }
 
-// TestJournal_CoercesTimeToUTC (RSEC-013-T05) — a zero Time is filled with
+// TestJournal_CoercesTimeToUTC — a zero Time is filled with
 // now() in UTC; a non-UTC Time is normalized to UTC (same instant).
 func TestJournal_CoercesTimeToUTC(t *testing.T) {
 	sink := &memSink{}
@@ -159,7 +159,7 @@ func TestJournal_CoercesTimeToUTC(t *testing.T) {
 	}
 }
 
-// TestJournal_ConcurrentRecordsSerialized (RSEC-013-T06) — concurrent Record
+// TestJournal_ConcurrentRecordsSerialized — concurrent Record
 // calls are serialized by the journal mutex: every event lands exactly once in
 // each sink, with no race (run under -race) and no lost write. A writeWait hook
 // forces overlap so a missing lock would corrupt the slice.
@@ -198,7 +198,7 @@ func TestJournal_ConcurrentRecordsSerialized(t *testing.T) {
 	}
 }
 
-// TestJournal_CloseJoinsSinkErrors (RSEC-013-T07) — Close attempts every sink
+// TestJournal_CloseJoinsSinkErrors — Close attempts every sink
 // and joins their errors; one sink's Close failure does not skip the others.
 func TestJournal_CloseJoinsSinkErrors(t *testing.T) {
 	errA := errors.New("close a failed")
@@ -215,7 +215,7 @@ func TestJournal_CloseJoinsSinkErrors(t *testing.T) {
 	}
 }
 
-// BenchmarkRecordFanOut (RSEC-013-T08) — Record cost scales linearly with sink
+// BenchmarkRecordFanOut — Record cost scales linearly with sink
 // count under the serializing mutex. Uses in-memory sinks so the measurement
 // isolates fan-out + stamping from disk I/O.
 func BenchmarkRecordFanOut(b *testing.B) {

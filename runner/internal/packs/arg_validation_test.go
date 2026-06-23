@@ -70,7 +70,7 @@ func accepted(t *testing.T, err error) {
 	}
 }
 
-// closes PCK-003-T07 / PCK-102-T05 — postgres.terminate_backend's `pid` is a
+// postgres.terminate_backend's `pid` is a
 // real integer arg bounded `min: 1, max: 4194304` (the Linux pid_max ceiling).
 // Drive the boundary against the actually-loaded action: 1 and 4194304 pass,
 // 0 and 4194305 are rejected at dispatch. terminate_backend severs a live DB
@@ -87,7 +87,7 @@ func TestDispatch_PostgresTerminateBackend_PidBounds(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": 4194305}), "pid", "max")
 }
 
-// closes PCK-003-T06 — a numeric arg outside its declared range is rejected at
+// a numeric arg outside its declared range is rejected at
 // dispatch. Grounded in docker.stop's `timeout` integer arg (`min: 1, max:
 // 600`): 1 and 600 accept, 0 (below min) and 601 (above max) reject. Confirms
 // min/max gate on a second real action, distinct from the pid ceiling above.
@@ -102,7 +102,7 @@ func TestDispatch_DockerStop_TimeoutRange(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"container": "web", "timeout": 601}), "timeout", "max")
 }
 
-// closes PCK-114-T05 — debugging.kill_pid's `pid` integer is bounded `min: 2,
+// debugging.kill_pid's `pid` integer is bounded `min: 2,
 // max: 4194304` (pid 1 is init — never a kill target) and a non-numeric value
 // is a type error, both rejected at dispatch.
 func TestDispatch_DebuggingKillPid_PidBoundsAndType(t *testing.T) {
@@ -119,7 +119,7 @@ func TestDispatch_DebuggingKillPid_PidBoundsAndType(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "all"}), "pid", "type")
 }
 
-// closes PCK-003-T05 — a value not in a declared enum is rejected at dispatch.
+// a value not in a declared enum is rejected at dispatch.
 // Grounded in two real enums: debugging.kill_pid's `signal` (the kill signal
 // allowlist) and linux.journalctl's `priority` (the syslog level set). A signal
 // the author did not list (and an out-of-set priority) must be refused.
@@ -135,7 +135,7 @@ func TestDispatch_EnumRejectsOutOfSet(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, "linux.journalctl", map[string]any{"unit": "nginx", "priority": "verbose"}), "priority", "enum")
 }
 
-// closes PCK-003-T08 — `max_length` is enforced in BYTES at dispatch. Grounded
+// `max_length` is enforced in BYTES at dispatch. Grounded
 // in showcase.every_arg_type's `note` (max_length: 4096): a value at exactly
 // 4096 bytes passes, 4097 is rejected, and a multibyte run is counted by BYTES
 // (not runes) — 2048 two-byte runes = 4096 bytes passes, 2049 = 4098 bytes is
@@ -162,10 +162,10 @@ func TestDispatch_MaxLengthIsBytes(t *testing.T) {
 
 // closes PCK-003 (required) — a missing required arg is rejected at dispatch,
 // and a valid value passes. Grounded in shell.run_script's required `script`
-// (the break-glass action's sole arg). PCK-007-T05 is the same row for that
+// (the break-glass action's sole arg). is the same row for that
 // action specifically.
 //
-// Also closes PCK-007-T03 — `script` is bounded by max_length: 65536: a value
+// Also `script` is bounded by max_length: 65536: a value
 // at exactly 64 KiB passes, +1 byte is rejected.
 func TestDispatch_ShellRunScript_RequiredAndMaxLength(t *testing.T) {
 	reg := loadRealLibrary(t)
@@ -183,7 +183,7 @@ func TestDispatch_ShellRunScript_RequiredAndMaxLength(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"script": over}), "script", "max_length")
 }
 
-// closes PCK-101-T05 — a representative web/proxy arg is bounded at dispatch.
+// a representative web/proxy arg is bounded at dispatch.
 // Grounded in nginx.status's `url` arg (pattern `^https?://[a-zA-Z0-9.:/_\-]+$`,
 // a URL whitelist), interpolated into a `curl` argv slot: a real localhost URL
 // passes, but a value with a space + shell metacharacters is rejected (the
@@ -200,7 +200,7 @@ func TestDispatch_NginxStatus_UrlBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "file:///etc/passwd"}), "url", "pattern")
 }
 
-// closes PCK-104-T05 — a messaging arg is bounded at dispatch. Grounded in
+// a messaging arg is bounded at dispatch. Grounded in
 // kafka.delete_consumer_group's `group` (pattern `^[a-zA-Z0-9_.\-]{1,255}$`):
 // a metacharacter-bearing group id is rejected; a legitimate one passes. The
 // group is interpolated into a `/bin/sh -c` kafka-consumer-groups.sh pipeline,
@@ -213,7 +213,7 @@ func TestDispatch_KafkaDeleteConsumerGroup_GroupBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"group": "g; rm -rf /"}), "group", "pattern")
 }
 
-// closes PCK-105-T05 — a container arg is bounded at dispatch. Grounded in
+// a container arg is bounded at dispatch. Grounded in
 // docker.stop's `container` (pattern `^[a-zA-Z0-9_.\-]{1,128}$`): a name with
 // shell metacharacters / spaces is rejected, a real name/ID passes.
 func TestDispatch_DockerStop_ContainerBounded(t *testing.T) {
@@ -225,7 +225,7 @@ func TestDispatch_DockerStop_ContainerBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"container": "web; rm -rf /"}), "container", "pattern")
 }
 
-// closes PCK-106-T05 — an orchestration node/name arg is bounded at dispatch.
+// an orchestration node/name arg is bounded at dispatch.
 // Grounded in kubernetes.cordon's `name` (pattern `^[a-z0-9][a-z0-9.\-]{0,253}$`,
 // a DNS-1123-ish node name) interpolated into a `/bin/sh -c` kubectl pipeline:
 // an uppercase/metacharacter value is rejected, a real node name passes.
@@ -238,7 +238,7 @@ func TestDispatch_KubernetesCordon_NodeNameBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": "Node; reboot"}), "name", "pattern")
 }
 
-// closes PCK-107-T05 — an observability query/range arg is bounded at dispatch.
+// an observability query/range arg is bounded at dispatch.
 // Grounded in prom.query_range's `window` (pattern `^[0-9]{1,4}[smhd]$`) and
 // `step` (`^[0-9]{1,4}[sm]$`), both interpolated into a `/bin/sh -c` curl
 // pipeline via env: a malformed/metacharacter window is rejected, a real one
@@ -252,7 +252,7 @@ func TestDispatch_PromQueryRange_WindowBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "step": "$(id)"}), "step", "pattern")
 }
 
-// closes PCK-112-T05 — a cloud instance-id arg is bounded at dispatch. Grounded
+// a cloud instance-id arg is bounded at dispatch. Grounded
 // in ec2.terminate_instance's `instance_id` (pattern `^i-[0-9a-f]{8,17}$`).
 // terminate_instance is an irreversible critical; the tight pattern is its only
 // arg containment, so a non-conforming id (wrong prefix, uppercase hex, or shell
@@ -269,7 +269,7 @@ func TestDispatch_Ec2TerminateInstance_InstanceIdBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"instance_id": "i-XYZ; terminate-all"}), "instance_id", "pattern")
 }
 
-// closes PCK-113-T05 — a runtime pid arg is bounded at dispatch. Grounded in
+// a runtime pid arg is bounded at dispatch. Grounded in
 // jvm.heap_dump (a critical that pauses the JVM and writes live heap, incl.
 // secrets, to disk). Its pid arg is range-bounded; a non-numeric and an
 // out-of-range value are rejected, a real pid passes. Read the real arg's
@@ -324,7 +324,7 @@ func TestDispatch_JvmHeapDump_PidBounded(t *testing.T) {
 	}
 }
 
-// closes PCK-103-T05 — a datastore arg is bounded at dispatch AND the boolean
+// a datastore arg is bounded at dispatch AND the boolean
 // arg passes through as a real bool (the bool-truthy-in-shell gotcha is about
 // the RENDERED token; the validator's job is only to enforce the type). Grounds
 // the arg-bound half in ch.kill_mutation's `database` (anchored identifier
@@ -345,7 +345,7 @@ func TestDispatch_ClickhouseKillMutation_IdentifierBounded(t *testing.T) {
 	}), "database", "pattern")
 }
 
-// closes PCK-003 (coercion / PCK-003-T19 bool half) — the bool, int, and string
+// closes PCK-003 (coercion / bool half) — the bool, int, and string
 // coercions accept the right shapes and reject the wrong ones at the real
 // dispatch seam. Grounded in showcase.every_arg_type (a bool `verbose`, an
 // integer `port` with an `allowed` set, a string `mode` enum):
@@ -386,7 +386,7 @@ func TestDispatch_UnknownArgRejected_RealAction(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"bond": "bond0", "extra": "x"}), "extra", "unknown_arg")
 }
 
-// closes PCK-109-T05 (re-grounded at the dispatch seam) — bonding.status's
+// (re-grounded at the dispatch seam) — bonding.status's
 // `bond` arg is the canonical anchored pattern `^[a-zA-Z][a-zA-Z0-9._-]{0,14}$`:
 // a shell-injection attempt and an over-15-char value are both rejected, a real
 // bond name passes. The value is interpolated into `cat /proc/net/bonding/<bond>`,

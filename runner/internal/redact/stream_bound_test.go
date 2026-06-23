@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// RSEC-007-T06 — the soundness gate (strings.HasPrefix, stream.go:96-100) must
+// the soundness gate (strings.HasPrefix, stream.go:96-100) must
 // HOLD a segment rather than emit it when a newline-boundary cut would split a
 // match that has already closed further along. Here the hold (256 B) exceeds
 // the PEM block (~125 B), and committed filler before it makes the block's
@@ -49,7 +49,7 @@ func TestStreamRedactor_SoundnessGateHoldsSplitMatch(t *testing.T) {
 	}
 }
 
-// RSEC-007-T07 — the commit cut is always taken just after the last newline in
+// the commit cut is always taken just after the last newline in
 // the committable region (indexAfterLastNewline, stream.go:88,110-122). With no
 // newline in that region nothing is emitted; once a newline lands inside it, the
 // prefix up to and including that newline is released.
@@ -79,7 +79,7 @@ func TestStreamRedactor_CutsOnlyOnNewlineBoundary(t *testing.T) {
 	}
 }
 
-// RSEC-007-T09 — accepted limitation: a single match longer than the 16 KiB
+// accepted limitation: a single match longer than the 16 KiB
 // hold can leak onto the live stream. The redactor commits the safe prefix
 // before the match closes, so the opening bytes of an oversized PEM block are
 // emitted unredacted. This is deliberate (unbounded buffering is the only
@@ -121,7 +121,7 @@ func TestStreamRedactor_OversizedMatchLeaksOnLiveStream(t *testing.T) {
 	}
 }
 
-// RSEC-007-T13 — empty / zero-length input must not panic and must emit nothing.
+// empty / zero-length input must not panic and must emit nothing.
 func TestStreamRedactor_EmptyWriteAndFlush(t *testing.T) {
 	eng := defaultEngine(t)
 	sr := newSR(eng, 8)
@@ -141,7 +141,7 @@ func TestStreamRedactor_EmptyWriteAndFlush(t *testing.T) {
 	}
 }
 
-// RSEC-007-T14 — streaming throughput vs the hold + soundness re-redact
+// streaming throughput vs the hold + soundness re-redact
 // overhead. Baseline only; guards against accidental quadratic behavior in the
 // commit path over a large stream.
 func BenchmarkStreamRedactor_LargeStream(b *testing.B) {

@@ -96,7 +96,7 @@ func TestResolveConfigPath_Precedence(t *testing.T) {
 
 // TestParseArgFlag_RequiresKeyEquals: an `--arg` without `=` is a hard error,
 // not a silently-empty value. The error names the bad token so the operator
-// can fix it. closes RUN-002-T08.
+// can fix it.
 func TestParseArgFlag_RequiresKeyEquals(t *testing.T) {
 	if _, err := parseArgFlag([]string{"novalue"}); err == nil {
 		t.Fatal("parseArgFlag([novalue]) must error: --arg requires key=value")
@@ -173,7 +173,7 @@ func withFlags(t *testing.T) {
 
 // TestBoot_PacksDirFlagOverridesConfig: when --packs-dir is given, boot() loads
 // packs from the flag dirs and ignores cfg.Paths.Packs entirely (common.go
-// packDirs selection). closes RUN-002-T02.
+// packDirs selection).
 func TestBoot_PacksDirFlagOverridesConfig(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -209,7 +209,6 @@ func actionIDs(rt *runtime) []string {
 // TestResolveConfigPath_WellKnownMustBeRegularFile: auto-discovery only accepts
 // a regular file at a well-known path — a directory there must NOT win, and
 // with no flag/env set resolution falls through to the no-config error.
-// closes RUN-002-T05.
 func TestResolveConfigPath_WellKnownMustBeRegularFile(t *testing.T) {
 	if isRegularFile(t.TempDir()) {
 		t.Fatal("isRegularFile must reject a directory")
@@ -225,7 +224,7 @@ func TestResolveConfigPath_WellKnownMustBeRegularFile(t *testing.T) {
 
 // TestResolveConfigPath_NoConfigAnywhere: with no --config, no $EMISAR_CONFIG,
 // and no well-known file, resolution is a hard error that names where it
-// looked — before boot() touches anything. closes RUN-002-T06.
+// looked — before boot touches anything.
 func TestResolveConfigPath_NoConfigAnywhere(t *testing.T) {
 	withFlags(t)
 	flagConfig = ""
@@ -256,9 +255,8 @@ func contains(s, sub string) bool {
 // An explicit --config value is returned as-is, never stat-checked, so a
 // missing path wins resolution and the open failure is reported later by
 // config.Load (through boot) — not silently swallowed by discovery falling
-// through to a well-known file. closes RUN-002-T04.
+// through to a well-known file.
 func TestResolveConfigPath_ExplicitValueReturnedUnstatted(t *testing.T) {
-	// closes RUN-002-T04
 	withFlags(t)
 	missing := filepath.Join(t.TempDir(), "nope.yaml")
 	flagConfig = missing
@@ -281,9 +279,8 @@ func TestResolveConfigPath_ExplicitValueReturnedUnstatted(t *testing.T) {
 // A pack dir that doesn't exist is skipped silently by LoadAll: boot()
 // succeeds and the registry is simply empty, rather than failing the whole
 // runner because one configured dir is absent (a typo is surfaced by `doctor`,
-// not by refusing to boot). closes RUN-002-T07.
+// not by refusing to boot).
 func TestBoot_MissingPackDirSkippedSilently(t *testing.T) {
-	// closes RUN-002-T07
 	withFlags(t)
 	dir := t.TempDir()
 	// A real config, but --packs-dir points only at a path that doesn't exist.
@@ -304,9 +301,7 @@ func TestBoot_MissingPackDirSkippedSilently(t *testing.T) {
 // boot(): config.Load doesn't validate the globs, so the error surfaces when
 // admission.New compiles them, wrapped as `admission: …` (common.go). A bad
 // pattern must fail at boot, not silently admit/deny nothing at first request.
-// closes RUN-002-T12.
 func TestBoot_AdmissionCompileErrorWrapped(t *testing.T) {
-	// closes RUN-002-T12
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")

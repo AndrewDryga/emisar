@@ -66,7 +66,7 @@ func configWithJournal(t *testing.T, dir string) (cfgPath, jsonlPath string) {
 }
 
 // `emisar events tail --lines N` prints the last N events from the JSONL log.
-// Non-follow path only (follow loops forever by design). closes RUN-024-T01.
+// Non-follow path only (follow loops forever by design).
 func TestEventsTailCmd_LastN(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -92,7 +92,7 @@ func TestEventsTailCmd_LastN(t *testing.T) {
 }
 
 // `events tail` with no --lines flag defaults to 50, so a short log prints
-// every event. closes RUN-024-T02.
+// every event.
 func TestEventsTailCmd_DefaultLines(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -117,9 +117,8 @@ func TestEventsTailCmd_DefaultLines(t *testing.T) {
 
 // `events tail` over a short log (fewer events than --lines) prints exactly
 // what exists, no padding and no error — the chunked tail handles a file with
-// a single event. An empty log prints nothing. closes RUN-024-T05.
+// a single event. An empty log prints nothing.
 func TestEventsTailCmd_ShortAndEmptyLog(t *testing.T) {
-	// closes RUN-024-T05
 	t.Run("fewer events than --lines prints what exists", func(t *testing.T) {
 		withFlags(t)
 		dir := t.TempDir()
@@ -174,9 +173,8 @@ func TestEventsTailCmd_ShortAndEmptyLog(t *testing.T) {
 // `events tail` errors when the JSONL file can't be opened — here the path
 // doesn't exist (boot's append-open creates it, but tail opens read-only via
 // os.Open, which fails). The command surfaces `open jsonl: …` rather than
-// printing garbage. closes RUN-024-T06.
+// printing garbage.
 func TestEventsTailCmd_FileOpenFailure(t *testing.T) {
-	// closes RUN-024-T06
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
@@ -197,7 +195,6 @@ func TestEventsTailCmd_FileOpenFailure(t *testing.T) {
 }
 
 // `emisar events cat` dumps the entire JSONL log to stdout, byte for byte.
-// closes RUN-025-T01.
 func TestEventsCatCmd_FullDump(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -225,7 +222,7 @@ func TestEventsCatCmd_FullDump(t *testing.T) {
 
 // `events cat` errors when the JSONL path can't be opened as a file — here it
 // resolves to a directory, so boot()'s append-open fails and the command
-// surfaces that error rather than dumping garbage. closes RUN-025-T03.
+// surfaces that error rather than dumping garbage.
 func TestEventsCatCmd_BadPathErrors(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -245,9 +242,7 @@ func TestEventsCatCmd_BadPathErrors(t *testing.T) {
 }
 
 // `events cat` over an empty log copies zero bytes — no output, no error.
-// closes RUN-025-T05.
 func TestEventsCatCmd_EmptyLog(t *testing.T) {
-	// closes RUN-025-T05
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
@@ -271,7 +266,7 @@ func TestEventsCatCmd_EmptyLog(t *testing.T) {
 }
 
 // `emisar events grep --action <id>` keeps only lines whose action_id matches
-// exactly. closes RUN-026-T01.
+// exactly.
 func TestEventsGrepCmd_FilterByAction(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -296,7 +291,7 @@ func TestEventsGrepCmd_FilterByAction(t *testing.T) {
 	}
 }
 
-// grep by event id matches exactly one event. closes RUN-026-T02.
+// grep by event id matches exactly one event.
 func TestEventsGrepCmd_FilterByEventID(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -318,7 +313,6 @@ func TestEventsGrepCmd_FilterByEventID(t *testing.T) {
 }
 
 // grep by caller does a substring match on caller.control_plane_request_id.
-// closes RUN-026-T03.
 func TestEventsGrepCmd_FilterByCaller(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -340,7 +334,7 @@ func TestEventsGrepCmd_FilterByCaller(t *testing.T) {
 }
 
 // Combined filters AND together: an action that matches but a caller that
-// doesn't yields nothing. closes RUN-026-T04 and RUN-026-T08 (no matches).
+// doesn't yields nothing. and (no matches).
 func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -365,9 +359,7 @@ func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 // A single line beyond the scanner's 4 MiB max buffer makes `events grep`
 // return the scanner's error (bufio.ErrTooLong) rather than silently truncating
 // — a pathologically long log line is surfaced, not swallowed. closes
-// RUN-026-T07.
 func TestEventsGrepCmd_OversizedLineErrors(t *testing.T) {
-	// closes RUN-026-T07
 	withFlags(t)
 	dir := t.TempDir()
 	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
@@ -399,7 +391,7 @@ func TestEventsGrepCmd_OversizedLineErrors(t *testing.T) {
 }
 
 // A corrupt (unparseable) line is skipped, not fatal — grep keeps scanning and
-// returns the good lines. closes RUN-026-T06.
+// returns the good lines.
 func TestEventsGrepCmd_SkipsUnparseableLine(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()

@@ -49,7 +49,6 @@ defmodule EmisarWeb.SecurityHeadersTest do
     test "documents the two scoped CSP relaxations: inline styles and broad img-src", %{
       conn: conn
     } do
-      # closes CFG-003-T12
       # `style-src 'unsafe-inline'` is the LiveView colocated-<style> concession;
       # `img-src ... https:` lets remote images load. Both are the documented
       # relaxations — pin them so a tightening/loosening is a deliberate diff.

@@ -152,7 +152,7 @@ func TestNonceIsRandomHex(t *testing.T) {
 	}
 }
 
-// BRG-004-T04 — jsonrpc / method / params.name are preserved byte-for-byte
+// jsonrpc / method / params.name are preserved byte-for-byte
 // through signing; withArguments replaces ONLY params.arguments. (T03 already
 // pins the id; this pins the rest of the envelope so the portal still routes the
 // frame as the same tools/call.)
@@ -184,7 +184,7 @@ func TestSignFramePreservesEnvelopeFieldsVerbatim(t *testing.T) {
 	}
 }
 
-// BRG-004-T07 — a tools/call with NO `arguments` key is treated as an empty args
+// a tools/call with NO `arguments` key is treated as an empty args
 // map and still gets an attestation injected (signFrame defaults a nil Arguments
 // to {} before signing), so a no-arg action is still client-attested.
 func TestSignFrameAbsentArgumentsGetsAttestation(t *testing.T) {
@@ -229,7 +229,7 @@ func TestSignFrameAbsentArgumentsGetsAttestation(t *testing.T) {
 	}
 }
 
-// BRG-004-T09 — a pre-existing `attestation` arg is EXCLUDED from the signed
+// a pre-existing `attestation` arg is EXCLUDED from the signed
 // claim (it is a reserved key) and then OVERWRITTEN with a fresh one, so a frame
 // can never be made to self-sign a forged attestation an attacker pre-seeded.
 func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
@@ -288,7 +288,7 @@ func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
 	}
 }
 
-// BRG-004-T18 — the injected `issued_at` is an RFC3339 timestamp in UTC (ends in
+// the injected `issued_at` is an RFC3339 timestamp in UTC (ends in
 // "Z"), matching the canonical encoding the runner re-signs.
 func TestSignFrameIssuedAtIsRFC3339UTC(t *testing.T) {
 	s, _ := testSigner(t)
@@ -318,7 +318,7 @@ func TestSignFrameIssuedAtIsRFC3339UTC(t *testing.T) {
 	}
 }
 
-// BRG-004-T20 — the bridge's reservedArgKeys MUST match the portal's
+// the bridge's reservedArgKeys MUST match the portal's
 // split_call_args contract exactly. The portal drops
 // ["runner","runners","reason","wait","idempotency_key","attestation"] to recover
 // the action args (mcp_rpc_controller.ex split_call_args); any drift would make

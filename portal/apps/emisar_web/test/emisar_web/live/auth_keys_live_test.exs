@@ -38,7 +38,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "dead-key-zzz"
   end
 
-  # closes CON-009-T04 — a brand-new account with no auth keys renders the
+  # a brand-new account with no auth keys renders the
   # "No auth keys yet." onboarding empty state.
   test "no auth keys → onboarding empty state", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -49,7 +49,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "bearer secret a fresh runner uses to register"
   end
 
-  # closes CON-009-T05 — a hand-edited page cursor makes the list read return
+  # a hand-edited page cursor makes the list read return
   # {:error, …}; `load/1` retries once with clean params (first page) rather than
   # recursing forever or raising. The page renders.
   test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
@@ -63,7 +63,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "still-here"
   end
 
-  # closes CON-021-T03 — `put_max_uses` keeps max_uses only for a reusable key
+  # `put_max_uses` keeps max_uses only for a reusable key
   # with a positive value; a single-use key (and a blank value) drops it (the
   # single-use key self-caps at 1 via the schema's not-reusable rule).
   test "max_uses is kept for a reusable+positive key, dropped otherwise", %{conn: conn} do
@@ -155,7 +155,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute html =~ "bootstrap for prod image"
   end
 
-  # closes CON-023-T02 — one-time-secret hygiene: once the operator dismisses the
+  # one-time-secret hygiene: once the operator dismisses the
   # revealed secret it's gone for good. There's no re-reveal control, and the
   # only "show secret again" affordance is the dismiss (which clears it) — the
   # raw secret is never re-rendered after dismiss.
@@ -259,7 +259,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute html =~ ~r/last used<time/
   end
 
-  # closes CON-009-T03 — at the plan's runner limit the page shows the rose
+  # at the plan's runner limit the page shows the rose
   # cap-warning banner: a key minted here is useless once a runner bounces off a
   # 402. The free plan caps at 3 runners; fill all three.
   test "at the runner limit, the cap-warning banner renders", %{conn: conn} do
@@ -272,7 +272,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "3 of 3 runners in use"
   end
 
-  # closes CON-009-T03 (the near-limit half) — one slot short of the cap shows
+  # (the near-limit half) — one slot short of the cap shows
   # the softer amber "one slot left" variant, not the at-limit rose one.
   test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -284,7 +284,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute html =~ "At runner limit"
   end
 
-  # closes CON-021-T04 — a `datetime-local` expiry (no seconds, no zone) is
+  # a `datetime-local` expiry (no seconds, no zone) is
   # stored as UTC: `put_expires` appends ":00Z" before parsing, so "2030-12-25
   # at 10:30" persists as 10:30:00 UTC.
   test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
@@ -307,7 +307,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
   end
 
-  # closes CON-021-T06 — a key created from account A's session is bound to A
+  # a key created from account A's session is bound to A
   # (no cross-account id), and its one-time secret is the only place the raw
   # value appears (the persisted row stores only the hash + prefix).
   test "a created key is bound to the current account", %{conn: conn} do
@@ -330,7 +330,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute key.key_hash == raw_secret
   end
 
-  # closes CON-009-T08 / CON-022-T03 — the page is manage-only (auth keys have no
+  # the page is manage-only (auth keys have no
   # view permission). An operator (view-only on runners, no manage_auth_keys) is
   # bounced at LOAD time with "Page not found." — they never reach the form or a
   # `revoke` event. (The viewer redirect is covered above; this is the operator,
@@ -357,7 +357,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert flash["error"] == "Page not found."
   end
 
-  # closes CON-009-T10 / CON-022-T04 — the list is account-scoped (A's admin sees
+  # the list is account-scoped (A's admin sees
   # A's keys, never B's), and revoke only finds keys in the loaded A list: forcing
   # a `revoke` with a foreign B-account key id is a quiet no-op (the id isn't in
   # `socket.assigns.auth_keys`), so only account-A keys are revocable.
@@ -389,7 +389,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert {:ok, _} = Runners.revoke_auth_key(key_b, subject_b)
   end
 
-  # closes CON-022-T05 — once a key is revoked the Revoke button (and its
+  # once a key is revoked the Revoke button (and its
   # typed-confirm dialog) are gone (`:if={is_nil(key.revoked_at) …}`); the row
   # carries the "Revoked" chip instead. The "gone key → no-op" half is the
   # absent-id case below (the genuine `do_revoke` guard).
@@ -411,7 +411,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute has_element?(lv, "[phx-click*=\"revoke-key-#{key.id}\"]")
   end
 
-  # closes CON-022-T05 (the "gone key → no-op" half) — a forced `revoke` with an
+  # (the "gone key → no-op" half) — a forced `revoke` with an
   # id that isn't in the loaded list (a since-deleted / never-present key) is a
   # quiet no-op: `do_revoke` finds nothing in `socket.assigns.auth_keys` and
   # returns the socket untouched (no flash, no crash).
@@ -426,7 +426,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "Auth keys"
   end
 
-  # BUG (CON-022-T05): a forced `revoke` of an ALREADY-revoked (but still loaded,
+  # BUG: a forced `revoke` of an ALREADY-revoked (but still loaded,
   # e.g. under ?status=revoked) key is NOT idempotent — `AuthKey.Changeset.revoke/2`
   # unconditionally re-stamps `revoked_at: DateTime.utc_now()` (and writes a fresh
   # audit row + broadcast), so re-revoking moves the timestamp instead of being a

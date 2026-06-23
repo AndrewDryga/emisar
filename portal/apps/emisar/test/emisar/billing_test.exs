@@ -325,7 +325,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "cycle-note columns are never written (documented dead-write)" do
-      # closes BILL-009-T07
       # `upsert_from_subscription/1` writes only id/price/plan/status/period_end —
       # never `cancel_at_period_end` / `trial_end` / `current_period_start`. The
       # billing dashboard's cycle-note UI reads those, so it is dead in prod.
@@ -350,7 +349,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "current_period_end is extracted through the apply path from either source" do
-      # closes BILL-009-T02
       # The apply path (not just extract_next_billed_at/1 in isolation) populates
       # current_period_end. Paddle puts the next charge under `next_billed_at` OR
       # `current_billing_period.ends_at` — both must land on the mirror row.
@@ -405,7 +403,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "re-derives the plan on the existing row (no new row inserted)" do
-      # closes BILL-010-T01
       account = account_fixture(%{paddle_customer_id: "ctm_upd_plan_01"})
 
       created =
@@ -434,7 +431,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "a payload re-stating its fields preserves plan + price + period" do
-      # closes BILL-010-T04
       # The peek-then-update path (not a null-clobbering on_conflict) keeps the
       # plan resolved via account_plan/1 even when the price id is unmapped, and
       # a full payload that re-sends items + next_billed_at carries price/period
@@ -479,7 +475,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an items-less partial payload preserves paddle_price_id + current_period_end" do
-      # closes BILL-010-T04 (the partial-payload half)
+      # (the partial-payload half)
       # A status-only `subscription.updated` (no `items` / `next_billed_at`) must
       # NOT null price/period: `upsert_from_subscription/1` omits those keys when
       # the payload doesn't carry them, so the peek-then-update preserves the
@@ -521,7 +517,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "an unknown/foreign customer is a no-op (no write, still :ok)" do
-      # closes BILL-010-T07
       account = account_fixture(%{paddle_customer_id: "ctm_upd_known_01"})
 
       created =
@@ -545,7 +540,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "an update for an account with no prior mirror takes the insert branch" do
-      # closes BILL-010-T06
       # upsert_subscription/2 peeks for an existing row; with none, a
       # subscription.updated inserts (the same clause as subscription.created),
       # so a first-seen update still lands the mirror rather than no-opping.
@@ -566,7 +560,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "an unmapped price id on update falls back to the account's current plan" do
-      # closes BILL-010-T08
       # plan_for_subscription/2 can't resolve an unmapped price id, so it falls
       # back to account_plan/1 — the existing subscription's plan. A sales-led
       # price the map doesn't carry keeps the row on its current (team) plan.
@@ -599,7 +592,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "an unmodeled status on update persists (no inclusion list, no 500)" do
-      # closes BILL-010-T09
       # status is an open :string — Paddle owns the value space — so a status this
       # code has never seen still persists rather than failing the changeset and
       # 500-ing the webhook on every redelivery.
@@ -628,7 +620,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "a missing status on an update fails the apply and rolls the dedup row back" do
-      # closes BILL-010-T03
       # An update lacking `status` fails `validate_required([..., :status])` exactly
       # as a created does (the upsert changeset is shared), so the apply returns
       # {:error, changeset}, record_and_apply_event rolls the dedup row back, and
@@ -671,7 +662,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "FINDING: a stale out-of-order update clobbers a newer state (last-writer-wins)" do
-      # closes BILL-010-T05
       # There is no version/sequence guard in upsert_from_subscription — every
       # field the payload carries is written. So replaying an OLDER captured
       # `subscription.updated` AFTER a newer one rewinds the row to the stale
@@ -723,7 +713,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "applying a subscription event takes no %Subject{} — the signature is the edge auth" do
-      # closes BILL-009-T08, BILL-010-T10
       # apply_webhook_event/1 and record_and_apply_event/3 are the webhook entry
       # points; they carry NO per-account authorization because the BILL-005
       # signature verify at the HTTP edge is the only auth. The contract is the
@@ -740,7 +729,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "FINDING: a subscription mutation writes no audit event (invisible in the trail)" do
-      # closes BILL-005-T18
       # The apply path writes only the subscriptions mirror — it never inserts an
       # Audit.Event. A plan change therefore leaves no audit trace. Assert the
       # documented gap (account_fixture itself writes no audit rows, so a count of
@@ -767,7 +755,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "on success the dedup row AND the subscription mutation commit together" do
-      # closes BILL-005-T07
       # The dedup insert and apply run in ONE Multi (record_and_apply_event), so a
       # successful delivery leaves BOTH the processed-events row AND the mirror row
       # — never a half state. (The failure-rollback companion is asserted in the
@@ -788,7 +775,6 @@ defmodule Emisar.BillingTest do
 
   describe "upsert_subscription/2 — unique_constraint backstop" do
     test "a concurrent first-insert loses on the per-account unique index" do
-      # closes BILL-009-T05
       # upsert_subscription peeks-then-inserts, so two callers that both peek-miss
       # would both try to INSERT for the same account. unique_index(:subscriptions,
       # [:account_id]) backstops the race: the second insert hits the constraint and
@@ -818,7 +804,6 @@ defmodule Emisar.BillingTest do
 
   describe "upsert_subscription/2 — partial reconciliation preserves untouched fields" do
     test "a status+period-only upsert leaves plan + cycle-note columns intact" do
-      # closes BILL-007-T05
       # The BillingSync worker upserts ONLY %{status, current_period_end} — exactly
       # the partial attr set the peek-then-update path is built for. The existing
       # row's plan/paddle_price_id/cancel_at_period_end/trial_end are keys ABSENT
@@ -860,7 +845,6 @@ defmodule Emisar.BillingTest do
 
   describe "ensure_paddle_customer/2 — internal helper has no own Subject gate" do
     test "it takes a %Subject{} for its email only — authz is the start_checkout caller's" do
-      # closes BILL-003-T06
       # ensure_paddle_customer/2 runs NO ensure_has_permissions of its own: by
       # design the manage_billing gate lives in its caller (start_checkout/3), and
       # the helper just threads the acting user's email onto the Paddle customer.
@@ -880,7 +864,6 @@ defmodule Emisar.BillingTest do
 
   describe "check_limit/2 — downgrade past current usage is not reconciled" do
     test "FINDING: existing over-cap runners keep running; only NEW ones are blocked" do
-      # closes BILL-006-T10
       # Downgrading below current usage (Team→Free here, via cancel) does NOT sweep
       # the excess runners — check_limit only gates the fresh-insert / re-enable
       # path. So an account that drops to a smaller cap keeps every already-counted
@@ -921,7 +904,6 @@ defmodule Emisar.BillingTest do
 
   describe "record_and_apply_event/3 — unhandled event type" do
     test "a well-formed unmodeled event_type is a no-op that still commits the dedup row" do
-      # closes BILL-012-T01, BILL-012-T03
       # `apply_webhook_event(_event), do: :ok` catches any type we don't model.
       # The apply succeeds (no DB write, no account resolve), so the dedup row
       # DOES commit — distinct from the apply-failure rollback path (asserted by
@@ -950,7 +932,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "a brand-new, never-seen future Paddle event type is a no-op (forward-compatible)" do
-      # closes BILL-012-T05
       # The total `apply_webhook_event(_event)` clause cannot fail, so an event
       # type this code has never seen (a future Paddle addition) is accepted as a
       # no-op rather than 500-ing — forward-compatible by construction. No account
@@ -1101,7 +1082,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "the owner of another account is denied checkout AND portal for account A" do
-      # closes BILL-002-T12
       # Account-B's owner holds manage_billing on B, but ensure_subject_owns_account
       # binds the gate to the subject's own account — so acting on A is :unauthorized.
       {_user_a, account_a, _subject_a} = owner_subject_fixture()
@@ -1114,7 +1094,6 @@ defmodule Emisar.BillingTest do
 
   describe "apply_webhook_event/1 — subscription.canceled keeps entitlement" do
     test "a canceled subscription still resolves to its plan (advisory-only status)" do
-      # closes BILL-011-T05
       # Cancel writes ONLY status: "canceled"; account_plan/1 is status-agnostic,
       # so the plan/limits are unchanged and a runner under the (Team) cap still
       # registers. Status is an advisory banner, never an entitlement gate.
@@ -1139,7 +1118,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "the cancel's partial %{status} satisfies validate_required via the stored row" do
-      # closes BILL-011-T04
       # Cancel applies `Subscription.Changeset.upsert(existing, %{status: "canceled"})`
       # — only `status` is cast. validate_required([:account_id, :plan, :status]) is
       # still satisfied because account_id + plan come from the EXISTING struct's
@@ -1172,7 +1150,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "a status-only transition rewrites status on the existing row" do
-      # closes BILL-010-T02
       # An update re-sending the same price/items but a new status rewrites
       # status on the same mirror row (peek-then-update), plan unchanged.
       account = account_fixture(%{paddle_customer_id: "ctm_upd_status_01"})
@@ -1194,7 +1171,6 @@ defmodule Emisar.BillingTest do
 
   describe "apply_webhook_event/1 — unmodeled subscription event types" do
     test "pause/resume/trialing are unhandled no-ops that leave the mirror untouched" do
-      # closes BILL-012-T04
       # emisar does NOT mirror subscription.paused/resumed/trialing — they hit
       # the catch-all `apply_webhook_event(_event), do: :ok`. The existing row's
       # status is preserved (those banner statuses only arise via a
@@ -1230,7 +1206,6 @@ defmodule Emisar.BillingTest do
 
   describe "billing_summary/2 — view_billing role matrix" do
     test "owner, admin, operator and viewer can all read the billing summary" do
-      # closes BILL-001-T11
       # view_billing_permission is held by owner/admin/operator/viewer
       # (authorizer.ex:10-19), so every human role can read the dashboard.
       {_owner_user, account, owner_subject} = owner_subject_fixture()
@@ -1247,7 +1222,6 @@ defmodule Emisar.BillingTest do
     end
 
     test "an api_client and a runner subject are denied the billing summary" do
-      # closes BILL-001-T12
       # Neither api_client nor runner appears in list_permissions_for_role, so
       # view_billing is absent and the read is refused.
       {_user, account, _subject} = owner_subject_fixture()
@@ -1350,7 +1324,6 @@ defmodule Emisar.BillingVendorErrorTest do
     end
 
     test "a vendor error on checkout-session creation bubbles up" do
-      # closes BILL-002-T04
       # An already-linked customer skips create_customer, so the only failing
       # call is create_checkout_session — its {:error, term} propagates out of
       # start_checkout unchanged (the LV turns it into a flash, no redirect).
@@ -1361,7 +1334,6 @@ defmodule Emisar.BillingVendorErrorTest do
     end
 
     test "a vendor error creating the customer short-circuits before any checkout" do
-      # closes BILL-002-T05, BILL-003-T03
       # ensure_paddle_customer/2 runs first; when create_customer errors, the
       # `with` in start_checkout bails on it — no checkout session is attempted
       # and no customer id is ever persisted.
@@ -1378,7 +1350,6 @@ defmodule Emisar.BillingVendorErrorTest do
 
   describe "ensure_paddle_customer/2 — vendor failure" do
     test "a create_customer error returns {:error, term} and links nothing" do
-      # closes BILL-003-T03
       {_user, account, subject} = owner_subject_fixture()
 
       assert {:error, :paddle_unavailable} = Billing.ensure_paddle_customer(account, subject)
@@ -1400,7 +1371,6 @@ defmodule Emisar.BillingVendorErrorTest do
     end
 
     test "a non-url portal-session result is passed through, not crashed" do
-      # closes BILL-004-T05
       {_user, account, subject} = owner_subject_fixture()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
@@ -1487,7 +1457,6 @@ defmodule Emisar.BillingCheckoutArgsTest do
   defp restore(key, value), do: Application.put_env(:emisar, key, value)
 
   test "the checkout quantity equals the account's live billable runner count" do
-    # closes BILL-002-T02
     # Team is per-runner pricing, so start_checkout passes
     # `quantity: current_count(account, :runners)` — the live billable count. Five
     # runners → quantity 5 on the created checkout session.
@@ -1501,7 +1470,6 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "FINDING: the success/cancel URLs are non-account-scoped /app/settings/billing" do
-    # closes BILL-002-T13
     # The checkout session is created with success/cancel URLs that point at the
     # bare `/app/settings/billing`, NOT the real account-scoped
     # `/app/:account/settings/billing`. Assert the documented redirect-target
@@ -1522,7 +1490,6 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "create_customer forwards the acting email + account name verbatim" do
-    # closes BILL-003-T05
     # ensure_paddle_customer threads the subject's email + the account name (incl.
     # special characters) straight onto the Paddle customer with no mangling —
     # invoices reach a real inbox and the customer is recognisable in Paddle.
@@ -1541,7 +1508,6 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a normal checkout leaks no secret / customer id / price id into the log drain" do
-    # closes BILL-002-T14, BILL-004-T12
     # The happy checkout + portal-open paths emit no log line carrying the Paddle
     # API key, the customer id, or the price id — those would land in the drain
     # (Sentry/console) verbatim. Capture the log around both and assert the

@@ -74,7 +74,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "a whitespace-only slug trims to nothing and re-renders the not-found message", %{
       conn: conn
     } do
-      # closes AUTH-028-T03 — the controller `String.trim`s the slug before looking
+      # the controller `String.trim`s the slug before looking
       # it up, so "   " becomes "" which no account matches: the same friendly
       # not-found re-render as a real unknown slug, never a redirect or a crash.
       conn = post(conn, ~p"/sign_in/sso", team: %{slug: "   "})
@@ -84,7 +84,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "a real slug and a fake slug resolve through the same pre-auth lookup — no leak", %{
       conn: conn
     } do
-      # closes AUTH-018-T05 — both a real and a bogus team address go through the
+      # both a real and a bogus team address go through the
       # same Subject-less `fetch_account_by_id_or_slug`. A real slug redirects to its
       # branded sign-in; an unknown one re-renders the friendly "couldn't find a team"
       # (200, no redirect). The signed-out prober learns only "this slug routes
@@ -103,7 +103,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "a tampered recent-accounts cookie is ignored — at worst an empty picker, no crash", %{
       conn: conn
     } do
-      # closes AUTH-018-T06 — the recent-accounts cookie is SIGNED, so a forged value
+      # the recent-accounts cookie is SIGNED, so a forged value
       # fails verification and is dropped (`list/1` → []): the picker renders its
       # manual-slug empty state rather than trusting attacker-planted entries or
       # crashing. (Even a validly-signed cookie only carries slug+name — never
@@ -120,7 +120,7 @@ defmodule EmisarWeb.SSOSignInTest do
     end
 
     test "an already-authenticated visitor is bounced off the team picker to /app", %{conn: conn} do
-      # closes AUTH-018-T07, AUTH-027-T04 — a signed-in user has no business on the
+      # a signed-in user has no business on the
       # signed-out "which team?" picker render; `:redirect_if_user_is_authenticated`
       # bounces them to the app before the controller runs.
       {conn, _user, _account} = register_and_log_in(conn)
@@ -129,7 +129,7 @@ defmodule EmisarWeb.SSOSignInTest do
     end
 
     test "an already-authenticated visitor's team-resolve POST is bounced to /app", %{conn: conn} do
-      # closes AUTH-028-T06 — the resolve-team POST shares the guarded scope, so a
+      # the resolve-team POST shares the guarded scope, so a
       # signed-in user can't drive the picker to a branded page; the gate halts
       # before the controller resolves any slug.
       {conn, _user, _account} = register_and_log_in(conn)
@@ -172,7 +172,7 @@ defmodule EmisarWeb.SSOSignInTest do
     end
 
     test "an already-authenticated visitor is bounced off the branded page to /app", %{conn: conn} do
-      # closes AUTH-007-T09 — the branded sign-in lives under
+      # the branded sign-in lives under
       # `:redirect_if_user_is_authenticated`, so a signed-in user GETting any
       # team's branded page is redirected to the app before the LiveView mounts —
       # no second sign-in surface for someone already signed in.

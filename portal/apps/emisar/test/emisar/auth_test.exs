@@ -105,7 +105,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
     end
 
-    # closes AUTH-005-T05 / AUTH-006-T04 — 15-minute window (magic_link).
+    # 15-minute window (magic_link).
     test "a link just inside 15 minutes still consumes" do
       user = user_fixture()
       raw = Auth.issue_magic_link_token!(user)
@@ -146,7 +146,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid_or_expired} = Auth.reset_user_password("nope", "doesnt-matter-xx")
     end
 
-    # closes AUTH-008-T05 / AUTH-009-T05 — 1-day window (reset_password).
+    # 1-day window (reset_password).
     test "a reset token just inside 1 day still resets" do
       user = user_fixture(password: @password)
       raw = Auth.issue_password_reset_token!(user)
@@ -165,7 +165,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid_or_expired} = Auth.reset_user_password(raw, "brand-new-password-y")
     end
 
-    # closes AUTH-009-T04 / AUTH-009-T08 — the 12..128 password rule on the
+    # the 12..128 password rule on the
     # reset path (Users.reset_user_password -> User.Changeset.password).
     test "accepts a 12-char and a 128-char new password" do
       for length <- [12, 128] do
@@ -190,7 +190,7 @@ defmodule Emisar.AuthTest do
       end
     end
 
-    # closes the remaining AUTH-009-T12 soft-delete row at the context.
+    # closes the remaining soft-delete row at the context.
     test "a reset link whose user was soft-deleted no longer resets" do
       user = user_fixture(password: @password)
       raw = Auth.issue_password_reset_token!(user)
@@ -215,7 +215,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token("not-a-real-token")
     end
 
-    # closes AUTH-016-T03 — 7-day window (confirm).
+    # 7-day window (confirm).
     test "a confirm token just inside 7 days still confirms" do
       user = user_fixture(confirmed?: false)
       raw = Auth.issue_confirmation_token!(user)
@@ -234,7 +234,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
     end
 
-    # closes the AUTH-016-T09 soft-delete row at the context.
+    # closes the soft-delete row at the context.
     test "a confirm link whose user was soft-deleted no longer confirms" do
       user = user_fixture(confirmed?: false)
       raw = Auth.issue_confirmation_token!(user)
@@ -296,7 +296,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
     end
 
-    # closes AUTH-004-T11 — a non-numeric OTP is rejected, and because the
+    # a non-numeric OTP is rejected, and because the
     # replay guard only stamps on a *valid* code, the real code still works
     # right after (the bad attempt didn't burn the current bucket).
     test "verify_mfa rejects a non-numeric OTP without burning the live code" do
@@ -341,7 +341,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.verify_mfa(user, otp1)
     end
 
-    # closes AUTH-004-T14 (sequential single-use; true-concurrent is out of
+    # (sequential single-use; true-concurrent is out of
     # scope) — a recovery code consumes once; a second consume of the SAME
     # code fails, while a sibling code from the set is unaffected.
     test "consume_mfa_recovery_code accepts a fresh code once, rejects reuse" do
@@ -359,7 +359,7 @@ defmodule Emisar.AuthTest do
       assert :ok = Auth.consume_mfa_recovery_code(user, other_code)
     end
 
-    # closes AUTH-010-T11 — recovery codes are shown once in plaintext, and
+    # recovery codes are shown once in plaintext, and
     # only their SHA-256 digests are persisted (never the plaintext).
     test "recovery codes are stored as SHA-256 digests, never plaintext" do
       {_user, _account, subject} = owner_subject_fixture()

@@ -76,7 +76,6 @@ defmodule Emisar.Workers.BillingSyncTest do
   end
 
   test "perform/1 reads string-key vendor payload (IL-13 round-trip safe)" do
-    # closes BILL-007-T06
     # The stub returns a map with STRING keys ("status"/"next_billed_at"), as a
     # JSON-decoded Paddle payload would; the worker reads them by string key, so
     # there's no atom-key crash on the round-tripped vendor data.
@@ -98,7 +97,7 @@ defmodule Emisar.Workers.BillingSyncTest do
   end
 
   test "perform/1 accepts string-key Oban args without crashing (IL-13)" do
-    # closes BILL-007-T06 (the args half)
+    # (the args half)
     # The scheduled job round-trips its args through the DB as string keys; the
     # worker ignores them but must not pattern-match atom keys. A bare %{} and a
     # string-keyed map both drive a clean sweep.
@@ -115,7 +114,6 @@ defmodule Emisar.Workers.BillingSyncTest do
   end
 
   test "perform/1 runs Subject-less — it's a trusted server sweep, not a per-account read" do
-    # closes BILL-007-T07
     # The hourly reconciliation operates on already-trusted server context: it
     # reconciles every mirror row against the vendor with no per-account authz, so
     # its contract is the Oban arity-1 perform/1 — no %Subject{} anywhere on the
@@ -171,7 +169,6 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
 
   @tag capture_log: true
   test "a single retrieve failure is logged and the sweep continues to the next row" do
-    # closes BILL-007-T02, BILL-007-T03
     # The first subscription's retrieve errors (logged with both ids, → Sentry);
     # the sweep does NOT abort — the second subscription is still refreshed from
     # the vendor. perform/1 returns :ok regardless of the per-row failure.
@@ -266,7 +263,7 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
     :ok
   end
 
-  # closes ENG-027-T06 — an unrecognized Paddle status string persists rather
+  # an unrecognized Paddle status string persists rather
   # than 500-ing the sweep (no inclusion list on the open `:string` column), so a
   # vendor that mints a new status can't wedge the hourly reconciliation.
   test "perform/1 persists an unrecognized vendor status without crashing" do

@@ -35,7 +35,7 @@ defmodule Emisar.AccountsTest do
       assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
     end
 
-    # closes AUTH-001-T07 — the account-name length bounds (1..80) are inclusive
+    # the account-name length bounds (1..80) are inclusive
     # at both edges (with a valid slug supplied so only the name is under test).
     test "accepts a name of 1 and of 80 chars" do
       for length <- [1, 80] do
@@ -50,7 +50,7 @@ defmodule Emisar.AccountsTest do
       end
     end
 
-    # closes AUTH-001-T14 — a name over 80 chars is rejected and the transaction
+    # a name over 80 chars is rejected and the transaction
     # rolls back (no orphaned account or membership).
     test "rejects a name over 80 chars and rolls back" do
       user = user_fixture()
@@ -198,7 +198,7 @@ defmodule Emisar.AccountsTest do
 
   describe "fetch_account_by_id_or_slug/1 (pre-auth, no Subject)" do
     test "resolves a live account by slug or id — knowing the ref is all it takes" do
-      # closes AUTH-007-T07, AUTH-028-T04 — the branded sign-in page and the SSO
+      # the branded sign-in page and the SSO
       # team picker resolve the tenant from the URL BEFORE anyone is signed in, so
       # this read takes NO `%Subject{}`: it's deliberately unauthorized (the slug
       # only picks which sign-in page to show; it grants nothing). It resolves by
@@ -211,7 +211,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an unknown ref and a soft-deleted account are the SAME :not_found (no leak)" do
-      # closes AUTH-007-T06, AUTH-028-T04 — the read starts at `not_deleted()`, so a
+      # the read starts at `not_deleted`, so a
       # tombstoned account is indistinguishable from one that never existed: both
       # `:not_found`. A pre-auth prober can't confirm a tenant exists from this read.
       account = account_fixture()
@@ -244,7 +244,6 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload!(account).require_sso
     end
 
-    # closes TEAM-013-T08
     test "an owner of another account can't toggle this account's require_sso (cross-account)" do
       {_owner_a, account_a, _subject_a} = owner_subject_fixture()
       {_owner_b, _account_b, subject_b} = owner_subject_fixture()
@@ -258,7 +257,6 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload!(account_a).require_sso
     end
 
-    # closes TEAM-012-T08
     test "an owner of another account can't toggle this account's require_mfa (cross-account)" do
       {_owner_a, account_a, _subject_a} = owner_subject_fixture()
       {_owner_b, _account_b, subject_b} = owner_subject_fixture()
@@ -269,7 +267,6 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload!(account_a).require_mfa
     end
 
-    # closes TEAM-012-T06
     test "an admin can rename the account — only the security flags need manage_security_settings" do
       {_owner, account, _owner_subject} = owner_subject_fixture()
       admin = user_fixture()
@@ -344,7 +341,6 @@ defmodule Emisar.AccountsTest do
                Accounts.invite_user_to_account(email, "owner", subject)
     end
 
-    # closes TEAM-002-T05
     test "seats are uncapped — inviting well past any prior limit always succeeds" do
       inviter = user_fixture()
       account = account_fixture()
@@ -364,7 +360,6 @@ defmodule Emisar.AccountsTest do
       assert Accounts.count_memberships(account.id) == 13
     end
 
-    # closes TEAM-002-T14
     test "an invite always lands in the SUBJECT's account — B's owner can't seed account A" do
       {_owner_a, account_a, _subject_a} = owner_subject_fixture()
       {_owner_b, account_b, subject_b} = owner_subject_fixture()
@@ -535,7 +530,6 @@ defmodule Emisar.AccountsTest do
                Accounts.update_membership_role(m, "owner", subject)
     end
 
-    # closes TEAM-004-T13
     test "an owner of another account can't change this member's role (cross-account)" do
       account = account_fixture()
       _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
@@ -644,7 +638,6 @@ defmodule Emisar.AccountsTest do
       assert {:error, :insufficient_privileges} = Accounts.delete_membership(owner_m, subject)
     end
 
-    # closes TEAM-005-T09
     test "an owner of another account can't remove this member (cross-account)" do
       account = account_fixture()
       _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
@@ -660,7 +653,6 @@ defmodule Emisar.AccountsTest do
       assert %Membership{} = fetch_membership(account.id, target_user.id)
     end
 
-    # closes TEAM-005-T10
     test "a removed member's API key can no longer resolve for dispatch" do
       account = account_fixture()
       owner = user_fixture()
@@ -736,7 +728,6 @@ defmodule Emisar.AccountsTest do
       assert {:error, :unauthorized} = Accounts.suspend_membership(target, operator_subject)
     end
 
-    # closes TEAM-006-T06
     test "suspending a member keeps the seat — count_memberships still includes them", %{
       account: account,
       target: target,
@@ -815,7 +806,6 @@ defmodule Emisar.AccountsTest do
       assert Accounts.all_memberships_suspended?(target_user)
     end
 
-    # closes TEAM-006-T10
     test "an owner of another account can't suspend this member (cross-account)", %{
       account: account,
       target: target
@@ -852,7 +842,6 @@ defmodule Emisar.AccountsTest do
       assert Enum.any?(events, &(&1.event_type == "user.password_reset_forced"))
     end
 
-    # closes TEAM-008-T07
     test "an owner of another account can't force-reset this member (cross-account)" do
       account = account_fixture()
       _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
@@ -1061,7 +1050,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "writes ONLY the audit row — the membership and account rows are untouched" do
-      # closes AUTH-013-T08 — switching the active tenant is session state plus an
+      # switching the active tenant is session state plus an
       # audit trail; it must mutate no user-facing data. `record_account_switched/1`
       # inserts the audit event and nothing else, so the membership and account rows
       # are unchanged (the web layer's switch only re-validates + pins the session,
@@ -1229,7 +1218,6 @@ defmodule Emisar.AccountsTest do
       %{account: account, target: target, subject: subject_for(owner, account, role: :owner)}
     end
 
-    # closes TEAM-014-T02
     test "suspending a member broadcasts {:list_changed, :team, …} on the account topic", %{
       account: account,
       target: target,
@@ -1247,7 +1235,6 @@ defmodule Emisar.AccountsTest do
       assert user_id == target.user_id
     end
 
-    # closes TEAM-014-T02
     test "removing a member broadcasts {:list_changed, :team, …} on the account topic", %{
       account: account,
       target: target,

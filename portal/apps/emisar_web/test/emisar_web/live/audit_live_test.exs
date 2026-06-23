@@ -315,7 +315,7 @@ defmodule EmisarWeb.AuditLiveTest do
                :binary.match(html, ~s(name="subject_id"))
     end
 
-    # closes AUD-007-T04 — `approval_grant` and `policy` have no label resolver,
+    # `approval_grant` and `policy` have no label resolver,
     # so their distinct-id options all resolve to nil and are rejected → the
     # dependent picker never renders (intentional; you filter those by Type).
     test "a subject kind with no label resolver surfaces no picker", %{conn: conn} do
@@ -341,7 +341,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ ~s(name="subject_id")
     end
 
-    # closes AUD-006-T05 — picking an actor then switching the Actor *type*
+    # picking an actor then switching the Actor *type*
     # invalidates the pick (its id belongs to the old kind), so actor_id is
     # dropped from the patched URL; the new kind's picker reads "All".
     test "switching the actor kind drops the now-invalid actor pick", %{conn: conn} do
@@ -360,7 +360,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert_patch(lv, ~p"/app/#{account}/audit?actor_kind=api_key")
     end
 
-    # closes AUD-007-T02 — same for the Subject picker: a changed subject kind
+    # same for the Subject picker: a changed subject kind
     # invalidates the previously-picked subject_id, dropping it from the URL.
     test "switching the subject kind drops the stale subject pick", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
@@ -376,7 +376,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert_patch(lv, ~p"/app/#{account}/audit?subject_kind=runner")
     end
 
-    # closes AUD-006-T09 — a crafted/blank actor_id is normalized: a junk UUID is
+    # a crafted/blank actor_id is normalized: a junk UUID is
     # account-scoped to zero rows (no crash, rich empty state), and a blank one
     # is dropped so no chip renders.
     test "a crafted or blank actor_id is normalized, never a crash", %{conn: conn} do
@@ -395,7 +395,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "real"
     end
 
-    # closes AUD-007-T06 — same normalization for a crafted/blank subject_id.
+    # same normalization for a crafted/blank subject_id.
     test "a crafted or blank subject_id is normalized, never a crash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -412,7 +412,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "real"
     end
 
-    # closes AUD-008-T02, AUD-008-T03 — the quick-range preset computes its From
+    # the quick-range preset computes its From
     # at CLICK time (anchored to now, via preset_from/1) and clears any
     # previously-set To. Land with a To set, click "Last hour": the patched URL
     # carries a fresh `from` and no `to`.
@@ -443,7 +443,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert_in_delta DateTime.diff(DateTime.utc_now(), from_dt, :second), 3600, 90
     end
 
-    # closes AUD-001-T10 — the timeline is live: on mount it subscribes to the
+    # the timeline is live: on mount it subscribes to the
     # account audit topic, and a committed `{:audit_event, _}` reloads the
     # current filter so a new row appears without a refresh. Simulate the
     # broadcast the way Repo.commit_multi fans it out.
@@ -465,7 +465,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert render(lv) =~ "freshly-committed-actor"
     end
 
-    # closes AUD-001-T13 — an account with zero events shows the RICH empty
+    # an account with zero events shows the RICH empty
     # state (naming the surfaces that produce events), distinct from the terse
     # filtered-empty one-liner. A fresh account already has its `account.created`
     # row, so clear the log to reach the genuinely-empty state.
@@ -481,7 +481,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "No events match these filters."
     end
 
-    # closes AUD-001-T14 — when a (type) filter matches nothing, the feed shows
+    # when a (type) filter matches nothing, the feed shows
     # the terse one-liner, NOT the rich empty-account copy: over-filtering must
     # read differently from "this account has never done anything".
     test "a filter that matches nothing shows the terse filtered-empty copy", %{conn: conn} do
@@ -496,7 +496,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "No audit events yet."
     end
 
-    # closes AUD-006-T03 — the actor chip's clear (✕) link drops `actor_id` from
+    # the actor chip's clear (✕) link drops `actor_id` from
     # the params, restoring the full feed (the previously-filtered-out rows
     # return). The clear link patches to the URL without actor_id.
     test "clearing the actor chip restores the full feed", %{conn: conn} do
@@ -524,7 +524,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "bob"
     end
 
-    # closes AUD-006-T04 — an active click-to-filter `actor_id` (which rides the
+    # an active click-to-filter `actor_id` (which rides the
     # URL, not the form) survives an UNRELATED dropdown change: the filter event
     # merges it back rather than silently dropping it when the form re-submits
     # without it.
@@ -554,7 +554,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert params["auth_method"] == "sso"
     end
 
-    # closes AUD-006-T08 — a chip for an actor that isn't in the loaded rows (its
+    # a chip for an actor that isn't in the loaded rows (its
     # id filters to zero events) falls back to showing the RAW id, never a crash
     # or a blank chip: actor_label_for/2 returns the id when no event matches.
     test "a stale actor chip falls back to the raw id", %{conn: conn} do
@@ -570,7 +570,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "No events match these filters."
     end
 
-    # closes AUD-008-T04 — a quick-range preset only touches from/to; an
+    # a quick-range preset only touches from/to; an
     # unrelated active filter (a Type pick) is preserved across the click.
     test "a preset preserves an unrelated active filter", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -590,7 +590,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert params["event_type"] == "user.invited"
     end
 
-    # closes AUD-006-T06 — selecting an Actor kind that has NO actors of that
+    # selecting an Actor kind that has NO actors of that
     # kind in the log surfaces no dependent picker: the `{:ok, [_|_]}` guard
     # fails on an empty option list, so the actor_id <select> isn't rendered.
     test "an actor kind with no actors in the log surfaces no picker", %{conn: conn} do
@@ -603,7 +603,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ ~s(name="actor_id")
     end
 
-    # closes AUD-007-T03 — same for the Subject picker: a subject kind with no
+    # same for the Subject picker: a subject kind with no
     # subjects of that kind in the log renders no dependent picker.
     test "a subject kind with no subjects in the log surfaces no picker", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -613,7 +613,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ ~s(name="subject_id")
     end
 
-    # closes AUD-001-T16 — a system / scheduler / runbook actor has no
+    # a system / scheduler / runbook actor has no
     # identifying row in another table, so it renders a clean label ("System")
     # with NO colon-id pair (which would read the meaningless "system: —").
     test "a system actor renders a clean label, not a kind:id pair", %{conn: conn} do
@@ -634,7 +634,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "system:"
     end
 
-    # closes AUD-001-T18 — crafted filter params from a hand-edited URL are
+    # crafted filter params from a hand-edited URL are
     # normalized: blank values are dropped (blank_to_nil) and unknown keys are
     # ignored by params_to_opts, so the feed loads cleanly instead of crashing.
     test "crafted / blank / unknown filter params are normalized, never a crash", %{conn: conn} do
@@ -649,7 +649,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "real"
     end
 
-    # closes AUD-001-T12, AUD-009-T06 — a bad pagination cursor from a hand-edited
+    # a bad pagination cursor from a hand-edited
     # URL (the keyset `?after=<opaque>`) makes list_events return
     # {:error, :invalid_cursor}; the LV retries once with empty params and loads
     # the feed cleanly rather than crashing or showing a broken page.
@@ -668,7 +668,7 @@ defmodule EmisarWeb.AuditLiveTest do
   end
 
   describe "keyset pagination is account-scoped across pages" do
-    # closes AUD-009-T07 — walking page → next as account B never pages in any of
+    # walking page → next as account B never pages in any of
     # account A's events: every page is scoped by for_subject/2. Seed enough A
     # rows to span multiple pages, then confirm B's walk yields only B's rows.
     test "account B's cursor walk never pages in account A's events", %{conn: conn} do
@@ -828,7 +828,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert revoked.revoked_at
     end
 
-    # closes AUD-004-T06, AUD-012-T03 — an account with no export tokens shows
+    # an account with no export tokens shows
     # the mint affordance but NOT the (empty) list section: the list div is
     # `:if={@export_keys != []}`, so a manager sees just the "Mint export token"
     # button until they've created one.
@@ -848,7 +848,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute siem_card =~ "Revoked"
     end
 
-    # closes AUD-010-T02 — while a freshly-minted secret is being revealed, the
+    # while a freshly-minted secret is being revealed, the
     # "Mint export token" button is hidden (`:if={is_nil(@export_secret)}`) so a
     # double-mint can't clobber the one-shot reveal; dismissing brings it back.
     test "the mint button is hidden while a secret is being revealed", %{conn: conn} do
@@ -866,7 +866,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "Mint export token"
     end
 
-    # closes AUD-010-T05 — the curl snippet's base URL is derived from the socket
+    # the curl snippet's base URL is derived from the socket
     # (`derive_base_url(socket) <> "/api/audit"`), so the reveal hands the
     # operator a copy-paste command pointed at this deployment's export endpoint.
     test "the reveal shows a curl snippet pointed at /api/audit", %{conn: conn} do
@@ -880,7 +880,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "Authorization: Bearer"
     end
 
-    # closes AUD-004-T08, AUD-010-T06 — the mint surface hardcodes the scope to
+    # the mint surface hardcodes the scope to
     # ["audit:read"]; crafted extra params on the event can't widen it. An
     # operator can't escalate a log-shipping token into an action-executing one
     # from this page.
@@ -903,7 +903,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert key.scopes == ["audit:read"]
     end
 
-    # closes AUD-004-T07, AUD-010-T04 — the raw secret is one-shot: it lives only
+    # the raw secret is one-shot: it lives only
     # in the socket assigns, so a fresh mount (a reconnect / reload) never
     # re-shows it. Mint in one session, then open a second LV: no secret.
     test "the minted secret is one-shot — a fresh mount never re-shows it", %{conn: conn} do
@@ -919,7 +919,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute fresh_html =~ "won't show it again"
     end
 
-    # closes AUD-011-T02 — the Revoke button renders only for non-revoked keys
+    # the Revoke button renders only for non-revoked keys
     # (`:if={is_nil(key.revoked_at)}`); a revoked key shows the "Revoked" chip and
     # no button — idempotency by affordance.
     test "revoke is offered only on active keys; revoked keys show a chip", %{conn: conn} do
@@ -944,7 +944,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert siem_card =~ "Revoked"
     end
 
-    # closes AUD-012-T04 — a key whose creating user has since been deleted still
+    # a key whose creating user has since been deleted still
     # lists (left-join preload → created_by is nil), and the "by <email>" line is
     # guarded (`:if={key.created_by}`) so the row renders without crashing.
     test "a key whose creator was deleted renders without the 'by' line", %{conn: conn} do
@@ -1016,7 +1016,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert render(lv) =~ "Side-channel export"
     end
 
-    # closes AUD-011-T04, AUD-004-T10
     test "an operator cannot revoke an export key (crafted event denied)", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
@@ -1052,7 +1051,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert is_nil(reread.revoked_at)
     end
 
-    # closes AUD-011-T03, AUD-004-T05
     test "revoking a bogus key id is a silent no-op, not a crash or a flash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
@@ -1067,7 +1065,6 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "Export token revoked."
     end
 
-    # closes AUD-011-T05, AUD-004-T11
     test "an admin cannot revoke another account's export key (cross-account no-op)", %{
       conn: conn
     } do
@@ -1098,7 +1095,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert is_nil(reread.revoked_at)
     end
 
-    # closes AUD-011-T06
     test "a revoked export token returns 401 from the export endpoint on its next call",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
@@ -1126,7 +1122,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert json_response(denied, 401) == %{"error" => "unauthorized"}
     end
 
-    # closes AUD-012-T06, AUD-004-T02
     test "the SIEM card is hidden from a non-manager (operator)", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
@@ -1147,7 +1142,6 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "Mint export token"
     end
 
-    # closes AUD-012-T07, AUD-004-T11
     test "another account's export tokens never appear in this account's SIEM list",
          %{conn: conn} do
       {conn, _user, account_b} = register_and_log_in(conn)
@@ -1167,7 +1161,6 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "Account-A-only-export-token"
     end
 
-    # closes AUD-012-T08, AUD-004-T12
     test "audit:read tokens are bucketed out of the LLM agents page", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)

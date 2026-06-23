@@ -251,9 +251,8 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 // file using the old `agent_id` field (renamed to `runner_id`), and a token
 // file holding just the raw token bytes (an even earlier format). Both must
 // still load so a runner upgraded from an older build reuses its token instead
-// of needlessly re-registering. closes RUN-005-T09.
+// of needlessly re-registering.
 func TestReadToken_LegacyAgentIDAndRawString(t *testing.T) {
-	// closes RUN-005-T09
 	dir := t.TempDir()
 
 	t.Run("legacy agent_id JSON", func(t *testing.T) {

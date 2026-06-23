@@ -152,8 +152,6 @@ func TestClient_SetVerifier_RevokesKeyLive(t *testing.T) {
 	}
 }
 
-// closes RSEC-001-T20
-//
 // The other half of a live key rotation: after SetVerifier swaps in a verifier
 // trusting a NEW key, a dispatch signed by that new key is ACCEPTED — rotation
 // isn't just revoking the old key, it's bringing the new one online without a

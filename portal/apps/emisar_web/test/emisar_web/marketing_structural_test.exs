@@ -139,10 +139,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # renders — so a regression that flipped a marketing page to a LiveView
     # (or wired app.js into the marketing branch) would surface here.
     #
-    # closes MKT-002-T10 MKT-003-T10 MKT-004-T11 MKT-005-T09 MKT-006-T08
-    # closes MKT-007-T08 MKT-008-T08 MKT-010-T09 MKT-011-T07 MKT-012-T07
-    # closes MKT-014-T07 MKT-015-T07 MKT-016-T07 MKT-017-T09 MKT-018-T06
-    # closes MKT-019-T07 MKT-020-T08 MKT-021-T08 MKT-022-T07 MKT-023-T07
     for route <- @indexable_routes do
       test "GET #{route} loads marketing.js and not app.js", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)
@@ -160,7 +156,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # path` means the expected href is exactly "https://emisar.dev" <>
     # route for the whole list (and "https://emisar.dev/" for "/").
     #
-    # closes MKT-002-T04
     for route <- @indexable_routes do
       test "GET #{route} emits a canonical pointing at its own URL", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)
@@ -178,12 +173,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # — not error, not vary the canonical. Asserting the canonical is
     # unchanged proves the same page shell rendered, not just any 200.
     #
-    # closes MKT-001-T11 MKT-002-T07 MKT-003-T08 MKT-004-T07 MKT-005-T05
-    # closes MKT-006-T05 MKT-007-T05 MKT-008-T05 MKT-009-T06 MKT-010-T06
-    # closes MKT-011-T05 MKT-012-T05 MKT-013-T06 MKT-014-T05 MKT-015-T05
-    # closes MKT-016-T05 MKT-017-T07 MKT-018-T04 MKT-019-T05 MKT-020-T06
-    # closes MKT-021-T06 MKT-022-T04 MKT-023-T05 MKT-024-T06 MKT-025-T08
-    # closes MKT-026-T07 MKT-034-T08 MKT-035-T09 MKT-036-T09
     for route <- @indexable_routes do
       test "GET #{route}?utm_source=x&foo=1 renders the same 200 shell", %{conn: conn} do
         clean = conn |> get(unquote(route)) |> html_response(200)
@@ -205,11 +194,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # string) is what proves it's valid structured data, not just the
     # literal token in some unrelated copy.
     #
-    # closes MKT-004-T04 MKT-005-T03 MKT-006-T04 MKT-007-T04 MKT-009-T04
-    # closes MKT-010-T04 MKT-011-T04 MKT-012-T04 MKT-013-T05 MKT-014-T04
-    # closes MKT-015-T04 MKT-016-T04 MKT-017-T06 MKT-019-T04 MKT-020-T04
-    # closes MKT-021-T04 MKT-022-T03 MKT-024-T04 MKT-025-T06 MKT-034-T07
-    # closes MKT-035-T08 MKT-036-T08
     for route <- @breadcrumb_routes do
       test "GET #{route} carries a valid BreadcrumbList", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)
@@ -255,7 +239,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # guards against a copy/canonical mix-up between the three near-identical
     # pages (a wrong canonical on /terms pointing at /privacy, say).
     #
-    # closes MKT-034-T02 MKT-035-T02 MKT-036-T02
     test "legal pages render their exact title + own canonical", %{conn: conn} do
       for {route, title} <- [
             {"/privacy", "Privacy Policy"},

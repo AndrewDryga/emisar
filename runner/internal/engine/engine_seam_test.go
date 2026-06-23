@@ -41,8 +41,6 @@ func readJournalEvents(t *testing.T, root string) []audit.Event {
 	return evs
 }
 
-// closes RSEC-004-T12
-//
 // A dispatch the runner-local admission policy denies must be journaled as the
 // dedicated EventActionBlockedByAdmission type — not a generic
 // validation_failed — so a SIEM rule keyed on that string can alert on it
@@ -50,7 +48,7 @@ func readJournalEvents(t *testing.T, root string) []audit.Event {
 // This drives the real engine→journal seam at engine.go:225-226: the existing
 // admission tests assert the returned status and a non-empty EventID, but none
 // reads the journal back to confirm the recorded event *type*; event_gap_test's
-// RSEC-012-T14 records that type directly via j.Record without ever passing
+// records that type directly via j.Record without ever passing
 // through Admit. This closes that seam: deny t.echo, dispatch it, then match the
 // returned EventID in the journal and assert its type + the block reason.
 func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
@@ -103,7 +101,7 @@ func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 	}
 }
 
-// closes RSEC-008-T11 (companion / positive case)
+// (companion / positive case)
 //
 // The script-SHA re-verify at engine.go:306 runs on EVERY dispatch, re-reading
 // the on-disk bytes and comparing to the loader-recorded hash — it is not a
@@ -142,8 +140,6 @@ func TestEngine_ScriptUnchangedRunsAcrossRedispatches(t *testing.T) {
 	}
 }
 
-// closes RUN-010-T03
-//
 // SIGHUP pack reload is fail-safe: when re-discovery errors (a pack on disk is
 // now corrupt), engine.Reload() returns the error WITHOUT swapping the registry
 // (engine.go:171-182 stores the new registry only after LoadAll succeeds), so
@@ -214,8 +210,6 @@ output:
       replacement: '[REDACTED_PEM]'
 `
 
-// closes RSEC-007-T12
-//
 // The engine wires a SEPARATE StreamRedactor per stream (engine.go:336-337):
 // outRed for stdout, errRed for stderr. A StreamRedactor is stateful and not
 // concurrency-safe — it holds a bounded raw tail in `pending` to catch

@@ -43,7 +43,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "resend confirmation (self)" do
     test "an unconfirmed user can resend their own confirmation email", %{conn: conn} do
-      # closes TEAM-015-T03
       # TeamLive defines no `resend_confirmation` handler — the row's button is
       # served by the portal-wide `:email_confirmation` on_mount hook (the same
       # one behind the verify-email banner), which owns the send + rate-limit. A
@@ -107,7 +106,6 @@ defmodule EmisarWeb.TeamLiveTest do
         teammate: teammate,
         teammate_membership: teammate_membership
       } do
-        # closes TEAM-001-T02
         member = Emisar.Fixtures.user_fixture()
 
         _ =
@@ -178,7 +176,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       target_membership: target_membership
     } do
-      # closes TEAM-004-T08
       html =
         render_click(lv, "change_role", %{
           "membership_id" => target_membership.id,
@@ -193,7 +190,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       target_membership: target_membership
     } do
-      # closes TEAM-005-T06
       html = render_click(lv, "remove", %{"membership_id" => target_membership.id})
 
       assert html =~ "Only owners and admins can manage memberships."
@@ -204,7 +200,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       target_membership: target_membership
     } do
-      # closes TEAM-006-T07
       html = render_click(lv, "suspend", %{"membership_id" => target_membership.id})
 
       assert html =~ "Only owners and admins can manage memberships."
@@ -216,7 +211,6 @@ defmodule EmisarWeb.TeamLiveTest do
       target: target,
       target_membership: target_membership
     } do
-      # closes TEAM-007-T05
       # The edit form is never in a viewer's DOM (no Actions menu), so push the
       # event directly — the server gate must still refuse it.
       html =
@@ -230,7 +224,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "end_sessions is refused", %{lv: lv, target_membership: target_membership} do
-      # closes TEAM-010-T04
       html = render_click(lv, "end_sessions", %{"membership_id" => target_membership.id})
 
       assert html =~ "Only owners and admins can manage memberships."
@@ -241,7 +234,6 @@ defmodule EmisarWeb.TeamLiveTest do
       target: target,
       target_membership: target_membership
     } do
-      # closes TEAM-009-T03 TEAM-009-T07
       # Enroll the target so the context's mutation path is the thing being
       # blocked, not a "not enrolled" no-op.
       enroll_mfa(target)
@@ -258,7 +250,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       target_membership: target_membership
     } do
-      # closes TEAM-011-T04
       html =
         render_submit(lv, "save_scopes", %{
           "membership_id" => target_membership.id,
@@ -456,7 +447,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       membership: membership
     } do
-      # closes TEAM-006-T01
       # The roster reflects the state change live — the "Suspended" chip is the
       # visible signal the row is disabled.
       refute render(lv) =~ "Suspended"
@@ -490,7 +480,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       membership: membership
     } do
-      # closes TEAM-005-T04
       dialog = "remove-member-#{membership.id}"
 
       # Empty + wrong token → Confirm disabled, `remove` never dispatched.
@@ -522,7 +511,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "invite form live validation (phx-change)" do
     test "a blank email surfaces an inline error via phx-change, not a flash", %{conn: conn} do
-      # closes TEAM-003-T02
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -538,7 +526,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a malformed email surfaces inline via phx-change", %{conn: conn} do
-      # closes TEAM-003-T03
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -551,7 +538,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a role outside the allowed set is rejected with no membership created", %{conn: conn} do
-      # closes TEAM-003-T04
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -785,7 +771,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "real-time roster updates (PubSub)" do
     test "an unrelated handle_info message is ignored, not crashed", %{conn: conn} do
-      # closes TEAM-014-T04
       # The badge/fleet on_mount hooks forward account-topic broadcasts to every
       # LV, so TeamLive must carry the mandatory handle_info(_, socket) catch-all
       # (a missing one crashes the socket on the first stray message).
@@ -799,7 +784,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "the disconnected (dead) render shows the loading state, never the roster", %{conn: conn} do
-      # closes TEAM-014-T05 TEAM-001-T11
       # handle_params gates the roster reads (and mount the subscribe) behind
       # connected?/1 (IL-18) — so the dead render a plain GET produces must show
       # <.loading_state>, with no member rows read or rendered. A teammate is
@@ -824,7 +808,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "pagination / filter param recovery" do
     test "a hand-edited bad cursor param recovers via the single clean retry", %{conn: conn} do
-      # closes TEAM-001-T07 TEAM-001-T08
       # A garbage `after` cursor makes the keyset read return
       # {:error, :invalid_cursor}; load/2 retries once with %{} (since the params
       # were non-empty), so the page recovers and renders the roster instead of
@@ -852,7 +835,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "client validation is not the authorization gate (IL-15)" do
     test "a viewer's well-formed invite is still refused server-side", %{conn: conn} do
-      # closes TEAM-003-T05
       # The invite changeset is purely UX — a viewer can pass every field-level
       # check (valid email, valid role) and the `invite` handler must STILL deny
       # them via can_manage?, never creating a membership.
@@ -891,7 +873,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "change_role on an unknown membership id is ignored", %{lv: lv, ghost_id: ghost_id} do
-      # closes TEAM-004-T04
       # change_role finds no row → the `nil` clause returns the socket unchanged
       # (no flash, no write).
       html = render_click(lv, "change_role", %{"membership_id" => ghost_id, "role" => "admin"})
@@ -903,7 +884,6 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       ghost_id: ghost_id
     } do
-      # closes TEAM-005-T03 TEAM-007-T02 TEAM-011-T03
       # All three route through with_membership, whose nil branch returns the
       # socket untouched — no success flash, no error flash, no crash.
       remove_html = render_click(lv, "remove", %{"membership_id" => ghost_id})
