@@ -8,9 +8,9 @@
   <%!-- Hero --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-brand-400">Documentation</p>
+      <p class="text-base font-semibold text-brand-400">Reference &amp; guides</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
-        Docs
+        emisar documentation
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         Install a runner, author packs, wire in an LLM. The full reference and example packs
@@ -44,6 +44,8 @@
             "Enterprise OIDC sign-in (Google Workspace, Okta, Keycloak) plus SCIM directory sync — offboarding revokes access automatically, with group-to-role mapping."},
            {~p"/docs/runners", "hero-server-stack", "Runner fleet",
             "Groups and labels, enrollment keys, pack credentials, updates, troubleshooting, and clean removal."},
+           {~p"/docs/signed-dispatch", "hero-finger-print", "Signed dispatch",
+            "Make a runner run only actions a real person signed in their MCP client — generate keys, configure both ends, and rotate or revoke them across a fleet."},
            {~p"/docs/audit-and-siem", "hero-document-magnifying-glass", "Audit & SIEM",
             "What gets recorded, the dashboard view, NDJSON export with a read-only key, and the runner journal."}
          ]},

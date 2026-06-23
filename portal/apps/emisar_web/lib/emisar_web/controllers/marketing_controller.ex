@@ -21,7 +21,7 @@ defmodule EmisarWeb.MarketingController do
   @pages [
     {"/security", :security, :security, "Security & compliance",
      "emisar's security model: pre-approved actions, redacted output, searchable audit, a hash-chained runner journal, and no SSH."},
-    {"/docs", :docs, :docs, "Docs",
+    {"/docs", :docs, :docs, "Documentation — runner setup, action packs & MCP",
      "Documentation, action pack format, security model, and integration guides for emisar."},
     {"/about", :about, :about, "About", "Why emisar exists and how we built it."},
     {"/privacy", :privacy, :privacy, "Privacy Policy",
@@ -523,35 +523,65 @@ defmodule EmisarWeb.MarketingController do
     # Docs pages also carry TechArticle structured data (richer article
     # results); every other page keeps the bare BreadcrumbList it always had.
     default_ld =
-      if String.starts_with?(path, "/docs") do
-        Jason.encode!(
-          %{
-            "@context" => "https://schema.org",
-            "@graph" => [
-              breadcrumb_node,
-              %{
-                "@type" => "TechArticle",
-                "headline" => title,
-                "description" => description,
-                "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
-                "publisher" => %{
-                  "@type" => "Organization",
+      cond do
+        String.starts_with?(path, "/docs") ->
+          Jason.encode!(
+            %{
+              "@context" => "https://schema.org",
+              "@graph" => [
+                breadcrumb_node,
+                %{
+                  "@type" => "TechArticle",
+                  "headline" => title,
+                  "description" => description,
+                  "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
+                  "publisher" => %{
+                    "@type" => "Organization",
+                    "name" => "emisar",
+                    "logo" => %{
+                      "@type" => "ImageObject",
+                      "url" => @base <> "/images/brand/emisar-logo.png"
+                    }
+                  },
+                  "mainEntityOfPage" => @base <> path
+                }
+              ]
+            },
+            escape: :html_safe
+          )
+
+        # The procurement (/trust) + framework (/zero-trust) pages carry a
+        # SoftwareApplication node so they surface as the product in rich
+        # results — the rest of the generated surface keeps a bare breadcrumb.
+        action in [:trust, :zero_trust] ->
+          Jason.encode!(
+            %{
+              "@context" => "https://schema.org",
+              "@graph" => [
+                breadcrumb_node,
+                %{
+                  "@type" => "SoftwareApplication",
                   "name" => "emisar",
-                  "logo" => %{
-                    "@type" => "ImageObject",
-                    "url" => @base <> "/images/brand/emisar-logo.png"
+                  "applicationCategory" => "SecurityApplication",
+                  "operatingSystem" => "Linux, macOS",
+                  "url" => @base <> path,
+                  "description" => description,
+                  "offers" => %{
+                    "@type" => "Offer",
+                    "priceCurrency" => "USD",
+                    "price" => "0",
+                    "description" => "Free for up to 3 runners"
                   }
-                },
-                "mainEntityOfPage" => @base <> path
-              }
-            ]
-          },
-          escape: :html_safe
-        )
-      else
-        Jason.encode!(Map.put(breadcrumb_node, "@context", "https://schema.org"),
-          escape: :html_safe
-        )
+                }
+              ]
+            },
+            escape: :html_safe
+          )
+
+        true ->
+          Jason.encode!(Map.put(breadcrumb_node, "@context", "https://schema.org"),
+            escape: :html_safe
+          )
       end
 
     attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, default_ld))
