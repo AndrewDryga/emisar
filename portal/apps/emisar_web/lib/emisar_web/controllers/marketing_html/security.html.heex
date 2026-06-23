@@ -330,14 +330,22 @@
           cloud, is the authority. Opt-in per runner; a runner can only make itself stricter.
         </p>
       </div>
-      <div class="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
-        <.link
-          navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1 font-semibold text-brand-400 hover:text-brand-300"
-        >
-          See emisar mapped to the framework, control by control
-          <.icon name="hero-arrow-right" class="h-4 w-4" />
-        </.link>
+      <div class="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 text-sm">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <.link
+            navigate={~p"/zero-trust"}
+            class="inline-flex items-center gap-1 font-semibold text-brand-400 hover:text-brand-300"
+          >
+            See emisar mapped to the framework, control by control
+            <.icon name="hero-arrow-right" class="h-4 w-4" />
+          </.link>
+          <.link
+            navigate={~p"/guides/give-ai-agents-safe-production-access"}
+            class="inline-flex items-center gap-1 font-semibold text-brand-400 hover:text-brand-300"
+          >
+            Guide: safe production access for AI <.icon name="hero-arrow-right" class="h-4 w-4" />
+          </.link>
+        </div>
         <span class="text-xs text-zinc-500">Not affiliated with or endorsed by Anthropic.</span>
       </div>
     </div>

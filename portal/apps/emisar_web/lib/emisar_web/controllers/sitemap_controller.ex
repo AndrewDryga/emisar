@@ -45,6 +45,13 @@ defmodule EmisarWeb.SitemapController do
     "/guides/ai-agents-and-ssh-the-risks"
   ]
 
+  @doc """
+  The canonical static marketing/docs paths. Also the source of truth for the
+  no-orphan link test, so a page added to the sitemap is automatically required
+  to be linked from somewhere.
+  """
+  def paths, do: @paths
+
   def show(conn, _params) do
     # Static marketing routes + a synthesized entry per published pack
     # (so /packs/linux-core etc. show up in search engines without
