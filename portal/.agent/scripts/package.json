@@ -1,0 +1,12 @@
+{
+  "name": "emisar-docs-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Regenerate the /docs console screenshots from a seeded dev account.",
+  "scripts": {
+    "capture": "node capture-docs-screenshots.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.2.0"
+  }
+}

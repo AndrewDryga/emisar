@@ -42,7 +42,7 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 
 ## The `.agent/` working state (per project)
 
-Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **Only `rules/` is committed (the shared taste KB); everything else here is local working state and git-ignored** — the queue, log, ideas, backlog, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
+Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **Only `rules/` (the shared taste KB) and `scripts/` (maintained dev tooling) are committed; everything else here is local working state and git-ignored** — the queue, log, ideas, backlog, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
 
 - **`TASKS.md`** — the work queue. Four states, nothing else, so skipped work has nowhere to hide:
   - `[ ]` todo · `[w]` **claimed / in progress** · `[x]` **done _and_ gated-green _and_ committed** · `[B]` blocked.
