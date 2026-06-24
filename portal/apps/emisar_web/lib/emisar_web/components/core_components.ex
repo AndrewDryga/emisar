@@ -3702,19 +3702,23 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-        <%!-- Early-access capture — the considered buyer's low-commitment path
-             (pre-GA, so "launch updates", not a newsletter). A server-rendered
-             POST: marketing has no LiveView, so the flash renders via the app
-             layout. Honeypot + CSRF + a citext-unique idempotent guard back it. --%>
-        <div class="mb-12 flex flex-col gap-6 border-b border-zinc-900 pb-12 sm:flex-row sm:items-center sm:justify-between">
+        <%!-- Product-updates capture — the considered buyer's low-commitment
+             path. A server-rendered POST: marketing has no LiveView, so the
+             flash renders via the app layout and the redirect anchors back here
+             (#updates) rather than jumping to the page top. Honeypot + CSRF + a
+             citext-unique idempotent guard back it. --%>
+        <div
+          id="updates"
+          class="mb-12 flex flex-col gap-6 border-b border-zinc-900 pb-12 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div>
-            <h2 class="text-sm font-semibold text-zinc-100">Get launch updates</h2>
+            <h2 class="text-sm font-semibold text-zinc-100">Product updates</h2>
             <p class="mt-1 max-w-md text-sm text-zinc-500">
-              One email when emisar is generally available, plus the occasional note on a major
-              release. No noise.
+              The occasional note when we ship something major — new packs, features, and security
+              improvements. No noise.
             </p>
           </div>
-          <.form for={%{}} action={~p"/early-access"} class="w-full sm:w-auto">
+          <.form for={%{}} action={~p"/subscribe"} class="w-full sm:w-auto">
             <input type="hidden" name="source" value="footer" />
             <%!-- Honeypot — hidden from people, tempting to bots. --%>
             <input
@@ -3726,21 +3730,21 @@ defmodule EmisarWeb.CoreComponents do
               class="hidden"
             />
             <div class="flex max-w-sm gap-2">
-              <label for="early-access-email" class="sr-only">Email address</label>
+              <label for="subscribe-email" class="sr-only">Email address</label>
               <input
                 type="email"
-                id="early-access-email"
+                id="subscribe-email"
                 name="email"
                 required
                 placeholder="you@company.com"
                 class="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:border-brand-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500"
               />
               <.marketing_button type="submit" variant={:secondary} size={:sm}>
-                Notify me
+                Subscribe
               </.marketing_button>
             </div>
             <p class="mt-2 text-xs text-zinc-600">
-              No spam, just launch news. See our <.link
+              No spam, just product news. See our <.link
                 navigate={~p"/privacy"}
                 class="text-zinc-500 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
               >privacy policy</.link>.

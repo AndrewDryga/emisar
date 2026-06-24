@@ -113,7 +113,7 @@ defmodule EmisarWeb.Router do
     get "/install.sh", InstallController, :show
     get "/install-mcp.sh", InstallMCPController, :show
     # Footer "get launch updates" capture — CSRF-protected by the :browser pipeline.
-    post "/early-access", MarketingController, :subscribe
+    post "/subscribe", MarketingController, :subscribe
   end
 
   # -- Auth surface (only when signed-out) ----------------------------

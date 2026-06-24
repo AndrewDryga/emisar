@@ -728,16 +728,16 @@ defmodule EmisarWeb.MarketingController do
     |> String.replace(~r/(\d)(?=(\d{3})+$)/, "\\1,")
   end
 
-  # POST /early-access — captures an email from the footer's launch-updates form.
+  # POST /subscribe — captures an email from the footer's product-updates form.
   # Public + unauthenticated; CSRF-protected by the :browser pipeline.
-  def subscribe(conn, params), do: capture_early_access(conn, params)
+  def subscribe(conn, params), do: capture_subscribe(conn, params)
 
   # Honeypot: bots fill the hidden "company" field; real users never see it, so a
   # non-blank value is a bot — accept silently and store nothing.
-  defp capture_early_access(conn, %{"company" => filled}) when filled not in [nil, ""],
+  defp capture_subscribe(conn, %{"company" => filled}) when filled not in [nil, ""],
     do: thank_subscriber(conn)
 
-  defp capture_early_access(conn, params) do
+  defp capture_subscribe(conn, params) do
     case Emisar.Marketing.capture_signup(%{email: params["email"], source: params["source"]}) do
       {:ok, _signup} ->
         thank_subscriber(conn)
@@ -753,18 +753,22 @@ defmodule EmisarWeb.MarketingController do
     conn
     |> put_flash(
       :info,
-      "You're on the list — we'll email you when emisar is generally available."
+      "You're subscribed — we'll email you when we ship something major."
     )
     |> redirect(to: return_path(conn))
   end
 
-  # Back to the page the form was posted from, but only ever a local path — the
-  # referer's host is discarded, so it can't become an open redirect.
+  # Back to the footer form the POST came from — anchored to #updates so the page
+  # doesn't jump to the top — but only ever a local path: the referer's host is
+  # discarded, so it can't become an open redirect.
   defp return_path(conn) do
-    case List.first(get_req_header(conn, "referer")) do
-      "http" <> _ = referer -> referer |> URI.parse() |> local_path()
-      _ -> "/"
-    end
+    path =
+      case List.first(get_req_header(conn, "referer")) do
+        "http" <> _ = referer -> referer |> URI.parse() |> local_path()
+        _ -> "/"
+      end
+
+    path <> "#updates"
   end
 
   defp local_path(%URI{path: "/" <> _ = path}), do: path
