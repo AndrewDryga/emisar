@@ -152,13 +152,13 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "saves the night"
     assert html =~ "Pre-migration go"
     assert html =~ "The work that never makes a post-mortem"
-    # Every case study is present and linked from the hub (no more orphans).
+    # The two real incidents are featured and linked from the hub. The weaker
+    # "real-shape" datastore walkthroughs were cut from the war stories; they
+    # live on as pack-supporting pages, reachable from their packs and docs.
     assert html =~ "The 33-hour wipe"
     assert html =~ "The fleet-wide 502 that no backend was causing"
     assert html =~ ~s(href="/use-cases/csi-data-loss")
     assert html =~ ~s(href="/use-cases/ingress-502")
-    assert html =~ ~s(href="/use-cases/postgres-ops")
-    assert html =~ ~s(href="/use-cases/cassandra-ops")
     # Structured data so the case studies can surface as a list.
     assert html =~ ~s("@type":"ItemList")
     assert html =~ "BreadcrumbList"

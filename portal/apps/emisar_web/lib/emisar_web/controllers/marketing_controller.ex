@@ -329,9 +329,7 @@ defmodule EmisarWeb.MarketingController do
     cases = [
       {"The 33-hour wipe: a CSI driver reformatted a live LUN",
        @base <> "/use-cases/csi-data-loss"},
-      {"The fleet-wide 502 that no backend was causing", @base <> "/use-cases/ingress-502"},
-      {"The migration that died holding a lock", @base <> "/use-cases/postgres-ops"},
-      {"The major compaction that ate the read path", @base <> "/use-cases/cassandra-ops"}
+      {"The fleet-wide 502 that no backend was causing", @base <> "/use-cases/ingress-502"}
     ]
 
     json_ld =
@@ -362,7 +360,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :use_cases,
       page_title: "Use cases — real incidents emisar contained",
       meta_description:
-        "Real-shape production incidents worked end to end through emisar: a CSI driver's 33-hour data wipe, a wedged Postgres lock chain, a runaway Cassandra compaction — each investigated through declared actions, stopped behind one approval, every step audited.",
+        "Real production incidents worked end to end through emisar: a CSI driver's 33-hour data wipe and a fleet-wide 502 that no backend was causing — each investigated through declared actions, stopped behind one approval, every step audited.",
       canonical_url: @base <> "/use-cases",
       json_ld: json_ld
     )

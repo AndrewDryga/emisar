@@ -21,10 +21,10 @@
           Your AI agent needs production access&nbsp;— not your SSH key.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          emisar is the MCP server that connects Claude, Cursor, ChatGPT — any agent — to your
-          live infrastructure. Your AI reads real production state to ground its work, debugs what
-          it shipped, and drives incidents. Reads run free on policy; only a risky change stops for
-          one human approval. No SSH, no standing access, every call on the record.
+          emisar is the MCP server that connects Claude, Cursor, ChatGPT — any AI agent — to your
+          live infrastructure. Your agent reads real production state to debug what it shipped and
+          help work incidents. Safe reads run on their own. The one risky change waits for a human
+          to approve it. No SSH key, no always-on access, every call on the record.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -111,12 +111,12 @@
             then <span class="text-zinc-300">claude</span>
             opens a PR with the <span class="text-brand-300">durable fix</span>
             — the corrected
-            Nomad job spec, in its own coding tools. emisar grounded it; the agent writes it.
+            Nomad job spec, in its own coding tools. emisar gave it the facts; the agent writes the fix.
           </span>
         </div>
 
         <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-500">
-          Reads run free on policy · only risky changes wait for one human · every call audited
+          Safe reads run on their own · risky changes wait for one human · every call audited
         </div>
       </div>
     </div>
@@ -178,9 +178,10 @@
           </p>
           <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
             Claude, Cursor, and ChatGPT reason about your stack all day — but they can't see it
-            running. emisar gives your agent gated eyes on production: it reads live logs, metrics,
-            hosts, datastores, and the network to ground its work, catches its own mistakes, and
-            works incidents beside you — stopping for you only when a change is actually risky.
+            running. emisar gives your agent eyes on production. It reads live logs, metrics, hosts,
+            datastores, and the network, so its plan matches what's actually running. It catches its
+            own mistakes. It works incidents beside you. And it stops for you only when a change is
+            actually risky.
           </p>
           <p class="mt-8 text-sm">
             <.link
@@ -195,14 +196,14 @@
 
         <div class="space-y-3">
           <%= for {icon, title, desc} <- [
-            {"hero-magnifying-glass", "Grounded in real state",
+            {"hero-magnifying-glass", "Starts from real state",
              "Before it writes a line, the agent reads live logs, metrics, configs, and process state. Its plan is based on what's actually running — not a stale guess from training data."},
             {"hero-bug-ant", "Debugs what it shipped",
-             "Deployed something that misbehaves? The agent inspects the running result, finds its own mistake, and proposes the fix — no human round-trip just to gather context."},
+             "Deployed something that misbehaves? The agent inspects the running result, finds its own mistake, and proposes the fix. You don't have to gather the context for it."},
             {"hero-bell-alert", "Works the incident",
-             "When the page fires, it triages across the fleet, correlates logs and metrics, and narrows the cause — then hands you a remediation it can run the moment you approve."},
-            {"hero-bolt", "Hot-patches, gated",
-             "When the fix is a mutation, that's the one moment you step in: a single scoped, audited approval. Everything safe runs without you in the loop."}
+             "When the page fires, it triages across the fleet, lines up logs against metrics, and narrows the cause. Then it hands you a fix it can run the moment you approve."},
+            {"hero-bolt", "The change waits for you",
+             "When the fix actually changes something, that's the one moment you step in — one approval, scoped and logged. Everything safe runs without you."}
           ] do %>
             <div class="flex gap-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
               <div class="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
@@ -253,7 +254,7 @@
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
             <.icon name="hero-puzzle-piece" class="h-5 w-5" />
           </div>
-          <h3 class="mt-6 text-xl font-semibold text-white">Wired to a bespoke tool server</h3>
+          <h3 class="mt-6 text-xl font-semibold text-white">Wired to a custom tool server</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Two engineers built a custom MCP server in a weekend. It hardcodes one cluster,
             swallows stderr, has no approval flow, and lives in a repo nobody dares touch.
@@ -286,10 +287,11 @@
           A catalog, a gate, and a ledger.
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Every request is narrowed by the action contract, judged by policy, optionally held for a
-          person, re-validated on the runner, and written to both the cloud audit and the host
-          journal. It's what's safe about deploys — reviewed artifacts, explicit gates, durable
-          history — applied to every operational command an LLM can request.
+          Every request is handled the same way. Each action declares what it can do and carries a
+          risk tier — low, medium, high, or critical. The policy you set decides which tiers need a
+          human to approve. The runner re-checks the request before it runs. Then every call is
+          recorded twice — to the searchable audit in the portal, and to a hash-chained journal on
+          the runner host.
         </p>
       </div>
 
@@ -301,9 +303,9 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Versioned action catalog</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Packs live in git, each one content-addressed. The LLM sees only a schema derived from
-            the YAML, so it can't request anything you didn't declare, and changed contents block
-            dispatch until an admin trusts the new hash.
+            Packs live in git, and each one is fingerprinted by its contents. The AI sees only the
+            actions you declared — it can't ask for anything else. Change a pack and emisar stops
+            running it until an admin trusts the new version.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
@@ -334,8 +336,9 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Set allow, approval, or deny by risk tier, then add stricter action overrides.
-            Risky calls wait for a human; approved shapes can receive bounded standing grants.
+            Set allow, ask-for-approval, or deny for each risk tier, then override specific actions.
+            Risky calls wait for a human. Or hand out a limited, revocable pass so routine ones
+            don't ask every time.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
@@ -380,11 +383,11 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Every input, output, exit code, and redaction. A SHA-256-chained JSONL journal on the
-            host — any edited line or break in the chain is caught by
+            Every input, output, exit code, and redaction is recorded. On the host it's a
+            hash-chained log — change one line and
             <code class="text-zinc-300">emisar audit verify</code>
-            — mirrored to the
-            searchable cloud audit, the system of record, and streamable to your SIEM as NDJSON.
+            catches it. It's mirrored to the searchable audit in the portal, and it can stream to
+            your SIEM.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
@@ -466,11 +469,11 @@
           {"hero-cpu-chip", "Any MCP client",
            "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
           {"hero-shield-exclamation", "Pack trust",
-           "New, custom, or changed hashes stop dispatch until an admin trusts the contents."},
+           "New or changed packs stop running until an admin trusts the contents."},
           {"hero-hand-raised", "Approvals & grants",
-           "Allow a single call, or mint a revocable grant bounded by duration, arguments, runner, and use count."},
+           "Approve one call, or hand out a revocable pass — limited by time, arguments, runner, and number of uses."},
           {"hero-document-check", "Searchable audit",
-           "Inspect actor and subject context in the portal, or stream NDJSON to your SIEM."}
+           "See who ran what, and on whose behalf, in the portal — or stream it to your SIEM."}
         ] do %>
           <div>
             <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
@@ -578,24 +581,33 @@
     </div>
   </section>
 
-  <%!-- Use cases --%>
+  <%!-- Case studies — proof the demo wasn't cherry-picked: the storage wipe from
+       the demo written up in full, plus a completely different failure on the
+       network. These are the two REAL incidents; the weaker "real-shape" datastore
+       walkthroughs (Postgres/Cassandra) were cut from the showcase — they live on
+       as pack-supporting pages, reachable from their packs and docs. Each card
+       links to its post-mortem; the hub link below carries the everyday wins too. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-brand-400">Example workflows</h2>
+        <h2 class="text-base font-semibold text-brand-400">Case studies</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Operational actions teams can expose without exposing a shell.
+          Two incidents, in full.
         </p>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          The incident the demo just walked through is one workflow. The same gate fits routine
-          datastore operations just as well.
+          The storage wipe from the demo, written up end to end — and a completely different
+          failure on the network. Both real, both logged with the command output to prove it.
         </p>
       </div>
 
       <div class="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
         <%= for {tag, title, scenario, icon, href} <- [
-          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
-          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"}
+          {"storage", "A CSI driver wiped 33 hours of metrics",
+           "The incident from the demo, in full — including the twist. The obvious one-line fix was a no-op, so the durable fix the agent shipped is a guard that refuses to trust the driver.",
+           "hero-circle-stack", ~p"/use-cases/csi-data-loss"},
+          {"ingress", "A fleet-wide 502 no backend was causing",
+           "Every app behind one edge threw intermittent 502s — yet every backend was green. The agent traced it across five layers to an OOM loop and a wedged node still advertising a dead ingress, then stopped the bleed behind gated approvals.",
+           "hero-globe-alt", ~p"/use-cases/ingress-502"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
@@ -609,15 +621,24 @@
             <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
             <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
             <.link
-              :if={href}
               navigate={href}
               class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
             >
-              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+              Read the post-mortem <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
             </.link>
           </div>
         <% end %>
       </div>
+
+      <p class="mt-12 text-center text-sm">
+        <.link
+          navigate={~p"/use-cases"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          See every use case — the daily wins and the war stories
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
     </div>
   </section>
 
@@ -642,19 +663,19 @@
           >
             Zero Trust for AI Agents
           </a>
-          guide says an agent with access to real systems needs least agency, deny-by-default
-          tools, human approval for high-risk actions, and an immutable audit trail. emisar
-          enforces that exact boundary — and controls the framework reserves for its Enterprise
-          and Advanced tiers ship on emisar's Free plan.
+          guide says an agent with access to real systems needs four things: least agency,
+          deny-by-default tools, human approval for high-risk actions, and an audit trail no one
+          can edit. emisar enforces exactly that. And the controls the framework reserves for its
+          top tiers ship on emisar's Free plan.
         </p>
       </div>
 
       <div class="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <%= for {principle, detail} <- [
-          {"Least agency", "Typed action contract — the agent only sees declared tools"},
+          {"Least agency", "The agent only sees the actions you declared"},
           {"Human in the loop", "High-risk actions stop for a one-click approval"},
           {"Tamper-evident audit", "Searchable portal audit, a hash-chained host journal, and SIEM export"},
-          {"Assume breach", "A jailbroken agent still can't exceed the catalog"}
+          {"Assume breach", "Even a jailbroken agent can't get past the catalog"}
         ] do %>
           <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-left">
             <h3 class="text-sm font-semibold text-brand-300">{principle}</h3>
@@ -827,7 +848,7 @@
           </.marketing_heading>
           <p class="mx-auto mt-6 max-w-xl text-lg text-zinc-400 leading-relaxed">
             Three runners. Seven-day audit. No credit card. Read the quickstart and
-            ship your first policy-gated LLM action.
+            run your first gated action.
           </p>
           <form
             action={~p"/sign_up"}
