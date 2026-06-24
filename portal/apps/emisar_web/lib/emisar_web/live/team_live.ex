@@ -664,7 +664,7 @@ defmodule EmisarWeb.TeamLive do
               <.chip tone={:brand}>All members enrolled</.chip>
             <% end %>
             <%= if @current_account.require_mfa do %>
-              <.chip tone={:neutral}>Enforced</.chip>
+              <.chip tone={:brand}>Enforced</.chip>
             <% end %>
           </div>
         </.panel>
@@ -716,7 +716,7 @@ defmodule EmisarWeb.TeamLive do
           </:actions>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <.chip>
+            <.chip tone={if @current_account.require_sso, do: :brand, else: :neutral}>
               {if @current_account.require_sso, do: "Required", else: "Optional"}
             </.chip>
           </div>
@@ -765,7 +765,7 @@ defmodule EmisarWeb.TeamLive do
           </:actions>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <.chip>
+            <.chip tone={if @current_account.require_four_eyes, do: :brand, else: :neutral}>
               {if @current_account.require_four_eyes, do: "Enforced", else: "Optional"}
             </.chip>
           </div>

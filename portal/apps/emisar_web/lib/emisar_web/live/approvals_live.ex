@@ -101,7 +101,11 @@ defmodule EmisarWeb.ApprovalsLive do
     {:ok, all_recent, decided_meta} =
       list_or_empty(Approvals.list_approval_requests_for_account(subject, decided_opts))
 
-    decided = all_recent -- pending
+    # Compare by id, not whole-struct: `pending` and `all_recent` come from two
+    # reads with potentially different preloads, so `--` (struct equality) could
+    # silently fail to drop the overlap and show a request in BOTH sections.
+    pending_ids = MapSet.new(pending, & &1.id)
+    decided = Enum.reject(all_recent, &MapSet.member?(pending_ids, &1.id))
 
     socket
     |> assign(:pending, pending)
