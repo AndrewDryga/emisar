@@ -95,8 +95,12 @@ defmodule EmisarWeb.MarketingController do
   @home_faqs [
     {"Can the LLM run anything it wants?",
      "No. The runner only exposes actions declared in a content-addressed pack. Anything else is rejected at the runner before it touches your shell. The model literally cannot see undeclared commands."},
+    {"What can it actually do?",
+     "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, never a raw shell."},
     {"Where do approvals happen?",
      "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
+    {"Do I have to approve every action?",
+     "No — you decide per action. Reads run automatically; you reserve approvals for the risky, mutating ones. Policy sets allow / require-approval / deny by risk tier, with per-action overrides, and the destructive verbs are deny-by-default."},
     {"What if my runner dies mid-run?",
      "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. If the runner stays offline, the cloud's dispatch-timeout sweep marks its in-flight runs as errored with the reason within minutes, so nothing reads as running forever."},
     {"Is this MCP-compatible?",
