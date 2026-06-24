@@ -181,7 +181,7 @@ defmodule EmisarWeb.RunnersLive do
              The whole-account total is NOT repeated here — it lives in the group
              header(s), so it isn't duplicated above and below the table. --%>
           <.summary_band>
-            <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
+            <.summary_stat tone={:brand} value={@fleet.online} label="Online" />
             <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
             <.summary_stat
               :if={@fleet.pending > 0}
@@ -191,7 +191,7 @@ defmodule EmisarWeb.RunnersLive do
             />
             <.summary_stat
               :if={@fleet.disabled > 0}
-              tone={:zinc}
+              tone={:neutral}
               value={@fleet.disabled}
               label="Disabled"
             />
@@ -246,7 +246,7 @@ defmodule EmisarWeb.RunnersLive do
                            can't dispatch to them; only signed MCP calls run. --%>
                       <.chip
                         :if={runner.enforce_signatures}
-                        tone={:indigo}
+                        tone={:neutral}
                         icon="hero-shield-check"
                         title="Runs only signed dispatches — the portal can't dispatch to this runner"
                       >

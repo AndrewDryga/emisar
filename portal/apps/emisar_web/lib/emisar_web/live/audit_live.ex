@@ -472,7 +472,7 @@ defmodule EmisarWeb.AuditLive do
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
               </:title>
               <:chips>
-                <.chip tone={:indigo} mono>audit:read</.chip>
+                <.chip tone={:neutral} mono>audit:read</.chip>
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>

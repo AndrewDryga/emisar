@@ -672,10 +672,10 @@ defmodule EmisarWeb.AgentsLive do
       <%!-- Quiet summary band (shared with Runners) so the connect-a-client
            panel below can lead. --%>
       <.summary_band>
-        <.summary_stat tone={:emerald} value={@active_count} label="Active" hint="last 5 min" />
+        <.summary_stat tone={:brand} value={@active_count} label="Active" hint="last 5 min" />
         <.summary_stat tone={:amber} value={@idle_count} label="Idle" hint="last 24 h" />
-        <.summary_stat tone={:zinc} value={@dormant_count} label="Dormant" hint="24 h+" />
-        <.summary_stat tone={:zinc} value={@never_used_count} label="Never used" />
+        <.summary_stat tone={:neutral} value={@dormant_count} label="Dormant" hint="24 h+" />
+        <.summary_stat tone={:neutral} value={@never_used_count} label="Never used" />
         <:trailing>
           {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1,
             do: "key",
@@ -720,7 +720,7 @@ defmodule EmisarWeb.AgentsLive do
                 <.client_status_pill key={key} />
               </:title>
               <:chips>
-                <.chip :for={scope <- key.scopes || []} tone={:indigo} mono>{scope}</.chip>
+                <.chip :for={scope <- key.scopes || []} tone={:neutral} mono>{scope}</.chip>
               </:chips>
               <:meta>
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>

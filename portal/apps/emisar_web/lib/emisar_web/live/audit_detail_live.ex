@@ -393,7 +393,7 @@ defmodule EmisarWeb.AuditDetailLive do
       <p :if={@auth_method} class="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-500">
         <.icon name="hero-finger-print" class="h-3 w-3 shrink-0 text-zinc-600" />
         <span>via <span class="text-zinc-300">{auth_method_label(@auth_method)}</span></span>
-        <.chip :if={@mfa == true} tone={:emerald}>2FA</.chip>
+        <.chip :if={@mfa == true} tone={:brand}>2FA</.chip>
         <.chip :if={@mfa == false}>no 2FA</.chip>
       </p>
       <%!-- MCP coordinates for this actor: the client the LLM connected

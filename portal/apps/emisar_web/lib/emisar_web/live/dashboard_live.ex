@@ -542,8 +542,8 @@ defmodule EmisarWeb.DashboardLive do
   defp team_security_stat(assigns) do
     tone =
       cond do
-        assigns.team_mfa.total == 0 -> :zinc
-        assigns.team_mfa.missing == 0 -> :emerald
+        assigns.team_mfa.total == 0 -> :neutral
+        assigns.team_mfa.missing == 0 -> :brand
         assigns.team_mfa.required? -> :rose
         true -> :amber
       end
@@ -564,7 +564,7 @@ defmodule EmisarWeb.DashboardLive do
 
   defp stat_label(_, _), do: "Team 2FA"
 
-  defp stat_hint(:emerald, m),
+  defp stat_hint(:brand, m),
     do: "All #{m.total} members enrolled."
 
   defp stat_hint(:rose, m),
@@ -574,7 +574,7 @@ defmodule EmisarWeb.DashboardLive do
     do:
       "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
 
-  defp stat_hint(:zinc, _),
+  defp stat_hint(:neutral, _),
     do: "No members yet."
 
   defp stat_ring(:rose), do: "ring-1 ring-rose-500/40"

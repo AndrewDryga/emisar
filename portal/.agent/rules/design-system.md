@@ -127,12 +127,21 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 | denied / failed / danger / error | **`rose`** | `text-rose-300`, `bg-rose-500/10`, `border-rose-500/40` |
 | neutral / off / muted | **`zinc`** | see below |
 
-> ⚠️ **Legacy to migrate:** the console currently uses Tailwind **`emerald-*`**
-> for success (`status_badge`, `button` primary `bg-emerald-500`, `notice`,
-> `summary_dot`, menu/icon-button "success") and lingering **`indigo-*`** for
-> accent (e.g. `auth_layout` `from-indigo-950`). Both should become `brand-*`.
-> See §9. `emerald-400 #34d399` ≈ `brand-400 #36e6a5` — close enough that the
-> swap is visually safe and removes the two-greens smell.
+> ✅ **Migrated (2026-06-23):** the console runs on `brand-*` — no raw
+> `indigo-*`/`emerald-*` classes remain (the marketing demo terminal's deliberate
+> `emerald-400` is the only exception). The shared-component **tone vocabulary is
+> SEMANTIC** — `:brand` (healthy/pass), `:amber` (pending/caution), `:rose`
+> (deny/danger), `:neutral` (identity/metadata) — across
+> `chip`/`list_row`/`count_badge`/`summary_stat`/`section_header`. There is **no**
+> `:indigo`/`:emerald`/`:default`/`:zinc` tone atom: those were dead/lying aliases
+> (two byte-identical greens that painted neutral metadata green, diluting "emerald
+> = passed the gate") and are gone. **Color names a MEANING, never a hue or
+> convenience** — a metadata label ("You", a scope, the current plan, a reusable
+> key) is `:neutral`, not green; green is reserved for a real pass/healthy state
+> (trusted, enabled, online, enrolled). **Enforcement:** each component's `attr
+> ..., values: [...]` whitelist makes a stray `tone={:indigo}` a compile error
+> under `--warnings-as-errors`, and the tone-class clauses carry no catch-all, so a
+> computed dead atom raises instead of silently rendering neutral.
 
 **Neutrals (Tailwind `zinc`) — the dark UI scale:**
 

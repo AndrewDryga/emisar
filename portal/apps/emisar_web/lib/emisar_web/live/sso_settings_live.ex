@@ -756,7 +756,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- Connection list. A bounded set (a handful per account at most), so
              a plain bordered card list — not a stream — is correct here. --%>
         <section :if={@live_action != :new}>
-          <.section_header title="Connections" count={length(@providers)} count_tone={:zinc} />
+          <.section_header title="Connections" count={length(@providers)} count_tone={:neutral} />
 
           <.card :if={@providers != []} padding="p-0">
             <ul class="divide-y divide-zinc-900">
@@ -770,7 +770,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">{provider.name}</span>
                       <.chip>{kind_label(provider.kind)}</.chip>
-                      <.chip :if={provider.enabled} tone={:emerald}>Enabled</.chip>
+                      <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
                       <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                     </div>
                     <div class="mt-1 truncate text-xs text-zinc-500">
@@ -1187,7 +1187,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-zinc-200">Directory sync (SCIM)</span>
-            <.chip :if={@provider.scim_enabled} tone={:emerald}>Enabled</.chip>
+            <.chip :if={@provider.scim_enabled} tone={:brand}>Enabled</.chip>
             <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
           </div>
           <p class="mt-1 max-w-prose text-xs text-zinc-500">

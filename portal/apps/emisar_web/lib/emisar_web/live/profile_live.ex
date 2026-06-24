@@ -684,7 +684,7 @@ defmodule EmisarWeb.ProfileLive do
                 </span>
               </:title>
               <:chips>
-                <.chip :if={current_session?(session, @current_session_digest)} tone={:indigo}>
+                <.chip :if={current_session?(session, @current_session_digest)} tone={:neutral}>
                   This device
                 </.chip>
               </:chips>

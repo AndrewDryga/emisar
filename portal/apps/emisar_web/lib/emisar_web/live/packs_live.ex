@@ -419,7 +419,7 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <.chip :if={v.trust_state == :trusted} upcase tone={:emerald}>Trusted</.chip>
+                  <.chip :if={v.trust_state == :trusted} upcase tone={:brand}>Trusted</.chip>
                   <.chip :if={v.trust_state == :pending} upcase tone={:amber}>Pending</.chip>
                 </div>
                 <div class="shrink-0 text-right text-xs text-zinc-500">

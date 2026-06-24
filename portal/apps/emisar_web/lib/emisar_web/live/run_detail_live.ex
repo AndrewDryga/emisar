@@ -447,10 +447,10 @@ defmodule EmisarWeb.RunDetailLive do
 
   defp show_output?(_run, _output_present?), do: true
 
-  defp policy_decision_tone("allow"), do: :emerald
+  defp policy_decision_tone("allow"), do: :brand
   defp policy_decision_tone("require_approval"), do: :amber
   defp policy_decision_tone("deny"), do: :rose
-  defp policy_decision_tone(_), do: :default
+  defp policy_decision_tone(_), do: :neutral
 
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"

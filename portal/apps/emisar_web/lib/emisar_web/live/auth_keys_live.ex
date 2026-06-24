@@ -399,7 +399,7 @@ defmodule EmisarWeb.AuthKeysLive do
               </:title>
               <:chips>
                 <.chip>group: {key.group || "default"}</.chip>
-                <.chip :if={key.reusable} tone={:emerald}>Reusable</.chip>
+                <.chip :if={key.reusable}>Reusable</.chip>
                 <.chip :if={not key.reusable}>Single-use</.chip>
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>

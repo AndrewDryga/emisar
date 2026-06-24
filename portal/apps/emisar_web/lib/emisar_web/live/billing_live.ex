@@ -355,7 +355,7 @@ defmodule EmisarWeb.BillingLive do
                 <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
-                    <.chip upcase tone={:indigo}>Current</.chip>
+                    <.chip upcase tone={:neutral}>Current</.chip>
                   <% plan.key == "team" -> %>
                     <.chip upcase tone={:amber}>Most popular</.chip>
                   <% true -> %>

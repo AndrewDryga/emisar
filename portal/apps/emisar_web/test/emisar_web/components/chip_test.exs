@@ -40,7 +40,7 @@ defmodule EmisarWeb.Components.ChipTest do
 
       html =
         rendered_to_string(
-          ~H"<CoreComponents.chip upcase tone={:emerald}>Trusted</CoreComponents.chip>"
+          ~H"<CoreComponents.chip upcase tone={:brand}>Trusted</CoreComponents.chip>"
         )
 
       assert html =~ "Trusted"

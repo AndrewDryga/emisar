@@ -155,9 +155,9 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Renders a button.
 
-  Variants: `primary` (default, filled indigo), `secondary` (bordered neutral),
+  Variants: `primary` (default, filled brand-green), `secondary` (bordered neutral),
   `danger` (bordered rose — destructive actions read identically everywhere),
-  `success` (filled emerald — affirmative), `caution` (filled amber — needs
+  `success` (filled brand-green — affirmative), `caution` (filled amber — needs
   attention but isn't "safe", e.g. trusting a pack's new contents), `ghost`
   (text-only; tint with `tone="danger|caution|success"` for low-prominence inline
   actions like remove/revoke/restore). Sizes: `lg` (default), `md`, `sm`. An
@@ -368,7 +368,7 @@ defmodule EmisarWeb.CoreComponents do
   A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or
   link) with an optional leading `icon`. `tone` mirrors `<.button variant="ghost">`
   exactly (neutral → zinc, `caution` → amber, `danger` → rose, `success` →
-  emerald), so an action reads the same color whether it sits inline or in a menu.
+  brand-green), so an action reads the same color whether it sits inline or in a menu.
 
   The action rides the global `:rest` — `phx-click`/`phx-value-*`/`data-confirm`
   for a button, or `navigate`/`patch`/`href` to render a `<.link>` instead — so
@@ -590,7 +590,7 @@ defmodule EmisarWeb.CoreComponents do
   # Resting + focus ring for an input/select/textarea. An actual validation
   # error always wins with the rose ring; absent errors, `tone="danger"` tints
   # only the FOCUS ring rose (a destructive field, e.g. a deny reason) while
-  # neutral keeps the indigo focus.
+  # neutral keeps the brand focus.
   defp input_ring([], "danger"), do: "ring-zinc-800 focus:ring-rose-500"
   defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-brand-500"
   defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
@@ -662,7 +662,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  A standalone checkbox — the standard indigo accent + `focus:ring-2` ring +
+  A standalone checkbox — the standard brand accent + `focus:ring-2` ring +
   clickable label — for the boxes that are NOT a changeset form field: a bare
   `name`/`checked` driven by `phx-click`/`phx-change`/`phx-value-*` (a toggle,
   an array member like `runner_filter[]`). For a checkbox bound to a form field
@@ -845,7 +845,7 @@ defmodule EmisarWeb.CoreComponents do
   The canonical section banner — the non-form sibling of `<.error_banner>`: a
   leading icon, an optional bold `title`, the message (default slot), and an
   optional right-aligned `:action` (a button/link). Four severities: `:info`
-  (indigo), `:success` (emerald), `:warning` (amber), `:danger` (rose). For any
+  (brand), `:success` (brand-green), `:warning` (amber), `:danger` (rose). For any
   section-level heads-up — a held-approval banner, an offline warning, a
   "needs trust review" notice, a freshly-minted credential reminder. The message
   renders escaped through HEEx (IL-16).
@@ -1687,7 +1687,7 @@ defmodule EmisarWeb.CoreComponents do
   The band's chrome lives here so the pages that use it can't drift apart.
 
       <.summary_band>
-        <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
+        <.summary_stat tone={:brand} value={@fleet.online} label="Online" />
         <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
       </.summary_band>
   """
@@ -1707,7 +1707,7 @@ defmodule EmisarWeb.CoreComponents do
   One stat in a `summary_band/1` — a coloured `value` + `label` (+ optional
   `hint`). The band owns the row chrome; this owns the dot + count.
   """
-  attr :tone, :atom, required: true, values: [:emerald, :amber, :rose, :zinc]
+  attr :tone, :atom, required: true, values: [:brand, :amber, :rose, :neutral]
   attr :value, :integer, required: true
   attr :label, :string, required: true
   attr :hint, :string, default: nil
@@ -1728,10 +1728,10 @@ defmodule EmisarWeb.CoreComponents do
 
   # The status colour lives on the dot, not the number — the count itself reads
   # neutral so the strip stays a quiet at-a-glance band.
-  defp summary_dot_class(:emerald), do: "bg-brand-400"
+  defp summary_dot_class(:brand), do: "bg-brand-400"
   defp summary_dot_class(:amber), do: "bg-amber-400"
   defp summary_dot_class(:rose), do: "bg-rose-400"
-  defp summary_dot_class(:zinc), do: "bg-zinc-600"
+  defp summary_dot_class(:neutral), do: "bg-zinc-600"
 
   @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
   attr :status, :any, required: true
@@ -1822,7 +1822,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A runner's `Runners.connection_state/1` atom → the display status string that
-  `<.status_badge>` / `<.connection_dot>` understand (`:online` → "connected",
+  `<.status_badge>` understands (`:online` → "connected",
   `:offline` → "disconnected"). One place so the runners list + detail pages
   can't drift on the connection vocabulary.
   """
@@ -1957,7 +1957,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :title, :string, required: true
   attr :count, :integer, default: nil
-  attr :count_tone, :atom, default: :amber, values: [:amber, :zinc, :indigo]
+  attr :count_tone, :atom, default: :amber, values: [:amber, :neutral, :brand]
   attr :class, :string, default: nil
   slot :actions
 
@@ -1975,7 +1975,7 @@ defmodule EmisarWeb.CoreComponents do
   Small count pill beside a section title. Renders nothing for a nil/zero count.
   """
   attr :count, :integer, default: nil
-  attr :tone, :atom, default: :amber, values: [:amber, :zinc, :indigo]
+  attr :tone, :atom, default: :amber, values: [:amber, :neutral, :brand]
 
   def count_badge(assigns) do
     ~H"""
@@ -1989,8 +1989,8 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp count_badge_tone(:amber), do: "bg-amber-500/20 text-amber-200"
-  defp count_badge_tone(:zinc), do: "bg-zinc-800 text-zinc-300"
-  defp count_badge_tone(:indigo), do: "bg-brand-500/20 text-brand-200"
+  defp count_badge_tone(:neutral), do: "bg-zinc-800 text-zinc-300"
+  defp count_badge_tone(:brand), do: "bg-brand-500/20 text-brand-200"
 
   @doc """
   Key-value row for detail panes. `:row` (default) is a label-left /
@@ -2104,7 +2104,7 @@ defmodule EmisarWeb.CoreComponents do
   `chips` slot renders inline pills next to the title.
   """
   attr :icon, :string, default: nil
-  attr :icon_tone, :atom, default: :zinc, values: [:zinc, :emerald, :amber, :rose, :indigo]
+  attr :icon_tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :class, :string, default: nil
   slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
@@ -2140,26 +2140,28 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp row_icon_class(:emerald), do: "bg-brand-500/15 text-brand-300"
+  defp row_icon_class(:brand), do: "bg-brand-500/15 text-brand-300"
   defp row_icon_class(:amber), do: "bg-amber-500/15 text-amber-300"
   defp row_icon_class(:rose), do: "bg-rose-500/15 text-rose-300"
-  defp row_icon_class(:indigo), do: "bg-brand-500/15 text-brand-300"
-  defp row_icon_class(_zinc), do: "bg-zinc-900 text-zinc-400"
+  defp row_icon_class(:neutral), do: "bg-zinc-900 text-zinc-400"
 
   @doc """
   Small inline chip — the rounded label that sits next to a row title
-  or inside a chips slot. Variants: `:default` (zinc), `:indigo`,
-  `:amber`, `:rose`, `:emerald`. With `mono`, renders monospace text;
-  with `upcase`, the uppercase-semibold status-tag look (a pack's trust
-  state, a plan's "Current"/"Most popular").
+  or inside a chips slot. Tones name a MEANING, not a hue: `:neutral`
+  (zinc — the default, for identity/metadata labels like "You", a scope,
+  the current plan), `:brand` (emerald — a healthy/affirmative state:
+  trusted, enabled, online, enrolled), `:amber` (pending/caution), `:rose`
+  (denied/danger). With `mono`, renders monospace text; with `upcase`, the
+  uppercase-semibold status-tag look (a pack's trust state, a plan's
+  "Current").
 
       <.chip>group: default</.chip>
       <.chip tone={:rose}>Suspended</.chip>
-      <.chip upcase tone={:emerald}>Trusted</.chip>
+      <.chip upcase tone={:brand}>Trusted</.chip>
   """
   attr :tone, :atom,
-    default: :default,
-    values: [:default, :indigo, :amber, :rose, :emerald]
+    default: :neutral,
+    values: [:neutral, :brand, :amber, :rose]
 
   attr :mono, :boolean, default: false
 
@@ -2190,11 +2192,10 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp chip_class(:indigo), do: "bg-brand-500/15 text-brand-200 ring-1 ring-brand-500/30"
+  defp chip_class(:brand), do: "bg-brand-500/15 text-brand-200 ring-1 ring-brand-500/30"
   defp chip_class(:amber), do: "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30"
   defp chip_class(:rose), do: "bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/30"
-  defp chip_class(:emerald), do: "bg-brand-500/15 text-brand-200 ring-1 ring-brand-500/30"
-  defp chip_class(_default), do: "bg-zinc-800/80 text-zinc-300"
+  defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
   Inline "back" breadcrumb for detail pages. Renders as a small label
@@ -2297,7 +2298,7 @@ defmodule EmisarWeb.CoreComponents do
   Confirmation-zone card — a bordered container with title + body + a `<.button>`
   it renders itself from the slot label and the button's `phx-click` (so call
   sites don't hand-roll the button). `tone` colors it and picks the button
-  variant: `:danger` (rose — disable/delete, the default) or `:success` (emerald
+  variant: `:danger` (rose — disable/delete, the default) or `:success` (brand-green
   — enable/restore), so every consequential-action panel reads alike. Pass
   `confirm` for a destructive action's `data-confirm` dialog; omit it for a safe
   restorative one. Used on detail pages (runner detail, team member remove, etc.).
@@ -2339,7 +2340,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   # `:danger` keeps the original rose danger-zone styling; `:success` is the
-  # emerald twin for restorative actions, so both read alike structurally.
+  # brand-green twin for restorative actions, so both read alike structurally.
   defp confirm_zone_section(:danger), do: "border-rose-900/40 bg-rose-950/20"
   defp confirm_zone_section(:success), do: "border-brand-500/30 bg-brand-500/[0.04]"
   defp confirm_zone_title(:danger), do: "text-rose-200"
@@ -3569,7 +3570,7 @@ defmodule EmisarWeb.CoreComponents do
   defp scan_sweep_via_class(:neutral), do: "via-zinc-400/70"
 
   @doc """
-  A policy-outcome chip — what the gate decided. `:pass` (emerald), `:pending`
+  A policy-outcome chip — what the gate decided. `:pass` (brand-green), `:pending`
   (amber — an approval is required), `:deny` (rose). A thin semantic wrapper
   over `<.chip>` so every comparison row, pipeline step, and demo reads the
   same; `label` overrides the default outcome word.
@@ -3590,7 +3591,7 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp state_tone(:pass), do: :emerald
+  defp state_tone(:pass), do: :brand
   defp state_tone(:pending), do: :amber
   defp state_tone(:deny), do: :rose
 

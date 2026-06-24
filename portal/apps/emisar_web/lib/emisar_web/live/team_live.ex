@@ -622,14 +622,14 @@ defmodule EmisarWeb.TeamLive do
               of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
             </span>
             <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
-              <.chip tone={if @current_account.require_mfa, do: :amber, else: :default}>
+              <.chip tone={if @current_account.require_mfa, do: :amber, else: :neutral}>
                 {n} without 2FA
               </.chip>
             <% else %>
-              <.chip tone={:emerald}>All members enrolled</.chip>
+              <.chip tone={:brand}>All members enrolled</.chip>
             <% end %>
             <%= if @current_account.require_mfa do %>
-              <.chip tone={:indigo}>Enforced</.chip>
+              <.chip tone={:neutral}>Enforced</.chip>
             <% end %>
           </div>
         </.panel>
@@ -681,7 +681,7 @@ defmodule EmisarWeb.TeamLive do
           </:actions>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <.chip tone={if @current_account.require_sso, do: :indigo, else: :default}>
+            <.chip>
               {if @current_account.require_sso, do: "Required", else: "Optional"}
             </.chip>
           </div>
@@ -812,7 +812,7 @@ defmodule EmisarWeb.TeamLive do
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
                     <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
-                    <.chip :if={membership.user_id == @current_user.id} tone={:indigo}>
+                    <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
                       You
                     </.chip>
                   </div>
@@ -838,7 +838,7 @@ defmodule EmisarWeb.TeamLive do
                         <span class="text-[10px] uppercase tracking-wider text-zinc-600">
                           scope:
                         </span>
-                        <.chip :for={scope <- scopes} tone={:indigo}>
+                        <.chip :for={scope <- scopes} tone={:neutral}>
                           {scope_type_label(scope.scope_type)}: {scope_label(
                             scope,
                             @runner_groups,
@@ -1046,7 +1046,7 @@ defmodule EmisarWeb.TeamLive do
   defp mfa_badge(%{user: %{mfa_enabled_at: %DateTime{}}} = assigns) do
     ~H"""
     <.chip
-      tone={:emerald}
+      tone={:brand}
       icon="hero-shield-check"
       title="Two-factor authentication is enrolled."
     >
