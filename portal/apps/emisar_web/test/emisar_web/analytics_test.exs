@@ -148,6 +148,9 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["path"] == "/app/:account"
       # The client IP is forwarded (test peer, since no x-forwarded-for header).
       assert props["ip"]
+      # account_id rides every console event so Group Analytics can roll usage
+      # up by account (the group key).
+      assert props["account_id"] == account.id
     end
   end
 end

@@ -319,7 +319,7 @@ defmodule EmisarWeb.UserAuth do
       user = socket.assigns[:current_user]
 
       if user && Phoenix.LiveView.connected?(socket) do
-        Analytics.track_console_pageview(user, uri, context)
+        Analytics.track_console_pageview(user, socket.assigns[:current_account], uri, context)
       end
 
       {:cont, socket}

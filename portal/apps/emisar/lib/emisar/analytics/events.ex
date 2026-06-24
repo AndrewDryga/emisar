@@ -17,6 +17,13 @@ defmodule Emisar.Analytics.Events do
       "status" => subscription.status,
       "account_id" => subscription.account_id
     })
+
+    # Stamp the plan on the account's Group profile so retention/expansion can be
+    # segmented by plan (no-op without the Group Analytics add-on).
+    Analytics.set_group("account_id", subscription.account_id, %{
+      "plan" => subscription.plan,
+      "status" => subscription.status
+    })
   end
 
   defp account_distinct_id(account_id), do: "account:" <> account_id

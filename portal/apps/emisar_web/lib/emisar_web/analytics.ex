@@ -59,21 +59,24 @@ defmodule EmisarWeb.Analytics do
   (distinct_id = the user id). The path is normalized (account slug + detail
   UUIDs collapsed to `/app/:account/…/:id`) so console pages aggregate.
   """
-  def track_console_pageview(user, uri, context) do
+  def track_console_pageview(user, account, uri, context) do
     %URI{path: path} = URI.parse(uri)
     ua = EmisarWeb.UserAgent.parse(context.user_agent)
 
-    props = %{
-      "path" => normalize_console_path(path),
-      "authenticated" => true,
-      "$current_url" => uri,
-      "$browser" => ua.browser,
-      "$browser_version" => ua.browser_version,
-      "$os" => ua.os,
-      "$device" => ua.device
-    }
+    props =
+      %{
+        "path" => normalize_console_path(path),
+        "authenticated" => true,
+        "$current_url" => uri,
+        "$browser" => ua.browser,
+        "$browser_version" => ua.browser_version,
+        "$os" => ua.os,
+        "$device" => ua.device
+      }
+      |> put_account(account)
 
     Analytics.track("page_viewed", user.id, props, user_id: user.id, ip: context.ip_address)
+    set_account_group(account)
   end
 
   # -- Identity transitions (called from UserAuth) ---------------------
@@ -200,4 +203,15 @@ defmodule EmisarWeb.Analytics do
   defp mask_id(segment) do
     if Regex.match?(@uuid_re, segment), do: ":id", else: segment
   end
+
+  # `account_id` rides every console event so Mixpanel Group Analytics can roll
+  # usage up by account (the group key); the group PROFILE (name) is set
+  # alongside. Both no-op without the paid add-on (`set_group` is gated).
+  defp put_account(props, %{id: id}), do: Map.put(props, "account_id", id)
+  defp put_account(props, _), do: props
+
+  defp set_account_group(%{id: id, name: name}),
+    do: Analytics.set_group("account_id", id, %{"$name" => name})
+
+  defp set_account_group(_), do: :ok
 end
