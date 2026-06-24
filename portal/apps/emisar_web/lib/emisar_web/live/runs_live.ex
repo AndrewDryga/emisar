@@ -157,6 +157,13 @@ defmodule EmisarWeb.RunsLive do
           >
             {run.action_id}
           </.link>
+          <%!-- Source is a column only at lg+; on a phone surface the origin here so an
+               agent run still reads distinctly from a human one (the product's point). --%>
+          <.source_badge
+            source={run.source}
+            label={run_actor(run)}
+            class="mt-0.5 max-w-[44vw] text-[11px] lg:hidden"
+          />
         </:col>
         <%!-- Runner drops on a phone so When + Action + Status (the run's outcome,
              the column you scan for) fit without a horizontal scroll; it's on the
