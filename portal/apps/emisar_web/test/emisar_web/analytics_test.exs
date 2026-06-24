@@ -22,7 +22,23 @@ defmodule EmisarWeb.AnalyticsTest do
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["path"] == "/pricing"
       assert props["authenticated"] == false
-      assert is_binary(props["distinct_id"])
+      # Anonymous distinct_id is $device:-prefixed so Mixpanel treats it as a
+      # device (mergeable on login), not a separate identified user.
+      assert "$device:" <> _ = props["distinct_id"]
+    end
+
+    test "events carry geo (ip), UA-derived browser/OS, and the URL", %{conn: conn} do
+      ua =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+      conn |> put_req_header("user-agent", ua) |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"properties" => props}]}
+      assert props["ip"]
+      assert props["$browser"] == "Chrome"
+      assert props["$os"] == "Windows"
+      assert props["$current_url"] =~ "/pricing"
     end
 
     test "DNT:1 suppresses tracking and writes no id", %{conn: conn} do

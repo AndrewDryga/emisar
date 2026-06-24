@@ -58,14 +58,12 @@ defmodule EmisarWeb.Analytics do
       {distinct_id, opts} = identity(conn)
 
       props =
-        %{
-          "path" => conn.request_path,
-          "referrer_host" => referrer_host(conn),
-          "authenticated" => conn.assigns[:current_user] != nil
-        }
-        |> Map.merge(first_touch(conn))
+        Map.merge(
+          %{"path" => conn.request_path, "authenticated" => authenticated?(conn)},
+          first_touch(conn)
+        )
 
-      Analytics.track("page_viewed", distinct_id, props, opts)
+      emit(conn, "page_viewed", distinct_id, props, opts)
     end
 
     :ok
@@ -76,7 +74,7 @@ defmodule EmisarWeb.Analytics do
     if tracking_allowed?(conn) do
       {distinct_id, opts} = identity(conn)
       props = Map.merge(%{"source" => source}, first_touch(conn))
-      Analytics.track("lead_captured", distinct_id, props, opts)
+      emit(conn, "lead_captured", distinct_id, props, opts)
     end
 
     :ok
@@ -110,7 +108,7 @@ defmodule EmisarWeb.Analytics do
 
       event = if registered?(conn), do: "sign_up_completed", else: "signed_in"
       props = Map.merge(%{"auth_method" => method, "mfa" => mfa}, pre_login.first_touch)
-      Analytics.track(event, user.id, props, device_id: pre_login.device_id, user_id: user.id)
+      emit(conn, event, user.id, props, device_id: pre_login.device_id, user_id: user.id)
     end
 
     conn
@@ -121,7 +119,7 @@ defmodule EmisarWeb.Analytics do
     user = conn.assigns[:current_user]
 
     if tracking_allowed?(conn) and user do
-      Analytics.track("signed_out", user.id, %{}, user_id: user.id)
+      emit(conn, "signed_out", user.id, %{}, user_id: user.id)
     end
 
     conn
@@ -139,12 +137,46 @@ defmodule EmisarWeb.Analytics do
     case conn.assigns[:current_user] do
       nil ->
         device_id = get_session(conn, @device_id_key) || "anonymous"
-        {device_id, [device_id: device_id]}
+        # The `$device:` prefix marks this as an anonymous device, not an
+        # identified user — without it Mixpanel counts every device as its own
+        # person and the post-login merge can't stitch the pre-signup journey.
+        {"$device:" <> device_id, [device_id: device_id]}
 
       user ->
         {user.id, [user_id: user.id, device_id: get_session(conn, @device_id_key)]}
     end
   end
+
+  # Every web event carries the enrichment Mixpanel can't derive from a
+  # server-to-server call: the client IP (→ $city/$region/country geo), the
+  # UA-parsed browser/OS/device, and the URL/referrer. Nils are dropped by track.
+  defp emit(conn, event, distinct_id, props, opts) do
+    props = Map.merge(request_props(conn), props)
+    opts = Keyword.put_new(opts, :ip, client_ip(conn))
+    Analytics.track(event, distinct_id, props, opts)
+  end
+
+  defp request_props(conn) do
+    ua = EmisarWeb.UserAgent.parse(List.first(get_req_header(conn, "user-agent")))
+
+    %{
+      "$browser" => ua.browser,
+      "$browser_version" => ua.browser_version,
+      "$os" => ua.os,
+      "$device" => ua.device,
+      "$current_url" => current_url(conn),
+      "$referrer" => List.first(get_req_header(conn, "referer")),
+      "$referring_domain" => referring_domain(conn)
+    }
+  end
+
+  # The real client IP (x-forwarded-for-aware), reusing the canonical extractor —
+  # Mixpanel resolves geo from it and does not store the raw IP as a property.
+  defp client_ip(conn), do: EmisarWeb.RequestContext.from_conn(conn).ip_address
+
+  defp current_url(conn), do: "#{conn.scheme}://#{conn.host}#{conn.request_path}"
+
+  defp authenticated?(conn), do: conn.assigns[:current_user] != nil
 
   defp first_touch(conn), do: get_session(conn, @first_touch_key) || %{}
 
@@ -164,6 +196,16 @@ defmodule EmisarWeb.Analytics do
          %URI{host: host} when is_binary(host) and host != conn.host <- URI.parse(referer) do
       host
     else
+      _ -> nil
+    end
+  end
+
+  # The referrer's domain whatever it is (internal page-to-page included), for
+  # Mixpanel's `$referring_domain`; `referrer_host/1` (external-only) drives
+  # first-touch acquisition.
+  defp referring_domain(conn) do
+    case get_req_header(conn, "referer") do
+      [referer | _] -> URI.parse(referer).host
       _ -> nil
     end
   end
