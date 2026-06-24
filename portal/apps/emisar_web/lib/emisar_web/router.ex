@@ -191,7 +191,8 @@ defmodule EmisarWeb.Router do
           {EmisarWeb.UserAuth, :ensure_sso_compliant},
           {EmisarWeb.UserAuth, :ensure_mfa_compliant},
           {EmisarWeb.UserAuth, :track_pending_approvals},
-          {EmisarWeb.UserAuth, :email_confirmation}
+          {EmisarWeb.UserAuth, :email_confirmation},
+          {EmisarWeb.UserAuth, :track_pageviews}
         ] do
         live "/", DashboardLive, :index
 

@@ -48,6 +48,32 @@ defmodule EmisarWeb.Analytics do
     :ok
   end
 
+  @doc """
+  Fire a `page_viewed` for a console (LiveView) navigation. The console is a
+  LiveView app, so its in-app navigation never hits a controller — this is
+  driven by the `:track_pageviews` `on_mount` hook (`handle_params`), with the
+  `uri` + the mount-captured `user_agent`. Always authenticated (distinct_id =
+  the user id). No IP/geo: behind Fly's LB the socket only sees the LB peer, and
+  the connect_info carries no `x-forwarded-for` — and the user is already
+  identified, so geo on console nav isn't worth a wrong city.
+  """
+  def track_console_pageview(user, uri, user_agent) do
+    %URI{path: path} = URI.parse(uri)
+    ua = EmisarWeb.UserAgent.parse(user_agent)
+
+    props = %{
+      "path" => path,
+      "authenticated" => true,
+      "$current_url" => uri,
+      "$browser" => ua.browser,
+      "$browser_version" => ua.browser_version,
+      "$os" => ua.os,
+      "$device" => ua.device
+    }
+
+    Analytics.track("page_viewed", user.id, props, user_id: user.id)
+  end
+
   # -- Identity transitions (called from UserAuth) ---------------------
 
   @doc """

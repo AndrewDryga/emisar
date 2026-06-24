@@ -4,8 +4,9 @@ defmodule EmisarWeb.Plugs.Analytics do
   `page_viewed` once the response is known to be a 200 HTML render. Writes no
   session state — the anonymous id is a cookieless daily hash (see
   `EmisarWeb.Analytics`). No-op for non-GET requests and `/app/*` — console
-  usage is captured as product events, not pageviews (see
-  `Emisar.Analytics.Events`).
+  pageviews come from the LiveView `:track_pageviews` on_mount hook instead
+  (console navigation is over the websocket, so there's no controller request
+  for this plug to see).
   """
 
   @behaviour Plug

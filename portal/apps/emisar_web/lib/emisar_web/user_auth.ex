@@ -305,6 +305,29 @@ defmodule EmisarWeb.UserAuth do
     {:cont, Phoenix.Component.assign(socket, :app_js?, true)}
   end
 
+  # Console pageview tracking. The console is a LiveView app, so in-app
+  # navigation happens over the websocket with no controller hit — the :browser
+  # pageview plug only sees the dead render, which it skips for /app. This
+  # attaches a `handle_params` lifecycle hook that fires `page_viewed` on the
+  # connected mount and on every live navigation; the `connected?` guard keeps
+  # the twice-running mount to one event. UA captured at mount (connect-info is
+  # mount-only) and closed over.
+  def on_mount(:track_pageviews, _params, _session, socket) do
+    user_agent = Phoenix.LiveView.get_connect_info(socket, :user_agent)
+
+    hook = fn _params, uri, socket ->
+      user = socket.assigns[:current_user]
+
+      if user && Phoenix.LiveView.connected?(socket) do
+        Analytics.track_console_pageview(user, uri, user_agent)
+      end
+
+      {:cont, socket}
+    end
+
+    {:cont, Phoenix.LiveView.attach_hook(socket, :analytics_pageview, :handle_params, hook)}
+  end
+
   def on_mount(:mount_current_user, _params, session, socket) do
     {:cont, mount_current_user(session, socket)}
   end

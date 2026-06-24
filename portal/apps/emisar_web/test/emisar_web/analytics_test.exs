@@ -133,4 +133,17 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["distinct_id"] == user.id
     end
   end
+
+  describe "console (LiveView) pageviews" do
+    test "a console mount fires page_viewed — authenticated, with the path", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, _lv, _html} = live(conn, ~p"/app/#{account.slug}")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["authenticated"] == true
+      assert props["distinct_id"] == user.id
+      assert props["$user_id"] == user.id
+      assert props["path"] =~ "/app"
+    end
+  end
 end
