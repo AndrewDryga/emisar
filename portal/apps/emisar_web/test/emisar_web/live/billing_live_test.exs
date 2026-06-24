@@ -99,12 +99,12 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "/ 3"
-      # At/over 100% the meter bar (an `h-full transition-all` div) is rose; the
+      # At/over 100% the meter bar (an `h-full transition-[width]` div) is rose; the
       # brand/amber classes appear elsewhere on the page (the "Most popular"
       # chip), so scope the assertion to the bar's own class combination.
-      assert html =~ ~s(class="h-full transition-all bg-rose-400")
-      refute html =~ ~s(class="h-full transition-all bg-amber-400")
-      refute html =~ ~s(class="h-full transition-all bg-brand-400")
+      assert html =~ ~s(class="h-full transition-[width] bg-rose-400")
+      refute html =~ ~s(class="h-full transition-[width] bg-amber-400")
+      refute html =~ ~s(class="h-full transition-[width] bg-brand-400")
     end
 
     test "a Team account at 80% of its runner cap colours the meter amber", %{conn: conn} do
@@ -119,8 +119,8 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "/ 100"
-      assert html =~ ~s(class="h-full transition-all bg-amber-400")
-      refute html =~ ~s(class="h-full transition-all bg-rose-400")
+      assert html =~ ~s(class="h-full transition-[width] bg-amber-400")
+      refute html =~ ~s(class="h-full transition-[width] bg-rose-400")
     end
 
     test "the hero CTA offers only the next priced tier, never an enterprise upgrade", %{

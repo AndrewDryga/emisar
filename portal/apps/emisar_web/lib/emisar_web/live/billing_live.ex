@@ -435,7 +435,7 @@ defmodule EmisarWeb.BillingLive do
         </span>
       </div>
       <div :if={@pct} class="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-900">
-        <div class={["h-full transition-all", usage_class(@pct)]} style={"width: #{@pct}%"}></div>
+        <div class={["h-full transition-[width]", usage_class(@pct)]} style={"width: #{@pct}%"}></div>
       </div>
       <div
         :if={is_nil(@pct)}

@@ -1036,14 +1036,14 @@ defmodule EmisarWeb.TeamLive do
     do:
       JS.show(
         to: "#invite-panel",
-        transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"}
+        transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
       )
 
   defp hide_invite,
     do:
       JS.hide(
         to: "#invite-panel",
-        transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"}
+        transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
       )
 
   # Inline action menu for a single member row. Hidden for the actor's

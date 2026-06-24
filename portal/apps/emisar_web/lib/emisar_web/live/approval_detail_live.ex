@@ -436,15 +436,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <span class="truncate text-zinc-200">
               {user_label(@requested_by, @request.requested_by_id)}
             </span>
-            <span
+            <.chip
               :if={@run && @run.source != :operator}
+              icon={dispatch_source_icon(@run.source)}
               title={dispatch_source_title(@run.source)}
-              class="inline-flex flex-none items-center gap-1 rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300 ring-1 ring-inset ring-zinc-700/60"
+              class="flex-none"
             >
-              <.icon name={dispatch_source_icon(@run.source)} class="h-3 w-3" />{dispatch_source_label(
-                @run.source
-              )}
-            </span>
+              {dispatch_source_label(@run.source)}
+            </.chip>
           </span>
         </.meta_field>
         <.meta_field label="When">

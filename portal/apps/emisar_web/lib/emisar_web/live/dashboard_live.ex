@@ -454,9 +454,7 @@ defmodule EmisarWeb.DashboardLive do
           <.icon name={@icon} class="h-4 w-4 text-amber-300" />
           <h3 class="text-sm font-semibold text-amber-100">
             {@title}
-            <span class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200">
-              {@count}
-            </span>
+            <.count_badge count={@count} tone={:amber} class="ml-1" />
           </h3>
         </div>
         <.link navigate={@href} class="text-xs font-medium text-amber-200 hover:text-amber-100">

@@ -1006,7 +1006,7 @@ defmodule EmisarWeb.CoreComponents do
       to: selector,
       time: 300,
       transition:
-        {"transition-all transform ease-out duration-300",
+        {"transition transform ease-out duration-300",
          "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95",
          "opacity-100 translate-y-0 sm:scale-100"}
     )
@@ -1017,7 +1017,7 @@ defmodule EmisarWeb.CoreComponents do
       to: selector,
       time: 200,
       transition:
-        {"transition-all transform ease-in duration-200",
+        {"transition transform ease-in duration-200",
          "opacity-100 translate-y-0 sm:scale-100",
          "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"}
     )
@@ -2008,12 +2008,13 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :count, :integer, default: nil
   attr :tone, :atom, default: :amber, values: [:amber, :neutral, :brand]
+  attr :class, :string, default: nil
 
   def count_badge(assigns) do
     ~H"""
     <span
       :if={@count && @count > 0}
-      class={["rounded px-1.5 py-0.5 text-xs font-medium", count_badge_tone(@tone)]}
+      class={["rounded px-1.5 py-0.5 text-xs font-medium", count_badge_tone(@tone), @class]}
     >
       {@count}
     </span>

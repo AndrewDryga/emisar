@@ -476,13 +476,13 @@ defmodule EmisarWeb.AuthKeysLive do
     do:
       JS.show(
         to: "#create-panel",
-        transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"}
+        transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
       )
 
   defp hide_create,
     do:
       JS.hide(
         to: "#create-panel",
-        transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"}
+        transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
       )
 end
