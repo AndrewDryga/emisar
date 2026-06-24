@@ -1,0 +1,91 @@
+schema_version: 1
+id: nomad.task_resources_set
+title: nomad job inspect | set task CPU/memory | job run
+kind: script
+risk: high
+description: >
+  Vertical-scale one task: set its CPU and/or memory limits and re-register the
+  job. Nomad has no atomic resource-change command, so this fetches the live
+  jobspec, patches only the named task's CPU (MHz), MemoryMB, and MemoryMaxMB,
+  and re-registers it with an optimistic JobModifyIndex check. The cloud never
+  supplies jobspec JSON — only the bounded ids and integers below. Pair with
+  nomad.job_resources to read current limits first, and nomad.job_scale to
+  change the replica count.
+side_effects:
+  - Re-registers the job with the patched task resources (one read + one write API call).
+  - Triggers a rolling update of the task group — allocations are replaced per its update stanza.
+  - Setting memory below the task's real working set can cause OOM kills on the new allocations.
+  - Refuses to write if the job changed since it was read (JobModifyIndex mismatch).
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: group
+    type: string
+    required: true
+    description: Task group.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: task
+    type: string
+    required: false
+    default: ""
+    description: Task name. Empty selects the group's only task (errors if the group has more than one).
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+  - name: cpu
+    type: integer
+    required: false
+    default: 0
+    description: New CPU reservation in MHz. 0 leaves it unchanged.
+    validation:
+      min: 0
+      max: 1000000
+  - name: memory
+    type: integer
+    required: false
+    default: 0
+    description: New memory reservation (MemoryMB). 0 leaves it unchanged.
+    validation:
+      min: 0
+      max: 4194304
+  - name: memory_max
+    type: integer
+    required: false
+    default: 0
+    description: New memory oversubscription cap (MemoryMaxMB). 0 leaves it unchanged.
+    validation:
+      min: 0
+      max: 4194304
+execution:
+  script:
+    path: scripts/task_resources_set.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.job }}"
+    - "{{ args.group }}"
+    - "{{ args.task }}"
+    - "{{ args.cpu }}"
+    - "{{ args.memory }}"
+    - "{{ args.memory_max }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Bump web/server to 1 vCPU + 1 GiB
+    args:
+      job: "api"
+      group: "web"
+      task: "server"
+      cpu: 1000
+      memory: 1024
+  - title: Raise memory only on a single-task group (auto-select)
+    args:
+      job: "cache"
+      group: "redis"
+      memory: 2048

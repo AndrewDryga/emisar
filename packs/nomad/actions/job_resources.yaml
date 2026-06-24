@@ -1,0 +1,36 @@
+schema_version: 1
+id: nomad.job_resources
+title: nomad job inspect <id> (resource summary)
+kind: script
+risk: low
+description: >
+  List the CPU and memory reservation and the replica count for every task group
+  and task in a job — the compact read companion to nomad.task_resources_set, so
+  you can see current limits before vertical-scaling. Projects only the resource
+  fields from the full jobspec: per task the CPU (MHz), cores, MemoryMB, and
+  MemoryMaxMB, and per group the count.
+side_effects:
+  - One read-only API call (job inspect).
+  - Read-only — never writes or mutates job state.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+execution:
+  script:
+    path: scripts/job_resources.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.job }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Show current resources per group/task
+    args:
+      job: "api"

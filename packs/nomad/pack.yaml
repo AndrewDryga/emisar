@@ -2,10 +2,11 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.11
+version: 0.1.12
 description: >
-  Deep Nomad operations — full job lifecycle (inspect, history, scale,
-  dispatch, revert, promote, stop), allocation introspection + restart +
+  Deep Nomad operations — full job lifecycle (inspect, history, scale
+  horizontally + vertically, dispatch, revert, promote, stop), per-task
+  CPU/memory resource read + set, allocation introspection + restart +
   signal + stop, node fleet management (drain, eligibility, purge),
   evaluation + deployment status, operator raft + autopilot, CSI + host
   volumes, ACL policies + tokens, namespaces + quotas. Authenticates via
@@ -45,6 +46,7 @@ setup:
   notes:
     - "Any of NOMAD_ADDR / NOMAD_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
+    - "The job_resources and task_resources_set actions also require jq on the runner host (they project / patch the inspect JSON locally)."
     - "For TLS-enabled servers use an https:// NOMAD_ADDR; the nomad CLI also reads NOMAD_CACERT / NOMAD_CLIENT_CERT / NOMAD_CLIENT_KEY, but the curl actions do not."
   verify: nomad.agent_info
 
@@ -76,7 +78,9 @@ actions:
   - actions/job_periodic_force.yaml
   - actions/job_dispatch.yaml
   - actions/job_revert.yaml
+  - actions/job_resources.yaml
   - actions/job_scale.yaml
+  - actions/task_resources_set.yaml
   - actions/job_promote.yaml
   - actions/job_stop.yaml
   # Allocations

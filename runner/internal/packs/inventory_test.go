@@ -41,8 +41,8 @@ func loadRealLibrary(t *testing.T) *Registry {
 // any future risk relabel (or an added destructive action) trips this test
 // and forces a deliberate re-pin + a look at whether the new label is honest.
 //
-// Measured 2026-06-22 by grepping `^risk: <level>$` across
-// packs/*/actions/*.yaml — low 921 · med 77 · high 149 · critical 40 = 1187.
+// Measured 2026-06-24 by grepping `^risk: <level>$` across
+// packs/*/actions/*.yaml — low 945 · med 78 · high 154 · critical 42 = 1219.
 // The shape (low ≫ medium; high + critical both present and non-trivial) is
 // the invariant the exact numbers encode.
 func TestLibrary_RiskDistribution(t *testing.T) {
@@ -55,11 +55,11 @@ func TestLibrary_RiskDistribution(t *testing.T) {
 	}
 
 	const (
-		wantLow      = 921
-		wantMedium   = 77
-		wantHigh     = 149
-		wantCritical = 40
-		wantTotal    = 1187
+		wantLow      = 945
+		wantMedium   = 78
+		wantHigh     = 154
+		wantCritical = 42
+		wantTotal    = 1219
 	)
 
 	if got := len(actions); got != wantTotal {
