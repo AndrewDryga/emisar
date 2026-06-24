@@ -39,6 +39,15 @@ config :emisar, Oban,
 # Paddle is stubbed in tests so we never hit the network.
 config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
 
+# Analytics off by default (so the suite stays free of it) and, when a
+# test opts in (`mixpanel_enabled: true` + `analytics_test_pid: self()`),
+# synchronous and routed to the stub — so the stub's `send/2` lands in
+# the test process for `assert_receive`. Never touches the network.
+config :emisar,
+  mixpanel_client: Emisar.Analytics.MixpanelClient.Stub,
+  mixpanel_enabled: false,
+  analytics_async?: false
+
 # In test we don't send emails
 config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Test
 

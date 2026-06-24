@@ -21,7 +21,15 @@ config :emisar,
   # approval email blasts). Lives in the web app's supervision tree so
   # SIGTERM gracefully drains in-flight tasks instead of dropping them
   # on the floor. Resolved by name at call-time; nil-safe.
-  task_supervisor: EmisarWeb.TaskSupervisor
+  task_supervisor: EmisarWeb.TaskSupervisor,
+  # Product analytics (Mixpanel). Off by default and routed to the stub
+  # client; prod with a `MIXPANEL_TOKEN` flips `mixpanel_enabled` and
+  # swaps in the Live client (runtime.exs). Server-side ingestion only —
+  # no third-party script ships. See .agent/specs/mixpanel-analytics.md.
+  mixpanel_client: Emisar.Analytics.MixpanelClient.Stub,
+  mixpanel_enabled: false,
+  mixpanel_api_host: "https://api.mixpanel.com",
+  mixpanel_groups_enabled: false
 
 # Configures the mailer
 #

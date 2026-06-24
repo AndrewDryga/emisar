@@ -27,6 +27,9 @@ import Config
 #   STATUS_PAGE_URL        — status-page URL surfaced in nav + footer
 #   PADDLE_PRICE_ID_TEAM   — Paddle price id for the Team plan
 #   RELEASE_VSN            — used in Sentry's `release` field
+#   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)
+#   MIXPANEL_API_HOST      — Mixpanel host (default api.mixpanel.com; EU: api-eu.mixpanel.com)
+#   MIXPANEL_GROUPS        — "1"/"true" to also write Mixpanel Group profiles (paid add-on)
 
 if config_env() == :prod do
   # Structured JSON logs for the fly log drain: every Logger metadata
@@ -197,6 +200,25 @@ if config_env() == :prod do
       PADDLE_WEBHOOK_SECRET and PADDLE_PRICE_ID_TEAM) to enable billing,
       or set EMISAR_DISABLE_BILLING=1 to ship with the stub client.
       """
+  end
+
+  # -- Mixpanel (product analytics) ----------------------------------
+  # Optional and quiet: no `MIXPANEL_TOKEN` means analytics stays off
+  # (the `Emisar.Analytics` no-op path) — no third-party script ships
+  # either way. See .agent/specs/mixpanel-analytics.md.
+  if token = System.get_env("MIXPANEL_TOKEN") do
+    config :emisar,
+      mixpanel_client: Emisar.Analytics.MixpanelClient.Live,
+      mixpanel_token: token,
+      mixpanel_enabled: true
+
+    # EU data residency: set https://api-eu.mixpanel.com.
+    if host = System.get_env("MIXPANEL_API_HOST"),
+      do: config(:emisar, :mixpanel_api_host, host)
+
+    # Mixpanel Group Analytics is a paid add-on — opt in explicitly.
+    if System.get_env("MIXPANEL_GROUPS") in ~w(1 true),
+      do: config(:emisar, :mixpanel_groups_enabled, true)
   end
 end
 
