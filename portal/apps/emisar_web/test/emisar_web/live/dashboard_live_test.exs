@@ -61,7 +61,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # dashboard as a wizard checklist. The runner card links to
       # /app/runners/install where the actual install command lives.
       assert html =~ "Connect a runner"
-      assert html =~ "Connect an LLM"
+      assert html =~ "Connect an agent"
 
       # No auto-minted install key — the dashboard doesn't mint
       # anymore. The runners/install page mints when the operator
@@ -89,7 +89,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Connect a runner"
       # LLM onboarding card still shows — no API key was minted in
       # this test.
-      assert html =~ "Connect an LLM"
+      assert html =~ "Connect an agent"
       # A runner with nothing dispatched yet gets the dispatch nudge.
       assert html =~ "Dispatch your first action"
     end
@@ -185,7 +185,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/agents"}']",
-               "Connect an LLM"
+               "Connect an agent"
              )
 
       # The three stat tiles are themselves links to their list pages (not

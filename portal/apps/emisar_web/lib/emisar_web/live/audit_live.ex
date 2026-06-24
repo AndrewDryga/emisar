@@ -147,7 +147,7 @@ defmodule EmisarWeb.AuditLive do
 
   # Quick relative-range presets for the audit date filter — re-adds the buttons
   # the date-unification dropped, now setting the unified bar's :from.
-  defp audit_presets, do: [{"Last hour", "1h"}, {"Last 24h", "24h"}, {"Last 7 days", "7d"}]
+  defp audit_presets, do: [{"Last hour", "1h"}, {"Last 24 hours", "24h"}, {"Last 7 days", "7d"}]
 
   # Window → the "YYYY-MM-DDTHH:MM" UTC string the :from datetime filter parses
   # (now minus the window). Computed at click time so the range stays anchored to

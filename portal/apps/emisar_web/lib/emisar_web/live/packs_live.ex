@@ -555,13 +555,13 @@ defmodule EmisarWeb.PacksLive do
                     phx-value-id={v.id}
                     data-confirm={
                       if is_nil(v.hash) do
-                        "Approve #{pack.id} v#{v.version}? Cloud will allow its actions to run on #{length(@advertising[v.id] || [])} advertising runner(s)."
+                        "Trust #{pack.id} v#{v.version}? Cloud will allow its actions to run on #{length(@advertising[v.id] || [])} advertising runner(s)."
                       else
                         "Adopt the new hash as trusted for #{pack.id} v#{v.version}? It authorizes dispatch on #{length(@advertising[v.id] || [])} advertising runner(s)."
                       end
                     }
                   >
-                    {if is_nil(v.hash), do: "Approve pack", else: "Trust new contents"}
+                    {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
                   </.button>
                   <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
                        data-confirm. The button only OPENS the page-level dialog

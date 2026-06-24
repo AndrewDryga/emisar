@@ -169,7 +169,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={not @has_llm_connected?}
         href={~p"/app/#{@current_account}/settings/agents"}
         icon="hero-bolt"
-        title="Connect an LLM"
+        title="Connect an agent"
         body="Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and drop a prefilled snippet you can paste straight in. Optional: each client's setup has a step to stop its per-tool prompts — safe, since emisar still gates every action server-side."
       />
     </div>

@@ -17,7 +17,7 @@ defmodule EmisarWeb.AuthKeysLive do
 
       {:ok,
        socket
-       |> assign(:page_title, "Auth keys")
+       |> assign(:page_title, "Runner keys")
        |> assign(:new_secret, nil)
        |> assign(:new_key, nil)
        |> assign(:base_url, UrlHelpers.derive_base_url(socket))
@@ -235,7 +235,7 @@ defmodule EmisarWeb.AuthKeysLive do
       section={:auth_keys}
       width={:table}
     >
-      <:title>Auth keys</:title>
+      <:title>Runner keys</:title>
       <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
         <.button phx-click={show_create()} size="md" icon="hero-plus">
           New key
@@ -452,8 +452,8 @@ defmodule EmisarWeb.AuthKeysLive do
             </.list_row>
           </:item>
           <:empty>
-            <.empty_state variant={:bare} icon="hero-key" title="No auth keys yet.">
-              Auth keys are the bearer secret a fresh runner uses to register
+            <.empty_state variant={:bare} icon="hero-key" title="No runner keys yet.">
+              Runner keys are the bearer secret a fresh runner uses to register
               with cloud. Click
               <.chip>New key</.chip>
               above, then run the install command on the host.

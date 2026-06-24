@@ -39,13 +39,13 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   end
 
   # a brand-new account with no auth keys renders the
-  # "No auth keys yet." onboarding empty state.
+  # "No runner keys yet." onboarding empty state.
   test "no auth keys → onboarding empty state", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
-    assert html =~ "No auth keys yet."
+    assert html =~ "No runner keys yet."
     assert html =~ "bearer secret a fresh runner uses to register"
   end
 
@@ -423,7 +423,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # No such key in the loaded list → the find misses → no-op, page intact.
     html = render_click(lv, "revoke", %{"id" => Ecto.UUID.generate()})
     refute html =~ "Key revoked."
-    assert html =~ "Auth keys"
+    assert html =~ "Runner keys"
   end
 
   # BUG: a forced `revoke` of an ALREADY-revoked (but still loaded,

@@ -197,9 +197,9 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
       assert html =~ "ancient-actor"
 
-      # Click "Last 24h": sets the unified bar's From to now − 24h, dropping the
+      # Click "Last 24 hours": sets the unified bar's From to now − 24h, dropping the
       # 3-day-old event and keeping the fresh one — same effect as typing it.
-      html = lv |> element("button", "Last 24h") |> render_click()
+      html = lv |> element("button", "Last 24 hours") |> render_click()
       assert html =~ "fresh-actor"
       refute html =~ "ancient-actor"
     end

@@ -211,7 +211,7 @@ defmodule EmisarWeb.ProfileLive do
            socket
            |> put_flash(
              :info,
-             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+             "2FA enabled. Copy your recovery codes below — they'll only be shown once."
            )
            |> assign(:current_user, updated)
            |> assign(:mfa_enabled?, true)
@@ -224,7 +224,7 @@ defmodule EmisarWeb.ProfileLive do
           {:noreply, put_flash(socket, :error, "Invalid code — try the next one.")}
 
         {:error, _changeset} ->
-          {:noreply, put_flash(socket, :error, "Could not enable MFA.")}
+          {:noreply, put_flash(socket, :error, "Could not enable 2FA.")}
       end
     end
   end
@@ -239,7 +239,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_recovery_codes, codes)}
 
       {:error, :mfa_not_enabled} ->
-        {:noreply, put_flash(socket, :error, "Enable MFA first.")}
+        {:noreply, put_flash(socket, :error, "Enable 2FA first.")}
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Could not generate recovery codes.")}
@@ -255,13 +255,13 @@ defmodule EmisarWeb.ProfileLive do
       {:ok, updated} ->
         {:noreply,
          socket
-         |> put_flash(:info, "MFA disabled.")
+         |> put_flash(:info, "2FA disabled.")
          |> assign(:current_user, updated)
          |> assign(:mfa_enabled?, false)
          |> assign(:mfa_recovery_codes, nil)}
 
       {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not disable MFA.")}
+        {:noreply, put_flash(socket, :error, "Could not disable 2FA.")}
     end
   end
 
@@ -469,7 +469,7 @@ defmodule EmisarWeb.ProfileLive do
 
         <.settings_section
           title="Two-factor authentication"
-          hint="Adds a TOTP code requirement at sign-in. Strongly recommended."
+          hint="Adds a TOTP code at sign-in, so a stolen password alone can't get in."
         >
           <:meta>
             <span
@@ -705,7 +705,7 @@ defmodule EmisarWeb.ProfileLive do
                   data-confirm="Sign out this session?"
                   class="shrink-0"
                 >
-                  Revoke
+                  Sign out
                 </.button>
               </:actions>
             </.list_row>

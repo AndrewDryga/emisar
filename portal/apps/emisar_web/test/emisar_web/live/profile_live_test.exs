@@ -363,7 +363,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = submit_mfa_enrollment(lv, secret)
 
-      assert html =~ "MFA enabled."
+      assert html =~ "2FA enabled."
       assert html =~ "recovery codes"
       assert Emisar.Repo.reload!(user).mfa_enabled_at
 
@@ -535,7 +535,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = render_click(lv, "disable_mfa", %{})
 
-      assert html =~ "MFA disabled."
+      assert html =~ "2FA disabled."
       refute html =~ "Could not disable MFA."
       reloaded = Emisar.Repo.reload!(user)
       assert is_nil(reloaded.mfa_enabled_at)
@@ -557,7 +557,7 @@ defmodule EmisarWeb.ProfileLiveTest do
                "New recovery codes generated."
 
       html = render_click(lv, "disable_mfa", %{})
-      assert html =~ "MFA disabled."
+      assert html =~ "2FA disabled."
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
   end
@@ -578,7 +578,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
       |> render_submit()
 
-    if html =~ "MFA enabled." do
+    if html =~ "2FA enabled." do
       html
     else
       lv
