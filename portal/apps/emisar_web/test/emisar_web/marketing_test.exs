@@ -953,13 +953,13 @@ defmodule EmisarWeb.MarketingTest do
     test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
-      # Adding Mixpanel means the page must disclose it AND the cookieless,
-      # opt-out posture honestly — the /trust honesty bar forbids a stale claim.
       assert html =~ "Mixpanel"
       assert html =~ "without a cookie"
-      assert html =~ "Do Not Track"
-      assert html =~ "Global Privacy Control"
       refute html =~ "no third-party trackers in the application"
+      # We do NOT honor DNT/GPC (cookieless first-party isn't a sale) — the page
+      # must not promise it.
+      refute html =~ "Do Not Track"
+      refute html =~ "Global Privacy Control"
     end
 
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do

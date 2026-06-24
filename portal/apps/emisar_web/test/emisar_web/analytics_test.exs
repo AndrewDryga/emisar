@@ -56,14 +56,10 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["$current_url"] =~ "/pricing"
     end
 
-    test "DNT:1 suppresses tracking", %{conn: conn} do
-      conn |> put_req_header("dnt", "1") |> get(~p"/pricing")
-      refute_receive {:mixpanel_track, _}
-    end
-
-    test "Sec-GPC:1 suppresses tracking", %{conn: conn} do
-      conn |> put_req_header("sec-gpc", "1") |> get(~p"/pricing")
-      refute_receive {:mixpanel_track, _}
+    test "tracks regardless of DNT / GPC (cookieless first-party — nothing to opt out of)",
+         %{conn: conn} do
+      conn |> put_req_header("dnt", "1") |> put_req_header("sec-gpc", "1") |> get(~p"/pricing")
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"} | _]}
     end
 
     test "first-touch UTM rides the pageview", %{conn: conn} do

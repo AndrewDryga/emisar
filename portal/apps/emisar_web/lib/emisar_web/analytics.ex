@@ -2,16 +2,18 @@ defmodule EmisarWeb.Analytics do
   @moduledoc """
   Web boundary for product analytics — the conn-aware layer over
   `Emisar.Analytics`. emisar tracks **without analytics cookies**: an anonymous
-  visitor is a daily-rotating salted hash of IP + User-Agent
+  visitor is a weekly-rotating salted hash of IP + User-Agent
   (`Emisar.Crypto.anonymous_visitor_id/1` — the Plausible/Fathom model: no
-  client storage, unlinkable across days), and an authenticated user is their
+  client storage, unlinkable across weeks), and an authenticated user is their
   `user.id` (from the necessary auth session). The only cookie the site sets is
   the strictly-necessary CSRF/session cookie — never an analytics identifier.
 
-  This module owns the request-derived bits Mixpanel can't see for a
-  server-to-server call: the `$device:` identity + anon→user merge, the client
-  IP (→ geo), the UA-parsed browser/OS/device, the URL/referrer, and the DNT /
-  Global-Privacy-Control opt-out gate. Domain value-moment events live in
+  The data is first-party and never sold or shared, so there is no DNT/GPC
+  opt-out gate (those headers signal opt-out of *sale/sharing*, which we don't
+  do — being cookieless is the privacy story). This module owns the
+  request-derived bits Mixpanel can't see for a server-to-server call: the
+  `$device:` identity + anon→user merge, the client IP (→ geo), the UA-parsed
+  browser/OS/device, and the URL/referrer. Domain value-moment events live in
   `Emisar.Analytics.Events`.
   """
 
@@ -22,40 +24,27 @@ defmodule EmisarWeb.Analytics do
 
   @utm_params ~w(utm_source utm_medium utm_campaign utm_term utm_content)
 
-  # -- Opt-out ---------------------------------------------------------
-
-  @doc "False when the request carries `DNT: 1` or `Sec-GPC: 1` — no tracking."
-  def tracking_allowed?(conn) do
-    get_req_header(conn, "dnt") != ["1"] and get_req_header(conn, "sec-gpc") != ["1"]
-  end
-
   # -- Funnel events ---------------------------------------------------
 
   @doc "Fire a `page_viewed` for the current (marketing/auth) request."
   def track_pageview(conn) do
-    if tracking_allowed?(conn) do
-      {distinct_id, opts} = identity(conn)
+    {distinct_id, opts} = identity(conn)
 
-      props =
-        Map.merge(
-          %{"path" => conn.request_path, "authenticated" => authenticated?(conn)},
-          current_utm(conn)
-        )
+    props =
+      Map.merge(
+        %{"path" => conn.request_path, "authenticated" => authenticated?(conn)},
+        current_utm(conn)
+      )
 
-      emit(conn, "page_viewed", distinct_id, props, opts)
-    end
-
+    emit(conn, "page_viewed", distinct_id, props, opts)
     :ok
   end
 
   @doc "Fire a marketing `lead_captured` (footer subscribe)."
   def track_lead_captured(conn, source) do
-    if tracking_allowed?(conn) do
-      {distinct_id, opts} = identity(conn)
-      props = Map.merge(%{"source" => source}, current_utm(conn))
-      emit(conn, "lead_captured", distinct_id, props, opts)
-    end
-
+    {distinct_id, opts} = identity(conn)
+    props = Map.merge(%{"source" => source}, current_utm(conn))
+    emit(conn, "lead_captured", distinct_id, props, opts)
     :ok
   end
 
@@ -64,24 +53,21 @@ defmodule EmisarWeb.Analytics do
   @doc """
   On a completed sign-in: refresh the user profile, then track
   `sign_up_completed` (a brand-new registration) or `signed_in`, sending the
-  same-day anonymous `device_id` + the `user_id` so Mixpanel merges the
+  same-week anonymous `device_id` + the `user_id` so Mixpanel merges the
   pre-signup journey to the user. Returns `conn` (pipeline-friendly).
   """
   def track_authentication(conn, user, auth_method, mfa) do
-    if tracking_allowed?(conn) do
-      method = to_string(auth_method)
+    method = to_string(auth_method)
 
-      Analytics.set_people(user.id, %{
-        "$name" => user.full_name,
-        "$email" => user.email,
-        "auth_method" => method
-      })
+    Analytics.set_people(user.id, %{
+      "$name" => user.full_name,
+      "$email" => user.email,
+      "auth_method" => method
+    })
 
-      event = if registered?(conn), do: "sign_up_completed", else: "signed_in"
-      props = Map.merge(%{"auth_method" => method, "mfa" => mfa}, current_utm(conn))
-      emit(conn, event, user.id, props, device_id: device_id(conn), user_id: user.id)
-    end
-
+    event = if registered?(conn), do: "sign_up_completed", else: "signed_in"
+    props = Map.merge(%{"auth_method" => method, "mfa" => mfa}, current_utm(conn))
+    emit(conn, event, user.id, props, device_id: device_id(conn), user_id: user.id)
     conn
   end
 
@@ -89,7 +75,7 @@ defmodule EmisarWeb.Analytics do
   def track_sign_out(conn) do
     user = conn.assigns[:current_user]
 
-    if tracking_allowed?(conn) and user do
+    if user do
       emit(conn, "signed_out", user.id, %{}, user_id: user.id)
     end
 
@@ -103,10 +89,10 @@ defmodule EmisarWeb.Analytics do
   defp registered?(%{params: %{"_action" => "registered"}}), do: true
   defp registered?(_conn), do: false
 
-  # distinct_id + merge opts. Anonymous = the cookieless daily device hash,
+  # distinct_id + merge opts. Anonymous = the cookieless weekly device hash,
   # `$device:`-prefixed so Mixpanel treats it as a mergeable device (not a
   # separate identified user). Identified = the user id (+ the device hash, so
-  # the first post-login event merges the same-day anonymous journey).
+  # the first post-login event merges the same-week anonymous journey).
   defp identity(conn) do
     case conn.assigns[:current_user] do
       nil ->
@@ -118,7 +104,7 @@ defmodule EmisarWeb.Analytics do
     end
   end
 
-  # The cookieless, daily-rotating anonymous id for this request.
+  # The cookieless, weekly-rotating anonymous id for this request.
   defp device_id(conn), do: Crypto.anonymous_visitor_id(fingerprint(conn))
 
   defp fingerprint(conn), do: "#{client_ip(conn)}|#{user_agent(conn)}"
@@ -147,7 +133,7 @@ defmodule EmisarWeb.Analytics do
   end
 
   # This request's campaign params — sent on each event; Mixpanel derives
-  # first-touch per distinct_id from the (same-day, merged) event stream.
+  # first-touch per distinct_id from the (same-week, merged) event stream.
   defp current_utm(conn) do
     conn = fetch_query_params(conn)
     Map.take(conn.query_params, @utm_params)
