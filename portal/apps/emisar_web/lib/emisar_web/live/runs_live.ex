@@ -149,12 +149,15 @@ defmodule EmisarWeb.RunsLive do
         <:col :let={run} label="Action">
           <.link
             navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
-            class="font-mono text-sm hover:text-brand-300"
+            class="block max-w-[44vw] truncate font-mono text-sm hover:text-brand-300 sm:max-w-none"
           >
             {run.action_id}
           </.link>
         </:col>
-        <:col :let={run} label="Runner">
+        <%!-- Runner drops on a phone so When + Action + Status (the run's outcome,
+             the column you scan for) fit without a horizontal scroll; it's on the
+             run detail and reappears at sm+. --%>
+        <:col :let={run} label="Runner" class="hidden sm:table-cell">
           <span class="text-xs text-zinc-400">
             {(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}
           </span>

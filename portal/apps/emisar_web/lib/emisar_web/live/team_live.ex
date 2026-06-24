@@ -761,135 +761,142 @@ defmodule EmisarWeb.TeamLive do
         >
           <:item :let={membership}>
             <li class="px-5 py-4">
-              <div class="flex items-center gap-4">
-                <%!-- Avatar: initial in a colored disc — same shape as
-                     the sidebar avatar, so the visual rhymes. --%>
-                <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-800 text-sm font-semibold uppercase text-zinc-300">
-                  {String.first(
-                    (membership.user && (membership.user.full_name || membership.user.email)) || "?"
-                  )}
-                </span>
+              <%!-- On a phone the role/Actions controls stack BELOW the
+                   name+email instead of cramming the row (which truncated
+                   "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div class="flex min-w-0 flex-1 items-start gap-4">
+                  <%!-- Avatar: initial in a colored disc — same shape as
+                       the sidebar avatar, so the visual rhymes. --%>
+                  <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-800 text-sm font-semibold uppercase text-zinc-300">
+                    {String.first(
+                      (membership.user && (membership.user.full_name || membership.user.email)) || "?"
+                    )}
+                  </span>
 
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate font-medium text-zinc-100">
-                      {(membership.user && (membership.user.full_name || membership.user.email)) ||
-                        "(unknown)"}
-                    </span>
-                    <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
-                      Suspended
-                    </.chip>
-                    <%!-- Unconfirmed = signed up but never clicked the
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate font-medium text-zinc-100">
+                        {(membership.user && (membership.user.full_name || membership.user.email)) ||
+                          "(unknown)"}
+                      </span>
+                      <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
+                        Suspended
+                      </.chip>
+                      <%!-- Unconfirmed = signed up but never clicked the
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
-                    <.chip
-                      :if={membership.user && is_nil(membership.user.confirmed_at)}
-                      tone={:amber}
-                      title="This user signed up but hasn't confirmed their email."
-                    >
-                      Unconfirmed
-                    </.chip>
-                    <%!-- Email on the deliverability suppression list (a hard
+                      <.chip
+                        :if={membership.user && is_nil(membership.user.confirmed_at)}
+                        tone={:amber}
+                        title="This user signed up but hasn't confirmed their email."
+                      >
+                        Unconfirmed
+                      </.chip>
+                      <%!-- Email on the deliverability suppression list (a hard
                          bounce or spam complaint) — invites and notifications
                          to this address are silently dropped, so it's the real
                          answer to "why didn't they get the invite?". We expose
                          no un-suppress control; clearing it is a support action
                          (per the product call), hence the tooltip copy. --%>
-                    <.chip
-                      :if={
-                        membership.user && MapSet.member?(@suppressed_emails, membership.user.email)
-                      }
-                      tone={:rose}
-                      title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
-                    >
-                      Email bouncing
-                    </.chip>
-                    <%!-- MFA status. Three states worth distinguishing:
+                      <.chip
+                        :if={
+                          membership.user && MapSet.member?(@suppressed_emails, membership.user.email)
+                        }
+                        tone={:rose}
+                        title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
+                      >
+                        Email bouncing
+                      </.chip>
+                      <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet emerald check, the happy
                          default; (2) not enrolled, account doesn't
                          enforce — neutral grey "No 2FA" hint; (3) not
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
-                    <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
-                    <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
-                      You
-                    </.chip>
-                  </div>
-                  <%!-- Both timestamps render through <.local_time> (viewer-local,
+                      <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
+                      <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
+                        You
+                      </.chip>
+                    </div>
+                    <%!-- Both timestamps render through <.local_time> (viewer-local,
                        hoverable, live); {" "} guards the space the formatter would
                        otherwise let HEEx trim before each component tag. --%>
-                  <div class="truncate text-xs text-zinc-500">
-                    {membership.user && membership.user.email} · joined{" "}<.local_time
-                      value={membership.inserted_at}
-                      mode={:relative}
-                    /> ·{" "}<.sign_in_status user={membership.user} />
-                  </div>
-                  <%!-- Per-user runner ACLs (#238): show what runners
+                    <div class="truncate text-xs text-zinc-500">
+                      {membership.user && membership.user.email} · joined{" "}<.local_time
+                        value={membership.inserted_at}
+                        mode={:relative}
+                      /> ·{" "}<.sign_in_status user={membership.user} />
+                    </div>
+                    <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
                        Group/runner scopes appear as inline chips. --%>
-                  <div class="mt-1 flex flex-wrap items-center gap-1">
-                    <%= case Map.get(@scopes_by_membership, membership.id, []) do %>
-                      <% [] -> %>
-                        <span class="text-[10px] text-zinc-600">
-                          access: all runners
-                        </span>
-                      <% scopes -> %>
-                        <span class="text-[10px] uppercase tracking-wider text-zinc-600">
-                          scope:
-                        </span>
-                        <.chip :for={scope <- scopes} tone={:neutral}>
-                          {scope_type_label(scope.scope_type)}: {scope_label(
-                            scope,
-                            @runner_groups,
-                            @runners_by_id
-                          )}
-                        </.chip>
-                    <% end %>
+                    <div class="mt-1 flex flex-wrap items-center gap-1">
+                      <%= case Map.get(@scopes_by_membership, membership.id, []) do %>
+                        <% [] -> %>
+                          <span class="text-[10px] text-zinc-600">
+                            access: all runners
+                          </span>
+                        <% scopes -> %>
+                          <span class="text-[10px] uppercase tracking-wider text-zinc-600">
+                            scope:
+                          </span>
+                          <.chip :for={scope <- scopes} tone={:neutral}>
+                            {scope_type_label(scope.scope_type)}: {scope_label(
+                              scope,
+                              @runner_groups,
+                              @runners_by_id
+                            )}
+                          </.chip>
+                      <% end %>
+                    </div>
                   </div>
                 </div>
 
-                <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
-                  <%!-- A role change is a privilege grant — a dropdown (same skin as
+                <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
+                  <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
+                    <%!-- A role change is a privilege grant — a dropdown (same skin as
                        the Actions menu beside it) whose items each carry their own
                        confirm, so the dialog fires only when you pick a DIFFERENT
                        role, never just on opening the control. The handler still
                        authorizes (IL-15). --%>
-                  <.dropdown
-                    class="inline-block shrink-0 text-left"
-                    summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                    panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
-                  >
-                    <:trigger>
-                      {String.capitalize(to_string(membership.role))}
-                      <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                    </:trigger>
-                    <.menu_item
-                      :for={role <- @roles}
-                      :if={role != to_string(membership.role)}
-                      phx-click="change_role"
-                      phx-value-membership_id={membership.id}
-                      phx-value-role={role}
-                      data-confirm={
-                        role_change_confirm(member_name(membership) || "this member", role)
-                      }
+                    <.dropdown
+                      class="inline-block shrink-0 text-left"
+                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                      panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                     >
-                      {String.capitalize(role)}
-                    </.menu_item>
-                  </.dropdown>
-                <% else %>
-                  <.chip class="shrink-0">
-                    {String.capitalize(to_string(membership.role))}
-                  </.chip>
-                <% end %>
+                      <:trigger>
+                        {String.capitalize(to_string(membership.role))}
+                        <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                      </:trigger>
+                      <.menu_item
+                        :for={role <- @roles}
+                        :if={role != to_string(membership.role)}
+                        phx-click="change_role"
+                        phx-value-membership_id={membership.id}
+                        phx-value-role={role}
+                        data-confirm={
+                          role_change_confirm(member_name(membership) || "this member", role)
+                        }
+                      >
+                        {String.capitalize(role)}
+                      </.menu_item>
+                    </.dropdown>
+                  <% else %>
+                    <.chip class="shrink-0">
+                      {String.capitalize(to_string(membership.role))}
+                    </.chip>
+                  <% end %>
 
-                <.member_actions
-                  membership={membership}
-                  current_user_id={@current_user.id}
-                  can_manage?={can_manage?(assigns)}
-                  current_account={@current_account}
-                  typed={@typed}
-                />
+                  <.member_actions
+                    membership={membership}
+                    current_user_id={@current_user.id}
+                    can_manage?={can_manage?(assigns)}
+                    current_account={@current_account}
+                    typed={@typed}
+                  />
+                </div>
               </div>
 
               <%!-- Edit form appears inline under the row. No bolted-
