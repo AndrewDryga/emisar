@@ -3850,21 +3850,21 @@ defmodule EmisarWeb.CoreComponents do
               <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
-                  <.link href={~p"/use-cases/cassandra-ops"} class="text-zinc-400 hover:text-zinc-100">
-                    Cassandra ops
-                  </.link>
-                </li>
-                <li>
-                  <.link href={~p"/use-cases/postgres-ops"} class="text-zinc-400 hover:text-zinc-100">
-                    Postgres ops
-                  </.link>
-                </li>
-                <li>
                   <.link
                     href={~p"/use-cases/csi-data-loss"}
                     class="text-zinc-400 hover:text-zinc-100"
                   >
                     The 33-hour wipe
+                  </.link>
+                </li>
+                <li>
+                  <.link href={~p"/use-cases/ingress-502"} class="text-zinc-400 hover:text-zinc-100">
+                    The fleet-wide 502
+                  </.link>
+                </li>
+                <li>
+                  <.link href={~p"/use-cases"} class="text-zinc-400 hover:text-zinc-100">
+                    All use cases
                   </.link>
                 </li>
               </ul>

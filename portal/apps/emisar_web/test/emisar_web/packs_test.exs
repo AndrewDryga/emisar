@@ -70,23 +70,6 @@ defmodule EmisarWeb.PacksTest do
       refute hidden =~ "Required binaries"
     end
 
-    test "the use-case CTA appears only on the cassandra and postgres detail pages",
-         %{conn: conn} do
-      # The footer links the use-case pages on every page, so assert the
-      # body CTA's link TEXT ("Cassandra use case" / "Postgres use case"),
-      # which the pack_detail template renders only on the matching pack.
-      cassandra = conn |> get(~p"/packs/cassandra") |> html_response(200)
-      assert cassandra =~ "Cassandra use case"
-
-      postgres = conn |> get(~p"/packs/postgres") |> html_response(200)
-      assert postgres =~ "Postgres use case"
-
-      # A pack without a paired use case shows neither body CTA.
-      other = conn |> get(~p"/packs/redis") |> html_response(200)
-      refute other =~ "Cassandra use case"
-      refute other =~ "Postgres use case"
-    end
-
     test "every external link on a pack detail page carries the safe-rel pair", %{conn: conn} do
       # Each action id + the "View on GitHub"/"Source" links open off-site,
       # so a missing rel="noopener" is a reverse-tabnabbing hole.

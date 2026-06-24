@@ -33,8 +33,6 @@ defmodule EmisarWeb.SitemapController do
     "/docs/mcp-reference",
     "/packs",
     "/use-cases",
-    "/use-cases/cassandra-ops",
-    "/use-cases/postgres-ops",
     "/use-cases/csi-data-loss",
     "/use-cases/ingress-502",
     "/compare/raw-ssh-for-ai",

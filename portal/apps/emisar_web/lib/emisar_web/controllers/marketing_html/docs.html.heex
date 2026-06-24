@@ -112,17 +112,14 @@
           gated, audited actions — not a shell.
         </p>
       </div>
-      <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+      <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 gap-6 md:grid-cols-2">
         <%= for {title, desc, href} <- [
-          {"Cassandra ops",
-           "Triage a read-latency alert and run nodetool repair on the lagging keyspace, behind one approval.",
-           ~p"/use-cases/cassandra-ops"},
-          {"Postgres ops",
-           "Check replication lag and slow queries, then terminate a blocking backend — with approval.",
-           ~p"/use-cases/postgres-ops"},
           {"Incident response: the 33-hour wipe",
            "A CSI driver reformats a live volume; the agent contains it through declared actions and writes the fix to Terraform.",
-           ~p"/use-cases/csi-data-loss"}
+           ~p"/use-cases/csi-data-loss"},
+          {"The fleet-wide 502",
+           "Every backend was green, yet one anycast edge threw intermittent 502s; the agent traced it across five layers and stopped the bleed behind approvals.",
+           ~p"/use-cases/ingress-502"}
         ] do %>
           <.link
             navigate={href}

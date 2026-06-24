@@ -27,8 +27,6 @@ defmodule EmisarWeb.MarketingTest do
     /packs/postgres
     /packs/cassandra
     /use-cases
-    /use-cases/cassandra-ops
-    /use-cases/postgres-ops
     /use-cases/csi-data-loss
     /use-cases/ingress-502
     /compare/raw-ssh-for-ai
@@ -87,8 +85,6 @@ defmodule EmisarWeb.MarketingTest do
   test "deep pages a convinced reader lands on carry a Start-free conversion CTA",
        %{conn: conn} do
     for route <- ~w(
-          /use-cases/cassandra-ops
-          /use-cases/postgres-ops
           /use-cases/ingress-502
           /compare/raw-ssh-for-ai
           /compare/custom-mcp-server
@@ -743,22 +739,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar audit verify --all"
     end
 
-    test "the cassandra use case renders its incident narrative sections", %{conn: conn} do
-      html = conn |> get(~p"/use-cases/cassandra-ops") |> html_response(200)
-
-      assert html =~ "Case study · Cassandra"
-      assert html =~ "Stop the bleed"
-      assert html =~ "The risk model"
-    end
-
-    test "the postgres use case renders its incident narrative sections", %{conn: conn} do
-      html = conn |> get(~p"/use-cases/postgres-ops") |> html_response(200)
-
-      assert html =~ "Case study · Postgres"
-      assert html =~ "Stop the bleed"
-      assert html =~ "Sweep the stragglers"
-    end
-
     test "the CSI data-loss use case renders its incident narrative and CTAs", %{conn: conn} do
       html = conn |> get(~p"/use-cases/csi-data-loss") |> html_response(200)
 
@@ -829,10 +809,6 @@ defmodule EmisarWeb.MarketingTest do
         ~w(/docs/policies-and-approvals /docs/connect-an-llm /docs/action-packs),
       "/docs/teams-and-access" =>
         ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
-      "/use-cases/cassandra-ops" =>
-        ~w(/packs/cassandra /use-cases/postgres-ops /docs/security-model),
-      "/use-cases/postgres-ops" =>
-        ~w(/packs/postgres /use-cases/cassandra-ops /compare/raw-ssh-for-ai),
       "/use-cases/ingress-502" =>
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
       "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),
