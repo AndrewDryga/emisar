@@ -370,7 +370,7 @@ defmodule EmisarWeb.AuditLive do
           />
         </:col>
         <:col :let={event} label="IP" class="w-32 hidden lg:table-cell">
-          <span class="font-mono text-xs text-zinc-500">{event.ip_address || "—"}</span>
+          <span class="font-mono text-xs tabular-nums text-zinc-400">{event.ip_address || "—"}</span>
         </:col>
         <:empty>
           <%!-- Filter-active stays a one-liner so it doesn't dominate

@@ -264,7 +264,7 @@ defmodule EmisarWeb.RunnersLive do
                   </div>
 
                   <div class="flex items-center gap-4 text-right">
-                    <div class="hidden text-xs text-zinc-400 sm:block">
+                    <div class="hidden text-xs tabular-nums text-zinc-400 sm:block">
                       {runner.action_load} active
                     </div>
                     <.status_badge status={state} class="shrink-0" />

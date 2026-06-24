@@ -144,7 +144,11 @@ defmodule EmisarWeb.RunsLive do
           <% end %>
         </:empty>
         <:col :let={run} label="When" class="w-24">
-          <.local_time value={run.inserted_at} mode={:relative} class="text-xs text-zinc-400" />
+          <.local_time
+            value={run.inserted_at}
+            mode={:relative}
+            class="text-xs tabular-nums text-zinc-400"
+          />
         </:col>
         <:col :let={run} label="Action">
           <.link
@@ -169,7 +173,7 @@ defmodule EmisarWeb.RunsLive do
           <.status_badge status={run.status} />
         </:col>
         <:col :let={run} label="Duration" class="w-20 text-right hidden lg:table-cell">
-          <span class="text-xs text-zinc-400">{format_duration(run.duration_ms)}</span>
+          <span class="text-xs tabular-nums text-zinc-400">{format_duration(run.duration_ms)}</span>
         </:col>
       </LiveTable.live_table>
     </.dashboard_shell>

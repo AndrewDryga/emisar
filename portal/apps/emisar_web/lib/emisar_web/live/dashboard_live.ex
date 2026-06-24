@@ -521,7 +521,7 @@ defmodule EmisarWeb.DashboardLive do
   #             They literally can't sign in until they fix it.
   #   * amber — MFA is optional but at least one teammate hasn't
   #             enrolled. Soft nudge.
-  #   * emerald — every member is enrolled. Quiet "you're good".
+  #   * brand — every member is enrolled. Quiet "you're good".
   #
   # Always links to the team page where the operator can chase the
   # missing enrollments.

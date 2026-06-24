@@ -809,7 +809,7 @@ defmodule EmisarWeb.TeamLive do
                         Email bouncing
                       </.chip>
                       <%!-- MFA status. Three states worth distinguishing:
-                         (1) enrolled — quiet emerald check, the happy
+                         (1) enrolled — quiet brand check, the happy
                          default; (2) not enrolled, account doesn't
                          enforce — neutral grey "No 2FA" hint; (3) not
                          enrolled AND the account requires MFA — LOUD
