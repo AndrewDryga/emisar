@@ -114,7 +114,7 @@ defmodule EmisarWeb.AuthKeysLive do
         {:ok, raw, key} ->
           {:noreply,
            socket
-           |> put_flash(:info, "Auth key created. Copy it now — you won't see it again.")
+           |> put_flash(:info, "Runner key created. Copy it now — you won't see it again.")
            |> assign(:new_secret, raw)
            |> assign(:new_key, key)
            |> assign_form(Runners.change_auth_key(%{"group" => "default"}))
@@ -284,7 +284,7 @@ defmodule EmisarWeb.AuthKeysLive do
 
         <.secret_reveal
           :if={@new_secret}
-          title="Copy this auth key now — it will not be shown again."
+          title="Copy this runner key now — it will not be shown again."
           secret={@new_secret}
           on_dismiss="dismiss_secret"
         >
@@ -303,7 +303,7 @@ defmodule EmisarWeb.AuthKeysLive do
           id="create-panel"
           class="hidden"
           padding="p-6"
-          title="Issue a new auth key"
+          title="Issue a runner key"
         >
           <:subtitle>
             Reusable keys suit stable fleets; single-use keys are right for autoscalers.
@@ -433,7 +433,7 @@ defmodule EmisarWeb.AuthKeysLive do
                 <.confirm_dialog
                   :if={is_nil(key.revoked_at)}
                   id={"revoke-key-#{key.id}"}
-                  title="Revoke auth key"
+                  title="Revoke runner key"
                   confirm_label="Revoke key"
                   confirm_token={key.key_prefix}
                   typed={@typed}
@@ -465,7 +465,7 @@ defmodule EmisarWeb.AuthKeysLive do
           :if={not Runners.subject_can_manage_auth_keys?(@current_subject)}
           class="text-xs text-zinc-500"
         >
-          Only owners and admins can issue or revoke auth keys.
+          Only owners and admins can issue or revoke runner keys.
         </p>
       </div>
     </.dashboard_shell>

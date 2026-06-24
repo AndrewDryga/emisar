@@ -593,9 +593,9 @@ defmodule EmisarWeb.ProfileLive do
                   variant="danger"
                   size="md"
                   phx-click="disable_mfa"
-                  data-confirm="Disable MFA on your account?"
+                  data-confirm="Disable 2FA on your account?"
                 >
-                  Disable MFA
+                  Disable 2FA
                 </.button>
               </div>
             <% @mfa_uri -> %>

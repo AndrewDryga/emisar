@@ -784,7 +784,7 @@ defmodule EmisarWeb.AgentsLive do
               :if={not @load_error?}
               variant={:bare}
               icon="hero-cpu-chip"
-              title="No LLMs connected yet."
+              title="No agents connected yet."
             >
               Pick a client above — we mint a key + pre-fill the snippet (local) or
               URL + token (cloud). The agent shows up here on its first MCP call.

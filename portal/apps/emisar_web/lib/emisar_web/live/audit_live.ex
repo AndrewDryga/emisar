@@ -283,7 +283,7 @@ defmodule EmisarWeb.AuditLive do
 
       <.page_intro>
         The append-only record of every action, approval, and access change in this account —
-        exportable to your SIEM for independent, tamper-evident retention.
+        exportable to your SIEM for independent, long-term retention.
       </.page_intro>
 
       <%!-- Row-click "what did X do" chip with a one-click clear. Date range +
