@@ -307,20 +307,13 @@ defmodule EmisarWeb.ApprovalsLive do
 
         <%!-- 2. STANDING GRANTS --%>
         <section>
-          <header class="mb-3 flex items-baseline justify-between gap-2">
-            <div class="flex items-center gap-2">
-              <h2 class="text-sm font-semibold text-zinc-100">Standing grants</h2>
-              <span
-                :if={@grants_metadata.count > 0}
-                class="rounded bg-zinc-800 px-1.5 py-0.5 text-xs font-medium text-zinc-300"
-              >
-                {@grants_metadata.count}
-              </span>
-            </div>
-            <p class="hidden text-xs text-zinc-500 sm:block">
-              Approvals that auto-allow follow-up calls for a bounded window. Revocable here.
-            </p>
-          </header>
+          <.section_header title="Standing grants" count={@grants_metadata.count} count_tone={:neutral}>
+            <:actions>
+              <p class="ml-auto hidden text-xs text-zinc-400 sm:block">
+                Approvals that auto-allow follow-up calls for a bounded window. Revocable here.
+              </p>
+            </:actions>
+          </.section_header>
 
           <LiveTable.live_table
             layout={:cards}

@@ -798,6 +798,9 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :key, :map, required: true
 
+  # A sanctioned hand-rolled pill (not `<.chip>`): the :active state shows a live
+  # animate-ping dot the shared chip can't express. Colors mirror `status_class/1`
+  # so it still reads as part of the status palette.
   defp client_status_pill(assigns) do
     status = client_status(assigns.key)
     assigns = assign(assigns, status: status)

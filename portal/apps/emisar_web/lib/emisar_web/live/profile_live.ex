@@ -475,18 +475,8 @@ defmodule EmisarWeb.ProfileLive do
           hint="Adds a TOTP code at sign-in, so a stolen password alone can't get in."
         >
           <:meta>
-            <span
-              :if={@mfa_enabled?}
-              class="inline-flex items-center gap-1.5 rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30"
-            >
-              <span class="h-1.5 w-1.5 rounded-full bg-brand-400"></span>On
-            </span>
-            <span
-              :if={not @mfa_enabled?}
-              class="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-zinc-400 ring-1 ring-zinc-700/40"
-            >
-              Off
-            </span>
+            <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
+            <.chip :if={not @mfa_enabled?}>Off</.chip>
           </:meta>
 
           <%= cond do %>
