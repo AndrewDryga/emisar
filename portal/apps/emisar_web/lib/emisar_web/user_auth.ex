@@ -462,6 +462,9 @@ defmodule EmisarWeb.UserAuth do
       |> Phoenix.Component.assign_new(:fleet_all_offline?, fn ->
         fleet_offline_for(socket.assigns[:current_subject])
       end)
+      |> Phoenix.Component.assign_new(:no_agents?, fn ->
+        no_agents_for(socket.assigns[:current_subject])
+      end)
 
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
@@ -611,6 +614,11 @@ defmodule EmisarWeb.UserAuth do
   # `refresh_fleet_offline` on the account's runner-connections topic.
   defp fleet_offline_for(nil), do: false
   defp fleet_offline_for(subject), do: Emisar.Runners.fleet_all_offline?(subject)
+
+  # "Connect an agent" nudge: no LLM agent (API key) on the account yet. Computed
+  # at mount (assign_new); resolves once the first agent appears.
+  defp no_agents_for(nil), do: false
+  defp no_agents_for(subject), do: Emisar.ApiKeys.no_agents?(subject)
 
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns

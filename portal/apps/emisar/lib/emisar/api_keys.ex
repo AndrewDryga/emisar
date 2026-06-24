@@ -413,6 +413,28 @@ defmodule Emisar.ApiKeys do
 
   def fetch_owner_user_id(_api_key_id), do: nil
 
+  @doc """
+  Whether the account has NO connected LLM agent yet (no non-revoked API key) —
+  drives the "connect an agent" nudge dot in the nav. Requires `view`; returns
+  false (no nudge) when the subject can't view keys.
+  """
+  def no_agents?(%Subject{account: %{id: account_id}} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_api_keys_permission()) do
+      :ok ->
+        queryable =
+          ApiKey.Query.not_deleted()
+          |> ApiKey.Query.by_account_id(account_id)
+          |> ApiKey.Query.not_revoked()
+
+        not Repo.exists?(queryable)
+
+      _ ->
+        false
+    end
+  end
+
+  def no_agents?(%Subject{}), do: false
+
   # -- Authorization ---------------------------------------------------
 
   @doc "Whether `subject` may manage MCP API keys (admin+)."

@@ -337,6 +337,7 @@ defmodule EmisarWeb.PacksLive do
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
+      no_agents?={@no_agents?}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}

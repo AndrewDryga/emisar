@@ -1180,6 +1180,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
+  attr :no_agents?, :boolean, default: false
   attr :flash, :map, default: %{}
 
   slot :inner_block, required: true
@@ -1205,6 +1206,7 @@ defmodule EmisarWeb.CoreComponents do
           pending_approvals_count={@pending_approvals_count}
           pending_packs_count={@pending_packs_count}
           fleet_all_offline?={@fleet_all_offline?}
+          no_agents?={@no_agents?}
         />
         <.shell_user current_user={@current_user} current_account={@current_account} />
       </aside>
@@ -1333,7 +1335,7 @@ defmodule EmisarWeb.CoreComponents do
     >
       <:trigger>
         <img src={~p"/images/brand/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 flex-1 translate-y-[2px]">
           <img
             src={~p"/images/brand/emisar-wordmark.svg"}
             alt="emisar"
@@ -1399,6 +1401,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
+  attr :no_agents?, :boolean, default: false
   attr :current_account, :map, required: true
 
   defp shell_nav(assigns) do
@@ -1406,6 +1409,28 @@ defmodule EmisarWeb.CoreComponents do
     <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
       <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
         Dashboard
+      </.nav_link>
+
+      <%!-- Connect — the two things you need to USE emisar: a runner to execute and
+           an agent to call it. Surfaced at the top so setup is one glance away. --%>
+      <.nav_group label="Connect" />
+      <.nav_link
+        to={~p"/app/#{@current_account}/runners"}
+        active={@section == :runners}
+        icon="hero-cpu-chip"
+        alert={@fleet_all_offline?}
+        alert_label="All runners offline"
+      >
+        Runners
+      </.nav_link>
+      <.nav_link
+        to={~p"/app/#{@current_account}/settings/agents"}
+        active={@section == :agents}
+        icon="hero-sparkles"
+        alert={@no_agents?}
+        alert_label="No LLM agent connected yet"
+      >
+        LLM agents
       </.nav_link>
 
       <.nav_group label="Operate" />
@@ -1428,16 +1453,7 @@ defmodule EmisarWeb.CoreComponents do
         Audit
       </.nav_link>
 
-      <.nav_group label="Fleet" />
-      <.nav_link
-        to={~p"/app/#{@current_account}/runners"}
-        active={@section == :runners}
-        icon="hero-cpu-chip"
-        alert={@fleet_all_offline?}
-        alert_label="All runners offline"
-      >
-        Runners
-      </.nav_link>
+      <.nav_group label="Control" />
       <.nav_link
         to={~p"/app/#{@current_account}/packs"}
         active={@section == :packs}
@@ -1468,13 +1484,6 @@ defmodule EmisarWeb.CoreComponents do
         icon="hero-user-group"
       >
         Team
-      </.nav_link>
-      <.nav_link
-        to={~p"/app/#{@current_account}/settings/agents"}
-        active={@section == :agents}
-        icon="hero-sparkles"
-      >
-        LLM agents
       </.nav_link>
       <.nav_link
         :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}

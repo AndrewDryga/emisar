@@ -199,6 +199,7 @@ defmodule EmisarWeb.BillingLive do
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
+      no_agents?={@no_agents?}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -437,11 +438,9 @@ defmodule EmisarWeb.BillingLive do
       <div :if={@pct} class="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-900">
         <div class={["h-full transition-[width]", usage_class(@pct)]} style={"width: #{@pct}%"}></div>
       </div>
-      <div
-        :if={is_nil(@pct)}
-        class="mt-2 h-1.5 rounded-full bg-gradient-to-r from-brand-900/30 via-brand-500/40 to-brand-900/30"
-      >
-      </div>
+      <%!-- Unlimited (no numeric cap): a quiet solid fill, not a gradient — the
+           dark→light→dark gradient read as a half-broken progress bar. --%>
+      <div :if={is_nil(@pct)} class="mt-2 h-1.5 rounded-full bg-brand-500/20"></div>
     </div>
     """
   end
