@@ -3,7 +3,7 @@ defmodule Emisar.ApprovalsTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Accounts, Approvals, Audit, Repo, Runs}
+  alias Emisar.{Approvals, Audit, Repo, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
   alias Emisar.Runs.ActionRun
 
@@ -1517,46 +1517,7 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
     end
 
-    test "ABUSE: the account four-eyes lock blocks self-approval LIVE — on a request filed while self-approval was allowed, even when the approver's session predates the toggle" do
-      requester = user_fixture()
-      account = account_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: requester.id, role: "owner")
-      # The subject snapshots the account as it is NOW — four-eyes OFF.
-      subject = subject_for(requester, account, role: :owner)
-      runner = runner_fixture(account_id: account.id)
-      Emisar.Runners.subscribe_runner_transport(runner)
-
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "operator",
-          args: %{},
-          status: :pending_approval
-        })
-
-      # Filed PERMISSIVELY — the request's own snapshot allows self-approval.
-      {:ok, request} =
-        Approvals.create_request(run, requester.id, "x",
-          min_approvals: 1,
-          allow_self_approval: true
-        )
-
-      # The owner turns four-eyes ON *after* the request is parked. `subject` still
-      # carries the pre-toggle account snapshot (require_four_eyes: false) — the
-      # gate must read the lock LIVE from the DB and bite anyway.
-      {:ok, _} = Accounts.update_account(account, %{require_four_eyes: true}, subject)
-
-      assert {:error, :self_approval_forbidden} =
-               Approvals.approve_request(request, subject, "approving my own")
-
-      assert %Request{status: :pending} = Repo.reload!(request)
-      assert approved_count(request.id) == 0
-      refute_receive {:cloud_to_runner, _}, 100
-    end
-
-    test "four-eyes off + a permissive request: the requester MAY self-approve (the lock is opt-in)" do
+    test "a permissive request lets its requester self-approve (self-approval allowed)" do
       requester = user_fixture()
       account = account_fixture()
       _ = membership_fixture(account_id: account.id, user_id: requester.id, role: "owner")

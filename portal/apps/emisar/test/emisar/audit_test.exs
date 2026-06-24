@@ -935,9 +935,9 @@ defmodule Emisar.AuditTest do
     # passes) and the dropdown set. If a drift type is later added to the
     # dropdown, this fails loudly — which is correct (it closed the gap then).
     test "builder-only types are emitted but absent from the Type dropdown" do
-      # account.require_sso_set + account.require_four_eyes_set were promoted INTO
-      # the dropdown alongside require_mfa_set (the account-security toggles now
-      # filter as a set), so they're no longer drift.
+      # account.require_sso_set was promoted INTO the dropdown alongside
+      # require_mfa_set (the account-security toggles filter as a set), so it's no
+      # longer drift.
       drift = ~w[
         user.mfa_reset_by_admin policy.scope_deleted
         approval.decision_recorded sso.provider_configured sso.provider_updated

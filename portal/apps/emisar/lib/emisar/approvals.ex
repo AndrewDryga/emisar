@@ -457,31 +457,15 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). An
-  # APPROVE by the recorded requester is blocked when the request's snapshotted
-  # posture forbids it, OR the account enforces four-eyes account-wide. Deny and
-  # the permissive case fall through.
-  defp check_self_approval(:approve, %Request{} = request, %Subject{} = subject) do
-    if self?(subject, request) and four_eyes_required?(request),
-      do: {:error, :self_approval_forbidden},
-      else: :ok
+  # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
+  # APPROVE by the recorded requester is blocked, and only when the request's
+  # snapshotted policy forbade self-approval. Deny and the permissive case fall
+  # through. Self-approval is a policy setting only — there is no account-wide flag.
+  defp check_self_approval(:approve, %Request{allow_self_approval: false} = request, subject) do
+    if self?(subject, request), do: {:error, :self_approval_forbidden}, else: :ok
   end
 
   defp check_self_approval(_decision, _request, _subject), do: :ok
-
-  # The account-wide four-eyes lock is read LIVE by the request's account — never
-  # the approver's session snapshot, which can lag a fresh toggle — so an owner
-  # turning it on closes the gap the instant it's set, even for a request parked
-  # while self-approval was still allowed. The request's own snapshot
-  # (`allow_self_approval: false`) is the other, independent trigger.
-  defp four_eyes_required?(%Request{allow_self_approval: false}), do: true
-
-  defp four_eyes_required?(%Request{account_id: account_id}) do
-    case Accounts.fetch_account_by_id(account_id) do
-      {:ok, %{require_four_eyes: required?}} -> required?
-      {:error, _} -> false
-    end
-  end
 
   defp self?(%Subject{} = subject, %Request{requested_by_id: rb}) when is_binary(rb),
     do: Subject.actor_id(subject) == rb

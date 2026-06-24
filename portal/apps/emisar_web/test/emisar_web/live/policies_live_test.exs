@@ -37,25 +37,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "No targeted rulesets"
     end
 
-    test "four-eyes enforced account-wide locks self-approval off in the policy editor", %{
-      conn: conn
-    } do
-      {conn, user, account} = register_and_log_in(conn)
-
-      {:ok, _} =
-        Emisar.Accounts.update_account(
-          account,
-          %{require_four_eyes: true},
-          owner_subject(user, account)
-        )
-
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
-
-      # The self-approval control reads as locked, not a free toggle.
-      assert html =~ "Locked — four-eyes is enforced account-wide"
-      refute html =~ "Off requires a"
-    end
-
     test "a tier select disables decisions below its floor and pre-selects the current value", %{
       conn: conn
     } do

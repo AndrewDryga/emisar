@@ -46,8 +46,10 @@ defmodule Emisar.Policies do
       "critical" => "deny"
     },
     "overrides" => [],
-    # GitHub-style approval gate. Defaults reproduce single-approver
-    # behavior: one approve dispatches, and the requester may self-approve.
+    # GitHub-style approval gate. Defaults reproduce single-approver behavior:
+    # one approve dispatches, and the requester may self-approve (most accounts
+    # have one operator). A team that wants four-eyes turns self-approval OFF in
+    # its policy — there is no account-wide flag.
     "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
   }
 

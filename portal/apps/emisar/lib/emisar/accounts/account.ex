@@ -12,7 +12,6 @@ defmodule Emisar.Accounts.Account do
     field :paddle_customer_id, :string
     field :require_mfa, :boolean, default: false
     field :require_sso, :boolean, default: false
-    field :require_four_eyes, :boolean, default: false
     field :deleted_at, :utc_datetime_usec
 
     # Soft-deletable associations skip tombstoned rows by default, so a

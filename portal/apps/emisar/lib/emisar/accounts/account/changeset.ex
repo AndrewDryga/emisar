@@ -3,12 +3,11 @@ defmodule Emisar.Accounts.Account.Changeset do
   alias Emisar.Accounts.Account
 
   @create_fields ~w[name slug paddle_customer_id]a
-  # update/2 may also flip the security settings (require_mfa, require_sso,
-  # require_four_eyes); the context's field-aware permission check
-  # (Accounts.update_account/3) decides who may change which field. Plan is NOT
-  # settable here — it's derived from the account's subscription
-  # (`Billing.account_plan/1`).
-  @update_fields ~w[name slug paddle_customer_id require_mfa require_sso require_four_eyes]a
+  # update/2 may also flip the security settings (require_mfa, require_sso); the
+  # context's field-aware permission check (Accounts.update_account/3) decides who
+  # may change them. Plan is NOT settable here — it's derived from the account's
+  # subscription (`Billing.account_plan/1`).
+  @update_fields ~w[name slug paddle_customer_id require_mfa require_sso]a
 
   def create(attrs) do
     %Account{}
