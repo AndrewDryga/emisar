@@ -28,7 +28,7 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Analytics, Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Glob, Policy}
 
@@ -332,12 +332,8 @@ defmodule Emisar.Policies do
       end)
       |> Repo.commit_multi()
       |> case do
-        {:ok, %{policy: policy}} ->
-          Analytics.Events.policy_updated(policy, subject)
-          {:ok, policy}
-
-        {:error, reason} ->
-          {:error, reason}
+        {:ok, %{policy: policy}} -> {:ok, policy}
+        {:error, reason} -> {:error, reason}
       end
     end
   end

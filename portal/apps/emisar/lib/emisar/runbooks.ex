@@ -8,7 +8,7 @@ defmodule Emisar.Runbooks do
   steps, and inline assertions are on the roadmap.
   """
   alias Ecto.Multi
-  alias Emisar.{Analytics, Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Runbook, RunbookExecution, StepSelector}
 
@@ -135,10 +135,7 @@ defmodule Emisar.Runbooks do
       |> Repo.fetch_and_update(Runbook.Query,
         with: &Runbook.Changeset.update(&1, %{status: :published}),
         audit: &Audit.Events.runbook_published(subject, &1),
-        after_commit: fn runbook ->
-          broadcast_runbook_published(runbook)
-          Analytics.Events.runbook_published(runbook, subject)
-        end
+        after_commit: &broadcast_runbook_published/1
       )
     end
   end

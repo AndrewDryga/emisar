@@ -23,7 +23,7 @@ defmodule Emisar.Catalog do
       * Different → keep trusted, set pending_hash. Dispatch refuses.
   """
   alias Ecto.Multi
-  alias Emisar.{Analytics, Audit, Auth, Repo, Runners}
+  alias Emisar.{Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline, PackVersion, RunnerAction}
   require Logger
@@ -247,7 +247,7 @@ defmodule Emisar.Catalog do
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: updated} ->
           broadcast_pack_trust(updated.account_id)
-          Analytics.Events.pack_trusted(updated, subject)
+          :ok
         end
       )
       |> case do
