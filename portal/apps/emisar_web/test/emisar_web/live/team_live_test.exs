@@ -634,24 +634,24 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(account).require_mfa
     end
 
-    test "a non-owner is refused at the event level", %{conn: conn} do
+    test "an operator is refused at the event level (IL-15 — owners + admins only)", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-      admin = Emisar.Fixtures.user_fixture()
+      operator = Emisar.Fixtures.user_fixture()
 
       _ =
         Emisar.Fixtures.membership_fixture(
           account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
+          user_id: operator.id,
+          role: "operator"
         )
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
-      assert html =~ "Only the account owner can change this setting."
+      assert html =~ "Only owners and admins can change this setting."
       refute Emisar.Repo.reload!(account).require_mfa
     end
 

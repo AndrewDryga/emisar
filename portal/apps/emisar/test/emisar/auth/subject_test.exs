@@ -196,11 +196,11 @@ defmodule Emisar.Auth.SubjectTest do
           account_id: account.id
         })
 
-      # Admin holds manage_team but NOT manage_security_settings (owner-only),
-      # so requiring both fails.
+      # Admin holds manage_team but NOT manage_owners (owner-only), so requiring
+      # both fails — a permission list requires ALL of them.
       perms = [
         Emisar.Accounts.Authorizer.manage_team_permission(),
-        Emisar.Accounts.Authorizer.manage_security_settings_permission()
+        Emisar.Accounts.Authorizer.manage_owners_permission()
       ]
 
       assert {:error, :unauthorized} =

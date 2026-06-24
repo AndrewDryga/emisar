@@ -224,7 +224,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "update_account/3 — require_sso (owner-only security setting)" do
+  describe "update_account/3 — require_sso (owner + admin security setting)" do
     test "an owner can enable require_sso" do
       {_owner, account, owner_subject} = owner_subject_fixture()
 
@@ -232,14 +232,24 @@ defmodule Emisar.AccountsTest do
                Accounts.update_account(account, %{require_sso: true}, owner_subject)
     end
 
-    test "a non-owner (admin) cannot — it's a security setting, owner-only" do
+    test "an admin can enable require_sso (owners + admins manage security settings)" do
       {_owner, account, _owner_subject} = owner_subject_fixture()
       admin = user_fixture()
       _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
       admin_subject = subject_for(admin, account, role: :admin)
 
-      assert {:error, :unauthorized} =
+      assert {:ok, %Account{require_sso: true}} =
                Accounts.update_account(account, %{require_sso: true}, admin_subject)
+    end
+
+    test "an operator cannot change a security setting (no manage_security_settings)" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(account, %{require_sso: true}, operator_subject)
 
       refute Repo.reload!(account).require_sso
     end
@@ -276,7 +286,7 @@ defmodule Emisar.AccountsTest do
       # A plain rename touches no security field, so the top-level
       # `manage_own_account` gate (which admins hold) is all it needs — the
       # field-aware `manage_security_settings` check only fires for
-      # require_mfa/require_sso, which an admin lacks.
+      # require_mfa/require_sso (owners + admins hold it; operators/viewers don't).
       assert {:ok, %Account{name: "Renamed By Admin"}} =
                Accounts.update_account(account, %{name: "Renamed By Admin"}, admin_subject)
     end

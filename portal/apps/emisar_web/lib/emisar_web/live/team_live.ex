@@ -73,7 +73,7 @@ defmodule EmisarWeb.TeamLive do
 
     cond do
       not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
-        {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
       # Prevent owners from locking themselves out — if they don't have
       # MFA enabled, they can't enforce it (since the enforcement gate
@@ -107,7 +107,7 @@ defmodule EmisarWeb.TeamLive do
 
           {:error, :unauthorized} ->
             {:noreply,
-             put_flash(socket, :error, "Only the account owner can change this setting.")}
+             put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not update 2FA setting.")}
@@ -121,7 +121,7 @@ defmodule EmisarWeb.TeamLive do
 
     cond do
       not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
-        {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
       # Prevent a lockout — requiring SSO with no enabled connection would leave
       # everyone (owners included) with no way in.
@@ -155,7 +155,7 @@ defmodule EmisarWeb.TeamLive do
 
           {:error, :unauthorized} ->
             {:noreply,
-             put_flash(socket, :error, "Only the account owner can change this setting.")}
+             put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not update SSO setting.")}
@@ -578,11 +578,11 @@ defmodule EmisarWeb.TeamLive do
              at-a-glance per-member MFA status. Lives at the top because
              this is the highest-leverage account setting on the page;
              everything below is per-member admin. --%>
-        <.panel title="Security">
+        <.panel title="Two-factor authentication">
           <:subtitle>
             When enforced, members without 2FA are funneled to their profile to set it up
-            before they can use the rest of the app. Owners can't enable this until they've
-            enrolled themselves — prevents lock-outs.
+            before they can use the rest of the app. You can't enable this until you've
+            enrolled yourself — prevents lock-outs.
           </:subtitle>
           <:actions>
             <%= cond do %>
@@ -610,7 +610,7 @@ defmodule EmisarWeb.TeamLive do
                   {if @current_account.require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
                 </button>
               <% true -> %>
-                <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
             <% end %>
           </:actions>
 
@@ -646,7 +646,7 @@ defmodule EmisarWeb.TeamLive do
           <:actions>
             <%= cond do %>
               <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
               <% not @require_sso_available? and not @current_account.require_sso -> %>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso"}

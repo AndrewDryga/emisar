@@ -27,7 +27,7 @@ defmodule Emisar.MfaEnforcementTest do
       refute account.require_mfa
     end
 
-    test "non-owner is rejected" do
+    test "an operator is rejected (owners + admins manage security settings)" do
       owner = user_fixture()
 
       {:ok, account} =
@@ -38,17 +38,17 @@ defmodule Emisar.MfaEnforcementTest do
 
       owner_subject = subject_for(owner, account, role: :owner)
 
-      email = "admin-#{System.unique_integer([:positive])}@example.com"
+      email = "operator-#{System.unique_integer([:positive])}@example.com"
 
-      {:ok, %{user: admin_user, membership: m}} =
-        Accounts.invite_user_to_account(email, "admin", owner_subject)
+      {:ok, %{user: operator_user, membership: m}} =
+        Accounts.invite_user_to_account(email, "operator", owner_subject)
 
-      confirm_user(admin_user)
-      {:ok, _} = Accounts.mark_invitation_accepted(m, admin_user)
-      admin_subject = subject_for(admin_user, account, role: :admin)
+      confirm_user(operator_user)
+      {:ok, _} = Accounts.mark_invitation_accepted(m, operator_user)
+      operator_subject = subject_for(operator_user, account, role: :operator)
 
       assert {:error, :unauthorized} =
-               Accounts.update_account(account, %{require_mfa: true}, admin_subject)
+               Accounts.update_account(account, %{require_mfa: true}, operator_subject)
     end
   end
 

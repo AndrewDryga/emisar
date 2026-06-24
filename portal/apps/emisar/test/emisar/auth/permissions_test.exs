@@ -46,9 +46,8 @@ defmodule Emisar.Auth.PermissionsTest do
 
   describe "roles_with_permission/1" do
     test "an owner-only permission resolves to exactly [:owner]" do
-      assert Permissions.roles_with_permission(
-               Accounts.Authorizer.manage_security_settings_permission()
-             ) == [:owner]
+      assert Permissions.roles_with_permission(Accounts.Authorizer.manage_owners_permission()) ==
+               [:owner]
     end
 
     test "a permission no role grants resolves to []" do

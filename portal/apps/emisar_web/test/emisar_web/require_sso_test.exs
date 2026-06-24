@@ -189,7 +189,7 @@ defmodule EmisarWeb.RequireSSOTest do
 
       html = render_click(lv, "toggle_require_sso", %{})
 
-      assert html =~ "Only the account owner"
+      assert html =~ "Only owners and admins"
       refute Repo.reload!(account).require_sso
     end
   end

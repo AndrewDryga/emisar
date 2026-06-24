@@ -40,6 +40,7 @@ defmodule Emisar.Accounts.Authorizer do
       view_own_account_permission(),
       manage_team_permission(),
       invite_member_permission(),
+      manage_security_settings_permission(),
       edit_own_profile_permission()
     ]
 
