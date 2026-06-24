@@ -3,7 +3,7 @@
 ============================================================ --%>
 <.legal_page
   title="Privacy Policy"
-  updated="June 4, 2026"
+  updated="June 24, 2026"
   summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and you can export or delete it any time."
   toc={[
     {"collect", "1. What we collect"},
@@ -12,7 +12,7 @@
     {"subprocessors", "4. Subprocessors"},
     {"rights", "5. Your rights"},
     {"retention", "6. Retention"},
-    {"cookies", "7. Cookies"},
+    {"cookies", "7. Cookies & analytics"},
     {"contact", "8. Contact"}
   ]}
 >
@@ -87,6 +87,12 @@
       — transactional email (sign-up confirmation, magic links, approval notifications).
     </li>
     <li><strong>Fly.io</strong> — application hosting and managed PostgreSQL.</li>
+    <li>
+      <strong>Mixpanel</strong>
+      — product & usage analytics (which features are used, and how people reach us).
+      Server-side; we send product-interaction events, never your runners' data or the
+      contents of actions.
+    </li>
   </ul>
   <p>
     We will update this list before adding new subprocessors. If you are on a paid
@@ -135,12 +141,22 @@
     days.
   </p>
 
-  <h2 id="cookies">7. Cookies</h2>
+  <h2 id="cookies">7. Cookies & analytics</h2>
   <p>
-    We use one cookie: a signed, HTTP-only session cookie that keeps you logged in.
-    That's it. No analytics cookies on the product surface, no advertising cookies,
-    no third-party trackers in the application. The marketing site uses a single
-    first-party cookie for the same purpose if you are logged in.
+    We use one cookie: a signed, HTTP-only, first-party session cookie. It keeps you
+    logged in and — unless you opt out (below) — carries a random, anonymous id we
+    use to measure product interest. No advertising cookies, no third-party trackers,
+    and no analytics script runs in your browser.
+  </p>
+  <p>
+    To understand which features get used and how people find us, we record product
+    events (pageviews, sign-ups, actions dispatched) in <strong>Mixpanel</strong>, a
+    product-analytics service. We do this <em>server-side</em>: events are sent from
+    our backend and scoped to product usage — never the contents of your runs, action
+    arguments, or audit records. We honor the <strong>Do Not Track</strong> and
+    <strong>Global Privacy Control</strong>
+    browser signals: if your browser sends either, we record nothing and set no
+    analytics id.
   </p>
 
   <h2 id="contact">8. Contact</h2>

@@ -904,7 +904,7 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # the date pins the right page (Refund is the only one on June 5).
       for {route, date} <- [
-            {"/privacy", "June 4, 2026"},
+            {"/privacy", "June 24, 2026"},
             {"/terms", "June 4, 2026"},
             {"/refund-policy", "June 5, 2026"}
           ] do
@@ -932,10 +932,22 @@ defmodule EmisarWeb.MarketingTest do
     test "the privacy page names only the real subprocessors", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 
-      # The three real subprocessors must be named...
+      # The four real subprocessors must be named...
       assert html =~ "Paddle"
       assert html =~ "Postmark"
       assert html =~ "Fly.io"
+      assert html =~ "Mixpanel"
+    end
+
+    test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do
+      html = conn |> get(~p"/privacy") |> html_response(200)
+
+      # Adding Mixpanel means the page must disclose it AND the opt-out honestly —
+      # the /trust honesty bar forbids a stale "no trackers" claim.
+      assert html =~ "Mixpanel"
+      assert html =~ "Do Not Track"
+      assert html =~ "Global Privacy Control"
+      refute html =~ "no third-party trackers in the application"
     end
 
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do
