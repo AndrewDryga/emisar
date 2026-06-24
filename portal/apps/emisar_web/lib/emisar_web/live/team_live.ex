@@ -163,6 +163,40 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event("toggle_require_four_eyes", _params, socket) do
+    account = socket.assigns.current_account
+    value = not account.require_four_eyes
+
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+      case Accounts.update_account(
+             account,
+             %{require_four_eyes: value},
+             socket.assigns.current_subject
+           ) do
+        {:ok, account} ->
+          {:noreply,
+           socket
+           |> assign(:current_account, account)
+           |> put_flash(
+             :info,
+             if(value,
+               do:
+                 "Four-eyes enforced. A gated action can no longer be approved by its own requester — including the ones already pending.",
+               else: "Four-eyes turned off — policies decide self-approval again."
+             )
+           )}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Could not update the four-eyes setting.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+    end
+  end
+
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
       groups = (params["groups"] || []) |> List.wrap()
@@ -684,6 +718,55 @@ defmodule EmisarWeb.TeamLive do
           <div class="flex flex-wrap items-center gap-2 text-xs">
             <.chip>
               {if @current_account.require_sso, do: "Required", else: "Optional"}
+            </.chip>
+          </div>
+        </.panel>
+
+        <%!-- Four-eyes card — owner-only. When on, a gated action can never be
+             approved by its own requester, regardless of any policy's
+             self-approval setting; the Policy editor shows that control locked.
+             Applies even to already-pending requests, so it closes the gap now. --%>
+        <.panel title="Four-eyes approval">
+          <:subtitle>
+            When required, a gated action can't be approved by whoever requested it —
+            a different operator must sign off, no matter what a policy allows. Needs at
+            least two operators who can approve.
+          </:subtitle>
+          <:actions>
+            <%= cond do %>
+              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
+              <% true -> %>
+                <button
+                  type="button"
+                  phx-click="toggle_require_four_eyes"
+                  role="switch"
+                  aria-checked={to_string(@current_account.require_four_eyes)}
+                  aria-label="Require four-eyes approval account-wide"
+                  data-confirm={
+                    if @current_account.require_four_eyes,
+                      do: "Stop requiring four-eyes? Policies decide self-approval again.",
+                      else:
+                        "Require four-eyes for every gated action? A requester can no longer approve their own action — a different operator must. Make sure you have at least two operators, or gated actions will wait with no one able to approve."
+                  }
+                  class={[
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    if(@current_account.require_four_eyes,
+                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
+                    )
+                  ]}
+                >
+                  {if @current_account.require_four_eyes,
+                    do: "Stop requiring four-eyes",
+                    else: "Require four-eyes"}
+                </button>
+            <% end %>
+          </:actions>
+
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <.chip>
+              {if @current_account.require_four_eyes, do: "Enforced", else: "Optional"}
             </.chip>
           </div>
         </.panel>

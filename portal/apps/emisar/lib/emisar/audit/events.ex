@@ -71,6 +71,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def account_require_four_eyes_set(%Subject{} = subject, %Accounts.Account{} = account) do
+    Audit.changeset(
+      account.id,
+      "account.require_four_eyes_set",
+      actor(subject) ++
+        [
+          subject_kind: "account",
+          subject_id: account.id,
+          payload: %{require_four_eyes: account.require_four_eyes}
+        ]
+    )
+  end
+
   def account_require_sso_set(%Subject{} = subject, %Accounts.Account{} = account) do
     Audit.changeset(
       account.id,

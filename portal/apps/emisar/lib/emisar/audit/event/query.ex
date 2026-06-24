@@ -27,6 +27,8 @@ defmodule Emisar.Audit.Event.Query do
     {"account.created", "Account created"},
     {"account.updated", "Account updated"},
     {"account.require_mfa_set", "MFA enforcement toggled"},
+    {"account.require_sso_set", "SSO enforcement toggled"},
+    {"account.require_four_eyes_set", "Four-eyes enforcement toggled"},
     {"runner.registered", "Runner registered"},
     {"runner.connected", "Runner connected"},
     {"runner.disconnected", "Runner disconnected"},
@@ -144,7 +146,9 @@ defmodule Emisar.Audit.Event.Query do
      [
        {"account.created", "Created"},
        {"account.updated", "Updated"},
-       {"account.require_mfa_set", "MFA enforcement toggled"}
+       {"account.require_mfa_set", "MFA enforcement toggled"},
+       {"account.require_sso_set", "SSO enforcement toggled"},
+       {"account.require_four_eyes_set", "Four-eyes enforcement toggled"}
      ]},
     {"Runner",
      [

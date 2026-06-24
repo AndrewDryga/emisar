@@ -634,6 +634,7 @@ defmodule EmisarWeb.PoliciesLive do
             approval={@account.approval}
             rules_errors={@account.rules_errors}
             can_manage={@can_manage?}
+            current_account={@current_account}
             save_label="Save default policy"
           />
         </.panel>
@@ -689,6 +690,7 @@ defmodule EmisarWeb.PoliciesLive do
             groups={@groups}
             rulesets={@rulesets}
             can_manage={@can_manage?}
+            current_account={@current_account}
           />
         </section>
       </div>
@@ -702,6 +704,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :groups, :list, required: true
   attr :rulesets, :list, required: true
   attr :can_manage, :boolean, required: true
+  attr :current_account, :map, required: true
 
   defp ruleset_card(assigns) do
     ~H"""
@@ -766,6 +769,7 @@ defmodule EmisarWeb.PoliciesLive do
         approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
         rules_errors={@ruleset.rules_errors}
         can_manage={@can_manage}
+        current_account={@current_account}
         save_label="Save ruleset"
       />
       <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
@@ -787,6 +791,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :rules_errors, :list, required: true
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
+  attr :current_account, :map, required: true
 
   defp policy_fields(assigns) do
     ~H"""
@@ -904,12 +909,22 @@ defmodule EmisarWeb.PoliciesLive do
               name="policy[approval][allow_self_approval]"
               value="true"
               unchecked_value="false"
-              checked={@approval["allow_self_approval"]}
-              disabled={!@can_manage}
+              checked={@approval["allow_self_approval"] and not @current_account.require_four_eyes}
+              disabled={!@can_manage or @current_account.require_four_eyes}
               label="Let the requester approve their own action"
             />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              Off (GitHub-style) requires a <em>different</em> operator to approve.
+            <p
+              :if={@current_account.require_four_eyes}
+              class="mt-1 text-[11px] leading-relaxed text-amber-300/80"
+            >
+              Locked — four-eyes is enforced account-wide (Team settings), so no policy can
+              let a requester approve their own action.
+            </p>
+            <p
+              :if={not @current_account.require_four_eyes}
+              class="mt-1 text-[11px] leading-relaxed text-zinc-500"
+            >
+              Off requires a <em>different</em> operator to approve.
             </p>
           </div>
         </div>
@@ -918,7 +933,11 @@ defmodule EmisarWeb.PoliciesLive do
              needed AND the requester may give it. We don't block it (self-approval
              is a deliberate option), but an operator who set a tier to "require
              approval" should know the defaults didn't actually add a reviewer. --%>
-        <.notice :if={single_reviewer_gate?(@approval)} variant={:warning} class="mt-3">
+        <.notice
+          :if={single_reviewer_gate?(@approval) and not @current_account.require_four_eyes}
+          variant={:warning}
+          class="mt-3"
+        >
           With 1 required approval and self-approval on, the requester can approve their
           own gated action — this gate adds no second reviewer. Raise required approvals
           or turn off self-approval for four-eyes control.

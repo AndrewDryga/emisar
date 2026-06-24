@@ -935,8 +935,11 @@ defmodule Emisar.AuditTest do
     # passes) and the dropdown set. If a drift type is later added to the
     # dropdown, this fails loudly — which is correct (it closed the gap then).
     test "builder-only types are emitted but absent from the Type dropdown" do
+      # account.require_sso_set + account.require_four_eyes_set were promoted INTO
+      # the dropdown alongside require_mfa_set (the account-security toggles now
+      # filter as a set), so they're no longer drift.
       drift = ~w[
-        account.require_sso_set user.mfa_reset_by_admin policy.scope_deleted
+        user.mfa_reset_by_admin policy.scope_deleted
         approval.decision_recorded sso.provider_configured sso.provider_updated
         sso.provider_deleted sso.existing_user_linked
       ]
@@ -964,7 +967,7 @@ defmodule Emisar.AuditTest do
       # format_event_type lives in the web app; assert the humanization contract
       # the dropdown-absent types rely on the same way the web test does, here
       # via the known-list lookup miss → title-cased fallback.
-      refute "account.require_sso_set" in (Audit.Event.Query.known_event_type_values()
+      refute "user.mfa_reset_by_admin" in (Audit.Event.Query.known_event_type_values()
                                            |> Enum.map(&elem(&1, 0)))
     end
   end

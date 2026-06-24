@@ -282,6 +282,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — require_four_eyes (owner-only security setting)" do
+    test "an owner can enable require_four_eyes" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      assert {:ok, %Account{require_four_eyes: true}} =
+               Accounts.update_account(account, %{require_four_eyes: true}, owner_subject)
+    end
+
+    test "a non-owner (admin) cannot — four-eyes is an owner-only security setting" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(account, %{require_four_eyes: true}, admin_subject)
+
+      refute Repo.reload!(account).require_four_eyes
+    end
+
+    test "an owner of another account can't toggle this account's require_four_eyes (cross-account)" do
+      {_owner_a, account_a, _subject_a} = owner_subject_fixture()
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(account_a, %{require_four_eyes: true}, subject_b)
+
+      refute Repo.reload!(account_a).require_four_eyes
+    end
+  end
+
   describe "invite_user_to_account/3" do
     test "creates a placeholder user for an unknown email" do
       inviter = user_fixture()

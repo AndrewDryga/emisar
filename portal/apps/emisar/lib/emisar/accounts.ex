@@ -162,9 +162,11 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # require_mfa and require_sso are the owner-only security settings.
+  # require_mfa, require_sso, and require_four_eyes are the owner-only security settings.
   defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
-    do: Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso)
+    do:
+      Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso) or
+        Map.has_key?(changes, :require_four_eyes)
 
   # A require_mfa / require_sso change is a security event; everything else is a
   # plain account.updated. The UI never changes more than one in a request.
@@ -179,6 +181,9 @@ defmodule Emisar.Accounts do
 
       Map.has_key?(changeset.changes, :require_sso) ->
         Audit.Events.account_require_sso_set(subject, account)
+
+      Map.has_key?(changeset.changes, :require_four_eyes) ->
+        Audit.Events.account_require_four_eyes_set(subject, account)
 
       true ->
         Audit.Events.account_updated(subject, account)
