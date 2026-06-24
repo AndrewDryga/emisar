@@ -99,17 +99,19 @@ defmodule Emisar.Crypto do
   def hash_hex(raw) when is_binary(raw), do: hash(raw) |> Base.encode16(case: :lower)
 
   @doc """
-  A cookieless, per-day anonymous visitor id — `hash_hex/1` of a request
-  fingerprint (IP + User-Agent) keyed by the app secret AND the current UTC
-  date. The date rotates the id every day, so a visitor is countable within a
-  day but UNLINKABLE across days: no persistent identifier and no cookie (the
-  Plausible/Fathom privacy model). The secret salt stops anyone without it from
-  recomputing a day's ids from a guessed fingerprint. Used as the `$device:` id
-  for anonymous analytics events; identified users are tracked by their user id.
+  A cookieless, per-week anonymous visitor id — `hash_hex/1` of a request
+  fingerprint (IP + User-Agent) keyed by the app secret AND the start of the
+  current UTC week. The week rotates the id every Monday, so a visitor is
+  countable within a week (good for weekly-active + retention) but UNLINKABLE
+  across weeks: no persistent identifier and no cookie (the Plausible/Fathom
+  privacy model). The secret salt stops anyone without it from recomputing a
+  week's ids from a guessed fingerprint. Used as the `$device:` id for anonymous
+  analytics events; identified users are tracked by their user id.
   """
   def anonymous_visitor_id(fingerprint) when is_binary(fingerprint) do
     salt = Application.fetch_env!(:emisar, :analytics_salt)
-    hash_hex(salt <> "|" <> Date.to_iso8601(Date.utc_today()) <> "|" <> fingerprint)
+    week_start = Date.to_iso8601(Date.beginning_of_week(Date.utc_today()))
+    hash_hex(salt <> "|" <> week_start <> "|" <> fingerprint)
   end
 
   # Dispatch correlation ids ride in runner envelopes, results, and logs;

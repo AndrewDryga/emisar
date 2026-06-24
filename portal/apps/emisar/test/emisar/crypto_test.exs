@@ -159,10 +159,10 @@ defmodule Emisar.CryptoTest do
 
   describe "anonymous_visitor_id/1" do
     # Cookieless visitor id: a salted hash of (IP|User-Agent) that also folds in
-    # the UTC date, so it's stable within a day but rotates daily (unlinkable
-    # across days). Determinism within a day is what makes a visitor countable
-    # and same-day-stitchable to their user on login — no client-stored id.
-    test "is a stable 64-char hex id for the same fingerprint within a day" do
+    # the UTC week-start, so it's stable within a week but rotates weekly
+    # (unlinkable across weeks). Determinism within the week is what makes a
+    # visitor countable and stitchable to their user on login — no client id.
+    test "is a stable 64-char hex id for the same fingerprint within a week" do
       fingerprint = "203.0.113.7|Mozilla/5.0 Chrome/120"
       id = Crypto.anonymous_visitor_id(fingerprint)
 
