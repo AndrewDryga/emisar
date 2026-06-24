@@ -100,7 +100,15 @@
     >
     </script>
   </head>
-  <body class="h-full bg-zinc-950 text-zinc-100 antialiased">
+  <body class={
+    [
+      "h-full bg-zinc-950 text-zinc-100 antialiased",
+      # Tag the server-rendered marketing/docs surface (not the LiveView console,
+      # which sets app_js?) so app.css can scope its expressive inline-code styling
+      # to marketing and leave the calm console's code styling alone.
+      !assigns[:app_js?] && "marketing"
+    ]
+  }>
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-brand-500 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-zinc-950"

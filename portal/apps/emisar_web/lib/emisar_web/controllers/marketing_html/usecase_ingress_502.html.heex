@@ -1,0 +1,275 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:use_cases} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <.breadcrumbs items={[{"Use cases", ~p"/use-cases"}, {"Ingress incident", nil}]} />
+      <p class="mt-6 text-sm font-semibold text-brand-400">Case study · Ingress</p>
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        The fleet-wide 502 that no backend was causing
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+        At peak, every app behind one edge started returning <code>502 Connection refused</code>. Not constantly — just often enough to be maddening.
+        Auth, checkout, the API tier, all at once, and yet every backend was healthy and every health
+        check was green. The cause was five layers down: a proxy stuck in an OOM loop, a node that had
+        quietly stopped serving, and a load balancer that never noticed either. Here is how an agent
+        ran it down on emisar — reading freely, and changing nothing in production without an approval.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The stack</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Five bare-metal Debian nodes in one colo, each running Traefik as a Nomad
+        <code>system</code>
+        job bound to <code>:443</code>. Every node also raises the same anycast VIP —
+        <code>10.x.x.250/32</code>
+        on a dummy interface — and advertises it to the edge firewall over BGP. The firewall
+        ECMP-hashes each incoming connection across whoever is advertising. Five nodes, five proxies,
+        five advertisers: that is the design, and it works right up until a node keeps advertising
+        after it stops serving.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">client → CDN (per-app pull zone)
+       → edge firewall WAN VIP (DNAT)
+       → anycast 10.x.x.250:443   <span class="text-zinc-500">← ECMP across all advertisers (BGP/FRR + BFD)</span>
+   ┌───────────┬───────────┬───────────┬───────────┬───────────┐
+ hvn01       hvn02       hvn03       hvn04       hvn05
+ Traefik     Traefik     Traefik     Traefik     Traefik   <span class="text-zinc-500">← Nomad system job, host net :443 (one per node)</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Everything below ran through emisar's stock <code>traefik</code>, <code>nomad</code>, <code>consul</code>,
+        and <code>frr</code>
+        packs. The edge was already covered; nobody had to write a tool to read it.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">It wasn't the app</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The page blamed one service — a health check 404-ing on a URL with a doubled slash. Two
+        problems with that. The doubled-slash path matches no Traefik route, so the edge returns its
+        default <code>404 page not found</code>; the same backend answers 200 on its real path, and
+        Consul had it registered and passing the whole time. The dashboards weren't much help either: 47 targets up, a 5xx
+        ratio rounding to zero, and a p99 of 9.8&nbsp;seconds that no single service accounted for.
+        The one thing every symptom shared was the edge they all sat behind. So that is where the
+        agent started.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Reading down to the edge
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Reads run freely on emisar — each scoped to a runner and logged with its reason — so the
+        agent could walk the whole edge from one surface instead of four CLIs and four sets of
+        credentials.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Claude, over MCP → emisar. Each call is a declared, scoped, logged read.</span>
+
+consul.service_health &#123;"service": "store-api"&#125;
+<span class="text-zinc-500">→ Server http://10.x.x.101:22504  status=UP
+  HTTP GET /healthcheck: 200 OK   &#123;"commit":"3433150"&#125;
+  # the named app is registered and healthy. it is not the app.</span>
+
+frr.bgp_summary &#123;"runners": ["nomad-hvn01 … nomad-hvn05"]&#125;
+<span class="text-zinc-500">→ every node, including hvn05:   PfxSnt = 1  →  upstream-edge-fw
+  # the smoking gun: a node with no working ingress is STILL advertising
+  # the anycast /32. the advertisement is not tied to Traefik's health.</span>
+
+traefik.ping &#123;"runners": ["nomad-hvn01 … nomad-hvn05"]&#125;
+<span class="text-zinc-500">→ hvn01–04: "404 page not found"    hvn05: curl (7) connection refused :8080
+  # four nodes are serving; hvn05 is a black hole — advertising, not serving.</span>
+
+nomad.job_resources &#123;"job": "traefik"&#125;
+<span class="text-zinc-500">→ group traefik · task traefik · cpu 1000 MHz · memory 1024 MiB
+  # the cap, confirmed: 1 GiB — read it before touching it.</span>
+
+nomad.alloc_status &#123;"alloc_id": "1c11be31… (hvn04 traefik)"&#125;
+<span class="text-zinc-500">→ Terminated  Exit Code: 137  "OOM Killed"
+  Total Restarts = 23   Memory  956 MiB / 1.0 GiB
+  # and the four live nodes are OOM-looping on that 1 GiB cap, ~every 70s.</span>
+
+nomad.alloc_status &#123;"alloc_id": "f746f2a3… (hvn05 traefik)"&#125;
+<span class="text-zinc-500">→ Setup Failure: pre-run hook "consul" failed
+  Post "http://127.0.0.1:8500/v1/acl/login": context deadline exceeded
+  # hvn05 can't even start Traefik: its local Consul won't issue a token.</span>
+
+consul.members
+<span class="text-zinc-500">→ nomad-hvn05   10.x.x.105:8301   left   server
+  # the root of hvn05: its Consul agent wedged after a reboot and never
+  # rejoined the gossip — so the token derivation above times out.</span>
+
+consul.autopilot_state
+<span class="text-zinc-500">→ Healthy = true   FailureTolerance = 0   Voters = nomad-hvn01, nomad-hvn03
+  # "healthy" only describes the shrunken raft: hvn05 leaving cost a voter, so
+  # two remain. one more loss and Consul loses quorum.</span>
+
+linux.uptime &#123;"runners": ["nomad-hvn01 … nomad-hvn05"]&#125;
+<span class="text-zinc-500">→ hvn02 and hvn05 booted ~02:00; the other three, weeks ago
+  # not a one-off — an overnight unattended-upgrades reboot wave. hvn05 is
+  # the one node that didn't come back clean.</span>
+
+debian.kernel_info &#123;"runners": ["nomad-hvn01 … nomad-hvn05"]&#125;
+<span class="text-zinc-500">→ all five: 6.12.x-amd64 · reboot-required: no
+  # rules out a kernel regression — every peer booted the same kernel and is
+  # fine, so hvn05's failure is node-local, not a fleet-wide landmine.</span>
+
+vm.query_instant &#123;"query":
+  "topk(5, sum by(service) (rate(traefik_service_requests_total[2m])))"&#125;
+<span class="text-zinc-500">→ match-api 1751 req/s   web 179   auth 122   feed 91   chat 65
+  # one single-replica backend drives ~1.75k req/s — the load that tips
+  # the four surviving nodes over the 1 GiB cap at peak. it is also the
+  # main producer of the 504s mixed into the report.</span></pre>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Three faults, stacked
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        On its own, none of these takes down a fleet. Stacked, they did.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Traefik was capped at 1&nbsp;GiB, and under real traffic it didn't fit. The cgroup killed it
+        — <code>Exit 137</code>
+        — and Nomad restarted it, twenty-plus times a node. What pushed it over was one single-replica
+        backend (<code>match-api</code>) pulling ~1.75k&nbsp;req/s; with a node already gone, four
+        proxies were carrying five nodes' worth of load.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The missing node was <code>hvn05</code>. An overnight reboot had dropped it to the initramfs
+        on an LVM race. It came back — but a later test reboot left its Consul agent
+        <code>left</code>
+        from the gossip, and Traefik needs a Consul token to start. A wedged Consul never issues one,
+        so <code>hvn05</code>
+        ran no proxy at all. Nobody caught it, because the only thing checked after the reboot was
+        Nomad's server quorum.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The amplifier is the part worth remembering. Every node advertises the VIP whether or not its
+        Traefik is up, so the firewall kept hashing connections onto nodes with nothing listening —
+        <code>hvn05</code>
+        constantly, plus whichever proxies were mid-restart — and each of those connections got a
+        reset. That is the whole shape of it: intermittent because ECMP picks per connection,
+        fleet-wide because every app shares the edge, and self-healing because a recovered proxy
+        rejoined on its own. A probe at the VIP settled it — about 40% of connections refused, while
+        the very next one went through.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Stopping the bleed — two approvals
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Two changes would stop it, and both touch production, so both waited for a human. The agent's
+        job was to line them up and say why; the yes belonged to someone else. Start with the weird
+        node: <code>hvn05</code>
+        isn't serving because its Consul is wedged, so restart Consul — not pull the node from the
+        anycast. A node you're about to heal isn't one you drain.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">linux.systemctl_restart &#123;"unit": "consul", "runners": ["nomad-hvn05"], "reason":
+  "hvn05 Consul wedged (left the gossip) after a reboot — restart so it rejoins and Traefik's token derivation succeeds"&#125;
+<span class="text-amber-300">⏸ pending approval — linux.systemctl_restart is risk:high; a human approves in the portal</span>
+<span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-zinc-500">→ consul rejoined the gossip · quorum restored · Traefik starts on hvn05 — it serves again, no drain needed</span>
+
+nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "traefik",
+  "memory": 4096, "reason": "Traefik OOM-looping at the 1 GiB cap under VIP load; raise to 4 GiB"&#125;
+<span class="text-amber-300">⏸ pending approval — nomad.task_resources_set is risk:high</span>
+<span class="text-brand-300">✓ approved · audit event recorded</span>
+<span class="text-zinc-500">→ jobspec patched at JobModifyIndex (MemoryMB 1024 → 4096) · rolling update places 4 GiB on all five</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Neither is a shell. The Consul restart isn't a special case —
+        <code>linux.systemctl_restart</code>
+        takes the unit by a name that can't carry shell metacharacters, and which units a runner may
+        touch is a policy decision, high-risk and approval-gated by default. The memory change refuses
+        to write if the jobspec moved under it, and it edits only that one task's limit. Two real
+        changes to production, each one named, reasoned, and on the record.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        The fix that actually holds
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Restarting Consul and raising the cap stopped the pain, but neither is the fix. A node can
+        wedge again tomorrow, and a running memory change evaporates the next time the job is
+        re-registered. Two of these belong in the repo; the third belongs in the load balancer's idea
+        of "healthy."
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># traefik.nomad.hcl — persist the cap so a re-register keeps it:</span>
+  resources &#123;
+<span class="text-rose-300">-   memory = 1024   # below observed RSS under load → cgroup OOM kills</span>
+<span class="text-brand-300">+   memory = 4096   # headroom for connection state, metrics, log buffers</span>
+  &#125;
+
+<span class="text-zinc-500"># the real fix: health-gate the anycast. a tiny per-node unit that probes
+# the local Traefik and adds/withdraws the /32 on the dummy interface — so
+# FRR pulls the route within a BFD interval (~900ms) and ECMP drops the node.</span>
+while true; do
+  if traefik_serving_on :443; then ip addr add 10.x.x.250/32 dev lb-anycast
+  else                             ip addr del 10.x.x.250/32 dev lb-anycast
+  fi
+  sleep 1
+done
+<span class="text-zinc-500"># now an OOMing, rebooting, or Consul-wedged node withdraws ITSELF
+# instead of black-holing one connection in five.</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        And the wedge itself has a one-line cure. A Consul <em>server</em>
+        should never <code>leave</code>
+        on a planned reboot — leaving is what dropped <code>hvn05</code>
+        out of raft to begin with. Tell it to stop, not leave (<code>leave_on_terminate = false</code>, <code>skip_leave_on_interrupt = true</code>),
+        and a rebooted server rejoins on its own.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        And about that anycast: pulling a node out of it by hand is now a single gated action.
+        <code>frr.bgp_neighbor_shutdown</code>
+        drops a node's BGP advertisement so ECMP routes around it — the break-glass for a node that
+        can't come back fast. It didn't come to that here; restarting Consul brought
+        <code>hvn05</code>
+        back outright, and a node you've just healed isn't one you pull from rotation. But when the
+        fix isn't a thirty-second restart, the lever is on the governed path now — not an SSH session
+        and a <code>vtysh</code>
+        prompt.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        With Consul healthy and 4&nbsp;GiB rolled to every node, the probes came back boring: nothing
+        refused at the VIP, every node serving, both quorums whole.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        What emisar didn't do
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Worth being plain about the limits. emisar didn't prevent this outage, and the page shouldn't
+        pretend otherwise. The three things that caused it — a boot that lost a race with udev, a
+        Consul server that left when it should have stopped, a VIP that advertises without checking —
+        are design flaws, and you fix design flaws in the repo, not with a tool call.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        What it changed is the hour in the middle: the part where someone is staring at a fleet-wide
+        502 with no failing service, hunting for the thread. Every read was one call away and on the
+        record. Every change that touched production waited for a yes. Nobody held a shell on the
+        edge, and nothing happened that you can't go read back later. Different failure, same fleet,
+        same loop — the night a storage driver
+        <.link navigate={~p"/use-cases/csi-data-loss"} class="text-brand-400 hover:text-brand-300">
+          reformatted a live LUN and erased 33 hours of metrics
+        </.link>
+        ran exactly this way.
+      </p>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          href={~p"/sign_up"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Start free — connect a runner <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Author your own pack <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

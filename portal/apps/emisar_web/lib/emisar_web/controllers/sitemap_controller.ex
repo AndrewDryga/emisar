@@ -36,6 +36,7 @@ defmodule EmisarWeb.SitemapController do
     "/use-cases/cassandra-ops",
     "/use-cases/postgres-ops",
     "/use-cases/csi-data-loss",
+    "/use-cases/ingress-502",
     "/compare/raw-ssh-for-ai",
     "/compare/custom-mcp-server",
     "/zero-trust",

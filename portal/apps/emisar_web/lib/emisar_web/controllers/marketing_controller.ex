@@ -57,6 +57,9 @@ defmodule EmisarWeb.MarketingController do
     {"/use-cases/csi-data-loss", :usecase_csi_data_loss, :usecase_csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
      "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra — a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
+    {"/use-cases/ingress-502", :usecase_ingress_502, :usecase_ingress_502,
+     "Case study: a fleet-wide 502 traced through five layers — via emisar",
+     "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers — FRR, Traefik, Nomad, Consul — to a Traefik OOM loop and a wedged node still advertising a dead ingress, stopped the bleed behind gated approvals, and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
     {"/compare/raw-ssh-for-ai", :compare_raw_ssh, :compare_raw_ssh,
      "Why not just give the LLM SSH? — honest comparison",
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
@@ -326,6 +329,7 @@ defmodule EmisarWeb.MarketingController do
     cases = [
       {"The 33-hour wipe: a CSI driver reformatted a live LUN",
        @base <> "/use-cases/csi-data-loss"},
+      {"The fleet-wide 502 that no backend was causing", @base <> "/use-cases/ingress-502"},
       {"The migration that died holding a lock", @base <> "/use-cases/postgres-ops"},
       {"The major compaction that ate the read path", @base <> "/use-cases/cassandra-ops"}
     ]

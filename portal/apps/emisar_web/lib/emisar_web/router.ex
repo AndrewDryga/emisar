@@ -87,6 +87,7 @@ defmodule EmisarWeb.Router do
     get "/use-cases/cassandra-ops", MarketingController, :usecase_cassandra
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres
     get "/use-cases/csi-data-loss", MarketingController, :usecase_csi_data_loss
+    get "/use-cases/ingress-502", MarketingController, :usecase_ingress_502
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
     get "/zero-trust", MarketingController, :zero_trust

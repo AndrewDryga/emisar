@@ -30,6 +30,7 @@ defmodule EmisarWeb.MarketingTest do
     /use-cases/cassandra-ops
     /use-cases/postgres-ops
     /use-cases/csi-data-loss
+    /use-cases/ingress-502
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
     /zero-trust
@@ -88,6 +89,7 @@ defmodule EmisarWeb.MarketingTest do
     for route <- ~w(
           /use-cases/cassandra-ops
           /use-cases/postgres-ops
+          /use-cases/ingress-502
           /compare/raw-ssh-for-ai
           /compare/custom-mcp-server
           /docs/connect-an-llm
@@ -152,7 +154,9 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "The work that never makes a post-mortem"
     # Every case study is present and linked from the hub (no more orphans).
     assert html =~ "The 33-hour wipe"
+    assert html =~ "The fleet-wide 502 that no backend was causing"
     assert html =~ ~s(href="/use-cases/csi-data-loss")
+    assert html =~ ~s(href="/use-cases/ingress-502")
     assert html =~ ~s(href="/use-cases/postgres-ops")
     assert html =~ ~s(href="/use-cases/cassandra-ops")
     # Structured data so the case studies can surface as a list.
@@ -165,6 +169,15 @@ defmodule EmisarWeb.MarketingTest do
   test "the sitemap lists the use-cases hub", %{conn: conn} do
     body = conn |> get(~p"/sitemap.xml") |> response(200)
     assert body =~ "https://emisar.dev/use-cases</loc>"
+  end
+
+  test "marketing pages tag the body so the marketing-scoped inline-code CSS applies",
+       %{conn: conn} do
+    # The `:where(.marketing) code` rule in app.css hangs off this body class.
+    # Controller-rendered marketing/docs pages carry it; the LiveView console
+    # (app_js?) does not, so the calm console keeps its own neutral code styling.
+    html = conn |> get(~p"/use-cases/ingress-502") |> html_response(200)
+    assert html =~ ~r/<body[^>]*\bmarketing\b/
   end
 
   test "marketing nav swaps to a Dashboard link when the visitor is signed in",
@@ -756,6 +769,26 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/action-packs")
     end
 
+    test "the ingress-502 use case renders its incident narrative, the gated stop, and CTAs",
+         %{conn: conn} do
+      html = conn |> get(~p"/use-cases/ingress-502") |> html_response(200)
+
+      assert html =~ "Case study · Ingress"
+      assert html =~ "Stopping the bleed"
+      # The honest beat: emisar didn't PREVENT the outage (no out-of-band step).
+      assert html =~ "What emisar didn't do"
+      # Two gated mutations actually executed (restart Consul, then resize Traefik) —
+      # pending → approved, the product's whole thesis. The anycast drain wasn't needed
+      # once Consul rejoined, but frr.bgp_neighbor_shutdown is still cited as the lever.
+      assert html =~ "pending approval — linux.systemctl_restart is risk:high"
+      assert html =~ "pending approval — nomad.task_resources_set is risk:high"
+      assert html =~ "approved by you · one use · audit event recorded"
+      assert html =~ "frr.bgp_neighbor_shutdown"
+      assert html =~ ~s(href="/sign_up")
+      assert html =~ ~s(href="/docs/security-model")
+      assert html =~ ~s(href="/docs/action-packs")
+    end
+
     test "the raw-SSH comparison renders both the desktop table and the mobile cards",
          %{conn: conn} do
       html = conn |> get(~p"/compare/raw-ssh-for-ai") |> html_response(200)
@@ -800,6 +833,8 @@ defmodule EmisarWeb.MarketingTest do
         ~w(/packs/cassandra /use-cases/postgres-ops /docs/security-model),
       "/use-cases/postgres-ops" =>
         ~w(/packs/postgres /use-cases/cassandra-ops /compare/raw-ssh-for-ai),
+      "/use-cases/ingress-502" =>
+        ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
       "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),
       "/compare/custom-mcp-server" =>
         ~w(/docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
