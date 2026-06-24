@@ -226,8 +226,10 @@ defmodule EmisarWeb.AuditLive do
 
     filters =
       Enum.flat_map(base_filters, fn
-        %{name: :actor_kind} = f -> [f | actor_filter]
-        %{name: :subject_kind} = f -> [f | subject_filter]
+        # The dependent picker inherits its kind's `advanced` placement, so it
+        # lands inside the same "More filters" disclosure, right after its trigger.
+        %{name: :actor_kind} = f -> [f | Enum.map(actor_filter, &%{&1 | advanced: true})]
+        %{name: :subject_kind} = f -> [f | Enum.map(subject_filter, &%{&1 | advanced: true})]
         f -> [f]
       end)
 

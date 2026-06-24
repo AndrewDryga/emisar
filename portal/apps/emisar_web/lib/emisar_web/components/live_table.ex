@@ -37,6 +37,8 @@ defmodule EmisarWeb.LiveTable do
   use Phoenix.Component
   use EmisarWeb, :verified_routes
 
+  import EmisarWeb.CoreComponents, only: [icon: 1]
+
   alias Emisar.Repo.Filter
 
   attr :id, :string, required: true
@@ -253,6 +255,18 @@ defmodule EmisarWeb.LiveTable do
   attr :disabled, :boolean, default: false
 
   defp filter_form(assigns) do
+    # Niche filters (`advanced: true`) collapse behind a "More filters" disclosure
+    # so a many-filtered bar isn't a wall of fields. The disclosure opens itself
+    # when one of them is set, so an active filter is never hidden. split_with
+    # keeps each group in its declared order; a page with no advanced filters
+    # (the default) renders exactly as a flat bar — the <details> never appears.
+    {primary, advanced} = Enum.split_with(assigns.filters, &(not &1.advanced))
+
+    assigns =
+      assigns
+      |> assign(:primary_filters, primary)
+      |> assign(:advanced_filters, advanced)
+
     ~H"""
     <form
       id={@id}
@@ -262,7 +276,7 @@ defmodule EmisarWeb.LiveTable do
       aria-disabled={@disabled}
     >
       <.filter_input
-        :for={filter <- @filters}
+        :for={filter <- @primary_filters}
         filter={filter}
         value={Map.get(@params, to_string(filter.name))}
         disabled={@disabled}
@@ -276,6 +290,27 @@ defmodule EmisarWeb.LiveTable do
       >
         &times;
       </.link>
+      <details
+        :if={@advanced_filters != []}
+        open={has_active_filters?(@params, @advanced_filters)}
+        class="group w-full"
+      >
+        <summary class="inline-flex w-max cursor-pointer list-none items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+          More filters
+          <.icon
+            name="hero-chevron-down"
+            class="h-3.5 w-3.5 transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div class="mt-3 flex flex-wrap items-end gap-3">
+          <.filter_input
+            :for={filter <- @advanced_filters}
+            filter={filter}
+            value={Map.get(@params, to_string(filter.name))}
+            disabled={@disabled}
+          />
+        </div>
+      </details>
     </form>
     """
   end
