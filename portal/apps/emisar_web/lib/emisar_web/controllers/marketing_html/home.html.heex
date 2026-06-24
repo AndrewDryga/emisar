@@ -274,63 +274,11 @@
     </div>
   </section>
 
-  <%!-- Watch it work — the live demo. It runs before the mechanism breakdown
-       below: watch the gated incident end to end first, then read how the
-       catalog, the gate, and the ledger make it safe. --%>
+  <%!-- Three-pillar deep-dive — the mechanism, placed right after the pain it
+       answers: the alternatives leave "no gate before, no record after"; emisar's
+       answer is a catalog, a gate, and a ledger. Unshaded, so it alternates
+       between the shaded pain above and the shaded demo below. --%>
   <section class="py-24 sm:py-32">
-    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          A real incident, start to finish.
-        </p>
-        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
-          investigate through declared actions, stop the writes behind one approval, and hand
-          back the durable fix as a Terraform PR — over MCP, no SSH, every step on the record.
-        </p>
-      </div>
-
-      <.emisar_demo />
-
-      <%!-- The four guarantees the demo just exercised, kept as scannable
-           value props (and crawlable copy). --%>
-      <dl class="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-        <%= for {icon, term, desc} <- [
-          {"hero-cpu-chip", "Any MCP client",
-           "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
-          {"hero-shield-exclamation", "Pack trust",
-           "New, custom, or changed hashes stop dispatch until an admin trusts the contents."},
-          {"hero-hand-raised", "Approvals & grants",
-           "Allow a single call, or mint a revocable grant bounded by duration, arguments, runner, and use count."},
-          {"hero-document-check", "Searchable audit",
-           "Inspect actor and subject context in the portal, or stream NDJSON to your SIEM."}
-        ] do %>
-          <div>
-            <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <.icon name={icon} class="h-4 w-4 flex-none text-brand-400" />{term}
-            </dt>
-            <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
-          </div>
-        <% end %>
-      </dl>
-
-      <p class="mt-10 text-center text-sm">
-        <.link
-          navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Read the full post-mortem — the multipath race, the dmesg window, and the Terraform fix
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </p>
-    </div>
-  </section>
-
-  <%!-- Three-pillar deep-dive. Shaded so the page keeps a clean shaded/unshaded
-       alternation (otherwise demo → pillars → comparison runs three light
-       sections in a row). --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Three pillars</h2>
@@ -492,6 +440,59 @@
     </div>
   </section>
 
+  <%!-- Watch it work — the live demo, right after the mechanism above: the
+       reader has seen the catalog, the gate, and the ledger; now all three run
+       a real incident end to end. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          A real incident, start to finish.
+        </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
+          A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
+          investigate through declared actions, stop the writes behind one approval, and hand
+          back the durable fix as a Terraform PR — over MCP, no SSH, every step on the record.
+        </p>
+      </div>
+
+      <.emisar_demo />
+
+      <%!-- The four guarantees the demo just exercised, kept as scannable
+           value props (and crawlable copy). --%>
+      <dl class="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+        <%= for {icon, term, desc} <- [
+          {"hero-cpu-chip", "Any MCP client",
+           "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
+          {"hero-shield-exclamation", "Pack trust",
+           "New, custom, or changed hashes stop dispatch until an admin trusts the contents."},
+          {"hero-hand-raised", "Approvals & grants",
+           "Allow a single call, or mint a revocable grant bounded by duration, arguments, runner, and use count."},
+          {"hero-document-check", "Searchable audit",
+           "Inspect actor and subject context in the portal, or stream NDJSON to your SIEM."}
+        ] do %>
+          <div>
+            <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name={icon} class="h-4 w-4 flex-none text-brand-400" />{term}
+            </dt>
+            <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
+          </div>
+        <% end %>
+      </dl>
+
+      <p class="mt-10 text-center text-sm">
+        <.link
+          navigate={~p"/use-cases/csi-data-loss"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Read the full post-mortem — the multipath race, the dmesg window, and the Terraform fix
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
+    </div>
+  </section>
+
   <%!-- Comparison table --%>
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
@@ -577,9 +578,54 @@
     </div>
   </section>
 
-  <%!-- Zero Trust validation — third-party framework. Shaded so it pops
-    between the comparison table above and the example workflows below. --%>
+  <%!-- Use cases --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">Example workflows</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
+          Operational actions teams can expose without exposing a shell.
+        </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
+          The incident the demo just walked through is one workflow. The same gate fits routine
+          datastore operations just as well.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
+        <%= for {tag, title, scenario, icon, href} <- [
+          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
+          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"}
+        ] do %>
+          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
+            <div class="flex items-center justify-between">
+              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+                <.icon name={icon} class="h-5 w-5" />
+              </div>
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                {tag}
+              </span>
+            </div>
+            <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
+            <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
+            <.link
+              :if={href}
+              navigate={href}
+              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+            >
+              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+            </.link>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Zero Trust validation — the third-party-framework authority capstone,
+       last of the proof run (comparison → use cases → here) before pricing.
+       Unshaded, alternating between the shaded use cases above and shaded
+       pricing below. --%>
+  <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Zero Trust for AI Agents</h2>
@@ -629,49 +675,6 @@
           Not affiliated with or endorsed by Anthropic. We cite the framework because emisar is
           built to the control set it describes.
         </p>
-      </div>
-    </div>
-  </section>
-
-  <%!-- Use cases --%>
-  <section class="py-24 sm:py-32">
-    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-brand-400">Example workflows</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Operational actions teams can expose without exposing a shell.
-        </p>
-        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
-          The incident the demo just walked through is one workflow. The same gate fits routine
-          datastore operations just as well.
-        </p>
-      </div>
-
-      <div class="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
-        <%= for {tag, title, scenario, icon, href} <- [
-          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
-          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"}
-        ] do %>
-          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
-            <div class="flex items-center justify-between">
-              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-                <.icon name={icon} class="h-5 w-5" />
-              </div>
-              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                {tag}
-              </span>
-            </div>
-            <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
-            <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
-            <.link
-              :if={href}
-              navigate={href}
-              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-            >
-              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
-          </div>
-        <% end %>
       </div>
     </div>
   </section>
