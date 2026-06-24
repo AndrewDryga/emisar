@@ -3,7 +3,6 @@ defmodule EmisarWeb.MarketingTest do
 
   @routes ~w(
     /
-    /ai
     /pricing
     /security
     /docs
@@ -141,43 +140,6 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.
     refute html =~ ~s(href="/app")
-  end
-
-  test "the /ai landing page leads with the blind-AI pain and converts", %{conn: conn} do
-    html = conn |> get(~p"/ai") |> html_response(200)
-
-    # Differentiated from home: lead with the relatable "your AI is blind" pain,
-    # then the practical three-step setup.
-    assert html =~ "brilliant"
-    assert html =~ "blind"
-    assert html =~ "Install the runner"
-    assert html =~ "Connect your LLM"
-    assert html =~ "Ask in plain English"
-
-    # The capabilities (the magic) and a brief safety reassurance. The deep
-    # security model + the live incident demo live on home/security — /ai
-    # points there instead of duplicating them.
-    assert html =~ "Read &amp; tail logs"
-    assert html =~ "gated catalog"
-    assert html =~ "No SSH, no standing access"
-    refute html =~ "data-emisar-demo"
-    assert html =~ ~s(href="/security")
-
-    # A convinced reader gets the Start-free conversion CTA.
-    assert html =~ "Start free"
-    assert html =~ ~s(href="/sign_up")
-
-    # FAQ accordion + its FAQPage rich data are driven by the same list.
-    assert html =~ "Is it safe to let an AI touch production?"
-    assert html =~ ~s("@type":"FAQPage")
-
-    # phx-no-format is a formatter directive — it must not reach the markup.
-    refute html =~ "phx-no-format"
-  end
-
-  test "the sitemap lists the /ai landing page", %{conn: conn} do
-    body = conn |> get(~p"/sitemap.xml") |> response(200)
-    assert body =~ "https://emisar.dev/ai</loc>"
   end
 
   test "the use-cases hub lists the case studies, links each, and carries an ItemList",

@@ -19,7 +19,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # query params, and emit a complete <title>/OG head.
   @indexable_routes ~w(
     /
-    /ai
     /pricing
     /security
     /docs
@@ -58,13 +57,13 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /guides/give-ai-agents-safe-production-access
   )
 
-  # The pages that emit a BreadcrumbList block. Home / /ai / /pricing carry
-  # bespoke JSON-LD graphs (Organization / SoftwareApplication / Product /
-  # FAQPage) with NO breadcrumb, so they're excluded — asserting a tag a
-  # page doesn't emit would be a false failure. Everything else (every
-  # @pages-generated page + the use-cases hub + the packs + changelog pages)
-  # derives a Home → [Docs →] page breadcrumb from its path.
-  @breadcrumb_routes @indexable_routes -- ~w(/ /ai /pricing)
+  # The pages that emit a BreadcrumbList block. Home and /pricing carry
+  # bespoke JSON-LD graphs (Organization / Product / FAQPage) with NO
+  # breadcrumb, so they're excluded — asserting a tag a page doesn't emit
+  # would be a false failure. Everything else (every @pages-generated page +
+  # the use-cases hub + the packs + changelog pages) derives a
+  # Home → [Docs →] page breadcrumb from its path.
+  @breadcrumb_routes @indexable_routes -- ~w(/ /pricing)
 
   # MarketingController GET routes that are NOT indexable HTML pages (feeds), so
   # they're excluded from the @indexable_routes parity guard below.

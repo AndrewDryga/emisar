@@ -3030,13 +3030,11 @@ defmodule EmisarWeb.CoreComponents do
           <.brand size={:md} />
         </.link>
 
-        <%!-- Desktop nav: visible md+. Five items along the buyer's path —
-             value, proof, trust, price, how. Packs/Changelog/About live in
-             the footer (and Packs is heavily body-linked). --%>
+        <%!-- Desktop nav: visible md+. Five items — use cases (proof),
+             security (trust), pricing, packs (the catalog), and docs. The
+             "what your AI gains" pitch leads the home page itself now;
+             Changelog and About live in the footer. --%>
         <nav class="hidden items-center gap-8 md:flex">
-          <.marketing_nav_link href={~p"/ai"} active={@current == :ai}>
-            For your AI
-          </.marketing_nav_link>
           <.marketing_nav_link href={~p"/use-cases"} active={@current == :use_cases}>
             Use cases
           </.marketing_nav_link>
@@ -3108,9 +3106,6 @@ defmodule EmisarWeb.CoreComponents do
           </div>
 
           <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
-            <.marketing_mobile_link href={~p"/ai"} active={@current == :ai}>
-              For your AI
-            </.marketing_mobile_link>
             <.marketing_mobile_link href={~p"/use-cases"} active={@current == :use_cases}>
               Use cases
             </.marketing_mobile_link>
@@ -3738,9 +3733,6 @@ defmodule EmisarWeb.CoreComponents do
             <div>
               <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h2>
               <ul class="mt-4 space-y-3 text-sm">
-                <li>
-                  <.link href={~p"/ai"} class="text-zinc-400 hover:text-zinc-100">For your AI</.link>
-                </li>
                 <li>
                   <.link href={~p"/how-it-works"} class="text-zinc-400 hover:text-zinc-100">
                     How it works
