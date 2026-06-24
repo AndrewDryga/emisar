@@ -6,10 +6,10 @@ risk: low
 description: >
   Show the Dell subsystem health rollup in one call — GET
   /redfish/v1/Systems/System.Embedded.1/Oem/Dell/DellRollupStatus. Returns a
-  member per subsystem (processor, memory, storage, fan, power supply, voltage,
-  intrusion, …) each with its rolled-up Status.Health, so one read tells you
-  exactly which subsystem is Warning or Critical. The fastest "what is
-  unhealthy on this box?" answer.
+  member per subsystem (Processor, Memory, Storage, Fan, PowerSupply, Voltage,
+  Intrusion, …), each with a SubSystem name and its RollupStatus (Ok / Warning
+  / Critical), so one read tells you exactly which subsystem is degraded. The
+  fastest "what is unhealthy on this box?" answer.
 side_effects:
   - One read-only Redfish GET of the Dell rollup-status collection.
   - Read-only.

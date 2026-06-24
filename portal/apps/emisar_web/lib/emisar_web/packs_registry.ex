@@ -242,7 +242,7 @@ defmodule EmisarWeb.PacksRegistry do
     {"Cloud & IaC", "cloud",
      ~w(aws-ec2 aws-s3 aws-rds aws-iam aws-cloudwatch aws-cost cloudflare terraform-readonly)},
     {"Networking, DNS & VPN", "networking",
-     ~w(bind frr firewall pfsense wireguard tailscale snmp nic bonding network-tls ssl-local time-sync)},
+     ~w(bind frr firewall pfsense wireguard tailscale snmp dell-idrac dell-ipmi nic bonding network-tls ssl-local time-sync)},
     {"Storage & filesystems", "storage",
      ~w(zfs nfs iscsi multipath pure-flasharray minio zot fs-search)},
     {"Linux & system", "linux",
