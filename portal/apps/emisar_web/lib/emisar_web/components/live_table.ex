@@ -524,11 +524,16 @@ defmodule EmisarWeb.LiveTable do
   by design — the cursor params aren't carried over.
   """
   def apply_filter(socket, path, params) when is_map(params) do
+    # Plug.Conn.Query.encode (NOT URI.encode_query) so a list-valued filter —
+    # `outcome: ["danger", "warn"]` from the "Problems only" toggle, a multi-select
+    # picker — encodes as `outcome[]=danger&outcome[]=warn` and round-trips back to
+    # a list. URI.encode_query flattens a list to one mangled value ("dangerwarn"),
+    # which then crashes `"danger" in "dangerwarn"` on the next render.
     query =
       params
       |> Map.drop(["_target"])
       |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
-      |> URI.encode_query()
+      |> Plug.Conn.Query.encode()
 
     to = if query == "", do: path, else: "#{path}?#{query}"
     Phoenix.LiveView.push_patch(socket, to: to)

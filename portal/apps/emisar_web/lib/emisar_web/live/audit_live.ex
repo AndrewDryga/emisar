@@ -164,7 +164,7 @@ defmodule EmisarWeb.AuditLive do
   # The "Problems only" toggle is on when the Outcome filter is exactly the two
   # non-routine outcomes (failures + denials/removals) the audit dots color.
   defp problems_only?(params) do
-    outcome = params["outcome"] || []
+    outcome = List.wrap(params["outcome"])
     "danger" in outcome and "warn" in outcome
   end
 

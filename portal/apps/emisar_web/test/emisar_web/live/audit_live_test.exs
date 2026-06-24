@@ -204,6 +204,36 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "ancient-actor"
     end
 
+    test "the Problems-only toggle filters to failures/denials without crashing (list-param round-trip)",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.sign_in_failed",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "failed-signin"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "runner.connected",
+          subject_kind: "runner",
+          subject_label: "routine-runner"
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+      assert html =~ "failed-signin"
+      assert html =~ "routine-runner"
+
+      # Toggling "Problems only" sets outcome=[danger, warn]; the list param must
+      # round-trip — it crashed when URI.encode_query flattened it to "dangerwarn"
+      # and the next render hit `"danger" in "dangerwarn"`.
+      html = lv |> element("button", "Problems only") |> render_click()
+
+      assert html =~ "failed-signin"
+      refute html =~ "routine-runner"
+    end
+
     test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
