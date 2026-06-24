@@ -1,0 +1,52 @@
+schema_version: 1
+id: frr.bgp_neighbor_shutdown
+title: vtysh -c "router bgp <asn>" -c "neighbor <peer> shutdown"
+kind: exec
+risk: high
+description: >
+  Administratively shut a BGP neighbor session via vtysh, withdrawing every
+  prefix this node advertises to that peer — the governed way to drain a node
+  from an anycast VIP so the upstream ECMP routes around it within a BFD
+  interval. Reversible: re-advertise with `no neighbor <peer> shutdown` once the
+  node is healthy. The change is to the running config only (not persisted), so a
+  daemon restart re-advertises. Pair with frr.bgp_summary to confirm PfxSnt drops
+  to 0 after the drain.
+side_effects:
+  - Shuts the BGP session to the named peer; this node withdraws every prefix it advertises to it (often just an anycast /32 — frr.bgp_summary PfxSnt shows the count).
+  - For an anycast VIP, upstream ECMP drops this node within a BFD interval and traffic shifts to the remaining advertisers.
+  - Running-config only — not written to startup-config, so an FRR restart or reboot re-advertises.
+  - Reversible with `no neighbor <peer> shutdown` (re-advertise when the node is healthy again).
+args:
+  - name: asn
+    type: integer
+    required: true
+    description: Local BGP autonomous system number (the `router bgp <asn>` this neighbor lives under).
+    validation:
+      min: 1
+      max: 4294967295
+  - name: peer
+    type: string
+    required: true
+    description: Neighbor to shut — an IPv4/IPv6 address, peer-group, or interface name.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$"
+execution:
+  command:
+    binary: vtysh
+    argv:
+      - "-c"
+      - "configure terminal"
+      - "-c"
+      - "router bgp {{ args.asn }}"
+      - "-c"
+      - "neighbor {{ args.peer }} shutdown"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain this node from the anycast VIP
+    args:
+      asn: 65010
+      peer: "10.0.0.1"
