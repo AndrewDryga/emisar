@@ -156,6 +156,13 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 | Faint / disabled | `text-zinc-600` | |
 | Code surface | `bg-zinc-900` | inline `<code>` |
 
+> **Contrast (WCAG AA).** `zinc-400` body/intro text clears AA on the `zinc-950`
+> ground (~7.8:1); `zinc-500` (~4:1) and `zinc-600` (~2.5:1) do **not**. So reserve
+> `zinc-500`/`zinc-600` for genuinely de-emphasized or decorative bits, and use
+> **`zinc-400` for any SMALL essential secondary text** — a `text-[10px]`/`text-xs`
+> label, scope, count, or timestamp an operator actually has to read. When in doubt
+> at a small size, go `zinc-400`.
+
 ### 3.2 Typography
 
 - **Family:** self-hosted **InterVariable** (`100–900`, `priv/static/fonts/`),

@@ -835,11 +835,11 @@ defmodule EmisarWeb.TeamLive do
                     <div class="mt-1 flex flex-wrap items-center gap-1">
                       <%= case Map.get(@scopes_by_membership, membership.id, []) do %>
                         <% [] -> %>
-                          <span class="text-[10px] text-zinc-600">
+                          <span class="text-[10px] text-zinc-400">
                             access: all runners
                           </span>
                         <% scopes -> %>
-                          <span class="text-[10px] uppercase tracking-wider text-zinc-600">
+                          <span class="text-[10px] uppercase tracking-wider text-zinc-400">
                             scope:
                           </span>
                           <.chip :for={scope <- scopes} tone={:neutral}>

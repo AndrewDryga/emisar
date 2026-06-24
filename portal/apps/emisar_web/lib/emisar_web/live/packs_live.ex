@@ -426,7 +426,7 @@ defmodule EmisarWeb.PacksLive do
                   <div>last seen <.local_time value={v.last_seen_at} class="text-zinc-300" /></div>
                   <div
                     :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}
-                    class="text-[10px] text-zinc-600"
+                    class="text-[10px] text-zinc-400"
                   >
                     first seen <.local_time value={v.first_seen_at} class="inline" />
                   </div>
