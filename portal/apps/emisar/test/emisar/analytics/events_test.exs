@@ -1,0 +1,96 @@
+defmodule Emisar.Analytics.EventsTest do
+  # async: false — flips the global `:mixpanel_enabled` app env.
+  use ExUnit.Case, async: false
+
+  alias Emisar.Analytics.Events
+  alias Emisar.Approvals.Request
+  alias Emisar.Runners.Runner
+  alias Emisar.Runs.ActionRun
+
+  setup do
+    Application.put_env(:emisar, :mixpanel_enabled, true)
+    Application.put_env(:emisar, :analytics_test_pid, self())
+
+    on_exit(fn ->
+      Application.put_env(:emisar, :mixpanel_enabled, false)
+      Application.delete_env(:emisar, :analytics_test_pid)
+    end)
+
+    :ok
+  end
+
+  describe "action_dispatched/1" do
+    test "operator run attributes to the requesting user" do
+      run = %ActionRun{
+        action_id: "linux_uptime",
+        runner_id: "rnr-1",
+        source: :operator,
+        requires_approval: false,
+        account_id: "acc-1",
+        requested_by_id: "usr-9"
+      }
+
+      Events.action_dispatched(run)
+
+      assert_receive {:mixpanel_track, [%{"event" => "action_dispatched", "properties" => props}]}
+      assert props["distinct_id"] == "usr-9"
+      assert props["action_id"] == "linux_uptime"
+      assert props["runner_id"] == "rnr-1"
+      assert props["source"] == "operator"
+      assert props["requires_approval"] == false
+      assert props["account_id"] == "acc-1"
+    end
+
+    test "agent (MCP) run with no user attributes to the account" do
+      run = %ActionRun{action_id: "x", source: :mcp, account_id: "acc-2", requested_by_id: nil}
+
+      Events.action_dispatched(run)
+
+      assert_receive {:mixpanel_track, [%{"properties" => props}]}
+      assert props["distinct_id"] == "account:acc-2"
+      assert props["source"] == "mcp"
+    end
+  end
+
+  test "run_finished/1 carries the terminal status, duration, and source" do
+    run = %ActionRun{
+      status: :success,
+      duration_ms: 1234,
+      source: :operator,
+      account_id: "acc-1",
+      requested_by_id: "usr-9"
+    }
+
+    Events.run_finished(run)
+
+    assert_receive {:mixpanel_track, [%{"event" => "run_finished", "properties" => props}]}
+    assert props["distinct_id"] == "usr-9"
+    assert props["status"] == "success"
+    assert props["duration_ms"] == 1234
+    assert props["account_id"] == "acc-1"
+  end
+
+  test "runner_connected/1 attributes to the account with runner metadata" do
+    runner = %Runner{id: "rnr-7", account_id: "acc-3", runner_version: "1.4.0"}
+
+    Events.runner_connected(runner)
+
+    assert_receive {:mixpanel_track, [%{"event" => "runner_connected", "properties" => props}]}
+    assert props["distinct_id"] == "account:acc-3"
+    assert props["runner_id"] == "rnr-7"
+    assert props["runner_version"] == "1.4.0"
+    assert props["account_id"] == "acc-3"
+  end
+
+  test "approval_decided/1 carries the decision and the approver" do
+    request = %Request{status: :approved, decided_by_id: "usr-4", account_id: "acc-5"}
+
+    Events.approval_decided(request)
+
+    assert_receive {:mixpanel_track, [%{"event" => "approval_decided", "properties" => props}]}
+    assert props["distinct_id"] == "account:acc-5"
+    assert props["decision"] == "approved"
+    assert props["approver_id"] == "usr-4"
+    assert props["account_id"] == "acc-5"
+  end
+end

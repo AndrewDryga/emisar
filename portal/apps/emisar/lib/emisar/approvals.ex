@@ -21,6 +21,7 @@ defmodule Emisar.Approvals do
   """
   alias Ecto.Multi
   alias Emisar.Accounts
+  alias Emisar.Analytics
   alias Emisar.ApiKeys
   alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
   alias Emisar.{Audit, Auth, Repo, Runs}
@@ -677,9 +678,11 @@ defmodule Emisar.Approvals do
 
   # Telemetry: count a request only when it reaches a TERMINAL decision. A
   # partial approval (still :pending below the threshold) is not an outcome.
-  defp count_approval_decision(%Request{status: status})
-       when status in [:approved, :denied, :expired],
-       do: Emisar.Telemetry.approval_decided(status)
+  defp count_approval_decision(%Request{status: status} = request)
+       when status in [:approved, :denied, :expired] do
+    Emisar.Telemetry.approval_decided(status)
+    Analytics.Events.approval_decided(request)
+  end
 
   defp count_approval_decision(_request), do: :ok
 

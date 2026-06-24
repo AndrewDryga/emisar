@@ -18,7 +18,7 @@ defmodule Emisar.Runners do
   socket's own subject upstream.
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
+  alias Emisar.{Accounts, Analytics, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
   alias Emisar.Runners.{AuthKey, Authorizer, Presence, Runner, Token, UserRunnerScope}
@@ -432,9 +432,12 @@ defmodule Emisar.Runners do
         Logger.warning("presence track failed for runner #{runner.id}: #{inspect(reason)}")
     end
 
-    runner
-    |> Runner.Changeset.connected()
-    |> Repo.update()
+    changeset = Runner.Changeset.connected(runner)
+
+    with {:ok, connected} <- Repo.update(changeset) do
+      Analytics.Events.runner_connected(connected)
+      {:ok, connected}
+    end
   end
 
   @doc """

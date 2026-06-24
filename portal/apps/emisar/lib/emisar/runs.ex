@@ -6,7 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo}
+  alias Emisar.{Analytics, ApiKeys, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -678,6 +678,7 @@ defmodule Emisar.Runs do
     case create_run(attrs, audit: audit, compose: compose) do
       {:ok, run} ->
         with :ok <- dispatch_to_runner(run) do
+          Analytics.Events.action_dispatched(run)
           {:ok, :running, run}
         end
 
@@ -1235,6 +1236,7 @@ defmodule Emisar.Runs do
 
     if ActionRun.terminal?(run.status) do
       Emisar.Telemetry.run_finished(run.status, run.duration_ms)
+      Analytics.Events.run_finished(run)
     end
 
     :ok
