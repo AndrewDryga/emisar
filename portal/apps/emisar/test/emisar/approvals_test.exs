@@ -1327,6 +1327,43 @@ defmodule Emisar.ApprovalsTest do
     Repo.one(Decision.Query.approved_distinct_decider_count(request_id))
   end
 
+  defp approval_gated_mcp_dispatch_setup do
+    account = account_fixture()
+    user = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    subject = subject_for(user, account, role: :owner)
+    {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+    runner = runner_fixture(account_id: account.id)
+    _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+
+    _ =
+      policy_fixture(
+        account_id: account.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{
+            "low" => "allow",
+            "medium" => "allow",
+            "high" => "require_approval",
+            "critical" => "deny"
+          },
+          "overrides" => []
+        }
+      )
+
+    attrs = %{
+      runner_id: runner.id,
+      action_id: "linux.uptime",
+      args: %{},
+      reason: "deploy",
+      source: "mcp",
+      api_key_id: key.id,
+      idempotency_key: "idem-#{System.unique_integer([:positive])}"
+    }
+
+    %{attrs: attrs, subject: subject}
+  end
+
   # Account + an online (subscribed) runner + a parked request snapshotting
   # `opts` (min_approvals / allow_self_approval). The requester is a separate
   # user so self-approval is opt-in per test.
@@ -1952,6 +1989,18 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "atomic run + request creation (MAJOR-2)" do
+    test "approval-gated MCP dispatch creates a pending run and request through the domain path" do
+      %{attrs: attrs, subject: subject} = approval_gated_mcp_dispatch_setup()
+
+      assert {:ok, :pending_approval, %ActionRun{status: :pending_approval} = run} =
+               Runs.dispatch_run(attrs, subject)
+
+      assert {:ok, [%Request{run_id: run_id, status: :pending}], _} =
+               Approvals.list_pending_approval_requests(subject)
+
+      assert run_id == run.id
+    end
+
     test "a duplicate request for the same run is rejected by the unique constraint" do
       {_account, run} = run_fixture()
       {:ok, _} = Approvals.create_request(run, user_fixture().id, "first")
@@ -1963,38 +2012,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "an idempotency-replayed require-approval dispatch files only ONE request" do
-      account = account_fixture()
-      user = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-      subject = subject_for(user, account, role: :owner)
-      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      runner = runner_fixture(account_id: account.id)
-      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
-
-      _ =
-        policy_fixture(
-          account_id: account.id,
-          rules: %{
-            "schema_version" => 2,
-            "defaults" => %{
-              "low" => "allow",
-              "medium" => "allow",
-              "high" => "require_approval",
-              "critical" => "deny"
-            },
-            "overrides" => []
-          }
-        )
-
-      attrs = %{
-        runner_id: runner.id,
-        action_id: "linux.uptime",
-        args: %{},
-        reason: "deploy",
-        source: "mcp",
-        api_key_id: key.id,
-        idempotency_key: "idem-#{System.unique_integer([:positive])}"
-      }
+      %{attrs: attrs, subject: subject} = approval_gated_mcp_dispatch_setup()
 
       # Two calls with the same Idempotency-Key resolve to the SAME run; the
       # request insert (composed into create_run's Multi, on_conflict :nothing)

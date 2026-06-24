@@ -387,6 +387,7 @@ end
 - `use Emisar.DataCase, async: true` — sandboxed concurrent runs. Anything that spawns DB-touching processes must inherit `$callers` or be made synchronous in test env (see `notify_approvers_async?` config flag).
 - Fixtures build a real Subject when one is needed: `subject_for(user, account)` or `owner_subject_fixture/1` in `test/support/fixtures.ex`.
 - **Fixtures and tests never depend on a context function that exists only for them.** Build rows the fixture way (`Schema.Changeset.fun() |> Repo.insert`) or via the real Subject-gated API; put test-only inspectors in `test/support`, not the production context. A `defp` used by an internal flow stays private — don't promote it to public just so a test can reach it. Fixture code leaking into a context's public namespace is a smell.
+- Regression tests drive the domain API that failed, not database catalog introspection. For a migration/backstop, prove the relevant context operation succeeds or rejects correctly (`Runs.dispatch_run/2`, `Approvals.create_request/3`, etc.); only inspect schema catalogs when no meaningful domain path exists.
 - Every context change covers three paths: **happy path**, **denial path** (wrong role → `{:error, :unauthorized}`), **cross-account isolation** (account A subject cannot see account B rows → `{:error, :not_found}`). A write isn't done without the denial test.
 - No `Process.sleep` for synchronization. Use `assert_receive` with an explicit timeout (default 500ms) when crossing process boundaries.
 
