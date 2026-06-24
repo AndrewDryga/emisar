@@ -13,8 +13,10 @@
         emisar documentation
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
-        Install a runner, author packs, wire in an LLM. The full reference and example packs
-        live in the <.external_link href="https://github.com/andrewdryga/emisar">GitHub repo</.external_link>.
+        Install a runner, author packs, wire in an LLM — the reference is right here. emisar is
+        source-available, so the example packs and the full source are
+        <.external_link href="https://github.com/andrewdryga/emisar">on GitHub</.external_link>
+        too.
       </p>
     </div>
   </section>
@@ -28,9 +30,7 @@
            {~p"/docs/quickstart", "hero-rocket-launch", "Quickstart",
             "Sign up, install a runner, run your first action in under five minutes."},
            {~p"/docs/connect-an-llm", "hero-puzzle-piece", "Connect an LLM",
-            "Claude.ai and ChatGPT over remote MCP, or Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI via the stdio bridge."},
-           {~p"/docs/mcp-reference", "hero-code-bracket", "MCP reference",
-            "The methods, parameters, idempotency, and error taxonomy of the emisar MCP server — the contract once you're connected."}
+            "Claude.ai and ChatGPT over remote MCP, or Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI via the stdio bridge."}
          ]},
         {"Operate",
          [
@@ -58,6 +58,8 @@
          ]},
         {"Reference",
          [
+           {~p"/docs/mcp-reference", "hero-code-bracket", "MCP reference",
+            "The methods, parameters, idempotency, and error taxonomy of the emisar MCP server — the contract once you're connected."},
            {~p"/docs/security-model", "hero-shield-check", "Security model",
             "Trust boundary, searchable cloud audit, hash-chained runner journal, redaction-before-egress."},
            {~p"/pricing", "hero-credit-card", "Hosting & plans",
@@ -95,21 +97,6 @@
           </div>
         </div>
       <% end %>
-
-      <div class="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-sm text-zinc-400">
-        <span>
-          Everything else — example packs, the runner source, and the full reference — lives in
-          the repo.
-        </span>
-        <a
-          href="https://github.com/andrewdryga/emisar"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1.5 font-semibold text-brand-300 hover:text-brand-200"
-        >
-          Open on GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5" />
-        </a>
-      </div>
     </div>
   </section>
 
