@@ -1,0 +1,394 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Signed dispatch", nil}]} />
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        Signed dispatch
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+        By default a runner trusts the control plane to tell it what to run. Signed dispatch
+        removes that trust: with enforcement on, a runner executes an action only when it carries a
+        valid Ed25519 signature a real person produced in their own MCP client. The control plane
+        relays that signature — it holds no private key, so it can't forge, alter, redirect, or
+        replay one, and it can't originate a run at all. The signature, not the cloud, is the
+        authority.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">
+        It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
+        runbooks, scheduled runs, and API keys can't dispatch to that host — only a signed MCP call
+        runs. Turn it on where "a real human asked for this" must be cryptographically true, not
+        just policy-checked.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">How it works</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Three parties, one of them untrusted. Here is the path a signed dispatch takes:
+      </p>
+      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+        <li>
+          <strong>The MCP client signs.</strong>
+          When you call an action, the client builds a canonical message — the action id, a hash of
+          the arguments, a one-time nonce, and a timestamp — and signs it with an Ed25519 private
+          key that never leaves your machine.
+        </li>
+        <li>
+          <strong>The control plane relays.</strong>
+          The portal stores and forwards the signature verbatim inside the dispatch. It can't change
+          the action or its arguments without invalidating the signature, and it has no key to mint
+          a new one.
+        </li>
+        <li>
+          <strong>The runner verifies, then runs.</strong>
+          It checks the signature against a public key in its own config, checks the timestamp is
+          inside its freshness window, and checks the nonce hasn't been seen before. Only then does
+          it execute. Anything else comes back as a failed run with a reason.
+        </li>
+      </ol>
+      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">The trust anchor is the key itself.</strong>
+        A runner trusts only the key ids listed in its own config, established out of band — so a
+        dispatch signed for one trust domain can't be run by a host that doesn't hold its key. The
+        signature binds the action, args, nonce, and time, not a runner name the signer and the
+        cloud would have to agree on. Use a distinct key per environment — or per runner — so a
+        dispatch signed for staging can't be relayed to prod.
+      </div>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Turn it on</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Generate a keypair, install the public half on the runner, hand the private half to your MCP
+        client, and reload. The keypair is generated offline — the private key is printed locally
+        and sent nowhere.
+      </p>
+
+      <p class="mt-6 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-200">1. Generate a keypair on the runner host.</strong>
+        It prints a ready-to-paste config block (the public key) and two env vars (the private key).
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> emisar keygen --key-id mcp-prod-2026</pre>
+      </div>
+
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-200">2. Install the public key</strong>
+        in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>. The
+        public key is safe to commit.
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
+signing:
+  enforce_signatures: true
+  max_attestation_age: 24h
+  trusted_keys:
+    - key_id: mcp-prod-2026
+      public_key: &lt;hex from keygen&gt;</pre>
+      </div>
+
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-200">3. Give the private key to your MCP client</strong>
+        as environment variables — never on the portal, never in version control
+        (see <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          connect an LLM
+        </.link>).
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># on the machine running your MCP client — not the portal, not git</span>
+EMISAR_SIGNING_KEY=&lt;hex seed from keygen&gt;
+EMISAR_SIGNING_KEY_ID=mcp-prod-2026</pre>
+      </div>
+
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-200">4. Apply it.</strong>
+        Reload the runner — it rebuilds the verifier from config and re-advertises, so enforcement
+        (and every later rotation) takes effect live, no restart and no dropped runs.
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> sudo systemctl reload emisar</pre>
+      </div>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Then check it landed: the Runner page shows <strong class="text-zinc-200">Signed dispatch
+          only</strong>
+        and the Run button is disabled, an MCP
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>
+        runs, and an operator or runbook dispatch is refused with a clear message.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Distributing keys across a fleet
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The hard part of any signing scheme isn't the math — it's getting the right public key onto
+        every host and keeping it current. emisar keeps that boring on purpose.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">The public key is config, not a secret.</strong>
+            Ship it the way you already ship the rest of
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>
+            — cloud-init, Packer, Ansible, a golden image, your
+            infra repo. It's the same shape as an SSH certificate authority's public key or an
+            OpenBSD signify key: one public file, pinned on the host, distributed through a channel
+            you already trust.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">
+              The control plane is deliberately not the distributor.
+            </strong>
+            emisar never holds or hands out your signing keys — that's the whole point. Don't route
+            them through the portal; route them through whatever already provisions the host. The
+            one step you can't avoid is getting that first public key onto the box through a trusted
+            channel, which is the same channel that writes its config.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">
+              Pick the granularity that matches how you operate.
+            </strong>
+            One key per environment — staging, prod — is the usual right answer: a prod-signed
+            action can't run on staging or the reverse, and the operator's client is set for the
+            environment they're in. A distinct key per runner is maximum isolation (a dispatch
+            signed for one host can never be relayed to another) at the cost of the signer selecting
+            the matching key per target. A single fleet-wide key is simplest to run but gives up
+            that redirect protection.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">The private key is the crown jewel.</strong>
+            The Ed25519 seed in
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+            is what mints authority. Generate it offline, keep it in your secrets store or password
+            manager, and never let it reach the portal or git. Whoever holds it can sign actions for
+            every runner that trusts its key id.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Rotating keys</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_keys</code>
+        is a list, so rotation is add-then-remove with zero downtime — a reload applies each step
+        live, rebuilding the verifier from config without dropping the connection or any in-flight
+        run.
+      </p>
+      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+        <li>
+          Add the new key alongside the old in every runner's config and reload. Both keys verify
+          now.
+        </li>
+        <li>
+          Switch your MCP client to the new <code>EMISAR_SIGNING_KEY</code>
+          and <code>EMISAR_SIGNING_KEY_ID</code>.
+        </li>
+        <li>
+          Remove the old key from the config and reload again — once no live dispatch could still
+          carry its signature.
+        </li>
+      </ol>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        That last condition has a precise answer: a signature is only valid inside the
+        ±<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code> window, so waiting one window after you stop signing with the old key guarantees no valid
+        old-key dispatch remains. Step three can't strand a run.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Revoking a key</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        To revoke a compromised key, remove it from
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_keys</code>
+        and reload every runner that trusts it — it stops verifying immediately, no restart. Be
+        clear-eyed about two things:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Revocation is a fleet operation, not a switch.</strong>
+            A key is dead only on the runners that have received the updated config. Push the removal
+            through the same pipeline you used to distribute it, and treat "every runner reloaded"
+            as the completion bar — the control plane can't do this for you, by design.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">
+              The freshness window bounds replay, not a key holder.
+            </strong>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            limits how long one captured signature can be replayed; it does not limit someone who
+            holds the private key — they can mint fresh, valid signatures until you remove the public
+            key. A trusted key has no automatic expiry, so a leaked seed means: rotate now, across
+            the fleet.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Best practices</h2>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">One key per environment, named for its life.</strong>
+            A key id like
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-prod-2026</code>
+            says what it's for and when to roll it. Rotate on a cadence, not only after an incident.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Keep the public key in your infra repo.</strong>
+            Let config management own it next to the host's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>; never
+            hand-copy it to one box at a time. A diff and a deploy is your rotation record.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Set the window against your real SLAs.</strong>
+            If you combine signing with approvals, a parked run is re-dispatched with its
+            <em>original</em>
+            signature — so
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            must comfortably exceed your approval turnaround, or a slow approval is refused as stale.
+            A wider window means a longer replay exposure: choose deliberately
+            (see <.link
+              navigate={~p"/docs/policies-and-approvals"}
+              class="text-brand-400 hover:text-brand-300"
+            >
+              policies &amp; approvals
+            </.link>).
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Don't share one key across trust domains.</strong>
+            A fleet-wide key trades away redirect protection. Reach for it only when per-environment
+            keys are genuinely too much to operate — and write down that you did.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        What it does and doesn't guarantee
+      </h2>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Integrity, not availability.</strong>
+            A compromised control plane can still withhold or refuse to relay your signed dispatch.
+            Signing stops it from forging one; it can't force it to deliver yours.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Replay across a restart or reload.</strong>
+            The nonce cache is in memory. A restart — or a reload that rebuilds the verifier —
+            forgets which nonces it has seen, so a replay within
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            after one could pass. Persisting the cache is future hardening.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Queued while offline.</strong>
+            A dispatch that sits queued longer than
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            (runner offline, or a slow approval) is refused as stale and must be re-issued.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Troubleshooting a refusal
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        A refused dispatch comes back as a failed run whose error names the cause:
+      </p>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
+            — the dispatch carried no signature (it came from the portal, a runbook, or an API key,
+            or the MCP client isn't configured to sign). Run it from a client with
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+            set.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">unknown_key</code>
+            — the signature's key id isn't in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_keys</code>. Add the public
+            key and reload, or point the client at a key the runner trusts.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stale</code>
+            — the timestamp is outside the freshness window (clock skew, a long-queued run, or a
+            slow approval). Re-issue the run, check host clocks (NTP), or widen
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            if approvals are the cause.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bad_signature</code>
+            — the signature doesn't verify against the action, args, nonce, and time as relayed.
+            Wrong key, or the client and runner disagree on it — re-mint and re-distribute.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">replayed</code>
+            — this nonce was already used. The client double-sent; re-issue with a fresh dispatch.
+          </span>
+        </li>
+      </ul>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Where it sits in the threat model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/runners"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Fleet config &amp; reload <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Set the signing key on your client <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

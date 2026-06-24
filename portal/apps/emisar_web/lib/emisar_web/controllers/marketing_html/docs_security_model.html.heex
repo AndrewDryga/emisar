@@ -138,7 +138,14 @@
           replay through; and a request queued longer than <code>max_attestation_age</code>
           is refused as stale. Use a distinct key per runner or environment — a
           fleet-wide shared key lets a dispatch signed for one host be
-          redirected to another.
+          redirected to another. See
+          <.link
+            navigate={~p"/docs/signed-dispatch"}
+            class="text-brand-400 hover:text-brand-300"
+          >
+            signed dispatch
+          </.link>
+          for setup, fleet key distribution, rotation, and revocation.
         </li>
       </ol>
 
