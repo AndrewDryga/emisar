@@ -83,7 +83,7 @@ defmodule EmisarWeb.TeamLive do
          put_flash(
            socket,
            :error,
-           "Enable MFA on your own profile first — otherwise you'd lock yourself out."
+           "Enable 2FA on your own profile first — otherwise you'd lock yourself out."
          )}
 
       true ->
@@ -110,7 +110,7 @@ defmodule EmisarWeb.TeamLive do
              put_flash(socket, :error, "Only the account owner can change this setting.")}
 
           {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
+            {:noreply, put_flash(socket, :error, "Could not update 2FA setting.")}
         end
     end
   end

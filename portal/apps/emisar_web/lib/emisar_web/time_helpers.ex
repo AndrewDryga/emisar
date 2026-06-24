@@ -162,7 +162,7 @@ defmodule EmisarWeb.TimeHelpers do
       phx-update="ignore"
       datetime={@iso}
       data-format={Atom.to_string(@mode)}
-      class={@class}
+      class={["tabular-nums", @class]}
     >
       {@fallback}
     </time>

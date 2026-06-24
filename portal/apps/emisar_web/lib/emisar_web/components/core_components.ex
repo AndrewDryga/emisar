@@ -1017,8 +1017,7 @@ defmodule EmisarWeb.CoreComponents do
       to: selector,
       time: 200,
       transition:
-        {"transition transform ease-in duration-200",
-         "opacity-100 translate-y-0 sm:scale-100",
+        {"transition transform ease-in duration-200", "opacity-100 translate-y-0 sm:scale-100",
          "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"}
     )
   end
@@ -1690,7 +1689,10 @@ defmodule EmisarWeb.CoreComponents do
 
       <.source_badge source={run.source} label={run_actor(run)} class="max-w-[12rem] text-xs" />
   """
-  attr :source, :any, required: true, doc: "the run's `source` enum — :operator/:mcp/:runbook/:scheduled"
+  attr :source, :any,
+    required: true,
+    doc: "the run's `source` enum — :operator/:mcp/:runbook/:scheduled"
+
   attr :label, :string, required: true, doc: "the actor label, e.g. from `run_actor/1`"
   attr :class, :string, default: nil
 
@@ -2014,7 +2016,11 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <span
       :if={@count && @count > 0}
-      class={["rounded px-1.5 py-0.5 text-xs font-medium", count_badge_tone(@tone), @class]}
+      class={[
+        "rounded px-1.5 py-0.5 text-xs font-medium tabular-nums",
+        count_badge_tone(@tone),
+        @class
+      ]}
     >
       {@count}
     </span>
@@ -2718,9 +2724,9 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         <% @install_command == :mint_failed -> %>
           <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
-            We couldn't mint a bootstrap auth key just now. Open
+            We couldn't mint a runner key just now. Open
             <.link navigate={@on_failure_path} class="font-semibold underline">
-              settings → auth keys
+              Settings → Runner keys
             </.link>
             and create one manually, or refresh this page to try again.
           </div>
@@ -2738,8 +2744,8 @@ defmodule EmisarWeb.CoreComponents do
   Empty-state panel: a centered icon + headline + body + optional CTA.
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
-        Issue an auth key and run the installer on a host.
-        <:cta navigate={~p"/app/\#{@current_account}/settings/runners/auth-keys"}>Issue auth key</:cta>
+        Mint a runner key and run the installer on a host.
+        <:cta navigate={~p"/app/\#{@current_account}/settings/runners/auth-keys"}>New runner key</:cta>
       </.empty_state>
   """
   attr :icon, :string, required: true

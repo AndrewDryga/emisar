@@ -139,7 +139,7 @@ defmodule EmisarWeb.RunnersLive do
         <% @runners == [] && @metadata.count == 0 && connected?(@socket) -> %>
           <.empty_state icon="hero-cpu-chip" title="No runners yet">
             A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
-            auth key and gives you a one-liner to paste on a Linux or macOS box.
+            runner key and gives you a one-liner to paste on a Linux or macOS box.
             <:cta navigate={~p"/app/#{@current_account}/runners/install"}>Open install wizard</:cta>
           </.empty_state>
         <% @runners == [] && @metadata.count == 0 -> %>

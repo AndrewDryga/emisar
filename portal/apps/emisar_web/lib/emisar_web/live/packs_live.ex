@@ -347,7 +347,7 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <.page_intro>
-        Each <em>(pack, version)</em>
+        A pack is a versioned set of actions a runner is allowed to run. Each <em>(pack, version)</em>
         has a pinned trusted hash. Runners advertising the same
         contents match the pin; a different hash flips the pack into
         <strong class="text-amber-300">pending</strong>
@@ -440,7 +440,7 @@ defmodule EmisarWeb.PacksLive do
                 <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner advertised <code>{pack.id}</code> v{v.version} — a
                   pack we don't ship a baseline for. Dispatch is blocked
-                  until you approve its contents.
+                  until you trust its contents.
                 </p>
                 <p :if={not is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner is advertising a different hash. Dispatch is blocked

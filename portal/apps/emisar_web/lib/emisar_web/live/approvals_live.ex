@@ -307,7 +307,11 @@ defmodule EmisarWeb.ApprovalsLive do
 
         <%!-- 2. STANDING GRANTS --%>
         <section>
-          <.section_header title="Standing grants" count={@grants_metadata.count} count_tone={:neutral}>
+          <.section_header
+            title="Standing grants"
+            count={@grants_metadata.count}
+            count_tone={:neutral}
+          >
             <:actions>
               <p class="ml-auto hidden text-xs text-zinc-400 sm:block">
                 Approvals that auto-allow follow-up calls for a bounded window. Revocable here.

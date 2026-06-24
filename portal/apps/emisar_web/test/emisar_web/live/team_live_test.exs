@@ -613,7 +613,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
-      assert html =~ "Enable MFA on your own profile first"
+      assert html =~ "Enable 2FA on your own profile first"
     end
 
     test "an owner with MFA enforces it account-wide", %{conn: conn} do

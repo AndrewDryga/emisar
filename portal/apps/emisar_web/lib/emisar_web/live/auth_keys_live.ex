@@ -243,7 +243,8 @@ defmodule EmisarWeb.AuthKeysLive do
       </:actions>
 
       <.page_intro>
-        Single-use enrollment keys — each registers one new host as a runner, then it's spent.
+        Enrollment keys register new hosts as runners — a single-use key is spent on first
+        registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
       </.page_intro>
 
       <div class="space-y-6">
@@ -400,6 +401,14 @@ defmodule EmisarWeb.AuthKeysLive do
               <:chips>
                 <.chip>group: {key.group || "default"}</.chip>
                 <.chip :if={key.reusable}>Reusable</.chip>
+                <%!-- A reusable key with no expiry is a standing fleet-enrollment secret —
+                     flag it amber so a long-lived multi-host credential isn't read as routine. --%>
+                <.chip
+                  :if={key.reusable and is_nil(key.expires_at) and is_nil(key.revoked_at)}
+                  tone={:amber}
+                >
+                  No expiry
+                </.chip>
                 <.chip :if={not key.reusable}>Single-use</.chip>
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
