@@ -1233,6 +1233,10 @@ defmodule EmisarWeb.TeamLive do
     do:
       "Make #{name} an admin? Admins manage runners, policy, members, and approvals across the whole account."
 
+  defp role_change_confirm(name, "operator"),
+    do:
+      "Make #{name} an operator? Operators can dispatch runs to your fleet and approve gated actions."
+
   defp role_change_confirm(name, role),
     do: "Change #{name}'s role to #{String.capitalize(role)}?"
 

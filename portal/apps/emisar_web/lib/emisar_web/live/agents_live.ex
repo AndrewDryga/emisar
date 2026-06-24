@@ -1185,7 +1185,9 @@ defmodule EmisarWeb.AgentsLive do
       — per-account policy, and human approval on risky ones — so {@client_label}'s
       per-tool "allow this?" prompt is redundant for emisar's tools. Safe to silence:
       this only drops {@client_label}'s prompt. A risky action still pauses for approval
-      at emisar, and an out-of-policy one is still denied.
+      at emisar, and an out-of-policy one is still denied. What counts as "risky" is your
+      <strong class="text-zinc-200">Policy</strong> — keep the tiers you don't want run
+      unattended on require-approval or deny.
     </p>
     """
   end

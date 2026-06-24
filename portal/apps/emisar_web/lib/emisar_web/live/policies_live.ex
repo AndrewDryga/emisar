@@ -396,6 +396,12 @@ defmodule EmisarWeb.PoliciesLive do
     )
   end
 
+  # A "require approval" gate that adds no SECOND party — one approval needed and
+  # the requester may supply it. `to_string` guards both the int state and a raw
+  # form string mid-edit.
+  defp single_reviewer_gate?(approval),
+    do: approval["allow_self_approval"] && to_string(approval["min_approvals"]) == "1"
+
   defp weakening_sentence([one]), do: one
   defp weakening_sentence(many), do: Enum.join(many, " and ")
 
@@ -907,6 +913,16 @@ defmodule EmisarWeb.PoliciesLive do
             </p>
           </div>
         </div>
+
+        <%!-- A "require approval" tier that adds no SECOND party: one approval is
+             needed AND the requester may give it. We don't block it (self-approval
+             is a deliberate option), but an operator who set a tier to "require
+             approval" should know the defaults didn't actually add a reviewer. --%>
+        <.notice :if={single_reviewer_gate?(@approval)} variant={:warning} class="mt-3">
+          With 1 required approval and self-approval on, the requester can approve their
+          own gated action — this gate adds no second reviewer. Raise required approvals
+          or turn off self-approval for four-eyes control.
+        </.notice>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval

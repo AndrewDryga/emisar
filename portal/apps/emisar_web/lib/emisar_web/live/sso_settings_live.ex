@@ -1019,11 +1019,17 @@ defmodule EmisarWeb.SSOSettingsLive do
         </p>
       </div>
       <div class="space-y-3 sm:col-span-2">
-        <.input
-          field={@form[:satisfies_mfa]}
-          type="checkbox"
-          label="Sign-in through this provider satisfies the account's 2FA requirement"
-        />
+        <div>
+          <.input
+            field={@form[:satisfies_mfa]}
+            type="checkbox"
+            label="Sign-in through this provider satisfies the account's 2FA requirement"
+          />
+          <p class="mt-1 text-[11px] leading-relaxed text-amber-300/80">
+            Only enable if this provider enforces MFA itself — otherwise members who sign in
+            through it bypass your 2FA requirement.
+          </p>
+        </div>
         <.input
           field={@form[:enabled]}
           type="checkbox"
