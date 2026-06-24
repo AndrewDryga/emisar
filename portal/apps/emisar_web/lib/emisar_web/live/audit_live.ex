@@ -333,12 +333,14 @@ defmodule EmisarWeb.AuditLive do
         <:col :let={event} label="Event">
           <div class="flex items-start gap-2">
             <span
-              class={["mt-1.5 h-1.5 w-1.5 flex-none rounded-full", tone_dot(event.event_type)]}
+              class={["mt-1.5 h-2 w-2 flex-none rounded-full", tone_dot(event.event_type)]}
               aria-hidden="true"
             >
             </span>
             <div class="min-w-0">
-              <div class="text-sm text-zinc-200">{format_event_type(event.event_type)}</div>
+              <div class={["text-sm", event_title_class(event.event_type)]}>
+                {format_event_type(event.event_type)}
+              </div>
               <div class="font-mono text-[10px] text-zinc-500">{event.event_type}</div>
               <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
                 <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
@@ -583,6 +585,18 @@ defmodule EmisarWeb.AuditLive do
       :danger -> "bg-rose-400"
       :warn -> "bg-amber-400"
       :neutral -> "bg-zinc-700"
+    end
+  end
+
+  # Tint the event title by outcome so the rows an operator hunts for — a failure
+  # (rose), a denial/removal/expiry (amber) — pop out of a wall of routine sign-ins
+  # (which stay neutral zinc). The title carries the color, not just the 2px dot,
+  # so the signal reads at a glance without making every row loud.
+  defp event_title_class(event_type) do
+    case Audit.Event.Query.outcome(event_type) do
+      :danger -> "font-medium text-rose-200"
+      :warn -> "text-amber-200"
+      :neutral -> "text-zinc-200"
     end
   end
 
