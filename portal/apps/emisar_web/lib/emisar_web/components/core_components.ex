@@ -2843,7 +2843,11 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp risk_classes("low"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  # Risk is a SEVERITY ramp, not a policy outcome: low is the quiet neutral floor,
+  # NOT brand-green — green means "the gate allowed this", and a risk tier has had
+  # no decision. So it climbs neutral → amber → rose → deeper-rose, and the policy
+  # editor's tier cards (`tier_border/tier_dot`) mirror it exactly.
+  defp risk_classes("low"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp risk_classes("medium"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"

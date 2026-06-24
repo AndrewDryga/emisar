@@ -1062,13 +1062,18 @@ defmodule EmisarWeb.PoliciesLive do
   defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
   defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
 
-  defp tier_border("low"), do: "border-brand-500/20"
-  defp tier_border("medium"), do: "border-sky-500/20"
-  defp tier_border("high"), do: "border-amber-500/20"
-  defp tier_border("critical"), do: "border-rose-500/20"
+  # Risk is a SEVERITY ramp, not a policy outcome — so it climbs neutral → amber
+  # → rose → deeper-rose (low isn't "passed the gate"; green is reserved for an
+  # allow decision, which the tier's own dropdown shows). Matches `risk_pill`
+  # (`risk_classes/1`) one-for-one so a tier reads the same color here and on the
+  # action/pack lists. No sky — there is no fifth accent hue.
+  defp tier_border("low"), do: "border-zinc-700/50"
+  defp tier_border("medium"), do: "border-amber-500/20"
+  defp tier_border("high"), do: "border-rose-500/20"
+  defp tier_border("critical"), do: "border-rose-600/40"
 
-  defp tier_dot("low"), do: "bg-brand-400"
-  defp tier_dot("medium"), do: "bg-sky-400"
-  defp tier_dot("high"), do: "bg-amber-400"
-  defp tier_dot("critical"), do: "bg-rose-400"
+  defp tier_dot("low"), do: "bg-zinc-500"
+  defp tier_dot("medium"), do: "bg-amber-400"
+  defp tier_dot("high"), do: "bg-rose-400"
+  defp tier_dot("critical"), do: "bg-rose-500"
 end
