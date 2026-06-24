@@ -1991,6 +1991,27 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A subtle "read the docs" link from a console page intro to its docs page. Opens
+  the public, server-rendered docs in a new tab with an external glyph.
+
+      <.doc_link href="/docs/runners">Runner docs</.doc_link>
+  """
+  attr :href, :string, required: true
+  slot :inner_block, required: true
+
+  def doc_link(assigns) do
+    ~H"""
+    <.link
+      href={@href}
+      target="_blank"
+      class="inline-flex items-center gap-0.5 whitespace-nowrap font-medium text-brand-400 hover:text-brand-300"
+    >
+      {render_slot(@inner_block)}<.icon name="hero-arrow-up-right" class="h-3 w-3" />
+    </.link>
+    """
+  end
+
+  @doc """
   The bare heading-row above an UNbordered list/table section (distinct from
   `<.panel>`, which owns a bordered header). A `text-sm` section title, an
   optional inline `<.count_badge>`, and an optional `:actions` slot.

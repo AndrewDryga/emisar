@@ -333,6 +333,7 @@ defmodule EmisarWeb.AuditLive do
       <.page_intro>
         The append-only record of every action, approval, and access change in this account —
         exportable to your SIEM for independent, long-term retention.
+        <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
 
       <%!-- Pivot chips — "what did this ACTOR do" (a row click or a person/agent's

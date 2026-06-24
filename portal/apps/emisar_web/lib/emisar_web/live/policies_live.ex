@@ -614,7 +614,7 @@ defmodule EmisarWeb.PoliciesLive do
             <strong class="text-zinc-100">overrides</strong>
             for the exceptions. Need different rules for one runner or a group? Add a
             <strong class="text-zinc-100">targeted ruleset</strong>
-            below.
+            below. <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
           </:help>
         </.page_intro>
 

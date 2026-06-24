@@ -89,7 +89,7 @@ defmodule EmisarWeb.RunsLive do
 
       <.page_intro>
         Every action dispatched across your fleet, newest first — each row opens to its arguments,
-        output, and audit record.
+        output, and audit record. <.doc_link href="/docs/quickstart">Quickstart</.doc_link>
       </.page_intro>
 
       <LiveTable.live_table

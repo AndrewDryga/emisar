@@ -246,6 +246,7 @@ defmodule EmisarWeb.AuthKeysLive do
       <.page_intro>
         Enrollment keys register new hosts as runners — a single-use key is spent on first
         registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
+        <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
       </.page_intro>
 
       <div class="space-y-6">

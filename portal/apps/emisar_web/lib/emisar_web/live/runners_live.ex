@@ -124,7 +124,7 @@ defmodule EmisarWeb.RunnersLive do
 
       <.page_intro>
         Live connection state for every host in your fleet — a runner must be connected before you
-        can dispatch an action to it.
+        can dispatch an action to it. <.doc_link href="/docs/runners">Runner docs</.doc_link>
       </.page_intro>
 
       <%= cond do %>

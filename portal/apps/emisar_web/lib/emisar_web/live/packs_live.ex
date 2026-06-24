@@ -354,6 +354,7 @@ defmodule EmisarWeb.PacksLive do
         <strong class="text-amber-300">pending</strong>
         — dispatch refuses runs against it until
         you Trust (adopt the new contents) or Reject (keep the pinned hash).
+        <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 
       <.notice
