@@ -118,6 +118,11 @@ defmodule Emisar.Workers.BillingSyncTest do
     # reconciles every mirror row against the vendor with no per-account authz, so
     # its contract is the Oban arity-1 perform/1 — no %Subject{} anywhere on the
     # path. (Confirms the documented internal-sweep posture.)
+    #
+    # function_exported?/3 reports false for a module that isn't loaded yet, which
+    # the async suite doesn't guarantee — force the load so the arity probe is
+    # deterministic rather than racing first-touch.
+    assert Code.ensure_loaded?(BillingSync)
     assert function_exported?(BillingSync, :perform, 1)
     refute function_exported?(BillingSync, :perform, 2)
 
