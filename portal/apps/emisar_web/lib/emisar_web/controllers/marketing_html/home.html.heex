@@ -347,57 +347,9 @@
     </div>
   </section>
 
-  <%!-- Mechanism pipeline --%>
-  <section id="mechanism" class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-        <div>
-          <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-brand-400">
-            The mechanism
-          </h2>
-          <p class="mt-4 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-            From model intent to verified receipt.
-          </p>
-        </div>
-        <p class="max-w-2xl text-lg leading-relaxed text-zinc-400 lg:justify-self-end">
-          No long-lived shells or hidden tools. Every request is narrowed by the action contract,
-          judged by policy, optionally approved by a person, re-validated on the runner, and
-          written to both the cloud audit and host journal.
-        </p>
-      </div>
-
-      <ol
-        class="relative mt-16 grid grid-cols-1 gap-4 lg:grid-cols-5"
-        aria-label="emisar action pipeline"
-      >
-        <%= for {step, label, title, desc, snippet, accent} <- [
-          {"01", "intent", "LLM asks for one declared action", "The model never gets a shell. It calls one MCP tool with typed arguments, target scope, and a required reason.", "nomad.job_revert\nreason: \"bad deploy\"", "text-sky-300"},
-          {"02", "contract", "Pack hash and args are checked", "The control plane checks trusted pack contents. The runner later recomputes the hash and validates every argument again.", "pack nomad@8f34… trusted\nargs re-validated", "text-brand-300"},
-          {"03", "gate", "Policy returns allow, approval, or deny", "Risk-tier defaults and action overrides decide whether the request can run, must wait, or is refused outright.", "risk: high\npolicy: require approval", "text-amber-300"},
-          {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "nomad job revert …\nexit 0 · 2.1s", "text-brand-300"},
-          {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "execution_completed\nprev 50c1… → 9a72…", "text-zinc-200"}
-        ] do %>
-          <li class="relative flex min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-950/70 p-5">
-            <div class="flex items-center justify-between gap-3">
-              <span class={["font-mono text-xs font-semibold", accent]}>{step}</span>
-              <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-                {label}
-              </span>
-            </div>
-            <h3 class="mt-5 text-base font-semibold text-zinc-50">{title}</h3>
-            <p class="mt-3 text-sm leading-6 text-zinc-400">{desc}</p>
-            <%!-- spacer pushes the snippet to the card's bottom so the code
-                 boxes align across cards regardless of description length --%>
-            <div class="grow"></div>
-            <pre class="mt-5 overflow-x-auto whitespace-pre-wrap border border-zinc-900 bg-black/35 p-3 font-mono text-[11px] leading-5 text-zinc-400">{snippet}</pre>
-          </li>
-        <% end %>
-      </ol>
-    </div>
-  </section>
-
-  <%!-- Watch it work — the live demo, placed after the mechanism so the
-       abstract pipeline pays off as a real, end-to-end incident. --%>
+  <%!-- Watch it work — the live demo. It runs before the mechanism breakdown
+       below: watch the gated incident end to end first, then read how the
+       catalog, the gate, and the ledger make it safe. --%>
   <section class="py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
@@ -459,8 +411,10 @@
           A catalog, a gate, and a ledger.
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Borrow what's safe about deploys: reviewed artifacts, explicit gates, and durable
-          history. Apply it to every operational command an LLM is allowed to request.
+          Every request is narrowed by the action contract, judged by policy, optionally held for a
+          person, re-validated on the runner, and written to both the cloud audit and the host
+          journal. It's what's safe about deploys — reviewed artifacts, explicit gates, durable
+          history — applied to every operational command an LLM can request.
         </p>
       </div>
 
@@ -760,13 +714,16 @@
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
           Operational actions teams can expose without exposing a shell.
         </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
+          The incident the demo just walked through is one workflow. The same gate fits routine
+          datastore operations just as well.
+        </p>
       </div>
 
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 sm:grid-cols-2">
         <%= for {tag, title, scenario, icon, href} <- [
           {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
-          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
-          {"incident", "Incident response", "A CSI driver reformats a live volume and wipes 33 hours of metrics. The agent reads the evidence, severs the bad path behind one approval, and lands a guard against a repeat as a Terraform PR.", "hero-bell-alert", ~p"/use-cases/csi-data-loss"}
+          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
