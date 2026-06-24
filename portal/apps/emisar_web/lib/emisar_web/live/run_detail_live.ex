@@ -122,6 +122,15 @@ defmodule EmisarWeb.RunDetailLive do
         </.detail_header>
       </:title>
       <:actions>
+        <%!-- The run id, copyable for a ticket or a log grep — the full UUID
+             without cluttering the meta strip (which deliberately dropped it). --%>
+        <.copy_button
+          text={@run.id}
+          label_copied="Copied id"
+          class="bg-transparent text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200"
+        >
+          <.icon name="hero-clipboard-document" class="-ml-0.5 mr-1 h-3.5 w-3.5" />Copy id
+        </.copy_button>
         <%!-- Close the loop: this run's slice of the audit trail (every event
              whose subject is this run). Subject-scoped by the audit page itself,
              so the link just pre-filters — it can't widen access. --%>

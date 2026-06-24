@@ -662,7 +662,7 @@ defmodule EmisarWeb.ProfileLive do
 
         <.settings_section
           title="Active sessions"
-          hint="Each row is one signed-in browser or device. Revoke any you don't recognize — your current device stays signed in."
+          hint="Each row is one signed-in browser or device. Sign out of any you don't recognize — your current device stays signed in."
         >
           <:meta>
             <.button
@@ -677,7 +677,11 @@ defmodule EmisarWeb.ProfileLive do
           </:meta>
 
           <ul class="divide-y divide-zinc-900 rounded-lg border border-zinc-900 bg-zinc-950/40 text-sm">
-            <.list_row :for={session <- @sessions} icon={session_device_icon(session)}>
+            <.list_row
+              :for={session <- @sessions}
+              icon={session_device_icon(session)}
+              class={current_session?(session, @current_session_digest) && "bg-brand-500/[0.04]"}
+            >
               <:title>
                 <span class="truncate font-medium text-zinc-100">
                   {session_device_label(session)}
@@ -695,10 +699,12 @@ defmodule EmisarWeb.ProfileLive do
                 <% end %>
               </:meta>
               <:actions>
+                <%!-- Neutral, not rose — a routine self-service sign-out shouldn't
+                     read as dangerous as the account-wide "Sign out everywhere else"
+                     (which keeps the danger tone). --%>
                 <.button
                   :if={not current_session?(session, @current_session_digest)}
                   variant="ghost"
-                  tone="danger"
                   size="sm"
                   phx-click="revoke_session"
                   phx-value-id={session.id}
