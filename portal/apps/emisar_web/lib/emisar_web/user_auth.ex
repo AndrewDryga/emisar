@@ -12,6 +12,7 @@ defmodule EmisarWeb.UserAuth do
 
   alias Emisar.{Accounts, Auth, SSO}
   alias Emisar.Auth.Subject
+  alias EmisarWeb.Analytics
   alias EmisarWeb.RequestContext
 
   @remember_me_cookie "_emisar_user_remember_me"
@@ -46,6 +47,10 @@ defmodule EmisarWeb.UserAuth do
   """
   def log_in_user(conn, user, auth_method, mfa, params \\ %{}, opts \\ []) do
     context = RequestContext.from_conn(conn)
+    # The anonymous device id + first-touch attribution live in the session,
+    # which `renew_session/1` is about to wipe — snapshot them first so the
+    # post-login merge event can stitch the pre-signup journey to the user.
+    pre_login = Analytics.capture_pre_login(conn)
 
     token =
       Auth.create_session_token!(
@@ -63,6 +68,7 @@ defmodule EmisarWeb.UserAuth do
     |> put_token_in_session(token)
     |> maybe_write_remember_me_cookie(token, params)
     |> maybe_flash_just_registered(user)
+    |> Analytics.track_authentication(user, auth_method, mfa, pre_login)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
 
@@ -117,6 +123,7 @@ defmodule EmisarWeb.UserAuth do
     end
 
     conn
+    |> Analytics.track_sign_out()
     |> renew_session()
     |> delete_resp_cookie(@remember_me_cookie)
     |> redirect(to: ~p"/")

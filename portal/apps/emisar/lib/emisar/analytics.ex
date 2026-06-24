@@ -112,7 +112,8 @@ defmodule Emisar.Analytics do
     end
   end
 
-  defp enabled?, do: Application.get_env(:emisar, :mixpanel_enabled, false)
+  @doc "Whether analytics is live (prod with a `MIXPANEL_TOKEN`). Off ⇒ everything no-ops."
+  def enabled?, do: Application.get_env(:emisar, :mixpanel_enabled, false)
 
   defp groups_enabled?, do: Application.get_env(:emisar, :mixpanel_groups_enabled, false)
 

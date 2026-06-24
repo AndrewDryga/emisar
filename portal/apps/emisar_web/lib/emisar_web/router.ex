@@ -13,6 +13,7 @@ defmodule EmisarWeb.Router do
     plug :put_secure_browser_headers
     plug EmisarWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_user
+    plug EmisarWeb.Plugs.Analytics
   end
 
   # `noindex` on every authenticated and auth-bound route. Indexable
