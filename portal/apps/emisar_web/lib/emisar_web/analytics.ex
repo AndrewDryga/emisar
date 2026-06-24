@@ -24,6 +24,9 @@ defmodule EmisarWeb.Analytics do
 
   @utm_params ~w(utm_source utm_medium utm_campaign utm_term utm_content)
 
+  # Console detail-page id segments to collapse so `path` doesn't explode.
+  @uuid_re ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
   # -- Funnel events ---------------------------------------------------
 
   @doc "Fire a `page_viewed` for the current (marketing/auth) request."
@@ -52,17 +55,16 @@ defmodule EmisarWeb.Analytics do
   Fire a `page_viewed` for a console (LiveView) navigation. The console is a
   LiveView app, so its in-app navigation never hits a controller — this is
   driven by the `:track_pageviews` `on_mount` hook (`handle_params`), with the
-  `uri` + the mount-captured `user_agent`. Always authenticated (distinct_id =
-  the user id). No IP/geo: behind Fly's LB the socket only sees the LB peer, and
-  the connect_info carries no `x-forwarded-for` — and the user is already
-  identified, so geo on console nav isn't worth a wrong city.
+  `uri` + the mount-captured `%RequestContext{}`. Always authenticated
+  (distinct_id = the user id). The path is normalized (account slug + detail
+  UUIDs collapsed to `/app/:account/…/:id`) so console pages aggregate.
   """
-  def track_console_pageview(user, uri, user_agent) do
+  def track_console_pageview(user, uri, context) do
     %URI{path: path} = URI.parse(uri)
-    ua = EmisarWeb.UserAgent.parse(user_agent)
+    ua = EmisarWeb.UserAgent.parse(context.user_agent)
 
     props = %{
-      "path" => path,
+      "path" => normalize_console_path(path),
       "authenticated" => true,
       "$current_url" => uri,
       "$browser" => ua.browser,
@@ -71,7 +73,7 @@ defmodule EmisarWeb.Analytics do
       "$device" => ua.device
     }
 
-    Analytics.track("page_viewed", user.id, props, user_id: user.id)
+    Analytics.track("page_viewed", user.id, props, user_id: user.id, ip: context.ip_address)
   end
 
   # -- Identity transitions (called from UserAuth) ---------------------
@@ -180,5 +182,22 @@ defmodule EmisarWeb.Analytics do
       [referer | _] -> URI.parse(referer).host
       _ -> nil
     end
+  end
+
+  # Console detail pages embed the account slug + run/runner UUIDs, which would
+  # explode `path` cardinality (every run id = a unique page). Normalize to
+  # templates so they aggregate: /app/acme/runs/<uuid> → /app/:account/runs/:id.
+  defp normalize_console_path(path) do
+    case String.split(path, "/") do
+      ["", "app", _account | rest] ->
+        Enum.join(["", "app", ":account" | Enum.map(rest, &mask_id/1)], "/")
+
+      _ ->
+        path
+    end
+  end
+
+  defp mask_id(segment) do
+    if Regex.match?(@uuid_re, segment), do: ":id", else: segment
   end
 end

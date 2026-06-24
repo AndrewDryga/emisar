@@ -313,13 +313,13 @@ defmodule EmisarWeb.UserAuth do
   # the twice-running mount to one event. UA captured at mount (connect-info is
   # mount-only) and closed over.
   def on_mount(:track_pageviews, _params, _session, socket) do
-    user_agent = Phoenix.LiveView.get_connect_info(socket, :user_agent)
+    context = RequestContext.from_socket(socket)
 
     hook = fn _params, uri, socket ->
       user = socket.assigns[:current_user]
 
       if user && Phoenix.LiveView.connected?(socket) do
-        Analytics.track_console_pageview(user, uri, user_agent)
+        Analytics.track_console_pageview(user, uri, context)
       end
 
       {:cont, socket}

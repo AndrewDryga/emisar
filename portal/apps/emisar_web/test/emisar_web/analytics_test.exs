@@ -143,7 +143,11 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["authenticated"] == true
       assert props["distinct_id"] == user.id
       assert props["$user_id"] == user.id
-      assert props["path"] =~ "/app"
+      # Path is normalized — the account slug collapses to :account so console
+      # pages aggregate (UUID detail segments collapse to :id the same way).
+      assert props["path"] == "/app/:account"
+      # The client IP is forwarded (test peer, since no x-forwarded-for header).
+      assert props["ip"]
     end
   end
 end

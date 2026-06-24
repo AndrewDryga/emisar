@@ -31,23 +31,42 @@ defmodule EmisarWeb.RequestContext do
   @doc """
   Request context for a LiveView socket, from its connect info. Carries
   IP + user agent only — request id and MCP session are HTTP-request
-  concerns the socket doesn't have. Requires `:peer_data` and
-  `:user_agent` in the endpoint's `socket "/live"` `connect_info`.
+  concerns the socket doesn't have. Like `from_conn/1`, the client IP comes
+  from `x-forwarded-for` (Fly's LB is the socket's only peer, so without it
+  the audit/geo IP would be the load balancer). Requires `:peer_data`,
+  `:user_agent`, and `:x_headers` in the endpoint's `socket "/live"`
+  `connect_info`.
   """
   def from_socket(socket) do
+    peer_ip = format_peer_ip(Phoenix.LiveView.get_connect_info(socket, :peer_data))
+
     RequestContext.new(%{
-      ip_address:
-        normalize_ip(format_peer_ip(Phoenix.LiveView.get_connect_info(socket, :peer_data))),
+      ip_address: normalize_ip(forwarded_for_socket(socket) || peer_ip),
       user_agent: Phoenix.LiveView.get_connect_info(socket, :user_agent)
     })
   end
 
   defp forwarded_for(conn) do
     case get_req_header(conn, "x-forwarded-for") do
-      [val | _] -> val |> String.split(",") |> List.first() |> String.trim()
+      [val | _] -> first_forwarded(val)
       [] -> nil
     end
   end
+
+  defp forwarded_for_socket(socket) do
+    case Phoenix.LiveView.get_connect_info(socket, :x_headers) do
+      headers when is_list(headers) ->
+        case List.keyfind(headers, "x-forwarded-for", 0) do
+          {_name, val} -> first_forwarded(val)
+          nil -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp first_forwarded(val), do: val |> String.split(",") |> List.first() |> String.trim()
 
   defp peer_ip(%{remote_ip: ip}) when is_tuple(ip),
     do: ip |> :inet_parse.ntoa() |> to_string()
