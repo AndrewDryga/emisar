@@ -135,6 +135,18 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
+  def handle_event("toggle_problems", _params, socket) do
+    params = socket.assigns.filter_params
+
+    merged =
+      if problems_only?(params),
+        do: Map.delete(params, "outcome"),
+        else: Map.put(params, "outcome", ["danger", "warn"])
+
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
+  end
+
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
            page_size: 50,
@@ -148,6 +160,13 @@ defmodule EmisarWeb.AuditLive do
   # Quick relative-range presets for the audit date filter — re-adds the buttons
   # the date-unification dropped, now setting the unified bar's :from.
   defp audit_presets, do: [{"Last hour", "1h"}, {"Last 24 hours", "24h"}, {"Last 7 days", "7d"}]
+
+  # The "Problems only" toggle is on when the Outcome filter is exactly the two
+  # non-routine outcomes (failures + denials/removals) the audit dots color.
+  defp problems_only?(params) do
+    outcome = params["outcome"] || []
+    "danger" in outcome and "warn" in outcome
+  end
 
   # Window → the "YYYY-MM-DDTHH:MM" UTC string the :from datetime filter parses
   # (now minus the window). Computed at click time so the range stays anchored to
@@ -315,6 +334,25 @@ defmodule EmisarWeb.AuditLive do
           class="rounded-md bg-zinc-900 px-2 py-1 font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
         >
           {label}
+        </button>
+        <span class="mx-1 h-4 w-px bg-zinc-800" aria-hidden="true"></span>
+        <%!-- One-click "only the events that went wrong" — denials, removals, and
+             failures (the danger+warn outcomes) — so the rows an operator hunts for
+             surface out of a wall of routine sign-ins, without hand-building the
+             Outcome filter. Toggles the filter the bar already exposes. --%>
+        <button
+          type="button"
+          phx-click="toggle_problems"
+          aria-pressed={to_string(problems_only?(@filter_params))}
+          class={[
+            "rounded-md px-2 py-1 font-medium ring-1 transition",
+            if(problems_only?(@filter_params),
+              do: "bg-rose-500/15 text-rose-200 ring-rose-500/40",
+              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+            )
+          ]}
+        >
+          Problems only
         </button>
       </div>
 
