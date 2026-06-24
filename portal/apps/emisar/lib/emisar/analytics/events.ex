@@ -13,10 +13,16 @@ defmodule Emisar.Analytics.Events do
   event as a property regardless of `distinct_id`.
   """
 
+  alias Emisar.Accounts
   alias Emisar.Analytics
   alias Emisar.Approvals
+  alias Emisar.Auth.Subject
+  alias Emisar.Catalog
+  alias Emisar.Policies
+  alias Emisar.Runbooks
   alias Emisar.Runners
   alias Emisar.Runs
+  alias Emisar.Users
 
   # -- Runs ------------------------------------------------------------
 
@@ -63,7 +69,56 @@ defmodule Emisar.Analytics.Events do
     })
   end
 
+  # -- Catalog ---------------------------------------------------------
+
+  @doc "Engagement — an operator trusted a pack version (committed to a capability)."
+  def pack_trusted(%Catalog.PackVersion{} = pack_version, %Subject{} = subject) do
+    Analytics.track("pack_trusted", subject_distinct_id(subject), %{
+      "pack_id" => pack_version.pack_id,
+      "version" => pack_version.version,
+      "account_id" => pack_version.account_id
+    })
+  end
+
+  # -- Policies --------------------------------------------------------
+
+  @doc "Engagement — an operator changed a policy (configured the gate)."
+  def policy_updated(%Policies.Policy{} = policy, %Subject{} = subject) do
+    Analytics.track("policy_updated", subject_distinct_id(subject), %{
+      "scope_type" => to_string(policy.scope_type),
+      "account_id" => policy.account_id
+    })
+  end
+
+  # -- Runbooks --------------------------------------------------------
+
+  @doc "Engagement — a runbook was published."
+  def runbook_published(%Runbooks.Runbook{} = runbook, %Subject{} = subject) do
+    Analytics.track("runbook_published", subject_distinct_id(subject), %{
+      "runbook_id" => runbook.id,
+      "version" => runbook.version,
+      "account_id" => runbook.account_id
+    })
+  end
+
+  # -- Accounts --------------------------------------------------------
+
+  @doc "Team growth — a member was invited to the account."
+  def member_invited(%Accounts.Membership{} = membership, %Subject{} = subject) do
+    Analytics.track("member_invited", subject_distinct_id(subject), %{
+      "role" => to_string(membership.role),
+      "account_id" => membership.account_id
+    })
+  end
+
   # -- distinct_id resolution -----------------------------------------
+
+  # Operator actions attribute to the acting user; an actor-less or
+  # non-user subject falls back to the account handle.
+  defp subject_distinct_id(%Subject{actor: %Users.User{id: id}}), do: id
+
+  defp subject_distinct_id(%Subject{account: %Accounts.Account{id: id}}),
+    do: account_distinct_id(id)
 
   # Operator-initiated runs attribute to the user (so dispatch + outcome
   # share a distinct_id); MCP/agent runs have no person → the account.

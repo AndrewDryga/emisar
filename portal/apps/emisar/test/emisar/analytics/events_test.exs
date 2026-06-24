@@ -2,10 +2,16 @@ defmodule Emisar.Analytics.EventsTest do
   # async: false — flips the global `:mixpanel_enabled` app env.
   use ExUnit.Case, async: false
 
+  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Analytics.Events
   alias Emisar.Approvals.Request
+  alias Emisar.Auth.Subject
+  alias Emisar.Catalog.PackVersion
+  alias Emisar.Policies.Policy
+  alias Emisar.Runbooks.Runbook
   alias Emisar.Runners.Runner
   alias Emisar.Runs.ActionRun
+  alias Emisar.Users.User
 
   setup do
     Application.put_env(:emisar, :mixpanel_enabled, true)
@@ -92,5 +98,49 @@ defmodule Emisar.Analytics.EventsTest do
     assert props["decision"] == "approved"
     assert props["approver_id"] == "usr-4"
     assert props["account_id"] == "acc-5"
+  end
+
+  describe "operator engagement events attribute to the acting user" do
+    setup do
+      {:ok, subject: %Subject{actor: %User{id: "usr-1"}, account: %Account{id: "acc-1"}}}
+    end
+
+    test "pack_trusted/2", %{subject: subject} do
+      pack = %PackVersion{pack_id: "linux-core", version: "1.2.0", account_id: "acc-1"}
+      Events.pack_trusted(pack, subject)
+
+      assert_receive {:mixpanel_track, [%{"event" => "pack_trusted", "properties" => props}]}
+      assert props["distinct_id"] == "usr-1"
+      assert props["pack_id"] == "linux-core"
+      assert props["version"] == "1.2.0"
+      assert props["account_id"] == "acc-1"
+    end
+
+    test "policy_updated/2", %{subject: subject} do
+      Events.policy_updated(%Policy{scope_type: :runner, account_id: "acc-1"}, subject)
+
+      assert_receive {:mixpanel_track, [%{"event" => "policy_updated", "properties" => props}]}
+      assert props["distinct_id"] == "usr-1"
+      assert props["scope_type"] == "runner"
+      assert props["account_id"] == "acc-1"
+    end
+
+    test "runbook_published/2", %{subject: subject} do
+      Events.runbook_published(%Runbook{id: "rb-1", version: 3, account_id: "acc-1"}, subject)
+
+      assert_receive {:mixpanel_track, [%{"event" => "runbook_published", "properties" => props}]}
+      assert props["distinct_id"] == "usr-1"
+      assert props["runbook_id"] == "rb-1"
+      assert props["version"] == 3
+    end
+
+    test "member_invited/2", %{subject: subject} do
+      Events.member_invited(%Membership{role: :operator, account_id: "acc-1"}, subject)
+
+      assert_receive {:mixpanel_track, [%{"event" => "member_invited", "properties" => props}]}
+      assert props["distinct_id"] == "usr-1"
+      assert props["role"] == "operator"
+      assert props["account_id"] == "acc-1"
+    end
   end
 end

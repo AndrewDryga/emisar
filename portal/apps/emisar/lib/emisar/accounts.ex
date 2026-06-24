@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
+  alias Emisar.{Analytics, ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -1206,6 +1206,7 @@ defmodule Emisar.Accounts do
       |> Repo.commit_multi()
       |> case do
         {:ok, %{user: user, membership: membership}} ->
+          Analytics.Events.member_invited(membership, subject)
           {:ok, %{membership: membership, user: user, invitation_token: token}}
 
         # The partial unique index on (account_id, user_id) is the source of
