@@ -1,0 +1,38 @@
+schema_version: 1
+id: ipmi.sel_info
+title: Show SEL summary (count, capacity)
+kind: script
+risk: low
+description: >
+  Show the System Event Log summary — `ipmitool sel info`. Returns the entry
+  count, free space, percent used, last-add and last-erase timestamps, and the
+  overflow flag, without dumping every entry. Use it to decide whether the SEL
+  is filling up or has new events before pulling the full log.
+side_effects:
+  - One read-only IPMI SEL info query.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sel"
+    - "info"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: SEL fill level
+    args:
+      host: "10.0.0.10"

@@ -1,0 +1,49 @@
+schema_version: 1
+id: idrac.delete_job
+title: Delete one Lifecycle Controller job
+kind: script
+risk: medium
+description: >
+  Delete a single job from the queue by id — DELETE
+  /redfish/v1/Managers/iDRAC.Embedded.1/Jobs/JID_xxxxxxxxxxxx. The surgical
+  alternative to clear_job_queue: remove one stuck or unwanted job (find its
+  JID with jobs) without touching the rest of the queue. Deleting a scheduled
+  job discards its pending change; it does not undo a job that already
+  completed.
+side_effects:
+  - Deletes the one named job from the iDRAC job queue.
+  - If the job was scheduled (not yet applied), its pending change is discarded.
+  - Leaves all other jobs and the server's power state untouched.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: job_id
+    type: string
+    required: true
+    description: The job id to delete (JID_ followed by digits), as shown by jobs.
+    validation:
+      pattern: "^JID_[A-Za-z0-9]{1,40}$"
+      max_length: 44
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "DELETE"
+    - "/Managers/iDRAC.Embedded.1/Jobs/{{ args.job_id }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete a stuck job by id
+    args:
+      host: "idrac-web01.mgmt"
+      job_id: "JID_123456789012"

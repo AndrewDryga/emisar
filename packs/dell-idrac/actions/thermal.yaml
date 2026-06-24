@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.thermal
+title: Show fans and temperatures
+kind: script
+risk: low
+description: >
+  Show thermal telemetry — GET /redfish/v1/Chassis/System.Embedded.1/Thermal.
+  Returns each temperature sensor (inlet, exhaust, CPU) in Celsius with its
+  thresholds and each fan's RPM and Status.Health, plus fan redundancy. Use to
+  check for a hot inlet, a failed fan, or lost cooling redundancy. (Newer iDRAC
+  firmware also serves /ThermalSubsystem; this universal /Thermal resource
+  works on iDRAC8 and iDRAC9.)
+side_effects:
+  - One read-only Redfish GET of the Thermal resource.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Chassis/System.Embedded.1/Thermal"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Fans and temperatures
+    args:
+      host: "idrac-web01.mgmt"

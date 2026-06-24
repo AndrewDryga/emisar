@@ -1,0 +1,67 @@
+schema_version: 1
+id: idrac.power_control
+title: Reset / power-control the server
+kind: script
+risk: critical
+description: >
+  Change the server's power state via Redfish — POST
+  /redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset with the
+  chosen ResetType. GracefulShutdown and GracefulRestart ask the OS to stop
+  cleanly; ForceOff, ForceRestart, PowerCycle, and Nmi are abrupt and can lose
+  in-flight data. On (power up) and PushPowerButton (toggle) are also
+  available. Check the current state with system (PowerState) first. The exact
+  ResetType set varies by iDRAC firmware — the iDRAC rejects an unsupported
+  value with an error.
+side_effects:
+  - "GracefulShutdown / GracefulRestart: asks the OS to shut down or reboot in an orderly way (the OS may delay or refuse)."
+  - "ForceOff / ForceRestart / PowerCycle: abrupt power-off / reset with no OS coordination — unsaved data can be lost."
+  - "Nmi: sends a non-maskable interrupt (triggers a crash/diagnostic dump), not a clean power action."
+  - "On / PushPowerButton: powers up / toggles the virtual power button."
+  - Any restart or off drops every running service and open connection on the host.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: reset_type
+    type: string
+    required: true
+    description: >
+      Redfish ResetType. Graceful: GracefulShutdown, GracefulRestart. Forceful:
+      ForceOff, ForceRestart, PowerCycle, Nmi. Power up: On, PushPowerButton.
+    validation:
+      enum:
+        - "On"
+        - "GracefulShutdown"
+        - "GracefulRestart"
+        - "ForceRestart"
+        - "ForceOff"
+        - "PowerCycle"
+        - "PushPowerButton"
+        - "Nmi"
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "POST"
+    - "/Systems/System.Embedded.1/Actions/ComputerSystem.Reset"
+    - '{"ResetType":"{{ args.reset_type }}"}'
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Graceful restart
+    args:
+      host: "idrac-web01.mgmt"
+      reset_type: GracefulRestart
+  - title: Hard power-off an unresponsive host
+    args:
+      host: "idrac-web01.mgmt"
+      reset_type: ForceOff

@@ -1,0 +1,39 @@
+schema_version: 1
+id: idrac.storage
+title: Show storage controllers and drives
+kind: script
+risk: low
+description: >
+  List the storage subsystem with controllers and drives expanded in one call —
+  GET /redfish/v1/Systems/System.Embedded.1/Storage?$expand=*($levels=1).
+  Returns each controller (e.g. PERC) and its physical drives with capacity,
+  media type, and Status.Health, so you can spot a predicted or failed drive.
+  Read-only.
+side_effects:
+  - One read-only Redfish GET of the Storage collection, expanded one level.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Systems/System.Embedded.1/Storage?$expand=*($levels=1)"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Controllers and drive health
+    args:
+      host: "idrac-web01.mgmt"

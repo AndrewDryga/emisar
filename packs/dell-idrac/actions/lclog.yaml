@@ -1,0 +1,39 @@
+schema_version: 1
+id: idrac.lclog
+title: List Lifecycle Controller log entries
+kind: script
+risk: low
+description: >
+  List the Lifecycle Controller log — GET
+  /redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog/Entries. The LC log is
+  the iDRAC's own activity history: configuration changes, firmware updates, job
+  results, and component events, each with Created, Severity, MessageId, and
+  Message. Broader than the SEL (which is hardware faults only). Read-only.
+side_effects:
+  - One read-only Redfish GET of the Lifecycle Controller log entries.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Managers/iDRAC.Embedded.1/LogServices/Lclog/Entries"
+  timeout: 45s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Lifecycle Controller log
+    args:
+      host: "idrac-web01.mgmt"

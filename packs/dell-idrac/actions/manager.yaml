@@ -1,0 +1,39 @@
+schema_version: 1
+id: idrac.manager
+title: Show iDRAC manager state and firmware
+kind: script
+risk: low
+description: >
+  Show the iDRAC controller itself — GET
+  /redfish/v1/Managers/iDRAC.Embedded.1. Returns the iDRAC firmware version,
+  model, date/time, and its own Status.Health. Use to confirm the management
+  controller's firmware level and that the iDRAC is healthy, as distinct from
+  the server it manages.
+side_effects:
+  - One read-only Redfish GET of the Manager resource.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Managers/iDRAC.Embedded.1"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: iDRAC firmware and health
+    args:
+      host: "idrac-web01.mgmt"

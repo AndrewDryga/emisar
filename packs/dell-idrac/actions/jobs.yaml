@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.jobs
+title: List Lifecycle Controller jobs
+kind: script
+risk: low
+description: >
+  List the Lifecycle Controller job queue — GET
+  /redfish/v1/Managers/iDRAC.Embedded.1/Jobs?$expand=*($levels=1). Each job is
+  expanded inline with its Id (JID_...), JobState (Scheduled / Running /
+  Completed / Failed), PercentComplete, and Message. The answer to "what
+  config/firmware jobs are queued or running, and how far along?". A queued job
+  shows JobState Scheduled — read PercentComplete for true progress. Read-only.
+side_effects:
+  - One read-only Redfish GET of the iDRAC job collection, expanded one level.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Managers/iDRAC.Embedded.1/Jobs?$expand=*($levels=1)"
+  timeout: 45s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All jobs with state and progress
+    args:
+      host: "idrac-web01.mgmt"

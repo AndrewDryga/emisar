@@ -1,0 +1,57 @@
+schema_version: 1
+id: idrac.clear_job_queue
+title: Clear the Lifecycle Controller job queue
+kind: script
+risk: high
+description: >
+  Clear the iDRAC job queue — POST
+  /redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DellJobService/Actions/DellJobService.DeleteJobQueue.
+  JID_CLEARALL deletes all scheduled jobs and the pending attribute values
+  attached to them; JID_CLEARALL_FORCE additionally restarts the Lifecycle
+  Controller services — a last resort when the iDRAC/LC is wedged. Use to
+  unstick a queue that is blocking new config or firmware jobs. Inspect the
+  queue with jobs first; this can cancel work that is mid-flight.
+side_effects:
+  - "JID_CLEARALL: deletes every scheduled job and discards the pending configuration values staged with them."
+  - "JID_CLEARALL_FORCE: the above, plus restarts the Lifecycle Controller services (brief LC unavailability)."
+  - Can cancel an in-progress configuration or firmware-update job; pending changes are lost, not applied.
+  - Does not change the server's power state or running OS.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: scope
+    type: string
+    required: false
+    default: JID_CLEARALL
+    description: >
+      JID_CLEARALL clears all scheduled jobs; JID_CLEARALL_FORCE also restarts
+      the LC services (last resort).
+    validation:
+      enum: ["JID_CLEARALL", "JID_CLEARALL_FORCE"]
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "POST"
+    - "/Managers/iDRAC.Embedded.1/Oem/Dell/DellJobService/Actions/DellJobService.DeleteJobQueue"
+    - '{"JobID":"{{ args.scope }}"}'
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear all scheduled jobs
+    args:
+      host: "idrac-web01.mgmt"
+  - title: Force-clear and restart LC services (wedged iDRAC)
+    args:
+      host: "idrac-web01.mgmt"
+      scope: JID_CLEARALL_FORCE

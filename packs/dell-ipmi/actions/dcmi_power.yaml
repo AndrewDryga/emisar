@@ -1,0 +1,40 @@
+schema_version: 1
+id: ipmi.dcmi_power
+title: Show DCMI power reading (watts)
+kind: script
+risk: low
+description: >
+  Show real-time power draw via DCMI — `ipmitool dcmi power reading`. Returns
+  the instantaneous, minimum, maximum, and average power consumption in watts
+  over the BMC's sampling period, plus the sampling timestamp. The direct
+  answer to "how much is this server drawing right now?" on BMCs that support
+  DCMI.
+side_effects:
+  - One read-only DCMI power-statistics query.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "dcmi"
+    - "power"
+    - "reading"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Current power draw
+    args:
+      host: "10.0.0.10"

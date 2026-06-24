@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.sel
+title: List System Event Log entries
+kind: script
+risk: low
+description: >
+  List the System Event Log — GET
+  /redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries. Each entry has
+  Created, Severity (OK / Warning / Critical), Message, MessageId, and the
+  sensor that raised it — the hardware-fault history (ECC, PSU, thermal,
+  intrusion). Read-only. For a long log, page with the generic get action and
+  ?$skip=N, or filter with ?$filter=Severity eq 'Critical'.
+side_effects:
+  - One read-only Redfish GET of the SEL entries collection.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries"
+  timeout: 45s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: System Event Log
+    args:
+      host: "idrac-web01.mgmt"

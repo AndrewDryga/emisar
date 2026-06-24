@@ -1,0 +1,39 @@
+schema_version: 1
+id: ipmi.chassis_status
+title: Chassis status (power, intrusion, faults)
+kind: script
+risk: low
+description: >
+  Show the BMC chassis status — `ipmitool chassis status`. Returns System
+  Power (on/off), Power Restore Policy and Last Power Event, plus the Chassis
+  Intrusion, Drive Fault, and Cooling/Fan Fault flags. The fastest power +
+  health snapshot, and the action to verify the pack can reach and
+  authenticate to a BMC.
+side_effects:
+  - One read-only IPMI chassis-status query.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "chassis"
+    - "status"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Chassis status for a BMC
+    args:
+      host: "10.0.0.10"

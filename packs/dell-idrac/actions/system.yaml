@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.system
+title: Show system identity, power state, health
+kind: script
+risk: low
+description: >
+  Show the server's top-line state — GET /redfish/v1/Systems/System.Embedded.1.
+  Returns model, service tag (SKU), BIOS version, PowerState (On/Off), the
+  overall Status.HealthRollup (OK / Warning / Critical, aggregating subordinate
+  subsystems), and the inline ProcessorSummary and MemorySummary health. The
+  starting point for "what is this server and is it healthy?", and the action to
+  verify the pack can reach and authenticate to an iDRAC.
+side_effects:
+  - One read-only Redfish GET of the ComputerSystem resource.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Systems/System.Embedded.1"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: System identity and health
+    args:
+      host: "idrac-web01.mgmt"

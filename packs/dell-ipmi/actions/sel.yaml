@@ -1,0 +1,39 @@
+schema_version: 1
+id: ipmi.sel
+title: List System Event Log entries
+kind: script
+risk: low
+description: >
+  List the BMC System Event Log — `ipmitool sel elist`. One row per event:
+  record id, date/time, sensor, decoded description, and asserted/deasserted.
+  The authoritative history of hardware faults (ECC errors, PSU loss, thermal
+  trips, intrusion). The iDRAC SEL is bounded and circular (512-1024 entries),
+  so a full log can be large.
+side_effects:
+  - One read-only IPMI System Event Log read.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sel"
+    - "elist"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Full event log
+    args:
+      host: "10.0.0.10"

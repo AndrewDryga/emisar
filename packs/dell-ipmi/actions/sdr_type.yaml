@@ -1,0 +1,50 @@
+schema_version: 1
+id: ipmi.sdr_type
+title: List sensors of one type
+kind: script
+risk: low
+description: >
+  List only the sensors of a chosen type — `ipmitool sdr type <type>`. Narrows
+  the SDR read to Temperature, Fan, Voltage, Current, or Power Supply so you
+  get just the readings you care about (e.g. all inlet/exhaust temps, or all
+  PSU sensors) without scanning the full repository.
+side_effects:
+  - One read-only IPMI SDR read filtered by sensor type.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: type
+    type: string
+    required: true
+    description: Sensor type to list.
+    validation:
+      enum: ["Temperature", "Fan", "Voltage", "Current", "Power Supply"]
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sdr"
+    - "type"
+    - "{{ args.type }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: All temperature sensors
+    args:
+      host: "10.0.0.10"
+      type: Temperature
+  - title: All power-supply sensors
+    args:
+      host: "10.0.0.10"
+      type: Power Supply

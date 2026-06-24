@@ -1,0 +1,59 @@
+schema_version: 1
+id: ipmi.power_control
+title: Control chassis power
+kind: script
+risk: critical
+description: >
+  Change the server's power state — `ipmitool chassis power <op>`. Only "soft"
+  is graceful (it sends an ACPI shutdown the OS can act on); "off", "cycle",
+  "reset", and "diag" are abrupt and can lose in-flight data — treat them like
+  pulling the plug. Prefer an OS-level shutdown or the iDRAC graceful path when
+  one is available; reach for this when the host is unresponsive. Confirm the
+  current state with power_status first.
+side_effects:
+  - "on: powers the chassis up."
+  - "off: immediate hard power-down (ACPI S4/S5) — NOT an OS-coordinated shutdown; unsaved data can be lost."
+  - "soft: graceful ACPI shutdown the OS performs in an orderly way (the only graceful option; the OS may delay or veto it)."
+  - "cycle: hard power-off then on."
+  - "reset: hard reset with no power-off."
+  - "diag: pulses an NMI to the CPUs (triggers a crash/diagnostic dump), not a power-state change."
+  - All non-graceful options drop every running service and open connection at once.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: operation
+    type: string
+    required: true
+    description: >
+      Power operation. "soft" is graceful (ACPI); "off", "cycle", "reset", and
+      "diag" are abrupt. "on" powers up.
+    validation:
+      enum: ["on", "off", "soft", "cycle", "reset", "diag"]
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "chassis"
+    - "power"
+    - "{{ args.operation }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Graceful shutdown (ACPI)
+    args:
+      host: "10.0.0.10"
+      operation: soft
+  - title: Hard reset an unresponsive host
+    args:
+      host: "10.0.0.10"
+      operation: reset

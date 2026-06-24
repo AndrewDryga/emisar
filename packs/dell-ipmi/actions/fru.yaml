@@ -1,0 +1,38 @@
+schema_version: 1
+id: ipmi.fru
+title: Show FRU inventory
+kind: script
+risk: low
+description: >
+  Show field-replaceable-unit inventory — `ipmitool fru print`. Returns board
+  and product manufacturer, name, part number, and serial for the chassis and
+  each FRU device (PSUs appear as their own devices). The Serial fields carry
+  the Dell service tag. Inventory and asset data; no live readings.
+side_effects:
+  - One read-only IPMI FRU inventory read.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "fru"
+    - "print"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Service tag and FRU inventory
+    args:
+      host: "10.0.0.10"

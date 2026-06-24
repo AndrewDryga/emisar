@@ -1,0 +1,93 @@
+schema_version: 1
+
+id: dell-ipmi
+name: Dell iDRAC / IPMI (ipmitool)
+version: 0.1.0
+description: >
+  Out-of-band BMC monitoring and power control over IPMI 2.0 (RMCP+/lanplus)
+  with ipmitool — sensor data records, full sensor readings with thresholds,
+  the System Event Log (SEL) and its summary, chassis + power state, FRU
+  inventory, BMC firmware (mc info) and self-test, LAN config, and DCMI power
+  draw. Plus gated mutators: chassis power control, one-time boot device, and
+  SEL clear. Targets a Dell iDRAC or any IPMI-over-LAN baseboard controller by
+  hostname/IP; credentials come from the runner environment. Reads are
+  read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - ipmitool
+
+# No detect block: ipmitool is a *client*, so its presence on the runner says
+# nothing about which BMCs to poll — every target is remote, reached by the
+# {{ args.host }} each action takes.
+
+setup:
+  summary: >
+    Every action runs ipmitool against the {{ args.host }} BMC you pass, over an
+    encrypted IPMI 2.0 (lanplus) session. The account name is read from
+    IPMI_USER and the password from IPMI_PASSWORD (via ipmitool's -E, so it
+    never appears in the process arguments or the audit log). Point actions at a
+    BMC by its hostname or IP.
+  env:
+    - name: IPMI_USER
+      required: true
+      description: >
+        BMC account name (ipmitool -U). Provision a dedicated, least-privilege
+        monitoring account; OPERATOR privilege covers every read plus chassis
+        power control.
+      example: monitor
+    - name: IPMI_PASSWORD
+      required: true
+      description: >
+        BMC account password. Read by ipmitool's -E straight from the
+        environment, so it never lands in argv, a `ps` listing, or the audit
+        log. We never pass -P.
+    - name: IPMI_CIPHER
+      required: false
+      default: "3"
+      description: >
+        RMCP+ cipher suite (-C). Default 3 (RAKP-HMAC-SHA1 + AES-128-CBC), the
+        reliable Dell baseline; ipmitool's own default changed 3->17 in 1.8.19,
+        so the pack always sets it. Suite 0 is refused (it disables wire
+        authentication — CVE-2013-4783). Set 17 for HMAC-SHA256 if the BMC
+        supports it.
+    - name: IPMI_PRIVLEVEL
+      required: false
+      default: OPERATOR
+      description: >
+        Requested privilege level (-L: USER, OPERATOR, or ADMINISTRATOR).
+        Default OPERATOR — enough for every read plus chassis power control,
+        and less than ipmitool's own ADMINISTRATOR default. Drop to USER for a
+        read-only account.
+  notes:
+    - "Any of IPMI_USER / IPMI_PASSWORD / IPMI_CIPHER / IPMI_PRIVLEVEL you set must also be allowlisted in the runner's inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a var present on the host but not allowlisted is silently dropped and the session fails to authenticate."
+    - "IPMI Over LAN ships DISABLED on iDRAC9. Enable it first: iDRAC web UI -> iDRAC Settings -> Connectivity -> Network -> IPMI Settings -> Enable IPMI Over LAN; or `racadm set iDRAC.IPMILan.Enable 1`. iDRAC9 is IPMI 2.0 / RMCP+ only (the legacy `lan` interface is unsupported), which is why the pack uses lanplus."
+    - "ipmitool historically exits 0 even when the session fails (bad credential, unreachable BMC, or IPMI Over LAN disabled all surface only on stderr with empty stdout). The pack's wrapper turns an empty result into a real non-zero exit so a failure is loud, not a misleading empty success."
+    - "IPMI 2.0 has unfixable protocol weaknesses (RAKP hash disclosure, CVE-2013-4786). Isolate BMCs on a dedicated management VLAN with no internet path (NSA/CISA BMC-hardening guidance), use strong unique BMC passwords, and never enable cipher suite 0."
+  verify: ipmi.chassis_status
+
+actions:
+  # Status & power state
+  - actions/chassis_status.yaml
+  - actions/power_status.yaml
+  # Sensors
+  - actions/sdr.yaml
+  - actions/sensor.yaml
+  - actions/sdr_type.yaml
+  - actions/dcmi_power.yaml
+  # Event log
+  - actions/sel.yaml
+  - actions/sel_info.yaml
+  # Inventory & BMC
+  - actions/fru.yaml
+  - actions/mc_info.yaml
+  - actions/mc_selftest.yaml
+  - actions/lan_print.yaml
+  # Mutating
+  - actions/power_control.yaml
+  - actions/bootdev.yaml
+  - actions/sel_clear.yaml

@@ -1,0 +1,56 @@
+schema_version: 1
+id: idrac.get
+title: GET an arbitrary Redfish resource
+kind: script
+risk: low
+description: >
+  Get any Redfish resource by path — a read-only GET under /redfish/v1 that the
+  curated reads do not cover. Give a path like
+  /Chassis/System.Embedded.1/Sensors or
+  /Systems/System.Embedded.1/Memory?$expand=*($levels=1), including a query
+  string ($expand, $skip, $filter). Use it to reach newer subsystems
+  (/PowerSubsystem, /ThermalSubsystem), page a long log (?$skip=50), or read a
+  single job (/Managers/iDRAC.Embedded.1/Jobs/JID_xx…). Read-only — it only ever
+  issues a GET.
+side_effects:
+  - One read-only Redfish GET of the supplied path.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: path
+    type: string
+    required: true
+    description: >
+      Resource path under /redfish/v1, starting with /. May include a query
+      string; URL-encode any spaces (e.g. %20 inside a $filter).
+    validation:
+      pattern: "^/[A-Za-z0-9._~:/?$()*,=&%@'+-]{1,256}$"
+      max_length: 256
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "{{ args.path }}"
+  timeout: 45s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Read the flat Sensors collection (newer firmware)
+    args:
+      host: "idrac-web01.mgmt"
+      path: "/Chassis/System.Embedded.1/Sensors?$expand=*($levels=1)"
+  - title: Page the SEL past the first 50 entries
+    args:
+      host: "idrac-web01.mgmt"
+      path: "/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries?$skip=50"

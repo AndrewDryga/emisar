@@ -1,0 +1,53 @@
+schema_version: 1
+id: ipmi.lan_print
+title: Show BMC LAN configuration
+kind: script
+risk: low
+description: >
+  Show the BMC LAN channel configuration — `ipmitool lan print <channel>`.
+  Returns the BMC IP source (static/DHCP), address, netmask, MAC, default
+  gateway, VLAN id, and the per-cipher-suite privilege map. Useful for
+  confirming BMC network settings and which cipher suites are enabled. The SNMP
+  community string in this output is redacted before it leaves the host.
+side_effects:
+  - One read-only IPMI LAN-configuration read.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: channel
+    type: integer
+    required: false
+    default: 1
+    description: IPMI LAN channel number (Dell iDRAC IPMI LAN is channel 1).
+    validation:
+      min: 1
+      max: 15
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "lan"
+    - "print"
+    - "{{ args.channel }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+  redact:
+    - name: snmp-community
+      type: regex
+      pattern: '(?i)(SNMP Community String\s*:\s*).*'
+      replacement: '${1}[REDACTED]'
+examples:
+  - title: BMC LAN config on channel 1
+    args:
+      host: "10.0.0.10"

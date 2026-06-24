@@ -1,0 +1,38 @@
+schema_version: 1
+id: ipmi.mc_info
+title: Show BMC info (firmware, capabilities)
+kind: script
+risk: low
+description: >
+  Show management-controller identity — `ipmitool mc info`. Returns the BMC
+  device id, firmware revision, IPMI version, manufacturer (Dell = 674) and
+  product ids, and the list of supported capabilities (SDR repo, SEL, FRU,
+  chassis, …). Confirms the BMC firmware level and what it can do.
+side_effects:
+  - One read-only IPMI management-controller info query.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "mc"
+    - "info"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: BMC firmware and capabilities
+    args:
+      host: "10.0.0.10"

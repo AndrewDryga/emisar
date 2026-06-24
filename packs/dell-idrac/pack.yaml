@@ -1,0 +1,82 @@
+schema_version: 1
+
+id: dell-idrac
+name: Dell iDRAC (Redfish)
+version: 0.1.0
+description: >
+  Monitor and operate a Dell iDRAC over its Redfish REST API with curl — system
+  identity and health rollup, the Dell subsystem rollup, storage controllers
+  and drives, power and thermal telemetry, firmware inventory, the System Event
+  Log and Lifecycle Controller log, and the Lifecycle Controller job queue.
+  Plus gated mutators: power control (ComputerSystem.Reset), clear / delete a
+  job, and clear the SEL. Targets an iDRAC by hostname/IP; credentials come from
+  the runner environment. Reads are read-only GETs.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# No detect block: the iDRAC is reached remotely over HTTPS, so there is no
+# local signal on the runner host to suggest this pack — every target is the
+# {{ args.host }} each action takes.
+
+setup:
+  summary: >
+    Every action calls the iDRAC Redfish API at https://{{ args.host }}/redfish
+    via curl on the runner host. Auth is HTTP Basic from IDRAC_USER and
+    IDRAC_PASSWORD (sent as an Authorization header over curl stdin, never in
+    argv or the audit log). Point actions at an iDRAC by its hostname or IP.
+  env:
+    - name: IDRAC_USER
+      required: true
+      description: >
+        iDRAC account name. Provision a dedicated least-privilege account: a
+        read-only role covers every read; the job and reset mutators need an
+        Operator/ConfigureComponents role.
+      example: monitor
+    - name: IDRAC_PASSWORD
+      required: true
+      description: >
+        iDRAC account password. Sent as an HTTP Basic Authorization header piped
+        to curl over stdin, so it never lands in argv, a `ps` listing, or the
+        audit log.
+    - name: IDRAC_INSECURE
+      required: false
+      default: "true"
+      description: >
+        Skip TLS verification of the iDRAC certificate. Default true because
+        iDRAC ships a Dell self-signed cert; set to false once you have
+        installed a CA-signed cert on the iDRAC.
+  notes:
+    - "Any of IDRAC_USER / IDRAC_PASSWORD / IDRAC_INSECURE you set must also be allowlisted in the runner's inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a var present on the host but not allowlisted is silently dropped and the call fails to authenticate."
+    - "Auth is HTTP Basic on purpose. It consumes no iDRAC session slot, whereas X-Auth-Token sessions draw from the shared web/Redfish session budget (iDRAC9: 8 concurrent, iDRAC8: 6); monitoring tools that open sessions and never close them are the classic cause of a 'maximum number of user sessions reached' lockout of the GUI/admin. Stateless Basic polls avoid that entirely."
+    - "Redfish API access (health, power/thermal, SEL/LC logs, firmware inventory, job queue, power control) is available at the iDRAC Basic license tier — this pack needs no Enterprise/Datacenter license. Streaming telemetry (SSE) would; plain polling does not."
+    - "Resource IDs are the stable embedded primaries System.Embedded.1 (system/chassis) and iDRAC.Embedded.1 (manager), unchanged across iDRAC8 and iDRAC9. The power/thermal reads use the universal /Power and /Thermal resources; newer firmware also exposes /PowerSubsystem, /ThermalSubsystem, and /Sensors, reachable via the generic get action."
+  verify: idrac.system
+
+actions:
+  # Identity & health
+  - actions/system.yaml
+  - actions/manager.yaml
+  - actions/health.yaml
+  - actions/storage.yaml
+  # Power & thermal telemetry
+  - actions/power.yaml
+  - actions/thermal.yaml
+  # Firmware & logs
+  - actions/firmware.yaml
+  - actions/sel.yaml
+  - actions/lclog.yaml
+  # Lifecycle Controller jobs
+  - actions/jobs.yaml
+  # Generic read
+  - actions/get.yaml
+  # Mutating
+  - actions/power_control.yaml
+  - actions/clear_job_queue.yaml
+  - actions/delete_job.yaml
+  - actions/clear_sel.yaml

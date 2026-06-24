@@ -1,0 +1,40 @@
+schema_version: 1
+id: ipmi.sel_clear
+title: Clear the System Event Log
+kind: script
+risk: high
+description: >
+  Erase the BMC System Event Log — `ipmitool sel clear`. IRREVERSIBLE: every
+  recorded hardware event is wiped and cannot be recovered. Pull the log with
+  sel first if you need a record. Routine after addressing the faults a server
+  logged (e.g. to reset a full SEL), but destroys forensic history, so it is
+  gated.
+side_effects:
+  - Irreversibly erases ALL System Event Log entries on the BMC.
+  - Cannot be undone; prior hardware-fault history is lost.
+  - Does not affect the running OS or power state.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sel"
+    - "clear"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear the event log after addressing faults
+    args:
+      host: "10.0.0.10"

@@ -1,0 +1,48 @@
+schema_version: 1
+id: ipmi.bootdev
+title: Set next-boot device
+kind: script
+risk: high
+description: >
+  Set the device the server boots from on its NEXT boot — `ipmitool chassis
+  bootdev <device>`. One-time by default (the BIOS reverts to its normal boot
+  order afterward); it does not reboot the host, so pair it with a power
+  action. Common use: "boot to PXE once" to re-image, or "bios" to drop into
+  setup on the next restart.
+side_effects:
+  - Overrides the next boot's device selection (one-time, not persistent).
+  - Does not power-cycle the host; the override applies at the next boot.
+  - Changes which OS/installer the next boot lands in — wrong choice can boot an unintended image.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+  - name: device
+    type: string
+    required: true
+    description: Boot device for the next boot.
+    validation:
+      enum: ["none", "pxe", "disk", "cdrom", "bios", "safe", "diag", "floppy"]
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "chassis"
+    - "bootdev"
+    - "{{ args.device }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Boot to PXE on the next restart
+    args:
+      host: "10.0.0.10"
+      device: pxe

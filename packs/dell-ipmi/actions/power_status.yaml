@@ -1,0 +1,38 @@
+schema_version: 1
+id: ipmi.power_status
+title: Chassis power state (on/off)
+kind: script
+risk: low
+description: >
+  Show whether the server is powered on or off — `ipmitool chassis power
+  status`. Returns a single line, "Chassis Power is on" or "... off". The
+  cheapest check before or after a power action.
+side_effects:
+  - One read-only IPMI power-status query.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "chassis"
+    - "power"
+    - "status"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Is the server on?
+    args:
+      host: "10.0.0.10"

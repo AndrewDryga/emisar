@@ -1,0 +1,39 @@
+schema_version: 1
+id: ipmi.sensor
+title: List sensors with thresholds
+kind: script
+risk: low
+description: >
+  List sensors with their full threshold set — `ipmitool sensor list`. Like
+  the SDR read but wider: each row adds the lower/upper non-critical, critical,
+  and non-recoverable thresholds alongside the reading and unit. Use when you
+  need to see how close a reading is to tripping, not just its current state.
+  Larger output than sdr.
+side_effects:
+  - One read-only IPMI sensor read.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sensor"
+    - "list"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All sensors with thresholds
+    args:
+      host: "10.0.0.10"

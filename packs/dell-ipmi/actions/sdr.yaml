@@ -1,0 +1,39 @@
+schema_version: 1
+id: ipmi.sdr
+title: List all sensors (SDR)
+kind: script
+risk: low
+description: >
+  List every sensor with its current reading and state — `ipmitool sdr elist`.
+  One row per sensor data record: name, reading, status (ok / nc / cr), plus
+  the sensor number and entity id. Covers temperatures, fans, voltages,
+  currents, power supplies, and discrete state sensors in a single call — the
+  workhorse health read.
+side_effects:
+  - One read-only IPMI SDR repository read.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "sdr"
+    - "elist"
+  timeout: 45s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All sensors and states
+    args:
+      host: "10.0.0.10"

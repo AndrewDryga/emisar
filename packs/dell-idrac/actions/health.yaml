@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.health
+title: Show per-subsystem health rollup
+kind: script
+risk: low
+description: >
+  Show the Dell subsystem health rollup in one call — GET
+  /redfish/v1/Systems/System.Embedded.1/Oem/Dell/DellRollupStatus. Returns a
+  member per subsystem (processor, memory, storage, fan, power supply, voltage,
+  intrusion, …) each with its rolled-up Status.Health, so one read tells you
+  exactly which subsystem is Warning or Critical. The fastest "what is
+  unhealthy on this box?" answer.
+side_effects:
+  - One read-only Redfish GET of the Dell rollup-status collection.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Systems/System.Embedded.1/Oem/Dell/DellRollupStatus"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Which subsystem is unhealthy?
+    args:
+      host: "idrac-web01.mgmt"

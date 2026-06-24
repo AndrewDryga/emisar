@@ -1,0 +1,43 @@
+schema_version: 1
+id: idrac.clear_sel
+title: Clear the System Event Log
+kind: script
+risk: high
+description: >
+  Erase the iDRAC System Event Log — POST
+  /redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/LogService.ClearLog.
+  IRREVERSIBLE: every SEL entry is wiped and cannot be recovered. Pull the log
+  with sel first if you need a record. Routine after addressing the faults a
+  server logged, but it destroys forensic history, so it is gated. (The
+  Lifecycle Controller log is append-only and is intentionally not clearable
+  here.)
+side_effects:
+  - Irreversibly erases ALL System Event Log entries on the iDRAC.
+  - Cannot be undone; prior hardware-fault history is lost.
+  - Does not affect the Lifecycle Controller log, the running OS, or power state.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "POST"
+    - "/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/LogService.ClearLog"
+    - "{}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear the SEL after addressing faults
+    args:
+      host: "idrac-web01.mgmt"

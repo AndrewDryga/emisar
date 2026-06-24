@@ -1,0 +1,38 @@
+schema_version: 1
+id: ipmi.mc_selftest
+title: Run BMC self-test
+kind: script
+risk: low
+description: >
+  Get the BMC self-test result — `ipmitool mc selftest`. A passing controller
+  prints "Selftest: passed"; a failure reports the specific fault (SDR repo
+  empty, FRU corrupt, …). A quick "is the management controller itself
+  healthy?" check. Reads the controller's own diagnostics; changes nothing.
+side_effects:
+  - One read-only IPMI controller self-test query.
+  - Read-only — reports existing self-test state, does not reset the BMC.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target BMC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/ipmireq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "mc"
+    - "selftest"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: BMC self-test result
+    args:
+      host: "10.0.0.10"

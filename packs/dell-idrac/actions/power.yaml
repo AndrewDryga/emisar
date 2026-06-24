@@ -1,0 +1,40 @@
+schema_version: 1
+id: idrac.power
+title: Show power supplies and consumption
+kind: script
+risk: low
+description: >
+  Show power telemetry — GET /redfish/v1/Chassis/System.Embedded.1/Power.
+  Returns each power supply (model, capacity, line input, Status.Health) and
+  their redundancy, the system voltages, and the current/average power
+  consumed in watts. Use to check PSU health/redundancy and draw. (Newer iDRAC
+  firmware also serves /PowerSubsystem; this universal /Power resource works on
+  iDRAC8 and iDRAC9.)
+side_effects:
+  - One read-only Redfish GET of the Power resource.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target iDRAC hostname or IP.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,253}$"
+      max_length: 253
+execution:
+  script:
+    path: scripts/idracreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+    - "GET"
+    - "/Chassis/System.Embedded.1/Power"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: PSU health and power draw
+    args:
+      host: "idrac-web01.mgmt"

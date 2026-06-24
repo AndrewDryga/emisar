@@ -1,6 +1,6 @@
 # Emisar example packs
 
-76 packs / 1,185 actions covering Linux ops, web/proxy, databases,
+78 packs / 1,217 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-76 packs, 1,185 actions, sorted by id. **Risk** is the pack's ceiling —
+78 packs, 1,217 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -88,6 +88,8 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `consul` | 44 | critical | CONSUL_HTTP_* (opt) |
 | `debian` | 9 | high | local-host |
 | `debugging` | 31 | high | local-host |
+| `dell-idrac` | 15 | critical | IDRAC_* |
+| `dell-ipmi` | 15 | critical | IPMI_* |
 | `dnf-rpm` | 13 | high | local-host |
 | `docker` | 25 | critical | local-host |
 | `elasticsearch` | 21 | critical | ELASTIC_* |
