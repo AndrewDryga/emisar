@@ -69,6 +69,29 @@
   background-color: rgb(54 230 165 / 0.3); /* brand-400 / 30% */
 }
 
+/* Inline code in marketing prose. A monospace face reads optically larger than
+   the body sans, so step it down to match — the size should read the same, not
+   bigger — then tint it the brand mint and wrap it in a hairline chip so a token
+   is clearly code without shouting. Scoped to the marketing surface (body
+   .marketing) so the calm operator console keeps its own neutral code styling;
+   `:where()` keeps specificity at zero so an explicitly-classed <code> (e.g. the
+   home demo's rose chip) still wins. <pre> transcripts are raw text + spans, not
+   <code>; the reset covers any literal <pre><code>. */
+:where(.marketing) code {
+  font-size: 0.875em;
+  color: #95f3cd; /* brand-200 — a softer mint than the brand-400 links */
+  background-color: rgb(149 243 205 / 0.08); /* brand-200 / 8% */
+  padding: 0.12em 0.32em;
+  border-radius: 0.25rem;
+}
+:where(.marketing) pre code {
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
 /* Honor "reduce motion": neutralize the hover lifts, pings, spins, and long
    transitions for operators who opt out of animation. */
 @media (prefers-reduced-motion: reduce) {
