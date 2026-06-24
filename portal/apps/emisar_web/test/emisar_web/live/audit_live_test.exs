@@ -234,6 +234,36 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "routine-runner"
     end
 
+    test "a subject 'View activity' pivot filters to that subject and shows a clearable chip",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "runner.connected",
+          subject_kind: "runner",
+          subject_id: runner_id,
+          subject_label: "pinned-runner"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "unrelated-actor"
+        )
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/audit?#{[subject_kind: "runner", subject_id: runner_id]}")
+
+      # The pivot is visible as a clearable chip (it was invisible before — the
+      # link filtered rows but surfaced no control)...
+      assert html =~ "Subject:"
+      assert html =~ "pinned-runner"
+      # ...and the rows are actually scoped to that subject.
+      refute html =~ "unrelated-actor"
+    end
+
     test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
