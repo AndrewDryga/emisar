@@ -17,6 +17,7 @@ defmodule Emisar.Analytics.Events do
   alias Emisar.Analytics
   alias Emisar.Approvals
   alias Emisar.Auth.Subject
+  alias Emisar.Billing
   alias Emisar.Catalog
   alias Emisar.Policies
   alias Emisar.Runbooks
@@ -111,6 +112,25 @@ defmodule Emisar.Analytics.Events do
     })
   end
 
+  @doc "Team growth — an invited member accepted (joined the account)."
+  def invitation_accepted(%Accounts.Membership{} = membership) do
+    Analytics.track("invitation_accepted", membership_distinct_id(membership), %{
+      "role" => to_string(membership.role),
+      "account_id" => membership.account_id
+    })
+  end
+
+  # -- Billing ---------------------------------------------------------
+
+  @doc "Expansion — a Paddle subscription was created, updated, or canceled."
+  def subscription_changed(%Billing.Subscription{} = subscription) do
+    Analytics.track("subscription_changed", account_distinct_id(subscription.account_id), %{
+      "plan" => subscription.plan,
+      "status" => subscription.status,
+      "account_id" => subscription.account_id
+    })
+  end
+
   # -- distinct_id resolution -----------------------------------------
 
   # Operator actions attribute to the acting user; an actor-less or
@@ -119,6 +139,13 @@ defmodule Emisar.Analytics.Events do
 
   defp subject_distinct_id(%Subject{account: %Accounts.Account{id: id}}),
     do: account_distinct_id(id)
+
+  # An accepted invitation attributes to the joining member (their user id).
+  defp membership_distinct_id(%Accounts.Membership{user_id: user_id}) when is_binary(user_id),
+    do: user_id
+
+  defp membership_distinct_id(%Accounts.Membership{account_id: account_id}),
+    do: account_distinct_id(account_id)
 
   # Operator-initiated runs attribute to the user (so dispatch + outcome
   # share a distinct_id); MCP/agent runs have no person → the account.

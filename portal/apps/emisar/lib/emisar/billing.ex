@@ -7,7 +7,7 @@ defmodule Emisar.Billing do
   binds the live client, tests use the in-process stub.
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Auth, PublicUrl, Repo, Runners}
+  alias Emisar.{Accounts, Analytics, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Subscription}
 
@@ -298,16 +298,21 @@ defmodule Emisar.Billing do
     # otherwise Paddle's redelivery is swallowed as already-processed and
     # the account never gets its plan/entitlement.
     |> Multi.run(:apply, fn _repo, _changes ->
+      # Carry the upserted subscription through so the POST-commit branch can
+      # emit `subscription_changed` — firing inside the txn would risk a
+      # phantom event if a later step rolls it back.
       case apply_webhook_event(event) do
+        {:ok, %Subscription{} = subscription} -> {:ok, subscription}
+        {:ok, _other} -> {:ok, :applied}
         :ok -> {:ok, :applied}
-        {:ok, _} -> {:ok, :applied}
         {:error, reason} -> {:error, {:apply_failed, reason}}
       end
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, _changes} ->
+      {:ok, changes} ->
         Emisar.Telemetry.billing_webhook(:applied)
+        track_subscription_change(changes.apply)
         :ok
 
       {:error, {:duplicate, _} = dup} ->
@@ -319,6 +324,14 @@ defmodule Emisar.Billing do
         {:error, other}
     end
   end
+
+  # Post-commit: only an actual upsert (created/updated/canceled) carries a
+  # subscription — a no-op apply (unknown event, cancel of an unknown id) is
+  # `:applied` and tracks nothing.
+  defp track_subscription_change(%Subscription{} = subscription),
+    do: Analytics.Events.subscription_changed(subscription)
+
+  defp track_subscription_change(_applied), do: :ok
 
   @doc """
   Internal — applies an incoming Paddle webhook event (account-scoped via

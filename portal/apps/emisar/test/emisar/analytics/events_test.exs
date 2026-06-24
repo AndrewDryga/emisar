@@ -6,6 +6,7 @@ defmodule Emisar.Analytics.EventsTest do
   alias Emisar.Analytics.Events
   alias Emisar.Approvals.Request
   alias Emisar.Auth.Subject
+  alias Emisar.Billing.Subscription
   alias Emisar.Catalog.PackVersion
   alias Emisar.Policies.Policy
   alias Emisar.Runbooks.Runbook
@@ -142,5 +143,30 @@ defmodule Emisar.Analytics.EventsTest do
       assert props["role"] == "operator"
       assert props["account_id"] == "acc-1"
     end
+  end
+
+  test "invitation_accepted/1 attributes to the joining member" do
+    Events.invitation_accepted(%Membership{user_id: "usr-2", role: :viewer, account_id: "acc-1"})
+
+    assert_receive {:mixpanel_track, [%{"event" => "invitation_accepted", "properties" => props}]}
+    assert props["distinct_id"] == "usr-2"
+    assert props["role"] == "viewer"
+    assert props["account_id"] == "acc-1"
+  end
+
+  test "subscription_changed/1 attributes to the account with plan + status" do
+    Events.subscription_changed(%Subscription{
+      account_id: "acc-1",
+      plan: "team",
+      status: "active"
+    })
+
+    assert_receive {:mixpanel_track,
+                    [%{"event" => "subscription_changed", "properties" => props}]}
+
+    assert props["distinct_id"] == "account:acc-1"
+    assert props["plan"] == "team"
+    assert props["status"] == "active"
+    assert props["account_id"] == "acc-1"
   end
 end
