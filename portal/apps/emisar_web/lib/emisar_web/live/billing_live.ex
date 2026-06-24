@@ -435,12 +435,12 @@ defmodule EmisarWeb.BillingLive do
           {@count} <span class="text-zinc-500">/ {@limit_label}</span>
         </span>
       </div>
+      <%!-- A progress bar only when there's a numeric cap to show progress
+           against. "Unlimited" has no progress, so no bar — an empty/full bar
+           there is meaningless; the "N / Unlimited" count above says it all. --%>
       <div :if={@pct} class="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-900">
         <div class={["h-full transition-[width]", usage_class(@pct)]} style={"width: #{@pct}%"}></div>
       </div>
-      <%!-- Unlimited (no numeric cap): a quiet solid fill, not a gradient — the
-           dark→light→dark gradient read as a half-broken progress bar. --%>
-      <div :if={is_nil(@pct)} class="mt-2 h-1.5 rounded-full bg-brand-500/20"></div>
     </div>
     """
   end

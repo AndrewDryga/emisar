@@ -170,9 +170,8 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Custom/mo"
       # Both meters read "/ Unlimited" (no numeric ceiling).
       assert html =~ "/ Unlimited"
-      # usage_pct is nil for an :unlimited limit → a quiet solid placeholder bar
-      # (no gradient), and crucially NO filled bar carrying a width: percentage style.
-      assert html =~ "bg-brand-500/20"
+      # usage_pct is nil for an :unlimited limit → NO progress bar at all (a bar
+      # with no cap to fill against is meaningless); just the "N / Unlimited" count.
       refute html =~ "style=\"width:"
     end
 
