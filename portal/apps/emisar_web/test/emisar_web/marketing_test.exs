@@ -556,7 +556,7 @@ defmodule EmisarWeb.MarketingTest do
       # The data-driven release entries (EmisarWeb.Changelog) — assert labels.
       assert html =~ "Runner 0.7"
       assert html =~ "Public beta control plane"
-      assert html =~ "Enterprise SSO and SCIM"
+      assert html =~ "SSO and SCIM directory sync"
       assert html =~ "The foundation"
       assert html =~ "portal-v0.9.0"
       assert html =~ "runner-v0.7.4"

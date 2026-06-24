@@ -270,17 +270,12 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex items-center justify-between">
-            <.icon name="hero-identification" class="h-7 w-7 text-brand-400" />
-            <span class="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-              Enterprise
-            </span>
-          </div>
+          <.icon name="hero-identification" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">SSO &amp; SCIM</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            OIDC sign-in with Google Workspace, Okta, or Keycloak, plus SCIM directory sync.
-            Offboard someone in your IdP and their emisar sessions and keys are revoked
-            automatically — <.link
+            OIDC sign-in (Team and Enterprise) with Google Workspace, Okta, or Keycloak, plus SCIM
+            directory sync (Enterprise). Offboard someone in your IdP and their emisar sessions and
+            keys are revoked automatically — <.link
               navigate={~p"/docs/sso"}
               class="text-brand-300 hover:text-brand-200"
             >see the docs</.link>.

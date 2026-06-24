@@ -81,7 +81,7 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
      "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
     {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on & directory sync",
-     "Enterprise OIDC SSO + SCIM 2.0 directory sync for emisar — sign in with Google Workspace, Okta, or Keycloak; offboarding in your IdP revokes emisar access automatically."},
+     "OIDC SSO (Team and Enterprise) + Enterprise SCIM 2.0 directory sync for emisar — sign in with Google Workspace, Okta, or Keycloak; offboarding in your IdP revokes emisar access automatically."},
     {"/docs/runners", :docs_runners, :docs_runners, "Operating your runner fleet",
      "Groups and labels, single-use enrollment keys, pack credentials via inherit_env, updating the binary and packs, reconnect and stuck-run semantics, host-side troubleshooting, and clean removal."},
     {"/docs/audit-and-siem", :docs_audit, :docs_audit, "The audit trail & SIEM export",
@@ -182,7 +182,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings and you drop back to Free at the end of the current billing period. Your audit data is retained per the Free retention window."},
     {"Do you support SSO and SCIM?",
-     "Yes, on the Enterprise plan: OIDC single sign-on with Google Workspace, Okta, or Keycloak (or any compliant provider), plus SCIM 2.0 directory sync. Offboard someone in your IdP and emisar ends their sessions and revokes their keys automatically — no manual cleanup."},
+     "Yes. OIDC single sign-on (Google Workspace, Okta, or Keycloak, or any compliant provider) is on Team and Enterprise; SCIM 2.0 directory sync is Enterprise. Offboard someone in your IdP and emisar ends their sessions and revokes their keys automatically — no manual cleanup."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]

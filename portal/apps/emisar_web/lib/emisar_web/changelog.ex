@@ -27,7 +27,7 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-06-15],
       slug: "sso-and-scim",
-      title: "Enterprise SSO and SCIM",
+      title: "SSO and SCIM directory sync",
       tag: "portal-v0.5.0",
       summary:
         "OIDC single sign-on with Google Workspace, Okta, and Keycloak, plus SCIM 2.0 directory sync — provision and deprovision from your IdP, map IdP groups to emisar roles, and have offboarding revoke a member's access and sessions automatically."
