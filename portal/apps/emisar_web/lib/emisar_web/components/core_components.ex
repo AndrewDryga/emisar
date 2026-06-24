@@ -1679,6 +1679,36 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The dispatch ORIGIN of a run — a small leading icon + the actor label on one
+  truncating line. The ICON (not color) distinguishes an LLM/MCP-dispatched run
+  (a bolt — the one an operator scans for) from an operator (a person), a runbook,
+  or a schedule, so agent-origin is pre-attentive without spending the
+  emerald-means-allowed semantic on it (who dispatched is metadata, not an
+  outcome). The canonical origin shape — reuse it instead of re-pairing an icon
+  with `run_actor/1`. The caller caps the width (`max-w-*`) where the column is
+  tight; the label always stays one line.
+
+      <.source_badge source={run.source} label={run_actor(run)} class="max-w-[12rem] text-xs" />
+  """
+  attr :source, :any, required: true, doc: "the run's `source` enum — :operator/:mcp/:runbook/:scheduled"
+  attr :label, :string, required: true, doc: "the actor label, e.g. from `run_actor/1`"
+  attr :class, :string, default: nil
+
+  def source_badge(assigns) do
+    ~H"""
+    <span class={["inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]} title={@label}>
+      <.icon name={source_icon(@source)} class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+      <span class="truncate">{@label}</span>
+    </span>
+    """
+  end
+
+  defp source_icon(:mcp), do: "hero-bolt"
+  defp source_icon(:runbook), do: "hero-book-open"
+  defp source_icon(:scheduled), do: "hero-clock"
+  defp source_icon(_operator), do: "hero-user"
+
+  @doc """
   The header summary band — a quiet, at-a-glance count strip wrapping several
   `summary_stat/1`s in one bordered flex row at the top of a LIST page (the
   Runners fleet health, the LLM-agents page). Not `<.stat>` (the dashboard's
@@ -1789,8 +1819,10 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot("connected"), do: "bg-brand-400"
   defp status_dot("approved"), do: "bg-brand-400"
   defp status_dot("published"), do: "bg-brand-400"
+  # In-flight runs pulse so they read as "still happening", not done — the one
+  # cue that separates sent/running from a static "success" dot (same hue).
   defp status_dot("running"), do: "bg-brand-400 animate-pulse"
-  defp status_dot("sent"), do: "bg-brand-400"
+  defp status_dot("sent"), do: "bg-brand-400 animate-pulse"
   defp status_dot("draft"), do: "bg-zinc-500"
   defp status_dot("pending"), do: "bg-zinc-500"
   defp status_dot("disconnected"), do: "bg-zinc-600"
