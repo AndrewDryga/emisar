@@ -15,16 +15,31 @@ defmodule EmisarWeb.AnalyticsTest do
   end
 
   describe "pageview plug" do
-    test "a marketing GET sets the anonymous device id and fires page_viewed", %{conn: conn} do
+    test "a marketing GET fires page_viewed with a cookieless $device: id", %{conn: conn} do
       conn = get(conn, ~p"/pricing")
 
-      assert Plug.Conn.get_session(conn, :analytics_device_id)
+      # Cookieless: nothing analytics-related is written to the session.
+      refute Plug.Conn.get_session(conn, :analytics_device_id)
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["path"] == "/pricing"
       assert props["authenticated"] == false
-      # Anonymous distinct_id is $device:-prefixed so Mixpanel treats it as a
-      # device (mergeable on login), not a separate identified user.
+      # Anonymous distinct_id is the $device:-prefixed daily hash, so Mixpanel
+      # treats it as a mergeable device, not a separate identified user.
       assert "$device:" <> _ = props["distinct_id"]
+    end
+
+    test "the same visitor gets a stable id across requests — no cookie needed", %{conn: conn} do
+      base = put_req_header(conn, "user-agent", "Mozilla/5.0 (X11; Linux) Firefox/121.0")
+
+      get(base, ~p"/pricing")
+      assert_receive {:mixpanel_track, [%{"properties" => %{"distinct_id" => first}}]}
+      get(base, ~p"/security")
+      assert_receive {:mixpanel_track, [%{"properties" => %{"distinct_id" => second}}]}
+
+      # Same IP + UA (same day) → same daily hash → countable as one visitor,
+      # stitched on login, all without a client-stored identifier.
+      assert first == second
+      assert "$device:" <> _ = first
     end
 
     test "events carry geo (ip), UA-derived browser/OS, and the URL", %{conn: conn} do
@@ -41,10 +56,8 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["$current_url"] =~ "/pricing"
     end
 
-    test "DNT:1 suppresses tracking and writes no id", %{conn: conn} do
-      conn = conn |> put_req_header("dnt", "1") |> get(~p"/pricing")
-
-      refute Plug.Conn.get_session(conn, :analytics_device_id)
+    test "DNT:1 suppresses tracking", %{conn: conn} do
+      conn |> put_req_header("dnt", "1") |> get(~p"/pricing")
       refute_receive {:mixpanel_track, _}
     end
 

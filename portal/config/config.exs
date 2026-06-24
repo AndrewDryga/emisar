@@ -29,7 +29,10 @@ config :emisar,
   mixpanel_client: Emisar.Analytics.MixpanelClient.Stub,
   mixpanel_enabled: false,
   mixpanel_api_host: "https://api.mixpanel.com",
-  mixpanel_groups_enabled: false
+  mixpanel_groups_enabled: false,
+  # Secret salt for the cookieless daily anonymous-visitor hash. Prod overrides
+  # it with SECRET_KEY_BASE (runtime.exs); this non-secret default is dev/test.
+  analytics_salt: "emisar-dev-analytics-salt"
 
 # Configures the mailer
 #

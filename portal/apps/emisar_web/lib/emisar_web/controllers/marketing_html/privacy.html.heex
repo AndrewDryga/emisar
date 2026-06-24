@@ -143,20 +143,22 @@
 
   <h2 id="cookies">7. Cookies & analytics</h2>
   <p>
-    We use one cookie: a signed, HTTP-only, first-party session cookie. It keeps you
-    logged in and — unless you opt out (below) — carries a random, anonymous id we
-    use to measure product interest. No advertising cookies, no third-party trackers,
-    and no analytics script runs in your browser.
+    We use one cookie: a signed, HTTP-only session cookie that keeps you logged in and
+    carries the CSRF token protecting your forms. No advertising cookies, no <strong>analytics cookies</strong>, no third-party trackers, and no analytics
+    script runs in your browser.
   </p>
   <p>
     To understand which features get used and how people find us, we record product
     events (pageviews, sign-ups, actions dispatched) in <strong>Mixpanel</strong>, a
-    product-analytics service. We do this <em>server-side</em>: events are sent from
-    our backend and scoped to product usage — never the contents of your runs, action
-    arguments, or audit records. We honor the <strong>Do Not Track</strong>
+    product-analytics service, <em>server-side</em>
+    — scoped to product usage, never
+    the contents of your runs, action arguments, or audit records. We count anonymous
+    visitors <strong>without a cookie</strong>: a salted hash of your IP address and
+    browser that rotates every day, so it can't follow you over time or identify you.
+    Once you sign in, your activity is tied to your account. We honor the
+    <strong>Do Not Track</strong>
     and <strong>Global Privacy Control</strong>
-    browser signals: if your browser sends either, we record nothing and set no
-    analytics id.
+    browser signals — send either and we record nothing.
   </p>
 
   <h2 id="contact">8. Contact</h2>

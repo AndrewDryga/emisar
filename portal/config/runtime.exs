@@ -67,6 +67,10 @@ if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing (generate with: mix phx.gen.secret)"
 
+  # Salt for the cookieless daily anonymous-visitor hash — reuse the app secret
+  # so every node agrees and an attacker can't recompute a day's ids.
+  config :emisar, :analytics_salt, secret_key_base
+
   host = System.get_env("PHX_HOST") || "emisar.dev"
 
   # FORCE_SSL marks this deployment as HTTPS-fronted: it drives the public

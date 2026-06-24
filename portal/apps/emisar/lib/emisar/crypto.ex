@@ -98,6 +98,20 @@ defmodule Emisar.Crypto do
   """
   def hash_hex(raw) when is_binary(raw), do: hash(raw) |> Base.encode16(case: :lower)
 
+  @doc """
+  A cookieless, per-day anonymous visitor id — `hash_hex/1` of a request
+  fingerprint (IP + User-Agent) keyed by the app secret AND the current UTC
+  date. The date rotates the id every day, so a visitor is countable within a
+  day but UNLINKABLE across days: no persistent identifier and no cookie (the
+  Plausible/Fathom privacy model). The secret salt stops anyone without it from
+  recomputing a day's ids from a guessed fingerprint. Used as the `$device:` id
+  for anonymous analytics events; identified users are tracked by their user id.
+  """
+  def anonymous_visitor_id(fingerprint) when is_binary(fingerprint) do
+    salt = Application.fetch_env!(:emisar, :analytics_salt)
+    hash_hex(salt <> "|" <> Date.to_iso8601(Date.utc_today()) <> "|" <> fingerprint)
+  end
+
   # Dispatch correlation ids ride in runner envelopes, results, and logs;
   # 16 random bytes keeps them unguessable without bloating log lines.
   @request_id_bytes 16

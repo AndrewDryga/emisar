@@ -1,11 +1,11 @@
 defmodule EmisarWeb.Plugs.Analytics do
   @moduledoc """
-  Server-side funnel pageview tracking. On an eligible browser GET it
-  ensures the anonymous device id + first-touch UTM are in the session,
-  then fires a `page_viewed` once the response is known to be a 200 HTML
-  render. No-op for opted-out (DNT/GPC) visitors, non-GET requests, and
-  `/app/*` — console usage is captured as product events, not pageviews
-  (see `Emisar.Analytics.Events`).
+  Server-side funnel pageview tracking. On an eligible browser GET it fires a
+  `page_viewed` once the response is known to be a 200 HTML render. Writes no
+  session state — the anonymous id is a cookieless daily hash (see
+  `EmisarWeb.Analytics`). No-op for opted-out (DNT/GPC) visitors, non-GET
+  requests, and `/app/*` — console usage is captured as product events, not
+  pageviews (see `Emisar.Analytics.Events`).
   """
 
   @behaviour Plug
@@ -20,10 +20,7 @@ defmodule EmisarWeb.Plugs.Analytics do
   @impl true
   def call(conn, _opts) do
     if eligible?(conn) do
-      conn
-      |> Analytics.ensure_device_id()
-      |> Analytics.capture_first_touch()
-      |> register_before_send(&track_if_rendered/1)
+      register_before_send(conn, &track_if_rendered/1)
     else
       conn
     end
@@ -34,8 +31,8 @@ defmodule EmisarWeb.Plugs.Analytics do
     conn
   end
 
-  # Off ⇒ a complete no-op: no `page_viewed`, and crucially no device id written
-  # to the session, so the analytics cookie only exists when the feature is live.
+  # Off ⇒ a complete no-op (no `page_viewed`), so the analytics HTTP calls only
+  # happen when the feature is live.
   defp eligible?(conn) do
     Emisar.Analytics.enabled?() and conn.method == "GET" and
       Analytics.tracking_allowed?(conn) and not console_path?(conn)

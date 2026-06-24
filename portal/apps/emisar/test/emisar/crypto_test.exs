@@ -156,4 +156,23 @@ defmodule Emisar.CryptoTest do
       refute Crypto.valid_totp?(secret, "000000")
     end
   end
+
+  describe "anonymous_visitor_id/1" do
+    # Cookieless visitor id: a salted hash of (IP|User-Agent) that also folds in
+    # the UTC date, so it's stable within a day but rotates daily (unlinkable
+    # across days). Determinism within a day is what makes a visitor countable
+    # and same-day-stitchable to their user on login — no client-stored id.
+    test "is a stable 64-char hex id for the same fingerprint within a day" do
+      fingerprint = "203.0.113.7|Mozilla/5.0 Chrome/120"
+      id = Crypto.anonymous_visitor_id(fingerprint)
+
+      assert id == Crypto.anonymous_visitor_id(fingerprint)
+      assert id =~ ~r/^[a-f0-9]{64}$/
+    end
+
+    test "differs for a different fingerprint (distinct visitors don't collide)" do
+      refute Crypto.anonymous_visitor_id("1.1.1.1|UA") ==
+               Crypto.anonymous_visitor_id("2.2.2.2|UA")
+    end
+  end
 end
