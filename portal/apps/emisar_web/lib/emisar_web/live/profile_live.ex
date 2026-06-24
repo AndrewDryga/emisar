@@ -43,7 +43,10 @@ defmodule EmisarWeb.ProfileLive do
       end
 
     current_digest = current_session_digest(socket.assigns.current_session_token)
-    assign(socket, :sessions, sessions) |> assign(:current_session_digest, current_digest)
+    # Pin the current device to the top so it's the anchor an operator reads
+    # from, not one row lost among the others.
+    sorted = Enum.sort_by(sessions, &(not current_session?(&1, current_digest)))
+    assign(socket, :sessions, sorted) |> assign(:current_session_digest, current_digest)
   end
 
   defp current_session_digest(nil), do: nil

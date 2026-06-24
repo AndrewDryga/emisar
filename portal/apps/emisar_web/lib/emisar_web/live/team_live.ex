@@ -596,7 +596,8 @@ defmodule EmisarWeb.TeamLive do
                   data-confirm={
                     if @current_account.require_mfa,
                       do: "Stop enforcing 2FA account-wide?",
-                      else: "Enforce 2FA for everyone on this account?"
+                      else:
+                        "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
                   }
                   class={[
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
