@@ -227,6 +227,12 @@ defmodule EmisarWeb.ApprovalsLive do
     >
       <:title>Approvals</:title>
 
+      <.page_intro>
+        Gated actions wait here for a human decision before they run — approve or deny,
+        with the reason logged to the audit trail.
+        <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
+      </.page_intro>
+
       <div class="space-y-6">
         <%!-- 1. PENDING --%>
         <section>

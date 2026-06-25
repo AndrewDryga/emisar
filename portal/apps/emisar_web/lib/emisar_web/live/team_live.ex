@@ -621,6 +621,11 @@ defmodule EmisarWeb.TeamLive do
         </.button>
       </:actions>
 
+      <.page_intro>
+        Members, roles, and invitations for this workspace — who can dispatch, approve,
+        and configure. <.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
+      </.page_intro>
+
       <.loading_state :if={@loading?} />
 
       <%!-- Single-column list. Each row is a member: avatar, name +

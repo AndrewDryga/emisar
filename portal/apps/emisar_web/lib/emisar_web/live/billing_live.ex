@@ -209,6 +209,11 @@ defmodule EmisarWeb.BillingLive do
     >
       <:title>Billing</:title>
 
+      <.page_intro>
+        Your plan, usage against its limits, and invoices.
+        <.doc_link href="/pricing">Compare plans</.doc_link>
+      </.page_intro>
+
       <.loading_state :if={@loading?} />
 
       <%!-- billing_summary/2 can return {:error, _} (→ nil); never deref a

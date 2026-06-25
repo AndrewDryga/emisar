@@ -701,6 +701,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <.page_intro :if={@live_action != :new}>
           Connect your organization's identity provider so members sign in through it. New
           users are provisioned on first sign-in, and you choose the role they land with.
+          <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
         </.page_intro>
 
         <%!-- The branded sign-in link to hand to the team. Always useful (the page
