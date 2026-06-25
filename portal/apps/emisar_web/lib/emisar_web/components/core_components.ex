@@ -1173,9 +1173,9 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :width, :atom,
     default: :detail,
-    values: [:table, :detail, :form, :settings],
+    values: [:full, :table, :detail, :form, :settings],
     doc:
-      "content column width: :table (7xl — lists/dashboard), :detail (6xl), :form (3xl), :settings (4xl)"
+      "content column width: :full (edge-to-edge — dense data tables: runs/audit), :table (7xl — card-lists/dashboard), :detail (6xl), :form (3xl), :settings (4xl)"
 
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
@@ -1307,9 +1307,13 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # Content width tiers (§3.2 of the UX redesign): one column width per page kind
-  # so every screen lines up. The shell owns it — pages pass `width=` and never
-  # hand-roll `mx-auto max-w-*`. Literal classes so Tailwind's purge keeps them.
+  # Content width tiers: one column width per page kind so every screen lines up
+  # (the shell owns it — pages pass `width=`, never hand-roll `mx-auto max-w-*`).
+  # Dense DATA TABLES go FULL-BLEED (founder: "centering tables like the audit log
+  # is a no-go — too much data") for column density; card-lists + dashboard stay
+  # capped so a single-column card doesn't stretch thin; reading/forms bounded for
+  # line length. Literal classes so Tailwind's purge keeps them.
+  defp shell_width(:full), do: "max-w-none"
   defp shell_width(:table), do: "max-w-7xl"
   defp shell_width(:detail), do: "max-w-6xl"
   defp shell_width(:form), do: "max-w-3xl"

@@ -326,7 +326,7 @@ defmodule EmisarWeb.AuditLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
-      width={:table}
+      width={:full}
     >
       <:title>Audit log</:title>
 
