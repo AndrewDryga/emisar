@@ -23,8 +23,9 @@ defmodule EmisarWeb.Components.PanelTest do
   describe "card/1" do
     test "renders the canonical surface with the default p-5 density" do
       html = render_card(%{})
-      assert html =~ "rounded-xl border border-zinc-800/70 bg-gradient-to-b from-zinc-900/50"
-      assert html =~ "shadow-lg"
+      assert html =~ "rounded-xl border border-zinc-800 bg-zinc-900/30"
+      # Console card is the flat hairline tier — no marketing glass lift.
+      refute html =~ "shadow"
       assert html =~ "p-5"
       assert html =~ "body"
     end
@@ -46,7 +47,7 @@ defmodule EmisarWeb.Components.PanelTest do
         <CoreComponents.panel title="Default policy">rules</CoreComponents.panel>
         """)
 
-      assert html =~ "from-zinc-900/50"
+      assert html =~ "bg-zinc-900/30"
       assert html =~ "rules"
     end
 
@@ -62,7 +63,8 @@ defmodule EmisarWeb.Components.PanelTest do
         </CoreComponents.panel>
         """)
 
-      assert html =~ ~s(<h2 class="text-sm font-semibold text-zinc-100">Security</h2>)
+      assert html =~ ~s(class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100")
+      assert html =~ "Security"
       assert html =~ "When enforced"
       assert html =~ "Enforce"
       assert html =~ "body"

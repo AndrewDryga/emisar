@@ -119,7 +119,7 @@ defmodule EmisarWeb.LiveTable do
       <%= if Enum.empty?(@rows) do %>
         <div
           id={"#{@id}-empty"}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500"
+          class="rounded-xl border border-zinc-800 bg-zinc-900/30 px-5 py-10 text-center text-sm text-zinc-500"
         >
           {render_slot(@empty) || "Nothing to show."}
         </div>
@@ -148,7 +148,7 @@ defmodule EmisarWeb.LiveTable do
           :if={
             @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0
           }
-          class="border-t border-zinc-900 px-5 py-3"
+          class="border-t border-zinc-800 px-5 py-3"
         >
           <.paginator
             id={@id}
@@ -226,11 +226,11 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp default_cards_wrapper_class(:visible),
-    do: "divide-y divide-zinc-900 rounded-xl border border-zinc-900 bg-zinc-950/40"
+    do: "divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/30"
 
   defp default_cards_wrapper_class(_),
     do:
-      "divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+      "divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
 
   # When `:group_by` is set, walk the rows preserving order and bucket
   # them by label — returns `[{label, [row, …]}, …]`. Without group_by

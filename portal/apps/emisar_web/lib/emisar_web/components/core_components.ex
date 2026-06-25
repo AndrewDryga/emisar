@@ -1194,7 +1194,7 @@ defmodule EmisarWeb.CoreComponents do
            it to the viewport so the bottom user-block (and sign-out
            icon) stays reachable on tall pages instead of being pushed
            off-screen by content height. --%>
-      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-900 bg-zinc-950/80 lg:sticky lg:top-0 lg:flex lg:h-screen">
+      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/80 lg:sticky lg:top-0 lg:flex lg:h-screen">
         <.shell_brand
           current_account={@current_account}
           switchable_accounts={@switchable_accounts || [@current_account]}
@@ -1227,7 +1227,7 @@ defmodule EmisarWeb.CoreComponents do
           phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
         >
         </div>
-        <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-900 bg-zinc-950 shadow-2xl">
+        <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-800 bg-zinc-950 shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
             <.shell_brand
               current_account={@current_account}
@@ -1291,7 +1291,7 @@ defmodule EmisarWeb.CoreComponents do
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
-          <h1 class="min-w-0 flex-1 truncate font-display text-lg font-bold tracking-tight sm:text-xl">
+          <h1 class="min-w-0 flex-1 truncate font-display text-xl font-bold tracking-[-0.015em] sm:text-2xl">
             {render_slot(@title)}
           </h1>
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
@@ -1741,7 +1741,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def summary_band(assigns) do
     ~H"""
-    <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-2.5 text-xs sm:gap-x-6 sm:px-5 sm:py-3">
+    <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-2.5 text-xs sm:gap-x-6 sm:px-5 sm:py-3">
       {render_slot(@inner_block)}
       <div :if={@trailing != []} class="ml-auto text-zinc-500">{render_slot(@trailing)}</div>
     </div>
@@ -1899,7 +1899,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div
       class={[
-        "rounded-xl border border-zinc-800/70 bg-gradient-to-b from-zinc-900/50 to-zinc-950/30 shadow-lg shadow-black/30",
+        "rounded-xl border border-zinc-800 bg-zinc-900/30",
         @padding,
         @class
       ]}
@@ -1943,7 +1943,9 @@ defmodule EmisarWeb.CoreComponents do
         class="mb-4 flex items-start justify-between gap-4"
       >
         <div class="min-w-0">
-          <h2 :if={@title} class="text-sm font-semibold text-zinc-100">{@title}</h2>
+          <h2 :if={@title} class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+            {@title}
+          </h2>
           <p :if={@subtitle != []} class="mt-1 text-xs leading-relaxed text-zinc-500">
             {render_slot(@subtitle)}
           </p>
@@ -2032,7 +2034,7 @@ defmodule EmisarWeb.CoreComponents do
   def section_header(assigns) do
     ~H"""
     <header class={["mb-3 flex items-center gap-2", @class]}>
-      <h2 class="text-sm font-semibold text-zinc-100">{@title}</h2>
+      <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">{@title}</h2>
       <.count_badge count={@count} tone={@count_tone} />
       {render_slot(@actions)}
     </header>
@@ -2153,7 +2155,7 @@ defmodule EmisarWeb.CoreComponents do
 
     ~H"""
     <div class={[
-      "grid grid-cols-2 gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 text-sm sm:grid-cols-3",
+      "grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm sm:grid-cols-3",
       @lg_cols,
       @class
     ]}>
