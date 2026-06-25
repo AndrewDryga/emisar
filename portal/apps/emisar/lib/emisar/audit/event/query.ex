@@ -419,7 +419,6 @@ defmodule Emisar.Audit.Event.Query do
       # usable; wildcards are escaped to match literally.
       %Filter{
         name: :request_id,
-        advanced: true,
         title: "Request ID",
         type: :string,
         fun: fn queryable, term ->
@@ -451,7 +450,6 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :actor_kind,
-        advanced: true,
         title: "Actor type",
         type: {:list, :string},
         values: [
@@ -469,7 +467,6 @@ defmodule Emisar.Audit.Event.Query do
       # a user session produces (nil for API-key / runner actors).
       %Filter{
         name: :auth_method,
-        advanced: true,
         title: "Sign-in method",
         type: {:list, :string},
         values: [
@@ -483,7 +480,6 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :subject_kind,
-        advanced: true,
         title: "Subject",
         type: {:list, :string},
         values: [

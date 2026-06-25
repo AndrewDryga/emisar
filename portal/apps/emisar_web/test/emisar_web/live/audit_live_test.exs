@@ -264,24 +264,6 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "unrelated-actor"
     end
 
-    test "niche filters collapse behind a 'More filters' disclosure that opens when one is set",
-         %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      # Default view: the disclosure exists but is collapsed (no advanced filter set).
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
-      assert html =~ "More filters"
-      refute html =~ "<details open"
-      # A primary filter (Outcome) stays in the always-visible bar; a niche one
-      # (Sign-in method) lives inside the disclosure — still in the DOM, just collapsed.
-      assert html =~ "Outcome"
-      assert html =~ "Sign-in method"
-
-      # An active advanced filter forces the disclosure open so it's never hidden.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?#{[auth_method: "sso"]}")
-      assert html =~ "<details open"
-    end
-
     test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

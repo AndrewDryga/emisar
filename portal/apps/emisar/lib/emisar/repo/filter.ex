@@ -7,9 +7,7 @@ defmodule Emisar.Repo.Filter do
 
   Filters also describe themselves to the UI: `name` + `type` + `values`
   is enough for `EmisarWeb.LiveTable` to render an input automatically.
-  The `fun` callback carries the SQL. `advanced: true` tucks a niche filter
-  behind the bar's "More filters" disclosure (it still applies — it's just
-  collapsed by default, and the disclosure opens itself when it's set).
+  The `fun` callback carries the SQL.
   """
   import Ecto.Query
   alias Emisar.Repo.Filter.Range
@@ -43,11 +41,10 @@ defmodule Emisar.Repo.Filter do
           title: String.t() | nil,
           type: type(),
           values: values() | Range.t() | nil,
-          fun: fun(),
-          advanced: boolean()
+          fun: fun()
         }
 
-  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil, advanced: false
+  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil
 
   @doc """
   Apply the supplied filter list to the queryable. Returns
