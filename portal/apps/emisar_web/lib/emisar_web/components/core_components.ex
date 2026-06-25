@@ -2164,13 +2164,21 @@ defmodule EmisarWeb.CoreComponents do
       </.meta_strip>
   """
   attr :label, :string, required: true
+
+  attr :wrap, :boolean,
+    default: false,
+    doc:
+      "For a long, must-read value (an action id): span the full row on mobile and wrap instead of truncating. The default keeps the strip tidy with a one-line ellipsis."
+
   slot :inner_block, required: true
 
   def meta_field(assigns) do
     ~H"""
-    <div class="min-w-0">
+    <div class={["min-w-0", @wrap && "col-span-2 sm:col-span-1"]}>
       <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@label}</div>
-      <div class="mt-0.5 truncate">{render_slot(@inner_block)}</div>
+      <div class={["mt-0.5", if(@wrap, do: "break-words", else: "truncate")]}>
+        {render_slot(@inner_block)}
+      </div>
     </div>
     """
   end

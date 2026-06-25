@@ -404,12 +404,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.meta_field label="Status">
           <.status_badge status={@request.status} />
         </.meta_field>
-        <.meta_field label="Action">
-          <span class="inline-flex min-w-0 items-center gap-2">
-            <span class="truncate font-mono text-zinc-200">
-              {@request.context["action_id"] || "—"}
-            </span>
-            <.risk_pill :if={@action_risk} risk={@action_risk} class="flex-none" />
+        <%!-- Never clip the action on the decision screen — an approver must read
+             the full action id before deciding. `wrap` gives it the full row on
+             mobile and wraps rather than truncating; the risk pill flows after. --%>
+        <.meta_field label="Action" wrap>
+          <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="font-mono text-zinc-200">{@request.context["action_id"] || "—"}</span>
+            <.risk_pill :if={@action_risk} risk={@action_risk} />
           </span>
         </.meta_field>
         <.meta_field label="Runner">
