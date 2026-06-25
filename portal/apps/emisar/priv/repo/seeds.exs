@@ -6,17 +6,29 @@
 # real-shaped data when an operator first opens the app — instead of
 # empty-state cards everywhere.
 
-alias Emisar.{Accounts, Approvals, Audit, Billing, Catalog, Policies, Repo}
-alias Emisar.{Runbooks, Runners, Runs, Users}
+alias Emisar.Accounts
 alias Emisar.Accounts.Account
+alias Emisar.ApiKeys
+alias Emisar.Approvals
 alias Emisar.Approvals.Request, as: ApprovalRequest
+alias Emisar.Audit
+alias Emisar.Auth
 alias Emisar.Auth.Subject
+alias Emisar.Billing
+alias Emisar.Catalog
+alias Emisar.Catalog.{PackBaseline, PackVersion}
+alias Emisar.Policies
+alias Emisar.Repo
+alias Emisar.Runbooks
+alias Emisar.Runners
+alias Emisar.Runs
+alias Emisar.Users
 alias Emisar.Users.User
 # Approval emails go through Swoosh; in dev that's fine, but the seed
 # shouldn't depend on the mailer being reachable.
 Application.put_env(:emisar, :notify_approvers_async?, false)
 
-now = fn -> DateTime.utc_now() |> DateTime.truncate(:microsecond) end
+now = fn -> DateTime.utc_now() end
 mins_ago = &DateTime.add(now.(), -&1 * 60, :second)
 hours_ago = &DateTime.add(now.(), -&1 * 3600, :second)
 days_ago = &DateTime.add(now.(), -&1 * 86_400, :second)
@@ -32,6 +44,64 @@ seed_subscription = fn %Account{} = account, plan ->
   account
 end
 
+confirm_user = fn
+  %User{confirmed_at: nil} = user ->
+    {:ok, confirmed} = user |> User.Changeset.confirm() |> Repo.update()
+    confirmed
+
+  %User{} = user ->
+    user
+end
+
+ensure_profile = fn %User{} = user, full_name ->
+  if user.full_name == full_name do
+    user
+  else
+    {:ok, updated} = Users.update_user_profile(%{full_name: full_name}, %Subject{actor: user})
+    updated
+  end
+end
+
+clear_seeded_mfa = fn
+  %User{mfa_enabled_at: nil} = user ->
+    user
+
+  %User{} = user ->
+    {:ok, updated} = Auth.disable_mfa(%Subject{actor: user})
+    updated
+end
+
+pack_versions = %{
+  "caddy" => "0.1.6",
+  "linux-core" => "0.3.14",
+  "postgres" => "0.2.7",
+  "systemd-deep" => "0.1.5"
+}
+
+pack_descriptor = fn pack_id ->
+  version = Map.fetch!(pack_versions, pack_id)
+  hash = PackBaseline.lookup(pack_id, version)
+
+  if is_nil(hash) do
+    raise "missing shipped-pack baseline for #{pack_id} #{version}"
+  end
+
+  %{"version" => version, "hash" => hash}
+end
+
+action_descriptor = fn pack_id, attrs ->
+  Map.merge(
+    %{
+      "kind" => "exec",
+      "risk" => "low",
+      "side_effects" => [],
+      "args" => [],
+      "pack_id" => pack_id
+    },
+    attrs
+  )
+end
+
 # Aggregate stream chunks: total byte size and sha256 of the
 # concatenation. Used to populate ActionRun.{stdout,stderr}_{bytes,sha256}
 # so the meta strip reads believably.
@@ -45,8 +115,7 @@ chunks_sha = fn chunks, stream ->
   blob =
     chunks
     |> Enum.filter(fn {s, _} -> s == stream end)
-    |> Enum.map(fn {_, t} -> t end)
-    |> Enum.join("")
+    |> Enum.map_join("", fn {_, t} -> t end)
 
   case blob do
     "" -> nil
@@ -56,27 +125,27 @@ end
 
 # -- Demo account + owner --------------------------------------------
 
+demo_account_name = "Northstar Labs"
 demo_email = "demo@emisar.dev"
+demo_full_name = "Maya Chen"
 
 user =
   case Users.fetch_user_by_email(demo_email) do
     {:error, :not_found} ->
       {:ok, u} =
         Users.register_user(%{
-          full_name: "Demo User",
+          full_name: demo_full_name,
           email: demo_email,
           password: "Sleep-tight-1234"
         })
 
-      {:ok, u} = u |> User.Changeset.confirm() |> Repo.update()
-      u
-
-    {:ok, %User{full_name: nil} = u} ->
-      {:ok, u} = Users.update_user_profile(%{full_name: "Demo User"}, %Subject{actor: u})
-      u
+      u = confirm_user.(u)
+      clear_seeded_mfa.(u)
 
     {:ok, %User{} = u} ->
-      u
+      u = ensure_profile.(u, demo_full_name)
+      u = confirm_user.(u)
+      clear_seeded_mfa.(u)
   end
 
 demo_account_query = Account.Query.not_deleted() |> Account.Query.by_slug("demo")
@@ -86,7 +155,7 @@ account =
     {:error, :not_found} ->
       {:ok, account} =
         Accounts.create_account_with_owner(
-          %{name: "Demo Corp", slug: "demo"},
+          %{name: demo_account_name, slug: "demo"},
           user
         )
 
@@ -96,12 +165,109 @@ account =
       account
   end
 
+{:ok, owner_membership} = Accounts.fetch_membership_for_session(user, account.id)
+
+owner_subject =
+  Subject.for_user(user, account, owner_membership)
+
+account =
+  if account.name == demo_account_name do
+    account
+  else
+    {:ok, updated} = Accounts.update_account(account, %{name: demo_account_name}, owner_subject)
+    updated
+  end
+
+owner_subject = Subject.for_user(user, account, owner_membership)
+
 # The demo account is enterprise so SSO/SCIM is testable here.
 seed_subscription.(account, "enterprise")
 
+# Retire the first-pass demo artifacts so re-running seeds upgrades an existing
+# dev DB instead of preserving screenshot-hostile laptop/CI/cache-purge rows.
+for email <- ["alex@emisar.dev", "sam@emisar.dev"] do
+  case Users.fetch_user_by_email(email) do
+    {:ok, old_user} ->
+      old_user = clear_seeded_mfa.(old_user)
+
+      case Accounts.peek_sync_membership(account.id, old_user.id) do
+        nil ->
+          :ok
+
+        membership ->
+          membership
+          |> Emisar.Accounts.Membership.Changeset.delete()
+          |> Repo.update!()
+      end
+
+    {:error, :not_found} ->
+      :ok
+  end
+end
+
+for name <- ["andrew-mbp", "ci-bot-runner", "edge-pop-fra"] do
+  Runners.Runner.Query.not_deleted()
+  |> Runners.Runner.Query.by_account_id(account.id)
+  |> Runners.Runner.Query.by_name(name)
+  |> Repo.delete_all()
+end
+
+case ApiKeys.list_api_keys_for_account(owner_subject, page: [limit: 100]) do
+  {:ok, keys, _metadata} ->
+    keys
+    |> Enum.filter(&(&1.name == "Claude — Andrew's terminal"))
+    |> Enum.each(fn key ->
+      key
+      |> Ecto.Changeset.change(deleted_at: now.())
+      |> Repo.update!()
+    end)
+
+  _ ->
+    :ok
+end
+
+case ApiKeys.list_audit_export_keys_for_account(owner_subject, page: [limit: 100]) do
+  {:ok, keys, _metadata} ->
+    keys
+    |> Enum.filter(&(&1.name == "SIEM export — initial"))
+    |> Enum.each(fn key ->
+      key
+      |> Ecto.Changeset.change(deleted_at: now.())
+      |> Repo.update!()
+    end)
+
+  _ ->
+    :ok
+end
+
+{:ok, legacy_runbooks, _metadata} = Runbooks.list_runbooks(owner_subject)
+
+legacy_runbooks
+|> Enum.filter(&(&1.slug == "nightly-edge-health"))
+|> Enum.each(fn runbook ->
+  runbook
+  |> Ecto.Changeset.change(deleted_at: now.())
+  |> Repo.update!()
+end)
+
+case Repo.fetch(Account.Query.not_deleted() |> Account.Query.by_slug("initech"), Account.Query) do
+  {:ok, old_account} ->
+    old_account
+    |> Ecto.Changeset.change(deleted_at: now.())
+    |> Repo.update!()
+
+  {:error, :not_found} ->
+    :ok
+end
+
+case Users.fetch_user_by_email("owner@initech.test") do
+  {:ok, old_user} -> clear_seeded_mfa.(old_user)
+  {:error, :not_found} -> :ok
+end
+
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Demo account ready (slug=demo, owner=#{demo_email}, password=Sleep-tight-1234)" <>
+    "✓ #{demo_account_name} ready (slug=demo, owner=#{demo_email}, password=Sleep-tight-1234)" <>
     IO.ANSI.reset()
 )
 
@@ -114,60 +280,75 @@ end
 
 # -- Invited teammates ------------------------------------------------
 
-owner_subject =
-  Subject.for_user(
-    user,
-    account,
-    %Emisar.Accounts.Membership{role: "owner", user_id: user.id, account_id: account.id}
-  )
-
 invite_member = fn email, full_name, role ->
-  case Users.fetch_user_by_email(email) do
-    {:ok, %User{} = u} ->
-      u
+  member =
+    case Users.fetch_user_by_email(email) do
+      {:ok, %User{} = existing_user} ->
+        case Accounts.peek_sync_membership(account.id, existing_user.id) do
+          nil ->
+            {:ok, %{user: invited, membership: membership}} =
+              Accounts.invite_user_to_account(email, role, owner_subject)
 
-    {:error, :not_found} ->
-      {:ok, %{user: invited, membership: m}} =
-        Accounts.invite_user_to_account(email, role, owner_subject)
+            {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
+            invited
 
-      {:ok, _u} = Users.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
-      {:ok, confirmed} = invited |> User.Changeset.confirm() |> Repo.update()
-      {:ok, _m} = Accounts.mark_invitation_accepted(m, invited)
-      confirmed
-  end
+          membership ->
+            if is_nil(membership.invitation_accepted_at) do
+              {:ok, _membership} = Accounts.mark_invitation_accepted(membership, existing_user)
+            end
+
+            existing_user
+        end
+
+      {:error, :not_found} ->
+        {:ok, %{user: invited, membership: membership}} =
+          Accounts.invite_user_to_account(email, role, owner_subject)
+
+        {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
+        invited
+    end
+
+  member = ensure_profile.(member, full_name)
+  member = confirm_user.(member)
+  clear_seeded_mfa.(member)
 end
 
-alex = invite_member.("alex@emisar.dev", "Alex Kim", "admin")
-sam = invite_member.("sam@emisar.dev", "Sam Patel", "operator")
-IO.puts(IO.ANSI.cyan() <> "✓ Teammates: alex (admin), sam (operator)" <> IO.ANSI.reset())
+jordan = invite_member.("jordan@emisar.dev", "Jordan Lee", "admin")
+priya = invite_member.("priya@emisar.dev", "Priya Shah", "operator")
+IO.puts(IO.ANSI.cyan() <> "✓ Teammates: Jordan (admin), Priya (operator)" <> IO.ANSI.reset())
 
 # -- Sample runbook (skip if exists) ---------------------------------
 
-unless (
-         {:ok, list, _} = Runbooks.list_runbooks(owner_subject)
-         Enum.find(list, &(&1.slug == "nightly-edge-health"))
-       ) do
+{:ok, runbooks, _metadata} = Runbooks.list_runbooks(owner_subject)
+morning_runbook = Enum.find(runbooks, &(&1.slug == "morning-edge-readiness"))
+
+unless morning_runbook do
   {:ok, _rb} =
     Runbooks.create_runbook(
       %{
-        name: "nightly-edge-health",
-        slug: "nightly-edge-health",
-        title: "Nightly edge fleet health",
+        name: "morning-edge-readiness",
+        slug: "morning-edge-readiness",
+        title: "Morning edge readiness",
         description:
-          "Routine 03:00 UTC sweep across every edge runner: uptime + disk usage. " <>
-            "Used by oncall to confirm fleet health before the EU traffic peak.",
+          "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
+            "host load, disk pressure, and Caddy upstream health.",
         status: "published",
         definition: %{
           "steps" => [
             %{
               "id" => "uptime",
               "action_id" => "linux.uptime",
-              "runner_selector" => %{"group" => ["edge-eu"]}
+              "runner_selector" => %{"group" => ["edge-web"]}
             },
             %{
               "id" => "disk",
               "action_id" => "linux.disk_usage",
-              "runner_selector" => %{"group" => ["edge-eu"]}
+              "runner_selector" => %{"group" => ["edge-web"]}
+            },
+            %{
+              "id" => "upstreams",
+              "action_id" => "caddy.reverse_proxy_upstreams",
+              "runner_selector" => %{"group" => ["edge-web"]}
             }
           ]
         }
@@ -180,47 +361,38 @@ end
 
 # -- Runners ----------------------------------------------------------
 #
-# Three personality-rich runners that DON'T collide with the docker-
-# compose stack (which boots its own `runner-1` / `-2` / `-3` rows).
-# This gives the dashboard a realistic mix:
-#
-#   * a dev laptop that connected once and then closed — typical
-#     "operator tested locally" stragglers
-#   * a CI bot that runs lint/deploy actions on every push
-#   * an edge node humming along in production
-#
-# The fake "cass-prod-*" / "db-prod-*" / "edge-west-01" rows the old
-# seed inserted are gone — they were never going to connect against
-# the docker stack and just made the dashboard look stale.
+# Three production-shaped runners that don't collide with the docker-compose
+# stack (`runner-1` / `runner-2` / `runner-3`). Live "online" status still comes
+# from Presence when a real runner socket is connected; these rows provide the
+# durable fleet shape, labels, action catalog, and run history for screenshots.
 
 runner_specs = [
   %{
-    name: "andrew-mbp",
-    group: "laptops",
-    hostname: "Andrews-MacBook-Pro.local",
-    labels: %{"env" => "dev", "owner" => "andrew"},
-    state: :disconnected,
-    disconnect_reason: "operator closed lid",
-    version: "0.4.1",
-    last_seen_min: 95
-  },
-  %{
-    name: "ci-bot-runner",
-    group: "ci",
-    hostname: "github-actions-runner-04",
-    labels: %{"env" => "ci", "purpose" => "lint+deploy"},
+    name: "edge-fra-01",
+    group: "edge-web",
+    hostname: "edge-fra-01.northstar.example",
+    labels: %{"env" => "prod", "region" => "eu-central", "role" => "edge"},
     state: :connected,
-    version: "0.4.1",
-    last_seen_min: 1
-  },
-  %{
-    name: "edge-pop-fra",
-    group: "edge-eu",
-    hostname: "vmi-fra-3.colocrossing.net",
-    labels: %{"region" => "eu-central", "tier" => "edge"},
-    state: :connected,
-    version: "0.4.1",
+    version: "0.4.2",
     last_seen_min: 2
+  },
+  %{
+    name: "api-iad-02",
+    group: "app-api",
+    hostname: "api-iad-02.northstar.example",
+    labels: %{"env" => "prod", "region" => "us-east-1", "service" => "checkout"},
+    state: :connected,
+    version: "0.4.2",
+    last_seen_min: 4
+  },
+  %{
+    name: "pg-primary-iad",
+    group: "data-postgres",
+    hostname: "pg-primary-iad.northstar.example",
+    labels: %{"env" => "prod", "region" => "us-east-1", "role" => "primary"},
+    state: :connected,
+    version: "0.4.2",
+    last_seen_min: 6
   }
 ]
 
@@ -231,6 +403,8 @@ ensure_runner = fn spec ->
   case Enum.find(all_runners, &(&1.name == spec.name)) do
     %{} = existing ->
       existing
+      |> Ecto.Changeset.change(group: spec.group, labels: spec.labels)
+      |> Repo.update!()
 
     nil ->
       {:ok, r} =
@@ -268,6 +442,12 @@ stamp_runner_state = fn runner, spec ->
           last_disconnect_reason: spec[:disconnect_reason] || "websocket dropped"
         }
     end
+    |> Map.merge(%{
+      group: spec.group,
+      hostname: spec.hostname,
+      labels: spec.labels,
+      runner_version: spec.version
+    })
 
   runner
   |> Ecto.Changeset.change(attrs)
@@ -281,108 +461,148 @@ runners =
 
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Seeded #{length(runners)} demo runners (docker runners self-register on boot)" <>
+    "✓ Seeded #{length(runners)} production-shaped demo runners (docker runners self-register on boot)" <>
     IO.ANSI.reset()
 )
 
 # -- Catalog: actions on each runner ---------------------------------
 
 linux_actions = [
-  %{
+  action_descriptor.("linux-core", %{
     "id" => "linux.uptime",
-    "title" => "uptime",
-    "kind" => "exec",
+    "title" => "System uptime and load average",
     "risk" => "low",
-    "description" => "Show uptime + load average.",
-    "side_effects" => [],
+    "description" => "Reports system uptime and 1/5/15-minute load averages.",
     "args" => []
-  },
-  %{
+  }),
+  action_descriptor.("linux-core", %{
     "id" => "linux.disk_usage",
-    "title" => "df -h",
-    "kind" => "exec",
+    "title" => "Filesystem disk usage",
     "risk" => "low",
-    "description" => "Show filesystem usage.",
-    "side_effects" => [],
-    "args" => []
-  },
-  %{
-    "id" => "linux.journalctl_tail",
-    "title" => "journalctl tail",
-    "kind" => "exec",
-    "risk" => "low",
-    "description" => "Tail the systemd journal for one unit.",
-    "side_effects" => [],
+    "description" => "Reports filesystem usage for supplied paths using df.",
+    "args" => [
+      %{"name" => "paths", "type" => "string_array", "required" => false}
+    ]
+  }),
+  action_descriptor.("linux-core", %{
+    "id" => "linux.journalctl",
+    "title" => "Recent systemd journal entries",
+    "risk" => "medium",
+    "description" => "Reads recent systemd journal entries for a named unit.",
     "args" => [
       %{"name" => "unit", "type" => "string", "required" => true},
-      %{"name" => "lines", "type" => "integer", "required" => false}
+      %{"name" => "since", "type" => "duration", "required" => false},
+      %{"name" => "priority", "type" => "string", "required" => false}
     ]
-  }
-]
-
-ci_actions = [
-  %{
-    "id" => "ci.lint",
-    "title" => "Lint repository",
-    "kind" => "exec",
-    "risk" => "low",
-    "description" => "Run mix credo + dialyzer on the current checkout.",
-    "side_effects" => [],
-    "args" => []
-  },
-  %{
-    "id" => "ci.deploy_canary",
-    "title" => "Deploy canary",
-    "kind" => "exec",
-    "risk" => "high",
-    "description" => "Promote the current main HEAD to the canary fleet.",
-    "side_effects" => ["state_change", "external_call"],
-    "args" => [
-      %{"name" => "fleet", "type" => "string", "required" => true},
-      %{"name" => "sha", "type" => "string", "required" => true}
-    ]
-  }
+  })
 ]
 
 edge_actions = [
-  %{
-    "id" => "nginx.status",
-    "title" => "nginx -s status",
-    "kind" => "exec",
+  action_descriptor.("caddy", %{
+    "id" => "caddy.version",
+    "title" => "caddy version",
     "risk" => "low",
-    "description" => "Report worker processes + active connections.",
-    "side_effects" => [],
+    "description" => "Prints the running Caddy version.",
     "args" => []
-  },
-  %{
-    "id" => "nginx.reload",
-    "title" => "nginx -s reload",
-    "kind" => "exec",
-    "risk" => "medium",
-    "description" => "Gracefully reload nginx after a config change.",
-    "side_effects" => ["state_change"],
+  }),
+  action_descriptor.("caddy", %{
+    "id" => "caddy.reverse_proxy_upstreams",
+    "title" => "GET /reverse_proxy/upstreams",
+    "risk" => "low",
+    "description" => "Lists all reverse-proxy upstreams with current health.",
     "args" => []
-  },
-  %{
-    "id" => "cache.purge",
-    "title" => "Purge CDN cache",
-    "kind" => "exec",
+  }),
+  action_descriptor.("caddy", %{
+    "id" => "caddy.access_log_tail",
+    "title" => "tail caddy access log",
+    "risk" => "low",
+    "description" => "Tails the access log with a bounded line count.",
+    "args" => [%{"name" => "lines", "type" => "integer", "required" => false}]
+  }),
+  action_descriptor.("caddy", %{
+    "id" => "caddy.validate_config",
+    "title" => "caddy validate --config <file>",
+    "risk" => "low",
+    "description" => "Validates a Caddy config without applying it.",
+    "args" => [%{"name" => "file", "type" => "string", "required" => false}]
+  }),
+  action_descriptor.("caddy", %{
+    "id" => "caddy.reload_config",
+    "title" => "caddy reload --config <file>",
     "risk" => "high",
-    "description" => "Invalidate a path prefix on the local edge cache.",
-    "side_effects" => ["state_change", "external_call"],
-    "args" => [%{"name" => "prefix", "type" => "string", "required" => true}]
-  }
+    "description" => "Live-swaps the running Caddy config after validation.",
+    "side_effects" => ["Replaces the in-memory config atomically."],
+    "args" => [%{"name" => "file", "type" => "string", "required" => false}]
+  })
+]
+
+api_actions = [
+  action_descriptor.("systemd-deep", %{
+    "id" => "systemd.failed_units",
+    "title" => "Failed systemd units",
+    "risk" => "low",
+    "description" => "Lists units not in active state with their last failure reason.",
+    "args" => []
+  }),
+  action_descriptor.("systemd-deep", %{
+    "id" => "systemd.unit_show",
+    "title" => "systemctl show <unit>",
+    "risk" => "low",
+    "description" => "Shows systemd properties for one unit.",
+    "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
+  }),
+  action_descriptor.("systemd-deep", %{
+    "id" => "systemd.unit_restart",
+    "title" => "systemctl restart <unit>",
+    "risk" => "high",
+    "description" => "Restarts one workload-bearing systemd unit.",
+    "side_effects" => ["Service stopped then started."],
+    "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
+  })
+]
+
+postgres_actions = [
+  action_descriptor.("postgres", %{
+    "id" => "postgres.replication_lag",
+    "title" => "Replication lag (primary view)",
+    "risk" => "low",
+    "description" => "Reports replication slot health from the primary's perspective.",
+    "args" => []
+  }),
+  action_descriptor.("postgres", %{
+    "id" => "postgres.vacuum_status",
+    "title" => "Autovacuum + bloat snapshot",
+    "risk" => "low",
+    "description" => "Returns dead-tuple counts and vacuum timestamps by table.",
+    "args" => [
+      %{"name" => "schema", "type" => "string", "required" => false},
+      %{"name" => "limit", "type" => "integer", "required" => false}
+    ]
+  }),
+  action_descriptor.("postgres", %{
+    "id" => "postgres.reload_conf",
+    "title" => "Reload postgresql.conf",
+    "risk" => "high",
+    "description" => "Calls pg_reload_conf() to re-read server config.",
+    "side_effects" => ["Server re-reads postgresql.conf and pg_hba.conf."],
+    "args" => []
+  })
 ]
 
 advertise = fn runner, actions ->
+  packs =
+    actions
+    |> Enum.map(& &1["pack_id"])
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Map.new(fn pack_id -> {pack_id, pack_descriptor.(pack_id)} end)
+
   payload = %{
     "hostname" => runner.hostname,
     "labels" => runner.labels || %{},
     "version" => runner.runner_version,
-    "packs" => %{
-      "showcase" => %{"version" => "0.4.1", "hash" => "sha256:seed"}
-    },
-    "actions" => Enum.map(actions, &Map.put(&1, "pack_id", "showcase"))
+    "packs" => packs,
+    "actions" => actions
   }
 
   {:ok, _} = Catalog.observe_state(runner, payload)
@@ -390,11 +610,17 @@ end
 
 Enum.each(runners, fn r ->
   case r.group do
-    "ci" -> advertise.(r, ci_actions ++ linux_actions)
-    "edge-eu" -> advertise.(r, edge_actions ++ linux_actions)
+    "edge-web" -> advertise.(r, edge_actions ++ linux_actions)
+    "app-api" -> advertise.(r, api_actions ++ linux_actions)
+    "data-postgres" -> advertise.(r, postgres_actions ++ linux_actions)
     _ -> advertise.(r, linux_actions)
   end
 end)
+
+PackVersion.Query.all()
+|> PackVersion.Query.by_account_id(account.id)
+|> PackVersion.Query.by_pack_id("showcase")
+|> Repo.delete_all()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Advertised actions on every runner" <> IO.ANSI.reset())
 
@@ -406,11 +632,10 @@ IO.puts(IO.ANSI.cyan() <> "✓ Advertised actions on every runner" <> IO.ANSI.re
 policy = Policies.peek_policy_for_account(account.id)
 
 # Pull each seeded runner out by name so the run-seeding code reads
-# like prose. Connected ones can take fresh in-flight runs; the
-# disconnected laptop only holds historical rows.
-laptop = Enum.find(runners, &(&1.name == "andrew-mbp"))
-ci = Enum.find(runners, &(&1.name == "ci-bot-runner"))
-edge = Enum.find(runners, &(&1.name == "edge-pop-fra"))
+# like prose.
+edge = Enum.find(runners, &(&1.name == "edge-fra-01"))
+api = Enum.find(runners, &(&1.name == "api-iad-02"))
+database = Enum.find(runners, &(&1.name == "pg-primary-iad"))
 
 # -- LLM-bridge API key (an "agent") --------------------------------
 #
@@ -419,18 +644,43 @@ edge = Enum.find(runners, &(&1.name == "edge-pop-fra"))
 # audit log entries the create_key call writes give the Audit page
 # an actor=api_key example, too.
 
-{:ok, _raw_agent, agent_key} =
-  Emisar.ApiKeys.create_key(
-    %{
-      name: "Claude — Andrew's terminal",
-      description:
-        "MCP bridge running under Claude Desktop on andrew-mbp. " <>
-          "Used for ad-hoc edge cache purges and disk-usage checks.",
-      scopes: ["actions:read", "actions:execute"],
-      runner_group_filter: ["edge-eu"]
-    },
-    owner_subject
+agent_key_name = "Claude Code - on-call"
+
+agent_key =
+  case ApiKeys.list_api_keys_for_account(owner_subject, page: [limit: 100]) do
+    {:ok, keys, _} ->
+      Enum.find(keys, &(&1.name == agent_key_name))
+
+    _ ->
+      nil
+  end
+
+agent_key =
+  case agent_key do
+    nil ->
+      {:ok, _raw_agent, key} =
+        ApiKeys.create_key(
+          %{
+            name: agent_key_name,
+            description:
+              "MCP bridge used by the on-call engineer for read-only triage and " <>
+                "approval-gated remediation.",
+            scopes: ["actions:read", "actions:execute"],
+            runner_group_filter: ["edge-web", "app-api", "data-postgres"]
+          },
+          owner_subject
+        )
+
+      key
+
+    key ->
+      key
+  end
+  |> Ecto.Changeset.change(
+    last_used_at: mins_ago.(9),
+    last_client_info: %{"name" => "Claude Code", "version" => "1.0.0"}
   )
+  |> Repo.update!()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.reset())
 
@@ -442,17 +692,38 @@ IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.
 # `audit:read` and nothing else, with no runner restrictions because
 # the audit endpoint doesn't dispatch to runners.
 
-{:ok, _raw_export, _export_key} =
-  Emisar.ApiKeys.create_key(
-    %{
-      name: "SIEM export — initial",
-      description:
-        "Streams audit events as NDJSON to the company SIEM. " <>
-          "Read-only — no dispatch rights.",
-      scopes: ["audit:read"]
-    },
-    owner_subject
-  )
+export_key_name = "SIEM export - Datadog intake"
+
+export_key =
+  case ApiKeys.list_audit_export_keys_for_account(owner_subject, page: [limit: 100]) do
+    {:ok, keys, _} ->
+      Enum.find(keys, &(&1.name == export_key_name))
+
+    _ ->
+      nil
+  end
+
+case export_key do
+  nil ->
+    {:ok, _raw_export, key} =
+      ApiKeys.create_key(
+        %{
+          name: export_key_name,
+          description:
+            "Streams audit events as NDJSON to the security team's SIEM. " <>
+              "Read-only; no dispatch rights.",
+          scopes: ["audit:read"]
+        },
+        owner_subject
+      )
+
+    key
+
+  key ->
+    key
+end
+|> Ecto.Changeset.change(last_used_at: hours_ago.(6))
+|> Repo.update!()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded audit-export API key" <> IO.ANSI.reset())
 
@@ -483,6 +754,15 @@ if existing_runs == [] do
   backdate = fn run, datetime ->
     run
     |> Ecto.Changeset.change(inserted_at: datetime, queued_at: datetime)
+    |> Repo.update!()
+  end
+
+  backdate_request = fn request, requested_at ->
+    request
+    |> Ecto.Changeset.change(
+      requested_at: requested_at,
+      expires_at: DateTime.add(requested_at, 24 * 3600, :second)
+    )
     |> Repo.update!()
   end
 
@@ -549,8 +829,7 @@ if existing_runs == [] do
   end
 
   # Realistic synthetic output per action — built once, reused below.
-  # Each entry is a list of `{stream, chunk_text}` tuples. The
-  # RunDetail panel renders stderr in rose so failures stand out.
+  # Each entry is a list of `{stream, chunk_text}` tuples.
   uptime_stdout = [
     {"stdout", " 14:02:31 up 18 days,  4:11,  3 users,  load average: 0.41, 0.28, 0.22\n"}
   ]
@@ -563,60 +842,77 @@ if existing_runs == [] do
        "/dev/nvme0n1p2  1.8T  1.4T  316G  82% /var/lib/data\n"}
   ]
 
-  nginx_status_stdout = [
+  caddy_upstreams_stdout = [
     {"stdout",
-     "Active connections: 142\n" <>
-       "server accepts handled requests\n" <>
-       " 91824 91824 304117\n" <>
-       "Reading: 0 Writing: 4 Waiting: 138\n"}
+     Jason.encode!(%{
+       "upstreams" => [
+         %{"address" => "10.42.8.12:8443", "healthy" => true, "requests" => 1284},
+         %{"address" => "10.42.8.13:8443", "healthy" => true, "requests" => 1198}
+       ]
+     }) <> "\n"}
   ]
 
-  cache_purge_stdout = [
-    {"stdout", "→ purging /static/css/* on edge-pop-fra…\n"},
-    {"stdout", "✓ purged 1284 cached objects in 312ms\n"}
+  caddy_access_stdout = [
+    {"stdout", "203.0.113.21 - - \"GET /checkout\" 200 4821 34ms\n"},
+    {"stdout", "198.51.100.44 - - \"POST /api/cart\" 200 812 41ms\n"},
+    {"stdout", "203.0.113.29 - - \"GET /assets/app.css\" 304 0 2ms\n"}
   ]
 
-  lint_stdout = [
-    {"stdout", "Compiling 17 files (.ex)\n"},
-    {"stdout", "Checking 17 files...\n"},
-    {"stdout", "  Found 0 issues (282 mods, 1.4s)\n"}
+  caddy_reload_stdout = [
+    {"stdout", "2026/06/24 11:12:08.214 INFO using adjacent Caddyfile\n"},
+    {"stdout", "2026/06/24 11:12:08.481 INFO autosaved config\n"},
+    {"stdout", "2026/06/24 11:12:08.482 INFO serving initial configuration\n"}
   ]
 
-  lint_failure_output = [
-    {"stdout", "Compiling 17 files (.ex)\n"},
+  caddy_validate_failure = [
     {"stderr",
-     "** (CompileError) lib/emisar/runs.ex:621: undefined function policy_attrs/4\n" <>
-       "    (emisar 0.4.1) lib/emisar/runs.ex:621: Emisar.Runs.dispatch_run/2\n"},
-    {"stderr", "Compilation failed.\n"}
+     "Error: adapting config using caddyfile: upstream app-blue.internal:8443: no healthy SRV records\n"}
   ]
 
   journalctl_stdout = [
     {"stdout",
      "-- Logs begin at Sat 2026-05-30 09:01:00 UTC. --\n" <>
-       "May 30 13:51:02 ip-10-1-0-3 nginx[1184]: 2026/05/30 13:51:02 [notice] 1184#1184: signal process started\n" <>
-       "May 30 13:55:14 ip-10-1-0-3 nginx[1184]: 2026/05/30 13:55:14 [warn] 1184#1184: 8 worker_connections are not enough\n"}
+       "Jun 24 13:51:02 api-iad-02 checkout-api[1184]: latency budget recovered p95=184ms\n" <>
+       "Jun 24 13:55:14 api-iad-02 checkout-api[1184]: deploy marker sha=6b7c19d\n"}
   ]
 
-  deploy_canary_output = [
-    {"stdout", "→ resolving canary fleet 'eu-canary'…\n"},
-    {"stdout", "  · resolved 2 hosts: edge-pop-fra, edge-pop-ams\n"},
-    {"stdout", "→ pulling image emisar/edge:9a7c4f0\n"},
-    {"stdout", "→ rolling restart\n"},
-    {"stdout", "  · edge-pop-fra: drained 142 conns, restart OK (2.1s)\n"},
-    {"stdout", "  · edge-pop-ams: drained 138 conns, restart OK (2.4s)\n"},
-    {"stdout", "✓ canary healthy on 2/2 hosts\n"}
+  postgres_lag_stdout = [
+    {"stdout", "checkout-read-1|10.42.12.41|streaming|async|0|16384\n"},
+    {"stdout", "checkout-read-2|10.42.12.42|streaming|async|0|32768\n"}
+  ]
+
+  postgres_vacuum_stdout = [
+    {"stdout", "public|orders|1842021|12804|0.69|2026-06-24 10:41:02|2026-06-24 13:20:11\n"},
+    {"stdout", "public|carts|931044|8092|0.86|2026-06-24 09:12:18|2026-06-24 13:04:52\n"}
+  ]
+
+  systemd_failed_stdout = [
+    {"stdout", "0 loaded units listed.\n"}
+  ]
+
+  systemd_restart_output = [
+    {"stdout", "Stopping checkout-api.service...\n"},
+    {"stdout", "Started checkout-api.service.\n"}
   ]
 
   # Successful operator-driven runs across the last 36 hours.
   successes = [
-    {edge, "linux.uptime", mins_ago.(8), 320, %{}, sam, "operator", nil, uptime_stdout},
-    {ci, "ci.lint", mins_ago.(35), 5400, %{}, alex, "operator", nil, lint_stdout},
-    {edge, "linux.disk_usage", mins_ago.(50), 280, %{}, user, "operator", nil, df_stdout},
-    {laptop, "linux.uptime", hours_ago.(2), 410, %{}, user, "operator", nil, uptime_stdout},
-    {edge, "nginx.status", hours_ago.(5), 740, %{}, alex, "operator", nil, nginx_status_stdout},
-    {ci, "linux.disk_usage", hours_ago.(11), 290, %{}, alex, "operator", nil, df_stdout},
-    {edge, "linux.journalctl_tail", hours_ago.(20), 410, %{"unit" => "nginx", "lines" => 100},
-     sam, "operator", nil, journalctl_stdout}
+    {edge, "linux.uptime", mins_ago.(8), 320, %{}, priya, "morning edge readiness",
+     uptime_stdout},
+    {edge, "caddy.reverse_proxy_upstreams", mins_ago.(24), 610, %{}, jordan,
+     "verify checkout upstream health after deploy", caddy_upstreams_stdout},
+    {database, "postgres.replication_lag", mins_ago.(46), 840, %{}, user,
+     "confirm replicas caught up after catalog import", postgres_lag_stdout},
+    {api, "systemd.failed_units", hours_ago.(3), 530, %{}, priya, "pre-handoff health sweep",
+     systemd_failed_stdout},
+    {database, "postgres.vacuum_status", hours_ago.(7), 1200,
+     %{"schema" => "public", "limit" => 20}, jordan, "check autovacuum before traffic peak",
+     postgres_vacuum_stdout},
+    {edge, "linux.disk_usage", hours_ago.(12), 280, %{"paths" => ["/", "/var/log"]}, user,
+     "weekly capacity check", df_stdout},
+    {api, "linux.journalctl", hours_ago.(19), 900,
+     %{"unit" => "checkout-api.service", "since" => "2h", "priority" => "warning"}, priya,
+     "review checkout-api warnings after release", journalctl_stdout}
   ]
 
   # MCP/agent-driven runs — these are what Claude dispatches over the
@@ -624,23 +920,22 @@ if existing_runs == [] do
   # includes the LLM's prompt summary so it's obvious in the UI who
   # asked.
   agent_runs = [
-    {edge, "linux.disk_usage", mins_ago.(12), 260, %{}, "Andrew via Claude: 'is fra disk OK?'",
-     df_stdout},
-    {edge, "nginx.status", mins_ago.(18), 690, %{},
-     "Andrew via Claude: 'why is fra throwing 502s?'", nginx_status_stdout},
-    {edge, "cache.purge", hours_ago.(3), 312, %{"prefix" => "/static/css/"},
-     "Andrew via Claude: 'flush the CSS cache after the deploy'", cache_purge_stdout}
+    {edge, "caddy.access_log_tail", mins_ago.(14), 260, %{"lines" => 50},
+     "Maya via Claude: summarize checkout traffic after the deploy", caddy_access_stdout},
+    {edge, "caddy.reverse_proxy_upstreams", mins_ago.(31), 690, %{},
+     "Maya via Claude: check whether edge upstreams are healthy", caddy_upstreams_stdout},
+    {database, "postgres.replication_lag", hours_ago.(2), 620, %{},
+     "Maya via Claude: confirm replica lag before the email campaign", postgres_lag_stdout}
   ]
 
-  Enum.each(successes, fn {runner, action_id, started_at, dur_ms, args, who, _source, _api_key_id,
-                           chunks} ->
+  Enum.each(successes, fn {runner, action_id, started_at, dur_ms, args, who, reason, chunks} ->
     finished_at = DateTime.add(started_at, dur_ms, :millisecond)
 
     insert_run.(%{
       runner_id: runner.id,
       action_id: action_id,
       args: args,
-      reason: "scheduled check",
+      reason: reason,
       requested_by_id: who.id,
       status: "running"
     })
@@ -665,41 +960,11 @@ if existing_runs == [] do
     |> finalize_success.(finished_at, dur_ms, chunks)
   end)
 
-  # In-flight runs — leave in "running" state. CI bot mid-lint,
-  # operator pulling logs.
-  Enum.each(
-    [
-      {ci, "ci.lint", mins_ago.(2), %{}, alex, "operator", nil},
-      {edge, "linux.journalctl_tail", mins_ago.(1), %{"unit" => "nginx", "lines" => 50}, sam,
-       "operator", nil}
-    ],
-    fn {runner, action_id, started_at, args, who, source, api_key_id} ->
-      insert_run.(%{
-        runner_id: runner.id,
-        action_id: action_id,
-        args: args,
-        reason: "investigating prod 502s",
-        requested_by_id: who.id,
-        source: source,
-        api_key_id: api_key_id,
-        status: "running"
-      })
-      |> backdate.(started_at)
-      |> Ecto.Changeset.change(sent_at: started_at, started_at: started_at)
-      |> Repo.update!()
-    end
-  )
-
-  # Two failures so the dashboard "Recent failures" tile lights up.
+  # A single old failure for filters/detail screenshots. It is outside the
+  # dashboard's 24h headline so the default account reads healthy.
   failed_specs = [
-    {ci, "ci.lint", mins_ago.(40), 1, "compilation error on lib/emisar/runs.ex:621", %{}, alex,
-     lint_failure_output},
-    {edge, "cache.purge", hours_ago.(3), 1, "upstream cache API returned 503",
-     %{"prefix" => "/api/v1/"}, sam,
-     [
-       {"stdout", "→ purging /api/v1/ on edge-pop-fra…\n"},
-       {"stderr", "✗ upstream returned 503 service unavailable after 3 retries\n"}
-     ]}
+    {edge, "caddy.validate_config", days_ago.(5), 1, "config validation failed before reload",
+     %{"file" => "/etc/caddy/Caddyfile"}, jordan, caddy_validate_failure}
   ]
 
   Enum.each(failed_specs, fn {runner, action_id, started_at, exit_code, reason, args, who, chunks} ->
@@ -717,153 +982,192 @@ if existing_runs == [] do
     |> finalize_failure.(finished_at, exit_code, reason, chunks)
   end)
 
-  # One cancelled run — half-deployed canary, operator hit cancel
-  # mid-rollout. Append the partial output so the RunDetail panel
-  # shows where it got to before cancellation.
+  # One old cancelled run. It gives the Runs filters a realistic terminal
+  # non-error without putting a fresh warning on the dashboard.
+  cancelled_at = days_ago.(3)
+
   cancelled =
     insert_run.(%{
-      runner_id: ci.id,
-      action_id: "ci.deploy_canary",
-      args: %{"fleet" => "eu-canary", "sha" => "9a7c4f0"},
-      reason: "canary rollout",
-      requested_by_id: alex.id,
+      runner_id: api.id,
+      action_id: "systemd.unit_restart",
+      args: %{"unit" => "checkout-api.service"},
+      reason: "cancel after canary rollback completed elsewhere",
+      requested_by_id: jordan.id,
       status: "running"
     })
-    |> backdate.(hours_ago.(8))
+    |> backdate.(cancelled_at)
 
-  # The first 3 chunks — operator hit cancel right as the rolling
-  # restart kicked off.
-  append_chunks.(cancelled, Enum.take(deploy_canary_output, 3))
+  append_chunks.(cancelled, systemd_restart_output)
 
-  {:ok, _} =
-    Runs.mark_cancelled(cancelled, "operator cancelled — rolling back to previous SHA")
+  {:ok, cancelled} =
+    Runs.mark_cancelled(cancelled, "operator cancelled - rollback already completed")
+
+  cancelled
+  |> Ecto.Changeset.change(finished_at: cancelled_at, cancelled_at: cancelled_at)
+  |> Repo.update!()
 
   IO.puts(
     IO.ANSI.cyan() <>
-      "✓ Seeded #{length(successes) + length(agent_runs)} successes (#{length(agent_runs)} via MCP agent), 2 in-flight, 2 failed, 1 cancelled" <>
+      "✓ Seeded #{length(successes) + length(agent_runs)} recent successes (#{length(agent_runs)} via MCP agent), 1 old failure, 1 old cancellation" <>
       IO.ANSI.reset()
   )
 
   # -- Pending approvals (so dashboard "Needs attention" lights up) ---
   #
   # Mix of human-initiated + agent-initiated requests so the approvals
-  # page shows both shapes. Sam files the routine one; Claude (the
-  # MCP agent) tries a high-risk cache purge and gets held.
+  # page shows both shapes. Priya files the routine one; Claude (the
+  # MCP agent) asks for a high-risk restart and gets held.
+
+  pending1_at = mins_ago.(6)
 
   pending1 =
     insert_run.(%{
       runner_id: edge.id,
-      action_id: "nginx.reload",
-      args: %{},
-      reason: "post-deploy nginx reload",
-      requested_by_id: sam.id,
+      action_id: "caddy.reload_config",
+      args: %{"file" => "/etc/caddy/Caddyfile"},
+      reason: "apply checked-in Caddyfile after certificate renewal",
+      requested_by_id: priya.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Default for medium-risk actions"
+      policy_reason: "High-risk config reload requires an admin approval"
     })
-    |> backdate.(mins_ago.(5))
+    |> backdate.(pending1_at)
 
-  {:ok, _req1} =
+  {:ok, req1} =
     Approvals.create_request(
-      Repo.preload(pending1, []),
-      sam.id,
-      "Picked up the new nginx config from the canary deploy — needs an admin to bless the reload."
+      pending1,
+      priya.id,
+      "Config was validated in CI; needs an admin approval before the edge reload."
     )
 
+  backdate_request.(req1, pending1_at)
+
   # Agent-initiated pending — note source: "mcp", api_key_id set.
+  pending2_at = mins_ago.(22)
+
   pending2 =
     insert_run.(%{
-      runner_id: edge.id,
-      action_id: "cache.purge",
-      args: %{"prefix" => "/static/"},
-      reason: "Andrew via Claude: 'something cached looks stale, can you flush /static?'",
+      runner_id: api.id,
+      action_id: "systemd.unit_restart",
+      args: %{"unit" => "checkout-api.service"},
+      reason: "Maya via Claude: restart checkout-api after deploy smoke test",
       requested_by_id: user.id,
       source: "mcp",
       api_key_id: agent_key.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Default for high-risk actions"
+      policy_reason: "Service restart is high-risk and requires human approval"
     })
-    |> backdate.(mins_ago.(18))
+    |> backdate.(pending2_at)
 
-  {:ok, _req2} =
+  {:ok, req2} =
     Approvals.create_request(
-      Repo.preload(pending2, []),
+      pending2,
       user.id,
-      "Agent-initiated purge of /static/. Risk=high because it can briefly miss-rate the whole site."
+      "Agent proposed a restart after the smoke test. Hold for the deploy captain."
     )
+
+  backdate_request.(req2, pending2_at)
 
   # An already-approved one (just to show history in the approvals
   # list filter when an operator clicks "Approved").
+  approved_at = hours_ago.(26)
+
   approved_run =
     insert_run.(%{
-      runner_id: ci.id,
-      action_id: "ci.deploy_canary",
-      args: %{"fleet" => "eu-canary", "sha" => "9a7c4f0"},
-      reason: "main → canary, deploy job #4218",
-      requested_by_id: sam.id,
+      runner_id: edge.id,
+      action_id: "caddy.reload_config",
+      args: %{"file" => "/etc/caddy/Caddyfile"},
+      reason: "Maya via Claude: reload Caddy after config validation",
+      requested_by_id: user.id,
+      source: "mcp",
+      api_key_id: agent_key.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Default for high-risk actions"
+      policy_reason: "High-risk config reload requires an admin approval"
     })
-    |> backdate.(hours_ago.(26))
+    |> backdate.(approved_at)
 
   {:ok, %ApprovalRequest{} = approved_req} =
-    Approvals.create_request(approved_run, sam.id, "canary rollout for SHA 9a7c4f0")
+    Approvals.create_request(approved_run, user.id, "reload after config validation")
+
+  approved_req = backdate_request.(approved_req, approved_at)
 
   # Manually mark approved (don't actually dispatch) + backdate the
   # decision so it doesn't pollute "pending" lists.
   approved_req
   |> Ecto.Changeset.change(
     status: :approved,
-    decided_by_id: alex.id,
+    decided_by_id: jordan.id,
     decided_at: hours_ago.(25),
-    decision_reason: "matches the deploy window, smoke tests green"
+    decision_reason: "validated config, active connections drained, deploy window open"
   )
   |> Repo.update!()
 
+  append_chunks.(approved_run, caddy_reload_stdout)
+
   approved_run
-  |> Ecto.Changeset.change(status: :success, finished_at: hours_ago.(24))
+  |> Ecto.Changeset.change(
+    status: :success,
+    sent_at: DateTime.add(hours_ago.(24), -2, :second),
+    started_at: DateTime.add(hours_ago.(24), -2, :second),
+    finished_at: hours_ago.(24),
+    exit_code: 0,
+    duration_ms: 1820,
+    stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
+    stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
+    stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
+    stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr")
+  )
   |> Repo.update!()
 
   # A denied one too.
+  denied_at = days_ago.(3)
+
   denied_run =
     insert_run.(%{
-      runner_id: laptop.id,
-      action_id: "linux.disk_usage",
+      runner_id: database.id,
+      action_id: "postgres.reload_conf",
       args: %{},
-      reason: "Andrew via Claude: 'check andrew-mbp disk before backup'",
+      reason: "Maya via Claude: reload Postgres config before change ticket is approved",
       requested_by_id: user.id,
       source: "mcp",
       api_key_id: agent_key.id,
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Override: deny-laptop-from-agent"
+      policy_reason: "Database config reload requires approved change window"
     })
-    |> backdate.(days_ago.(2))
+    |> backdate.(denied_at)
 
   {:ok, denied_req} =
     Approvals.create_request(
       denied_run,
       user.id,
-      "Agent tried to peek at the dev laptop — denied by policy override."
+      "Agent proposed a Postgres reload before the change ticket was approved."
     )
+
+  denied_req = backdate_request.(denied_req, denied_at)
 
   denied_req
   |> Ecto.Changeset.change(
     status: :denied,
-    decided_by_id: user.id,
-    decided_at: days_ago.(2),
-    decision_reason: "Agents shouldn't be running anything on the laptops group."
+    decided_by_id: jordan.id,
+    decided_at: days_ago.(3),
+    decision_reason: "Wait for the DBA-approved change window."
   )
   |> Repo.update!()
 
   denied_run
-  |> Ecto.Changeset.change(status: :cancelled, finished_at: days_ago.(2))
+  |> Ecto.Changeset.change(
+    status: :cancelled,
+    finished_at: denied_at,
+    cancelled_at: denied_at,
+    reason_text: "approval denied: Wait for the DBA-approved change window."
+  )
   |> Repo.update!()
 
   IO.puts(
@@ -879,8 +1183,8 @@ if existing_runs == [] do
   # then run autonomously" workflow on the Grants page.
 
   for {action, runner_id, scope, duration} <- [
-        {"linux.disk_usage", edge.id, :any_args, :ninety_days},
-        {"nginx.status", edge.id, :exact_args, :thirty_days}
+        {"caddy.access_log_tail", edge.id, :any_args, :thirty_days},
+        {"postgres.replication_lag", database.id, :any_args, :thirty_days}
       ] do
     fake_run = %{
       account_id: account.id,
@@ -907,17 +1211,14 @@ if existing_runs == [] do
 
   Audit.log(account.id, "user.signed_in",
     actor_kind: "user",
-    actor_id: alex.id,
+    actor_id: jordan.id,
     payload: %{ip: "203.0.113.42"}
   )
 
-  Audit.log(account.id, "runner.disabled",
+  Audit.log(account.id, "user.signed_in",
     actor_kind: "user",
-    actor_id: user.id,
-    subject_kind: "runner",
-    subject_id: laptop.id,
-    subject_label: laptop.name,
-    payload: %{reason: "operator closed lid"}
+    actor_id: priya.id,
+    payload: %{ip: "198.51.100.17"}
   )
 end
 
@@ -942,7 +1243,7 @@ case Runners.list_auth_keys(owner_subject) do
           Runners.create_auth_key(
             %{
               description: "Demo auth key",
-              group: "edge-eu",
+              group: "edge-web",
               reusable: true
             },
             owner_subject
@@ -970,22 +1271,25 @@ end
 #    enterprise — above — so SSO/SCIM is testable there.) -------------------
 seed_plan_account = fn name, slug, plan ->
   email = "owner@#{slug}.test"
+  full_name = "#{name} Owner"
 
   owner =
     case Users.fetch_user_by_email(email) do
       {:error, :not_found} ->
         {:ok, u} =
           Users.register_user(%{
-            full_name: "#{name} Owner",
+            full_name: full_name,
             email: email,
             password: "Sleep-tight-1234"
           })
 
-        {:ok, u} = u |> User.Changeset.confirm() |> Repo.update()
-        u
+        u = confirm_user.(u)
+        clear_seeded_mfa.(u)
 
       {:ok, u} ->
-        u
+        u = ensure_profile.(u, full_name)
+        u = confirm_user.(u)
+        clear_seeded_mfa.(u)
     end
 
   acct =
@@ -1000,41 +1304,91 @@ seed_plan_account = fn name, slug, plan ->
         a
     end
 
+  {:ok, membership} = Accounts.fetch_membership_for_session(owner, acct.id)
+  subject = Subject.for_user(owner, acct, membership)
+
+  acct =
+    if acct.name == name do
+      acct
+    else
+      {:ok, updated} = Accounts.update_account(acct, %{name: name}, subject)
+      updated
+    end
+
   seed_subscription.(acct, plan)
 
-  subject =
-    Subject.for_user(
-      owner,
-      acct,
-      %Emisar.Accounts.Membership{role: "owner", user_id: owner.id, account_id: acct.id}
-    )
+  subject = Subject.for_user(owner, acct, membership)
 
   {acct, owner, subject}
 end
 
 # Free + Team accounts WITH data (a runner + two finished runs each) so a
 # non-enterprise account looks lived-in and its plan's runner limit shows.
-for {name, slug, plan} <- [{"Acme Logistics", "acme", "free"}, {"Globex Corp", "globex", "team"}] do
+for {name, slug, plan} <- [
+      {"Acme Logistics Demo", "acme", "free"},
+      {"Globex Platform Demo", "globex", "team"}
+    ] do
   {acct, owner, subject} = seed_plan_account.(name, slug, plan)
 
-  {:ok, runner} = Runners.create_runner(%{name: "#{slug}-prod-1", group: "prod"}, subject)
+  runner_name = "#{slug}-prod-1"
 
-  for {action, hrs} <- [{"linux.uptime", 2}, {"linux.disk_usage", 9}] do
-    {:ok, run} =
-      Runs.create_run(%{
-        account_id: acct.id,
-        runner_id: runner.id,
-        action_id: action,
-        source: "operator",
-        requested_by_id: owner.id
-      })
+  runner =
+    case Runners.fetch_runner_by_name(runner_name, subject) do
+      {:ok, existing} ->
+        existing
 
-    run |> Ecto.Changeset.change(status: :success, finished_at: hours_ago.(hrs)) |> Repo.update!()
+      {:error, :not_found} ->
+        {:ok, created} = Runners.create_runner(%{name: runner_name, group: "prod"}, subject)
+        created
+    end
+    |> Ecto.Changeset.change(
+      hostname: "#{runner_name}.example",
+      labels: %{"env" => "prod", "account" => slug},
+      last_connected_at: mins_ago.(35),
+      runner_version: "0.4.2"
+    )
+    |> Repo.update!()
+
+  advertise.(runner, linux_actions)
+
+  existing_account_runs =
+    case Runs.list_recent_runs(subject, limit: 1) do
+      {:ok, rows, _metadata} -> rows
+      _ -> []
+    end
+
+  if existing_account_runs == [] do
+    for {action, hrs, args, reason} <- [
+          {"linux.uptime", 2, %{}, "spot check after runner install"},
+          {"linux.disk_usage", 9, %{"paths" => ["/"]}, "daily capacity check"}
+        ] do
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: acct.id,
+          runner_id: runner.id,
+          action_id: action,
+          args: args,
+          reason: reason,
+          source: "operator",
+          requested_by_id: owner.id
+        })
+
+      run
+      |> Ecto.Changeset.change(
+        status: :success,
+        inserted_at: hours_ago.(hrs),
+        queued_at: hours_ago.(hrs),
+        finished_at: DateTime.add(hours_ago.(hrs), 1, :second),
+        exit_code: 0,
+        duration_ms: 1000
+      )
+      |> Repo.update!()
+    end
   end
 
   IO.puts(IO.ANSI.cyan() <> "✓ #{name} (slug=#{slug}, #{plan}) — with data" <> IO.ANSI.reset())
 end
 
 # An empty Free account — to see the onboarding / empty-state surfaces.
-_ = seed_plan_account.("Initech", "initech", "free")
-IO.puts(IO.ANSI.cyan() <> "✓ Initech (slug=initech, free) — empty" <> IO.ANSI.reset())
+_ = seed_plan_account.("Blank Workspace Demo", "blank", "free")
+IO.puts(IO.ANSI.cyan() <> "✓ Blank Workspace Demo (slug=blank, free) — empty" <> IO.ANSI.reset())
