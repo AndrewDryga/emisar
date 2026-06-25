@@ -125,6 +125,7 @@ defmodule EmisarWeb.RunsLive do
         metadata={@metadata}
         filter_params={@filter_params}
         filters={@filters}
+        responsive
       >
         <:empty>
           <%!-- Two-state empty: "you have a filter set" stays a quiet

@@ -57,6 +57,11 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:table` renders `<table>` with `:col` slots (data dense); `:cards` renders `<ul>/<li>` with the `:item` slot (operator-friendly card rows)"
 
+  attr :responsive, :boolean,
+    default: false,
+    doc:
+      "`:table` only. Below `sm`, re-render each row as a label/value card (reusing the same `:col` slots + their labels) instead of letting a dense table overflow and clip. The card shows ALL columns — including the ones the table hides on small screens — since it has the vertical room. Enable on wide tables (runs, audit)."
+
   attr :overflow, :atom,
     default: :hidden,
     values: [:hidden, :visible],
@@ -183,7 +188,10 @@ defmodule EmisarWeb.LiveTable do
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
-        <div class="overflow-x-auto rounded-lg border border-zinc-800">
+        <div class={[
+          "overflow-x-auto rounded-lg border border-zinc-800",
+          @responsive && "hidden sm:block"
+        ]}>
           <table id={@id} class={["w-full text-sm text-left", @class]}>
             <thead class="bg-zinc-900/50 text-xs uppercase tracking-wider text-zinc-400">
               <tr>
@@ -212,6 +220,36 @@ defmodule EmisarWeb.LiveTable do
             </tbody>
           </table>
         </div>
+
+        <%!-- Below sm a dense table overflows and clips (status badges, long
+             action ids). Re-render each row as a label/value card reusing the
+             same :col slots + labels — so the page authors the table once, and
+             the card restores the columns the table hides on small screens. --%>
+        <ul
+          :if={@responsive}
+          id={"#{@id}-cards"}
+          class="divide-y divide-zinc-800 overflow-hidden rounded-lg border border-zinc-800 sm:hidden"
+        >
+          <li
+            :for={row <- @rows}
+            id={@row_id && "#{@row_id.(row)}-card"}
+            phx-click={@row_click && @row_click.(row)}
+            class={["space-y-2 px-4 py-3.5", @row_click && "cursor-pointer hover:bg-zinc-900/40"]}
+          >
+            <div :for={col <- @col} class="flex items-baseline gap-3">
+              <span
+                :if={col[:label] not in [nil, ""]}
+                class="w-24 shrink-0 text-[11px] font-medium uppercase tracking-wider text-zinc-500"
+              >
+                {col.label}
+              </span>
+              <div class="min-w-0 flex-1 text-sm text-zinc-200">{render_slot(col, row)}</div>
+            </div>
+            <div :if={@action != []} class="flex justify-end gap-2 pt-1">
+              {render_slot(@action, row)}
+            </div>
+          </li>
+        </ul>
 
         <.paginator
           id={@id}

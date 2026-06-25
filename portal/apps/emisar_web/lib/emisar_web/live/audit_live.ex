@@ -382,6 +382,7 @@ defmodule EmisarWeb.AuditLive do
         filters={@filters}
         row_id={fn event -> "event-#{event.id}" end}
         row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
+        responsive
       >
         <:col :let={event} label="When" class="w-40">
           <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
