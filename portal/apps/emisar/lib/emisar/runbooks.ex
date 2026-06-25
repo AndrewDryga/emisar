@@ -341,10 +341,12 @@ defmodule Emisar.Runbooks do
   # than getting a silently-skipped step. Accumulates per-step lists and
   # concats once (not `acc ++ rows` per step — that's quadratic).
   defp resolve_work_list(account_id, steps) do
+    runners_by_group = active_runner_ids_by_group(account_id, steps)
+
     steps
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, [], 0}, fn {step, idx}, {:ok, acc, count} ->
-      case step_runner_ids(account_id, step) do
+      case step_runner_ids(step, runners_by_group) do
         [] ->
           {:halt, {:error, {:step_no_runners, idx + 1}}}
 
@@ -377,18 +379,35 @@ defmodule Emisar.Runbooks do
         do: {step, idx, runner_id}
   end
 
-  # A step's own runners from its `runner_selector`: a `runner_id` list
-  # passes through (dispatch_run re-validates each), a `group` list
-  # resolves to the union of those groups' active members at dispatch.
-  defp step_runner_ids(account_id, step) do
+  # Group targets resolve through one Runners-domain read, then each step pulls
+  # from that grouped result. A `runner_id` selector still passes through
+  # directly; dispatch_run re-validates each runner before enqueueing.
+  defp active_runner_ids_by_group(account_id, steps) do
+    groups =
+      steps
+      |> Enum.flat_map(&step_groups/1)
+      |> Enum.uniq()
+
+    account_id
+    |> Emisar.Runners.list_active_runners_in_groups(groups)
+    |> Enum.group_by(& &1.group, & &1.id)
+  end
+
+  defp step_groups(step) do
+    case StepSelector.parse(step["runner_selector"]) do
+      {"group", groups} -> groups
+      _ -> []
+    end
+  end
+
+  defp step_runner_ids(step, runners_by_group) do
     case StepSelector.parse(step["runner_selector"]) do
       {"runner_id", [_ | _] = ids} ->
         ids
 
       {"group", [_ | _] = groups} ->
         groups
-        |> Enum.flat_map(&Emisar.Runners.list_active_runners_in_group(account_id, &1))
-        |> Enum.map(& &1.id)
+        |> Enum.flat_map(&Map.get(runners_by_group, &1, []))
         |> Enum.uniq()
 
       _ ->

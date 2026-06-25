@@ -26,6 +26,9 @@ defmodule Emisar.Runners.Runner.Query do
   def by_group(queryable, group),
     do: where(queryable, [runners: r], r.group == ^group)
 
+  def by_groups(queryable, groups) when is_list(groups),
+    do: where(queryable, [runners: r], r.group in ^groups)
+
   def enforcing(queryable \\ all()),
     do: where(queryable, [runners: r], r.enforce_signatures == true)
 

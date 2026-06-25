@@ -236,14 +236,16 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — the runbook engine's group-target resolution: active (not
-  deleted, not disabled) runners in `group`, ordered by name so the
+  deleted, not disabled) runners in `groups`, ordered by name so the
   engine's work list is stable across continuation recomputes.
   """
-  def list_active_runners_in_group(account_id, group) when is_binary(group) do
+  def list_active_runners_in_groups(_account_id, []), do: []
+
+  def list_active_runners_in_groups(account_id, groups) when is_list(groups) do
     Runner.Query.not_deleted()
     |> Runner.Query.not_disabled()
     |> Runner.Query.by_account_id(account_id)
-    |> Runner.Query.by_group(group)
+    |> Runner.Query.by_groups(Enum.uniq(groups))
     |> Runner.Query.ordered_by_group_name()
     |> Repo.all()
   end

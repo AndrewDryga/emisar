@@ -565,7 +565,7 @@ defmodule Emisar.AuditTest do
       end
     end
 
-    test "the request_id filter matches request_id, with wildcards escaped" do
+    test "the request_id filter matches an anchored prefix, with wildcards escaped" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
 
@@ -579,12 +579,15 @@ defmodule Emisar.AuditTest do
 
       log.("policy.updated", "req_trace")
       # A would-be wildcard collision: if `_` weren't escaped, searching
-      # "req_trace" would also match this.
+      # "req_tr" would also match this.
       log.("user.invited", "reqZtrace")
+      # A would-be infix collision: the filter stays prefix-anchored so the
+      # request_id index can serve it.
+      log.("user.signed_in", "xreq_trace")
 
-      # Paste a request_id → only its event; the `_` is matched literally.
+      # Paste the leading fragment: only its event; the `_` is matched literally.
       assert {:ok, [hit], %{count: 1}} =
-               Audit.list_events(subject, filter: [request_id: "req_trace"])
+               Audit.list_events(subject, filter: [request_id: "req_tr"])
 
       assert hit.request_id == "req_trace"
     end

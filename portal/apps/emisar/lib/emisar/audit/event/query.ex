@@ -414,17 +414,17 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
-      # Request-id trace: paste a request_id to pull every event tied to it.
-      # ILIKE so a partial paste still matches; wildcards escaped to match
-      # literally. (Type filtering is the `event_type` dropdown below.)
+      # Request-id trace: paste the leading part of a request_id to pull every
+      # event tied to it. Anchored LIKE keeps the account/request_id prefix index
+      # usable; wildcards are escaped to match literally.
       %Filter{
         name: :request_id,
         advanced: true,
         title: "Request ID",
         type: :string,
         fun: fn queryable, term ->
-          pattern = "%" <> escape_like(term) <> "%"
-          {queryable, dynamic([events: e], ilike(e.request_id, ^pattern))}
+          pattern = escape_like(term) <> "%"
+          {queryable, dynamic([events: e], like(e.request_id, ^pattern))}
         end
       },
       # Date range — backed by the same %Filter{} mechanism as the rest, so the
@@ -529,10 +529,10 @@ defmodule Emisar.Audit.Event.Query do
     for {type, _label} <- @known_event_types, Atom.to_string(outcome(type)) in outcomes, do: type
   end
 
-  # Escape LIKE/ILIKE wildcards so a pasted id matches literally: a request_id
-  # like `req_…` carries `_` (a single-char wildcard) and `%`/`\` shouldn't act
+  # Escape LIKE wildcards so a pasted id matches literally: a request_id
+  # like `req_...` carries `_` (a single-char wildcard) and `%`/`\` shouldn't act
   # as patterns either. Backslash first, so the escapes we add aren't re-escaped;
-  # Postgres ILIKE uses `\` as the default escape char.
+  # Postgres LIKE uses `\` as the default escape char.
   defp escape_like(term) do
     term
     |> String.replace("\\", "\\\\")
