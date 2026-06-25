@@ -165,7 +165,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ user.email
     end
 
-    test "each agent links to its audit activity, including after it's revoked", %{conn: conn} do
+    test "each agent links to its run activity, including after it's revoked", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
@@ -181,10 +181,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
 
       # "What did this agent do" is exactly what you want after killing a key —
-      # the (revoked) row still deep-links the audit log filtered to its actor.
+      # the (revoked) row still deep-links the RUNS feed scoped to this agent's
+      # key (agent activity lives on the run, not the engine-attributed audit actor).
       assert html =~ "View activity"
-      assert html =~ "actor_id=#{key.id}"
-      assert html =~ "actor_kind=api_key"
+      assert html =~ "runs?api_key_id=#{key.id}"
     end
 
     test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do

@@ -46,6 +46,41 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ ~s(data-format="relative")
   end
 
+  test "the agent 'View activity' pivot (api_key_id) scopes runs to that key + shows a clearable chip",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
+    {_raw2, other_key} = api_key_fixture(account_id: account.id, name: "Other Agent")
+
+    {:ok, runner} =
+      Runner.Changeset.register(%{
+        account_id: account.id,
+        name: "runner-1",
+        external_id: Ecto.UUID.generate(),
+        group: "default",
+        hostname: "10.0.5.12"
+      })
+      |> Repo.insert()
+
+    base = %{account_id: account.id, runner_id: runner.id, source: "mcp", args: %{}}
+
+    {:ok, _} =
+      Runs.create_run(Map.merge(base, %{action_id: "ci.deploy_canary", api_key_id: key.id}))
+
+    {:ok, _} =
+      Runs.create_run(Map.merge(base, %{action_id: "linux.uptime", api_key_id: other_key.id}))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?#{[api_key_id: key.id]}")
+
+    # Scoped to this agent's run (the dead audit-actor link is replaced by the
+    # runs feed where agent activity actually lives); the other agent is excluded.
+    assert html =~ "ci.deploy_canary"
+    refute html =~ "linux.uptime"
+    # The clearable "Agent: <name>" pivot chip resolves the key's name.
+    assert html =~ "Agent:"
+    assert html =~ "Claude Code"
+  end
+
   test "redirects anonymous users", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/runs")
   end

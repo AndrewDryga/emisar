@@ -2018,6 +2018,32 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A "pinned to X" filter chip for a row-click / "View activity" pivot — shows what
+  the list is scoped to and clears in one click. Shared by the audit actor/subject
+  pivots and the runs agent pivot. `clear_to` is a same-LV patch path.
+
+      <.pivot_chip label="Agent" value={@agent_label} clear_to={~p"/app/\#{@acct}/runs"} />
+  """
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :clear_to, :string, required: true
+
+  def pivot_chip(assigns) do
+    ~H"""
+    <div class="mb-4 flex w-max items-center gap-2 rounded-lg bg-brand-500/10 px-3 py-1.5 text-xs text-brand-200 ring-1 ring-brand-500/30">
+      <span>{@label}: <span class="font-medium">{@value}</span></span>
+      <.link
+        patch={@clear_to}
+        class="font-semibold text-brand-300 hover:text-brand-100"
+        aria-label={"Clear #{String.downcase(@label)} filter"}
+      >
+        ✕
+      </.link>
+    </div>
+    """
+  end
+
+  @doc """
   The bare heading-row above an UNbordered list/table section (distinct from
   `<.panel>`, which owns a bordered header). A `text-sm` section title, an
   optional inline `<.count_badge>`, and an optional `:actions` slot.

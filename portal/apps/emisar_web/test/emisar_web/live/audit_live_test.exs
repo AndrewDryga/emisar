@@ -132,6 +132,34 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~s(name="request_id")
     end
 
+    test "an actor pivot (actor_kind + actor_id) filters the feed and shows a clearable chip",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      actor_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "membership.role_changed",
+          actor_kind: "user",
+          actor_id: actor_id,
+          actor_label: "admin@example.com"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "user.signed_in",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "unrelated-human"
+        )
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/audit?#{[actor_kind: "user", actor_id: actor_id]}")
+
+      # The pivot resolves: the actor chip shows + rows scope to that actor.
+      assert html =~ "Actor:"
+      assert html =~ "admin@example.com"
+      refute html =~ "unrelated-human"
+    end
+
     test "the From date filter narrows to recent events", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

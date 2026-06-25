@@ -26,13 +26,25 @@ defmodule Emisar.Runs do
              Authorizer.view_runs_permission()
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
+      # "View activity" from an agent key pivots here, scoped to that key — agent
+      # activity lives on the run (`api_key_id`), not the audit actor (terminal run
+      # events are engine/`system`-attributed, so the audit actor filter is always
+      # empty for an api_key). Threaded as an opt, not a visible filter, so it stays
+      # a pivot and never renders a UUID text input in the bar.
+      {api_key_id, opts} = Keyword.pop(opts, :api_key_id)
 
       ActionRun.Query.all()
+      |> filter_runs_by_api_key_id(api_key_id)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
     end
   end
+
+  defp filter_runs_by_api_key_id(queryable, nil), do: queryable
+
+  defp filter_runs_by_api_key_id(queryable, api_key_id),
+    do: ActionRun.Query.by_api_key_id(queryable, api_key_id)
 
   @doc """
   Paginated top-N most recent runs for the dashboard tile. Default

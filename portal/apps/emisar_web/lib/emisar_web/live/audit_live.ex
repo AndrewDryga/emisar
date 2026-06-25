@@ -293,26 +293,6 @@ defmodule EmisarWeb.AuditLive do
     Enum.find_value(events, subject_id, fn e -> e.subject_id == subject_id && e.subject_label end)
   end
 
-  # The "pinned to X" filter chip shared by the actor + subject pivots.
-  attr :label, :string, required: true
-  attr :value, :string, required: true
-  attr :clear_to, :string, required: true
-
-  defp pivot_chip(assigns) do
-    ~H"""
-    <div class="mb-4 flex w-max items-center gap-2 rounded-lg bg-brand-500/10 px-3 py-1.5 text-xs text-brand-200 ring-1 ring-brand-500/30">
-      <span>{@label}: <span class="font-medium">{@value}</span></span>
-      <.link
-        patch={@clear_to}
-        class="font-semibold text-brand-300 hover:text-brand-100"
-        aria-label={"Clear #{String.downcase(@label)} filter"}
-      >
-        ✕
-      </.link>
-    </div>
-    """
-  end
-
   def render(assigns) do
     ~H"""
     <.dashboard_shell

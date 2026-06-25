@@ -747,14 +747,16 @@ defmodule EmisarWeb.AgentsLive do
                      filtered to this key's actor. Shown for revoked keys too:
                      that's exactly when "what did it do" matters. Every role
                      that can see this page also holds view_audit. --%>
-                <.link
-                  navigate={
-                    ~p"/app/#{@current_account}/audit?#{[actor_kind: "api_key", actor_id: key.id]}"
-                  }
-                  class="text-xs text-brand-400 hover:text-brand-300"
+                <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
+                     audit actor filter is empty for an api_key (terminal run events
+                     are engine-attributed), so this pivots to the runs feed. --%>
+                <.button
+                  navigate={~p"/app/#{@current_account}/runs?#{[api_key_id: key.id]}"}
+                  variant="ghost"
+                  size="sm"
                 >
-                  View activity →
-                </.link>
+                  View activity
+                </.button>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
