@@ -573,11 +573,10 @@ defmodule EmisarWeb.AuditLive do
 
   def event_summary(assigns) do
     ~H"""
-    <div :if={@pairs != []} class="mt-1 flex flex-wrap gap-1.5">
-      <span
-        :for={pair <- @pairs}
-        class="inline-flex items-center gap-1 rounded-md bg-zinc-900/80 px-1.5 py-0.5 text-[10px] ring-1 ring-zinc-800"
-      >
+    <%!-- Inline muted key:value, not chip pills — the pills stacked under every
+         row added visual weight and cramped the densest, most-scanned table. --%>
+    <div :if={@pairs != []} class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+      <span :for={pair <- @pairs} class="inline-flex items-center gap-1">
         {render_slot(@inner_block, pair)}
       </span>
     </div>

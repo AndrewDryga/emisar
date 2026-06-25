@@ -2986,11 +2986,13 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <span
       :if={@expires_at}
+      title="If no one decides by then, it's auto-denied — the action won't run."
       class={["inline-flex items-center gap-1 text-xs", expiry_class(@expires_at), @class]}
     >
       <%!-- {" "} is a literal space HEEx won't trim — without it the
            formatter drops the component to its own line and "expires"
-           abuts the time ("expires3h ago"). --%>
+           abuts the time ("expires3h ago"). The hover title states the
+           on-expiry behavior; the LocalTime hook carries the absolute time. --%>
       <.icon name="hero-clock" class="h-3 w-3" />
       expires{" "}<TimeHelpers.local_time value={@expires_at} mode={:relative} />
     </span>
