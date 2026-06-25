@@ -658,9 +658,11 @@ defmodule EmisarWeb.ProfileLive do
           title="Active sessions"
           hint="Each row is one signed-in browser or device. Sign out of any you don't recognize — your current device stays signed in."
         >
-          <:meta>
+          <%!-- The account-wide sign-out sits ABOVE the list (in the content
+               column), not in the title's meta slot — its long label collided
+               with the heading in the narrow left column. --%>
+          <div :if={length(@sessions) > 1} class="mb-3 flex justify-end">
             <.button
-              :if={length(@sessions) > 1}
               variant="danger"
               size="sm"
               phx-click="revoke_other_sessions"
@@ -668,9 +670,9 @@ defmodule EmisarWeb.ProfileLive do
             >
               Sign out everywhere else
             </.button>
-          </:meta>
+          </div>
 
-          <ul class="max-h-96 divide-y divide-zinc-900 overflow-y-auto rounded-lg border border-zinc-900 bg-zinc-950/40 text-sm">
+          <ul class="max-h-96 divide-y divide-zinc-800 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/30 text-sm">
             <.list_row
               :for={session <- @sessions}
               icon={session_device_icon(session)}
