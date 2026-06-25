@@ -37,19 +37,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
         requested_by = if connected?(socket), do: lookup_user(request.requested_by_id), else: nil
         decided_by = if connected?(socket), do: lookup_user(request.decided_by_id), else: nil
 
-        # Risk is the approver's headline signal but isn't on the request — look
-        # it up from the catalog (display-only, connected pass; nil if the action
-        # is no longer advertised).
-        action_risk =
+        # Risk + the plain-English "what this does" are the approver's headline
+        # signals but aren't on the request — look the action up from the catalog
+        # (display-only, connected pass; nil if it's no longer advertised).
+        action =
           if connected?(socket),
-            do: action_risk_for(request.context, socket.assigns.current_subject)
+            do: fetch_action_for(request.context, socket.assigns.current_subject)
 
         {:ok,
          socket
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
-         |> assign(:action_risk, action_risk)
+         |> assign(:action_risk, action && action.risk)
+         |> assign(:action_description, action && action.description)
          |> assign(:runner_connection, runner_connection(run))
          |> assign(:requested_by, requested_by)
          |> assign(:decided_by, decided_by)
@@ -120,15 +121,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp action_risk_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
+  defp fetch_action_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
        when is_binary(action_id) and is_binary(runner_id) do
     case Catalog.fetch_action_by_id(action_id, runner_id, subject) do
-      {:ok, action} -> action.risk
+      {:ok, action} -> action
       {:error, _} -> nil
     end
   end
 
-  defp action_risk_for(_context, _subject), do: nil
+  defp fetch_action_for(_context, _subject), do: nil
 
   def handle_info({:approval_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
@@ -463,8 +464,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </.meta_strip>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <%!-- Left: context — reason, policy, args, link to run --%>
+        <%!-- Left: context — what-it-does, reason, policy, args, link to run --%>
         <div class="space-y-4">
+          <%!-- Plain-English effect from the pack manifest, so a non-expert
+               approver knows what they're signing off on — not just the
+               action id + raw args. --%>
+          <.card :if={@action_description} padding="p-4">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              What this does
+            </h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@action_description}</p>
+          </.card>
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Reason
