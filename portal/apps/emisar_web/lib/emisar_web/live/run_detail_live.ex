@@ -289,9 +289,7 @@ defmodule EmisarWeb.RunDetailLive do
         <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Reason
         </h3>
-        <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-          {@run.reason}
-        </p>
+        <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
       </.card>
 
       <%!-- Policy decision strip — single horizontal line. Hidden for

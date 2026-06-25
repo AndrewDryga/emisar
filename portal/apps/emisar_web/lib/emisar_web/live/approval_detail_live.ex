@@ -484,9 +484,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Reason
             </h3>
-            <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-              {@request.reason}
-            </p>
+            <%!-- No whitespace-pre-wrap: it preserved the template's own leading
+                 indentation and pushed the reason right of every other section
+                 body. The reason is prose, so normal flow (flush-left) is correct. --%>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
           </.card>
 
           <.notice
