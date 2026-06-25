@@ -414,18 +414,9 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
-      # Request-id trace: paste the leading part of a request_id to pull every
-      # event tied to it. Anchored LIKE keeps the account/request_id prefix index
-      # usable; wildcards are escaped to match literally.
-      %Filter{
-        name: :request_id,
-        title: "Request ID",
-        type: :string,
-        fun: fn queryable, term ->
-          pattern = escape_like(term) <> "%"
-          {queryable, dynamic([events: e], like(e.request_id, ^pattern))}
-        end
-      },
+      # Order = the bar's left-to-right flow: WHEN (date range), WHAT (type +
+      # outcome), WHO (actor + subject), HOW (sign-in), then the niche TRACE
+      # (request id) + the noise toggle last — common filters lead, niche trail.
       # Date range — backed by the same %Filter{} mechanism as the rest, so the
       # bar's clear (×) wipes them too. Inclusive bounds (a "From 10:00" pick
       # includes 10:00:00); the LiveTable datetime input parses the UTC value.
@@ -449,6 +440,16 @@ defmodule Emisar.Audit.Event.Query do
         fun: fn queryable, types -> {queryable, dynamic([events: e], e.event_type in ^types)} end
       },
       %Filter{
+        name: :outcome,
+        title: "Outcome",
+        type: {:list, :string},
+        values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],
+        fun: fn queryable, outcomes ->
+          types = event_types_for_outcomes(outcomes)
+          {queryable, dynamic([events: e], e.event_type in ^types)}
+        end
+      },
+      %Filter{
         name: :actor_kind,
         title: "Actor type",
         type: {:list, :string},
@@ -461,22 +462,6 @@ defmodule Emisar.Audit.Event.Query do
           {"system", "System"}
         ],
         fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.actor_kind in ^kinds)} end
-      },
-      # Sign-in method (provenance). Lets a security buyer answer "show me every
-      # action taken via SSO last week" — `auth_method` is stamped on every event
-      # a user session produces (nil for API-key / runner actors).
-      %Filter{
-        name: :auth_method,
-        title: "Sign-in method",
-        type: {:list, :string},
-        values: [
-          {"password", "Password"},
-          {"magic_link", "Magic link"},
-          {"sso", "SSO"}
-        ],
-        fun: fn queryable, methods ->
-          {queryable, dynamic([events: e], e.auth_method in ^methods)}
-        end
       },
       %Filter{
         name: :subject_kind,
@@ -498,14 +483,32 @@ defmodule Emisar.Audit.Event.Query do
           {queryable, dynamic([events: e], e.subject_kind in ^kinds)}
         end
       },
+      # Sign-in method (provenance). Lets a security buyer answer "show me every
+      # action taken via SSO last week" — `auth_method` is stamped on every event
+      # a user session produces (nil for API-key / runner actors).
       %Filter{
-        name: :outcome,
-        title: "Outcome",
+        name: :auth_method,
+        title: "Sign-in method",
         type: {:list, :string},
-        values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],
-        fun: fn queryable, outcomes ->
-          types = event_types_for_outcomes(outcomes)
-          {queryable, dynamic([events: e], e.event_type in ^types)}
+        values: [
+          {"password", "Password"},
+          {"magic_link", "Magic link"},
+          {"sso", "SSO"}
+        ],
+        fun: fn queryable, methods ->
+          {queryable, dynamic([events: e], e.auth_method in ^methods)}
+        end
+      },
+      # Request-id trace: paste the leading part of a request_id to pull every
+      # event tied to it. Anchored LIKE keeps the account/request_id prefix index
+      # usable; wildcards are escaped to match literally.
+      %Filter{
+        name: :request_id,
+        title: "Request ID",
+        type: :string,
+        fun: fn queryable, term ->
+          pattern = escape_like(term) <> "%"
+          {queryable, dynamic([events: e], like(e.request_id, ^pattern))}
         end
       },
       %Filter{
