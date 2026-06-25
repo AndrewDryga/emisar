@@ -368,7 +368,7 @@ defmodule EmisarWeb.DashboardLive do
         label="Runners online"
         value={"#{@connected} / #{@total}"}
         hint={runners_hint(@connected, @total)}
-        class={runners_ring(@connected, @total)}
+        hint_tone={runners_tone(@connected, @total)}
       />
     </.link>
     """
@@ -386,9 +386,9 @@ defmodule EmisarWeb.DashboardLive do
 
   defp runners_hint(_connected, _total), do: "All connected"
 
-  defp runners_ring(0, total) when total > 0, do: "ring-1 ring-rose-500/30"
-  defp runners_ring(connected, total) when connected < total, do: "ring-1 ring-amber-500/20"
-  defp runners_ring(_connected, _total), do: ""
+  defp runners_tone(0, total) when total > 0, do: :rose
+  defp runners_tone(connected, total) when connected < total, do: :amber
+  defp runners_tone(_connected, _total), do: :neutral
 
   attr :stats, :map, required: true
   attr :current_account, :map, required: true
@@ -400,16 +400,11 @@ defmodule EmisarWeb.DashboardLive do
         label={"Runs (last #{@stats.window_hours}h)"}
         value={@stats.total}
         hint={runs_hint(@stats)}
-        class={
+        hint_tone={
           cond do
-            @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 ->
-              "ring-1 ring-rose-500/30"
-
-            @stats.failed > 0 ->
-              "ring-1 ring-amber-500/20"
-
-            true ->
-              ""
+            @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 -> :rose
+            @stats.failed > 0 -> :amber
+            true -> :neutral
           end
         }
       />
@@ -555,7 +550,7 @@ defmodule EmisarWeb.DashboardLive do
         label={stat_label(@tone, @team_mfa)}
         value={"#{@team_mfa.enrolled} / #{@team_mfa.total}"}
         hint={stat_hint(@tone, @team_mfa)}
-        class={stat_ring(@tone)}
+        hint_tone={@tone}
       />
     </.link>
     """
@@ -575,10 +570,6 @@ defmodule EmisarWeb.DashboardLive do
 
   defp stat_hint(:neutral, _),
     do: "No members yet."
-
-  defp stat_ring(:rose), do: "ring-1 ring-rose-500/40"
-  defp stat_ring(:amber), do: "ring-1 ring-amber-500/30"
-  defp stat_ring(_), do: nil
 
   attr :billing, :map, required: true
   attr :current_account, :map, required: true

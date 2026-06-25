@@ -386,7 +386,7 @@ defmodule EmisarWeb.AuditLive do
         <:col :let={event} label="When" class="w-40">
           <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
         </:col>
-        <:col :let={event} label="Event">
+        <:col :let={event} label="Event" class="w-full">
           <div class="flex items-start gap-2">
             <span
               class={["mt-1.5 h-2 w-2 flex-none rounded-full", tone_dot(event.event_type)]}
@@ -621,7 +621,9 @@ defmodule EmisarWeb.AuditLive do
       <%!-- The "kind:" prefix is a plain label — only the value links. --%>
       <span class="text-zinc-500">{@kind}:</span>
       <%= if @href do %>
-        <.link navigate={@href} class="text-brand-300 hover:text-brand-200">{@text}</.link>
+        <%!-- Neutral value, emerald on hover — emerald is the pass/accent token,
+             not a generic link color, so a green value always means "succeeded". --%>
+        <.link navigate={@href} class="text-zinc-300 hover:text-brand-300">{@text}</.link>
       <% else %>
         {@text}
       <% end %>

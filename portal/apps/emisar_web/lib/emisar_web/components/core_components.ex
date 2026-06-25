@@ -2612,6 +2612,10 @@ defmodule EmisarWeb.CoreComponents do
   attr :label, :string, required: true
   attr :value, :any, required: true
   attr :hint, :string, default: nil
+  # Outcome lives in the value + this colored hint, NOT a tinted card border —
+  # so a stat tile reads the same as every other card (one flat surface) while
+  # still signalling state.
+  attr :hint_tone, :atom, default: :neutral, values: [:neutral, :rose, :amber, :brand]
   attr :class, :string, default: nil
 
   def stat(assigns) do
@@ -2621,12 +2625,15 @@ defmodule EmisarWeb.CoreComponents do
       <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
         {stat_value(@value)}
       </div>
-      <%= if @hint do %>
-        <div class="mt-1 text-xs text-zinc-500">{@hint}</div>
-      <% end %>
+      <div :if={@hint} class={["mt-1 text-xs", stat_hint_tone(@hint_tone)]}>{@hint}</div>
     </.card>
     """
   end
+
+  defp stat_hint_tone(:rose), do: "text-rose-300"
+  defp stat_hint_tone(:amber), do: "text-amber-300"
+  defp stat_hint_tone(:brand), do: "text-brand-300"
+  defp stat_hint_tone(_), do: "text-zinc-500"
 
   # `value={:unavailable}` renders a muted em dash so a tile whose read failed
   # reads "couldn't load", not a misleading 0 (the value is otherwise a count
