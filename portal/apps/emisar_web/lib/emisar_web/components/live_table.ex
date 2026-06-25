@@ -62,6 +62,11 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:table` only. Below `sm`, re-render each row as a label/value card (reusing the same `:col` slots + their labels) instead of letting a dense table overflow and clip. The card shows ALL columns — including the ones the table hides on small screens — since it has the vertical room. Enable on wide tables (runs, audit)."
 
+  attr :card_accent, :any,
+    default: nil,
+    doc:
+      "`:responsive` only. `fn row -> :pass | :pending | :deny | :neutral`. Colors a left spine on each mobile card so problem/pending rows pop in a long scroll; routine rows get a transparent spine (no shift). Without it every card reads the same weight."
+
   attr :overflow, :atom,
     default: :hidden,
     values: [:hidden, :visible],
@@ -234,7 +239,11 @@ defmodule EmisarWeb.LiveTable do
             :for={row <- @rows}
             id={@row_id && "#{@row_id.(row)}-card"}
             phx-click={@row_click && @row_click.(row)}
-            class={["space-y-2 px-4 py-3.5", @row_click && "cursor-pointer hover:bg-zinc-900/40"]}
+            class={[
+              "space-y-2 border-l-2 px-4 py-3.5",
+              card_spine_class(@card_accent && @card_accent.(row)),
+              @row_click && "cursor-pointer hover:bg-zinc-900/40"
+            ]}
           >
             <div :for={col <- @col} class="flex items-baseline gap-3">
               <span
@@ -262,6 +271,15 @@ defmodule EmisarWeb.LiveTable do
     </div>
     """
   end
+
+  # Left status spine on a responsive card. Every card carries `border-l-2` so
+  # the inset is uniform (no content shift between rows); only the COLOR varies —
+  # rose/amber make problem + pending rows pop in a scroll, pass is a quiet
+  # healthy edge, and routine/neutral stays transparent so it recedes.
+  defp card_spine_class(:deny), do: "border-l-rose-500"
+  defp card_spine_class(:pending), do: "border-l-amber-500"
+  defp card_spine_class(:pass), do: "border-l-brand-500/40"
+  defp card_spine_class(_), do: "border-l-transparent"
 
   defp default_cards_wrapper_class(:visible),
     do: "divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/30"

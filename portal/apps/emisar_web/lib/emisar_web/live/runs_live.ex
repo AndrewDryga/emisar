@@ -126,6 +126,7 @@ defmodule EmisarWeb.RunsLive do
         filter_params={@filter_params}
         filters={@filters}
         responsive
+        card_accent={fn run -> status_tone(run.status) end}
       >
         <:empty>
           <%!-- Two-state empty: "you have a filter set" stays a quiet

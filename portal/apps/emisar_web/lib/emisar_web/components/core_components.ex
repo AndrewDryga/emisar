@@ -1797,6 +1797,30 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  @doc """
+  The coarse semantic bucket for a status string — `:pass | :pending | :deny |
+  :neutral`. Used where a caller needs the OUTCOME tone without the full badge
+  (e.g. the mobile card's left status spine). The detailed `status_classes`/
+  `status_dot` below carry the per-status visual specifics (the running pulse,
+  the amber "refused" security-block) that this coarse bucket flattens.
+  """
+  def status_tone(status) do
+    case to_string(status) do
+      s when s in ~w[success connected approved published running sent] ->
+        :pass
+
+      s when s in ~w[pending_approval refused] ->
+        :pending
+
+      s
+      when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed denied] ->
+        :deny
+
+      _ ->
+        :neutral
+    end
+  end
+
   defp status_classes("success"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp status_classes("connected"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp status_classes("approved"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
