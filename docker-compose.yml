@@ -24,14 +24,18 @@
 #   portal      depends on db healthy; runs migrate + bin/server on
 #               its way up; becomes healthy on GET /healthz
 #   seeder      runs once after portal is healthy; inserts the demo
-#               account, default policy, sample runbook, and a fixed
-#               dev auth key matching what the runners present
-#   runner-*    depend on seeder succeeding; register against portal
+#               account, default policy, sample runbook, the demo runner
+#               rows, and a fixed dev auth key matching what the runners present
+#   runner-*    depend on seeder succeeding; register against portal and
+#               ADOPT their pre-seeded rows by external_id — so they come up
+#               online carrying the seeded run history, approvals, and grants
 #
-# Sign in to http://localhost:4000 as demo@emisar.dev / Sleep-tight-1234.
+# Sign in to http://localhost:4010 as demo@emisar.dev / Sleep-tight-1234.
+# (Host port 4010, not 4000, so the stack doesn't collide with a local
+# `mix phx.server`; the portal still listens on 4000 inside the network.)
 #
-# Drive the MCP bridge for an ad-hoc test (after issuing an API key in
-# the dashboard and editing it into the mcp service's env):
+# The MCP bridge works out of the box against the seeded fixed dev API key
+# (wired into the mcp service below) — no manual key minting needed:
 #
 #   echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
 #     | docker compose run --rm -T mcp
@@ -88,8 +92,11 @@ services:
       # Use the Paddle stub client locally — prod runtime.exs refuses to
       # boot without PADDLE_API_KEY unless this is set.
       EMISAR_DISABLE_BILLING: "1"
+    # Host port 4010 → container 4000: keeps the container/internal port at
+    # 4000 (so `portal:4000`, the healthcheck, and PORT below are unchanged)
+    # while freeing host :4000 for a local `mix phx.server`.
     ports:
-      - "4000:4000"
+      - "4010:4000"
     # `curl` is the only http client in the debian-slim runtime image —
     # wget isn't installed and adding it would bloat the image.
     healthcheck:
@@ -120,31 +127,45 @@ services:
       # seed inserts a row with the SHA-256 of this raw string so the
       # runners' /runner/register call resolves it.
       EMISAR_DEV_FIXED_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      # DEV-ONLY well-known MCP API key. The seed mints the demo agent key
+      # ("Claude Code - on-call") with this exact raw value so the `mcp`
+      # service below can drive the bridge with no manual key minting. Must
+      # start with `emk-` and stay in sync with the mcp service's EMISAR_API_KEY.
+      EMISAR_DEV_FIXED_MCP_KEY: "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
     restart: "no"
     command: ["/app/bin/emisar", "eval", "Emisar.Release.seed()"]
 
   # ----------------------------------------------------------------
-  # Runners — three identical Go runners against the local portal
+  # Runners — three Go runners that ADOPT their seeded demo rows
   # ----------------------------------------------------------------
-  # The runner derives its display name from the container hostname.
-  # Without `hostname:`, Docker uses the container id — `0103417bc796`
-  # is technically unique but looks like noise to an LLM picking a host
-  # to target. Naming them `runner-1` / `-2` / `-3` makes the inputSchema
-  # enum self-documenting on every tool descriptor.
-  # Fixture volumes are demo-only: realistic /var/log entries and
-  # stub systemctl / journalctl binaries so the linux-core actions
+  # Each runner pins a durable `runner.id` (external_id) in its mounted
+  # config (dev/runners/<name>.yaml) matching the external_id the seed writes
+  # on that runner's row. On register the live container REUSES the pre-seeded
+  # row instead of creating a new one — so edge-fra-01 / api-iad-02 /
+  # pg-primary-iad come up ONLINE carrying their seeded run history, approvals,
+  # grants, and (baseline-trusted) pack catalog. The mounted config also sets
+  # each runner's group, labels, and which role packs it loads + advertises.
+  #
+  # `hostname:` is the FQDN the runner reports and the cloud displays; the
+  # compose service name (runner-1/-2/-3) stays the docker-network alias.
+  #
+  # Fixture volumes are demo-only: realistic /var/log entries and stub
+  # systemctl / journalctl binaries so the linux-core + systemd-deep actions
   # produce believable output inside this stack (no systemd, no real
-  # nginx/postgres logs). The runner image itself stays
-  # production-pristine — only this compose file knows about them.
+  # nginx/postgres logs). The runner image itself stays production-pristine —
+  # only this compose file knows about them.
   runner-1: &runner
     # Build context is the REPO ROOT (matching the portal) — runner/docker/Dockerfile
     # COPYs both `packs/` (now at the repo root) and `runner/...`, so it can't build
-    # from a `./runner` context.
+    # from a `./runner` context. RUNNER_VERSION stamps the binary so the live
+    # runner reports the same version the seed pinned (else the "dev" build default).
     build:
       context: .
       dockerfile: runner/docker/Dockerfile
+      args:
+        RUNNER_VERSION: "0.4.2"
     image: emisar/runner:dev
-    hostname: runner-1
+    hostname: edge-fra-01.northstar.example
     depends_on:
       seeder:
         condition: service_completed_successfully
@@ -153,6 +174,7 @@ services:
       EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
     volumes:
       - runner_1_data:/var/lib/emisar
+      - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
@@ -162,9 +184,10 @@ services:
 
   runner-2:
     <<: *runner
-    hostname: runner-2
+    hostname: api-iad-02.northstar.example
     volumes:
       - runner_2_data:/var/lib/emisar
+      - ./dev/runners/api-iad-02.yaml:/etc/emisar/config.yaml:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
@@ -173,9 +196,10 @@ services:
 
   runner-3:
     <<: *runner
-    hostname: runner-3
+    hostname: pg-primary-iad.northstar.example
     volumes:
       - runner_3_data:/var/lib/emisar
+      - ./dev/runners/pg-primary-iad.yaml:/etc/emisar/config.yaml:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
@@ -187,10 +211,10 @@ services:
   # on `docker compose up` (it would exit immediately without stdin).
   # Use `docker compose run --rm -T mcp` to drive it.
   #
-  # EMISAR_API_KEY is intentionally empty: you mint it from the
-  # dashboard's Settings → API keys page after first sign-in, then
-  # edit this file (or pass via `-e EMISAR_API_KEY=...` on the run
-  # command).
+  # EMISAR_API_KEY is the seeded fixed dev key (same raw the seeder mints as
+  # the "Claude Code - on-call" agent key via EMISAR_DEV_FIXED_MCP_KEY), so
+  # the bridge authenticates with no manual minting. Mint your own from
+  # Settings → API keys and pass `-e EMISAR_API_KEY=...` to use a real one.
   # ----------------------------------------------------------------
   mcp:
     build:
@@ -203,7 +227,10 @@ services:
         condition: service_healthy
     environment:
       EMISAR_URL: "http://portal:4000"
-      EMISAR_API_KEY: ""
+      EMISAR_API_KEY: "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      # The bridge fails closed on cleartext http:// to a non-loopback host;
+      # opt in for the in-network portal:4000 (same as the runners' allow_insecure).
+      EMISAR_ALLOW_INSECURE: "1"
 
 volumes:
   pg_data:

@@ -28,9 +28,14 @@ RUN go mod download
 # Source — the runner module's full source tree
 COPY runner/ ./
 
+# Version stamped into the binary (reported to the cloud + shown in the UI).
+# Defaults to "dev"; docker-compose overrides it so the live runner matches
+# the version the seed pins on its row.
+ARG RUNNER_VERSION=dev
+
 # Strip symbols + omit DWARF for a smaller binary
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=dev" \
+    -ldflags="-s -w -X main.Version=${RUNNER_VERSION}" \
     -o /out/emisar \
     .
 

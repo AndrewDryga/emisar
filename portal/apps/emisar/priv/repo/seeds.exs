@@ -361,14 +361,18 @@ end
 
 # -- Runners ----------------------------------------------------------
 #
-# Three production-shaped runners that don't collide with the docker-compose
-# stack (`runner-1` / `runner-2` / `runner-3`). Live "online" status still comes
-# from Presence when a real runner socket is connected; these rows provide the
-# durable fleet shape, labels, action catalog, and run history for screenshots.
+# Production-shaped demo runners. The first three carry a fixed `external_id`
+# that the docker-compose runner configs (dev/runners/<name>.yaml) pin as
+# their `runner.id` — so when the live containers register they ADOPT these
+# rows (online status from Presence, while the seeded catalog + run history
+# stay attached) instead of creating separate empty runners. The fourth has
+# no container, so it stays offline — the realistic "host currently down" row
+# for the fleet screenshots. `external_id` is the identity; names are display.
 
 runner_specs = [
   %{
     name: "edge-fra-01",
+    external_id: "edge-fra-01",
     group: "edge-web",
     hostname: "edge-fra-01.northstar.example",
     labels: %{"env" => "prod", "region" => "eu-central", "role" => "edge"},
@@ -378,6 +382,7 @@ runner_specs = [
   },
   %{
     name: "api-iad-02",
+    external_id: "api-iad-02",
     group: "app-api",
     hostname: "api-iad-02.northstar.example",
     labels: %{"env" => "prod", "region" => "us-east-1", "service" => "checkout"},
@@ -387,23 +392,42 @@ runner_specs = [
   },
   %{
     name: "pg-primary-iad",
+    external_id: "pg-primary-iad",
     group: "data-postgres",
     hostname: "pg-primary-iad.northstar.example",
     labels: %{"env" => "prod", "region" => "us-east-1", "role" => "primary"},
     state: :connected,
     version: "0.4.2",
     last_seen_min: 6
+  },
+  %{
+    name: "edge-sfo-03",
+    external_id: "edge-sfo-03",
+    group: "edge-web",
+    hostname: "edge-sfo-03.northstar.example",
+    labels: %{"env" => "prod", "region" => "us-west-2", "role" => "edge"},
+    state: :disconnected,
+    disconnect_reason: "drained for kernel upgrade",
+    version: "0.4.2",
+    last_seen_min: 140
   }
 ]
 
-# Use create_runner; idempotent via (account_id, name) unique index.
+# Use create_runner; idempotent via (account_id, name) unique index. The
+# fixed `external_id` is what the live docker runner adopts — set it on BOTH
+# branches so re-seeding an older DB (rows created before external_id was
+# pinned) still converges to the id the container presents.
 ensure_runner = fn spec ->
   {:ok, all_runners, _} = Runners.list_runners_for_account(owner_subject)
 
   case Enum.find(all_runners, &(&1.name == spec.name)) do
     %{} = existing ->
       existing
-      |> Ecto.Changeset.change(group: spec.group, labels: spec.labels)
+      |> Ecto.Changeset.change(
+        external_id: spec.external_id,
+        group: spec.group,
+        labels: spec.labels
+      )
       |> Repo.update!()
 
     nil ->
@@ -411,6 +435,7 @@ ensure_runner = fn spec ->
         Runners.create_runner(
           %{
             "name" => spec.name,
+            "external_id" => spec.external_id,
             "group" => spec.group,
             "hostname" => spec.hostname,
             "labels" => spec.labels,
@@ -424,10 +449,11 @@ ensure_runner = fn spec ->
 end
 
 stamp_runner_state = fn runner, spec ->
-  # Connection state is Phoenix.Presence now and can't be seeded (there's
-  # no live socket), so we only backdate the durable "last seen" history.
-  # Seed runners therefore render as offline; the live docker runners
-  # (runner-1/2/3) provide the connected demo state.
+  # Connection state is Phoenix.Presence — it can't be seeded (no live
+  # socket), so we backdate the durable "last seen" history only. The three
+  # :connected rows flip to truly online the moment their docker container
+  # adopts them (matched by external_id); the :disconnected row has no
+  # container, so it stays offline with this last-seen + disconnect reason.
   seen_at = mins_ago.(spec.last_seen_min)
 
   attrs =
@@ -461,7 +487,7 @@ runners =
 
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Seeded #{length(runners)} production-shaped demo runners (docker runners self-register on boot)" <>
+    "✓ Seeded #{length(runners)} demo runners (3 adopted by docker containers on boot, 1 offline)" <>
     IO.ANSI.reset()
 )
 
@@ -643,8 +669,22 @@ database = Enum.find(runners, &(&1.name == "pg-primary-iad"))
 # row and we can attribute some of the historical runs to it. The
 # audit log entries the create_key call writes give the Audit page
 # an actor=api_key example, too.
+#
+# In the docker stack EMISAR_DEV_FIXED_MCP_KEY is set, so this key is
+# minted with that well-known raw value and the `mcp` compose service can
+# drive the bridge with no manual minting. Locally (no env) it's a random
+# secret like any real key.
 
 agent_key_name = "Claude Code - on-call"
+
+agent_key_attrs = %{
+  name: agent_key_name,
+  description:
+    "MCP bridge used by the on-call engineer for read-only triage and " <>
+      "approval-gated remediation.",
+  scopes: ["actions:read", "actions:execute"],
+  runner_group_filter: ["edge-web", "app-api", "data-postgres"]
+}
 
 agent_key =
   case ApiKeys.list_api_keys_for_account(owner_subject, page: [limit: 100]) do
@@ -658,20 +698,29 @@ agent_key =
 agent_key =
   case agent_key do
     nil ->
-      {:ok, _raw_agent, key} =
-        ApiKeys.create_key(
-          %{
-            name: agent_key_name,
-            description:
-              "MCP bridge used by the on-call engineer for read-only triage and " <>
-                "approval-gated remediation.",
-            scopes: ["actions:read", "actions:execute"],
-            runner_group_filter: ["edge-web", "app-api", "data-postgres"]
-          },
-          owner_subject
-        )
+      case System.get_env("EMISAR_DEV_FIXED_MCP_KEY") do
+        # Build the row the way create_key does — Crypto.mint's prefix is the
+        # first 12 chars (ApiKeys @prefix_size) and the hash is Crypto.hash(raw),
+        # which is exactly what peek_api_key_by_secret recomputes on lookup.
+        # §7: seeds build rows directly rather than via a seed-only context fn.
+        fixed when is_binary(fixed) and byte_size(fixed) >= 12 ->
+          {:ok, key} =
+            ApiKeys.ApiKey.Changeset.create(
+              account.id,
+              user.id,
+              owner_membership.id,
+              String.slice(fixed, 0, 12),
+              Emisar.Crypto.hash(fixed),
+              agent_key_attrs
+            )
+            |> Repo.insert()
 
-      key
+          key
+
+        _ ->
+          {:ok, _raw_agent, key} = ApiKeys.create_key(agent_key_attrs, owner_subject)
+          key
+      end
 
     key ->
       key

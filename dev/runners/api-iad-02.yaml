@@ -1,0 +1,44 @@
+schema_version: 1
+
+# Per-runner config for the docker-compose demo stack, mounted over the
+# image's baked-in /etc/emisar/config.yaml. DEV ONLY. See
+# dev/runners/edge-fra-01.yaml for the full rationale — `runner.id` is the
+# external_id the seed pins so this container adopts the "api-iad-02" row.
+runner:
+  id: "api-iad-02"
+  group: "app-api"
+  labels:
+    env: prod
+    region: us-east-1
+    service: checkout
+
+cloud:
+  url: "http://portal:4000"
+  allow_insecure: true
+  auth_key_env: "EMISAR_AUTH_KEY"
+  token_path: "/var/lib/emisar/token.json"
+  heartbeat_every: "30s"
+  reconnect_min: "1s"
+  reconnect_max: "30s"
+
+paths:
+  data_dir: "/var/lib/emisar"
+  work_dir: "/tmp/emisar"
+  # App/API host: deep systemd introspection + the linux-core basics. The
+  # mounted systemctl/journalctl shims (dev/runner-fixtures) give these
+  # believable output without a real systemd inside the container.
+  packs:
+    - "/opt/emisar/packs/linux-core"
+    - "/opt/emisar/packs/systemd-deep"
+
+execution:
+  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
+  cancel_grace: "30s"
+
+events:
+  jsonl_path: "/var/log/emisar/events.jsonl"
+  max_size_bytes: 104857600
+  max_backups: 5
+
+redaction:
+  rules: []

@@ -1,9 +1,34 @@
 # Dev-only fixtures & harnesses
 
-Local-only development scaffolding for the docker-compose stacks — fixtures
-for the root demo stack and the standalone pack-test harness. None of this
-ships with production releases — the runner tarball produced by the release
-workflow contains exactly the runner binary and its config skeleton.
+Local-only development scaffolding for the docker-compose stacks — per-runner
+configs + fixtures for the root demo stack, and the standalone pack-test
+harness. None of this ships with production releases — the runner tarball
+produced by the release workflow contains exactly the runner binary and its
+config skeleton.
+
+## `runners/`
+
+One config file per docker-compose runner (`edge-fra-01.yaml`,
+`api-iad-02.yaml`, `pg-primary-iad.yaml`), mounted over the image's baked-in
+`/etc/emisar/config.yaml`:
+
+```yaml
+volumes:
+  - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
+```
+
+Each pins a fixed `runner.id` (the durable `external_id`) that **matches the
+`external_id` the seed writes on that runner's row** (`apps/emisar/priv/repo/seeds.exs`).
+Because runner identity is `(account, external_id)`, the live container
+*adopts* its pre-seeded row on register — coming up **online** while keeping
+the seeded run history, approvals, grants, and trusted pack catalog — instead
+of registering a second, empty runner. The config also sets each runner's
+`group`, `labels`, and which role packs it loads + advertises (edge → caddy,
+api → systemd-deep, pg → postgres; all three also load linux-core, which runs
+for real off the container via the fixtures below).
+
+To add a runner: add a `dev/runners/<name>.yaml`, a matching `runner_specs`
+entry in the seed (same `external_id`), and a service in `docker-compose.yml`.
 
 ## `runner-fixtures/`
 
