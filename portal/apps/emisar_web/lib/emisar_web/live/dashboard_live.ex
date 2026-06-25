@@ -313,7 +313,7 @@ defmodule EmisarWeb.DashboardLive do
           navigate={~p"/app/#{@current_account}/runs"}
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          See all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
+          View all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
         </.link>
       </header>
 

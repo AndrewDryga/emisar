@@ -2983,21 +2983,37 @@ defmodule EmisarWeb.CoreComponents do
   attr :class, :string, default: nil
 
   def approval_expiry(assigns) do
+    assigns = assign(assigns, :expired?, approval_expired?(assigns.expires_at))
+
     ~H"""
     <span
       :if={@expires_at}
-      title="If no one decides by then, it's auto-denied — the action won't run."
+      title={expiry_title(@expired?)}
       class={["inline-flex items-center gap-1 text-xs", expiry_class(@expires_at), @class]}
     >
-      <%!-- {" "} is a literal space HEEx won't trim — without it the
-           formatter drops the component to its own line and "expires"
-           abuts the time ("expires3h ago"). The hover title states the
-           on-expiry behavior; the LocalTime hook carries the absolute time. --%>
-      <.icon name="hero-clock" class="h-3 w-3" />
-      expires{" "}<TimeHelpers.local_time value={@expires_at} mode={:relative} />
+      <%!-- Past tense once it's lapsed ("expired 2m ago") so an at-the-wire
+           approval isn't an ambiguous static "expires just now"; {" "} is a
+           literal space HEEx won't trim. The title states the on-expiry behavior;
+           the LocalTime hook carries the absolute time on hover. --%>
+      <.icon name={if @expired?, do: "hero-no-symbol", else: "hero-clock"} class="h-3 w-3" />
+      {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
+        value={@expires_at}
+        mode={:relative}
+      />
     </span>
     """
   end
+
+  defp approval_expired?(%DateTime{} = expires_at),
+    do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
+
+  defp approval_expired?(_), do: false
+
+  defp expiry_title(true),
+    do: "Expired without a decision — it was auto-denied; the action won't run."
+
+  defp expiry_title(false),
+    do: "If no one decides by then, it's auto-denied — the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out
   # in the queue. Already-expired (the sweeper hasn't cancelled it yet) is moot,

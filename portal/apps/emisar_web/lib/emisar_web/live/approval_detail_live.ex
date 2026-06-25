@@ -131,6 +131,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp fetch_action_for(_context, _subject), do: nil
 
+  defp request_expired?(%{expires_at: %DateTime{} = expires_at}),
+    do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
+
+  defp request_expired?(_), do: false
+
   def handle_info({:approval_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
     {:noreply,
@@ -553,28 +558,39 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <%!-- Right: decision panel — sticky on desktop so it stays in
              reach when scanning a long args/reason. --%>
         <aside class="lg:sticky lg:top-6 lg:self-start">
-          <%= if @request.status == :pending do %>
-            <.decision_panel
-              can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
-              grant_duration={@grant_duration}
-              runner_state={@runner_connection}
-              self_blocked?={@self_blocked?}
-              already_decided?={@already_decided?}
-              approved_count={@approved_count}
-              min_approvals={@request.min_approvals}
-              current_account={@current_account}
-            />
-          <% else %>
-            <.panel title="Decision history">
-              <dl class="space-y-2 text-sm">
-                <.kv label="Status"><.status_badge status={@request.status} /></.kv>
-                <.kv label="Decided"><.local_time value={@request.decided_at} /></.kv>
-                <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
-                <.kv :if={@request.decision_reason && @request.decision_reason != ""} label="Reason">
-                  <span class="text-xs text-zinc-300">{@request.decision_reason}</span>
-                </.kv>
-              </dl>
-            </.panel>
+          <%= cond do %>
+            <% @request.status == :pending and request_expired?(@request) -> %>
+              <%!-- Pending-but-lapsed (the expiry sweeper hasn't run yet): a decide
+                   would fail :expired, so don't offer a live Approve — state the
+                   terminal outcome instead. --%>
+              <.panel title="Expired">
+                <p class="text-sm leading-relaxed text-zinc-400">
+                  This request expired before anyone decided, so it was auto-denied — the action
+                  will not run. The requester can re-issue it if it's still needed.
+                </p>
+              </.panel>
+            <% @request.status == :pending -> %>
+              <.decision_panel
+                can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
+                grant_duration={@grant_duration}
+                runner_state={@runner_connection}
+                self_blocked?={@self_blocked?}
+                already_decided?={@already_decided?}
+                approved_count={@approved_count}
+                min_approvals={@request.min_approvals}
+                current_account={@current_account}
+              />
+            <% true -> %>
+              <.panel title="Decision history">
+                <dl class="space-y-2 text-sm">
+                  <.kv label="Status"><.status_badge status={@request.status} /></.kv>
+                  <.kv label="Decided"><.local_time value={@request.decided_at} /></.kv>
+                  <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
+                  <.kv :if={@request.decision_reason && @request.decision_reason != ""} label="Reason">
+                    <span class="text-xs text-zinc-300">{@request.decision_reason}</span>
+                  </.kv>
+                </dl>
+              </.panel>
           <% end %>
         </aside>
       </div>

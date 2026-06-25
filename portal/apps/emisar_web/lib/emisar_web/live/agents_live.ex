@@ -671,7 +671,7 @@ defmodule EmisarWeb.AgentsLive do
       <:title>LLM agents</:title>
 
       <.page_intro>
-        Connect an LLM client over MCP to dispatch gated, audited actions — each key is
+        Connect an LLM agent over MCP to dispatch gated, audited actions — each agent's key is
         scoped to runners and capabilities, and revocable in one click.
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
