@@ -287,7 +287,7 @@ defmodule EmisarWeb.RunDetailLive do
            side panel that would just echo the status chip. --%>
       <.card :if={@run.reason && @run.reason != ""} class="mt-4" padding="p-4">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-          Operator's reason
+          Reason
         </h3>
         <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
           {@run.reason}

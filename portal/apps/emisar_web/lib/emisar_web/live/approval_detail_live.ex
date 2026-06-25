@@ -327,7 +327,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # How the held run was dispatched. `:operator` (a human from the console)
   # carries no tag — the requester name says it. The rest qualify "who asked":
   # `:mcp` is the one that matters, an autonomous LLM agent reaching the gate.
-  defp dispatch_source_label(:mcp), do: "MCP"
+  defp dispatch_source_label(:mcp), do: "LLM agent"
   defp dispatch_source_label(:runbook), do: "Runbook"
   defp dispatch_source_label(:scheduled), do: "Scheduled"
   defp dispatch_source_label(_), do: nil
@@ -467,7 +467,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <div class="space-y-4">
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Operator's reason
+              Reason
             </h3>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
               {@request.reason}

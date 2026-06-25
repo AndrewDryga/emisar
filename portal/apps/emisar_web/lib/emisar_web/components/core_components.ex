@@ -2941,15 +2941,26 @@ defmodule EmisarWeb.CoreComponents do
     assigns = assign(assigns, :risk, to_string(assigns.risk))
 
     ~H"""
-    <span class={[
-      "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
-      risk_classes(@risk),
-      @class
-    ]}>
+    <span
+      title={risk_title(@risk)}
+      class={[
+        "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
+        risk_classes(@risk),
+        @class
+      ]}
+    >
       {@risk}
     </span>
     """
   end
+
+  # The severity scale spelled out on hover, so a non-expert approver knows what
+  # "HIGH" means and that CRITICAL is above it (the lexicon a single word can't carry).
+  defp risk_title("low"), do: "Low — read-only or trivially reversible"
+  defp risk_title("medium"), do: "Medium — changes state, easily reversible"
+  defp risk_title("high"), do: "High — service-affecting"
+  defp risk_title("critical"), do: "Critical — data loss or irreversible"
+  defp risk_title(_), do: nil
 
   # Risk is a SEVERITY ramp, not a policy outcome: low is the quiet neutral floor,
   # NOT brand-green — green means "the gate allowed this", and a risk tier has had
