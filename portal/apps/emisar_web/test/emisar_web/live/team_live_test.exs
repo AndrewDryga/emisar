@@ -8,6 +8,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
   use EmisarWeb.ConnCase, async: true
 
+  import Swoosh.TestAssertions
+
   describe "GET /app/settings/team as an owner" do
     test "renders the invite form (not the read-only banner)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -246,6 +248,16 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(target).mfa_enabled_at
     end
 
+    test "resend_invitation is refused server-side", %{
+      lv: lv,
+      target_membership: target_membership
+    } do
+      html = render_click(lv, "resend_invitation", %{"membership_id" => target_membership.id})
+
+      assert html =~ "Only owners and admins can invite members."
+      refute Emisar.Repo.reload!(target_membership).invitation_token_digest
+    end
+
     test "save_scopes is refused via the Runners gate, scopes unchanged", %{
       lv: lv,
       target_membership: target_membership
@@ -359,6 +371,43 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Invited #{email}."
       assert html =~ email
+    end
+
+    test "a pending invitation row can resend the invite", %{owner: owner, account: account} do
+      subject = Emisar.Fixtures.subject_for(owner, account, role: :owner)
+      email = "resend-web-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership, invitation_token: old_token}} =
+        Emisar.Accounts.invite_user_to_account(email, "operator", subject)
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
+
+      assert html =~ "Resend invite"
+
+      assert has_element?(
+               lv,
+               "button[phx-click='resend_invitation'][phx-value-membership_id='#{membership.id}']",
+               "Resend invite"
+             )
+
+      html = render_click(lv, "resend_invitation", %{"membership_id" => membership.id})
+
+      assert html =~ "Invitation resent to #{email}."
+      assert {:error, :not_found} = Emisar.Accounts.fetch_invitation_by_token(old_token)
+
+      assert_email_sent(fn sent ->
+        sent.to == [{"", email}] and
+          sent.subject == "You're invited to #{account.name} on emisar" and
+          sent.text_body =~ "/accept_invitation/"
+      end)
+    end
+
+    test "accepted member rows do not offer invite resend", %{lv: lv, membership: membership} do
+      refute has_element?(
+               lv,
+               "button[phx-click='resend_invitation'][phx-value-membership_id='#{membership.id}']"
+             )
     end
 
     test "inviting a suppressed address warns the inviter instead of a silent success", %{lv: lv} do

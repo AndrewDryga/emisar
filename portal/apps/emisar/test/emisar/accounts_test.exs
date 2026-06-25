@@ -388,6 +388,113 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "resend_account_invitation/2" do
+    test "refreshes the pending invite token and validity window" do
+      {_owner, _account, subject} = owner_subject_fixture()
+      email = "resend-#{System.unique_integer([:positive])}@example.test"
+
+      {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
+        Accounts.invite_user_to_account(email, "operator", subject)
+
+      expired_at = DateTime.add(DateTime.utc_now(), -8 * 24 * 60 * 60, :second)
+
+      membership =
+        membership
+        |> Ecto.Changeset.change(inserted_at: expired_at, updated_at: expired_at)
+        |> Repo.update!()
+
+      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(old_token)
+
+      assert {:ok,
+              %{
+                membership: %Membership{} = updated,
+                user: %User{id: user_id},
+                invitation_token: new_token
+              }} =
+               Accounts.resend_account_invitation(membership, subject)
+
+      assert user_id == user.id
+      assert updated.id == membership.id
+      refute new_token == old_token
+      refute updated.invitation_token_digest == membership.invitation_token_digest
+      assert DateTime.compare(updated.inserted_at, expired_at) == :gt
+      assert {:ok, %Membership{id: id}} = Accounts.fetch_invitation_by_token(new_token)
+      assert id == membership.id
+      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(old_token)
+    end
+
+    test "a viewer cannot resend an invitation" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          "viewer-denied-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          owner_subject
+        )
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      viewer_subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Accounts.resend_account_invitation(membership, viewer_subject)
+
+      assert Repo.reload!(membership).invitation_token_digest ==
+               membership.invitation_token_digest
+    end
+
+    test "an owner of another account cannot resend this account's invitation" do
+      {_owner_a, _account_a, subject_a} = owner_subject_fixture()
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          "cross-resend-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          subject_a
+        )
+
+      assert {:error, :unauthorized} =
+               Accounts.resend_account_invitation(membership, subject_b)
+
+      assert Repo.reload!(membership).invitation_token_digest ==
+               membership.invitation_token_digest
+    end
+
+    test "an accepted invitation is no longer resendable" do
+      {_owner, _account, subject} = owner_subject_fixture()
+
+      {:ok, %{membership: membership, user: user}} =
+        Accounts.invite_user_to_account(
+          "accepted-resend-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          subject
+        )
+
+      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(membership, user)
+      assert {:error, :not_found} = Accounts.resend_account_invitation(membership, subject)
+    end
+
+    test "an admin cannot resend an owner invitation" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          "owner-resend-#{System.unique_integer([:positive])}@example.test",
+          "owner",
+          owner_subject
+        )
+
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :insufficient_privileges} =
+               Accounts.resend_account_invitation(membership, admin_subject)
+    end
+  end
+
   describe "mark_invitation_accepted/1" do
     test "stamps invitation_accepted_at + clears the token without touching the user" do
       inviter = user_fixture()

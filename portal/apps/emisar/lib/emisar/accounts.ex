@@ -586,6 +586,13 @@ defmodule Emisar.Accounts do
     )
   end
 
+  defp broadcast_membership_invitation_resent(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.invitation_resent", membership.user_id}
+    )
+  end
+
   defp broadcast_membership_removed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
@@ -1210,6 +1217,46 @@ defmodule Emisar.Accounts do
           if Repo.Changeset.unique_constraint_error?(changeset),
             do: {:error, :already_member},
             else: {:error, changeset}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Resends a pending account invitation. Requires `invite` on memberships,
+  role coverage for the invitee's current role, and same-account scope.
+
+  Returns `{:ok, %{membership: m, user: u, invitation_token: token}}` or
+  `{:error, :not_found | :unauthorized | :insufficient_privileges | %Ecto.Changeset{}}`.
+  """
+  def resend_account_invitation(%Membership{} = membership, %Subject{} = subject) do
+    with :ok <- ensure_invite_permitted(membership.role, subject),
+         :ok <- ensure_subject_in_account(subject, membership.account_id) do
+      {token, token_digest} = Crypto.user_invite_token()
+
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Membership.Query.pending_invitation()
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.with_preloaded_user()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn loaded_membership ->
+          case ensure_invite_permitted(loaded_membership.role, subject) do
+            :ok -> Membership.Changeset.resend_invitation(loaded_membership, token_digest)
+            {:error, reason} -> reason
+          end
+        end,
+        audit: fn updated ->
+          Audit.Events.user_invited(subject, updated.user, updated.role)
+        end,
+        after_commit: &broadcast_membership_invitation_resent/1
+      )
+      |> case do
+        {:ok, %Membership{user: %Users.User{} = user} = updated} ->
+          {:ok, %{membership: updated, user: user, invitation_token: token}}
 
         {:error, reason} ->
           {:error, reason}

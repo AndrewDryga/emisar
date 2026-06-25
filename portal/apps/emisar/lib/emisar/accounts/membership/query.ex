@@ -38,11 +38,17 @@ defmodule Emisar.Accounts.Membership.Query do
     do: where(queryable, [memberships: m], m.invitation_token_digest == ^digest)
 
   def pending_invitation(queryable),
-    do: where(queryable, [memberships: m], is_nil(m.invitation_accepted_at))
+    do:
+      where(
+        queryable,
+        [memberships: m],
+        is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)
+      )
 
   # Invitation links lapse after a week — long enough for a weekend
   # inbox, short enough that a leaked link isn't a standing seat. The
-  # row's inserted_at IS the invite time (re-invites insert fresh rows).
+  # row's inserted_at IS the invite time (fresh invites insert rows;
+  # resends refresh it with the replacement token).
   @invitation_validity_in_days 7
 
   @doc "Pending invitations still inside their validity window."

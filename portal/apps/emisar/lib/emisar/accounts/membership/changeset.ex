@@ -24,4 +24,12 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def accept_invitation(%Membership{} = membership),
     do:
       change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())
+
+  def resend_invitation(%Membership{} = membership, token_digest) when is_binary(token_digest) do
+    change(membership,
+      invitation_token_digest: token_digest,
+      invitation_accepted_at: nil,
+      inserted_at: DateTime.utc_now()
+    )
+  end
 end

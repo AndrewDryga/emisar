@@ -210,6 +210,13 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event("resend_invitation", %{"membership_id" => id}, socket) do
+    case find_membership(socket, id) do
+      nil -> {:noreply, socket}
+      %Accounts.Membership{} = membership -> do_resend_invitation(socket, membership)
+    end
+  end
+
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
          %Accounts.Membership{} = membership <- find_membership(socket, id) do
@@ -389,6 +396,24 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  defp do_resend_invitation(socket, %Accounts.Membership{} = membership) do
+    account = socket.assigns.current_account
+    inviter = socket.assigns.current_user
+
+    case Accounts.resend_account_invitation(membership, socket.assigns.current_subject) do
+      {:ok, %{user: user, invitation_token: token}} ->
+        delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
+
+        {:noreply,
+         socket
+         |> flash_resend_invitation_outcome(user.email, delivery)
+         |> reload()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, resend_invitation_error_message(reason))}
+    end
+  end
+
   # The invitation row + token are created regardless of email delivery; the
   # flash reflects whether we could actually reach the address. A suppressed
   # recipient (hard-bounced or spam-flagged, recorded from the Postmark
@@ -405,6 +430,25 @@ defmodule EmisarWeb.TeamLive do
 
   defp flash_invite_outcome(socket, email, _delivery),
     do: put_flash(socket, :info, "Invited #{email}.")
+
+  defp flash_resend_invitation_outcome(socket, email, {:ok, %{suppressed: true}}) do
+    put_flash(
+      socket,
+      :error,
+      "Invite link refreshed for #{email}, but we can't email that address (it bounced or was marked spam). Contact support to clear it or invite a different address."
+    )
+  end
+
+  defp flash_resend_invitation_outcome(socket, email, _delivery),
+    do: put_flash(socket, :info, "Invitation resent to #{email}.")
+
+  defp resend_invitation_error_message(:not_found),
+    do: "That invitation is no longer pending. Refresh to see the member's current state."
+
+  defp resend_invitation_error_message(:unauthorized),
+    do: "Only owners and admins can invite members."
+
+  defp resend_invitation_error_message(reason), do: error_message(reason)
 
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
@@ -526,6 +570,15 @@ defmodule EmisarWeb.TeamLive do
 
   defp can_manage?(%{current_subject: subject}),
     do: Accounts.subject_can_manage_team?(subject)
+
+  defp pending_invitation?(%Accounts.Membership{
+         invitation_accepted_at: nil,
+         invitation_token_digest: token_digest
+       })
+       when is_binary(token_digest),
+       do: true
+
+  defp pending_invitation?(_membership), do: false
 
   # Schemaless validation changeset for the invite form. The invite itself
   # is created by `Accounts.invite_user_to_account/3`; this only drives
@@ -1157,6 +1210,17 @@ defmodule EmisarWeb.TeamLive do
             data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
           >
             Suspend access
+          </.menu_item>
+          <.menu_item
+            :if={
+              pending_invitation?(@membership) and
+                not Emisar.Accounts.Membership.disabled?(@membership)
+            }
+            phx-click="resend_invitation"
+            phx-value-membership_id={@membership.id}
+            icon="hero-paper-airplane"
+          >
+            Resend invite
           </.menu_item>
           <.menu_item
             phx-click="force_password_reset"
