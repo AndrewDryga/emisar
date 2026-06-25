@@ -15,7 +15,7 @@ defmodule EmisarWeb.ApprovalsLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, Runners, Users}
+  alias Emisar.{Approvals, Catalog, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(_params, _session, socket) do
@@ -118,6 +118,9 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:filter_params, params)
     |> assign(:runner_labels, runner_labels_for(pending ++ all_recent))
     |> assign(:user_labels, user_labels_for(pending ++ all_recent))
+    # Risk tier per pending request so the queue is triageable at a glance — an
+    # approver shouldn't have to open each card to see if it's a scary one.
+    |> assign(:risk_labels, risk_labels_for(pending, subject))
   end
 
   defp list_or_empty({:ok, _, _} = ok), do: ok
@@ -143,6 +146,23 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp runner_id_from(%{context: %{"runner_id" => id}}) when is_binary(id), do: id
   defp runner_id_from(_), do: nil
+
+  defp risk_labels_for(requests, subject) do
+    for request <- requests, into: %{}, do: {request.id, risk_for_request(request, subject)}
+  end
+
+  defp risk_for_request(
+         %{context: %{"action_id" => action_id, "runner_id" => runner_id}},
+         subject
+       )
+       when is_binary(action_id) and is_binary(runner_id) do
+    case Catalog.fetch_action_by_id(action_id, runner_id, subject) do
+      {:ok, action} -> action.risk
+      _ -> nil
+    end
+  end
+
+  defp risk_for_request(_request, _subject), do: nil
 
   defp runner_label(request, labels) do
     id = runner_id_from(request)
@@ -256,8 +276,15 @@ defmodule EmisarWeb.ApprovalsLive do
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-                      <div class="truncate font-mono text-sm font-semibold text-amber-100">
-                        {request.context["action_id"] || "—"}
+                      <div class="flex items-center gap-2">
+                        <span class="truncate font-mono text-sm font-semibold text-amber-100">
+                          {request.context["action_id"] || "—"}
+                        </span>
+                        <.risk_pill
+                          :if={@risk_labels[request.id]}
+                          risk={@risk_labels[request.id]}
+                          class="flex-none"
+                        />
                       </div>
                       <div class="mt-0.5 truncate text-xs text-amber-200/70">
                         on {runner_label(request, @runner_labels)} · requested by {user_label(
