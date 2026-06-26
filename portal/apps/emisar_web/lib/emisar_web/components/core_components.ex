@@ -2838,6 +2838,15 @@ defmodule EmisarWeb.CoreComponents do
                 >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
                 dedicated <code class="font-mono text-zinc-400">emisar</code>
                 user (not root) under a systemd unit, and only dials out — nothing listens on the host.
+                Prefer to verify before you run?
+                <.link
+                  href={~p"/trust" <> "#release-integrity"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-semibold text-brand-400 hover:text-brand-300"
+                >
+                  Check the release's provenance + checksum →
+                </.link>
               </p>
             </div>
 

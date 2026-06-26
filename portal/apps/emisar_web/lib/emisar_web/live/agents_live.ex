@@ -1110,6 +1110,13 @@ defmodule EmisarWeb.AgentsLive do
         <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
           Manual install →
         </.link>
+        ·
+        <.link
+          href={~p"/trust" <> "#release-integrity"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          Verify the release →
+        </.link>
       </p>
     </div>
     """

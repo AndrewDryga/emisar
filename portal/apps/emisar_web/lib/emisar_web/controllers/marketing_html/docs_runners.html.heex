@@ -117,6 +117,15 @@ execution:
 <span class="text-zinc-500">$</span> sudo systemctl reload emisar</pre>
       </div>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The installer verifies the download's checksum; to check before you run it, verify the
+        release's SLSA provenance + checksum yourself first — see <.link
+          href={~p"/trust" <> "#release-integrity"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          Release integrity
+        </.link>.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
         Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
         changed pack hash lands as <strong class="text-zinc-200">pending</strong> on the Packs
         page until someone trusts it — updates are visible, never silent.

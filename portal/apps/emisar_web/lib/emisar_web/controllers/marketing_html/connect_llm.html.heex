@@ -260,6 +260,16 @@
           </div>
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
         </div>
+        <p class="mt-2 text-xs leading-5 text-zinc-500">
+          Rather verify first? The bridge release carries SLSA provenance + a
+          <code class="font-mono">SHA256SUMS-MCP</code>
+          checksum file — see <.link
+            href={~p"/trust" <> "#release-integrity"}
+            class="text-brand-400 hover:text-brand-300"
+          >
+            Release integrity
+          </.link>.
+        </p>
 
         <p class="mt-4 text-sm text-zinc-300">
           <strong>

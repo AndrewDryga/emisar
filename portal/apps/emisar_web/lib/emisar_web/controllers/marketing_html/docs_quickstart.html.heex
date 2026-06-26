@@ -67,7 +67,14 @@
         <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
           read it first
         </.link>
-        if you'd rather. It:
+        if you'd rather, or
+        <.link
+          href={~p"/trust" <> "#release-integrity"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          verify the release's provenance + checksum
+        </.link>
+        before you run it. It:
       </p>
       <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
