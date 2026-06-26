@@ -2,13 +2,15 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
   middleware inventory (each carrying its status and error list, so you can
-  see which router is broken), the raw dynamic-config dump, version, liveness
-  ping, and Prometheus metrics. ACME/Let's Encrypt certificate state is read
+  see which router is broken), plus a per-host readiness check that joins the
+  router and service views into one cutover-preflight verdict, the raw
+  dynamic-config dump, version, liveness ping, and Prometheus metrics.
+  ACME/Let's Encrypt certificate state is read
   from the on-disk acme.json (no API exposes it), and access-log 4xx/5xx
   tails mirror the nginx pack. Default API at http://127.0.0.1:8080
   (api.insecure mode); override via TRAEFIK_URL.
@@ -68,6 +70,7 @@ actions:
   - actions/entrypoints.yaml
   - actions/http_routers.yaml
   - actions/http_services.yaml
+  - actions/http_host_readiness.yaml
   - actions/http_middlewares.yaml
   - actions/tcp_routers.yaml
   - actions/tcp_services.yaml

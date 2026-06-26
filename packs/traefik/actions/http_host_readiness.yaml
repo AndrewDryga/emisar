@@ -1,0 +1,46 @@
+schema_version: 1
+id: traefik.http_host_readiness
+title: Check whether a public host is live behind Traefik
+kind: script
+risk: low
+description: >
+  Check a single public host's end-to-end readiness through Traefik — the
+  cutover preflight read. Joins /api/http/routers and /api/http/services into
+  ONE compact verdict: is there an enabled router matching Host(`<host>`), a
+  healthy service behind it, and at least one UP backend? Returns "host",
+  "ready" (true only when nothing is wrong), the matched router and resolved
+  service (name/provider/status/errors), backend counts (up/down/total) with
+  the DOWN backend URLs, and a "failures" list of operator-readable reasons:
+  missing_router, router_not_enabled, router_errors, missing_service,
+  service_not_enabled, service_errors, no_up_backends, backend_down. Use this
+  before a DNS/origin cutover instead of the raw 4 MiB inventory dumps.
+side_effects:
+  - Two read-only HTTP GETs to the Traefik API.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: >
+      The public host to check, as it appears in the router's Host(`…`) rule —
+      a bare DNS name, no scheme/port/path (e.g. app.va1.example.com).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+execution:
+  script:
+    path: scripts/host_readiness.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.host }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Is app.va1.example.com live behind Traefik?
+    args:
+      host: app.va1.example.com
+  - title: Preflight a host before an origin cutover
+    args:
+      host: shop.example.com
