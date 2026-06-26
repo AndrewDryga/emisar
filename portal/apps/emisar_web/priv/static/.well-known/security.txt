@@ -1,5 +1,6 @@
+# Re-issue before Expires (RFC 9116 wants the value < 1 year out).
 Contact: mailto:security@emisar.dev
-Expires: 2027-12-31T23:59:59.000Z
+Expires: 2027-06-01T00:00:00.000Z
 Preferred-Languages: en
 Canonical: https://emisar.dev/.well-known/security.txt
 Policy: https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md
