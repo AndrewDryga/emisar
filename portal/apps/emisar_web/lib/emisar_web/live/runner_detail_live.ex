@@ -349,7 +349,7 @@ defmodule EmisarWeb.RunnerDetailLive do
 
             <div
               :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
-              class="border-t border-zinc-900 px-5 py-3"
+              class="px-5 py-3"
             >
               <LiveTable.paginator
                 id="actions"
