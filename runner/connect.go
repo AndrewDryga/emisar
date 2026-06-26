@@ -102,10 +102,15 @@ env var can be unset after the first successful connect.`,
 				GetRegistry: rt.engine.Registry,
 				Admission:   rt.admission,
 			}
+			dedupStorePath := ""
+			if rt.cfg.Paths.DataDir != "" {
+				dedupStorePath = filepath.Join(rt.cfg.Paths.DataDir, "dedup.jsonl")
+			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
 				Engine:         rt.engine,
 				Cursor:         rt.cursor,
+				DedupStorePath: dedupStorePath,
 				Logger:         logger,
 				HeartbeatEvery: rt.cfg.Cloud.HeartbeatEvery.Std(),
 				ReconnectMin:   rt.cfg.Cloud.ReconnectMin.Std(),

@@ -56,6 +56,12 @@ type Options struct {
 	// for idempotent replay. Defaults to 1024.
 	DedupRingSize int
 
+	// DedupStorePath persists the dedup ring so it survives a runner
+	// restart (empty = in-memory only). Without it, a re-dispatch landing
+	// after a restart finds an empty ring and re-executes a completed
+	// action — double-running a mutating action.
+	DedupStorePath string
+
 	// Verifier is the INITIAL signature verifier gating dispatches; SIGHUP
 	// swaps it live via Client.SetVerifier. Nil (or a non-enforcing verifier)
 	// means legacy trust — run whatever the cloud sends.
@@ -133,7 +139,7 @@ func NewClient(d Dialer, opts Options) *Client {
 		dialer:      d,
 		opts:        opts,
 		runs:        map[string]*runState{},
-		dedup:       newDedupRing(opts.DedupRingSize),
+		dedup:       newDedupRing(opts.DedupRingSize, opts.DedupStorePath, opts.Logger),
 		readvertise: make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
 	}
