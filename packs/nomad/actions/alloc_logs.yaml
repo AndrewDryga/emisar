@@ -1,15 +1,22 @@
 schema_version: 1
 id: nomad.alloc_logs
-title: nomad alloc logs <alloc> <task> (stdout)
+title: Tail a task's application logs — stdout (nomad alloc logs)
 kind: exec
 risk: low
-description: Tail the last N lines of stdout from one task in one allocation.
+description: >
+  Tail application logs (stdout) from one task in a Nomad allocation — the last
+  N lines the app/service/container wrote to stdout. This is the read for "show
+  me the app logs" or "tail the service output" during an incident or cutover
+  preflight, instead of a local CLI session. Needs the allocation ID and task
+  name: when you only have the job name, call nomad.job_allocations first to
+  list its allocations and pick the running one. Use nomad.alloc_logs_stderr for
+  the stderr stream (errors, stack traces, panics).
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: alloc_id
     type: string
     required: true
-    description: Allocation ID or prefix.
+    description: Allocation ID or prefix (from nomad.job_allocations when you only have the job name).
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
   - name: task
@@ -36,7 +43,12 @@ output:
   max_stdout_bytes: 2097152
   max_stderr_bytes: 8192
 examples:
-  - title: Last 200 stdout
+  - title: Last 200 stdout lines from the web task
     args:
       alloc_id: "abc12345"
       task: "web"
+  - title: Last 500 stdout lines while chasing a restart
+    args:
+      alloc_id: "abc12345"
+      task: "redis"
+      tail: 500
