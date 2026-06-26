@@ -274,15 +274,11 @@ defmodule EmisarWeb.RunnerDetailLive do
              the catalog gets the wide column, recent runs sit
              alongside as a freshness check. --%>
         <.card class="overflow-hidden lg:col-span-2 lg:order-1" padding="">
-          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
+          <header class="flex items-center gap-2 border-b border-zinc-900 px-5 py-3">
             <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
               Advertised actions
             </h2>
-            <span class="text-xs text-zinc-500">
-              {@actions_metadata.count} {if @actions_metadata.count == 1,
-                do: "action",
-                else: "actions"}
-            </span>
+            <.count_badge count={@actions_metadata.count} tone={:neutral} />
           </header>
 
           <%= if @actions == [] do %>

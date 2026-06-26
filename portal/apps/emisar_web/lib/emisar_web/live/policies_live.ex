@@ -674,15 +674,16 @@ defmodule EmisarWeb.PoliciesLive do
             Refresh the page; if it persists, your access to this account may have changed.
           </.empty_state>
 
-          <p
+          <.empty_state
             :if={not @load_error? and @rulesets == []}
-            class="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
+            icon="hero-adjustments-horizontal"
+            title="No targeted rulesets yet"
           >
-            No targeted rulesets yet. Every runner uses the default policy above.
+            Every runner uses the default policy above.
             <span :if={@can_manage?}>
               Add one to give a specific runner or group its own rules.
             </span>
-          </p>
+          </.empty_state>
 
           <.ruleset_card
             :for={ruleset <- @rulesets}
