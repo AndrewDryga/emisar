@@ -308,7 +308,9 @@ defmodule EmisarWeb.DashboardLive do
          the bottom (that just duplicated the audit page). --%>
     <.card class="mt-8 overflow-hidden" padding="">
       <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-        <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
+        <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+          Recent runs
+        </h2>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
           class="text-xs font-medium text-brand-400 hover:text-brand-300"

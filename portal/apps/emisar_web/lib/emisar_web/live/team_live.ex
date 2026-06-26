@@ -805,7 +805,7 @@ defmodule EmisarWeb.TeamLive do
              and scope-edit forms render INSIDE the :item slot below the
              top-line content, keeping the natural flow per row. --%>
         <header class="mb-3 flex items-baseline gap-2">
-          <h2 class="text-sm font-semibold text-zinc-100">
+          <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
             {@metadata.count} {if @metadata.count == 1, do: "member", else: "members"}
           </h2>
         </header>

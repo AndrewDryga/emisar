@@ -275,7 +275,9 @@ defmodule EmisarWeb.RunnerDetailLive do
              alongside as a freshness check. --%>
         <.card class="overflow-hidden lg:col-span-2 lg:order-1" padding="">
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">Advertised actions</h2>
+            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+              Advertised actions
+            </h2>
             <span class="text-xs text-zinc-500">
               {@actions_metadata.count} {if @actions_metadata.count == 1,
                 do: "action",
@@ -355,7 +357,9 @@ defmodule EmisarWeb.RunnerDetailLive do
 
         <.card class="overflow-hidden lg:order-2" padding="">
           <header class="border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
+            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+              Recent runs
+            </h2>
           </header>
 
           <%= if @recent_runs == [] do %>

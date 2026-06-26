@@ -735,7 +735,9 @@ defmodule EmisarWeb.ProfileLive do
     <section class="grid grid-cols-1 gap-6 py-10 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-12">
       <div>
         <div class="flex items-center justify-between gap-3">
-          <h2 class="text-base font-semibold text-zinc-100">{@title}</h2>
+          <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+            {@title}
+          </h2>
           <div :for={m <- @meta}>{render_slot(m)}</div>
         </div>
         <p :if={@hint} class="mt-2 text-sm leading-relaxed text-zinc-500">{@hint}</p>

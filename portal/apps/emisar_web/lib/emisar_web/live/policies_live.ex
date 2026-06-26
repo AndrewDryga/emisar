@@ -642,7 +642,9 @@ defmodule EmisarWeb.PoliciesLive do
         <section class="space-y-4">
           <header class="flex items-end justify-between gap-4">
             <div>
-              <h2 class="text-base font-semibold text-zinc-100">Targeted rulesets</h2>
+              <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+                Targeted rulesets
+              </h2>
               <p class="mt-0.5 max-w-xl text-xs text-zinc-500">
                 A ruleset <strong class="text-zinc-300">replaces</strong>
                 the default policy for one runner or group. Most specific wins — runner,

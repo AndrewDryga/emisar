@@ -871,7 +871,9 @@ defmodule EmisarWeb.AgentsLive do
            depends on the choice (install / snippet / URL+token / scope
            note) renders below, only after a client is chosen. --%>
       <div class="border-b border-zinc-900 px-6 py-4">
-        <h2 class="text-base font-semibold text-zinc-50">Connect an agent</h2>
+        <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+          Connect an agent
+        </h2>
         <p class="mt-0.5 text-xs text-zinc-500">
           Pick how your agent connects. We mint a fresh API key named after the
           client and pre-fill the exact setup it needs.

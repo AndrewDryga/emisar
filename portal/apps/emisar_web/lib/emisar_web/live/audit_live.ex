@@ -480,7 +480,9 @@ defmodule EmisarWeb.AuditLive do
       >
         <header class="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
           <div>
-            <h2 class="text-sm font-semibold text-zinc-100">SIEM export</h2>
+            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+              SIEM export
+            </h2>
             <p class="mt-0.5 text-xs leading-relaxed text-zinc-500">
               Stream audit events as NDJSON to your SIEM. Mint an
               <code class="font-mono text-zinc-300">audit:read</code>
