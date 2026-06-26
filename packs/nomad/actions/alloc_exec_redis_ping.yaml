@@ -1,0 +1,47 @@
+schema_version: 1
+id: nomad.alloc_exec_redis_ping
+title: Ping Redis inside an allocation (nomad alloc exec redis-cli ping)
+kind: exec
+risk: medium
+description: >
+  Check whether the Redis inside one allocation's task is alive — runs the fixed
+  command `redis-cli ping` via `nomad alloc exec` and returns PONG. This is for
+  the incident where Redis is only reachable inside the alloc (no direct
+  REDIS_URL from the runner); use the redis pack's redis.ping when you can reach
+  it directly. The command is fixed — no freeform command, shell, host, port, or
+  password is accepted, so it connects to the task's local redis-cli default
+  (127.0.0.1:6379) and returns NOAUTH on a password-protected instance (itself a
+  signal). risk:medium, not low: `nomad alloc exec` runs inside the running
+  container and can expose internal state, so it is policy-gated even though the
+  command only reads. Requires the alloc-exec namespace capability
+  (alloc-node-exec for raw_exec/raw-driver tasks).
+side_effects:
+  - Executes the fixed read-only command `redis-cli ping` inside the task container.
+  - Does not mutate Redis.
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: task
+    type: string
+    required: true
+    description: Task name inside the allocation that runs Redis.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command:
+    binary: nomad
+    argv: ["alloc", "exec", "-i=false", "-t=false", "-task", "{{ args.task }}", "{{ args.alloc_id }}", "redis-cli", "ping"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Ping Redis in the cache task
+    args:
+      alloc_id: "abc12345"
+      task: "redis"

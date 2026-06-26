@@ -38,6 +38,23 @@ cases:
     alloc_id: abc12345
     path: alloc/logs/app.stdout.0
   expect_exit: 0
+- action: nomad.alloc_exec_redis_ping
+  args:
+    alloc_id: abc12345
+    task: redis
+  expect_exit:
+  - 0
+  - 1
+  skip: needs a redis-in-alloc SUT with the alloc-exec capability
+- action: nomad.alloc_exec_redis_info
+  args:
+    alloc_id: abc12345
+    task: redis
+    section: replication
+  expect_exit:
+  - 0
+  - 1
+  skip: needs a redis-in-alloc SUT with the alloc-exec capability
 - action: nomad.alloc_logs
   args:
     alloc_id: abc12345
