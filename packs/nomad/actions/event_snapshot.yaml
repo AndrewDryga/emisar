@@ -1,0 +1,65 @@
+schema_version: 1
+id: nomad.event_snapshot
+title: Snapshot recent Nomad events (bounded /v1/event/stream)
+kind: script
+risk: low
+description: >
+  Show a bounded snapshot of the Nomad event stream — recent Job, Allocation,
+  Evaluation, Deployment, and Node events for incident triage, with no local CLI
+  session. Nomad has no "last N events" query: /v1/event/stream is a forward
+  feed whose only history is the broker's replay buffer (~100 events). This reads
+  it from index=1 (replays the buffer, then live events) for `seconds` seconds,
+  capped at 256 KiB, then returns — so it never hangs. Optionally filter to one
+  `topic` or one `namespace`. Output is NDJSON: one {Index, Events:[...]} batch
+  per line. Requires a token that can read the event stream.
+side_effects:
+  - Opens the Nomad event stream for a bounded time window.
+  - Read-only.
+args:
+  - name: seconds
+    type: integer
+    required: false
+    default: 5
+    description: How long to read the stream — the snapshot window, in seconds.
+    validation:
+      min: 1
+      max: 15
+  - name: topic
+    type: string
+    required: false
+    default: ""
+    description: >
+      Filter to one event topic (empty = all topics). One of Job, Allocation,
+      Evaluation, Deployment, Node, Service, or an ACL topic.
+    validation:
+      pattern: "^(Job|Allocation|Evaluation|Deployment|Node|Service|ACLToken|ACLPolicy|ACLRole|ACLAuthMethod|ACLBindingRule|NodePool)?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Filter to one namespace (empty = the runner's ambient/default).
+    validation:
+      pattern: "^[a-zA-Z0-9_-]{0,128}$"
+execution:
+  script:
+    path: scripts/event_snapshot.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.seconds }}"
+    - "{{ args.topic }}"
+    - "{{ args.namespace }}"
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent events across all topics (5s window)
+    args: {}
+  - title: Recent allocation events only
+    args:
+      topic: Allocation
+  - title: Recent events in one namespace, 10s window
+    args:
+      seconds: 10
+      namespace: production

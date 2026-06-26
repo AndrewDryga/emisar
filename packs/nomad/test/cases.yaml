@@ -251,6 +251,10 @@ cases:
 - action: nomad.operator_autopilot_state
   args: {}
   expect_exit: 0
+- action: nomad.event_snapshot
+  args:
+    seconds: 3
+  expect_exit: 0
 - action: nomad.operator_raft_list_peers
   args: {}
   expect_exit: 0

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.18
+version: 0.1.19
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
   horizontally + vertically, dispatch, revert, promote, stop), per-task
@@ -112,6 +112,7 @@ actions:
   - actions/operator_raft_remove_peer.yaml
   - actions/operator_autopilot_get_config.yaml
   - actions/operator_autopilot_state.yaml
+  - actions/event_snapshot.yaml
   # Volumes
   - actions/csi_volume_list.yaml
   - actions/csi_volume_status.yaml
