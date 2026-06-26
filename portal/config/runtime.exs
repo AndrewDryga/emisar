@@ -96,11 +96,6 @@ if config_env() == :prod do
 
   endpoint_opts = [
     url: [host: host, port: url_port, scheme: url_scheme],
-    # In dev/compose (FORCE_SSL=false) the portal is reached over several
-    # hostnames (localhost + host.docker.internal for the host-browser SSO
-    # demo) — relax the websocket origin check so LiveView connects from any of
-    # them. Production (HTTPS-fronted) keeps Phoenix's strict default.
-    check_origin: https_fronted?,
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: String.to_integer(System.get_env("PORT") || "4000"),

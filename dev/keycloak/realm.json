@@ -21,7 +21,7 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://host.docker.internal:4010/sign_in/sso/callback"
+        "http://localhost:4010/sign_in/sso/callback"
       ],
       "webOrigins": ["+"],
       "attributes": {

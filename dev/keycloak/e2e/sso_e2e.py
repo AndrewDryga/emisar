@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-SSO end-to-end driver for the docker-compose stack. Reaches the portal and
-Keycloak over host.docker.internal (the published 4010 + 8443), the SAME path a
-host browser takes — so the OIDC issuer + redirect_uri are consistent across the
-browser, the portal container, and this driver, and a green run proves the
-host-browser flow works.
+SSO end-to-end driver. Runs FROM THE HOST (via dev/keycloak/e2e/run.sh) against
+the published localhost ports — portal localhost:4010, Keycloak localhost:8443 —
+which is the exact path a host browser takes, so a green run proves the
+host-browser SSO flow works. Reads PORTAL_URL / KEYCLOAK_ISSUER / KEYCLOAK_CA /
+PROVIDER_ID / SCIM_TOKEN / KC_USER / KC_PASS from the environment.
 
 Tests both halves against the seeded Keycloak IdentityProvider:
 
