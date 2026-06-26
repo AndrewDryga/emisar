@@ -5,8 +5,11 @@ defmodule EmisarWeb.MCP.ToolSchema do
   action arg + the universal control fields:
 
     * `reason` (required) — operator-facing audit string.
-    * `runners` (conditional) — fan-out target list; required unless
-      exactly one runner advertises the action.
+    * `runners` (required) — explicit fan-out target list. ALWAYS
+      required: emisar never auto-targets, even when exactly one runner
+      advertises the action (implicit targeting is a security footgun —
+      no audit-visible intent about which host, and it silently
+      retargets as the fleet changes).
     * `idempotency_key` (optional) — LLM-controlled at-most-once retry
       (Layer 2). See `EmisarWeb.MCP.Idempotency` for the contract.
 
@@ -83,30 +86,25 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp runners_property([]), do: {nil, false}
 
-  defp runners_property([only]) do
+  # `runners` is ALWAYS required — emisar never auto-targets, even when a
+  # single runner advertises the action. Implicit targeting is a footgun:
+  # it carries no audit-visible intent about WHICH host the operator meant
+  # and silently retargets as the fleet changes. The enum still narrows the
+  # choice (one name when only one advertises), but naming it is mandatory —
+  # no `default`, no "safe to omit".
+  defp runners_property(runner_names) do
     {%{
        type: "array",
-       items: %{type: "string", enum: [only]},
+       items: %{type: "string", enum: runner_names},
        minItems: 1,
-       maxItems: 1,
-       default: [only],
-       description: "Runners to execute on. Only `#{only}` advertises this action — safe to omit."
-     }, false}
-  end
-
-  defp runners_property(many) do
-    {%{
-       type: "array",
-       items: %{type: "string", enum: many},
-       minItems: 1,
-       maxItems: min(length(many), @max_runner_fan_out),
+       maxItems: min(length(runner_names), @max_runner_fan_out),
        description:
-         "REQUIRED. One or more runner names from the `enum`. " <>
-           "The call fans out and each runner runs independently. " <>
-           "Pass `[\"runner-1\"]` to target a single host, or " <>
-           ~s(`["runner-1","runner-2"]` to run on multiple. ) <>
-           "Each returned run carries its own status — some may " <>
-           "succeed immediately while others need approval."
+         "REQUIRED — name the target runner(s) explicitly; emisar never picks for you. " <>
+           "One or more names from the `enum`. The call fans out and each runner runs " <>
+           "independently. Pass `[\"runner-1\"]` for a single host, or " <>
+           ~s(`["runner-1","runner-2"]` for multiple. ) <>
+           "Each returned run carries its own status — some may succeed immediately " <>
+           "while others need approval."
      }, true}
   end
 

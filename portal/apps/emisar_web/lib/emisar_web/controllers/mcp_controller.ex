@@ -12,9 +12,9 @@ defmodule EmisarWeb.MCPController do
 
     * `GET  /api/mcp/tools` — return MCP-shaped tool descriptors. One
       entry per distinct action_id. Each tool's input schema declares a
-      `runners` array whose enum lists the runners advertising it; if
-      exactly one runner advertises it, `runners` is optional and defaults
-      to that runner.
+      required `runners` array whose enum lists the runners advertising
+      it — always required, even when only one advertises, so the call
+      names its target host explicitly (emisar never auto-picks).
 
     * `POST /api/mcp/tools/:action_id` — dispatch a run. Body is flat:
 
@@ -106,9 +106,10 @@ defmodule EmisarWeb.MCPController do
             |> json(%{
               error: "runner_required",
               message:
-                "Multiple runners advertise this action. Pick one or more by name and " <>
-                  "retry with `runners: [\"name\"]` in the body. Call `/runners` first if " <>
-                  "you need to check which ones are online.",
+                "This action needs an explicit target — emisar never auto-picks a runner, " <>
+                  "even when only one advertises it. Retry with `runners: [\"name\"]` in the " <>
+                  "body, choosing from `candidates` below. Call `/runners` first if you need " <>
+                  "to check which ones are online.",
               candidates: candidates
             })
 
@@ -219,13 +220,15 @@ defmodule EmisarWeb.MCPController do
 
   # -- Param shaping --------------------------------------------------
 
-  # The flat body carries the runner targets under `runners` (array).
-  # An empty/absent list tells Service to auto-pick when exactly one
-  # runner advertises the action.
+  # The flat body names its target host(s) under `runners` (array) or the
+  # singular `runner` (string) — mirroring the JSON-RPC `split_call_args`.
+  # An empty/absent value fails closed with `runner_required`: Service never
+  # auto-targets, even when exactly one runner advertises the action.
   defp normalize_runner_input(params) do
-    case params["runners"] do
-      list when is_list(list) -> Enum.filter(list, &is_binary/1)
-      _ -> []
+    cond do
+      is_list(params["runners"]) -> Enum.filter(params["runners"], &is_binary/1)
+      is_binary(params["runner"]) -> [params["runner"]]
+      true -> []
     end
   end
 

@@ -22,13 +22,17 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       refute "idempotency_key" in schema.required
     end
 
-    test "exactly one runner → runners optional with a default + enum locked to that name" do
+    test "exactly one runner → runners still REQUIRED (no auto-pick), enum locked to that name" do
       schema = ToolSchema.build(action(), ["solo"])
 
       runners = schema.properties["runners"]
       assert runners.items.enum == ["solo"]
-      assert runners.default == ["solo"]
-      refute "runners" in schema.required
+      assert runners.minItems == 1
+      assert runners.maxItems == 1
+      # No `default` and not optional — emisar never auto-targets, so the caller
+      # must name the host explicitly even when there's only one choice.
+      refute Map.has_key?(runners, :default)
+      assert "runners" in schema.required
     end
 
     test "multiple runners → runners required, enum lists every option" do

@@ -72,7 +72,7 @@
               <%= for {param, req, desc} <- [
                 {"reason", "Required", "An operator-facing audit string — one short sentence on why. It's recorded on the run for a human to audit later."},
                 {"<action args>", "Per the action", "The action's own typed arguments, re-validated against its declared schema on the runner."},
-                {"runners", "Conditional", "The target runner(s) to fan out to. Required when more than one in-scope runner advertises the action; optional when exactly one does."},
+                {"runners", "Required", "The target runner(s) to fan out to — an array of names (or a single runner string). Always required: emisar never auto-targets, even when exactly one runner advertises the action, so every call names its host explicitly."},
                 {"idempotency_key", "Optional", "Dedups a call you might retry, so the same intent runs once. (The bridge also mints a transport-level key automatically — see Idempotency.)"},
                 {"wait", "Optional", "Block until the run reaches a terminal state, up to a ~60s cap, and return its result. Otherwise the call returns once the run is dispatched; poll with wait_for_run."}
               ] do %>

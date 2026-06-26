@@ -180,8 +180,9 @@ defmodule EmisarWeb.MCPRpcController do
 
       {:error, :runner_required, candidates} ->
         msg =
-          "Multiple runners advertise this action. Pick one or more by name and retry " <>
-            "with `runners: [\"name\"]`. Candidates: " <> Enum.join(candidates, ", ")
+          "This action needs an explicit target — emisar never auto-picks a runner, even " <>
+            "when only one advertises it. Retry with `runners: [\"name\"]`, choosing from " <>
+            "the candidates: " <> Enum.join(candidates, ", ")
 
         {content, _} = ContentBlocks.error_content("Runner required", msg)
         {:ok, %{content: content, isError: true}}

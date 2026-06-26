@@ -269,9 +269,10 @@ defmodule EmisarWeb.MCPControllerTest do
 
       solo = tools_by_name["solo.action"]
       assert solo["inputSchema"]["properties"]["runners"]["items"]["enum"] == ["db-prod-01"]
-      assert solo["inputSchema"]["properties"]["runners"]["default"] == ["db-prod-01"]
       assert solo["inputSchema"]["properties"]["runners"]["maxItems"] == 1
-      refute "runners" in solo["inputSchema"]["required"]
+      # Single advertiser is still REQUIRED — no auto-pick, no default.
+      refute Map.has_key?(solo["inputSchema"]["properties"]["runners"], "default")
+      assert "runners" in solo["inputSchema"]["required"]
     end
 
     test "emits valid JSON Schema 2020-12 for every emisar arg type", %{
@@ -506,10 +507,11 @@ defmodule EmisarWeb.MCPControllerTest do
       assert Enum.sort(runner_ids) == Enum.sort([runner_a.id, runner_b.id, runner_c.id])
     end
 
-    test "auto-picks the runner when only one advertises the action", %{
+    test "no runner target + single advertiser → 400 runner_required (no auto-pick)", %{
       conn: conn,
       account: account,
-      user: user
+      user: user,
+      runner: runner
     } do
       raw = make_api_key!(account, user)
 
@@ -517,10 +519,12 @@ defmodule EmisarWeb.MCPControllerTest do
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> post(~p"/api/mcp/tools/linux.uptime", %{"reason" => "ad-hoc"})
-        |> json_response(202)
+        |> json_response(400)
 
-      assert %{"runs" => [%{"status" => status}]} = body
-      assert status in ["running", "sent", "success"]
+      # Even with exactly one advertiser, emisar never auto-targets — the
+      # caller must name it. The lone candidate is offered so they can retry.
+      assert body["error"] == "runner_required"
+      assert body["candidates"] == [runner.name]
     end
 
     test "400 when multiple runners advertise + `runners` omitted", %{

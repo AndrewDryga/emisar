@@ -410,9 +410,10 @@ defmodule EmisarWeb.MCP.Service do
           do: {:error, :no_runner_available, :scope_blocked},
           else: {:error, :no_runner_available, :unknown_action}
 
-      [one] ->
-        {:ok, [{one.name, one.id}]}
-
+      # `runners` is always required — emisar never auto-targets, even when
+      # exactly one runner advertises the action. Absent/empty `runners` fails
+      # closed with the candidate names so the caller names the host explicitly
+      # (audit-visible intent; no silent retarget as the fleet shifts).
       candidates ->
         {:error, :runner_required, Enum.map(candidates, & &1.name)}
     end

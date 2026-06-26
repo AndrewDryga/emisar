@@ -34,7 +34,7 @@ defmodule EmisarWeb.MarketingController do
      "emisar's refund policy: Free is free; Team is billed monthly via Paddle and cancellable any time with access through the paid period; duplicate charges and billing errors are refunded in full."},
     {"/docs/mcp-reference", :docs_mcp_reference, :docs_mcp_reference,
      "MCP reference — methods, parameters, and errors",
-     "The emisar MCP API reference for builders: the JSON-RPC methods (initialize, tools/list, tools/call), the per-action parameters (the required reason, conditional runners, idempotency_key, and wait), the meta tools (wait_for_run, recent_runs, list_runbooks, get_runbook), idempotency, and the error taxonomy — pack_untrusted, no runner advertises, no runner in scope — with what to do about each."},
+     "The emisar MCP API reference for builders: the JSON-RPC methods (initialize, tools/list, tools/call), the per-action parameters (the required reason, required runners, idempotency_key, and wait), the meta tools (wait_for_run, recent_runs, list_runbooks, get_runbook), idempotency, and the error taxonomy — pack_untrusted, no runner advertises, no runner in scope — with what to do about each."},
     {"/docs/connect-an-llm", :connect_llm, :connect_llm, "Connect an LLM",
      "Connect Claude.ai and ChatGPT with remote MCP and OAuth, or use the emisar-mcp stdio bridge with Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI."},
     {"/docs/quickstart", :docs_quickstart, :docs_quickstart,
