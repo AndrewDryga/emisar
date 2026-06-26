@@ -11,10 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 DAYS=3650
-# Every hostname the OIDC issuer is reached by: keycloak (docker DNS),
-# localhost + 127.0.0.1 (host-published port), host.docker.internal (the host
-# browser path — needs `127.0.0.1 host.docker.internal` in /etc/hosts).
-SAN="DNS:keycloak,DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1"
+# The OIDC issuer is plain localhost:8443 — the host browser uses the published
+# port and the portal reaches Keycloak at that same localhost via the shared
+# netns (docker-compose.yml: keycloak `network_mode: service:portal`). Loopback
+# is the only name TLS-verified against this cert.
+SAN="DNS:localhost,IP:127.0.0.1"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
