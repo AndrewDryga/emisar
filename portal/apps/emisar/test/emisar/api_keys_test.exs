@@ -289,6 +289,61 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "rotate_api_key/2" do
+    test "mints a successor inheriting scope; the old key stays usable (overlap)" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, original} =
+        ApiKeys.create_key(
+          %{
+            name: "claude",
+            scopes: ["actions:read", "actions:execute"],
+            action_scope: ["linux.uptime"]
+          },
+          subject
+        )
+
+      assert {:ok, new_raw, successor} = ApiKeys.rotate_api_key(original, subject)
+
+      assert String.starts_with?(new_raw, "emk-")
+      assert successor.id != original.id
+      # Scope carried forward verbatim.
+      assert successor.name == original.name
+      assert successor.kind == original.kind
+      assert Enum.sort(successor.scopes) == Enum.sort(original.scopes)
+      assert successor.action_scope == original.action_scope
+
+      # The old key isn't revoked — it overlaps until the operator revokes it.
+      {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(original.id, subject)
+      assert is_nil(reloaded.revoked_at)
+      assert ApiKey.usable?(reloaded)
+    end
+
+    test "an operator without manage_api_keys is refused with :unauthorized" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "k", scopes: ["actions:execute"]}, owner_subject)
+
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
+    end
+
+    test "an owner of account B cannot rotate account A's key (cross-account → :not_found)" do
+      {_owner_a, _account_a, subject_a} = owner_subject_pair()
+
+      {:ok, _raw, key_a} =
+        ApiKeys.create_key(%{name: "a", scopes: ["actions:execute"]}, subject_a)
+
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert {:error, :not_found} = ApiKeys.rotate_api_key(key_a, subject_b)
+    end
+  end
+
   describe "mint_quick_key/1" do
     test "mints a pre-scoped auto key, hidden until first use" do
       {_user, _account, subject} = owner_subject_pair()

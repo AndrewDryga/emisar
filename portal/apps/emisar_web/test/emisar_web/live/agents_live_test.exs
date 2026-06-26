@@ -341,11 +341,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
-    # (partial) — a custom create persists an MCP-shaped key
-    # (`actions:read` + `actions:execute`, nothing else), resets the form, and
-    # reloads the list so the new key is visible. (The "raw secret shown once"
-    # half of is broken on the custom tab — see the skipped test
-    # below and the agent report.)
+    # A custom create persists an MCP-shaped key (`actions:read` +
+    # `actions:execute`, nothing else), resets the form, and reloads the list so
+    # the new key is visible. The one-time secret reveal is covered separately
+    # below ("custom create reveals the raw secret once").
     test "custom create persists an MCP-shaped key and reloads the list", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
@@ -436,11 +435,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
     end
 
-    # (the secret-reveal half) — BUG: the custom tab renders
-    # only the key-builder form, never the `@quick_secret` reveal, so a
-    # custom-created key's one-time raw secret is minted but never shown to the
-    # operator (no "New key minted", no emk- secret in the DOM). They can't copy
-    # it and must revoke + reissue. The per-client tabs show it correctly.
+    # The custom tab shows the one-time `@quick_secret` reveal after a create,
+    # the same as the per-client tabs: "New key minted" + the emk- secret in the
+    # DOM, copyable before the operator leaves the page.
     test "custom create reveals the raw secret once", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
@@ -454,6 +451,30 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert html =~ "New key minted"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
+    end
+
+    test "rotating a key from its row mints a successor and reveals the new secret",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "rotate-me", scopes: ["actions:execute"]}, subject)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      html =
+        lv
+        |> element(~s(button[phx-click="rotate"][phx-value-id="#{key.id}"]))
+        |> render_click()
+
+      assert html =~ "Key rotated"
+      assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
+
+      # Successor minted alongside the original — both visible, neither revoked.
+      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(subject)
+      assert length(keys) == 2
+      assert Enum.all?(keys, &is_nil(&1.revoked_at))
     end
 
     # picking a real client mints + shows a quick_secret;

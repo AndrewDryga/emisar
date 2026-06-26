@@ -153,6 +153,32 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc """
+  Mints a fresh successor to an existing key, inheriting its name, kind,
+  scopes, action allow-list, and runner filters but with a new secret and a
+  fresh default expiry. The old key keeps working until the operator revokes
+  it (the overlap window), so a short-lived key can be rolled without locking
+  the agent out mid-config-update. `%Subject{}` needs `manage_api_keys`;
+  returns `{:ok, raw_secret, new_key}`.
+  """
+  def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
+    # Re-fetch scoped to the subject so a caller can't rotate a key outside its
+    # account; `create_key/2` then re-gates on `manage_api_keys` and mints.
+    with {:ok, source} <- fetch_api_key_by_id(key.id, subject) do
+      attrs = %{
+        name: source.name,
+        description: source.description,
+        kind: source.kind,
+        scopes: source.scopes,
+        action_scope: source.action_scope,
+        runner_filter: source.runner_filter,
+        runner_group_filter: source.runner_group_filter
+      }
+
+      create_key(attrs, subject)
+    end
+  end
+
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).
   defp apply_api_key_preloads(queryable, preloads) do

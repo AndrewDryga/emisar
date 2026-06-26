@@ -174,6 +174,14 @@ defmodule EmisarWeb.AgentsLive do
     )
   end
 
+  def handle_event("rotate", %{"id" => id}, socket) do
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      &do_rotate(&1, id)
+    )
+  end
+
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, @refresh_ms)
     {:noreply, reload(socket)}
@@ -230,6 +238,27 @@ defmodule EmisarWeb.AgentsLive do
       {:ok, key} ->
         {:ok, _} = ApiKeys.revoke_api_key(key, socket.assigns.current_subject)
         {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
+    end
+  end
+
+  defp do_rotate(socket, id) do
+    with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject),
+         {:ok, raw, _new_key} <- ApiKeys.rotate_api_key(key, socket.assigns.current_subject) do
+      # Reveal the successor's secret in the custom panel (the working one-time
+      # reveal) and tell the operator the old key still works until they revoke.
+      {:noreply,
+       socket
+       |> assign(:selected_client, "custom")
+       |> assign(:quick_secret, raw)
+       |> put_flash(
+         :info,
+         "Key rotated. Copy the new key below and update your agent — the old key keeps " <>
+           "working until you revoke it."
+       )
+       |> reload()}
+    else
+      {:error, :not_found} -> {:noreply, socket}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not rotate the key.")}
     end
   end
 
@@ -434,6 +463,25 @@ defmodule EmisarWeb.AgentsLive do
         "groups: #{Enum.join(groups, ", ")} + #{length(runner_ids)} explicit"
     end
   end
+
+  defp expired?(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}),
+    do: DateTime.compare(exp, DateTime.utc_now()) == :lt
+
+  defp expired?(%ApiKeys.ApiKey{}), do: false
+
+  # Past expiry reads rose (the key is dead); inside a week, amber (rotate
+  # soon); otherwise muted like the rest of the meta line.
+  defp expiry_class(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}) do
+    now = DateTime.utc_now()
+
+    cond do
+      DateTime.compare(exp, now) == :lt -> "text-rose-400"
+      DateTime.diff(exp, now, :day) < 7 -> "text-amber-400"
+      true -> "text-zinc-500"
+    end
+  end
+
+  defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-500"
 
   # -- Status derivation ----------------------------------------------
 
@@ -760,6 +808,13 @@ defmodule EmisarWeb.AgentsLive do
                     mode={:relative}
                     placeholder="never"
                   />
+                  <span :if={key.expires_at} class={expiry_class(key)}>
+                    · {if expired?(key), do: "expired", else: "expires"}
+                    <.local_time
+                      value={key.expires_at}
+                      mode={:relative}
+                    />
+                  </span>
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
                 </div>
 
@@ -784,6 +839,18 @@ defmodule EmisarWeb.AgentsLive do
                   size="sm"
                 >
                   View activity
+                </.button>
+                <.button
+                  :if={
+                    is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                  }
+                  variant="ghost"
+                  size="sm"
+                  phx-click="rotate"
+                  phx-value-id={key.id}
+                  data-confirm="Rotate this key? A new key with the same scope is minted; the old one keeps working until you revoke it, so update your agent before revoking."
+                >
+                  Rotate
                 </.button>
                 <.button
                   :if={
