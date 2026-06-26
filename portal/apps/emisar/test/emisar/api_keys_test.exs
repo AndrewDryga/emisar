@@ -23,6 +23,10 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, export_key} =
         ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
 
+      # The split is the explicit `kind`, no longer inferred from scope.
+      assert agent_key.kind == :mcp
+      assert export_key.kind == :audit_export
+
       assert {:ok, [agents_visible], _} = ApiKeys.list_api_keys_for_account(subject)
       assert agents_visible.id == agent_key.id
 
@@ -235,6 +239,18 @@ defmodule Emisar.ApiKeysTest do
 
       assert {:ok, _raw, %ApiKey{expires_at: nil}} =
                ApiKeys.create_key(%{name: "SIEM", scopes: ["audit:read"]}, subject)
+    end
+
+    test "rejects an explicit audit_export kind that lacks the audit:read scope" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:error, cs} =
+               ApiKeys.create_key(
+                 %{name: "mismatch", kind: :audit_export, scopes: ["actions:execute"]},
+                 subject
+               )
+
+      assert errors_on(cs).scopes != []
     end
 
     test "an operator (no manage_api_keys permission) is refused with :unauthorized" do

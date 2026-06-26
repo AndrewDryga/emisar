@@ -30,6 +30,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> cast(attrs, [
       :name,
       :description,
+      :kind,
       :runner_filter,
       :runner_group_filter,
       :scopes,
@@ -45,20 +46,52 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_length(:name, min: 1, max: 80)
     |> validate_subset(:scopes, @valid_scopes)
     |> validate_action_scope()
+    |> put_default_kind()
+    |> validate_kind_scope_consistency()
     |> put_default_mcp_expiry()
+  end
+
+  # When the caller doesn't set `kind`, derive it ONCE from the scope at mint
+  # (audit:read ⇒ :audit_export, else the schema's :mcp default) so the column
+  # is always explicit + queryable. This is a write-time classification, not
+  # the read-time scope inference 68a removed — the list sites read `kind`.
+  defp put_default_kind(changeset) do
+    cond do
+      get_change(changeset, :kind) ->
+        changeset
+
+      "audit:read" in (get_field(changeset, :scopes) || []) ->
+        put_change(changeset, :kind, :audit_export)
+
+      true ->
+        changeset
+    end
+  end
+
+  # `kind` and `scopes` must agree: an audit-export token carries `audit:read`,
+  # an MCP key never does — so a miscategorised credential can't land on the
+  # wrong list or dodge the default expiry. The main bite is an explicit
+  # `:audit_export` lacking `audit:read`; the reverse (`:mcp` + `audit:read`)
+  # is already auto-corrected to `:audit_export` by `put_default_kind` (passing
+  # the `:mcp` default is a no-op change, so the scope wins).
+  defp validate_kind_scope_consistency(changeset) do
+    has_audit = "audit:read" in (get_field(changeset, :scopes) || [])
+
+    if get_field(changeset, :kind) == :audit_export and not has_audit do
+      add_error(changeset, :scopes, "an audit_export key must carry the audit:read scope")
+    else
+      changeset
+    end
   end
 
   # Newly-minted MCP keys default to a 30-day expiry when the operator gives no
   # explicit one, so a leaked key self-heals (`usable?/1` enforces it). Audit-
-  # export tokens (`audit:read`) are exempt — a log-shipping credential expiring
-  # out from under a SIEM would silently break ingestion. (68a will switch this
-  # scope check to the explicit `kind`.)
+  # export tokens (`kind: :audit_export`) are exempt — a log-shipping credential
+  # expiring out from under a SIEM would silently break ingestion.
   @default_mcp_key_ttl_s 30 * 24 * 3_600
 
   defp put_default_mcp_expiry(changeset) do
-    scopes = get_field(changeset, :scopes) || []
-
-    if get_field(changeset, :expires_at) || "audit:read" in scopes do
+    if get_field(changeset, :expires_at) || get_field(changeset, :kind) == :audit_export do
       changeset
     else
       put_change(

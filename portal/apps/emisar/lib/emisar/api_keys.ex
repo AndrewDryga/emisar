@@ -31,11 +31,10 @@ defmodule Emisar.ApiKeys do
   # -- Reads -----------------------------------------------------------
 
   @doc """
-  Lists MCP / LLM-bridge keys for the Agents page — hides
-  auto-generated never-used ones AND hides audit-export tokens
-  (`audit:read`). Audit-export tokens live on the audit page; mixing
-  them in here confused operators looking for the LLM keys.
-  `:created_by` is preloaded.
+  Lists MCP / LLM-bridge keys (`kind: :mcp`) for the Agents page — hides
+  auto-generated never-used ones AND audit-export tokens. Audit-export
+  tokens live on the audit page; mixing them in here confused operators
+  looking for the LLM keys. `:created_by` is preloaded.
   """
   def list_api_keys_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -46,7 +45,7 @@ defmodule Emisar.ApiKeys do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       ApiKey.Query.visible_to_operators()
-      |> ApiKey.Query.without_scope("audit:read")
+      |> ApiKey.Query.by_kind(:mcp)
       |> ApiKey.Query.ordered_by_recent()
       |> apply_api_key_preloads(preloads)
       |> Authorizer.for_subject(subject)
@@ -56,7 +55,7 @@ defmodule Emisar.ApiKeys do
 
   @doc """
   `{:ok, [{user_id, email}]}` — the distinct creators of the account's visible
-  agent keys (the same `visible_to_operators` + non-`audit:read` set the agents
+  agent keys (the same `visible_to_operators` + `kind: :mcp` set the agents
   list shows), for that page's "Owner" filter options. `%Subject{}` needs
   `view_api_keys`.
   """
@@ -68,7 +67,7 @@ defmodule Emisar.ApiKeys do
            ) do
       options =
         ApiKey.Query.visible_to_operators()
-        |> ApiKey.Query.without_scope("audit:read")
+        |> ApiKey.Query.by_kind(:mcp)
         |> ApiKey.Query.owner_options()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -78,10 +77,10 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Lists audit-export tokens (`audit:read`) for the audit page. Same
-  visibility rules + creator preload as the agents list, but scoped
-  to the SIEM-export bucket only so the audit page renders just the
-  keys that actually hit `/api/audit`.
+  Lists audit-export tokens (`kind: :audit_export`) for the audit page.
+  Same visibility rules + creator preload as the agents list, but scoped
+  to the SIEM-export bucket only so the audit page renders just the keys
+  that actually hit `/api/audit`.
   """
   def list_audit_export_keys_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -92,7 +91,7 @@ defmodule Emisar.ApiKeys do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       ApiKey.Query.visible_to_operators()
-      |> ApiKey.Query.by_scope("audit:read")
+      |> ApiKey.Query.by_kind(:audit_export)
       |> ApiKey.Query.ordered_by_recent()
       |> apply_api_key_preloads(preloads)
       |> Authorizer.for_subject(subject)

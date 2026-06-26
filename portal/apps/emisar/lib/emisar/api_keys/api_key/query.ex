@@ -40,18 +40,12 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     do: where(queryable, [api_keys: k], k.key_prefix == ^prefix)
 
   @doc """
-  Restricts to keys that carry the given scope. Uses Postgres array
-  containment so the index on `scopes` (if added later) covers it.
+  Restricts to keys of a given `kind` (`:mcp` LLM-bridge keys vs
+  `:audit_export` SIEM tokens) — the type split behind the agents-page
+  and audit-page lists.
   """
-  def by_scope(queryable \\ all(), scope) when is_binary(scope),
-    do: where(queryable, [api_keys: k], fragment("? = ANY(?)", ^scope, k.scopes))
-
-  @doc """
-  Restricts to keys that do NOT carry the given scope. Used to keep
-  audit-export tokens (audit:read) out of the LLM-bridge agents list.
-  """
-  def without_scope(queryable \\ all(), scope) when is_binary(scope),
-    do: where(queryable, [api_keys: k], fragment("NOT (? = ANY(?))", ^scope, k.scopes))
+  def by_kind(queryable \\ all(), kind) when is_atom(kind),
+    do: where(queryable, [api_keys: k], k.kind == ^kind)
 
   @doc """
   Auto-generated keys that no LLM has ever authenticated with — the

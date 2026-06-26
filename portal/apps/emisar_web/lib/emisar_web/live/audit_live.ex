@@ -72,6 +72,7 @@ defmodule EmisarWeb.AuditLive do
         attrs = %{
           name: "Audit export — #{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")}",
           description: "Read-only token for shipping audit events to a SIEM.",
+          kind: :audit_export,
           scopes: ["audit:read"]
         }
 

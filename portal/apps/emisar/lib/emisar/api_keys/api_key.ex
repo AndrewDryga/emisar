@@ -13,6 +13,14 @@ defmodule Emisar.ApiKeys.ApiKey do
     field :key_prefix, :string
     field :key_hash, :binary, redact: true
 
+    # What this key IS, kept explicit rather than inferred from `scopes`:
+    # `:mcp` is an LLM-bridge key (the agents page); `:audit_export` is a
+    # read-only SIEM log-shipping token (the audit page). Drives which list a
+    # key appears on and whether it gets the default short expiry (export
+    # tokens don't — that would break log shipping). `scopes` still carries the
+    # capability (`actions:*` vs `audit:read`); `kind` is the type.
+    field :kind, Ecto.Enum, values: [:mcp, :audit_export], default: :mcp
+
     field :runner_filter, {:array, :string}, default: []
     field :runner_group_filter, {:array, :string}, default: []
     field :scopes, {:array, :string}, default: []
