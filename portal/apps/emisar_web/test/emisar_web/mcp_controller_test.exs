@@ -1454,10 +1454,10 @@ defmodule EmisarWeb.MCPControllerTest do
       raw = make_api_key!(account, user)
 
       attestation = %{
-        "key_id" => "k1",
         "sig" => "deadbeef",
         "nonce" => "n1",
-        "issued_at" => "2026-06-17T12:00:00Z"
+        "issued_at" => "2026-06-17T12:00:00Z",
+        "cert" => %{"ca_id" => "ca-acme", "key_id" => "op-1", "sig" => "cafe"}
       }
 
       body =

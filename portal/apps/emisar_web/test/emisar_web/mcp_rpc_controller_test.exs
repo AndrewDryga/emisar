@@ -670,7 +670,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert run.mcp_session_id == "sess-abc-123"
     end
 
-    test "extracts a well-formed attestation and stores it on the run, not in the args",
+    test "extracts a well-formed attestation (nested cert) and stores it on the run, not in the args",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
@@ -678,10 +678,19 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
       attestation = %{
-        "key_id" => "k1",
         "sig" => "deadbeef",
         "nonce" => "n1",
-        "issued_at" => "2026-06-17T12:00:00Z"
+        "issued_at" => "2026-06-17T12:00:00Z",
+        "cert" => %{
+          "ca_id" => "ca-acme",
+          "key_id" => "op-1",
+          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+          "valid_from" => "2026-06-25T00:00:00Z",
+          "valid_until" => "2026-06-26T00:00:00Z",
+          "scope" => %{"group" => "edge", "labels" => %{"env" => "prod"}},
+          "serial" => "01J0CERT0000000000000000A",
+          "sig" => "cafebabe"
+        }
       }
 
       conn
@@ -715,12 +724,18 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       |> put_req_header("authorization", "Bearer " <> raw)
       |> rpc("tools/call", %{
         "name" => "linux.uptime",
-        # Missing nonce + issued_at — not the 4-field envelope the runner needs.
+        # The cert is missing required fields — not a well-formed envelope, so the
+        # whole attestation degrades to nil and an enforcing runner refuses.
         "arguments" => %{
           "runner" => "host-1",
           "reason" => "smoke",
           "wait" => "0",
-          "attestation" => %{"key_id" => "k1", "sig" => "x"}
+          "attestation" => %{
+            "sig" => "x",
+            "nonce" => "n1",
+            "issued_at" => "2026-06-17T12:00:00Z",
+            "cert" => %{"ca_id" => "ca-acme", "sig" => "cafe"}
+          }
         }
       })
       |> json_response(200)
@@ -730,7 +745,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       refute Map.has_key?(run.args, "attestation")
     end
 
-    test "an oversized attestation field is rejected (dropped to nil)",
+    test "an oversized cert field is rejected (dropped to nil)",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
@@ -741,16 +756,26 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       |> put_req_header("authorization", "Bearer " <> raw)
       |> rpc("tools/call", %{
         "name" => "linux.uptime",
-        # A 9 KB sig — far over the 512-byte field cap, the multi-MB-blob abuse.
+        # A 9 KB public_key inside the cert — far over the 512-byte field cap, the
+        # multi-MB-blob abuse a key-blind relay must still bound.
         "arguments" => %{
           "runner" => "host-1",
           "reason" => "smoke",
           "wait" => "0",
           "attestation" => %{
-            "key_id" => "k1",
-            "sig" => String.duplicate("a", 9_000),
+            "sig" => "deadbeef",
             "nonce" => "n1",
-            "issued_at" => "2026-06-17T12:00:00Z"
+            "issued_at" => "2026-06-17T12:00:00Z",
+            "cert" => %{
+              "ca_id" => "ca-acme",
+              "key_id" => "op-1",
+              "public_key" => String.duplicate("a", 9_000),
+              "valid_from" => "2026-06-25T00:00:00Z",
+              "valid_until" => "2026-06-26T00:00:00Z",
+              "scope" => %{},
+              "serial" => "01J0CERT0000000000000000A",
+              "sig" => "cafebabe"
+            }
           }
         }
       })
@@ -2265,14 +2290,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
 
-    test "an extra attestation key is stripped by Map.take; the 4 valid fields are kept",
+    test "extra keys (top-level and in the cert) are stripped; only the known fields are kept",
          %{conn: conn, account: account, user: user} do
-      # The spec row's premise ("extra keys → nil") doesn't match the real
-      # code: `normalize_attestation` does `Map.take(att, [4 keys])` FIRST,
-      # so a 5th key is discarded before the `map_size == 4` check — the
-      # envelope is accepted with exactly the four expected fields, the extra
-      # key silently dropped. (Only a MISSING field or an oversized one → nil;
-      # those are covered by the existing well-formed / malformed tests.)
+      # normalize_attestation builds the relayed envelope from the KNOWN fields
+      # only (top-level sig/nonce/issued_at/cert; the cert's own seven strings +
+      # scope), so an unexpected key at either level is silently dropped rather
+      # than rejected. (Only a MISSING field or an oversized one → nil.)
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
@@ -2287,23 +2310,42 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           "reason" => "smoke",
           "wait" => "0",
           "attestation" => %{
-            "key_id" => "k1",
             "sig" => "deadbeef",
             "nonce" => "n1",
             "issued_at" => "2026-06-17T12:00:00Z",
-            "extra" => "x"
+            "extra" => "x",
+            "cert" => %{
+              "ca_id" => "ca-acme",
+              "key_id" => "op-1",
+              "public_key" => "ab",
+              "valid_from" => "2026-06-25T00:00:00Z",
+              "valid_until" => "2026-06-26T00:00:00Z",
+              "scope" => %{},
+              "serial" => "01X",
+              "sig" => "cafe",
+              "extra_cert" => "y"
+            }
           }
         }
       })
       |> json_response(200)
 
       {:ok, [run], _meta} = Runs.list_runs(subject)
-      # The unexpected key is gone; only the four canonical fields remain.
+      # The unexpected keys are gone at both levels; only the known fields remain.
       assert run.attestation == %{
-               "key_id" => "k1",
                "sig" => "deadbeef",
                "nonce" => "n1",
-               "issued_at" => "2026-06-17T12:00:00Z"
+               "issued_at" => "2026-06-17T12:00:00Z",
+               "cert" => %{
+                 "ca_id" => "ca-acme",
+                 "key_id" => "op-1",
+                 "public_key" => "ab",
+                 "valid_from" => "2026-06-25T00:00:00Z",
+                 "valid_until" => "2026-06-26T00:00:00Z",
+                 "scope" => %{},
+                 "serial" => "01X",
+                 "sig" => "cafe"
+               }
              }
 
       refute Map.has_key?(run.args, "attestation")
@@ -2835,10 +2877,19 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       subject = subject_for(account, user)
 
       bogus_but_well_formed = %{
-        "key_id" => "operator-key-1",
         "sig" => "not-a-real-signature-but-the-right-shape",
         "nonce" => "nonce-123",
-        "issued_at" => "2026-06-17T12:00:00Z"
+        "issued_at" => "2026-06-17T12:00:00Z",
+        "cert" => %{
+          "ca_id" => "ca-acme",
+          "key_id" => "operator-key-1",
+          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+          "valid_from" => "2026-06-25T00:00:00Z",
+          "valid_until" => "2026-06-26T00:00:00Z",
+          "scope" => %{"group" => "edge"},
+          "serial" => "01J0CERT0000000000000000A",
+          "sig" => "also-not-real-but-right-shape"
+        }
       }
 
       conn
