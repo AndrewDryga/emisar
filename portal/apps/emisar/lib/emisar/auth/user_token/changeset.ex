@@ -23,11 +23,31 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
-  @doc "Single-use emailed token row (magic link / password reset / confirm)."
+  @doc "Single-use emailed token row (password reset / confirm)."
   def hashed(%Users.User{} = user, digest, context, sent_to)
       when is_binary(digest) and is_binary(context) do
     change(%UserToken{}, token: digest, context: context, sent_to: sent_to, user_id: user.id)
   end
+
+  @doc """
+  Split-code magic-link token row. `digest` is `Crypto.hash(nonce <> secret)` —
+  neither half is stored, so a DB breach + an intercepted email still can't sign
+  in. `attempts` is the online-guess budget for the 6-digit secret.
+  """
+  def magic_link(%Users.User{} = user, digest, sent_to, attempts)
+      when is_binary(digest) and is_integer(attempts) do
+    change(%UserToken{},
+      token: digest,
+      context: "magic_link",
+      sent_to: sent_to,
+      user_id: user.id,
+      remaining_attempts: attempts
+    )
+  end
+
+  @doc "Spend one attempt on a magic-link token (a wrong nonce or secret)."
+  def decrement_attempts(%UserToken{remaining_attempts: n} = token) when is_integer(n),
+    do: change(token, remaining_attempts: n - 1)
 
   # The request metadata arrives from Plug with mixed atom/string keys
   # and non-string values — normalize to the two string-keyed fields

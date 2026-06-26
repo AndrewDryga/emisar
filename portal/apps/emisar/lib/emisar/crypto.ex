@@ -77,6 +77,41 @@ defmodule Emisar.Crypto do
     end
   end
 
+  # The emailed magic-link secret is a short, typable numeric code; the
+  # browser-side nonce carries the entropy, so 6 digits + the attempt cap
+  # is safe (an email interceptor lacks the nonce and gets 5 guesses).
+  @magic_link_code_digits 6
+
+  @doc """
+  Mints a split-code magic-link token as `{nonce, secret, digest}`. The
+  high-entropy `nonce` stays in the browser, the 6-digit `secret` is emailed
+  (and typable cross-device), and only `digest = hash(nonce <> secret)` is
+  stored — neither half alone reconstructs it, so a DB breach plus an
+  intercepted email still can't sign in. Verify with `magic_link_digest/2`.
+  """
+  def magic_link_token do
+    nonce = random_secret()
+    secret = numeric_code(@magic_link_code_digits)
+    {nonce, secret, hash(nonce <> secret)}
+  end
+
+  @doc "Digest of a presented `(nonce, secret)` pair, for the magic-link row compare."
+  def magic_link_digest(nonce, secret) when is_binary(nonce) and is_binary(secret),
+    do: hash(nonce <> secret)
+
+  # Crypto-random zero-padded N-digit code. 8 random bytes mod 10^N — the
+  # modulo bias over 64 bits is ~5e-14, negligible for a code whose security
+  # is the nonce, not its own entropy.
+  defp numeric_code(digits) when is_integer(digits) and digits > 0 do
+    max = Integer.pow(10, digits)
+
+    :crypto.strong_rand_bytes(8)
+    |> :binary.decode_unsigned()
+    |> rem(max)
+    |> Integer.to_string()
+    |> String.pad_leading(digits, "0")
+  end
+
   @doc """
   Url-safe-base64 (no padding) of a digest — for embedding a digest in
   a PubSub topic or similar identifier without the call site inlining

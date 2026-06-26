@@ -33,6 +33,10 @@ defmodule Emisar.Auth.UserToken.Query do
   def not_expired(queryable, context),
     do: where(queryable, [tokens: t], t.inserted_at > ago(^validity_in_days(context), "day"))
 
+  @doc "Split-code magic-link tokens that still have guess attempts left (locked at 0)."
+  def with_attempts_remaining(queryable),
+    do: where(queryable, [tokens: t], t.remaining_attempts > 0)
+
   defp validity_in_days("session"), do: @session_validity_in_days
   defp validity_in_days("confirm"), do: @confirm_validity_in_days
   defp validity_in_days("reset_password"), do: @reset_validity_in_days

@@ -124,6 +124,66 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "split-code magic link" do
+    test "verifies with both halves and is single-use" do
+      user = user_fixture()
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+
+      assert {:ok, %User{id: id}} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert id == user.id
+
+      # Single-use — the token is deleted on success.
+      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+    end
+
+    test "the email half alone can't sign in — a wrong nonce is rejected (anti-hijack)" do
+      user = user_fixture()
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+
+      # An intercepted email gives token_id + secret but NOT the originating
+      # browser's nonce → the core anti-hijack guarantee: no sign-in.
+      assert {:error, :invalid_or_expired} =
+               Auth.verify_magic_link(token_id, secret, "wrong-nonce")
+
+      # …and the real browser still signs in — one wrong attempt only spent one
+      # of the budget, it didn't burn the token.
+      assert {:ok, %User{id: id}} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert id == user.id
+    end
+
+    test "a token past the 15-minute window no longer verifies" do
+      user = user_fixture()
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      age_tokens(user.id, 16)
+
+      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+    end
+
+    test "five wrong attempts lock the token — even the correct half then fails" do
+      user = user_fixture()
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+
+      # Burn all five attempts (a wrong nonce always mismatches the high-entropy one).
+      for _ <- 1..5 do
+        assert {:error, :invalid_or_expired} =
+                 Auth.verify_magic_link(token_id, secret, "wrong-nonce")
+      end
+
+      # Locked: the correct (nonce, secret) no longer works.
+      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+    end
+
+    test "issuing again replaces the prior outstanding token (single outstanding)" do
+      user = user_fixture()
+      {token_id1, nonce1, secret1} = Auth.issue_magic_link(user)
+      {token_id2, nonce2, secret2} = Auth.issue_magic_link(user)
+
+      # The first token is gone — re-issuing deleted it.
+      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id1, secret1, nonce1)
+      assert {:ok, %User{}} = Auth.verify_magic_link(token_id2, secret2, nonce2)
+    end
+  end
+
   describe "password reset" do
     test "reset_user_password swaps the hash and invalidates sessions" do
       user = user_fixture(password: @password)

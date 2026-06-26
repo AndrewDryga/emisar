@@ -75,6 +75,11 @@ defmodule Emisar.Repo.Migrations.AccountsAndUsers do
       add :context, :string, null: false
       add :sent_to, :string
       add :metadata, :map, null: false, default: %{}
+      # Split-code magic link only: the email carries a 6-digit secret, the
+      # browser keeps a high-entropy nonce, and the row stores hash(nonce<>secret)
+      # in :token. A wrong half decrements this; at 0 the token is locked (caps
+      # online guessing of the 6-digit code).
+      add :remaining_attempts, :integer
       timestamps(type: :utc_datetime_usec, updated_at: false)
     end
 

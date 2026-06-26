@@ -398,6 +398,91 @@ defmodule Emisar.Auth do
     end
   end
 
+  # Online-guess budget for the 6-digit magic-link secret. The nonce carries
+  # the real entropy; this caps brute-force by anyone who somehow has it.
+  @magic_link_attempts 5
+
+  @doc """
+  Issues a split-code magic-link token. Returns `{token_id, nonce, secret}`: the
+  caller keeps `nonce` browser-side (a short-lived cookie) and emails the
+  `secret` (a 6-digit code) plus a link carrying `token_id` + `secret`. Deletes
+  any prior outstanding magic-link token for the user (single outstanding).
+  """
+  def issue_magic_link(%Users.User{} = user, context \\ %RequestContext{}) do
+    {nonce, secret, digest} = Crypto.magic_link_token()
+
+    prior =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("magic_link")
+
+    {:ok, %{token: token}} =
+      Multi.new()
+      |> Multi.delete_all(:prior, prior)
+      |> Multi.insert(
+        :token,
+        UserToken.Changeset.magic_link(user, digest, user.email, @magic_link_attempts)
+      )
+      |> Audit.Multi.log_for_user(:audit, user, "user.magic_link_issued",
+        extra: [context: context]
+      )
+      |> Repo.commit_multi()
+
+    {token.id, nonce, secret}
+  end
+
+  @doc """
+  Verifies a split-code magic link by reconstructing `hash(nonce <> secret)` and
+  matching it against the locked token row. BOTH halves are required, so an
+  intercepted email link/code can't sign in without the originating browser's
+  nonce. Single-use on success; a wrong half spends one of the #{@magic_link_attempts}
+  attempts, and a spent-out or expired token reads as `{:error, :invalid_or_expired}`.
+  """
+  def verify_magic_link(token_id, secret, nonce, context \\ %RequestContext{})
+      when is_binary(token_id) and is_binary(secret) and is_binary(nonce) do
+    Multi.new()
+    |> Multi.run(:token, fn repo, _changes ->
+      loaded_token =
+        UserToken.Query.by_id(token_id)
+        |> UserToken.Query.by_context("magic_link")
+        |> UserToken.Query.not_expired("magic_link")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
+    end)
+    |> Multi.run(:outcome, fn repo, %{token: token} ->
+      if Crypto.secure_compare(Crypto.magic_link_digest(nonce, secret), token.token) do
+        # Both halves match → single-use: delete the token, resolve the user.
+        {:ok, _} = repo.delete(token)
+
+        case Users.fetch_user_by_id(token.user_id) do
+          {:ok, user} -> {:ok, {:ok, user}}
+          # A soft-deleted user behind a live token reads as a dead link.
+          {:error, :not_found} -> {:ok, {:error, :invalid_or_expired}}
+        end
+      else
+        # Wrong nonce or secret → spend one attempt. Returns `{:ok, …}` so the
+        # decrement COMMITS (a Multi rollback would undo the spend).
+        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid_or_expired}}
+      end
+    end)
+    |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
+      extra: [context: context],
+      user_fn: fn
+        %{outcome: {:ok, %Users.User{} = user}} -> user
+        _ -> nil
+      end,
+      payload_fn: fn _ -> %{method: "magic_link"} end
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{outcome: outcome}} -> outcome
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # -- Password reset ---------------------------------------------------
 
   @doc """

@@ -14,6 +14,8 @@ defmodule Emisar.Auth.UserToken do
     field :context, :string
     field :sent_to, :string
     field :metadata, :map, default: %{}
+    # Split-code magic link only — see the migration. nil for every other token.
+    field :remaining_attempts, :integer
     # How the session was authenticated — carried onto %Auth.Subject{} and
     # stamped on every audit row (provenance). `auth_method` is the method;
     # `mfa` records whether a second factor was verified this session (kept
