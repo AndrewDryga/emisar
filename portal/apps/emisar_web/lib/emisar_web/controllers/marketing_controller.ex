@@ -46,8 +46,8 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/security-model", :docs_security_model, :docs_security_model, "Security model",
      "The emisar trust boundary: pre-approved actions, server-side re-validation, searchable audit, a hash-chained runner journal, and redaction before egress."},
     {"/docs/signed-dispatch", :docs_signed_dispatch, :docs_signed_dispatch,
-     "Signed dispatch — set up, distribute, and rotate signing keys",
-     "Make a runner execute only actions a real person signed in their MCP client. Generate the Ed25519 keypair, configure both ends, and distribute, rotate, and revoke keys across a fleet — without trusting the control plane."},
+     "Signed dispatch — a CA for runner actions, set up and rotated",
+     "Make a runner execute only actions a real person signed in their MCP client. An offline Ed25519 CA issues short-lived, scoped certificates; a runner trusts the CA, not every key — so onboarding, rotation, and revocation never touch the control plane."},
     {"/use-cases/csi-data-loss", :usecase_csi_data_loss, :usecase_csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
      "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra — a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
@@ -265,7 +265,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :changelog,
       page_title: "Changelog",
       meta_description:
-        "Shipping notes for emisar — the control plane that gives AI agents approved infrastructure actions instead of SSH. The redesigned site, the new identity, runner releases, SSO/SCIM, approvals, and audit.",
+        "Shipping notes for emisar — the control plane that gives AI agents approved infrastructure actions instead of SSH. Signed dispatch, SSO and SCIM, approvals and audit, the action-pack catalog, and the redesigned site and identity.",
       canonical_url: @base <> "/changelog",
       entries: EmisarWeb.Changelog.entries(),
       json_ld: json_ld

@@ -679,24 +679,25 @@ defmodule EmisarWeb.MarketingTest do
     # The signed-dispatch operator guide: setup + the fleet key lifecycle
     # (distribute, rotate, revoke) plus the config tokens and a refusal code
     # an operator copies. Stable, apostrophe-free anchors per the describe note.
-    test "the signed-dispatch page renders setup, fleet distribution, rotation, and revocation",
+    test "the signed-dispatch page renders setup, CA distribution, rotation, and revocation",
          %{conn: conn} do
       html = conn |> get(~p"/docs/signed-dispatch") |> html_response(200)
 
       # The section spine of the how-to.
-      assert html =~ "Distributing keys across a fleet"
-      assert html =~ "Rotating keys"
-      assert html =~ "Revoking a key"
+      assert html =~ "Distributing the CA across a fleet"
+      assert html =~ "Rotating operators"
+      assert html =~ "Revoking"
 
       # The exact knobs an operator sets on both ends.
-      assert html =~ "emisar keygen"
+      assert html =~ "emisar signing init"
       assert html =~ "enforce_signatures"
-      assert html =~ "trusted_keys"
+      assert html =~ "trusted_cas"
       assert html =~ "EMISAR_SIGNING_KEY"
+      assert html =~ "EMISAR_SIGNING_CERT"
       assert html =~ "max_attestation_age"
 
       # A refusal code from the troubleshooting table.
-      assert html =~ "unknown_key"
+      assert html =~ "cert_untrusted"
     end
 
     test "the publishing-packs guide renders the operator commands", %{conn: conn} do
