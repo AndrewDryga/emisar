@@ -40,6 +40,7 @@ services:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "test-root-token"
       NOMAD_ADDR: "http://nomad:4646"
+      COCKROACH_URL: "postgresql://root@cockroach:26257/defaultdb?sslmode=disable"
       CH_HOST: clickhouse
       CH_USER: default
       ELASTIC_USER: elastic
@@ -54,6 +55,15 @@ services:
       SNMP_COMMUNITY: public
 
   # Databases
+  cockroach:
+    image: cockroachdb/cockroach:v24.3.5
+    command: start-single-node --insecure
+    networks: [packtest]
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      retries: 10
+
   postgres:
     image: postgres:16
     environment:

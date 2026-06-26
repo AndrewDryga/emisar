@@ -78,6 +78,14 @@ RUN set -eux; case "$(dpkg --print-architecture)" in arm64) m=arm64;; amd64) m=x
     rm -rf /tmp/mongosh*; \
     mongosh --version
 
+# cockroach CLI for the cockroach pack (the single binary from the release tarball).
+RUN set -eux; v=v24.3.5; arch="$(dpkg --print-architecture)"; \
+    curl -fsSL "https://binaries.cockroachdb.com/cockroach-$v.linux-$arch.tgz" -o /tmp/crdb.tgz; \
+    tar -xzf /tmp/crdb.tgz -C /tmp; \
+    mv "/tmp/cockroach-$v.linux-$arch/cockroach" /usr/local/bin/cockroach; \
+    rm -rf /tmp/crdb.tgz "/tmp/cockroach-$v.linux-$arch"; \
+    cockroach version | head -1
+
 # emisar binary (mounted at runtime via volume)
 VOLUME ["/opt/emisar"]
 ENV PATH="/opt/emisar/bin:${PATH}"

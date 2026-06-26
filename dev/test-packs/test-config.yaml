@@ -31,6 +31,7 @@ execution:
     - CADDY_ADMIN
     - CH_HOST
     - CH_USER
+    - COCKROACH_URL
     - CONSUL_HTTP_ADDR
     - ELASTIC_PASSWORD
     - ELASTIC_USER
