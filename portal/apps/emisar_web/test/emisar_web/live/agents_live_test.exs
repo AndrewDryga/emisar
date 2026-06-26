@@ -145,6 +145,23 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert id == auto.id
     end
 
+    test "an unbounded quick-connect foregrounds the key's blast-radius + no-expiry lifetime",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # A real fleet to bound — the default scope reaches all of it.
+      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+
+      # The credential's blast-radius is legible, not buried as a muted default.
+      assert html =~ "Reaches all 2 runners"
+      # And its lifetime — quick keys never expire, so rotation is on the operator.
+      assert html =~ "Quick-connect keys"
+    end
+
     test "agents list shows the creator's email", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

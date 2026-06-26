@@ -1205,11 +1205,13 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # Scope picker block. Wrapped as a collapsible "Restrict scope"
-  # section because the default ("all runners, all groups") is the right
-  # one for most operators — surfacing it as an optional refinement
-  # that they can ignore feels less imposing than a step the wizard
-  # demands an answer to.
+  # Key-scope block. A security product must make the credential's
+  # blast-radius legible, so the collapsed summary FOREGROUNDS it — an
+  # amber "reaches all N runners" when unbound, a brand "scoped to …" when
+  # narrowed — instead of burying "all runners" as a muted default. The
+  # picker itself stays collapsible (re-opening a long runner list for
+  # every connect fought the frictionless path), but the bound is now
+  # impossible to miss, and the footnote says these keys never expire.
   attr :runners, :list, required: true
   attr :selected_runner_ids, :list, required: true
   attr :selected_runner_groups, :list, required: true
@@ -1217,41 +1219,62 @@ defmodule EmisarWeb.AgentsLive do
   defp scope_block(assigns) do
     assigns =
       assign(assigns,
-        scoped?: assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
+        scoped?: assigns.selected_runner_ids != [] or assigns.selected_runner_groups != [],
+        runner_count: length(assigns.runners)
       )
 
     ~H"""
-    <details
-      class="rounded-lg border border-zinc-800 bg-zinc-950/40"
-      {if(@scoped?, do: %{open: ""}, else: %{})}
-    >
-      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
-        <div>
-          <span class="font-medium">Restrict scope</span>
-          <span class="ml-2 text-[11px] text-zinc-500">
-            <%= if @scoped? do %>
-              {scope_summary(@selected_runner_ids, @selected_runner_groups)}
-            <% else %>
-              defaults to all runners + all groups
+    <div>
+      <details
+        class="rounded-lg border border-zinc-800 bg-zinc-950/40"
+        {if(@scoped?, do: %{open: ""}, else: %{})}
+      >
+        <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-medium">Key scope</span>
+            <%= cond do %>
+              <% @scoped? -> %>
+                <span class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[11px] font-medium text-brand-300">
+                  <.icon name="hero-shield-check" class="h-3 w-3" />
+                  {scope_summary(@selected_runner_ids, @selected_runner_groups)}
+                </span>
+              <% @runner_count == 0 -> %>
+                <span class="text-[11px] text-zinc-500">no runners connected yet</span>
+              <% true -> %>
+                <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                  <.icon name="hero-globe-alt" class="h-3 w-3" />
+                  Reaches all {@runner_count} {if @runner_count ==
+                                                    1,
+                                                  do: "runner",
+                                                  else: "runners"}
+                </span>
             <% end %>
+          </div>
+          <span class="text-xs text-zinc-500">
+            click to {if @scoped?, do: "edit", else: "narrow"}
           </span>
+        </summary>
+        <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
+          <p class="text-xs text-zinc-500">
+            Tick groups or specific runners to scope the next key mint. Re-picking your
+            client re-mints with the current scope.
+          </p>
+          <div class="mt-3">
+            <.scope_picker
+              runners={@runners}
+              selected_runner_ids={@selected_runner_ids}
+              selected_runner_groups={@selected_runner_groups}
+            />
+          </div>
         </div>
-        <span class="text-xs text-zinc-500">click to {if @scoped?, do: "edit", else: "narrow"}</span>
-      </summary>
-      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
-        <p class="text-xs text-zinc-500">
-          Tick groups or specific runners to scope the next key mint. Re-picking your
-          client re-mints with the current scope.
-        </p>
-        <div class="mt-3">
-          <.scope_picker
-            runners={@runners}
-            selected_runner_ids={@selected_runner_ids}
-            selected_runner_groups={@selected_runner_groups}
-          />
-        </div>
-      </div>
-    </details>
+      </details>
+      <p class="mt-2 flex items-start gap-1.5 px-1 text-[11px] text-zinc-500">
+        <.icon name="hero-clock" class="mt-0.5 h-3 w-3 flex-none" />
+        <span>
+          Quick-connect keys don't expire — revoke one from the list below when its agent no longer needs access.
+        </span>
+      </p>
+    </div>
     """
   end
 
