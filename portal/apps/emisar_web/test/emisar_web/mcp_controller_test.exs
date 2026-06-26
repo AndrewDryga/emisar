@@ -613,7 +613,7 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["runner"] == "db-prod-02"
     end
 
-    test "missing reason surfaces inside the per-runner result entry", %{
+    test "missing reason fails fast with 400 reason_required — not a 202 of per-runner errors", %{
       conn: conn,
       account: account,
       user: user,
@@ -621,14 +621,16 @@ defmodule EmisarWeb.MCPControllerTest do
     } do
       raw = make_api_key!(account, user)
 
+      # Explicit runner so resolution passes; the reason is what's missing.
+      # The boundary rejects up front rather than fanning out N runs that each
+      # error — a 202 carrying only errors would misreport "accepted".
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> post(~p"/api/mcp/tools/linux.uptime", %{"runners" => [runner.name]})
-        |> json_response(202)
+        |> json_response(400)
 
-      assert %{"runs" => [entry]} = body
-      assert entry["error"] == "reason_required"
+      assert body["error"] == "reason_required"
     end
 
     test "missing scope returns 403", %{conn: conn, account: account, user: user, runner: runner} do

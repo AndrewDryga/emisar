@@ -276,7 +276,8 @@ defmodule EmisarWeb.MCP.Service do
         }
 
   @type dispatch_error ::
-          {:error, :runner_required, [String.t()]}
+          {:error, :reason_required}
+          | {:error, :runner_required, [String.t()]}
           | {:error, :runner_not_found, String.t()}
           | {:error, :runner_not_allowed, String.t(), String.t()}
           | {:error, :no_runner_available, :unknown_action | :scope_blocked}
@@ -302,7 +303,8 @@ defmodule EmisarWeb.MCP.Service do
     mcp_session_id = Map.get(opts, :mcp_session_id)
     attestation = Map.get(opts, :attestation)
 
-    with {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
+    with :ok <- validate_reason(reason),
+         {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
       runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
 
       results =
@@ -400,6 +402,16 @@ defmodule EmisarWeb.MCP.Service do
   def max_wait_ms, do: @max_wait_ms
   def max_get_run_wait_ms, do: @max_get_run_wait_ms
   def max_runners_per_call, do: @max_runners_per_call
+
+  # `reason` is the audit "why" — a security product requires it on every
+  # dispatch. The tool schema declares it required, but a schema is an LLM hint,
+  # not the gate; enforce it here so an absent/blank reason fails closed rather
+  # than persisting a run with no rationale for the operator to audit.
+  defp validate_reason(reason) when is_binary(reason) do
+    if String.trim(reason) == "", do: {:error, :reason_required}, else: :ok
+  end
+
+  defp validate_reason(_), do: {:error, :reason_required}
 
   # -- Runner resolution ----------------------------------------------
 

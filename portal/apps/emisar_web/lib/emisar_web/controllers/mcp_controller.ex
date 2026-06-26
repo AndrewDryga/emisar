@@ -100,6 +100,17 @@ defmodule EmisarWeb.MCPController do
           {:ok, runs} ->
             conn |> put_status(:accepted) |> json(%{runs: runs})
 
+          {:error, :reason_required} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{
+              error: "reason_required",
+              message:
+                "Every action call must include a non-empty `reason` — a short sentence on " <>
+                  "why. It lands in the audit log so an operator can later answer 'why did " <>
+                  "this fire?'."
+            })
+
           {:error, :runner_required, candidates} ->
             conn
             |> put_status(:bad_request)

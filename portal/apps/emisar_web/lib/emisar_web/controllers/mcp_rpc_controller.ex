@@ -178,6 +178,16 @@ defmodule EmisarWeb.MCPRpcController do
         {content, is_err} = ContentBlocks.from_runs(runs)
         {:ok, %{content: content, isError: is_err}}
 
+      {:error, :reason_required} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Reason required",
+            "Every action call must include a non-empty `reason` — a short sentence on why. " <>
+              "It lands in the audit log so an operator can later answer 'why did this fire?'."
+          )
+
+        {:ok, %{content: content, isError: true}}
+
       {:error, :runner_required, candidates} ->
         msg =
           "This action needs an explicit target — emisar never auto-picks a runner, even " <>

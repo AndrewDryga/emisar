@@ -1297,7 +1297,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["result"]["isError"] == true
-      assert content_text(body) =~ "reason_required"
+      assert content_text(body) =~ "Reason required"
     end
 
     test "a non-string reason is rejected with reason_required",
@@ -1314,7 +1314,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["result"]["isError"] == true
-      assert content_text(body) =~ "reason_required"
+      assert content_text(body) =~ "Reason required"
     end
 
     test "a reason-denied dispatch leaves no orphan run row",
@@ -2671,7 +2671,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           do: refute(Map.has_key?(run.args, k))
     end
 
-    test "a missing reason is a per-runner reason_required, not a crash",
+    test "a missing reason is rejected up-front (reason_required), not a crash",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
       subject = subject_for(account, user)
@@ -2686,7 +2686,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["result"]["isError"] == true
-      assert content_text(body) =~ "reason_required"
+      assert content_text(body) =~ "Reason required"
       # Gated before run creation — no orphan row.
       assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
@@ -3219,10 +3219,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "reason gate lives at the context layer (IL)" do
     test "Runs.dispatch_run rejects a missing reason before any run row exists",
          %{account: account, user: user} do
-      # The MCP per-runner reason_required block (covered elsewhere) is downstream
-      # of the real gate: `Runs.dispatch_run` runs `require_reason` in its `with`
-      # chain BEFORE creating the run, so the rejection holds even when a caller
-      # bypasses the schema hint and dispatches with no reason at all. Assert the
+      # The MCP boundary now rejects a missing reason up-front (covered elsewhere),
+      # but `Runs.dispatch_run` is the real gate: it runs `require_reason` in its
+      # `with` chain BEFORE creating the run, so the rejection holds even when a
+      # caller bypasses both the schema hint and the MCP boundary check. Assert the
       # context function directly — the security boundary, not the MCP rendering.
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
