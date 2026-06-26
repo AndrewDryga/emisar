@@ -136,19 +136,19 @@ defmodule Emisar.AuthAuditTest do
       %{user: user, account: account}
     end
 
-    test "issue_magic_link_token! audits", %{user: user, account: account} do
-      _raw = Auth.issue_magic_link_token!(user)
+    test "issue_magic_link audits", %{user: user, account: account} do
+      _ = Auth.issue_magic_link(user)
       assert [event] = events_of(account, "user.magic_link_issued")
       assert event.actor_id == user.id
     end
 
-    test "consume_magic_link_token audits user.signed_in with magic_link method", %{
+    test "verify_magic_link audits user.signed_in with the magic_link method", %{
       user: user,
       account: account
     } do
-      raw = Auth.issue_magic_link_token!(user)
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
 
-      assert {:ok, _u} = Auth.consume_magic_link_token(raw)
+      assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
       assert [event] = events_of(account, "user.signed_in")
       assert event.payload["method"] == "magic_link"
     end

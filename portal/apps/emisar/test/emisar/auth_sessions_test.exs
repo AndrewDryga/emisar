@@ -34,7 +34,7 @@ defmodule Emisar.AuthSessionsTest do
     test "only includes session-context tokens (not magic-link or reset)" do
       {user, _account, subject} = owner_subject_fixture()
       _ = Auth.create_session_token!(user, :password, false)
-      _ = Auth.issue_magic_link_token!(user)
+      _ = Auth.issue_magic_link(user)
       _ = Auth.issue_password_reset_token!(user)
 
       assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)

@@ -80,50 +80,6 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "magic link" do
-    test "issued token can be consumed once" do
-      user = user_fixture()
-      raw = Auth.issue_magic_link_token!(user)
-
-      assert {:ok, %User{id: id}} = Auth.consume_magic_link_token(raw)
-      assert id == user.id
-
-      # Single-use — second attempt fails.
-      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
-    end
-
-    test "garbage token returns invalid_or_expired" do
-      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token("not-a-real-token")
-    end
-
-    test "a link whose user was deleted no longer works" do
-      user = user_fixture()
-      raw = Auth.issue_magic_link_token!(user)
-
-      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
-
-      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
-    end
-
-    # 15-minute window (magic_link).
-    test "a link just inside 15 minutes still consumes" do
-      user = user_fixture()
-      raw = Auth.issue_magic_link_token!(user)
-      age_tokens(user.id, 14)
-
-      assert {:ok, %User{id: id}} = Auth.consume_magic_link_token(raw)
-      assert id == user.id
-    end
-
-    test "a link just past 15 minutes no longer consumes" do
-      user = user_fixture()
-      raw = Auth.issue_magic_link_token!(user)
-      age_tokens(user.id, 16)
-
-      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
-    end
-  end
-
   describe "split-code magic link" do
     test "verifies with both halves and is single-use" do
       user = user_fixture()

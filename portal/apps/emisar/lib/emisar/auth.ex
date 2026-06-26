@@ -361,43 +361,6 @@ defmodule Emisar.Auth do
     end)
   end
 
-  @doc "Issues a magic-link token. Returns the raw token to email."
-  def issue_magic_link_token!(%Users.User{} = user, context \\ %RequestContext{}) do
-    {raw, digest} = Crypto.email_token()
-
-    {:ok, _} =
-      Multi.new()
-      |> Multi.insert(:token, UserToken.Changeset.hashed(user, digest, "magic_link", user.email))
-      |> Audit.Multi.log_for_user(:audit, user, "user.magic_link_issued",
-        extra: [context: context]
-      )
-      |> Repo.commit_multi()
-
-    raw
-  end
-
-  @doc "Consumes a magic-link token, returning the user or {:error, reason}."
-  def consume_magic_link_token(raw, context \\ %RequestContext{}) when is_binary(raw) do
-    case Crypto.email_token_digest(raw) do
-      :error ->
-        {:error, :invalid_or_expired}
-
-      {:ok, digest} ->
-        verified_token_multi(digest, "magic_link")
-        |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-        |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
-          extra: [context: context],
-          user_fn: fn %{token_user: user} -> user end,
-          payload_fn: fn _ -> %{method: "magic_link"} end
-        )
-        |> Repo.commit_multi()
-        |> case do
-          {:ok, %{token_user: user}} -> {:ok, user}
-          {:error, reason} -> {:error, reason}
-        end
-    end
-  end
-
   # Online-guess budget for the 6-digit magic-link secret. The nonce carries
   # the real entropy; this caps brute-force by anyone who somehow has it.
   @magic_link_attempts 5
