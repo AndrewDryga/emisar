@@ -256,7 +256,7 @@ defmodule EmisarWeb.ApprovalsLive do
       <div class="space-y-6">
         <%!-- 1. PENDING --%>
         <section>
-          <.section_header title="Pending" count={@pending_metadata.count} />
+          <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
 
           <LiveTable.live_table
             layout={:cards}

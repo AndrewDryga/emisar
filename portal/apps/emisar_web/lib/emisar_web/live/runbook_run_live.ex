@@ -648,7 +648,7 @@ defmodule EmisarWeb.RunbookRunLive do
           padding=""
         >
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+            <h2 class="flex items-center gap-2 font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
               {if @execution, do: "Execution", else: "Plan"}
               <%!-- Headline risk: the most-severe step's risk, so the operator
                    sees the worst this runbook can do at a glance. Hidden when no

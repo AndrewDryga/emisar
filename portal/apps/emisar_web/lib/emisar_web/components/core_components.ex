@@ -2077,7 +2077,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :title, :string, required: true
   attr :count, :integer, default: nil
-  attr :count_tone, :atom, default: :amber, values: [:amber, :neutral, :brand]
+  attr :count_tone, :atom, default: :neutral, values: [:amber, :neutral, :brand]
   attr :class, :string, default: nil
   slot :actions
 
@@ -2095,7 +2095,7 @@ defmodule EmisarWeb.CoreComponents do
   Small count pill beside a section title. Renders nothing for a nil/zero count.
   """
   attr :count, :integer, default: nil
-  attr :tone, :atom, default: :amber, values: [:amber, :neutral, :brand]
+  attr :tone, :atom, default: :neutral, values: [:amber, :neutral, :brand]
   attr :class, :string, default: nil
 
   def count_badge(assigns) do
@@ -3848,7 +3848,9 @@ defmodule EmisarWeb.CoreComponents do
           class="mb-12 flex flex-col gap-6 border-b border-zinc-900 pb-12 sm:flex-row sm:items-center sm:justify-between"
         >
           <div>
-            <h2 class="text-sm font-semibold text-zinc-100">Product updates</h2>
+            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+              Product updates
+            </h2>
             <p class="mt-1 max-w-md text-sm text-zinc-500">
               The occasional note when we ship something major — new packs, features, and security
               improvements. No noise.
