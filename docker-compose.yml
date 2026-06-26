@@ -34,6 +34,14 @@
 # (Host port 4010, not 4000, so the stack doesn't collide with a local
 # `mix phx.server`; the portal still listens on 4000 inside the network.)
 #
+# SSO from the host browser: browse http://host.docker.internal:4010 (one-time:
+# add `127.0.0.1 host.docker.internal` to /etc/hosts). The OIDC issuer must
+# resolve to the SAME Keycloak from your browser AND the portal container, and
+# host.docker.internal does — plain `localhost` can't, because inside the portal
+# container it's the portal's own loopback, not Keycloak. Start the SSO flow on
+# host.docker.internal:4010 (not localhost:4010) so the session cookie domain
+# matches the OIDC redirect.
+#
 # The MCP bridge works out of the box against the seeded fixed dev API key
 # (wired into the mcp service below) — no manual key minting needed:
 #
@@ -83,17 +91,20 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: "admin"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "admin"
       KC_HEALTH_ENABLED: "true"
-      # The issuer/frontend URL the portal + e2e driver both reach in-network,
-      # so the discovery doc + token `iss` are consistent (keycloak:8443).
-      KC_HOSTNAME: "https://keycloak:8443"
+      # The issuer/frontend URL. host.docker.internal resolves to the same
+      # Keycloak from BOTH the host browser (via /etc/hosts → published 8443)
+      # and the portal container (via the docker host-gateway → published 8443),
+      # so the discovery doc, the token `iss`, and the browser redirect are all
+      # consistent — which is what makes the host-browser SSO flow work.
+      KC_HOSTNAME: "https://host.docker.internal:8443"
       KC_HOSTNAME_STRICT: "false"
     volumes:
       - ./dev/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./dev/keycloak/certs/tls.crt:/certs/tls.crt:ro
       - ./dev/keycloak/certs/tls.key:/certs/tls.key:ro
-    # Also reachable from the host at https://localhost:8443 (admin/admin) — but
-    # the seeded issuer is the in-network keycloak:8443, so the automated e2e
-    # drives it in-network (see the sso-e2e service).
+    # Published on the host as 8443. The Keycloak admin console is at
+    # https://host.docker.internal:8443 (admin/admin), which is also the seeded
+    # OIDC issuer host — reachable identically from the host and the containers.
     ports:
       - "8443:8443"
     # No curl in the Keycloak image; a bash TCP probe confirms the HTTPS listener.
@@ -123,17 +134,28 @@ services:
       # DEV-ONLY signing key. Generate a real one with `mix phx.gen.secret`
       # before any non-local deployment.
       SECRET_KEY_BASE: "zy7QplH6bzgWzgVDXSC8KxCprn+OQB7vWMRcQ+0iyJ2WlcQqg1AswEXqzcjHj8nu"
-      PHX_HOST: "localhost"
+      # host.docker.internal so generated absolute URLs (the OIDC redirect_uri
+      # most of all) resolve to this portal from BOTH the host browser and the
+      # in-network e2e driver — the same name the OIDC issuer uses. URL_PORT=4010
+      # advertises the PUBLISHED host port while we still LISTEN on PORT=4000.
+      PHX_HOST: "host.docker.internal"
       PORT: "4000"
+      URL_PORT: "4010"
       # Speak plain HTTP for local. force_ssl in runtime.exs is gated
       # on this knob — see config/runtime.exs.
       FORCE_SSL: "false"
       # Use the Paddle stub client locally — prod runtime.exs refuses to
       # boot without PADDLE_API_KEY unless this is set.
       EMISAR_DISABLE_BILLING: "1"
+    # Resolve host.docker.internal to the host gateway so the portal can reach
+    # Keycloak's published 8443 at the same issuer host the browser uses (auto
+    # on Docker Desktop/OrbStack; explicit here for Linux engines too).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Host port 4010 → container 4000: keeps the container/internal port at
-    # 4000 (so `portal:4000`, the healthcheck, and PORT below are unchanged)
-    # while freeing host :4000 for a local `mix phx.server`.
+    # 4000 (so `portal:4000`, the healthcheck, and PORT above are unchanged)
+    # while freeing host :4000 for a local `mix phx.server`. URL_PORT=4010 makes
+    # generated URLs advertise the published 4010.
     ports:
       - "4010:4000"
     # `curl` is the only http client in the debian-slim runtime image —
@@ -184,7 +206,7 @@ services:
       # :keycloak IdentityProvider (fixed id) on the demo account + enables SCIM.
       EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET: "emisar-oidc-dev-secret-DO-NOT-USE-IN-PROD"
       EMISAR_DEV_FIXED_SCIM_TOKEN: "ems-scim-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
-      EMISAR_DEV_KEYCLOAK_ISSUER: "https://keycloak:8443/realms/emisar"
+      EMISAR_DEV_KEYCLOAK_ISSUER: "https://host.docker.internal:8443/realms/emisar"
       EMISAR_DEV_KEYCLOAK_PROVIDER_ID: "11111111-1111-7111-8111-111111111111"
     restart: "no"
     command: ["/app/bin/emisar", "eval", "Emisar.Release.seed()"]
@@ -287,9 +309,9 @@ services:
       EMISAR_ALLOW_INSECURE: "1"
 
   # ----------------------------------------------------------------
-  # SSO e2e driver — profile-gated. Shares the portal's network namespace
-  # (so `localhost:4000` IS the portal and `keycloak` resolves), then drives
-  # BOTH round-trips against the seeded Keycloak provider:
+  # SSO e2e driver — profile-gated. Drives BOTH round-trips against the seeded
+  # Keycloak provider over host.docker.internal (the published 4010 + 8443) —
+  # the SAME path a host browser takes, so a green run proves the host flow:
   #   · SCIM  — POST/GET/PATCH a user to /scim/v2 with the fixed dev bearer
   #   · OIDC  — the full auth-code login as alice → JIT-provision
   # Run it once the stack is up:  docker compose run --rm sso-e2e
@@ -297,7 +319,8 @@ services:
   sso-e2e:
     image: python:3.12-slim
     profiles: ["test"]
-    network_mode: "service:portal"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       portal:
         condition: service_healthy
@@ -306,8 +329,8 @@ services:
       seeder:
         condition: service_completed_successfully
     environment:
-      PORTAL_URL: "http://localhost:4000"
-      KEYCLOAK_ISSUER: "https://keycloak:8443/realms/emisar"
+      PORTAL_URL: "http://host.docker.internal:4010"
+      KEYCLOAK_ISSUER: "https://host.docker.internal:8443/realms/emisar"
       KEYCLOAK_CA: "/certs/ca.crt"
       PROVIDER_ID: "11111111-1111-7111-8111-111111111111"
       SCIM_TOKEN: "ems-scim-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"

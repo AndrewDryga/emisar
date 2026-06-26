@@ -11,7 +11,9 @@ import Config
 #
 # Optional prod env vars:
 #   PHX_HOST               — public hostname (defaults to emisar.dev)
-#   PORT                   — HTTP port (default 4000)
+#   PORT                   — HTTP listen port (default 4000)
+#   URL_PORT               — public URL port if it differs from PORT (e.g. a
+#                            published host port); only applies when FORCE_SSL=false
 #   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
 #   POOL_SIZE              — Ecto pool size (default 10)
 #   ECTO_IPV6              — "1" / "true" to dial Postgres over IPv6
@@ -81,11 +83,24 @@ if config_env() == :prod do
   https_fronted? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
   url_scheme = if https_fronted?, do: "https", else: "http"
 
+  # HTTPS-fronted → 443. Otherwise URL_PORT (if set) overrides the listen PORT
+  # for URL generation — needed when a published host port differs from the
+  # container's listen port (docker-compose maps host 4010 → container 4000, so
+  # redirect_uris / email links must advertise 4010 while we listen on 4000).
   url_port =
-    if https_fronted?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
+    if https_fronted? do
+      443
+    else
+      String.to_integer(System.get_env("URL_PORT") || System.get_env("PORT") || "4000")
+    end
 
   endpoint_opts = [
     url: [host: host, port: url_port, scheme: url_scheme],
+    # In dev/compose (FORCE_SSL=false) the portal is reached over several
+    # hostnames (localhost + host.docker.internal for the host-browser SSO
+    # demo) — relax the websocket origin check so LiveView connects from any of
+    # them. Production (HTTPS-fronted) keeps Phoenix's strict default.
+    check_origin: https_fronted?,
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: String.to_integer(System.get_env("PORT") || "4000"),

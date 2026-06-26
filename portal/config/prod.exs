@@ -14,13 +14,20 @@ config :emisar_web, EmisarWeb.Endpoint,
   # `validate_compile_env`. `rewrite_on` trusts fly-proxy's
   # `x-forwarded-proto` (it terminates TLS and forwards plain HTTP), so real
   # requests get HSTS instead of a 301 loop; `exclude` lets the plain-HTTP
-  # `/healthz` probe, localhost dev, and the docker-compose internal host
-  # (`portal`, where the e2e runners reach it over plain HTTP) through without a
-  # redirect. None of the excluded hosts is ever a real prod request host (prod
-  # arrives as emisar.dev via fly-proxy), so this is a dev-only accommodation.
+  # `/healthz` probe, localhost dev, and the docker-compose hosts (`portal`,
+  # where the e2e runners reach it over plain HTTP, and `host.docker.internal`,
+  # the host-browser SSO entrypoint) through without a redirect. None of the
+  # excluded hosts is ever a real prod request host (prod arrives as emisar.dev
+  # via fly-proxy), so this is a dev-only accommodation.
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
-    exclude: ["localhost", "127.0.0.1", "portal", {:paths, ["/healthz"]}],
+    exclude: [
+      "localhost",
+      "127.0.0.1",
+      "portal",
+      "host.docker.internal",
+      {:paths, ["/healthz"]}
+    ],
     # Strong HSTS (Plug.SSL builds the Strict-Transport-Security header):
     # two-year max-age, every subdomain, and the `preload` directive so the
     # domain is eligible for the browsers' built-in preload list. Getting onto

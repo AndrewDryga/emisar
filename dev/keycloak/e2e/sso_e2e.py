@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-SSO end-to-end driver for the docker-compose stack. Runs INSIDE the portal's
-network namespace (network_mode: service:portal), so `localhost:4000` is the
-portal and `keycloak` resolves the same way the portal sees it — which keeps
-the OIDC issuer + redirect_uri consistent across portal and driver.
+SSO end-to-end driver for the docker-compose stack. Reaches the portal and
+Keycloak over host.docker.internal (the published 4010 + 8443), the SAME path a
+host browser takes — so the OIDC issuer + redirect_uri are consistent across the
+browser, the portal container, and this driver, and a green run proves the
+host-browser flow works.
 
 Tests both halves against the seeded Keycloak IdentityProvider:
 
@@ -144,9 +145,9 @@ def test_oidc():
     with op.open(f"{PORTAL}/sign_in/sso/{PROVIDER_ID}", timeout=20) as r:
         login_html = r.read().decode(errors="replace")
         login_url = r.geturl()
-    if "keycloak" not in login_url:
-        fail(f"begin did not reach Keycloak (got {login_url}) — discovery/TLS-trust failed")
-    log(f"OIDC: portal discovered Keycloak over TLS + redirected to login — trust OK ✓")
+    if not login_url.startswith(ISSUER):
+        fail(f"begin did not reach the Keycloak issuer (got {login_url}) — discovery/TLS-trust failed")
+    log("OIDC: portal discovered Keycloak over TLS + redirected to login — trust OK ✓")
 
     # 2) parse the Keycloak login-form action + POST alice's credentials.
     m = re.search(r'action="([^"]*login-actions/authenticate[^"]*)"', login_html)
