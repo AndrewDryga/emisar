@@ -1,0 +1,43 @@
+schema_version: 1
+id: traefik.http_services_summary
+title: List HTTP services, compact health summary
+kind: script
+risk: low
+description: >
+  List every HTTP service as a compact, name-sorted health summary — the
+  preflight-sized view of /api/http/services without its multi-megabyte
+  load-balancer config. One row per service: name, provider, status,
+  error_count + errors, backend counts (up/down/total), and the URLs of only
+  the DOWN backends. Set only_unhealthy=true to return just the services that
+  need attention (not "enabled", carrying errors, a DOWN backend, or a
+  load-balancer with no UP backend). Use traefik.http_services for the full
+  raw load-balancer config of a single service.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args:
+  - name: only_unhealthy
+    type: boolean
+    required: false
+    default: false
+    description: >
+      When true, return only services that need attention — status not
+      "enabled", with errors, with a DOWN backend, or a load-balancer with no
+      UP backend. Default false returns every service.
+execution:
+  script:
+    path: scripts/http_services_summary.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.only_unhealthy }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Compact health summary of every HTTP service
+    args: {}
+  - title: Only the services that need attention
+    args:
+      only_unhealthy: true
