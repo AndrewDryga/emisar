@@ -377,14 +377,25 @@ defmodule Emisar.ApiKeys do
   scope/attribution logic applies unchanged. The raw secret is generated
   then DISCARDED — the OAuth client never sees it; it authenticates with
   OAuth access tokens that resolve to this key. Returns `{:ok, key}`.
+
+  Minted NON-expiring (`default_expiry: false`): OAuth governs the lifecycle —
+  the refresh token's 30-day expiry retires an abandoned connection and revoking
+  this key is the operator off-switch. Inheriting the 30-day static-MCP-key
+  self-heal would instead break every OAuth connection 30 days after consent
+  even while it is actively refreshing.
   """
   def create_backing_key(account_id, user_id, membership_id, name) do
     {_raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
-    ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, %{
-      name: name,
-      scopes: ["actions:read", "actions:execute"]
-    })
+    ApiKey.Changeset.create(
+      account_id,
+      user_id,
+      membership_id,
+      prefix,
+      hash,
+      %{name: name, scopes: ["actions:read", "actions:execute"]},
+      default_expiry: false
+    )
     |> Repo.insert()
   end
 

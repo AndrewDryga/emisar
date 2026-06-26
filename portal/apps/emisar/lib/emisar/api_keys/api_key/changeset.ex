@@ -25,7 +25,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_length(:name, min: 1, max: 80)
   end
 
-  def create(account_id, user_id, membership_id, prefix, hash, attrs) do
+  def create(account_id, user_id, membership_id, prefix, hash, attrs, opts \\ []) do
     %ApiKey{}
     |> cast(attrs, [
       :name,
@@ -48,7 +48,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_action_scope()
     |> put_default_kind()
     |> validate_kind_scope_consistency()
-    |> put_default_mcp_expiry()
+    |> maybe_put_default_mcp_expiry(opts)
   end
 
   # When the caller doesn't set `kind`, derive it ONCE from the scope at mint
@@ -89,6 +89,19 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   # export tokens (`kind: :audit_export`) are exempt — a log-shipping credential
   # expiring out from under a SIEM would silently break ingestion.
   @default_mcp_key_ttl_s 30 * 24 * 3_600
+
+  # OAuth backing keys opt out (`default_expiry: false`): OAuth owns their
+  # lifecycle — the refresh token's own 30-day expiry retires an abandoned
+  # connection and backing-key revocation is the operator off-switch — so the
+  # static-key self-heal must NOT apply, or every OAuth MCP connection would die
+  # 30 days after consent even while it is actively refreshing.
+  defp maybe_put_default_mcp_expiry(changeset, opts) do
+    if Keyword.get(opts, :default_expiry, true) do
+      put_default_mcp_expiry(changeset)
+    else
+      changeset
+    end
+  end
 
   defp put_default_mcp_expiry(changeset) do
     if get_field(changeset, :expires_at) || get_field(changeset, :kind) == :audit_export do

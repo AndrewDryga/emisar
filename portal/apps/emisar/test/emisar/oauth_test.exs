@@ -140,6 +140,24 @@ defmodule Emisar.OAuthTest do
       assert "actions:execute" in key.scopes
     end
 
+    test "the backing key is minted NON-expiring so a long-lived OAuth connection never breaks on key expiry",
+         %{subject: subject, client: client} do
+      {_verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      code_row =
+        Repo.get_by!(Emisar.OAuth.AuthorizationCode, code_hash: Emisar.Crypto.hash(code))
+
+      key = Repo.get!(Emisar.ApiKeys.ApiKey, code_row.api_key_id)
+
+      # OAuth owns the lifecycle (refresh-token expiry retires an abandoned
+      # connection; revocation is the off-switch). The 30-day static-MCP-key
+      # self-heal must NOT apply, or every OAuth connection would die 30 days
+      # after consent even while it is actively refreshing.
+      assert key.expires_at == nil
+      assert Emisar.ApiKeys.ApiKey.usable?(key)
+    end
+
     test "consent audits oauth.consent_granted with the backing key as subject",
          %{subject: subject, client: client} do
       {_verifier, challenge} = pkce()
