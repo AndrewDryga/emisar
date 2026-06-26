@@ -1240,7 +1240,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       </div>
 
       <div :if={@provider.scim_enabled} class="mt-3">
-        <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           SCIM base URL
         </span>
         <div class="mt-1 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">

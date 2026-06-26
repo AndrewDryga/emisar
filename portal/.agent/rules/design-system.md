@@ -152,9 +152,8 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 | Hairline border | `border-zinc-900` (`/80` for softer) | the default divider |
 | Heading text | `text-zinc-50` / `text-zinc-100` | |
 | Body text | `text-zinc-400` | running copy |
-| Muted / labels / meta | `text-zinc-500` | eyebrows, captions |
-| Faint / disabled | `text-zinc-600` | |
-| Code surface | `bg-zinc-900` | inline `<code>` |
+| Eyebrow / meta label | `text-zinc-400` | the canonical small uppercase label (read below) |
+| Faint / decorative | `text-zinc-500` / `text-zinc-600` | a divider word ("or"), a purely decorative caption |
 
 > **Contrast (WCAG AA).** `zinc-400` body/intro text clears AA on the `zinc-950`
 > ground (~7.8:1); `zinc-500` (~4:1) and `zinc-600` (~2.5:1) do **not**. So reserve
@@ -162,6 +161,16 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > **`zinc-400` for any SMALL essential secondary text** — a `text-[10px]`/`text-xs`
 > label, scope, count, or timestamp an operator actually has to read. When in doubt
 > at a small size, go `zinc-400`.
+
+> **The eyebrow is ONE shape — don't re-tune it per page.** Every small uppercase
+> label (a meta-strip key, a section eyebrow like "REASON"/"ARGUMENTS", a stat tile
+> label, a card eyebrow) is exactly `font-semibold uppercase tracking-wider
+> text-zinc-400` at its role size (`text-[10px]` for meta-strip/tiny keys, `text-xs`
+> for section headers). Not `font-medium`, not `tracking-[0.12em]`, not zinc-500/300/200.
+> Route through `<.label variant={:eyebrow}>` / `<.meta_field>` / `<.section_header>`
+> rather than hand-rolling an `<h3 class="…uppercase…">`, so it can't drift again.
+> The only sanctioned exception is a divider word (`or_separator`'s "or"), which is
+> connective tissue, not a label, and stays quiet (`zinc-500`, no weight).
 
 ### 3.2 Typography
 

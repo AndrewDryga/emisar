@@ -142,7 +142,7 @@ defmodule EmisarWeb.AuditDetailLive do
         class="mt-4 flex flex-wrap items-center gap-2"
         padding="px-4 py-3"
       >
-        <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Summary
         </span>
         <span
@@ -237,7 +237,7 @@ defmodule EmisarWeb.AuditDetailLive do
       <div class="space-y-4 p-4">
         <%= if @defaults_diff != %{} do %>
           <div>
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Tier defaults
             </p>
             <ul class="space-y-1 text-sm">
@@ -338,7 +338,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
     <.card class="flex-1" padding="p-4">
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
       <p class="mt-1 text-sm text-zinc-500">— (not recorded)</p>
     </.card>
     """
@@ -347,7 +347,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp entity_card(assigns) do
     ~H"""
     <.card class="min-w-0 flex-1" padding="p-4">
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
       <div class="mt-1 text-sm">
         <EmisarWeb.AuditLive.ref
           kind={@kind}

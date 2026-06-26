@@ -799,7 +799,7 @@ defmodule EmisarWeb.CoreComponents do
   defp label_variant(:default), do: "block text-sm font-medium text-zinc-200"
 
   defp label_variant(:eyebrow),
-    do: "block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+    do: "block text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
 
   @doc """
   Generates a generic error message.
@@ -1356,7 +1356,7 @@ defmodule EmisarWeb.CoreComponents do
       </:trigger>
 
       <div class="border-b border-zinc-900 px-3 py-2">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Switch workspace
         </p>
       </div>
@@ -1553,7 +1553,7 @@ defmodule EmisarWeb.CoreComponents do
   defp nav_group(assigns) do
     ~H"""
     <div class="pt-3 pb-1 first:pt-0">
-      <p class="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+      <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
         {@label}
       </p>
     </div>
@@ -2175,7 +2175,7 @@ defmodule EmisarWeb.CoreComponents do
   def meta_field(assigns) do
     ~H"""
     <div class={["min-w-0", @wrap && "col-span-2 sm:col-span-1"]}>
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@label}</div>
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
       <div class={["mt-0.5", if(@wrap, do: "break-words", else: "truncate")]}>
         {render_slot(@inner_block)}
       </div>
@@ -2653,7 +2653,7 @@ defmodule EmisarWeb.CoreComponents do
   def stat(assigns) do
     ~H"""
     <.card padding="p-6" class={@class}>
-      <div class="text-xs uppercase tracking-wider text-zinc-500">{@label}</div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
       <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
         {stat_value(@value)}
       </div>
@@ -2708,7 +2708,7 @@ defmodule EmisarWeb.CoreComponents do
         <% is_binary(@install_command) -> %>
           <div class="mt-8 space-y-6">
             <div>
-              <div class="text-xs uppercase tracking-wider text-zinc-500">
+              <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Run on any Linux or macOS host
               </div>
               <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">

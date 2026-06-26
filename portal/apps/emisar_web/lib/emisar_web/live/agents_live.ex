@@ -883,7 +883,7 @@ defmodule EmisarWeb.AgentsLive do
            new users want; Local row below for IDE / desktop clients
            that go through the stdio bridge. --%>
       <div class="border-b border-zinc-900 px-6 py-4">
-        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Cloud LLMs
           <span class="ml-1 normal-case tracking-normal text-zinc-600">
             — no install, URL + token
@@ -898,7 +898,7 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
 
-        <p class="mt-5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        <p class="mt-5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Local / IDE clients
           <span class="ml-1 normal-case tracking-normal text-zinc-600">— uses the stdio bridge</span>
         </p>
@@ -911,7 +911,7 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
 
-        <p class="mt-5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        <p class="mt-5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Roll your own
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -1007,7 +1007,7 @@ defmodule EmisarWeb.AgentsLive do
             <.local_install_block />
 
             <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Paste this into {client_label(@selected_client)}
               </h3>
               <p class="mt-1 text-[11px] text-zinc-500 font-mono">{@config.location}</p>
@@ -1081,7 +1081,7 @@ defmodule EmisarWeb.AgentsLive do
   defp local_install_block(assigns) do
     ~H"""
     <div>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
         Install the bridge
         <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">
           one-time, per machine
@@ -1288,7 +1288,7 @@ defmodule EmisarWeb.AgentsLive do
            connectors", ChatGPT uses "Connectors" under different
            settings). --%>
       <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-        <p class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+        <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Steps for {@client_label}
         </p>
         <ol class="mt-2 list-decimal space-y-1 pl-5 text-xs text-zinc-300">

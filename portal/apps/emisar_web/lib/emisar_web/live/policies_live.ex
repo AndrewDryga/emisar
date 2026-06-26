@@ -956,7 +956,7 @@ defmodule EmisarWeb.PoliciesLive do
     ~H"""
     <label class={["block rounded-lg border bg-black/30 p-3", tier_border(@tier)]}>
       <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-200">{@tier}</span>
+        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
         <span class={["h-1.5 w-1.5 rounded-full", tier_dot(@tier)]}></span>
       </div>
       <%!-- Options below the floor are disabled — they'd make this tier

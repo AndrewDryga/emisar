@@ -248,7 +248,7 @@ defmodule EmisarWeb.LiveTable do
             <div :for={col <- @col} class="flex items-baseline gap-3">
               <span
                 :if={col[:label] not in [nil, ""]}
-                class="w-24 shrink-0 text-[11px] font-medium uppercase tracking-wider text-zinc-500"
+                class="w-24 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
               >
                 {col.label}
               </span>

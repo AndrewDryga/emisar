@@ -1006,7 +1006,7 @@ defmodule EmisarWeb.TeamLive do
 
                   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <label class="block">
-                      <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                         Groups
                       </span>
                       <.multi_select
@@ -1026,7 +1026,7 @@ defmodule EmisarWeb.TeamLive do
                     </label>
 
                     <label class="block">
-                      <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                         Individual runners
                       </span>
                       <.multi_select

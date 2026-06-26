@@ -398,7 +398,7 @@ defmodule EmisarWeb.AuditLive do
               <div class={["text-sm", event_title_class(event.event_type)]}>
                 {format_event_type(event.event_type)}
               </div>
-              <div class="font-mono text-[10px] text-zinc-500">{event.event_type}</div>
+              <div class="font-mono text-[10px] text-zinc-400">{event.event_type}</div>
               <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
                 <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
                 <span class="text-zinc-300">{elem(pair, 1)}</span>

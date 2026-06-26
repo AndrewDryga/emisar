@@ -476,13 +476,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                approver knows what they're signing off on — not just the
                action id + raw args. --%>
           <.card :if={@action_description} padding="p-4">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               What this does
             </h3>
             <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@action_description}</p>
           </.card>
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               Reason
             </h3>
             <%!-- No whitespace-pre-wrap: it preserved the template's own leading
@@ -505,7 +505,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
           <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
             <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Arguments
               </h3>
               <span :if={@request.context["args_sha256"]} class="font-mono text-[11px] text-zinc-500">
@@ -525,7 +525,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             padding=""
           >
             <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Decisions
               </h3>
               <span class="text-[11px] text-zinc-500">

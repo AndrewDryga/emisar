@@ -258,7 +258,7 @@ defmodule EmisarWeb.RunNewLive do
                form open and is wondering "what does a real call look
                like?". Only renders when the pack ships examples. --%>
           <div :if={action_examples(@action) != []} class="mt-4 space-y-2">
-            <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Examples
             </div>
             <ul class="space-y-2">

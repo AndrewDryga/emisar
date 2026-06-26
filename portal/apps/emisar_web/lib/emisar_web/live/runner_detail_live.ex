@@ -255,7 +255,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         padding="px-4 py-2.5"
       >
         <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Labels</span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Labels</span>
           <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
         </div>
         <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">

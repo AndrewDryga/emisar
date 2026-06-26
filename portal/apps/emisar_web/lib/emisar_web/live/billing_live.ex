@@ -248,7 +248,7 @@ defmodule EmisarWeb.BillingLive do
         <.card padding="p-6">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div class="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Current plan
               </div>
               <div class="mt-1 flex items-baseline gap-2">

@@ -286,7 +286,7 @@ defmodule EmisarWeb.RunDetailLive do
            as an inline strip below (only when it carries signal), not a
            side panel that would just echo the status chip. --%>
       <.card :if={@run.reason && @run.reason != ""} class="mt-4" padding="p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Reason
         </h3>
         <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
@@ -303,7 +303,7 @@ defmodule EmisarWeb.RunDetailLive do
         class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
         padding="px-4 py-2.5"
       >
-        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Policy
         </span>
         <.chip tone={policy_decision_tone(@run.policy_decision)}>
