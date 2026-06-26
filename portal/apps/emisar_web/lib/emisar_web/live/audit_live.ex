@@ -383,8 +383,9 @@ defmodule EmisarWeb.AuditLive do
         row_id={fn event -> "event-#{event.id}" end}
         row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
         responsive
+        class="[&_td]:align-top"
       >
-        <:col :let={event} label="When" class="w-40">
+        <:col :let={event} label="When" class="whitespace-nowrap">
           <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={event} label="Event" class="w-full">
@@ -425,7 +426,7 @@ defmodule EmisarWeb.AuditLive do
             current_account={@current_account}
           />
         </:col>
-        <:col :let={event} label="IP" class="w-32 hidden lg:table-cell">
+        <:col :let={event} label="IP" class="w-32 whitespace-nowrap hidden lg:table-cell">
           <span class="font-mono text-xs tabular-nums text-zinc-400">{event.ip_address || "—"}</span>
         </:col>
         <:empty>
@@ -619,7 +620,10 @@ defmodule EmisarWeb.AuditLive do
       )
 
     ~H"""
-    <span class="text-xs text-zinc-400">
+    <%!-- One truncating line: a short actor (email/name) shows in full; a long
+         unresolved value (e.g. an approval_request UUID) ellipsis-clips instead of
+         wrapping to 2-3 lines. The full value is on hover via title. --%>
+    <span class="block max-w-[16rem] truncate text-xs text-zinc-400" title={"#{@kind}: #{@text}"}>
       <%!-- The "kind:" prefix is a plain label — only the value links. --%>
       <span class="text-zinc-500">{@kind}:</span>
       <%= if @href do %>
