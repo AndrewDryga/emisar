@@ -9,7 +9,8 @@ description: >
   Reads runtime config by glob pattern. Useful before any tuning
   conversation: confirm `maxmemory`, `maxmemory-policy`, `appendonly`,
   `save`, etc. Read-only. Pattern is restricted to safe globs against
-  Redis config keys.
+  Redis config keys. Secret values (requirepass, masterauth) are masked
+  in the output — the key stays visible so you can see it is set.
 
 side_effects:
   - Issues one CONFIG GET command.
@@ -37,6 +38,15 @@ output:
   parser: text
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+  redact:
+    # CONFIG GET prints alternating key\nvalue lines; the secret config keys
+    # (requirepass, masterauth, any *pass key) would otherwise leak in
+    # cleartext. Mask the value line, keep the key line so the operator still
+    # sees the key is set. Replacement needs a real newline → YAML "\n".
+    - name: redis-secret-config-value
+      type: regex
+      pattern: "(?im)^([a-z][a-z0-9_-]*pass|masterauth)\\n[^\\n]*"
+      replacement: "${1}\n[REDACTED]"
 
 examples:
   - title: Memory-related config

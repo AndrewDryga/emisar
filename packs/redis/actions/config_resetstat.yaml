@@ -2,11 +2,13 @@ schema_version: 1
 id: redis.config_resetstat
 title: CONFIG RESETSTAT
 kind: exec
-risk: low
+risk: medium
 description: >
   Reset INFO stats counters (commandstats, keyspace hits/misses,
-  evictions, etc.). Does NOT change keyspace data. Use to start a
-  fresh measurement window.
+  evictions, etc.). Does NOT change keyspace data, but it DOES mutate
+  server state by zeroing the counters — so it is risk:medium (policy-gated),
+  like the other non-keyspace mutators (memory_purge, script_flush). Use to
+  start a fresh measurement window.
 side_effects:
   - INFO counters zero.
   - No keys read or written.

@@ -237,7 +237,7 @@ defmodule EmisarWeb.PacksTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PacksRegistry.get("redis").content_hash ==
-               "sha256:8c53a93854ca8571c13a5a62b76cd0f45808473132344e8fd38ced93904ed815"
+               "sha256:f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1"
 
       assert PacksRegistry.get("cassandra").content_hash ==
                "sha256:5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af"
