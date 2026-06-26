@@ -30,6 +30,7 @@ execution:
   inherit_env:
     - CADDY_ADMIN
     - CH_HOST
+    - CH_PASSWORD
     - CH_USER
     - COCKROACH_URL
     - CONSUL_HTTP_ADDR

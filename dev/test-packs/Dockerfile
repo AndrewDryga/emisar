@@ -86,6 +86,17 @@ RUN set -eux; v=v24.3.5; arch="$(dpkg --print-architecture)"; \
     rm -rf /tmp/crdb.tgz "/tmp/cockroach-$v.linux-$arch"; \
     cockroach version | head -1
 
+# clickhouse-client for the clickhouse pack — the single multicall `clickhouse`
+# binary from the pinned common-static tgz (no apt repo / GPG keyserver), symlinked
+# so the pack's bare `clickhouse-client` invocation resolves. 24.8 LTS matches the SUT.
+RUN set -eux; v=24.8.14.39; case "$(dpkg --print-architecture)" in arm64) a=arm64;; *) a=amd64;; esac; \
+    curl -fsSL "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$v-$a.tgz" -o /tmp/ch.tgz; \
+    tar -xzf /tmp/ch.tgz -C /tmp; \
+    mv "/tmp/clickhouse-common-static-$v/usr/bin/clickhouse" /usr/local/bin/clickhouse; \
+    ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client; \
+    rm -rf /tmp/ch.tgz "/tmp/clickhouse-common-static-$v"; \
+    clickhouse-client --version
+
 # emisar binary (mounted at runtime via volume)
 VOLUME ["/opt/emisar"]
 ENV PATH="/opt/emisar/bin:${PATH}"
