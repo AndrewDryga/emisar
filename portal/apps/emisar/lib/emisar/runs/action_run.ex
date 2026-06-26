@@ -120,6 +120,23 @@ defmodule Emisar.Runs.ActionRun do
     timestamps()
   end
 
+  @terminal_statuses [
+    :success,
+    :failed,
+    :error,
+    :validation_failed,
+    :unknown_action,
+    :cancelled,
+    :timed_out,
+    :refused,
+    :denied
+  ]
+  # Terminal NON-success — a run that settled badly. Exactly `@terminal_statuses`
+  # minus `:success`, so a future terminal status is treated as a failure unless
+  # it is explicitly a success; a renderer can't silently pass a new bad status
+  # (e.g. `:refused`) off as a success.
+  @failure_statuses @terminal_statuses -- [:success]
+
   @doc """
   Is `status` a terminal state? The single source of truth for "this run has
   settled" across the run engine, the runbook wave logic, the web, and MCP —
@@ -127,19 +144,15 @@ defmodule Emisar.Runs.ActionRun do
   and `:refused` (runner refused at dispatch) are terminal: the run won't
   progress, so it can't be cancelled or re-dispatched.
   """
-  def terminal?(status) when is_atom(status),
-    do:
-      status in [
-        :success,
-        :failed,
-        :error,
-        :validation_failed,
-        :unknown_action,
-        :cancelled,
-        :timed_out,
-        :refused,
-        :denied
-      ]
-
+  def terminal?(status) when is_atom(status), do: status in @terminal_statuses
   def terminal?(_), do: false
+
+  @doc """
+  The terminal NON-success statuses (`terminal?/1` minus `:success`) — the single
+  source of truth for "this run failed", consumed by the MCP `is_error` render so
+  a newly-added failure status can't slip through as a success.
+  """
+  def failure_statuses, do: @failure_statuses
+  def failure?(status) when is_atom(status), do: status in @failure_statuses
+  def failure?(_), do: false
 end

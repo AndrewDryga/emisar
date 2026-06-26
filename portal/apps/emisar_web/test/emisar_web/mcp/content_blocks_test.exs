@@ -47,6 +47,23 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
       assert is_error
     end
 
+    test "a runner-REFUSED dispatch (trust-check rejection) flags isError, not success" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            id: "run-r",
+            status: "refused",
+            error_message: "client signature missing or stale",
+            runner: "web-1"
+          }
+        ])
+
+      # :refused = the runner rejected the dispatch on a pre-exec trust check, so
+      # it never ran (no exit_code). It must NOT be reported to the LLM as success.
+      assert text(blocks) =~ "client signature missing or stale"
+      assert is_error
+    end
+
     test "a successful run surfaces stdout and is not an error" do
       {blocks, is_error} =
         ContentBlocks.from_runs([

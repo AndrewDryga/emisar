@@ -10,6 +10,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   Returns `{content_list, is_error_bool}`. The caller wraps these into
   a JSON-RPC `result` shape: `%{content: blocks, isError: is_error}`.
   """
+  alias Emisar.Runs
 
   @doc """
   Synthetic tool descriptor for `wait_for_run`. Surfaced in
@@ -357,9 +358,14 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       string_field(run, ["status"]) in ["pending_approval", "pending", "sent", "running"]
   end
 
-  defp failure_status?(s),
-    do:
-      s in ~w(failed error validation_failed unknown_action cancelled timed_out denied denied_by_policy)
+  # is_error for a terminal run = any terminal NON-success status. The enum set
+  # is derived from ActionRun (so a newly-added status like `:refused` — a runner
+  # trust refusal — can't silently render as success), plus `denied_by_policy`,
+  # the synthetic status the MCP dispatch path emits for a policy deny (service.ex).
+  @failure_status_strings Enum.map(Runs.ActionRun.failure_statuses(), &Atom.to_string/1) ++
+                            ["denied_by_policy"]
+
+  defp failure_status?(s), do: s in @failure_status_strings
 
   defp string_field(map, keys) do
     Enum.find_value(keys, "", fn k ->
