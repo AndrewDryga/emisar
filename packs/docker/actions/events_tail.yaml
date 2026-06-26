@@ -1,10 +1,15 @@
 schema_version: 1
 id: docker.events_tail
-title: docker events (bounded window)
-kind: exec
+title: docker events — lifecycle + failures (bounded window)
+kind: script
 risk: low
 description: >
-  Replays docker daemon events from the last N minutes (create/destroy/start/stop/oom/health). Use to find "why did the container restart?" Read-only.
+  Replay docker daemon events from the last N minutes, focused on container
+  lifecycle and failures (create, start, restart, stop, die, kill, oom, destroy,
+  health_status) — the "why did the container restart / OOM / go unhealthy?"
+  read. Routine health-check exec_* chatter is excluded by default so the real
+  signal is not drowned out; set include_exec=true to add exec_create/exec_start/
+  exec_die. Read-only.
 side_effects:
   - One docker events query bounded to the requested window.
   - Read-only.
@@ -17,17 +22,27 @@ args:
     validation:
       min: 1
       max: 1440
+  - name: include_exec
+    type: boolean
+    required: false
+    default: false
+    description: When true, also show the routine exec_create/exec_start/exec_die events (health-check chatter). Default false.
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "docker events --since {{ args.minutes }}m --until 0s"
+  script:
+    path: scripts/events_tail.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.minutes }}"
+    - "{{ args.include_exec }}"
   timeout: 30s
 output:
   parser: text
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
-  - title: Events from the last 5 minutes
+  - title: Recent restarts / OOM / health changes (last 5 minutes)
     args: {}
+  - title: Last 30 minutes including exec/health-check events
+    args:
+      minutes: 30
+      include_exec: true

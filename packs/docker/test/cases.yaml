@@ -22,6 +22,11 @@ cases:
 - action: docker.events_tail
   args: {}
   expect_exit: 0
+- action: docker.events_tail
+  args:
+    minutes: 30
+    include_exec: true
+  expect_exit: 0
 - action: docker.image_history
   args:
     image: nginx:latest
