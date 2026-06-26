@@ -113,7 +113,7 @@ defmodule EmisarWeb.RunnersLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={:table}
+      width={:full}
     >
       <:title>Runners</:title>
       <:actions>

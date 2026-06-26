@@ -343,7 +343,7 @@ defmodule EmisarWeb.PacksLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:packs}
-      width={:table}
+      width={:full}
     >
       <:title>Packs</:title>
 

@@ -105,7 +105,7 @@ defmodule EmisarWeb.DashboardLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:dashboard}
-      width={:table}
+      width={:full}
     >
       <:title>Dashboard</:title>
 

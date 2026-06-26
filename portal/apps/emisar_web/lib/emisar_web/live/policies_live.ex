@@ -798,7 +798,7 @@ defmodule EmisarWeb.PoliciesLive do
       id={"policy-form-" <> @editor_id}
       phx-change="form_change"
       phx-submit="save"
-      class="mt-4 space-y-5"
+      class="mt-4 space-y-4"
     >
       <input type="hidden" name="editor" value={@editor_id} />
 

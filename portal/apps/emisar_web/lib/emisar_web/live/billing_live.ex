@@ -221,9 +221,9 @@ defmodule EmisarWeb.BillingLive do
            reload. This is on us, not the operator's payment. --%>
       <.empty_state
         :if={not @loading? and is_nil(@summary)}
+        tone={:danger}
         icon="hero-exclamation-triangle"
         title="Couldn't load billing"
-        class="mx-auto max-w-2xl"
       >
         Something went wrong loading your plan and usage — this is on our side,
         not a problem with your payment. Try again in a moment.

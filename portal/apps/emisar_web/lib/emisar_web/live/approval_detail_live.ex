@@ -625,7 +625,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               />
             <% true -> %>
               <.panel title="Decision history">
-                <dl class="space-y-2 text-sm">
+                <dl class="space-y-4 text-sm">
                   <.kv label="Status"><.status_badge status={@request.status} /></.kv>
                   <.kv label="Decided"><.local_time value={@request.decided_at} /></.kv>
                   <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
