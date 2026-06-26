@@ -52,15 +52,19 @@ func refuse(code, detail string) Decision { return Decision{Code: code, Detail: 
 
 // Verifier holds the trusted keyring and replay state. Safe for concurrent use:
 // the keyring is read-only after construction and the nonce cache is mutex-guarded.
+// When storePath is set the cache is mirrored to disk under the lock, so a restart
+// or SIGHUP rebuild reloads the seen nonces instead of clearing them (which would
+// let a captured, in-window attestation replay once).
 type Verifier struct {
-	enforce bool
-	maxAge  time.Duration
-	now     func() time.Time
+	enforce   bool
+	maxAge    time.Duration
+	now       func() time.Time
+	storePath string // "" = in-memory only (no persistence)
 
 	keys map[string]ed25519.PublicKey // key_id -> public key
 
 	mu   sync.Mutex
-	seen map[string]time.Time // nonce -> issued_at, pruned by maxAge
+	seen map[string]time.Time // nonce -> issued_at, pruned by maxAge, mirrored to storePath
 }
 
 // NewVerifier parses the trusted keys and builds a verifier. enforce mirrors
@@ -68,7 +72,13 @@ type Verifier struct {
 // verifier with no usable keys is rejected (config validation already guards
 // the empty-keys case, but a key that fails to parse must not silently leave a
 // runner enforcing with nothing to verify against).
-func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration) (*Verifier, error) {
+//
+// storePath, when non-empty, is the on-disk replay-cache file: NewVerifier loads
+// the persisted in-window nonces from it (so a restart/SIGHUP can't clear the
+// cache), and every consumed nonce is mirrored back. A present-but-unreadable or
+// corrupt store is a construction error — fail closed rather than enforce with a
+// replay cache we can't trust. Pass "" for in-memory only.
+func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration, storePath string) (*Verifier, error) {
 	if maxAge <= 0 {
 		return nil, fmt.Errorf("signing: max attestation age must be positive")
 	}
@@ -88,12 +98,23 @@ func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration) (*Verifie
 	if enforce && len(ring) == 0 {
 		return nil, fmt.Errorf("signing: enforcement is on with no trusted keys")
 	}
+
+	seen := make(map[string]time.Time)
+	if storePath != "" {
+		loaded, err := loadNonces(storePath, time.Now().Add(-maxAge))
+		if err != nil {
+			return nil, err
+		}
+		seen = loaded
+	}
+
 	return &Verifier{
-		enforce: enforce,
-		maxAge:  maxAge,
-		now:     time.Now,
-		keys:    ring,
-		seen:    make(map[string]time.Time),
+		enforce:   enforce,
+		maxAge:    maxAge,
+		now:       time.Now,
+		storePath: storePath,
+		keys:      ring,
+		seen:      seen,
 	}, nil
 }
 
@@ -158,16 +179,25 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 			"signature does not match the dispatched action, args, nonce, or time")
 	}
 
-	if !v.consumeNonce(att.Nonce, issued) {
+	ok, err = v.consumeNonce(att.Nonce, issued)
+	if err != nil {
+		return refuse("nonce_store_unavailable",
+			"could not durably record the attestation nonce; refusing rather than risk a replay")
+	}
+	if !ok {
 		return refuse("replayed", "this attestation nonce was already used")
 	}
 	return allow
 }
 
-// consumeNonce records the nonce, returning false if it was already used. It
-// prunes entries whose issued_at predates the window first, so the cache stays
-// bounded by the dispatch rate over maxAge.
-func (v *Verifier) consumeNonce(nonce string, issued time.Time) bool {
+// consumeNonce records the nonce, returning (false, nil) if it was already used.
+// It prunes entries whose issued_at predates the window first, so the cache stays
+// bounded by the dispatch rate over maxAge. When the cache is persisted, the
+// pruned set is mirrored to disk under the lock; a write failure rolls back the
+// in-memory record and returns the error so Check fails CLOSED (a nonce we can't
+// durably record must not be treated as consumed — that would let it replay after
+// a restart, the very gap this closes).
+func (v *Verifier) consumeNonce(nonce string, issued time.Time) (bool, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	cutoff := v.now().Add(-v.maxAge)
@@ -177,8 +207,14 @@ func (v *Verifier) consumeNonce(nonce string, issued time.Time) bool {
 		}
 	}
 	if _, used := v.seen[nonce]; used {
-		return false
+		return false, nil
 	}
 	v.seen[nonce] = issued
-	return true
+	if v.storePath != "" {
+		if err := saveNonces(v.storePath, v.seen); err != nil {
+			delete(v.seen, nonce)
+			return false, err
+		}
+	}
+	return true, nil
 }

@@ -112,7 +112,7 @@ func enforcingVerifier(t *testing.T, keyIDs ...string) *signing.Verifier {
 		}
 		keys[i] = signing.KeyConfig{KeyID: id, PublicKeyHex: hex.EncodeToString(pub)}
 	}
-	v, err := signing.NewVerifier(true, keys, 24*time.Hour)
+	v, err := signing.NewVerifier(true, keys, 24*time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 
 	// A present-but-non-enforcing verifier — the real "enforcement off" config
 	// state, since the client always holds a verifier — also advertises nothing.
-	nonEnforcing, err := signing.NewVerifier(false, nil, time.Hour)
+	nonEnforcing, err := signing.NewVerifier(false, nil, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}

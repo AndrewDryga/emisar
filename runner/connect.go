@@ -176,7 +176,15 @@ func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
 	for i, k := range cfg.Signing.TrustedKeys {
 		keys[i] = signing.KeyConfig{KeyID: k.KeyID, PublicKeyHex: k.PublicKey}
 	}
-	return signing.NewVerifier(cfg.Signing.EnforceSignatures, keys, cfg.Signing.MaxAttestationAge.Std())
+	// Persist the replay cache under the data dir so a restart or SIGHUP rebuild
+	// reloads the seen nonces instead of clearing them (an emptied cache would let
+	// a captured, still-in-window attestation replay once).
+	storePath := ""
+	if cfg.Paths.DataDir != "" {
+		storePath = filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
+	}
+	return signing.NewVerifier(
+		cfg.Signing.EnforceSignatures, keys, cfg.Signing.MaxAttestationAge.Std(), storePath)
 }
 
 // reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP

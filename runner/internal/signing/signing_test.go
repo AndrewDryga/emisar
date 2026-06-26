@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -30,7 +32,7 @@ func newTestVerifier(t *testing.T) (*Verifier, ed25519.PrivateKey) {
 	priv := ed25519.NewKeyFromSeed(seed)
 	pub := priv.Public().(ed25519.PublicKey)
 
-	v, err := NewVerifier(true, []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour)
+	v, err := NewVerifier(true, []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -49,16 +51,16 @@ func sign(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[strin
 }
 
 func TestNewVerifierRejectsBadKeys(t *testing.T) {
-	if _, err := NewVerifier(true, []KeyConfig{{KeyID: "k", PublicKeyHex: "zz"}}, time.Hour); err == nil {
+	if _, err := NewVerifier(true, []KeyConfig{{KeyID: "k", PublicKeyHex: "zz"}}, time.Hour, ""); err == nil {
 		t.Fatal("expected error for non-hex public key")
 	}
-	if _, err := NewVerifier(true, []KeyConfig{{KeyID: "k", PublicKeyHex: "00"}}, time.Hour); err == nil {
+	if _, err := NewVerifier(true, []KeyConfig{{KeyID: "k", PublicKeyHex: "00"}}, time.Hour, ""); err == nil {
 		t.Fatal("expected error for wrong-length public key")
 	}
-	if _, err := NewVerifier(true, nil, time.Hour); err == nil {
+	if _, err := NewVerifier(true, nil, time.Hour, ""); err == nil {
 		t.Fatal("expected error for enforcement with no keys")
 	}
-	if _, err := NewVerifier(false, nil, time.Hour); err != nil {
+	if _, err := NewVerifier(false, nil, time.Hour, ""); err != nil {
 		t.Fatalf("non-enforcing verifier with no keys should be fine: %v", err)
 	}
 }
@@ -73,7 +75,7 @@ func TestVerifierKeyIDsSortedAndMaxAge(t *testing.T) {
 	v, err := NewVerifier(true, []KeyConfig{
 		{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)},
 		{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub1)},
-	}, 2*time.Hour)
+	}, 2*time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -87,7 +89,7 @@ func TestVerifierKeyIDsSortedAndMaxAge(t *testing.T) {
 }
 
 func TestCheckEnforcementOffAlwaysAllows(t *testing.T) {
-	v, err := NewVerifier(false, nil, time.Hour)
+	v, err := NewVerifier(false, nil, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -230,7 +232,7 @@ func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
 
 	for _, maxAge := range []time.Duration{0, -time.Second, -time.Hour} {
 		t.Run(maxAge.String(), func(t *testing.T) {
-			if _, err := NewVerifier(true, keys, maxAge); err == nil {
+			if _, err := NewVerifier(true, keys, maxAge, ""); err == nil {
 				t.Fatalf("maxAge %v must be rejected", maxAge)
 			}
 		})
@@ -466,7 +468,7 @@ func BenchmarkCheck(b *testing.B) {
 	seed, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	priv := ed25519.NewKeyFromSeed(seed)
 	pub := priv.Public().(ed25519.PublicKey)
-	v, err := NewVerifier(true, []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour)
+	v, err := NewVerifier(true, []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour, "")
 	if err != nil {
 		b.Fatalf("NewVerifier: %v", err)
 	}
@@ -494,5 +496,94 @@ func BenchmarkCheck(b *testing.B) {
 		if d := v.Check("docker.restart", args, atts[i]); !d.Allowed {
 			b.Fatalf("benchmark dispatch refused: %+v", d)
 		}
+	}
+}
+
+// persistKeys returns the trusted-key config + private key both persistence tests
+// sign with — the same seed as newTestVerifier, so the ids line up.
+func persistKeys(t *testing.T) ([]KeyConfig, ed25519.PrivateKey) {
+	t.Helper()
+	seed, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub := priv.Public().(ed25519.PublicKey)
+	return []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, priv
+}
+
+// TestNonceCachePersistsAcrossRestart is the gap this feature closes: an in-memory
+// replay cache is empty after a restart / SIGHUP rebuild, so a captured, still-in-
+// window attestation could replay once. With the on-disk store, a fresh verifier
+// over the SAME state file reloads the seen nonce and refuses the replay.
+func TestNonceCachePersistsAcrossRestart(t *testing.T) {
+	keys, priv := persistKeys(t)
+	store := filepath.Join(t.TempDir(), "signing", "nonce-cache.json")
+	args := map[string]any{"x": 1}
+	// Real-clock issued_at so the nonce stays inside the window across the reload;
+	// both verifiers use the real clock, so the load cutoff and freshness agree.
+	issuedAt := time.Now().UTC().Format(time.RFC3339)
+	att := sign(t, priv, "a.b", args, "nonce-restart", issuedAt)
+
+	v1, err := NewVerifier(true, keys, time.Hour, store)
+	if err != nil {
+		t.Fatalf("NewVerifier v1: %v", err)
+	}
+	if d := v1.Check("a.b", args, att); !d.Allowed {
+		t.Fatalf("first dispatch refused: %+v", d)
+	}
+
+	// A brand-new verifier over the same store = a restart / SIGHUP rebuild.
+	v2, err := NewVerifier(true, keys, time.Hour, store)
+	if err != nil {
+		t.Fatalf("NewVerifier v2 (restart): %v", err)
+	}
+	if d := v2.Check("a.b", args, att); d.Allowed {
+		t.Fatalf("restart let the in-window nonce replay")
+	} else if d.Code != "replayed" {
+		t.Fatalf("restart replay refused with %q, want \"replayed\"", d.Code)
+	}
+}
+
+// TestNonceCacheCorruptStoreFailsClosed: a present-but-corrupt cache must fail
+// construction, not silently start enforcing with a replay cache we can't trust.
+func TestNonceCacheCorruptStoreFailsClosed(t *testing.T) {
+	keys, _ := persistKeys(t)
+	store := filepath.Join(t.TempDir(), "nonce-cache.json")
+	if err := os.WriteFile(store, []byte("{ not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewVerifier(true, keys, time.Hour, store); err == nil {
+		t.Fatal("a corrupt nonce cache must fail construction (fail closed), got nil error")
+	}
+}
+
+// TestNonceCacheUnwritableFailsClosed: when a consumed nonce can't be durably
+// recorded, Check must refuse rather than allow a dispatch that could replay
+// after a restart. Skipped under root, which bypasses the directory write bit.
+func TestNonceCacheUnwritableFailsClosed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the directory write bit this test relies on")
+	}
+	keys, priv := persistKeys(t)
+	// A read-only parent dir: the file doesn't exist yet (load is a clean no-op),
+	// but the atomic write into it is denied.
+	roDir := t.TempDir()
+	if err := os.Chmod(roDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(roDir, 0o700) }) // let TempDir cleanup remove it
+	store := filepath.Join(roDir, "nonce-cache.json")
+
+	v, err := NewVerifier(true, keys, time.Hour, store)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	args := map[string]any{"x": 1}
+	att := sign(t, priv, "a.b", args, "nonce-unwritable", time.Now().UTC().Format(time.RFC3339))
+
+	d := v.Check("a.b", args, att)
+	if d.Allowed {
+		t.Fatal("an unpersistable nonce must be refused (fail closed), got Allowed")
+	}
+	if d.Code != "nonce_store_unavailable" {
+		t.Fatalf("refused with %q, want \"nonce_store_unavailable\"", d.Code)
 	}
 }

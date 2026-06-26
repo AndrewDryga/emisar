@@ -19,7 +19,7 @@ func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey) 
 	seed, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	priv := ed25519.NewKeyFromSeed(seed)
 	pub := priv.Public().(ed25519.PublicKey)
-	v, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour)
+	v, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestClient_SetVerifier_RevokesKeyLive(t *testing.T) {
 	// verifier no longer trusts k1.
 	seed2, _ := hex.DecodeString("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
 	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
-	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour)
+	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestClient_SetVerifier_NewKeyAcceptedAndGetterReflectsSwap(t *testing.T) {
 	seed2, _ := hex.DecodeString("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
 	priv2 := ed25519.NewKeyFromSeed(seed2)
 	pub2 := priv2.Public().(ed25519.PublicKey)
-	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour)
+	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
