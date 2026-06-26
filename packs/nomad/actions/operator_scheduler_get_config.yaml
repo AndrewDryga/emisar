@@ -1,0 +1,24 @@
+schema_version: 1
+id: nomad.operator_scheduler_get_config
+title: nomad operator scheduler get-config
+kind: exec
+risk: low
+description: >
+  Show the cluster's scheduler configuration — the scheduler algorithm
+  (binpack/spread), memory oversubscription, preemption settings (system/batch/
+  service/sysbatch), job-registration rejection, and eval-broker pause state.
+  This is the "why is placement behaving this way / is preemption on" read for
+  incident triage. Read-only; requires a Nomad token with the operator:read
+  capability.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nomad, argv: ["operator", "scheduler", "get-config"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster scheduler configuration
+    args: {}

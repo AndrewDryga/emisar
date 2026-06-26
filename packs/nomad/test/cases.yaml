@@ -242,6 +242,9 @@ cases:
   args:
     node_id: abc12345
   expect_exit: 0
+- action: nomad.operator_scheduler_get_config
+  args: {}
+  expect_exit: 0
 - action: nomad.operator_autopilot_get_config
   args: {}
   expect_exit: 0
