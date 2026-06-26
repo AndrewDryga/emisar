@@ -31,6 +31,19 @@ cases:
 - action: pfsense.gateway_status
   args: {}
   expect_exit: 0
+- action: pfsense.gateways
+  args: {}
+  expect_exit: 0
+- action: pfsense.pf_tables
+  args: {}
+  expect_exit: 0
+- action: pfsense.pf_table
+  args:
+    name: sshguard
+  expect_exit:
+  - 0
+  - 1
+  skip: needs a pfSense SUT with the named pf table present
 - action: pfsense.static_routes
   args: {}
   expect_exit: 0
@@ -76,6 +89,14 @@ cases:
   args: {}
   expect_exit: 0
 - action: pfsense.auth_log
+  args:
+    limit: 50
+  expect_exit: 0
+- action: pfsense.dhcp_log
+  args:
+    limit: 50
+  expect_exit: 0
+- action: pfsense.openvpn_log
   args:
     limit: 50
   expect_exit: 0

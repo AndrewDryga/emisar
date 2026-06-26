@@ -1,0 +1,36 @@
+schema_version: 1
+id: pfsense.dhcp_log
+title: GET /api/v2/status/logs/dhcp
+kind: script
+risk: low
+description: >
+  Show recent DHCP server log entries — lease discover/offer/request/ack and
+  declines, with client MACs and assigned addresses. Use to debug a client that
+  is not getting an address or to see who leased what.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum number of log lines to return.
+    validation:
+      min: 1
+      max: 5000
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/status/logs/dhcp?limit={{ args.limit }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 100 DHCP log lines
+    args: {}

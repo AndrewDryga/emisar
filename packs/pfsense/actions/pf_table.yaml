@@ -1,0 +1,37 @@
+schema_version: 1
+id: pfsense.pf_table
+title: GET /api/v2/diagnostics/table
+kind: script
+risk: low
+description: >
+  Show the addresses in one pf table by name (list the names with
+  pfsense.pf_tables) — e.g. which IPs sshguard or a pfBlocker alias is currently
+  blocking. pfBlocker feed tables can hold tens of thousands of entries, so the
+  output is deliberately capped and returned as text; a table larger than the
+  cap is truncated — narrow to a specific smaller table.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: pf table name (from pfsense.pf_tables), e.g. sshguard, bogons, virusprot.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/diagnostics/table?name={{ args.name }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Addresses sshguard is blocking
+    args:
+      name: "sshguard"

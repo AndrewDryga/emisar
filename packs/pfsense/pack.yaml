@@ -2,15 +2,15 @@ schema_version: 1
 
 id: pfsense
 name: pfSense firewall
-version: 0.2.1
+version: 0.3.0
 description: >
   Operate a pfSense firewall over its REST API: read firewall rules, NAT,
-  aliases, virtual IPs, interface / gateway / service / VPN status, DHCP
-  leases, routes, ARP, CARP, installed packages, the config-change history,
-  and firewall / system / auth logs, plus a few gated mutators (apply filter,
-  flush states, restart a service, reboot). Uses the community
-  pfSense-pkg-RESTAPI package (/api/v2), which runs on the firewall and works
-  across CE and Plus.
+  aliases, virtual IPs, interface / gateway (config + status) / service / VPN
+  status, DHCP leases, routes, ARP, CARP, pf tables, installed packages, the
+  config-change history, and firewall / system / auth / DHCP / OpenVPN logs,
+  plus a few gated mutators (apply filter, flush states, restart a service,
+  reboot). Uses the community pfSense-pkg-RESTAPI package (/api/v2), which runs
+  on the firewall and works across CE and Plus.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -69,8 +69,11 @@ actions:
   - actions/interface_config.yaml
   - actions/gateway_status.yaml
   - actions/gateway_groups.yaml
+  - actions/gateways.yaml
   - actions/static_routes.yaml
   - actions/arp_table.yaml
+  - actions/pf_tables.yaml
+  - actions/pf_table.yaml
   - actions/service_status.yaml
   - actions/dhcp_leases.yaml
   - actions/openvpn_status.yaml
@@ -80,6 +83,8 @@ actions:
   - actions/firewall_log.yaml
   - actions/system_log.yaml
   - actions/auth_log.yaml
+  - actions/dhcp_log.yaml
+  - actions/openvpn_log.yaml
   - actions/config_history.yaml
   - actions/apply_filter.yaml
   - actions/flush_states.yaml
