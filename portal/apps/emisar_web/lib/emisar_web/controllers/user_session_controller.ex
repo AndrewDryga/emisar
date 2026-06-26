@@ -36,6 +36,9 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
+    # The sign-up form posts `registration=1`; carry it in the magic cookie so the
+    # sign-in that completes this round-trip fires sign_up_completed (activation).
+    registered? = params["registration"] == "1"
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
     # doesn't apply. No `else`: throttled OR unknown both fall through to the
@@ -47,7 +50,7 @@ defmodule EmisarWeb.UserSessionController do
            {:ok, user} <- Users.fetch_user_by_email(email) do
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
         Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, return_to)
-        put_magic_cookie(conn, token_id, nonce)
+        put_magic_cookie(conn, token_id, nonce, registered?)
       else
         _ -> conn
       end
@@ -80,7 +83,7 @@ defmodule EmisarWeb.UserSessionController do
   defp finish_magic_link(conn, secret, prep, link_token_id \\ nil) do
     context = RequestContext.from_conn(conn)
 
-    with {:ok, cookie_token_id, nonce} <- read_magic_cookie(conn),
+    with {:ok, cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
          token_id = link_token_id || cookie_token_id,
          {:ok, user} <- Auth.verify_magic_link(token_id, secret, nonce, context) do
       Users.record_sign_in(user, "magic_link", context)
@@ -88,7 +91,10 @@ defmodule EmisarWeb.UserSessionController do
       conn
       |> delete_resp_cookie(@magic_cookie)
       |> prep.()
-      |> complete_branded_sign_in(user, &UserAuth.log_in_user(&1, user, :magic_link, false, %{}))
+      |> complete_branded_sign_in(
+        user,
+        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
+      )
     else
       _ ->
         conn
@@ -101,8 +107,10 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  defp put_magic_cookie(conn, token_id, nonce),
-    do: put_resp_cookie(conn, @magic_cookie, "#{token_id}:#{nonce}", @magic_cookie_opts)
+  defp put_magic_cookie(conn, token_id, nonce, registered?) do
+    flag = if registered?, do: "1", else: "0"
+    put_resp_cookie(conn, @magic_cookie, "#{token_id}:#{nonce}:#{flag}", @magic_cookie_opts)
+  end
 
   defp put_magic_return_to(conn, nil), do: conn
   defp put_magic_return_to(conn, path), do: put_session(conn, :user_return_to, path)
@@ -112,9 +120,12 @@ defmodule EmisarWeb.UserSessionController do
 
     case conn.cookies[@magic_cookie] do
       value when is_binary(value) ->
-        case String.split(value, ":", parts: 2) do
-          [token_id, nonce] when token_id != "" and nonce != "" -> {:ok, token_id, nonce}
-          _ -> :error
+        case String.split(value, ":", parts: 3) do
+          [token_id, nonce, flag] when token_id != "" and nonce != "" ->
+            {:ok, token_id, nonce, flag == "1"}
+
+          _ ->
+            :error
         end
 
       _ ->

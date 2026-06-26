@@ -46,6 +46,10 @@ defmodule EmisarWeb.UserSignUpLive do
           required
         />
 
+        <%!-- Marks this magic-link request as a registration, so the first
+             sign-in completing the round-trip fires sign_up_completed. --%>
+        <input type="hidden" name="registration" value="1" />
+
         <:actions>
           <.button phx-disable-with="Creating..." class="w-full">
             Create account <span aria-hidden="true">→</span>

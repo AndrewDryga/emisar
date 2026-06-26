@@ -219,7 +219,7 @@ defmodule Emisar.SSO do
 
     with {:ok, %UserIdentity{} = identity} <- Repo.update(changeset),
          {:ok, user} <- Users.fetch_user_by_id(identity.user_id) do
-      {:ok, %{user: user, identity: identity}}
+      {:ok, %{user: user, identity: identity, created?: false}}
     end
   end
 
@@ -228,7 +228,7 @@ defmodule Emisar.SSO do
 
     case Repo.commit_multi(multi) do
       {:ok, %{user: user, identity: identity}} ->
-        {:ok, %{user: user, identity: identity}}
+        {:ok, %{user: user, identity: identity, created?: true}}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         # #9: a concurrent first login created this identity — converge on it

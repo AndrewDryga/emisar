@@ -87,7 +87,7 @@ defmodule EmisarWeb.Analytics do
   same-week anonymous `device_id` + the `user_id` so Mixpanel merges the
   pre-signup journey to the user. Returns `conn` (pipeline-friendly).
   """
-  def track_authentication(conn, user, auth_method, mfa) do
+  def track_authentication(conn, user, auth_method, mfa, registered?) do
     method = to_string(auth_method)
 
     Analytics.set_people(user.id, %{
@@ -96,7 +96,7 @@ defmodule EmisarWeb.Analytics do
       "auth_method" => method
     })
 
-    event = if registered?(conn), do: "sign_up_completed", else: "signed_in"
+    event = if registered?, do: "sign_up_completed", else: "signed_in"
     props = Map.merge(%{"auth_method" => method, "mfa" => mfa}, current_utm(conn))
     emit(conn, event, user.id, props, device_id: device_id(conn), user_id: user.id)
     conn
@@ -114,11 +114,6 @@ defmodule EmisarWeb.Analytics do
   end
 
   # -- internals -------------------------------------------------------
-
-  # The sign-up form posts `?_action=registered`; pattern-matched (not
-  # `conn.params[...]`) so it stays safe when params are unfetched.
-  defp registered?(%{params: %{"_action" => "registered"}}), do: true
-  defp registered?(_conn), do: false
 
   # distinct_id + merge opts. Anonymous = the cookieless weekly device hash,
   # `$device:`-prefixed so Mixpanel treats it as a mergeable device (not a

@@ -514,7 +514,7 @@ defmodule Emisar.SSOTest do
         "name" => "New Operator"
       }
 
-      assert {:ok, %{user: user, identity: identity, provider: ^provider}} =
+      assert {:ok, %{user: user, identity: identity, provider: ^provider, created?: true}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert user.email == "new@acme.test"
@@ -547,8 +547,13 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|stable", "email" => "stable@acme.test", "email_verified" => true}
 
-      assert {:ok, %{user: first}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert {:ok, %{user: second}} = SSO.complete_auth(provider, callback(claims), %{})
+      # created?: true only on the FIRST login (the JIT registration) — the
+      # returning login resolves the existing identity, so it's signed_in.
+      assert {:ok, %{user: first, created?: true}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert {:ok, %{user: second, created?: false}} =
+               SSO.complete_auth(provider, callback(claims), %{})
 
       assert first.id == second.id
     end

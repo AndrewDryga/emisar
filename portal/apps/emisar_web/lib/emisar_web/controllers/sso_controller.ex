@@ -45,7 +45,8 @@ defmodule EmisarWeb.SSOController do
 
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
-         {:ok, %{user: user, identity: identity}} <- SSO.complete_auth(provider, params, stash),
+         {:ok, %{user: user, identity: identity, created?: created?}} <-
+           SSO.complete_auth(provider, params, stash),
          {:ok, account} <- Accounts.fetch_account_by_id(provider.account_id) do
       Users.record_sign_in(user, "sso", context)
 
@@ -59,7 +60,8 @@ defmodule EmisarWeb.SSOController do
       |> put_session(:user_return_to, ~p"/app/#{account}")
       |> RecentAccounts.put(%{slug: account.slug, name: account.name})
       |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider), %{},
-        user_identity_id: identity.id
+        user_identity_id: identity.id,
+        registered?: created?
       )
     else
       nil -> sso_error(conn, "Your sign-in session expired. Start again.")

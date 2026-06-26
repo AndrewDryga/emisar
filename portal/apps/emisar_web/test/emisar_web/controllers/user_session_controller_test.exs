@@ -23,6 +23,41 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert conn.resp_cookies["emisar_magic"]
     end
 
+    # The sign-up form posts `registration=1` to /start; the flag rides the magic
+    # cookie through the round-trip so the FIRST sign-in fires sign_up_completed.
+    # The welcome flash is the observable proxy (same `registered?` signal drives
+    # both it and the analytics event), since the analytics seam is off in test.
+    test "a registration round-trip welcomes the new operator", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration" => "1"
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+
+      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(conn, :user_token)
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
+    end
+
+    test "a normal sign-in (no registration) shows no welcome", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+
+      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(conn, :user_token)
+      refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
+    end
+
     test "the email link signs in from the originating browser", %{conn: conn} do
       user = Emisar.Fixtures.user_fixture()
       {conn, token_id, secret} = request_magic_link(conn, user.email)
