@@ -116,6 +116,7 @@ defmodule EmisarWeb.MCPControllerTest do
         %{
           name: "key-#{unique()}",
           scopes: opts[:scopes] || ["actions:read", "actions:execute"],
+          action_scope: opts[:action_scope] || [],
           runner_filter: opts[:runner_filter] || [],
           runner_group_filter: opts[:runner_group_filter] || []
         },
@@ -377,6 +378,28 @@ defmodule EmisarWeb.MCPControllerTest do
       names = Enum.map(body["tools"], & &1["name"])
       assert "visible.action" in names
       refute "hidden.action" in names
+    end
+
+    test "action_scope hides actions the key may not run", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, name: "db-prod-01")
+      advertise_action!(runner, action_id: "linux.uptime")
+      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
+
+      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/tools")
+        |> json_response(200)
+
+      names = Enum.map(body["tools"], & &1["name"])
+      assert "linux.uptime" in names
+      refute "linux.reboot" in names
     end
 
     test "every tool exposes an optional `idempotency_key` property the LLM can set", %{
@@ -645,6 +668,41 @@ defmodule EmisarWeb.MCPControllerTest do
         |> json_response(403)
 
       assert body["error"] == "missing_scope"
+    end
+
+    test "action_scope confines a key to its listed actions (per-action denial)", %{
+      conn: conn,
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      # Runner advertises a second, riskier action the key is NOT scoped to.
+      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
+      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
+
+      # The in-scope action dispatches.
+      assert conn
+             |> put_req_header("authorization", "Bearer " <> raw)
+             |> post(~p"/api/mcp/tools/linux.uptime", %{
+               "runners" => [runner.name],
+               "reason" => "allowed by scope"
+             })
+             |> json_response(202)
+
+      # The out-of-scope action is refused at the dispatch boundary — even though
+      # the runner advertises it and policy would allow it. A leaked key can't be
+      # turned around to a riskier action than it was minted for.
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.reboot", %{
+          "runners" => [runner.name],
+          "reason" => "should be blocked"
+        })
+        |> json_response(403)
+
+      assert body["error"] == "action_not_in_key_scope"
+      assert body["action_id"] == "linux.reboot"
     end
 
     test "runner_not_found error includes actionable message", %{

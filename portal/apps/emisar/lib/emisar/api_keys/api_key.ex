@@ -16,6 +16,11 @@ defmodule Emisar.ApiKeys.ApiKey do
     field :runner_filter, {:array, :string}, default: []
     field :runner_group_filter, {:array, :string}, default: []
     field :scopes, {:array, :string}, default: []
+    # Per-action allow-list. Empty = any action (the default); non-empty
+    # restricts dispatch to exactly these action_ids — enforced at the MCP
+    # dispatch boundary on top of the runner scope, so a leaked key can't run
+    # actions the operator never granted it.
+    field :action_scope, {:array, :string}, default: []
 
     field :expires_at, :utc_datetime_usec
     field :last_used_at, :utc_datetime_usec
@@ -53,6 +58,17 @@ defmodule Emisar.ApiKeys.ApiKey do
     do: DateTime.compare(DateTime.utc_now(), exp) == :lt
 
   def usable?(_), do: false
+
+  @doc """
+  Whether this key may dispatch `action_id`. An empty `action_scope` means any
+  action (the default + every pre-existing key); a non-empty list is an
+  allow-list — only those action_ids may run. Checked at the MCP dispatch
+  boundary in addition to the runner-scope checks.
+  """
+  def action_allowed?(%__MODULE__{action_scope: scope}, _action_id) when scope in [nil, []],
+    do: true
+
+  def action_allowed?(%__MODULE__{action_scope: scope}, action_id), do: action_id in scope
 
   @doc """
   True when the key is auto-generated AND has never been used. Drives

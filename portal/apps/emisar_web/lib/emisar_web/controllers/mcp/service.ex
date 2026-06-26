@@ -13,7 +13,7 @@ defmodule EmisarWeb.MCP.Service do
   modules — `Catalog`, `Runners`, `Runs`.
   """
 
-  alias Emisar.{Catalog, Runbooks, Runners, Runs}
+  alias Emisar.{ApiKeys, Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.MCP.{Idempotency, ToolSchema}
   require Logger
 
@@ -56,7 +56,8 @@ defmodule EmisarWeb.MCP.Service do
     actions
     |> Enum.filter(
       &(action_visible_to_key?(&1, api_key, runners_by_id) and
-          action_in_membership_scope?(&1, runners_by_id, scopes))
+          action_in_membership_scope?(&1, runners_by_id, scopes) and
+          ApiKeys.ApiKey.action_allowed?(api_key, &1.action_id))
     )
     |> Enum.group_by(& &1.action_id)
     |> Enum.map(fn {_action_id, group} -> mcp_tool_from_group(group, runners_by_id) end)
@@ -304,6 +305,7 @@ defmodule EmisarWeb.MCP.Service do
     attestation = Map.get(opts, :attestation)
 
     with :ok <- validate_reason(reason),
+         :ok <- check_action_scope(api_key, action_id),
          {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
       runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
 
@@ -412,6 +414,17 @@ defmodule EmisarWeb.MCP.Service do
   end
 
   defp validate_reason(_), do: {:error, :reason_required}
+
+  # Per-action allow-list on the key (empty = any action — the default, so
+  # every pre-existing key is unaffected). A leaked key scoped to `linux.uptime`
+  # can't be turned around to run `linux.reboot`. Enforced here, not just hidden
+  # from the tool list, so a hand-crafted call past discovery is refused too
+  # (IL-15 — authorize the action, never trust the rendered UI).
+  defp check_action_scope(api_key, action_id) do
+    if ApiKeys.ApiKey.action_allowed?(api_key, action_id),
+      do: :ok,
+      else: {:error, :action_not_in_key_scope}
+  end
 
   # -- Runner resolution ----------------------------------------------
 

@@ -188,6 +188,17 @@ defmodule EmisarWeb.MCPRpcController do
 
         {:ok, %{content: content, isError: true}}
 
+      {:error, :action_not_in_key_scope} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Action not in key scope",
+            "This API key is limited to a specific set of actions and `#{name}` isn't one of " <>
+              "them. Call tools/list to see exactly what it may run, or ask an admin to widen " <>
+              "the key's action scope on the API keys page. Retrying won't help."
+          )
+
+        {:ok, %{content: content, isError: true}}
+
       {:error, :runner_required, candidates} ->
         msg =
           "This action needs an explicit target — emisar never auto-picks a runner, even " <>

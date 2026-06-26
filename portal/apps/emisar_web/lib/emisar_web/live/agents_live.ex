@@ -67,6 +67,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:runners, runners)
      |> assign(:quick_secret, nil)
      |> assign(:selected_client, nil)
+     |> assign(:action_scope_text, "")
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
@@ -148,16 +149,20 @@ defmodule EmisarWeb.AgentsLive do
      )}
   end
 
-  def handle_event("validate", %{"api_key" => params}, socket) do
+  def handle_event("validate", %{"api_key" => params} = all, socket) do
     changeset = ApiKeys.change_key(params) |> Map.put(:action, :validate)
-    {:noreply, assign_form(socket, changeset)}
+    # `action_scope` rides outside the api_key params (it's parsed at create,
+    # like the runner-scope hidden inputs) — round-trip the raw text so a
+    # validation re-render keeps what the operator typed.
+    {:noreply,
+     socket |> assign(:action_scope_text, all["action_scope"] || "") |> assign_form(changeset)}
   end
 
-  def handle_event("create", %{"api_key" => params}, socket) do
+  def handle_event("create", %{"api_key" => params} = all, socket) do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      &do_create(&1, params)
+      &do_create(&1, params, all["action_scope"])
     )
   end
 
@@ -183,7 +188,7 @@ defmodule EmisarWeb.AgentsLive do
 
   # -- Internals -------------------------------------------------------
 
-  defp do_create(socket, params) do
+  defp do_create(socket, params, action_scope_text) do
     # Custom keys minted from the agents page are always MCP-shaped:
     # `actions:read` + `actions:execute`, nothing else. The audit
     # `audit:read` scope lives on the audit page where it belongs;
@@ -193,6 +198,7 @@ defmodule EmisarWeb.AgentsLive do
       description: nil_if_blank(params["description"]),
       expires_at: parse_expires_at(params["expires_at"]),
       scopes: ["actions:read", "actions:execute"],
+      action_scope: split_action_ids(action_scope_text),
       runner_filter: selected_runner_ids(params, socket.assigns.runners),
       runner_group_filter: selected_runner_groups(params, socket.assigns.runners)
     }
@@ -203,13 +209,16 @@ defmodule EmisarWeb.AgentsLive do
          socket
          |> assign(:quick_secret, raw)
          |> assign(:show_advanced, false)
+         |> assign(:action_scope_text, "")
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
-      # Field errors (required name, length, or a DB constraint) render
-      # inline on the form via <.input>/<.error> — no flash dump.
+      # Field errors (required name, length, a per-action-id format error, or a
+      # DB constraint) render inline on the form via <.input>/<.error> — no flash
+      # dump. Keep the typed action-scope text so it isn't lost on a re-render.
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:noreply,
+         socket |> assign(:action_scope_text, action_scope_text || "") |> assign_form(changeset)}
     end
   end
 
@@ -325,6 +334,18 @@ defmodule EmisarWeb.AgentsLive do
       {:ok, datetime, _} -> datetime
       _ -> nil
     end
+  end
+
+  # The action-scope textarea is free text — operators paste action ids one per
+  # line or comma-separated. Split, trim, drop blanks; the changeset validates
+  # each against the `pack.action` shape and rejects an over-long entry.
+  defp split_action_ids(nil), do: []
+
+  defp split_action_ids(text) when is_binary(text) do
+    text
+    |> String.split([",", "\n"])
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
   end
 
   # Allowlist submitted runner IDs against the account's real runners
@@ -696,6 +717,7 @@ defmodule EmisarWeb.AgentsLive do
         selected_client={@selected_client}
         quick_secret={@quick_secret}
         form={@form}
+        action_scope_text={@action_scope_text}
         runners={@runners}
         selected_runner_ids={@selected_runner_ids}
         selected_runner_groups={@selected_runner_groups}
@@ -850,6 +872,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :selected_client, :any, required: true
   attr :quick_secret, :string, default: nil
   attr :form, :any, default: nil
+  attr :action_scope_text, :string, default: ""
   attr :runners, :list, default: []
   attr :selected_runner_ids, :list, default: []
   attr :selected_runner_groups, :list, default: []
@@ -966,6 +989,7 @@ defmodule EmisarWeb.AgentsLive do
 
             <.custom_key_panel
               form={@form}
+              action_scope_text={@action_scope_text}
               runners={@runners}
               selected_runner_ids={@selected_runner_ids}
               selected_runner_groups={@selected_runner_groups}
@@ -1340,6 +1364,7 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   attr :form, :any, required: true
+  attr :action_scope_text, :string, required: true
   attr :runners, :list, required: true
   attr :selected_runner_ids, :list, required: true
   attr :selected_runner_groups, :list, required: true
@@ -1387,6 +1412,22 @@ defmodule EmisarWeb.AgentsLive do
           field={@form[:expires_at]}
           type="datetime-local"
           label="Expires (UTC)"
+        />
+
+        <%!-- Optional per-action allow-list. Blank = the key may run any action
+             its runner scope allows; listing ids locks it to exactly those,
+             enforced at dispatch — a leaked key can't be repurposed to a
+             riskier action. Parsed at create like the runner hidden inputs, so
+             it lives outside `api_key[...]` and round-trips via @action_scope_text. --%>
+        <.input
+          type="textarea"
+          name="action_scope"
+          id="api_key_action_scope"
+          value={@action_scope_text}
+          label="Limit to actions (optional)"
+          rows="2"
+          placeholder="e.g. linux.uptime, docker.ps — one per line or comma-separated. Blank = any action."
+          errors={Enum.map(@form[:action_scope].errors, &translate_error/1)}
         />
 
         <%!-- Runner / group restrictions read from the shared scope

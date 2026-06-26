@@ -372,6 +372,46 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ ~s(value="my-custom-bot")
     end
 
+    test "a custom key can be limited to specific actions via the action-scope field",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      # `action_scope` is a top-level textarea (parsed at create, like the runner
+      # hidden inputs), comma/newline separated — trimmed + blank-dropped.
+      lv
+      |> form("#api_key_form", %{
+        "api_key" => %{"name" => "scoped-bot"},
+        "action_scope" => "linux.uptime, docker.ps\n"
+      })
+      |> render_submit()
+
+      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      key = Enum.find(keys, &(&1.name == "scoped-bot"))
+
+      assert Enum.sort(key.action_scope) == ["docker.ps", "linux.uptime"]
+    end
+
+    test "a malformed action id renders an inline error and persists no key", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{
+          "api_key" => %{"name" => "bad-scope-bot"},
+          "action_scope" => "not a valid id"
+        })
+        |> render_submit()
+
+      assert html =~ "must be a list of action ids"
+      assert Repo.all(ApiKey) == []
+    end
+
     # a `datetime-local` expiry on the custom-create form
     # (no seconds, no zone) is stored as UTC: `parse_expires_at` appends ":00Z"
     # before parsing, so "2030-12-25 at 10:30" persists as 10:30:00 UTC. (The

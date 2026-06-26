@@ -33,6 +33,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
       :runner_filter,
       :runner_group_filter,
       :scopes,
+      :action_scope,
       :expires_at
     ])
     |> put_change(:account_id, account_id)
@@ -43,6 +44,31 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_required([:account_id, :name, :scopes])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_subset(:scopes, @valid_scopes)
+    |> validate_action_scope()
+  end
+
+  # Each action_scope entry is an action_id (`<pack>.<action>`, exactly one dot).
+  # The pack segment may carry a hyphen (`cloud-init.analyze_show`,
+  # `aws-ec2.describe_instances`), so allow `-` on both sides. This is a *bound*,
+  # not a correctness gate — an entry matching no advertised action just never
+  # authorizes a run — but it stops a hostile value smuggling junk into scope.
+  @action_id_format ~r/^[a-z0-9_-]+\.[a-z0-9_-]+$/
+
+  defp validate_action_scope(changeset) do
+    case get_change(changeset, :action_scope) do
+      nil ->
+        changeset
+
+      ids ->
+        if Enum.all?(
+             ids,
+             &(is_binary(&1) and String.length(&1) <= 128 and &1 =~ @action_id_format)
+           ) do
+          changeset
+        else
+          add_error(changeset, :action_scope, "must be a list of action ids like \"pack.action\"")
+        end
+    end
   end
 
   def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs \\ %{}) do

@@ -97,6 +97,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         %{
           name: "key-#{unique()}",
           scopes: opts[:scopes] || ["actions:read", "actions:execute"],
+          action_scope: opts[:action_scope] || [],
           runner_filter: opts[:runner_filter] || [],
           runner_group_filter: opts[:runner_group_filter] || []
         },
@@ -648,6 +649,29 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert is_list(body["result"]["content"])
       assert body["result"]["isError"] == false
+    end
+
+    test "action_scope refuses an out-of-scope action with isError, dispatching nothing",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
+      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.reboot",
+          "arguments" => %{"runner" => "host-1", "reason" => "should be blocked", "wait" => "0"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "action scope"
+      # The refusal is at the dispatch boundary, before any run is created.
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
 
     test "records the Mcp-Session-Id header on the dispatched run",

@@ -111,6 +111,19 @@ defmodule EmisarWeb.MCPController do
                   "this fire?'."
             })
 
+          {:error, :action_not_in_key_scope} ->
+            conn
+            |> put_status(:forbidden)
+            |> json(%{
+              error: "action_not_in_key_scope",
+              action_id: action_id,
+              message:
+                "This API key is limited to a specific set of actions, and `#{action_id}` " <>
+                  "isn't one of them. Use an action from `GET /api/mcp/tools` (which lists only " <>
+                  "what this key may run) or ask an admin to widen the key's action scope on the " <>
+                  "API keys page."
+            })
+
           {:error, :runner_required, candidates} ->
             conn
             |> put_status(:bad_request)

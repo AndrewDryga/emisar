@@ -150,6 +150,60 @@ defmodule Emisar.ApiKeysTest do
       assert "has an invalid entry" in errors_on(cs).scopes
     end
 
+    test "persists action_scope and confines the key via action_allowed?/2" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:ok, _raw, %ApiKey{} = key} =
+               ApiKeys.create_key(
+                 %{name: "scoped", scopes: ["actions:execute"], action_scope: ["linux.uptime"]},
+                 subject
+               )
+
+      assert key.action_scope == ["linux.uptime"]
+      assert ApiKey.action_allowed?(key, "linux.uptime")
+      refute ApiKey.action_allowed?(key, "linux.reboot")
+    end
+
+    test "an empty action_scope allows any action (the default, so existing keys are unaffected)" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:ok, _raw, %ApiKey{action_scope: []} = key} =
+               ApiKeys.create_key(%{name: "open", scopes: ["actions:execute"]}, subject)
+
+      assert ApiKey.action_allowed?(key, "linux.reboot")
+    end
+
+    test "rejects a malformed action_scope entry" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:error, cs} =
+               ApiKeys.create_key(
+                 %{name: "bad", scopes: ["actions:execute"], action_scope: ["not a valid id"]},
+                 subject
+               )
+
+      assert ~s(must be a list of action ids like "pack.action") in errors_on(cs).action_scope
+    end
+
+    test "accepts hyphenated pack ids (cloud-init.*, aws-ec2.*) in action_scope" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      # The pack segment carries a hyphen for several real packs; the scope
+      # validation must not reject them.
+      assert {:ok, _raw, %ApiKey{} = key} =
+               ApiKeys.create_key(
+                 %{
+                   name: "hyphenated",
+                   scopes: ["actions:execute"],
+                   action_scope: ["cloud-init.analyze_show", "aws-ec2.describe_instances"]
+                 },
+                 subject
+               )
+
+      assert ApiKey.action_allowed?(key, "cloud-init.analyze_show")
+      refute ApiKey.action_allowed?(key, "cloud-init.clean_logs")
+    end
+
     test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
       # A custom key mints an execute-capable MCP credential, so it gates
       # on `manage_api_keys` — which operators lack (they may only mint
