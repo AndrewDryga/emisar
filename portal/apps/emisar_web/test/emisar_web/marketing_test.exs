@@ -518,6 +518,20 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Not affiliated with or endorsed by Anthropic"
     end
 
+    test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do
+      # The procurement-facing answer to "how do I verify the binary I pipe into
+      # sudo bash" — SLSA provenance + checksums, with the ACTUAL commands that
+      # verify against our published releases (gh attestation verify succeeds for
+      # runner-v0.7.4 --owner andrewdryga; sha256sum -c SHA256SUMS passes).
+      html = conn |> get(~p"/trust") |> html_response(200)
+
+      assert html =~ "Release integrity"
+      assert html =~ "SLSA-3 build provenance"
+      assert html =~ "gh attestation verify"
+      assert html =~ "--owner andrewdryga"
+      assert html =~ "sha256sum -c SHA256SUMS"
+    end
+
     test "the zero-trust page maps concrete controls and stays honest about scope",
          %{conn: conn} do
       html = conn |> get(~p"/zero-trust") |> html_response(200)
@@ -563,12 +577,14 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/changelog") |> html_response(200)
 
       # The data-driven release entries (EmisarWeb.Changelog) — assert labels.
-      assert html =~ "Runner 0.7"
-      assert html =~ "Public beta control plane"
-      assert html =~ "SSO and SCIM directory sync"
       assert html =~ "The foundation"
-      assert html =~ "portal-v0.9.0"
-      assert html =~ "runner-v0.7.4"
+      assert html =~ "Public beta control plane"
+      assert html =~ "Client-attested signed dispatch"
+      assert html =~ "The marketing site, rebuilt"
+      # Product release tags — the commit history, the tags, and the changelog
+      # all line up (newest and oldest both rendered).
+      assert html =~ "v0.1.0"
+      assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
       assert html =~ "/changelog.xml"
