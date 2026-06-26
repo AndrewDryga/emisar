@@ -12,6 +12,8 @@ emisar pack validate packs/<name>      # → "pack <id> OK: <n> actions" + the s
 
 That runs the runner's load-time checks. A malformed pack breaks **both** consumers: the runner (loads + SHA-256-pins each pack at runtime) and the portal (`EmisarWeb.PacksRegistry` compile-scans every `packs/*/pack.yaml` at build time, so a bad pack **fails the portal build**). Validate every pack you touch.
 
+**Editing `redis/` or `cassandra/`? Refresh the cross-impl hash golden too.** The portal test `apps/emisar_web/test/emisar_web/packs_test.exs` pins the `content_hash` of **redis** (exec-only) and **cassandra** (has a script-kind action) byte-for-byte — the proof that the Elixir `PacksRegistry` and the Go runner hash a pack identically. **`emisar pack validate` does NOT run that test**, so ANY byte change to those two packs (including a catalog-wide sweep that touches their action text) leaves the golden stale and the *portal* build RED — silently, from the packs side. After editing redis/ or cassandra/: copy the new `sha256:` that `emisar pack validate` prints into the two golden literals in `packs_test.exs`, then run the portal packs_test (`cd portal/apps/emisar_web && mix test test/emisar_web/packs_test.exs`) to confirm the Elixir hash agrees. Commit the golden refresh **with** the pack change.
+
 ## Anatomy
 
 ```
