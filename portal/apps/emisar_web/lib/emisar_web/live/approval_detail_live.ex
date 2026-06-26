@@ -667,7 +667,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         phx-update="ignore"
         data-expires-at={DateTime.to_iso8601(@expires_at)}
         data-lapsed-event="expiry_lapsed"
-        class="flex items-center gap-1.5 text-xs font-medium tabular-nums text-zinc-400"
+        class="mb-4 flex items-center gap-1.5 text-xs font-medium tabular-nums text-zinc-400"
       >
         <.icon name="hero-clock" class="h-3.5 w-3.5" />
         <span data-countdown-text>{countdown_fallback(@expires_at)}</span>
