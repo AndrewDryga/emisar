@@ -95,14 +95,15 @@ Environment:
                     (claude-desktop, cursor, codex, …). Defaults to
                     "unknown".
   EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
-                         (with EMISAR_SIGNING_KEY_ID), the bridge signs each
+                         (with EMISAR_SIGNING_CERT), the bridge signs each
                          tools/call so runners that enforce signatures will run
-                         it. Generate the keypair with 'emisar keygen' on the
-                         runner host; install the public key in the runner
-                         config. Keep this secret — never put it on the control
-                         plane.
-  EMISAR_SIGNING_KEY_ID  Key id naming which trusted key signed the dispatch;
-                         the runner echoes it to pick the public key to verify.
+                         it. Get the key+cert pair from 'emisar cert new' (or
+                         'emisar signing init') on the operator host. Keep this
+                         secret — never put it on the control plane.
+  EMISAR_SIGNING_CERT    The CA-signed certificate JSON that vouches for the
+                         signing key (and its scope/validity). The bridge carries
+                         it verbatim alongside the signature; the runner verifies
+                         it against the trusted CA.
 
 Flags:
   -h, --help        Print this help and exit
@@ -145,7 +146,7 @@ func main() {
 	// Optional client-attested dispatch: when a signing key is configured, the
 	// bridge signs each tools/call so an enforcing runner will run it. The
 	// private key never leaves this process.
-	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_KEY_ID"))
+	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_CERT"))
 	if err != nil {
 		fatalln(err)
 	}

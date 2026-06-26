@@ -203,20 +203,22 @@ func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
 func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 	// (the signing-key branch of the startup glue)
 	base := map[string]string{"EMISAR_URL": "https://emisar.dev", "EMISAR_API_KEY": "emk-x"}
+	cert := certJSONFor(t, testSeedHex)
 	cases := []struct {
 		name string
 		key  string
-		keID string
+		cert string
 		want string
 	}{
-		{"key without id", testSeedHex, "", "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_KEY_ID"},
-		{"id without key", "", "k1", "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_KEY_ID"},
-		{"non-hex seed", "zz", "k1", "not valid hex"},
-		{"wrong-length seed", "00", "k1", "Ed25519 seed"},
+		{"key without cert", testSeedHex, "", "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT"},
+		{"cert without key", "", cert, "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT"},
+		{"non-hex seed", "zz", cert, "not valid hex"},
+		{"wrong-length seed", "00", cert, "Ed25519 seed"},
+		{"unparseable cert", testSeedHex, "{nope", "not valid JSON"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			env := map[string]string{"EMISAR_SIGNING_KEY": c.key, "EMISAR_SIGNING_KEY_ID": c.keID}
+			env := map[string]string{"EMISAR_SIGNING_KEY": c.key, "EMISAR_SIGNING_CERT": c.cert}
 			for k, v := range base {
 				env[k] = v
 			}

@@ -18,10 +18,13 @@ import (
 	"github.com/andrewdryga/emisar/mcp/internal/attest"
 )
 
-// signer holds the key the bridge signs dispatches with. Nil = signing off.
+// signer holds the leaf key + the CA-signed cert the bridge signs dispatches
+// with. Nil = signing off. The cert is parsed once at construction and attached
+// verbatim to every dispatch; the bridge never validates it (the runner does) —
+// it only carries it.
 type signer struct {
-	keyID string
-	priv  ed25519.PrivateKey
+	priv ed25519.PrivateKey
+	cert *attest.Cert
 }
 
 // reservedArgKeys are the control keys the portal strips from a tools/call's
@@ -31,15 +34,18 @@ type signer struct {
 var reservedArgKeys = []string{"runner", "runners", "reason", "wait", "idempotency_key", "attestation"}
 
 // newSigner builds a signer from EMISAR_SIGNING_KEY (a 64-hex Ed25519 seed) and
-// EMISAR_SIGNING_KEY_ID. Returns (nil, nil) when neither is set (signing
-// disabled); an error if only one is set or the seed is malformed.
-func newSigner(keyHex, keyID string) (*signer, error) {
-	if keyHex == "" && keyID == "" {
+// EMISAR_SIGNING_CERT (the CA-signed cert JSON the operator was given by
+// `emisar cert new`). Returns (nil, nil) when neither is set (signing disabled);
+// an error if only one is set, the seed is malformed, the cert is unparseable,
+// or the cert vouches for a different key than the seed (a copy-paste mismatch
+// that would make every dispatch fail at the runner).
+func newSigner(keyHex, certJSON string) (*signer, error) {
+	if keyHex == "" && certJSON == "" {
 		return nil, nil
 	}
-	if keyHex == "" || keyID == "" {
+	if keyHex == "" || certJSON == "" {
 		return nil, fmt.Errorf(
-			"both EMISAR_SIGNING_KEY and EMISAR_SIGNING_KEY_ID must be set to sign dispatches")
+			"both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT must be set to sign dispatches")
 	}
 	seed, err := hex.DecodeString(keyHex)
 	if err != nil {
@@ -50,7 +56,18 @@ func newSigner(keyHex, keyID string) (*signer, error) {
 			"EMISAR_SIGNING_KEY must be %d hex-encoded bytes (an Ed25519 seed), got %d",
 			ed25519.SeedSize, len(seed))
 	}
-	return &signer{keyID: keyID, priv: ed25519.NewKeyFromSeed(seed)}, nil
+	priv := ed25519.NewKeyFromSeed(seed)
+
+	var cert attest.Cert
+	if err := json.Unmarshal([]byte(certJSON), &cert); err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
+	}
+	if leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey)); cert.PublicKey != leafPub {
+		return nil, fmt.Errorf(
+			"EMISAR_SIGNING_CERT vouches for a different key than EMISAR_SIGNING_KEY — " +
+				"use the matching key+cert pair printed by `emisar cert new`")
+	}
+	return &signer{priv: priv, cert: &cert}, nil
 }
 
 // signFrame attaches an attestation to a tools/call frame so an enforcing runner
@@ -104,11 +121,11 @@ func (s *signer) signFrame(frame []byte) []byte {
 		return frame
 	}
 
-	params.Arguments["attestation"] = map[string]string{
-		"key_id":    s.keyID,
+	params.Arguments["attestation"] = map[string]any{
 		"sig":       sig,
 		"nonce":     nonce,
 		"issued_at": issuedAt,
+		"cert":      s.cert,
 	}
 
 	signed, err := withArguments(frame, params.Arguments)

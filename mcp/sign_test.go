@@ -13,11 +13,42 @@ import (
 	"github.com/andrewdryga/emisar/mcp/internal/attest"
 )
 
-const testSeedHex = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+const (
+	testSeedHex   = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	testCASeedHex = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
+)
+
+// certJSONFor mints a CA-signed cert vouching for the public key of leafSeedHex
+// and returns it as the JSON the operator would set as EMISAR_SIGNING_CERT.
+func certJSONFor(t *testing.T, leafSeedHex string) string {
+	t.Helper()
+	seed, err := hex.DecodeString(leafSeedHex)
+	if err != nil {
+		t.Fatalf("decode leaf seed: %v", err)
+	}
+	leafPub := hex.EncodeToString(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey))
+	caSeed, _ := hex.DecodeString(testCASeedHex)
+	caPriv := ed25519.NewKeyFromSeed(caSeed)
+	cert := attest.Cert{
+		CAID: "ca-test", KeyID: "op", PublicKey: leafPub,
+		ValidFrom: "2026-01-01T00:00:00Z", ValidUntil: "2030-01-01T00:00:00Z",
+		Serial: "01MCPSIGNTEST00000000000000",
+	}
+	sig, err := attest.SignCert(caPriv, cert)
+	if err != nil {
+		t.Fatalf("SignCert: %v", err)
+	}
+	cert.Sig = sig
+	b, err := json.Marshal(cert)
+	if err != nil {
+		t.Fatalf("marshal cert: %v", err)
+	}
+	return string(b)
+}
 
 func testSigner(t *testing.T) (*signer, ed25519.PublicKey) {
 	t.Helper()
-	s, err := newSigner(testSeedHex, "k1")
+	s, err := newSigner(testSeedHex, certJSONFor(t, testSeedHex))
 	if err != nil {
 		t.Fatalf("newSigner: %v", err)
 	}
@@ -25,23 +56,32 @@ func testSigner(t *testing.T) (*signer, ed25519.PublicKey) {
 }
 
 func TestNewSigner(t *testing.T) {
+	cert := certJSONFor(t, testSeedHex)
 	if s, err := newSigner("", ""); err != nil || s != nil {
 		t.Fatalf("no key set should disable signing: signer=%v err=%v", s, err)
 	}
 	if _, err := newSigner(testSeedHex, ""); err == nil {
-		t.Fatal("key without key_id should error")
+		t.Fatal("key without cert should error")
 	}
-	if _, err := newSigner("", "k1"); err == nil {
-		t.Fatal("key_id without key should error")
+	if _, err := newSigner("", cert); err == nil {
+		t.Fatal("cert without key should error")
 	}
-	if _, err := newSigner("zz", "k1"); err == nil {
+	if _, err := newSigner("zz", cert); err == nil {
 		t.Fatal("non-hex key should error")
 	}
-	if _, err := newSigner("00", "k1"); err == nil {
+	if _, err := newSigner("00", cert); err == nil {
 		t.Fatal("wrong-length key should error")
 	}
-	if s, err := newSigner(testSeedHex, "k1"); err != nil || s == nil {
-		t.Fatalf("valid key should build a signer: %v", err)
+	if _, err := newSigner(testSeedHex, "{not valid json"); err == nil {
+		t.Fatal("unparseable cert should error")
+	}
+	// A cert that vouches for a DIFFERENT key than the seed is a config mismatch.
+	otherCert := certJSONFor(t, "2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	if _, err := newSigner(testSeedHex, otherCert); err == nil {
+		t.Fatal("a cert for a different key than EMISAR_SIGNING_KEY should error")
+	}
+	if s, err := newSigner(testSeedHex, cert); err != nil || s == nil {
+		t.Fatalf("valid key+cert should build a signer: %v", err)
 	}
 }
 
@@ -92,8 +132,8 @@ func TestSignFrameProducesRunnerVerifiableAttestation(t *testing.T) {
 	if !ok {
 		t.Fatalf("no attestation attached: %#v", parsed.Params.Arguments)
 	}
-	if att["key_id"] != "k1" {
-		t.Fatalf("key_id = %v", att["key_id"])
+	if _, ok := att["cert"].(map[string]any); !ok {
+		t.Fatalf("no cert attached to the attestation: %#v", att)
 	}
 
 	// Reconstruct the action args exactly as the portal/runner do.
@@ -253,9 +293,9 @@ func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
 	if !ok {
 		t.Fatalf("no attestation present: %#v", parsed.Params.Arguments)
 	}
-	// The forged attestation must be gone — a fresh one from our key id.
-	if att["key_id"] != "k1" {
-		t.Errorf("attestation not replaced: key_id = %v", att["key_id"])
+	// The forged attestation must be gone — a fresh one carrying our cert.
+	if _, ok := att["cert"].(map[string]any); !ok {
+		t.Errorf("attestation not replaced with our cert: %#v", att)
 	}
 	if att["sig"] == "deadbeef" || att["nonce"] == "replayed" {
 		t.Fatalf("pre-seeded attestation survived: %#v", att)
