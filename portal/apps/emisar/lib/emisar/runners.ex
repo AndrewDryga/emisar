@@ -363,17 +363,34 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, runner.account_id),
-         # ensure_in_account just proved runner.account_id == subject.account.id,
-         # so the subject's own account feeds the plan-limit check — no preload.
-         :ok <- Emisar.Billing.check_limit(subject.account, :runners) do
-      Runner.Query.not_deleted()
-      |> Runner.Query.by_id(runner.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.enable/1,
-        audit: &Audit.Events.runner_enabled(subject, &1)
-      )
+         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
+      Multi.new()
+      # Lock the account so a concurrent enable/register can't both pass the
+      # plan-limit count and claim the last slot (TOCTOU).
+      |> Multi.run(:lock_account, fn repo, _ -> Accounts.lock_account(repo, runner.account_id) end)
+      # ensure_in_account proved runner.account_id == subject.account.id, so the
+      # subject's own account feeds the count — no preload.
+      |> Multi.run(:limit, fn _repo, _ ->
+        case Emisar.Billing.check_limit(subject.account, :runners) do
+          :ok -> {:ok, :ok}
+          {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
+        end
+      end)
+      |> Multi.run(:runner, fn _repo, _ ->
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_id(runner.id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(Runner.Query,
+          with: &Runner.Changeset.enable/1,
+          audit: &Audit.Events.runner_enabled(subject, &1)
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{runner: enabled}} -> {:ok, enabled}
+        {:error, {:over_limit, plan, limit}} -> {:error, :over_limit, plan, limit}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -1067,6 +1084,12 @@ defmodule Emisar.Runners do
     external_id = registration_external_id(attrs)
 
     Multi.new()
+    # Lock the account row FIRST so concurrent registrations for this account
+    # serialize: the plan-limit count + insert below is a TOCTOU otherwise (two
+    # runners both read `current < limit` and both insert, exceeding the ceiling).
+    |> Multi.run(:lock_account, fn repo, _changes ->
+      Accounts.lock_account(repo, key.account_id)
+    end)
     # Atomically claim a use of this auth key. The conditional UPDATE only
     # succeeds if the key is still usable AT the moment of the update —
     # defeating the race where two concurrent registrations both see

@@ -32,6 +32,24 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Internal — lock the account row (`FOR NO KEY UPDATE`) inside the CALLER's
+  transaction (pass the Multi's `repo`) so concurrent per-account work serializes
+  on it. Runners uses it as the first step of its registration / enable Multi:
+  the plan-limit count is a TOCTOU otherwise (two callers both read `current <
+  limit` and both insert, exceeding the ceiling). Returns `{:ok, account}` or
+  `{:error, :not_found}`.
+  """
+  def lock_account(repo, account_id) when is_binary(account_id) do
+    loaded_account =
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Account.Query.lock_for_update()
+      |> repo.one()
+
+    if loaded_account, do: {:ok, loaded_account}, else: {:error, :not_found}
+  end
+
   @doc "Internal — Approvals reads an account's grant-lifetime cap to enforce it; nil = no cap. No subject; the approval flow already authorized the approver."
   def fetch_account_max_grant_lifetime(account_id) do
     Account.Query.not_deleted()
