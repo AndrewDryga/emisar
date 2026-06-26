@@ -516,6 +516,10 @@ defmodule EmisarWeb.MarketingTest do
       # The honest not-affiliated note (this is a security product; the
       # framing is "we implement it", never "they endorse us").
       assert html =~ "Not affiliated with or endorsed by Anthropic"
+
+      # A REAL console screenshot, not only mocks — a security buyer sees the
+      # actual product (the audit they'd live in), countering "nothing to show".
+      assert html =~ "/images/screenshots/audit-view.webp"
     end
 
     test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do
