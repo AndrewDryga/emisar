@@ -2076,4 +2076,80 @@ defmodule Emisar.ApprovalsTest do
       assert %{count: 0, oldest_age_seconds: 0} = Approvals.pending_queue_stats()
     end
   end
+
+  describe "approve_request — signed-dispatch freshness gate (option b)" do
+    test "approving a run whose signature aged out while parked is refused up front" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # The runner enforces signing with a 1h freshness window.
+      {:ok, runner} =
+        Emisar.Runners.apply_state(runner, %{
+          "enforce_signatures" => true,
+          "max_attestation_age_seconds" => 3600
+        })
+
+      requester = user_fixture()
+      approver = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: approver.id, role: "owner")
+      approver_subject = subject_for(approver, account, role: :owner)
+
+      # Parked with a signature already 2h old — it would be refused at dispatch.
+      stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          status: :pending_approval,
+          attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => stale}
+        })
+
+      {:ok, request} = Approvals.create_request(run, requester.id, "please")
+
+      # Refused before finalizing, so there's no approved-but-dead run; the
+      # request stays pending for a re-issued (freshly-signed) request.
+      assert {:error, :attestation_stale} =
+               Approvals.approve_request(request, approver_subject, "go")
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+    end
+
+    test "approving a run with a still-fresh signature proceeds normally" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, runner} =
+        Emisar.Runners.apply_state(runner, %{
+          "enforce_signatures" => true,
+          "max_attestation_age_seconds" => 3600
+        })
+
+      requester = user_fixture()
+      approver = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: approver.id, role: "owner")
+      approver_subject = subject_for(approver, account, role: :owner)
+
+      fresh = DateTime.to_iso8601(DateTime.utc_now())
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          status: :pending_approval,
+          attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => fresh}
+        })
+
+      {:ok, request} = Approvals.create_request(run, requester.id, "please")
+
+      assert {:ok, {%Request{status: :approved}, _run}} =
+               Approvals.approve_request(request, approver_subject, "go")
+    end
+  end
 end

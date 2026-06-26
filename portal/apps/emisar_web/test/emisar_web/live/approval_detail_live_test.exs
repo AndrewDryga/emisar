@@ -205,6 +205,59 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Approve and send"
   end
 
+  test "approving a run whose signature aged out shows the re-issue prompt", %{conn: conn} do
+    {conn, approver, account} = register_and_log_in(conn)
+
+    {:ok, runner} =
+      %{
+        account_id: account.id,
+        name: "signer",
+        external_id: Ecto.UUID.generate(),
+        group: "default",
+        hostname: "10.0.5.9"
+      }
+      |> Runner.Changeset.register()
+      |> Repo.insert()
+
+    # Enforcing runner, 1h freshness window; the parked run's signature is 2h old.
+    {:ok, runner} =
+      Emisar.Runners.apply_state(runner, %{
+        "enforce_signatures" => true,
+        "max_attestation_age_seconds" => 3600
+      })
+
+    stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        args: %{},
+        status: :pending_approval,
+        attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => stale}
+      })
+
+    # A different requester so this is a real (non-self) approval.
+    requester = Emisar.Fixtures.user_fixture()
+    {:ok, request} = Approvals.create_request(run, requester.id, "please")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    html =
+      lv
+      |> form("form[phx-submit='approve']", %{"reason" => "go"})
+      |> render_submit()
+
+    # The gate refuses up front with the actionable re-issue prompt, not a
+    # generic "didn't record" — and the run is never finalized/dispatched.
+    assert html =~ "expired before approval"
+    assert html =~ "Re-issue it from your MCP client"
+    assert Repo.reload!(request).status == :pending
+    _ = approver
+  end
+
   test "warns when the target runner is offline (queues on approve)", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     # pending_request/2 targets a freshly-registered runner that never connects,

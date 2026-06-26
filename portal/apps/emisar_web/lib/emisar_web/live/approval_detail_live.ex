@@ -294,6 +294,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
     do: "The run was cancelled before approval, so there's nothing left to approve."
 
+  defp decision_error_message(:attestation_stale),
+    do:
+      "This signed request expired before approval — its signature is now outside the runner's " <>
+        "freshness window, so the runner would refuse it. Re-issue it from your MCP client and " <>
+        "approve the fresh one."
+
   defp decision_error_message(_),
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 
