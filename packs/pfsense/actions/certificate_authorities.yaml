@@ -1,0 +1,35 @@
+schema_version: 1
+id: pfsense.certificate_authorities
+title: GET /api/v2/system/certificate_authorities
+kind: script
+risk: low
+description: >
+  List the certificate authorities — each CA's description, refid, parent CA
+  (caref, for intermediates), OS-trust-store flag, and serial. The CA private
+  key is never returned: the action selects only these non-secret fields, so
+  the `prv` PEM is dropped at the source. (The REST API exposes no structured
+  expiry for CAs; use pfsense.certificates for cert validity windows.)
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfcerts.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/system/certificate_authorities"
+    - ".data = [(.data // [])[] | {descr, refid, caref, trust, randomserial, serial}]"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+  redact:
+    - name: private-key-pem
+      type: regex
+      pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'
+      replacement: '[REDACTED PRIVATE KEY]'
+examples:
+  - title: Certificate authorities
+    args: {}

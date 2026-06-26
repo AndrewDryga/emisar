@@ -1,0 +1,29 @@
+schema_version: 1
+id: pfsense.crls
+title: GET /api/v2/system/crls
+kind: script
+risk: low
+description: >
+  List the certificate revocation lists — each CRL's description, refid,
+  issuing CA (caref), method (internal / existing), lifetime, serial, and the
+  count of revoked certificates. The raw CRL PEM and the full revoked-entry
+  list are omitted to keep the output compact (neither is a secret).
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfcerts.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/system/crls"
+    - ".data = [(.data // [])[] | {refid, descr, caref, method, lifetime, serial, revoked: ((.cert // []) | length)}]"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Certificate revocation lists
+    args: {}

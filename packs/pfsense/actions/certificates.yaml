@@ -1,0 +1,35 @@
+schema_version: 1
+id: pfsense.certificates
+title: GET /api/v2/system/certificates
+kind: script
+risk: low
+description: >
+  List the certificate store — each certificate's description, refid, signing
+  CA (caref), type, and validity window (valid_from / valid_until /
+  valid_days_left) for expiry monitoring. The private key is never returned:
+  the action selects only these non-secret fields, so the `prv` PEM is dropped
+  at the source.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfcerts.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/system/certificates"
+    - ".data = [(.data // [])[] | {descr, refid, caref, type, valid_from, valid_until, valid_days_left}]"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+  redact:
+    - name: private-key-pem
+      type: regex
+      pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'
+      replacement: '[REDACTED PRIVATE KEY]'
+examples:
+  - title: Certificate store with expiry
+    args: {}

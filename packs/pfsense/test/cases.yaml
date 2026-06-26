@@ -103,6 +103,15 @@ cases:
 - action: pfsense.config_history
   args: {}
   expect_exit: 0
+- action: pfsense.certificates
+  args: {}
+  expect_exit: 0
+- action: pfsense.certificate_authorities
+  args: {}
+  expect_exit: 0
+- action: pfsense.crls
+  args: {}
+  expect_exit: 0
 - action: pfsense.apply_filter
   args: {}
   expect_exit: 0
