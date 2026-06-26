@@ -872,60 +872,95 @@ defmodule EmisarWeb.PoliciesLive do
         </div>
       </div>
 
-      <%!-- Approval requirements: who, and how many, must approve a gated
-           action. Defaults (1 distinct approver, self-approval allowed)
-           reproduce single-approver behavior. --%>
+      <%!-- Approval requirements: the mode (single-operator vs four-eyes) and how
+           many distinct operators must approve. Defaults to single-operator (1
+           approval, self-approval allowed) — buyers pick four-eyes for a second party. --%>
       <div>
         <h3 class="text-sm font-semibold text-zinc-200">Approval requirements</h3>
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
-            <.input
-              type="number"
-              name="policy[approval][min_approvals]"
-              value={@approval["min_approvals"]}
-              label="Required approvals"
-              label_variant={:eyebrow}
-              min="1"
-              step="1"
-              disabled={!@can_manage}
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              How many <em>distinct</em> operators must approve before the action runs.
+        <%!-- Name the security posture instead of a bare "self-approval" box.
+             Both radios post `allow_self_approval` (true = single-operator,
+             false = four-eyes), so the form state + merge_approval are unchanged
+             — a radio group always posts the selected value, no hidden companion. --%>
+        <div class="mt-3">
+          <.label variant={:eyebrow}>Approval mode</.label>
+        </div>
+        <div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label class={[
+            "block rounded-lg border bg-black/30 p-3 transition",
+            @can_manage && "cursor-pointer",
+            if(@approval["allow_self_approval"],
+              do: "border-zinc-800 hover:border-zinc-700",
+              else: "border-brand-500/50 ring-1 ring-brand-500/20"
+            )
+          ]}>
+            <span class="flex items-center gap-2">
+              <input
+                type="radio"
+                name="policy[approval][allow_self_approval]"
+                value="false"
+                checked={!@approval["allow_self_approval"]}
+                disabled={!@can_manage}
+                class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
+              />
+              <span class="text-sm font-medium text-zinc-100">Four-eyes approval</span>
+            </span>
+            <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+              A <em>different</em>
+              operator must approve — the requester can't approve their own action.
             </p>
-          </div>
-          <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
-            <.label variant={:eyebrow}>
-              Self-approval
-            </.label>
-            <%!-- `unchecked_value` emits the companion hidden input so an
-                 unchecked box still posts a value — a native checkbox posts
-                 nothing when off. --%>
-            <.checkbox
-              class="mt-1 flex items-center gap-2 text-sm text-zinc-200"
-              name="policy[approval][allow_self_approval]"
-              value="true"
-              unchecked_value="false"
-              checked={@approval["allow_self_approval"]}
-              disabled={!@can_manage}
-              label="Let the requester approve their own action"
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              Off requires a <em>different</em> operator to approve.
+          </label>
+          <label class={[
+            "block rounded-lg border bg-black/30 p-3 transition",
+            @can_manage && "cursor-pointer",
+            if(@approval["allow_self_approval"],
+              do: "border-brand-500/50 ring-1 ring-brand-500/20",
+              else: "border-zinc-800 hover:border-zinc-700"
+            )
+          ]}>
+            <span class="flex items-center gap-2">
+              <input
+                type="radio"
+                name="policy[approval][allow_self_approval]"
+                value="true"
+                checked={@approval["allow_self_approval"]}
+                disabled={!@can_manage}
+                class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
+              />
+              <span class="text-sm font-medium text-zinc-100">Single-operator approval</span>
+            </span>
+            <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+              The requester can approve their own action. Right for a solo account, but it adds no second reviewer.
             </p>
-          </div>
+          </label>
         </div>
 
-        <%!-- A "require approval" tier that adds no SECOND party: one approval is
-             needed AND the requester may give it. We don't block it (self-approval
-             is a deliberate option), but an operator who set a tier to "require
-             approval" should know the defaults didn't actually add a reviewer. --%>
+        <div class="mt-3 max-w-[14rem]">
+          <.input
+            type="number"
+            name="policy[approval][min_approvals]"
+            value={@approval["min_approvals"]}
+            label="Required approvals"
+            label_variant={:eyebrow}
+            min="1"
+            step="1"
+            disabled={!@can_manage}
+          />
+          <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            How many <em>distinct</em> operators must approve before the action runs.
+          </p>
+        </div>
+
+        <%!-- Single-operator mode with 1 required approval adds no SECOND party:
+             the requester may supply the one approval. A deliberate choice for
+             solo accounts, but flag it so "require approval" isn't mistaken for
+             four-eyes. --%>
         <.notice :if={single_reviewer_gate?(@approval)} variant={:warning} class="mt-3">
-          With 1 required approval and self-approval on, the requester can approve their
-          own gated action — this gate adds no second reviewer. Raise required approvals
-          or turn off self-approval for four-eyes control.
+          Single-operator mode with 1 required approval adds no second reviewer — the
+          requester can approve their own gated action. Switch to four-eyes approval, or
+          raise required approvals, for a second party.
         </.notice>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override

@@ -357,14 +357,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="3"/
 
-      # The self-approval <.checkbox> renders its hidden "false" companion so an
-      # unchecked box still posts a value, and reflects the stored false
-      # (unchecked) state.
+      # Four-eyes (allow_self_approval=false) is the stored state, so the
+      # value="false" radio renders checked and value="true" (single-operator)
+      # does not.
       assert html =~
-               ~r/<input[^>]*type="hidden"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"/
+               ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
 
       refute html =~
-               ~r/<input[^>]*type="checkbox"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*checked/
+               ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
     end
 
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
@@ -455,7 +455,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
                ~r/<input(?=[^>]*\bname="policy\[approval\]\[min_approvals\]")(?=[^>]*\bdisabled)[^>]*>/
 
       assert html =~
-               ~r/<input(?=[^>]*\btype="checkbox")(?=[^>]*\bname="policy\[approval\]\[allow_self_approval\]")(?=[^>]*\bdisabled)[^>]*>/
+               ~r/<input(?=[^>]*\btype="radio")(?=[^>]*\bname="policy\[approval\]\[allow_self_approval\]")(?=[^>]*\bdisabled)[^>]*>/
     end
 
     test "another account's default policy + rulesets never appear on this page", %{conn: conn} do
