@@ -6,7 +6,7 @@ emisar is a control plane, outbound-only runner, and MCP bridge for
 letting AI tools request a finite, declared set of operational actions
 without receiving raw shell or SSH access.
 
-Status: **active private beta.** This monorepo contains the complete
+Status: **public beta.** This monorepo contains the complete
 runner, Phoenix control plane, public website, and MCP stdio bridge.
 The hosted control plane is the current supported product boundary;
 self-hosted and air-gapped deployments are not generally available.
