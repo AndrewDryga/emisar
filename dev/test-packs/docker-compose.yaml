@@ -21,6 +21,7 @@ services:
       - ../../packs:/packs:ro
       - ./bin:/opt/emisar/bin:ro
       - ./reports:/reports
+      - k3s_kubeconfig:/shared:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - packtest
@@ -308,6 +309,42 @@ services:
       - ./fixtures/snmpd.conf:/etc/snmp/snmpd.conf:ro
     networks: [packtest]
 
+  # Kubernetes SUT — single-node k3s for the kubernetes pack (43 actions). Privileged
+  # (k3s needs cgroup/mount access). --node-name pins the node name (the node_describe
+  # target); --tls-san=k3s makes the API cert valid for the `k3s` service name so
+  # runner-tools' kubectl can connect over packtest. The probe fixture auto-deploys
+  # via the manifests dir (a stable-named pod the pod_* reads target); coredns is a
+  # stable deployment for the rollout reads, and metrics-server backs nodes_top/pods_top.
+  # Only traefik is disabled (faster boot).
+  k3s:
+    image: rancher/k3s:v1.31.4-k3s1
+    command: server --node-name=harness --tls-san=k3s --disable=traefik
+    privileged: true
+    environment:
+      K3S_KUBECONFIG_MODE: "666"
+      K3S_KUBECONFIG_OUTPUT: /shared/kubeconfig.yaml
+    volumes:
+      - k3s_kubeconfig:/shared
+      - ./fixtures/k8s-probe.yaml:/var/lib/rancher/k3s/server/manifests/probe.yaml:ro
+    networks: [packtest]
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get nodes | grep -q ' Ready'"]
+      interval: 10s
+      retries: 20
+
+  # One-shot: rewrite the k3s-written kubeconfig's server 127.0.0.1 -> k3s (the service
+  # name, reachable over packtest) so runner-tools' kubectl connects. Waits, rewrites, exits.
+  k3s-kubeconfig:
+    image: busybox:1.36
+    depends_on: [k3s]
+    volumes:
+      - k3s_kubeconfig:/shared
+    command: sh -c 'until [ -f /shared/kubeconfig.yaml ]; do sleep 1; done; sed -i "s#https://127.0.0.1:6443#https://k3s:6443#" /shared/kubeconfig.yaml; echo kubeconfig-rewritten'
+    networks: [packtest]
+
 networks:
   packtest:
     driver: bridge
+
+volumes:
+  k3s_kubeconfig:

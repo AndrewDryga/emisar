@@ -38,6 +38,7 @@ execution:
     - ELASTIC_USER
     - ENVOY_ADMIN
     - KAFKA_BOOTSTRAP
+    - KUBECONFIG
     - MONGO_URI
     - MYSQL_HOST
     - MYSQL_PWD

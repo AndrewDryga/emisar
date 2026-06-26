@@ -1,0 +1,15 @@
+# Auto-deployed by k3s (mounted into /var/lib/rancher/k3s/server/manifests/) so the
+# kubernetes pack's pod-targeting reads (pod_describe / pod_logs / events_for_pod)
+# have a stable-named target. Sleeps so it stays Running for the harness run.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe
+  namespace: default
+  labels: { app: probe }
+spec:
+  containers:
+  - name: probe
+    image: busybox:1.36
+    command: ["sh","-c","echo harness-probe-log; sleep 3600"]
+  restartPolicy: Never
