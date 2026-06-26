@@ -1295,45 +1295,52 @@ defmodule EmisarWeb.SSOSettingsLive do
         </div>
       </div>
 
-      <%!-- IdP-side SCIM setup — the base URL + bearer are above; this is how to
-           wire them into the provider, plus the externalId↔subject note that
-           keeps a member's SSO login and their synced record one identity. --%>
-      <div
+      <%!-- IdP-side SCIM setup — collapsed once enabled so a working connection
+           doesn't dump its setup steps every visit; auto-opens right after the
+           token's minted (you're mid-setup then). The base URL + bearer are
+           above; this is how to wire them in, plus the externalId↔subject note. --%>
+      <details
         :if={@provider.scim_enabled}
-        class="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+        class="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40"
+        {if(@revealed_token, do: %{open: ""}, else: %{})}
       >
-        <p class="text-sm font-medium text-zinc-200">Point your IdP at this connection</p>
-        <ol class="mt-3 space-y-2.5 text-xs leading-relaxed text-zinc-400">
-          <li>
-            <span class="font-semibold text-zinc-300">1.</span>
-            Enable SCIM provisioning {scim_location_hint(@provider.kind)}.
-          </li>
-          <li>
-            <span class="font-semibold text-zinc-300">2.</span>
-            Set the <span class="text-zinc-300">base URL</span>
-            above as the connector's SCIM endpoint and paste the
-            <span class="text-zinc-300">bearer token</span>
-            into its <span class="text-zinc-300">API token</span>
-            field (rotate above if you didn't copy it) — it's sent in the
-            <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
-            header.
-          </li>
-          <li>
-            <span class="font-semibold text-zinc-300">3.</span>
-            Map the SCIM <span class="text-zinc-300">externalId</span>
-            to the same value your OIDC
-            <code class="rounded bg-zinc-900 px-1 py-0.5">{@provider.identifier_claim}</code>
-            claim carries — so a member's SSO login and their synced record are one identity.
-          </li>
-        </ol>
-        <p :if={@provider.kind == :okta} class="mt-3 text-[11px] leading-relaxed text-zinc-500">
-          The SCIM app is a second Okta integration, separate from your sign-in app — its own
-          SSO doesn't need to be functional. Okta defaults both the OIDC
-          <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
-          and the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5">externalId</code>
-          to the Okta user id, so step 3 usually needs no change.
-        </p>
-      </div>
+        <summary class="flex cursor-pointer items-center justify-between gap-3 p-4 text-sm font-medium text-zinc-200 hover:bg-zinc-900/60">
+          <span>Point your IdP at this connection</span>
+          <span class="text-xs font-normal text-zinc-500">setup steps</span>
+        </summary>
+        <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
+          <ol class="space-y-2.5 text-xs leading-relaxed text-zinc-400">
+            <li>
+              <span class="font-semibold text-zinc-300">1.</span>
+              Enable SCIM provisioning {scim_location_hint(@provider.kind)}.
+            </li>
+            <li>
+              <span class="font-semibold text-zinc-300">2.</span>
+              Set the <span class="text-zinc-300">base URL</span>
+              above as the connector's SCIM endpoint and paste the
+              <span class="text-zinc-300">bearer token</span>
+              into its <span class="text-zinc-300">API token</span>
+              field (rotate above if you didn't copy it) — it's sent in the
+              <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
+              header.
+            </li>
+            <li>
+              <span class="font-semibold text-zinc-300">3.</span>
+              Map the SCIM <span class="text-zinc-300">externalId</span>
+              to the same value your OIDC
+              <code class="rounded bg-zinc-900 px-1 py-0.5">{@provider.identifier_claim}</code>
+              claim carries — so a member's SSO login and their synced record are one identity.
+            </li>
+          </ol>
+          <p :if={@provider.kind == :okta} class="mt-3 text-[11px] leading-relaxed text-zinc-500">
+            The SCIM app is a second Okta integration, separate from your sign-in app — its own
+            SSO doesn't need to be functional. Okta defaults both the OIDC
+            <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
+            and the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5">externalId</code>
+            to the Okta user id, so step 3 usually needs no change.
+          </p>
+        </div>
+      </details>
 
       <%!-- Group → role mapping — only when directory sync is on. Maps an IdP
            group (by its SCIM externalId) to the role a member in it lands at;
