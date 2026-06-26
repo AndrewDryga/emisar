@@ -45,7 +45,24 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
-  @doc "Spend one attempt on a magic-link token (a wrong nonce or secret)."
+  @doc """
+  Email-change step-up token. A 6-digit code (only its digest is stored) is
+  emailed to the user's CURRENT address; `sent_to` binds the NEW email this
+  code authorizes, so a code can only confirm the exact change it was issued
+  for. `attempts` caps online guessing of the code.
+  """
+  def email_change(%Users.User{} = user, digest, new_email, attempts)
+      when is_binary(digest) and is_binary(new_email) and is_integer(attempts) do
+    change(%UserToken{},
+      token: digest,
+      context: "email_change",
+      sent_to: new_email,
+      user_id: user.id,
+      remaining_attempts: attempts
+    )
+  end
+
+  @doc "Spend one attempt on a split-code step-up token (a wrong nonce/secret/code)."
   def decrement_attempts(%UserToken{remaining_attempts: n} = token) when is_integer(n),
     do: change(token, remaining_attempts: n - 1)
 

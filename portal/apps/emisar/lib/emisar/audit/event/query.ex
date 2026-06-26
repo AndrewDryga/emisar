@@ -49,6 +49,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.invited", "User invited"},
     {"user.invitation_accepted", "User accepted invitation"},
     {"user.email_confirmed", "Email confirmed"},
+    {"user.email_change_requested", "Email change requested"},
     {"user.email_changed", "Email changed"},
     {"user.profile_updated", "Profile updated"},
     {"user.updated_by_admin", "Profile edited by admin"},
@@ -175,6 +176,7 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Account security",
      [
+       {"user.email_change_requested", "Email change requested"},
        {"user.email_changed", "Email changed"},
        {"user.profile_updated", "Profile updated"},
        {"user.updated_by_admin", "Profile edited by admin"},

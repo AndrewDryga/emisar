@@ -18,6 +18,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> assign_mfa_form()
+     |> reset_email_step()
      |> maybe_load_sessions()}
   end
 
@@ -83,22 +84,71 @@ defmodule EmisarWeb.ProfileLive do
     {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
   end
 
+  # Email is identity-defining — it controls every future magic link — so a
+  # self-service change is credential-grade: the submit only STARTS a step-up
+  # (an MFA-on user re-enters a TOTP code; everyone else confirms a one-time
+  # code emailed to their CURRENT address) and the change commits only after
+  # `confirm_email_change` verifies it. A stolen session alone — no second
+  # factor, no inbox — can't pass it.
   def handle_event("save_email", %{"email" => params}, socket) do
+    user = socket.assigns.current_user
     new_email = String.trim(params["email"] || "")
+    changeset = Users.change_user(user, %{"email" => new_email})
 
-    # No current-password challenge — passwords are gone, and the authenticated
-    # session is the proof-of-control (same as an SSO-provisioned user).
-    case Users.update_user_email(new_email, socket.assigns.current_subject) do
-      {:ok, updated} ->
+    cond do
+      not changeset.valid? ->
+        changeset = Map.put(changeset, :action, :validate)
+        {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
+
+      not Map.has_key?(changeset.changes, :email) ->
+        {:noreply, put_flash(socket, :info, "That's already your email.")}
+
+      true ->
+        {:noreply, start_email_step_up(socket, user, new_email)}
+    end
+  end
+
+  def handle_event("confirm_email_change", %{"email_step" => %{"code" => code}}, socket) do
+    user = socket.assigns.current_user
+    subject = socket.assigns.current_subject
+
+    with {:ok, new_email} <- verify_email_step_up(socket, user, String.trim(code || "")),
+         {:ok, updated} <- Users.update_user_email(new_email, subject) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Email updated.")
+       |> assign(:current_user, updated)
+       |> assign_email_form(updated)
+       |> reset_email_step()}
+    else
+      {:error, :replay} ->
+        {:noreply,
+         put_flash(socket, :error, "That code was just used — wait a moment for the next one.")}
+
+      {:error, :invalid} ->
+        {:noreply, put_flash(socket, :error, step_up_error(socket.assigns.email_step))}
+
+      # Step-up passed but the email itself was rejected (e.g. now taken) — the
+      # one-time proof is spent, so send them back to the start.
+      {:error, %Ecto.Changeset{}} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Email updated.")
-         |> assign(:current_user, updated)
-         |> assign_email_form(updated)}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
+         |> put_flash(:error, "Could not change to that email — it may already be in use.")
+         |> reset_email_step()}
     end
+  end
+
+  def handle_event("resend_email_code", _params, socket) do
+    user = socket.assigns.current_user
+    Auth.issue_email_change_code(socket.assigns.pending_new_email, socket.assigns.current_subject)
+    {:noreply, put_flash(socket, :info, "We sent a new code to #{user.email}.")}
+  end
+
+  def handle_event("cancel_email_change", _params, socket) do
+    {:noreply,
+     socket
+     |> assign_email_form(socket.assigns.current_user)
+     |> reset_email_step()}
   end
 
   def handle_event("revoke_session", %{"id" => id}, socket) do
@@ -241,6 +291,48 @@ defmodule EmisarWeb.ProfileLive do
     assign(socket, :email_form, to_form(changeset, as: "email"))
   end
 
+  # Email-change step-up state: :idle (the edit form), :totp (an MFA-on user
+  # re-enters an authenticator code), or :code (a one-time code emailed to the
+  # current address). `pending_new_email` is the change awaiting confirmation.
+  defp reset_email_step(socket) do
+    socket
+    |> assign(:email_step, :idle)
+    |> assign(:pending_new_email, nil)
+    |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
+  end
+
+  defp start_email_step_up(socket, user, new_email) do
+    socket = assign(socket, :pending_new_email, new_email)
+
+    if socket.assigns.mfa_enabled? do
+      assign(socket, :email_step, :totp)
+    else
+      Auth.issue_email_change_code(new_email, socket.assigns.current_subject)
+
+      socket
+      |> assign(:email_step, :code)
+      |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
+    end
+  end
+
+  # MFA-on → the TOTP second factor stands in for re-auth; otherwise → the
+  # emailed code proves current-inbox control. Both yield the email to apply.
+  defp verify_email_step_up(socket, user, code) do
+    case socket.assigns.email_step do
+      :totp ->
+        with :ok <- Auth.verify_mfa(user, code, socket.assigns.current_subject.context),
+             do: {:ok, socket.assigns.pending_new_email}
+
+      :code ->
+        Auth.verify_email_change_code(code, socket.assigns.current_subject)
+    end
+  end
+
+  defp step_up_error(:totp), do: "That authenticator code didn't match. Try again."
+
+  defp step_up_error(_),
+    do: "That confirmation code is wrong or expired. Try again, or resend a new one."
+
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
   end
@@ -342,28 +434,76 @@ defmodule EmisarWeb.ProfileLive do
 
         <.settings_section
           title="Email"
-          hint="Used to sign in. Changing it takes effect immediately."
+          hint="Used to sign in. A change is confirmed with a second step before it takes effect."
         >
-          <.simple_form
-            for={@email_form}
-            id="email_form"
-            phx-change="validate_email"
-            phx-submit="save_email"
-          >
-            <.input
-              field={@email_form[:email]}
-              type="email"
-              label="Email address"
-              autocomplete="email"
-              required
-            />
-            <p class="text-xs text-amber-200/70">
-              This takes effect immediately — you'll sign in with the new address from now on.
-            </p>
-            <:actions>
-              <.button phx-disable-with="Updating...">Update email</.button>
-            </:actions>
-          </.simple_form>
+          <%= case @email_step do %>
+            <% :idle -> %>
+              <.simple_form
+                for={@email_form}
+                id="email_form"
+                phx-change="validate_email"
+                phx-submit="save_email"
+              >
+                <.input
+                  field={@email_form[:email]}
+                  type="email"
+                  label="Email address"
+                  autocomplete="email"
+                  required
+                />
+                <p class="text-xs text-amber-200/70">
+                  Your email controls every future sign-in link, so we'll ask you to confirm a
+                  change before it takes effect.
+                </p>
+                <:actions>
+                  <.button phx-disable-with="Checking...">Update email</.button>
+                </:actions>
+              </.simple_form>
+            <% step -> %>
+              <.simple_form
+                for={@email_step_form}
+                id="email_step_form"
+                phx-submit="confirm_email_change"
+              >
+                <p class="text-sm text-zinc-300">
+                  Confirm changing your email to <span class="font-medium text-zinc-100">{@pending_new_email}</span>.
+                </p>
+                <p :if={step == :code} class="text-xs text-amber-200/70">
+                  We emailed a 6-digit code to your current address ({@current_user.email}). Entering
+                  it proves it's really you — an open session alone can't change your email.
+                </p>
+                <p :if={step == :totp} class="text-xs text-amber-200/70">
+                  Enter the code from your authenticator app — your second factor confirms the change.
+                </p>
+                <.input
+                  field={@email_step_form[:code]}
+                  type="text"
+                  label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
+                  autocomplete="one-time-code"
+                  required
+                />
+                <:actions>
+                  <.button phx-disable-with="Confirming...">Confirm change</.button>
+                  <.button
+                    :if={step == :code}
+                    variant="secondary"
+                    size="md"
+                    type="button"
+                    phx-click="resend_email_code"
+                  >
+                    Resend code
+                  </.button>
+                  <.button
+                    variant="secondary"
+                    size="md"
+                    type="button"
+                    phx-click="cancel_email_change"
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+          <% end %>
         </.settings_section>
 
         <.settings_section

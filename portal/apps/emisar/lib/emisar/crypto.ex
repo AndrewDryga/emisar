@@ -99,6 +99,19 @@ defmodule Emisar.Crypto do
   def magic_link_digest(nonce, secret) when is_binary(nonce) and is_binary(secret),
     do: hash(nonce <> secret)
 
+  @doc """
+  Mints an email-change step-up code as `{code, digest}` — a 6-digit code
+  emailed to the user's CURRENT address to re-prove control before the
+  identity-defining email is changed. Only `digest = hash(code)` is stored.
+  Unlike the magic link there's no browser nonce: the authenticated session
+  IS the second factor, so the code stands alone, and a tight attempts budget
+  plus a short expiry bound online guessing.
+  """
+  def email_change_code do
+    code = numeric_code(@magic_link_code_digits)
+    {code, hash(code)}
+  end
+
   # Crypto-random zero-padded N-digit code. 8 random bytes mod 10^N — the
   # modulo bias over 64 bits is ~5e-14, negligible for a code whose security
   # is the nonce, not its own entropy.

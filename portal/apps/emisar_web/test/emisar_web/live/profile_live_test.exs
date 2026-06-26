@@ -8,9 +8,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # The email form warns the change is immediate (the sign-in identity
-      # flips right away).
-      assert html =~ "takes effect immediately"
+      # The email form tells the operator a change takes a second step.
+      assert html =~ "confirmed with a second step"
 
       # The email-format check is a field error driven by phx-change.
       html =
@@ -39,19 +38,61 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "email form" do
-    test "the authenticated session is the proof — the email changes (no password)", %{
+    test "a change needs a confirmation code (no MFA) — not applied until confirmed", %{
       conn: conn
     } do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
+      # Submitting only STARTS the step-up — the email is not changed yet.
       html =
         lv
         |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
         |> render_submit()
 
+      assert html =~ "emailed a confirmation code"
+      assert html =~ "Confirm change"
+      assert Emisar.Repo.reload!(user).email == user.email
+
+      # A wrong code is refused and the email stays put.
+      html =
+        lv
+        |> form("#email_step_form", %{"email_step" => %{"code" => "000000"}})
+        |> render_submit()
+
+      assert html =~ "wrong or expired"
+      assert Emisar.Repo.reload!(user).email == user.email
+    end
+
+    test "an MFA-on user confirms with a TOTP code, then the email changes", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      secret = Auth.generate_mfa_secret()
+      {:ok, _user, _codes} = Emisar.Fixtures.enroll_mfa(secret, owner_subject(user, account))
+
+      # Clear the consumed-bucket marker so a fresh code this same 30s window
+      # isn't read as a replay of the enrollment code.
+      {:ok, _} = user |> Ecto.Changeset.change(mfa_last_used_at: nil) |> Emisar.Repo.update()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      # MFA-on → an authenticator prompt, no emailed code.
+      html =
+        lv
+        |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
+        |> render_submit()
+
+      assert html =~ "authenticator"
+      assert Emisar.Repo.reload!(user).email == user.email
+
+      html =
+        lv
+        |> form("#email_step_form", %{
+          "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
+        })
+        |> render_submit()
+
       assert html =~ "Email updated."
-      assert Emisar.Repo.reload!(user).email == "fresh@example.com"
+      assert Emisar.Repo.reload!(user).email == "mfa-fresh@example.com"
     end
 
     test "a malformed email is refused with an inline changeset error", %{conn: conn} do
@@ -67,6 +108,21 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "must have the @ sign and no spaces"
       assert Emisar.Repo.reload!(user).email == original_email
+    end
+
+    test "cancelling the step-up returns to the form, email unchanged", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+      |> render_submit()
+
+      html = lv |> element("#email_step_form button", "Cancel") |> render_click()
+
+      assert html =~ "Email address"
+      refute html =~ "Confirm change"
+      assert Emisar.Repo.reload!(user).email == user.email
     end
   end
 

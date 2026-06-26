@@ -62,6 +62,22 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
+  def deliver_email_change_code(%Users.User{} = user, code) do
+    deliver(user.email, "Confirm your emisar email change", """
+    Someone asked to change the email address on your emisar account.
+
+    To confirm the change, enter this code on the email-change form:
+
+        #{code}
+
+    The code works once and expires in 15 minutes. If you didn't request this,
+    you can safely ignore this email — your address is unchanged, and whoever
+    asked can't proceed without this code sent here.
+
+    — emisar
+    """)
+  end
+
   @doc """
   Notifies an approver that a run is waiting on their decision. The
   link lands on the approval detail page; the approver must be signed

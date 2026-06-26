@@ -162,6 +162,75 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "email-change step-up code" do
+    test "issues a 6-digit code to the current address, bound to the new email" do
+      {user, _account, subject} = owner_subject_fixture()
+      current = user.email
+
+      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+
+      assert_received {:email, email}
+      assert [{_, ^current}] = email.to
+      assert email.subject =~ "email change"
+      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      # The right code confirms and hands back the bound email; single-use.
+      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "a wrong code is rejected and spends an attempt; the right one still works" do
+      {_user, _account, subject} = owner_subject_fixture()
+      :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert_received {:email, email}
+      [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "the code locks after the attempt budget is spent" do
+      {_user, _account, subject} = owner_subject_fixture()
+      :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert_received {:email, email}
+      [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      for _ <- 1..5,
+          do: assert({:error, :invalid} = Auth.verify_email_change_code("000000", subject))
+
+      # Budget spent → even the right code no longer loads a token.
+      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "an expired code is rejected" do
+      {user, _account, subject} = owner_subject_fixture()
+      :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert_received {:email, email}
+      [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      age_tokens(user.id, 16)
+      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "verifying with no outstanding code is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+      assert {:error, :invalid} = Auth.verify_email_change_code("123456", subject)
+    end
+
+    test "issuing again replaces the prior code (single outstanding)" do
+      {_user, _account, subject} = owner_subject_fixture()
+      :ok = Auth.issue_email_change_code("first@example.com", subject)
+      assert_received {:email, first_email}
+      [first_code] = Regex.run(~r/\d{6}/, first_email.text_body)
+
+      :ok = Auth.issue_email_change_code("second@example.com", subject)
+      assert_received {:email, _second_email}
+
+      # The first code is gone; only the latest issuance verifies.
+      assert {:error, :invalid} = Auth.verify_email_change_code(first_code, subject)
+    end
+  end
+
   describe "MFA" do
     test "generate_mfa_secret returns a binary suitable for NimbleTOTP" do
       secret = Auth.generate_mfa_secret()

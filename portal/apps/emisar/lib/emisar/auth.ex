@@ -422,6 +422,83 @@ defmodule Emisar.Auth do
     end
   end
 
+  # -- Email-change step-up --------------------------------------------
+
+  # Online-guess budget for the 6-digit email-change step-up code.
+  @email_change_attempts 5
+
+  @doc """
+  Mints + emails a 6-digit step-up code to the user's CURRENT address, binding
+  it to `new_email`. A self-service email change must re-enter it first, so the
+  identity-defining field (it controls every future magic link) gets a
+  credential-grade gate a stolen session alone can't pass. Deletes any prior
+  outstanding email-change code (single outstanding). Best-effort delivery;
+  returns `:ok`.
+  """
+  def issue_email_change_code(new_email, %Subject{actor: %Users.User{} = user} = subject)
+      when is_binary(new_email) do
+    {code, digest} = Crypto.email_change_code()
+
+    prior =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("email_change")
+
+    {:ok, _} =
+      Multi.new()
+      |> Multi.delete_all(:prior, prior)
+      |> Multi.insert(
+        :token,
+        UserToken.Changeset.email_change(user, digest, new_email, @email_change_attempts)
+      )
+      |> Audit.Multi.log_for_user(:audit, user, "user.email_change_requested",
+        extra: [context: subject.context]
+      )
+      |> Repo.commit_multi()
+
+    _ = Emisar.Mailers.UserNotifier.deliver_email_change_code(user, code)
+    :ok
+  end
+
+  @doc """
+  Verifies an email-change step-up code against the user's locked `email_change`
+  token. Returns `{:ok, new_email}` — the email the code was bound to, for the
+  caller to pass straight to `Users.update_user_email/2` — on a match
+  (single-use: the token is consumed), or `{:error, :invalid}` for a
+  wrong/expired/spent code (a wrong code spends one of the #{@email_change_attempts}
+  attempts).
+  """
+  def verify_email_change_code(code, %Subject{actor: %Users.User{} = user})
+      when is_binary(code) do
+    Multi.new()
+    |> Multi.run(:token, fn repo, _changes ->
+      loaded_token =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("email_change")
+        |> UserToken.Query.not_expired("email_change")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
+    end)
+    |> Multi.run(:outcome, fn repo, %{token: token} ->
+      if Crypto.secure_compare(Crypto.hash(code), token.token) do
+        # Match → single-use: consume the token, hand back the bound email.
+        {:ok, _} = repo.delete(token)
+        {:ok, {:ok, token.sent_to}}
+      else
+        # Wrong code → spend one attempt. `{:ok, …}` so the decrement COMMITS.
+        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{outcome: outcome}} -> outcome
+      {:error, _} -> {:error, :invalid}
+    end
+  end
+
   # -- Email confirmation ----------------------------------------------
 
   @doc "Internal — the email-confirmation flow (registration / pre-auth) mints the confirm token; no Subject yet."
