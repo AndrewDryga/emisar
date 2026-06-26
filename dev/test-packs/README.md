@@ -50,6 +50,11 @@ cases:
 ## Running
 
 ```sh
+# 1. Build the emisar runner binary into ./bin (git-ignored, mounted read-only at
+#    /opt/emisar/bin). It must be a LINUX binary matching the container's arch —
+#    `go env GOARCH` gives the host arch, which is also the default image platform.
+( cd runner && GOOS=linux GOARCH="$(go env GOARCH)" go build -o ../dev/test-packs/bin/emisar . )
+
 # Build the runner-tools image (one-time)
 docker compose -f dev/test-packs/docker-compose.yaml build runner-tools
 

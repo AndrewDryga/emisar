@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file findutils grep gawk sed jq nano vim-tiny \
     git openssl openssh-client \
     psmisc lsof strace gdb sysstat netcat-openbsd ngrep \
-    iptables nftables conntrack iproute2 tcpdump \
-    chrony ntp \
+    iptables nftables conntrack tcpdump \
+    chrony \
     rsync xz-utils zstd \
     python3 python3-pip python3-venv python3-yaml \
     nodejs npm \
@@ -19,9 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client mariadb-client redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# yq for cases.yaml parsing in harness.sh
-RUN curl -sSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture)" \
-    -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+# cases.yaml is parsed by harness.sh with jq (base apt) on JSON converted from
+# YAML by python3 — no yq needed.
 
 # AWS CLI v2
 RUN curl -sSL "https://awscli.amazonaws.com/awscli-exoscale-linux-$(uname -m).zip" -o /tmp/awscli.zip 2>/dev/null \

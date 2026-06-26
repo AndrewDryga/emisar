@@ -22,6 +22,9 @@ set -uo pipefail
 PACK="${1:?usage: harness.sh <pack-name>}"
 EMISAR="${EMISAR:-/opt/emisar/bin/emisar}"
 PACK_DIR="${PACK_DIR:-/packs}"
+# `emisar action run` needs a config (packs dir + execution.inherit_env); without
+# --config it falls back to /etc/emisar/config.yaml, which the image doesn't have.
+CONFIG="${EMISAR_CONFIG:-/workspace/test-packs/test-config.yaml}"
 CASES_FILE="$PACK_DIR/$PACK/test/cases.yaml"
 
 if [ ! -f "$CASES_FILE" ]; then
@@ -29,26 +32,35 @@ if [ ! -f "$CASES_FILE" ]; then
     exit 2
 fi
 
-# Pull defaults.env keys then for each case run emisar action run.
-# Uses yq to parse YAML. If yq missing, install or fail loud.
-if ! command -v yq >/dev/null 2>&1; then
-    echo "yq not installed in runner-tools image; can't parse cases"
+# cases.yaml is parsed with jq, on JSON produced from the YAML by python3 — the
+# expressions below are jq's (to_entries, \(...), // empty), and jq is the
+# unambiguous, always-available tool in the image. (mikefarah yq speaks a
+# different language and silently dropped skips/args.)
+for tool in jq python3; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "$tool not installed in runner-tools image; can't parse cases"
+        exit 3
+    fi
+done
+
+CASES_JSON=$(python3 -c 'import yaml, json, sys; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)' "$CASES_FILE") || {
+    echo "failed to parse $CASES_FILE as YAML"
     exit 3
-fi
+}
 
 # Export defaults.env to current shell
 while IFS='=' read -r k v; do
     [ -n "$k" ] && export "$k=$v"
-done < <(yq -r '.defaults.env // {} | to_entries[] | "\(.key)=\(.value)"' "$CASES_FILE")
+done < <(jq -r '.defaults.env // {} | to_entries[] | "\(.key)=\(.value)"' <<<"$CASES_JSON")
 
 PASS=0
 FAIL=0
 SKIP=0
-N=$(yq -r '.cases | length' "$CASES_FILE")
+N=$(jq -r '.cases | length' <<<"$CASES_JSON")
 
 for i in $(seq 0 $((N-1))); do
-    action=$(yq -r ".cases[$i].action" "$CASES_FILE")
-    skip=$(yq -r ".cases[$i].skip // empty" "$CASES_FILE")
+    action=$(jq -r ".cases[$i].action" <<<"$CASES_JSON")
+    skip=$(jq -r ".cases[$i].skip // empty" <<<"$CASES_JSON")
     if [ -n "$skip" ]; then
         echo "SKIP $action — $skip"
         SKIP=$((SKIP+1))
@@ -56,17 +68,18 @@ for i in $(seq 0 $((N-1))); do
     fi
 
     # Collect --arg key=value flags
-    mapfile -t args < <(yq -r ".cases[$i].args // {} | to_entries[] | \"--arg\\n\(.key)=\(.value)\"" "$CASES_FILE")
-    reason=$(yq -r ".cases[$i].reason // \"smoke\"" "$CASES_FILE")
-    expect_exit=$(yq -r ".cases[$i].expect_exit // 0" "$CASES_FILE")
+    mapfile -t args < <(jq -r ".cases[$i].args // {} | to_entries[] | \"--arg\\n\(.key)=\(.value)\"" <<<"$CASES_JSON")
+    reason=$(jq -r ".cases[$i].reason // \"smoke\"" <<<"$CASES_JSON")
+    # -c so a list renders compact ([0,1]) for the ^\[ test below.
+    expect_exit=$(jq -rc ".cases[$i].expect_exit // 0" <<<"$CASES_JSON")
 
     stdout=$(mktemp); stderr=$(mktemp)
-    "$EMISAR" action run "$action" "${args[@]}" --reason "$reason" --stream >"$stdout" 2>"$stderr"
+    "$EMISAR" --config "$CONFIG" action run "$action" "${args[@]}" --reason "$reason" --stream >"$stdout" 2>"$stderr"
     actual_exit=$?
 
     # exit-code match: either scalar or array of allowed values
     if [[ "$expect_exit" =~ ^\[ ]]; then
-        mapfile -t allowed < <(yq -r ".cases[$i].expect_exit[]" "$CASES_FILE")
+        mapfile -t allowed < <(jq -r ".cases[$i].expect_exit[]" <<<"$CASES_JSON")
         ok=0
         for a in "${allowed[@]}"; do [ "$a" = "$actual_exit" ] && ok=1; done
     else
@@ -77,11 +90,11 @@ for i in $(seq 0 $((N-1))); do
     while IFS= read -r needle; do
         [ -z "$needle" ] && continue
         if ! grep -qF -- "$needle" "$stdout"; then ok=0; fi
-    done < <(yq -r ".cases[$i].expect_stdout_contains // [] | .[]" "$CASES_FILE")
+    done < <(jq -r ".cases[$i].expect_stdout_contains // [] | .[]" <<<"$CASES_JSON")
     while IFS= read -r needle; do
         [ -z "$needle" ] && continue
         if ! grep -qF -- "$needle" "$stderr"; then ok=0; fi
-    done < <(yq -r ".cases[$i].expect_stderr_contains // [] | .[]" "$CASES_FILE")
+    done < <(jq -r ".cases[$i].expect_stderr_contains // [] | .[]" <<<"$CASES_JSON")
 
     if [ "$ok" = "1" ]; then
         echo "PASS $action  (exit=$actual_exit)"

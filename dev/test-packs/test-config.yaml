@@ -22,4 +22,34 @@ paths:
 events:
   jsonl_path: /tmp/emisar-test/events.jsonl
 
-execution: {}
+execution:
+  # The executor scrubs the action env to PATH/LANG/LC_ALL/TERM by default, so
+  # every credential/endpoint var the SUTs expose (set on the runner-tools
+  # service in docker-compose.yaml) must be allowlisted here or the actions get
+  # a silent "auth missing". Add a var here when you wire a new SUT.
+  inherit_env:
+    - CADDY_ADMIN
+    - CH_HOST
+    - CH_USER
+    - CONSUL_HTTP_ADDR
+    - ELASTIC_PASSWORD
+    - ELASTIC_USER
+    - ENVOY_ADMIN
+    - KAFKA_BOOTSTRAP
+    - MONGO_URI
+    - MYSQL_HOST
+    - MYSQL_PWD
+    - MYSQL_USER
+    - NOMAD_ADDR
+    - PGDATABASE
+    - PGHOST
+    - PGPASSWORD
+    - PGUSER
+    - PROM_URL
+    - RABBITMQ_HOST
+    - REDIS_HOST
+    - REDISCLI_AUTH
+    - SNMP_COMMUNITY
+    - SNMP_VERSION
+    - VAULT_ADDR
+    - VAULT_TOKEN
