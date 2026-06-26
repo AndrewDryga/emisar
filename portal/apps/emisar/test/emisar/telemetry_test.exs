@@ -5,7 +5,7 @@ defmodule Emisar.TelemetryTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Approvals, Runs}
+  alias Emisar.{Approvals, Repo, Runs}
 
   # Attach a one-shot handler for `event`, run `fun`, return the captured
   # measurements. The metric definition in `EmisarWeb.Telemetry` keys off this
@@ -67,6 +67,37 @@ defmodule Emisar.TelemetryTest do
       assert is_integer(measurements.disconnected)
       assert measurements.never_connected >= 1
       assert is_integer(measurements.disabled)
+    end
+  end
+
+  describe "measure_oban_queues/0" do
+    test "emits the available backlog per configured queue, tagged by queue" do
+      # An available job in :default — Repo.insert keeps it queued (Oban's
+      # runtime doesn't run it here), so it counts toward the backlog.
+      {:ok, _} =
+        %{}
+        |> Oban.Job.new(worker: Emisar.Workers.BillingSync, queue: "default")
+        |> Repo.insert()
+
+      handler = "test-oban-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :oban, :queue],
+        fn _event, measurements, meta, pid ->
+          send(pid, {:oban_queue, meta.queue, measurements.available})
+        end,
+        self()
+      )
+
+      :ok = Emisar.Telemetry.measure_oban_queues()
+      :telemetry.detach(handler)
+
+      # The default queue reports its available backlog, tagged by queue. (In
+      # test mode `:queues` is `false`, so only queues holding jobs report; in
+      # prod every configured queue reports, a drained one at 0.)
+      assert_received {:oban_queue, "default", default_available}
+      assert default_available >= 1
     end
   end
 end

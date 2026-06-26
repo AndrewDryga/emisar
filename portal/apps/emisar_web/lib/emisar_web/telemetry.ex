@@ -169,6 +169,12 @@ defmodule EmisarWeb.Telemetry do
       last_value("emisar.runners.connection.disabled",
         description: "Disabled runners (gauge)"
       ),
+      # Oban queue backlog (sampled by Emisar.Telemetry.measure_oban_queues/0)
+      # — available (waiting) jobs per queue, the "jobs piling up" alert signal.
+      last_value("emisar.oban.queue.available",
+        tags: [:queue],
+        description: "Available (waiting) Oban jobs, by queue (gauge)"
+      ),
 
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
@@ -201,7 +207,8 @@ defmodule EmisarWeb.Telemetry do
       # Fleet-wide domain gauges — each reads an aggregate and emits; the
       # matching `last_value` metric is defined above. Fleet-wide / no account_id.
       {Emisar.Telemetry, :measure_approval_queue, []},
-      {Emisar.Telemetry, :measure_runner_connections, []}
+      {Emisar.Telemetry, :measure_runner_connections, []},
+      {Emisar.Telemetry, :measure_oban_queues, []}
     ]
   end
 end
