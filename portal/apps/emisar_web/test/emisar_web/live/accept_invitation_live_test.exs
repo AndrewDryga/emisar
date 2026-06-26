@@ -5,7 +5,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
   # Mints a pending invitation and returns its token. The invitee is a
   # brand-new email (anonymous-accept flow), so the accept page renders
-  # the password-set form.
+  # the name-only join form (passwordless — a sign-in link is emailed on accept).
   defp invitation_token(account, owner) do
     email = "invitee-#{System.unique_integer([:positive])}@example.com"
     subject = owner_subject(owner, account)
@@ -14,23 +14,6 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       Accounts.invite_user_to_account(email, "operator", subject)
 
     token
-  end
-
-  describe "anonymous accept form validation" do
-    test "a too-short password renders inline on the field, not in a flash", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-
-      # Fresh, signed-out visitor — the anonymous password-set form renders.
-      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
-
-      params = %{"user" => %{"full_name" => "New Person", "password" => "short"}}
-      html = lv |> form("#accept_form", params) |> render_submit()
-
-      assert html =~ "should be at least 12 character"
-      # Old flash copy ("Could not accept: ...") is gone.
-      refute html =~ "Could not accept"
-    end
   end
 
   describe "token gate" do
@@ -68,16 +51,17 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert html =~ account.name
       assert html =~ "operator"
       assert html =~ "invitee-"
+      # Passwordless: the join form sets a name, not a password.
+      refute html =~ ~s|name="user[password]"|
 
-      params = %{
-        "user" => %{"full_name" => "New Person", "password" => "a-long-enough-password"}
-      }
+      params = %{"user" => %{"full_name" => "New Person"}}
 
       {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
 
-      # A valid accept arms the hidden POST to /sign_in (phx-trigger-action).
+      # A valid accept arms the hidden POST to the magic-link start
+      # (phx-trigger-action), so the invitee gets a one-time sign-in link.
       html = lv |> form("#accept_form", params) |> render_submit()
-      assert html =~ ~s|action="/sign_in?_action=invitation_accepted"|
+      assert html =~ ~s|action="/sign_in/magic/start"|
 
       # Accepting burns the token and completes the registration.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
@@ -94,8 +78,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     } do
       # the anonymous form shows the invited email as a
       # read-only hidden field, but the `accept` handler builds its attrs from ONLY
-      # full_name + password (never `user[email]`), so a client that rewrites the
-      # hidden value can't redirect the invitation onto a different address: the
+      # full_name (never `user[email]`), so a client that rewrites the hidden value
+      # can't redirect the invitation onto a different address: the
       # registered/confirmed user still carries the membership's invited email.
       {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
@@ -111,8 +95,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       params = %{
         "user" => %{
           "email" => "attacker@evil.test",
-          "full_name" => "New Person",
-          "password" => "a-long-enough-password"
+          "full_name" => "New Person"
         }
       }
 

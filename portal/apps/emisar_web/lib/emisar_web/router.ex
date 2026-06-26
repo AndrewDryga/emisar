@@ -126,15 +126,11 @@ defmodule EmisarWeb.Router do
       live "/sign_up", UserSignUpLive
       live "/sign_in", UserSignInLive
       live "/sign_in/magic", MagicLinkLive
-      live "/sign_in/mfa", MfaChallengeLive
 
-      # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + userpass + magic.
+      # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + magic link.
       live "/app/:account_id_or_slug/sign_in", AccountSignInLive
-      live "/reset_password", ResetPasswordLive
-      live "/reset_password/:token", ResetPasswordLive
     end
 
-    post "/sign_in", UserSessionController, :create
     # Split-code magic link: the LV form POSTs the email to :magic_link_start
     # (issues + sets the nonce cookie + mails the link/code); the email link
     # carries token_id + secret, the typed code POSTs to :magic_link_verify_code.

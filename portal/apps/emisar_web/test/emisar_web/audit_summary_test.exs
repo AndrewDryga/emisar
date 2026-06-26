@@ -45,8 +45,8 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "user.signed_in" do
     test "shows method when present" do
-      assert [{"via", "password"}] =
-               AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "password"}))
+      assert [{"via", "magic_link"}] =
+               AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "magic_link"}))
     end
 
     test "drops to empty when method missing" do
@@ -180,8 +180,8 @@ defmodule EmisarWeb.AuditSummaryTest do
     end
 
     test "accepts atom keys (test fixtures)" do
-      assert [{"via", "password"}] =
-               AuditSummary.summary_pairs(ev("user.signed_in", %{method: "password"}))
+      assert [{"via", "magic_link"}] =
+               AuditSummary.summary_pairs(ev("user.signed_in", %{method: "magic_link"}))
     end
   end
 
@@ -213,8 +213,6 @@ defmodule EmisarWeb.AuditSummaryTest do
         {"user.mfa_failed", %{"reason" => "invalid_otp"}, [{"reason", "invalid_otp"}]},
         {"user.mfa_recovery_code_used", %{"remaining" => 7}, [{"codes left", "7"}]},
         {"user.session_revoked", %{"anything" => "x"}, []},
-        {"user.email_change_failed", %{"reason" => "taken"}, [{"reason", "taken"}]},
-        {"user.password_change_failed", %{"reason" => "invalid"}, [{"reason", "invalid"}]},
         {"user.profile_updated", %{"full_name" => "Ada"}, [{"full name", "Ada"}]},
         {"user.profile_updated", %{"full_name" => ""}, []},
         {"user.updated_by_admin", %{"full_name" => "Bob"}, [{"full name", "Bob"}]},

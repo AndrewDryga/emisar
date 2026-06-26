@@ -3,9 +3,8 @@ defmodule Emisar.MfaEnforcementTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Accounts, Repo, Users}
+  alias Emisar.Accounts
   alias Emisar.Accounts.Account
-  alias Emisar.Users.User
 
   describe "update_account/3 (require_mfa)" do
     test "owner can enable; flips the column" do
@@ -49,39 +48,6 @@ defmodule Emisar.MfaEnforcementTest do
 
       assert {:error, :unauthorized} =
                Accounts.update_account(account, %{require_mfa: true}, operator_subject)
-    end
-  end
-
-  describe "User.valid_password?/2 after force_password_reset" do
-    test "old password stops working immediately" do
-      owner = user_fixture()
-
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
-          owner
-        )
-
-      owner_subject = subject_for(owner, account, role: :owner)
-
-      email = "t-#{System.unique_integer([:positive])}@example.com"
-
-      {:ok, user} =
-        Users.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
-
-      user = confirm_user(user)
-      {:ok, _} = Accounts.invite_user_to_account(email, "operator", owner_subject)
-      {:ok, m} = Accounts.fetch_membership_for_session(user, nil)
-
-      # Verify old password works pre-reset.
-      assert User.valid_password?(user, "Hunter222-original")
-
-      :ok = Accounts.force_password_reset(m, owner_subject)
-
-      # Reload and check.
-      reloaded = Repo.get!(User, user.id)
-      refute User.valid_password?(reloaded, "Hunter222-original")
-      assert is_nil(reloaded.hashed_password)
     end
   end
 

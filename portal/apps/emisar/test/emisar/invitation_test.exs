@@ -161,87 +161,35 @@ defmodule Emisar.InvitationTest do
       %{membership: membership}
     end
 
-    test "sets the user's password + full_name, confirms, clears the token", %{
+    test "sets the user's full_name, confirms, clears the token", %{
       membership: membership
     } do
-      attrs = %{"full_name" => "Carol", "password" => "very-long-password-1234"}
+      attrs = %{"full_name" => "Carol"}
 
       assert {:ok, %{user: user, membership: accepted_membership}} =
                Accounts.accept_invitation(membership, attrs)
 
       assert user.full_name == "Carol"
+      # Accepting the invite proves email ownership — the user is confirmed and
+      # signs in by magic link (no password is set).
       assert user.confirmed_at
       assert is_nil(accepted_membership.invitation_token_digest)
       assert accepted_membership.invitation_accepted_at
-
-      # And the user can now actually sign in.
-      assert {:ok, %_{}} =
-               Emisar.Auth.fetch_user_by_email_and_password(user.email, "very-long-password-1234")
-    end
-
-    test "rejects too-short passwords", %{membership: membership} do
-      assert {:error, %Ecto.Changeset{}} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "Carol",
-                 "password" => "short"
-               })
-    end
-
-    # the 12..128 bounds are inclusive on the
-    # invite-accept path (register_invited_user -> User.Changeset.password).
-    # Each boundary needs its own pending invite: a successful accept burns
-    # the token, so 12 and 128 are tested against fresh memberships.
-    test "accepts a 12-char and a 128-char password (anon accept)" do
-      for length <- [12, 128] do
-        account = account_fixture()
-        {_inviter, subject} = inviter_subject(account)
-
-        email = "len-#{System.unique_integer([:positive])}@example.test"
-
-        {:ok, %{membership: membership}} =
-          Accounts.invite_user_to_account(email, "viewer", subject)
-
-        assert {:ok, %{user: _}} =
-                 Accounts.accept_invitation(membership, %{
-                   "full_name" => "Lengthy",
-                   "password" => String.duplicate("a", length)
-                 })
-      end
-    end
-
-    test "rejects a 129-char password on accept", %{membership: membership} do
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "TooLong",
-                 "password" => String.duplicate("a", 129)
-               })
-
-      assert changeset.errors[:password]
     end
 
     test "a second accept with the same (stale) membership loses — first wins", %{
       membership: membership
     } do
       assert {:ok, %{user: user}} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "Carol",
-                 "password" => "winner-password-1234"
-               })
+               Accounts.accept_invitation(membership, %{"full_name" => "Carol"})
 
       # A second link holder submits after the token is burnt: judged on
       # the locked fresh row, it must fail — and crucially must NOT have
-      # overwritten the winner's password.
+      # overwritten the winner's full_name.
       assert {:error, :not_found} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "Mallory",
-                 "password" => "attacker-password-99"
-               })
+               Accounts.accept_invitation(membership, %{"full_name" => "Mallory"})
 
-      assert {:ok, _} =
-               Emisar.Auth.fetch_user_by_email_and_password(user.email, "winner-password-1234")
-
-      assert {:error, _} =
-               Emisar.Auth.fetch_user_by_email_and_password(user.email, "attacker-password-99")
+      assert {:ok, %{full_name: "Carol"}} = Emisar.Users.fetch_user_by_id(user.id)
     end
   end
 

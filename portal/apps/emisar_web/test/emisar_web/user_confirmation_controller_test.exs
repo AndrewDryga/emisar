@@ -50,17 +50,17 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
     end
 
-    test "a reset/magic token presented at the confirm endpoint is uniformly invalid", %{
+    test "a session token presented at the confirm endpoint is uniformly invalid", %{
       conn: conn
     } do
       # tokens carry a `context`; the confirm consumer
-      # matches `context == "confirm"`. A valid (but wrong-context) reset token
+      # matches `context == "confirm"`. A valid (but wrong-context) session token
       # confirms nothing — same uniform error as a bad token, and the user stays
       # unconfirmed. No cross-endpoint token reuse.
       user = unconfirmed_user()
-      reset_token = Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+      session_token = Auth.create_session_token!(user, :magic_link, false)
 
-      conn = get(conn, ~p"/confirm/#{reset_token}")
+      conn = get(conn, ~p"/confirm/#{session_token}")
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
@@ -87,8 +87,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
     {:ok, user} =
       Users.register_user(%{
         email: "unconfirmed-#{System.unique_integer([:positive])}@example.com",
-        full_name: "Unconfirmed User",
-        password: "very-long-password-1234"
+        full_name: "Unconfirmed User"
       })
 
     user

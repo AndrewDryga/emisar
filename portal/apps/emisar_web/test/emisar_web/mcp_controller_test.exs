@@ -24,8 +24,7 @@ defmodule EmisarWeb.MCPControllerTest do
     {:ok, user} =
       Users.register_user(%{
         email: "owner-#{unique()}@example.com",
-        full_name: "Test Owner",
-        password: "very-long-password-1234"
+        full_name: "Test Owner"
       })
 
     user = Emisar.Fixtures.confirm_user(user)

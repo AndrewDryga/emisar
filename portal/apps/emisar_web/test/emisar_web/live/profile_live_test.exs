@@ -3,9 +3,6 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   alias Emisar.Auth
 
-  # register_and_log_in's fixture password (conn_case.ex).
-  @password "very-long-password-here"
-
   describe "email form validation" do
     test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -15,103 +12,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       # flips right away).
       assert html =~ "takes effect immediately"
 
-      # The email-format check is a field error driven by phx-change. On
-      # submit the current-password challenge runs first, so the format
-      # error has to show before the user ever fills that in.
+      # The email-format check is a field error driven by phx-change.
       html =
         lv
-        |> form("#email_form", %{
-          "email" => %{"email" => "not-an-email", "current_password" => ""}
-        })
+        |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
         |> render_change()
 
       assert html =~ "must have the @ sign and no spaces"
-    end
-  end
-
-  describe "password form validation" do
-    test "a too-short new password renders inline, not in a flash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> form("#password_form", %{
-          "password" => %{
-            "current_password" => "very-long-password-here",
-            "password" => "short",
-            "password_confirmation" => "short"
-          }
-        })
-        |> render_submit()
-
-      assert html =~ "should be at least 12 character"
-      # Old flash copy is gone.
-      refute html =~ "Use at least 12 characters."
-    end
-
-    test "a confirmation mismatch renders inline on the confirmation field, not in a flash", %{
-      conn: conn
-    } do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> form("#password_form", %{
-          "password" => %{
-            "current_password" => "very-long-password-here",
-            "password" => "another-long-password",
-            "password_confirmation" => "does-not-match-this-one"
-          }
-        })
-        |> render_submit()
-
-      assert html =~ "does not match password"
-      refute html =~ "New passwords don&#39;t match."
-    end
-
-    test "a valid change updates the password and signs other devices out", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
-      # A second signed-in device — the change must revoke it.
-      {other_conn, _user, _account} = register_and_log_in(build_conn())
-      _ = other_conn
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> form("#password_form", %{
-          "password" => %{
-            "current_password" => @password,
-            "password" => "a-brand-new-password",
-            "password_confirmation" => "a-brand-new-password"
-          }
-        })
-        |> render_submit()
-
-      assert html =~ "Password updated. Other devices were signed out."
-
-      updated = Emisar.Repo.reload!(user)
-      assert Emisar.Users.User.valid_password?(updated, "a-brand-new-password")
-    end
-
-    test "a wrong current password is a flash, not a field error", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> form("#password_form", %{
-          "password" => %{
-            "current_password" => "not-the-real-password",
-            "password" => "a-brand-new-password",
-            "password_confirmation" => "a-brand-new-password"
-          }
-        })
-        |> render_submit()
-
-      assert html =~ "Current password is incorrect."
     end
   end
 
@@ -132,34 +39,34 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "email form" do
-    test "the current-password challenge gates the change", %{conn: conn} do
+    test "the authenticated session is the proof — the email changes (no password)", %{
+      conn: conn
+    } do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
-        |> form("#email_form", %{
-          "email" => %{"email" => "fresh@example.com", "current_password" => "wrong-password"}
-        })
-        |> render_submit()
-
-      assert html =~ "Current password is incorrect."
-      refute Emisar.Repo.reload!(user).email == "fresh@example.com"
-    end
-
-    test "with the right password the email changes", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> form("#email_form", %{
-          "email" => %{"email" => "fresh@example.com", "current_password" => @password}
-        })
+        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
         |> render_submit()
 
       assert html =~ "Email updated."
       assert Emisar.Repo.reload!(user).email == "fresh@example.com"
+    end
+
+    test "a malformed email is refused with an inline changeset error", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      original_email = user.email
+
+      html =
+        lv
+        |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
+        |> render_submit()
+
+      assert html =~ "must have the @ sign and no spaces"
+      assert Emisar.Repo.reload!(user).email == original_email
     end
   end
 
@@ -192,7 +99,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # A second device with recognizable metadata so its row renders distinctly
       # from the current session.
       _other =
-        Emisar.Auth.create_session_token!(user, :password, false, %{
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
           "ip_address" => "198.51.100.4",
           "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
@@ -215,7 +122,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # A second device — the row we'll revoke. Its session is found by being the
       # one whose token-digest is NOT the current device's.
-      other_raw = Emisar.Auth.create_session_token!(user, :password, false)
+      other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
       other_digest = Emisar.Crypto.hash(other_raw)
 
       subject = Emisar.Fixtures.subject_for(user, account)
@@ -238,7 +145,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Two devices: one current, one other. The other carries a Revoke button;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
-      other_raw = Emisar.Auth.create_session_token!(user, :password, false)
+      other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
       other_digest = Emisar.Crypto.hash(other_raw)
 
       subject = Emisar.Fixtures.subject_for(user, account)
@@ -270,7 +177,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       # 100 more sessions (register_and_log_in already created one) → 101 total.
-      for _ <- 1..100, do: Emisar.Auth.create_session_token!(user, :password, false)
+      for _ <- 1..100, do: Emisar.Auth.create_session_token!(user, :magic_link, false)
 
       subject = Emisar.Fixtures.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
@@ -293,7 +200,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       _other =
-        Emisar.Auth.create_session_token!(user, :password, false, %{
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
           "ip_address" => "203.0.113.9",
           "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Safari/17.0"
         })
@@ -325,7 +232,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # digest may ever reach the rendered rows — only id + inserted_at + the
       # ip/user-agent metadata.
       raw_token =
-        Emisar.Auth.create_session_token!(user, :password, false, %{
+        Emisar.Auth.create_session_token!(user, :magic_link, false, %{
           "ip_address" => "203.0.113.7",
           "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Firefox/126.0"
         })

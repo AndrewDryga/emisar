@@ -26,7 +26,6 @@ defmodule Emisar.Repo.Migrations.AccountsAndUsers do
       add :id, :binary_id, primary_key: true
       add :email, :citext, null: false
       add :full_name, :string
-      add :hashed_password, :string
       add :confirmed_at, :utc_datetime_usec
       add :mfa_secret, :binary
       add :mfa_enabled_at, :utc_datetime_usec

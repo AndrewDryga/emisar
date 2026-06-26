@@ -2,8 +2,8 @@ defmodule Emisar.AuthAuditTest do
   @moduledoc """
   Asserts that every security-relevant operation in the Auth + Accounts
   contexts emits the expected `Audit.Event` row. Covers sign-in / out,
-  password reset, MFA, magic link, account/membership lifecycle, and
-  per-user profile edits.
+  MFA, magic link, account/membership lifecycle, and per-user profile
+  edits.
 
   Each test seeds an owner and asserts the matching event_type appears
   in `Audit.list_events/1` scoped to that account.
@@ -130,7 +130,7 @@ defmodule Emisar.AuthAuditTest do
     end
   end
 
-  describe "magic link + password reset + confirmation" do
+  describe "magic link + confirmation" do
     setup do
       {user, account, _} = owner_subject_fixture()
       %{user: user, account: account}
@@ -153,23 +153,6 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["method"] == "magic_link"
     end
 
-    test "issue_password_reset_token! audits", %{user: user, account: account} do
-      _raw = Auth.issue_password_reset_token!(user)
-      assert [event] = events_of(account, "user.password_reset_requested")
-      assert event.actor_id == user.id
-    end
-
-    test "reset_user_password audits user.password_reset_completed", %{
-      user: user,
-      account: account
-    } do
-      raw = Auth.issue_password_reset_token!(user)
-
-      assert {:ok, _} = Auth.reset_user_password(raw, "fresh-12-chars-now")
-      assert [event] = events_of(account, "user.password_reset_completed")
-      assert event.actor_id == user.id
-    end
-
     test "confirm_user_by_token audits user.email_confirmed", %{account: account} do
       # Unconfirmed user — bypass owner_subject_fixture which auto-confirms.
       unconfirmed = user_fixture(confirmed?: false)
@@ -188,8 +171,8 @@ defmodule Emisar.AuthAuditTest do
     setup do
       {user, account, subject} = owner_subject_fixture()
       # Mint two sessions for the user.
-      _ = Auth.create_session_token!(user, :password, false)
-      keep = Auth.create_session_token!(user, :password, false)
+      _ = Auth.create_session_token!(user, :magic_link, false)
+      keep = Auth.create_session_token!(user, :magic_link, false)
       %{user: user, account: account, keep: keep, subject: subject}
     end
 
@@ -218,7 +201,7 @@ defmodule Emisar.AuthAuditTest do
     end
   end
 
-  describe "Accounts profile / email / password" do
+  describe "Accounts profile / email" do
     setup do
       {user, account, subject} = owner_subject_fixture()
       %{user: user, account: account, subject: subject}
@@ -241,54 +224,11 @@ defmodule Emisar.AuthAuditTest do
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
 
-      {:ok, _} = Users.update_user_email(new, "password-with-12-chars", subject)
+      {:ok, _} = Users.update_user_email(new, subject)
 
       assert [event] = events_of(account, "user.email_changed")
       assert event.payload["from"] == user.email
       assert event.payload["to"] == new
-    end
-
-    test "update_user_email with wrong current password audits user.email_change_failed", %{
-      account: account,
-      subject: subject
-    } do
-      assert {:error, :invalid_current_password} =
-               Users.update_user_email("new@example.test", "wrong", subject)
-
-      assert [event] = events_of(account, "user.email_change_failed")
-      assert event.payload["reason"] == "invalid_current_password"
-    end
-
-    test "change_user_password success audits user.password_changed", %{
-      user: user,
-      account: account,
-      subject: subject
-    } do
-      {:ok, _} =
-        Users.change_user_password("password-with-12-chars", "new-password-12c", subject)
-
-      assert [event] = events_of(account, "user.password_changed")
-      assert event.actor_id == user.id
-    end
-
-    test "change_user_password with wrong current audits user.password_change_failed", %{
-      account: account,
-      subject: subject
-    } do
-      assert {:error, :invalid_current_password} =
-               Users.change_user_password("wrong-password", "new-pw-12-char", subject)
-
-      assert [event] = events_of(account, "user.password_change_failed")
-      assert event.payload["reason"] == "invalid_current_password"
-    end
-
-    test "change_user_password rejects passwords below the length minimum", %{
-      subject: subject
-    } do
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Users.change_user_password("password-with-12-chars", "short", subject)
-
-      assert "should be at least 12 character(s)" in errors_on(changeset).password
     end
   end
 
@@ -574,74 +514,6 @@ defmodule Emisar.AuthAuditTest do
 
     defp audit_count(account, event_type) do
       account |> events_of(event_type) |> length()
-    end
-  end
-
-  # Admin-driven helpers must attribute the actor to the ADMIN, not the
-  # target — and must not leak through to self-service primitives that
-  # would re-record the action with the target as actor. The exact bug
-  # this guards against: prior to the fix,
-  # `Accounts.force_password_reset/2` called
-  # `Auth.issue_password_reset_token!/1` whose inline
-  # `user.password_reset_requested` audit attributed the request to the
-  # target user (sam@…) rather than the admin who clicked the button.
-  describe "admin-path attribution" do
-    setup do
-      {admin, account, admin_subject} = owner_subject_fixture()
-      target = user_fixture()
-
-      target_membership =
-        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
-
-      %{
-        admin: admin,
-        admin_subject: admin_subject,
-        account: account,
-        target: target,
-        target_membership: target_membership
-      }
-    end
-
-    test "force_password_reset audits exactly ONE event, with admin as actor and target as subject",
-         %{
-           admin: admin,
-           admin_subject: admin_subject,
-           account: account,
-           target: target,
-           target_membership: m
-         } do
-      :ok = Accounts.force_password_reset(m, admin_subject)
-
-      forced = events_of(account, "user.password_reset_forced")
-      assert [forced_ev] = forced
-      assert forced_ev.actor_id == admin.id, "actor should be the admin"
-      assert forced_ev.subject_id == target.id, "subject should be the target"
-      assert forced_ev.subject_label == target.email
-
-      # The misattributed event must NOT leak through — the inline
-      # `issue_password_reset_token!` call inside the admin path used to
-      # emit it with target=actor=target, which is the exact bug.
-      assert [] = events_of(account, "user.password_reset_requested")
-    end
-
-    test "self-service Auth.issue_password_reset_token!/1 still audits (forgot-password flow)",
-         %{target: target, account: account} do
-      # Default behavior — caller is the user requesting their own reset.
-      _ = Auth.issue_password_reset_token!(target)
-
-      assert [event] = events_of(account, "user.password_reset_requested")
-      assert event.actor_id == target.id
-      assert event.subject_id == target.id
-    end
-
-    test "the :audit false override suppresses the inline event without affecting token issuance",
-         %{target: target, account: account} do
-      raw = Auth.issue_password_reset_token!(target, audit: false)
-
-      # Token still works — the token row was inserted, only the audit
-      # was suppressed.
-      assert is_binary(raw) and byte_size(raw) > 0
-      assert [] = events_of(account, "user.password_reset_requested")
     end
   end
 

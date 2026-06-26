@@ -71,7 +71,7 @@ defmodule Emisar.Users do
 
   @doc """
   Stamp the user's last sign-in and audit `user.signed_in` (with the auth
-  `method` — `"password"`, `"password+mfa"`, `"magic_link"`) in one
+  `method` — `"magic_link"`) in one
   transaction. The audit row is silently skipped for a user with no active
   membership (no account to scope it to), matching `Audit.log_for_user/3`.
   Sign-in is the one mutation the web layer triggers pre-Subject, so the
@@ -114,29 +114,18 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Change the caller's own sign-in email after verifying their current
-  password. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, %Ecto.Changeset{}}`. Self-service — the user is the subject's
-  own actor; the current-password check is the proof-of-control gate.
-
-  Audits success (`user.email_changed`) with both addresses for traceability,
-  and failed-password attempts (`user.email_change_failed`) since wrong-password
-  on the email-change form is a credential probe worth seeing.
+  Change the caller's own sign-in email. Returns `{:ok, user} |
+  {:error, %Ecto.Changeset{}}`. Self-service — the user is the subject's own
+  actor, and the authenticated session is the proof-of-control: passwords are
+  gone, so there's no credential to re-challenge (an SSO-provisioned user has
+  none either). Audits `user.email_changed` with both addresses for traceability.
   """
-  def update_user_email(
-        new_email,
-        current_password,
-        %Subject{actor: %User{id: user_id} = user} = subject
-      )
-      when is_binary(new_email) and is_binary(current_password) do
+  def update_user_email(new_email, %Subject{actor: %User{id: user_id}} = subject)
+      when is_binary(new_email) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: fn loaded_user ->
-        if User.valid_password?(loaded_user, current_password),
-          do: User.Changeset.email(loaded_user, %{email: new_email}),
-          else: :invalid_current_password
-      end,
+      with: &User.Changeset.email(&1, %{email: new_email}),
       # `changeset.data` is the locked pre-update row — the accurate "from",
       # not `user.email` off the (possibly stale) socket-snapshot subject.
       audit: fn updated, changeset ->
@@ -146,86 +135,12 @@ defmodule Emisar.Users do
         )
       end
     )
-    |> case do
-      {:error, :invalid_current_password} ->
-        # Failed-credential probe — log it standalone since the
-        # transaction rolled back without an audit row.
-        Audit.log_for_user(user, "user.email_change_failed",
-          context: subject.context,
-          payload: %{reason: "invalid_current_password"}
-        )
-
-        {:error, :invalid_current_password}
-
-      other ->
-        other
-    end
-  end
-
-  @doc """
-  Change the caller's own sign-in password after verifying the current
-  one. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, %Ecto.Changeset{}}` — length/confirmation problems come back
-  as changeset field errors from `User.Changeset.password/2`.
-
-  Audits success (`user.password_changed`) and audit-records bad
-  current-password attempts (`user.password_change_failed`) — wrong
-  current-password on this form is a real-credential probe worth seeing.
-
-  The caller is responsible for revoking other sessions after success —
-  a successful password change implies "the old credential is blown",
-  so every other device should sign out. Self-service — the user is the
-  subject's own actor.
-  """
-  def change_user_password(
-        current_password,
-        new_password,
-        %Subject{
-          actor: %User{id: user_id} = user
-        } = subject
-      )
-      when is_binary(current_password) and is_binary(new_password) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: fn loaded_user ->
-        if User.valid_password?(loaded_user, current_password),
-          do: User.Changeset.password(loaded_user, %{password: new_password}),
-          else: :invalid_current_password
-      end,
-      audit: &Audit.user_changeset(&1, "user.password_changed", context: subject.context)
-    )
-    |> case do
-      {:error, :invalid_current_password} ->
-        # Failed-credential probe — log it standalone since the
-        # transaction rolled back without an audit row.
-        Audit.log_for_user(user, "user.password_change_failed",
-          context: subject.context,
-          payload: %{reason: "invalid_current_password"}
-        )
-
-        {:error, :invalid_current_password}
-
-      other ->
-        other
-    end
   end
 
   # -- Form builders -------------------------------------------------------
 
   def change_user(%User{} = user, attrs \\ %{}) do
-    User.Changeset.registration(user, attrs, hash_password: false)
-  end
-
-  @doc """
-  Validation-only changeset for a password change. `hash_password: false`
-  keeps it pure — no bcrypt, no `:password` consumed — so it validates
-  length + confirmation and round-trips the field for redisplay. The
-  actual change, with the current-password challenge and audit, is
-  `change_user_password/3`.
-  """
-  def change_password(%User{} = user, attrs \\ %{}) do
-    User.Changeset.password(user, attrs, hash_password: false)
+    User.Changeset.registration(user, attrs)
   end
 
   # -- Internal (Auth flows) ----------------------------------------------
@@ -234,11 +149,6 @@ defmodule Emisar.Users do
   # into its token transactions via `Multi.run`, so each runs inside the
   # caller's transaction — the User changeset internals stay private to
   # Users. Never exposed to LiveView/controllers/MCP.
-
-  @doc "Internal — Auth: set a new password after a verified reset token."
-  def reset_user_password(%User{} = user, password) when is_binary(password) do
-    user |> User.Changeset.password(%{password: password}) |> Repo.update()
-  end
 
   @doc "Internal — Auth: mark the user's email confirmed (token flow)."
   def mark_user_confirmed(%User{} = user) do
@@ -381,7 +291,7 @@ defmodule Emisar.Users do
   concurrent one.
   """
   def fetch_or_create_user_by_email(email) when is_binary(email) do
-    changeset = User.Changeset.registration(%User{}, %{email: email}, hash_password: false)
+    changeset = User.Changeset.registration(%User{}, %{email: email})
 
     with {:error, :not_found} <- fetch_user_by_email(email),
          {:ok, _} <- Repo.insert(changeset, on_conflict: :nothing) do
@@ -390,10 +300,9 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Internal — Accounts invitation accept: set the invited user's
-  full_name + password and mark them confirmed (accepting the invite
-  proves they own the email). Two updates inside the caller's
-  transaction.
+  Internal — Accounts invitation accept: set the invited user's full_name
+  and mark them confirmed (accepting the invite proves they own the email;
+  they sign in via magic link). Two updates inside the caller's transaction.
   """
   def register_invited_user(%User{} = user, %{} = attrs) do
     registration = User.Changeset.registration(user, attrs)
@@ -414,23 +323,6 @@ defmodule Emisar.Users do
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
       with: &User.Changeset.profile(&1, attrs),
-      audit: Keyword.fetch!(opts, :audit)
-    )
-  end
-
-  @doc """
-  Internal — Accounts team admin: null out the member's password hash
-  under the row lock. `User.valid_password?/2` guards on
-  `is_binary(hashed_password)`, so the old credential stops working the
-  moment this commits. The caller supplies `:audit` (forced-reset event
-  with the acting subject) and `:after_commit` (session kill + reset
-  email).
-  """
-  def clear_user_password(user_id, opts) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.clear_password/1,
       audit: Keyword.fetch!(opts, :audit)
     )
   end

@@ -2,11 +2,10 @@ defmodule Emisar.Users.User.Changeset do
   use Emisar, :changeset
   alias Emisar.Users.User
 
-  def registration(user, attrs, opts \\ []) do
+  def registration(user, attrs) do
     user
-    |> cast(attrs, [:email, :full_name, :password])
+    |> cast(attrs, [:email, :full_name])
     |> validate_email_field()
-    |> validate_optional_password(opts)
   end
 
   def email(user, attrs) do
@@ -17,13 +16,6 @@ defmodule Emisar.Users.User.Changeset do
       %{changes: %{email: _}} = changeset -> changeset
       %{} = changeset -> add_error(changeset, :email, "did not change")
     end
-  end
-
-  def password(user, attrs, opts \\ []) do
-    user
-    |> cast(attrs, [:password])
-    |> validate_confirmation(:password, message: "does not match password")
-    |> validate_password_field(opts)
   end
 
   def profile(user, attrs), do: cast(user, attrs, [:full_name])
@@ -87,8 +79,6 @@ defmodule Emisar.Users.User.Changeset do
 
   def delete(%User{} = user), do: change(user, deleted_at: DateTime.utc_now())
 
-  def clear_password(%User{} = user), do: change(user, hashed_password: nil)
-
   # The citext unique index is the uniqueness source of truth (IL-8:
   # changesets are pure — no Repo pre-check); `unique_constraint` maps
   # the violation back onto the :email field.
@@ -98,31 +88,5 @@ defmodule Emisar.Users.User.Changeset do
     |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
     |> validate_length(:email, max: 160)
     |> unique_constraint(:email)
-  end
-
-  defp validate_optional_password(changeset, opts) do
-    if get_change(changeset, :password),
-      do: validate_password_field(changeset, opts),
-      else: changeset
-  end
-
-  defp validate_password_field(changeset, opts) do
-    changeset
-    |> validate_required([:password])
-    |> validate_length(:password, min: 12, max: 128)
-    |> maybe_hash_password(opts)
-  end
-
-  defp maybe_hash_password(changeset, opts) do
-    hash_password? = Keyword.get(opts, :hash_password, true)
-    password = get_change(changeset, :password)
-
-    if hash_password? && password && changeset.valid? do
-      changeset
-      |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
-      |> delete_change(:password)
-    else
-      changeset
-    end
   end
 end

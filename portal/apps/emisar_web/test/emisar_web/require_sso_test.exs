@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RequireSSOTest do
   @moduledoc """
   Per-account `require_sso` (enforcement approach B): a member must hold an SSO
-  session FOR THIS ACCOUNT to reach it. A password/magic session — or an SSO
+  session FOR THIS ACCOUNT to reach it. A magic-link session — or an SSO
   session for a *different* account — is logged out and sent to this account's
   branded SSO sign-in. The owner-only toggle can't be turned on without an enabled
   SSO connection (no lock-out).
@@ -52,12 +52,12 @@ defmodule EmisarWeb.RequireSSOTest do
   end
 
   describe "enforcement" do
-    test "require_sso OFF — a password session reaches the account", %{conn: conn} do
+    test "require_sso OFF — a magic-link session reaches the account", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
     end
 
-    test "require_sso ON — a password session is bounced to the SSO step-up", %{conn: conn} do
+    test "require_sso ON — a magic-link session is bounced to the SSO step-up", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       _ = enabled_provider(account)
       require_sso!(account)
@@ -96,9 +96,9 @@ defmodule EmisarWeb.RequireSSOTest do
       conn: conn
     } do
       # `ensure_sso_compliant` admits ONLY an `:sso` session
-      # for this account. A magic-link session (auth_method :magic_link) is no more
-      # SSO than a password one, so it's bounced to the step-up shim even though the
-      # operator authenticated — the account demands the IdP specifically.
+      # for this account. A magic-link session (auth_method :magic_link) is not an
+      # SSO one, so it's bounced to the step-up shim even though the operator
+      # authenticated — the account demands the IdP specifically.
       {_conn, user, account} = register_and_log_in(conn)
       _ = enabled_provider(account)
       require_sso!(account)

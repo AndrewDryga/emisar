@@ -1,7 +1,8 @@
 defmodule EmisarWeb.UserSignUpLiveTest do
   @moduledoc """
   Self-serve sign-up: one form creates the user AND their free-plan
-  workspace, then arms the hidden POST that signs them in.
+  workspace, then arms the hidden POST that mails them a one-time sign-in
+  link. Passwordless — no credential is set at registration.
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -12,8 +13,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       %{
         "user" => %{
           "full_name" => "Founder Person",
-          "email" => "founder-#{System.unique_integer([:positive])}@example.com",
-          "password" => "a-long-enough-password"
+          "email" => "founder-#{System.unique_integer([:positive])}@example.com"
         },
         "account_name" => "Founder Co"
       },
@@ -21,17 +21,18 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     )
   end
 
-  test "renders the registration form", %{conn: conn} do
+  test "renders the registration form (no password to set)", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_up")
 
     assert html =~ "Start your free workspace"
     assert html =~ "Team or company name"
-    # The password length expectation is stated up front (matches the reset
-    # screen), not left to a post-submit error.
-    assert html =~ "Use at least 12 characters"
+    # Passwordless: the page states up front that a one-time link is emailed.
+    assert html =~ "one-time sign-in link"
+    refute html =~ ~s|name="user[password]"|
   end
 
-  test "the registration form carries a CSRF token for its POST to /sign_in", %{conn: conn} do
+  test "the registration form carries a CSRF token for its POST to the magic-link start",
+       %{conn: conn} do
     # the form's hidden auto-login POST rides the
     # CSRF-protected :browser pipeline. Because it renders with an
     # `action`+`method=post`, `<.form>` emits the hidden `_csrf_token` input, so
@@ -39,7 +40,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_up")
 
     assert html =~ "_csrf_token"
-    assert html =~ ~s|action="/sign_in?_action=registered"|
+    assert html =~ ~s|action="/sign_in/magic/start"|
   end
 
   test "an already-authenticated visitor is bounced off /sign_up to /app", %{conn: conn} do
@@ -51,32 +52,13 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert redirected_to(get(conn, ~p"/sign_up")) == ~p"/app"
   end
 
-  test "the password hint flips to a ✓ once it clears 12 characters", %{conn: conn} do
-    {:ok, lv, _html} = live(conn, ~p"/sign_up")
-
-    short =
-      lv
-      |> form("#registration_form", sign_up_params(%{"user" => %{"password" => "short"}}))
-      |> render_change()
-
-    assert short =~ "Use at least 12 characters"
-    refute short =~ "✓"
-
-    long =
-      lv
-      |> form("#registration_form", sign_up_params(%{"user" => %{"password" => "twelve-chars"}}))
-      |> render_change()
-
-    assert long =~ "✓ At least 12 characters"
-  end
-
-  test "a valid sign-up creates user + workspace and arms the sign-in POST", %{conn: conn} do
+  test "a valid sign-up creates user + workspace and arms the magic-link POST", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params()
 
     html = lv |> form("#registration_form", params) |> render_submit()
 
-    assert html =~ ~s|action="/sign_in?_action=registered"|
+    assert html =~ ~s|action="/sign_in/magic/start"|
     assert html =~ "phx-trigger-action"
 
     {:ok, user} = Users.fetch_user_by_email(params["user"]["email"])
@@ -108,9 +90,9 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     result = lv |> form("#registration_form", params) |> render_submit()
 
-    # Recovers to sign-in with concrete, reassuring copy (not a vague "setup
-    # failed" error) — follow the live redirect to render the flash there.
-    assert {:error, {:live_redirect, %{to: "/sign_in"}}} = result
+    # Recovers to the magic-link page with concrete, reassuring copy (not a vague
+    # "setup failed" error) — follow the live redirect to render the flash there.
+    assert {:error, {:live_redirect, %{to: "/sign_in/magic"}}} = result
     assert {:ok, _lv, html} = follow_redirect(result, conn)
     assert html =~ "check your email"
 
@@ -137,11 +119,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     params =
       sign_up_params(%{
-        "user" => %{
-          "full_name" => "Copy Cat",
-          "email" => existing.email,
-          "password" => "a-long-enough-password"
-        }
+        "user" => %{"full_name" => "Copy Cat", "email" => existing.email}
       })
 
     html = lv |> form("#registration_form", params) |> render_submit()
@@ -163,7 +141,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   test "a malformed email surfaces the regex error inline via phx-change", %{conn: conn} do
     # the email changeset enforces `^[^\s]+@[^\s]+$`, so an
     # address with a space (or no @) re-renders with the inline field error and
-    # never submits. The message matches the reset/sign-in forms' copy.
+    # never submits. The message matches the sign-in form's copy.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 
     for bad <- ["foo bar", "nodomain"] do
@@ -192,10 +170,8 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "the validate (phx-change) path writes nothing to the DB", %{conn: conn} do
-    # the strength-tick `validate` event runs a pure
-    # `change_user` changeset (action :validate, hash_password: false) — no insert,
-    # no bcrypt round-trip. Streaming the password while typing must never create a
-    # user.
+    # the `validate` event runs a pure `change_user` changeset
+    # (action :validate) — no insert. Typing the email must never create a user.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params()
 
@@ -215,14 +191,14 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     email = "noname-#{System.unique_integer([:positive])}@example.com"
 
     params = %{
-      "user" => %{"full_name" => "", "email" => email, "password" => "a-long-enough-password"},
+      "user" => %{"full_name" => "", "email" => email},
       "account_name" => "Nameless Founder Co"
     }
 
     html = lv |> form("#registration_form", params) |> render_submit()
 
-    # It proceeds to the auto-login POST — the workspace was created, no crash.
-    assert html =~ ~s|action="/sign_in?_action=registered"|
+    # It proceeds to the magic-link POST — the workspace was created, no crash.
+    assert html =~ ~s|action="/sign_in/magic/start"|
     {:ok, user} = Users.fetch_user_by_email(email)
     assert user.full_name in [nil, ""]
   end

@@ -7,7 +7,6 @@ defmodule Emisar.Auth.UserToken.Query do
   # phone is lost."
   @session_validity_in_days 60
   @confirm_validity_in_days 7
-  @reset_validity_in_days 1
   @magic_link_validity_in_minutes 15
 
   def all,
@@ -39,7 +38,6 @@ defmodule Emisar.Auth.UserToken.Query do
 
   defp validity_in_days("session"), do: @session_validity_in_days
   defp validity_in_days("confirm"), do: @confirm_validity_in_days
-  defp validity_in_days("reset_password"), do: @reset_validity_in_days
   defp validity_in_days("magic_link"), do: @magic_link_validity_in_minutes / (24 * 60)
 
   @doc ~S(Preload the token's user, scoped to live users — a soft-deleted user's token preloads no user.)

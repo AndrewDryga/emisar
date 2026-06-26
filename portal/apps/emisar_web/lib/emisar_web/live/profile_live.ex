@@ -17,7 +17,6 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:current_session_token, session["user_token"])
      |> assign_profile_form(user)
      |> assign_email_form(user)
-     |> assign_password_form()
      |> assign_mfa_form()
      |> maybe_load_sessions()}
   end
@@ -86,9 +85,10 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("save_email", %{"email" => params}, socket) do
     new_email = String.trim(params["email"] || "")
-    current = params["current_password"] || ""
 
-    case Users.update_user_email(new_email, current, socket.assigns.current_subject) do
+    # No current-password challenge — passwords are gone, and the authenticated
+    # session is the proof-of-control (same as an SSO-provisioned user).
+    case Users.update_user_email(new_email, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
@@ -96,62 +96,8 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:current_user, updated)
          |> assign_email_form(updated)}
 
-      {:error, :invalid_current_password} ->
-        {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
-
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
-    end
-  end
-
-  def handle_event("validate_password", %{"password" => params}, socket) do
-    changeset =
-      socket.assigns.current_user
-      |> Users.change_password(params)
-      |> Map.put(:action, :validate)
-
-    {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
-  end
-
-  def handle_event("change_password", %{"password" => params}, socket) do
-    user = socket.assigns.current_user
-    subject = socket.assigns.current_subject
-    current_token = socket.assigns.current_session_token
-
-    current = params["current_password"] || ""
-    new = params["password"] || ""
-
-    # Length + confirmation-mismatch are field errors on the password form —
-    # render them inline (border + message) instead of a flash. The
-    # current-password challenge isn't a field of the password schema; a
-    # wrong one stays a concise flash.
-    changeset = Users.change_password(user, params)
-
-    if changeset.valid? do
-      case Users.change_user_password(current, new, subject) do
-        {:ok, _updated} ->
-          # A successful password change blows the old credential — log out
-          # every other device immediately, both at the DB layer (cookie no
-          # longer resolves) and over PubSub (open LV tabs hard-disconnect).
-          if is_binary(current_token) do
-            _ = Auth.revoke_and_disconnect_other_sessions!(current_token, subject)
-          end
-
-          {:noreply,
-           socket
-           |> put_flash(:info, "Password updated. Other devices were signed out.")
-           |> assign_password_form()
-           |> load_sessions()}
-
-        {:error, :invalid_current_password} ->
-          {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
-
-        {:error, _changeset} ->
-          {:noreply, put_flash(socket, :error, "Could not update password.")}
-      end
-    else
-      changeset = Map.put(changeset, :action, :validate)
-      {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
     end
   end
 
@@ -295,11 +241,6 @@ defmodule EmisarWeb.ProfileLive do
     assign(socket, :email_form, to_form(changeset, as: "email"))
   end
 
-  defp assign_password_form(socket) do
-    changeset = Users.change_password(socket.assigns.current_user)
-    assign(socket, :password_form, to_form(changeset, as: "password"))
-  end
-
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
   end
@@ -401,7 +342,7 @@ defmodule EmisarWeb.ProfileLive do
 
         <.settings_section
           title="Email"
-          hint="Used to sign in. Requires your current password to change."
+          hint="Used to sign in. Changing it takes effect immediately."
         >
           <.simple_form
             for={@email_form}
@@ -416,13 +357,6 @@ defmodule EmisarWeb.ProfileLive do
               autocomplete="email"
               required
             />
-            <.input
-              field={@email_form[:current_password]}
-              type="password"
-              label="Current password"
-              autocomplete="current-password"
-              required
-            />
             <p class="text-xs text-amber-200/70">
               This takes effect immediately — you'll sign in with the new address from now on.
             </p>
@@ -433,47 +367,8 @@ defmodule EmisarWeb.ProfileLive do
         </.settings_section>
 
         <.settings_section
-          title="Password"
-          hint="Use 12+ characters. Other sessions stay signed in — sign them out below if you suspect a leak."
-        >
-          <.simple_form
-            for={@password_form}
-            id="password_form"
-            phx-change="validate_password"
-            phx-submit="change_password"
-          >
-            <.input
-              field={@password_form[:current_password]}
-              type="password"
-              label="Current password"
-              autocomplete="current-password"
-              required
-            />
-            <.input
-              field={@password_form[:password]}
-              type="password"
-              label="New password"
-              autocomplete="new-password"
-              minlength="12"
-              required
-            />
-            <.input
-              field={@password_form[:password_confirmation]}
-              type="password"
-              label="Confirm new password"
-              autocomplete="new-password"
-              minlength="12"
-              required
-            />
-            <:actions>
-              <.button phx-disable-with="Updating...">Change password</.button>
-            </:actions>
-          </.simple_form>
-        </.settings_section>
-
-        <.settings_section
           title="Two-factor authentication"
-          hint="Adds a TOTP code at sign-in, so a stolen password alone can't get in."
+          hint="Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in."
         >
           <:meta>
             <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
@@ -558,8 +453,8 @@ defmodule EmisarWeb.ProfileLive do
               </div>
             <% @mfa_enabled? -> %>
               <p class="text-sm text-zinc-300">
-                You're protected by a second factor. Disabling means a stolen password is enough
-                to sign in.
+                You're protected by a second factor. Disabling means a leaked sign-in link is
+                enough to sign in.
               </p>
               <%!-- Recovery codes burn down one per lost-device sign-in, but the
                    count was never surfaced — nudge to regenerate before they run

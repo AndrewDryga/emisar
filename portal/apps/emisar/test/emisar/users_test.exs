@@ -7,66 +7,23 @@ defmodule Emisar.UsersTest do
   alias Emisar.Users.User
 
   describe "register_user/1" do
-    test "creates a user with a hashed password" do
+    test "creates a user" do
       email = "reg-#{System.unique_integer([:positive])}@example.test"
 
       assert {:ok, %User{} = user} =
-               Users.register_user(%{
-                 email: email,
-                 full_name: "Reggie",
-                 password: "a-12-char-password"
-               })
+               Users.register_user(%{email: email, full_name: "Reggie"})
 
       assert user.email == email
-      assert is_binary(user.hashed_password)
-      # The virtual `password` field is wiped after hashing.
-      refute user.password
+      assert user.full_name == "Reggie"
     end
 
     test "rejects duplicate emails" do
       email = "dup-#{System.unique_integer([:positive])}@example.test"
       _ = user_fixture(email: email)
 
-      assert {:error, changeset} =
-               Users.register_user(%{
-                 email: email,
-                 password: "a-12-char-password"
-               })
+      assert {:error, changeset} = Users.register_user(%{email: email})
 
       assert "has already been taken" in errors_on(changeset).email
-    end
-
-    # the 12..128 password bounds are
-    # inclusive at registration (User.Changeset.registration).
-    test "accepts a 12-char and a 128-char password" do
-      for length <- [12, 128] do
-        email = "len-ok-#{System.unique_integer([:positive])}@example.test"
-
-        assert {:ok, %User{}} =
-                 Users.register_user(%{
-                   email: email,
-                   full_name: "Lengthy",
-                   password: String.duplicate("a", length)
-                 })
-      end
-    end
-
-    # (11) / (129) — just-outside lengths are
-    # rejected and nothing is written.
-    test "rejects an 11-char and a 129-char password with no user written" do
-      for length <- [11, 129] do
-        email = "len-bad-#{System.unique_integer([:positive])}@example.test"
-
-        assert {:error, changeset} =
-                 Users.register_user(%{
-                   email: email,
-                   full_name: "TooLong",
-                   password: String.duplicate("a", length)
-                 })
-
-        assert changeset.errors[:password]
-        assert {:error, :not_found} = Users.fetch_user_by_email(email)
-      end
     end
 
     # the email length cap (160) is inclusive: a 160-char
@@ -75,12 +32,7 @@ defmodule Emisar.UsersTest do
       email = String.duplicate("a", 160 - String.length("@example.test")) <> "@example.test"
       assert String.length(email) == 160
 
-      assert {:ok, %User{}} =
-               Users.register_user(%{
-                 email: email,
-                 full_name: "Edge",
-                 password: "a-12-char-password"
-               })
+      assert {:ok, %User{}} = Users.register_user(%{email: email, full_name: "Edge"})
     end
 
     # one char over the 160 cap is rejected and nothing is
@@ -89,12 +41,7 @@ defmodule Emisar.UsersTest do
       email = String.duplicate("a", 161 - String.length("@example.test")) <> "@example.test"
       assert String.length(email) == 161
 
-      assert {:error, changeset} =
-               Users.register_user(%{
-                 email: email,
-                 full_name: "TooLong",
-                 password: "a-12-char-password"
-               })
+      assert {:error, changeset} = Users.register_user(%{email: email, full_name: "TooLong"})
 
       assert changeset.errors[:email]
       assert {:error, :not_found} = Users.fetch_user_by_email(email)
@@ -105,11 +52,7 @@ defmodule Emisar.UsersTest do
     test "rejects a malformed email (space, or no @)" do
       for bad <- ["foo bar@example.test", "nodomain"] do
         assert {:error, changeset} =
-                 Users.register_user(%{
-                   email: bad,
-                   full_name: "Malformed",
-                   password: "a-12-char-password"
-                 })
+                 Users.register_user(%{email: bad, full_name: "Malformed"})
 
         assert "must have the @ sign and no spaces" in errors_on(changeset).email
       end
@@ -129,37 +72,25 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "update_user_email/3" do
-    test "updates the email when the current password verifies" do
-      password = "current-password-12-chars"
-      user = user_fixture(password: password)
-      subject = %Emisar.Auth.Subject{actor: user}
-
-      new = "new-#{System.unique_integer([:positive])}@example.test"
-      assert {:ok, updated} = Users.update_user_email(new, password, subject)
-      assert updated.email == new
-    end
-
-    test "refuses when the current password is wrong" do
+  describe "update_user_email/2" do
+    test "updates the email — the authenticated session is the proof (no password)" do
       user = user_fixture()
       subject = %Emisar.Auth.Subject{actor: user}
 
-      assert {:error, :invalid_current_password} =
-               Users.update_user_email("x@y.test", "not-the-password", subject)
+      new = "new-#{System.unique_integer([:positive])}@example.test"
+      assert {:ok, updated} = Users.update_user_email(new, subject)
+      assert updated.email == new
     end
 
-    test "rejects a malformed email even with the right password" do
-      password = "right-password-12-chars"
-      user = user_fixture(password: password)
+    test "rejects a malformed email" do
+      user = user_fixture()
       subject = %Emisar.Auth.Subject{actor: user}
 
-      assert {:error, %Ecto.Changeset{}} =
-               Users.update_user_email("not-an-email", password, subject)
+      assert {:error, %Ecto.Changeset{}} = Users.update_user_email("not-an-email", subject)
     end
 
     test "accepts an email of exactly 160 characters" do
-      password = "right-password-12-chars"
-      user = user_fixture(password: password)
+      user = user_fixture()
       subject = %Emisar.Auth.Subject{actor: user}
 
       # local-part (147) + "@" + "example.test" (12) = 160 chars, the inclusive max.
@@ -167,19 +98,18 @@ defmodule Emisar.UsersTest do
       email = "#{local}@example.test"
       assert String.length(email) == 160
 
-      assert {:ok, updated} = Users.update_user_email(email, password, subject)
+      assert {:ok, updated} = Users.update_user_email(email, subject)
       assert updated.email == email
     end
 
     test "rejects an email of 161 characters (over the max)" do
-      password = "right-password-12-chars"
-      user = user_fixture(password: password)
+      user = user_fixture()
       subject = %Emisar.Auth.Subject{actor: user}
 
       email = "#{String.duplicate("a", 148)}@example.test"
       assert String.length(email) == 161
 
-      assert {:error, changeset} = Users.update_user_email(email, password, subject)
+      assert {:error, changeset} = Users.update_user_email(email, subject)
       assert "should be at most 160 character(s)" in errors_on(changeset).email
       # Nothing was written — the original email stands.
       assert Repo.reload!(user).email == user.email
@@ -210,79 +140,14 @@ defmodule Emisar.UsersTest do
     test "stamps the sign-in and audits user.signed_in with the method" do
       {user, account, subject} = owner_subject_fixture()
 
-      assert {:ok, updated} = Users.record_sign_in(user, "password")
+      assert {:ok, updated} = Users.record_sign_in(user, "magic_link")
       assert %DateTime{} = updated.last_sign_in_at
 
       {:ok, [event], _} =
         Emisar.Audit.list_events(subject, filter: [event_type: ["user.signed_in"]])
 
-      assert event.payload["method"] == "password"
+      assert event.payload["method"] == "magic_link"
       _ = account
-    end
-  end
-
-  describe "change_password/2" do
-    test "validates without hashing so the form can round-trip the field" do
-      user = user_fixture()
-
-      changeset = Users.change_password(user, %{"password" => "short"})
-      refute changeset.valid?
-
-      changeset = Users.change_password(user, %{"password" => "long-enough-password-123"})
-      assert changeset.valid?
-      # hash_password: false keeps it pure — nothing consumed the field.
-      assert Ecto.Changeset.get_change(changeset, :password)
-      refute Ecto.Changeset.get_change(changeset, :hashed_password)
-    end
-  end
-
-  describe "change_user_password/3 (self-service)" do
-    setup do
-      pw = "current-password-1234"
-      account = account_fixture()
-      user = user_fixture(password: pw)
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-      %{user: user, subject: subject_for(user, account, role: :owner), pw: pw}
-    end
-
-    test "with the correct current password, rotates the credential", %{
-      user: user,
-      subject: subject,
-      pw: pw
-    } do
-      assert {:ok, %User{}} = Users.change_user_password(pw, "a-new-password-5678", subject)
-      assert User.valid_password?(Repo.reload!(user), "a-new-password-5678")
-    end
-
-    test "with the wrong current password, refuses with :invalid_current_password", %{
-      subject: subject
-    } do
-      assert {:error, :invalid_current_password} =
-               Users.change_user_password("wrong-current-xxxx", "a-new-password-5678", subject)
-    end
-
-    test "accepts a new password of exactly 12 characters", %{
-      user: user,
-      subject: subject,
-      pw: pw
-    } do
-      new = String.duplicate("z", 12)
-
-      assert {:ok, %User{}} = Users.change_user_password(pw, new, subject)
-      assert User.valid_password?(Repo.reload!(user), new)
-    end
-
-    test "rejects a new password of 129 characters (over the max)", %{
-      user: user,
-      subject: subject,
-      pw: pw
-    } do
-      new = String.duplicate("z", 129)
-
-      assert {:error, changeset} = Users.change_user_password(pw, new, subject)
-      assert "should be at most 128 character(s)" in errors_on(changeset).password
-      # The credential is unchanged — the old password still verifies.
-      assert User.valid_password?(Repo.reload!(user), pw)
     end
   end
 
@@ -297,7 +162,7 @@ defmodule Emisar.UsersTest do
                Users.update_user_profile(%{"full_name" => "Renamed Person"}, subject)
     end
 
-    test "casts only full_name — smuggled email/password are dropped by the whitelist" do
+    test "casts only full_name — a smuggled email is dropped by the whitelist" do
       account = account_fixture()
       user = user_fixture(email: "keep-me@example.test")
       _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
@@ -308,17 +173,15 @@ defmodule Emisar.UsersTest do
                  %{
                    "full_name" => "Renamed Person",
                    "email" => "hijacked@example.test",
-                   "password" => "smuggled-password-xx",
                    "role" => "owner"
                  },
                  subject
                )
 
-      # Only the whitelisted field changed; the credential-bearing fields are
-      # untouched (the profile changeset casts `[:full_name]` and nothing else).
+      # Only the whitelisted field changed; email is untouched (the profile
+      # changeset casts `[:full_name]` and nothing else).
       assert updated.full_name == "Renamed Person"
       assert updated.email == "keep-me@example.test"
-      assert updated.hashed_password == user.hashed_password
     end
 
     test "writes against the freshly-fetched row, not the (possibly stale) subject snapshot" do

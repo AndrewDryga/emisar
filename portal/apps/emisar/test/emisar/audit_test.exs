@@ -388,7 +388,7 @@ defmodule Emisar.AuditTest do
 
   describe "Event.Query.outcome/1 (one source for the dots + the Outcome filter)" do
     test "failures and errors are :danger" do
-      for t <- ~w[user.sign_in_failed user.mfa_failed user.password_change_failed
+      for t <- ~w[user.sign_in_failed user.mfa_failed
                   action_run.failed action_run.error runner.error action_run.timed_out] do
         assert Audit.Event.Query.outcome(t) == :danger, "expected #{t} to be :danger"
       end

@@ -268,15 +268,6 @@ defmodule EmisarWeb.TeamLive do
     end)
   end
 
-  def handle_event("force_password_reset", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn membership ->
-      case Accounts.force_password_reset(membership, socket.assigns.current_subject) do
-        :ok -> {:ok, "Password-reset email sent and sessions ended."}
-        {:error, reason} -> {:error, error_message(reason)}
-      end
-    end)
-  end
-
   def handle_event("end_sessions", %{"membership_id" => id}, socket) do
     with_membership(socket, id, fn membership ->
       case Accounts.end_all_sessions_for(membership, socket.assigns.current_subject) do
@@ -700,7 +691,7 @@ defmodule EmisarWeb.TeamLive do
         <.panel title="Single sign-on">
           <:subtitle>
             When required, members sign in through this account's identity provider —
-            password and magic-link sign-ins are bounced to SSO. Needs an SSO connection.
+            magic-link sign-ins are bounced to SSO. Needs an SSO connection.
           </:subtitle>
           <:actions>
             <%= cond do %>
@@ -723,7 +714,7 @@ defmodule EmisarWeb.TeamLive do
                   data-confirm={
                     if @current_account.require_sso,
                       do:
-                        "Stop requiring single sign-on? Members will be able to sign in with a password or magic link again.",
+                        "Stop requiring single sign-on? Members will be able to sign in with a magic link again.",
                       else:
                         "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
                   }
@@ -976,8 +967,7 @@ defmodule EmisarWeb.TeamLive do
                   <.input field={@edit_form[:full_name]} type="text" label="Full name" />
                   <p class="text-xs text-zinc-500">
                     Only display name can be changed from here. Members
-                    update their own sign-in email (with a current-
-                    password check) on their Profile page.
+                    update their own sign-in email on their Profile page.
                   </p>
                   <%!-- Cancel sits next to Save (not pushed right by simple_form's
                        <:actions> justify-between), matching the scope editor below. --%>
@@ -1227,13 +1217,6 @@ defmodule EmisarWeb.TeamLive do
             icon="hero-paper-airplane"
           >
             Resend invite
-          </.menu_item>
-          <.menu_item
-            phx-click="force_password_reset"
-            phx-value-membership_id={@membership.id}
-            data-confirm="Email them a password-reset link and sign out every session?"
-          >
-            Force password reset
           </.menu_item>
           <%!-- Only offered when the member actually has 2FA enrolled —
                the recovery path for someone locked out of both their

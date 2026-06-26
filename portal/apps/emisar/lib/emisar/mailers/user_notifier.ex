@@ -1,8 +1,8 @@
 defmodule Emisar.Mailers.UserNotifier do
   @moduledoc """
-  Transactional emails sent during user lifecycle: confirmation,
-  magic-link login, password reset. Plain-text templates — the
-  rendering engine is intentionally not LiveView's heex.
+  Transactional emails sent during user lifecycle: confirmation and
+  magic-link login. Plain-text templates — the rendering engine is
+  intentionally not LiveView's heex.
   """
   import Swoosh.Email
   alias Emisar.Mail
@@ -53,19 +53,6 @@ defmodule Emisar.Mailers.UserNotifier do
     once. Didn't request this? You can safely ignore it.
 
     — emisar
-    """)
-  end
-
-  def deliver_password_reset(%Users.User{} = user, token, return_to \\ nil) do
-    url = PublicUrl.url("/reset_password/#{token}#{return_to_query(return_to)}")
-
-    deliver(user.email, "Reset your emisar password", """
-    Reset your password using this link (valid for 1 hour):
-
-    #{url}
-
-    Didn't request a reset? You can ignore this email; your password
-    won't change unless someone clicks the link.
     """)
   end
 

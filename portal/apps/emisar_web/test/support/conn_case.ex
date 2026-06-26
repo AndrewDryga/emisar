@@ -34,7 +34,7 @@ defmodule EmisarWeb.ConnCase do
   into the session and returning the conn.
   """
   def log_in_user(conn, user) do
-    token = Emisar.Auth.create_session_token!(user, :password, false)
+    token = Emisar.Auth.create_session_token!(user, :magic_link, false)
 
     conn
     |> Phoenix.ConnTest.init_test_session(%{})
@@ -50,8 +50,7 @@ defmodule EmisarWeb.ConnCase do
       Map.merge(
         %{
           email: "user-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Test User",
-          password: "very-long-password-here"
+          full_name: "Test User"
         },
         Map.get(attrs, :user, %{})
       )

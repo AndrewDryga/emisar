@@ -7,8 +7,6 @@ defmodule Emisar.AuthTest do
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
 
-  @password "a-password-of-some-length"
-
   # Backdate every user_token row so its `inserted_at` lands `minutes` in
   # the past — the only lever on the validity window, since
   # `UserToken.Query.not_expired/2` filters `inserted_at > ago(window)`.
@@ -21,33 +19,13 @@ defmodule Emisar.AuthTest do
     n
   end
 
-  describe "fetch_user_by_email_and_password/2" do
-    test "returns the user with a correct password" do
-      user = user_fixture(password: @password)
-      assert {:ok, %User{id: id}} = Auth.fetch_user_by_email_and_password(user.email, @password)
-      assert id == user.id
-    end
-
-    test "returns :not_found for the wrong password" do
-      user = user_fixture(password: @password)
-
-      assert {:error, :not_found} =
-               Auth.fetch_user_by_email_and_password(user.email, "definitely-wrong")
-    end
-
-    test "returns :not_found for an unknown email" do
-      assert {:error, :not_found} =
-               Auth.fetch_user_by_email_and_password("no-one@example.test", @password)
-    end
-  end
-
   describe "session tokens" do
     test "create + lookup round-trip" do
       user = user_fixture()
-      token = Auth.create_session_token!(user, :password, false)
+      token = Auth.create_session_token!(user, :magic_link, false)
       assert is_binary(token)
 
-      assert {:ok, %User{id: id}, %{auth_method: :password, mfa: false, user_identity_id: nil}} =
+      assert {:ok, %User{id: id}, %{auth_method: :magic_link, mfa: false, user_identity_id: nil}} =
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert id == user.id
@@ -55,22 +33,22 @@ defmodule Emisar.AuthTest do
 
     test "session provenance round-trips on lookup" do
       user = user_fixture()
-      token = Auth.create_session_token!(user, :password, true)
+      token = Auth.create_session_token!(user, :magic_link, true)
 
-      assert {:ok, %User{}, %{auth_method: :password, mfa: true, user_identity_id: nil}} =
+      assert {:ok, %User{}, %{auth_method: :magic_link, mfa: true, user_identity_id: nil}} =
                Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "delete_session_token invalidates the token" do
       user = user_fixture()
-      token = Auth.create_session_token!(user, :password, false)
+      token = Auth.create_session_token!(user, :magic_link, false)
       :ok = Auth.delete_session_token(token)
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "a session past its validity window no longer resolves" do
       user = user_fixture()
-      token = Auth.create_session_token!(user, :password, false)
+      token = Auth.create_session_token!(user, :magic_link, false)
 
       {1, _} =
         Emisar.Auth.UserToken.Query.by_user_id(user.id)
@@ -137,83 +115,6 @@ defmodule Emisar.AuthTest do
       # The first token is gone — re-issuing deleted it.
       assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id1, secret1, nonce1)
       assert {:ok, %User{}} = Auth.verify_magic_link(token_id2, secret2, nonce2)
-    end
-  end
-
-  describe "password reset" do
-    test "reset_user_password swaps the hash and invalidates sessions" do
-      user = user_fixture(password: @password)
-      session_token = Auth.create_session_token!(user, :password, false)
-      raw = Auth.issue_password_reset_token!(user)
-      new_password = "brand-new-password-x"
-
-      assert {:ok, %User{} = updated} = Auth.reset_user_password(raw, new_password)
-      assert updated.id == user.id
-
-      # New password works, old does not.
-      assert {:ok, %User{}} = Auth.fetch_user_by_email_and_password(user.email, new_password)
-      assert {:error, :not_found} = Auth.fetch_user_by_email_and_password(user.email, @password)
-
-      # Existing session was nuked.
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(session_token)
-    end
-
-    test "garbage token returns invalid_or_expired" do
-      assert {:error, :invalid_or_expired} = Auth.reset_user_password("nope", "doesnt-matter-xx")
-    end
-
-    # 1-day window (reset_password).
-    test "a reset token just inside 1 day still resets" do
-      user = user_fixture(password: @password)
-      raw = Auth.issue_password_reset_token!(user)
-      # 1 day minus 5 minutes still inside the window.
-      age_tokens(user.id, 24 * 60 - 5)
-
-      assert {:ok, %User{}} = Auth.reset_user_password(raw, "brand-new-password-y")
-    end
-
-    test "a reset token just past 1 day no longer resets" do
-      user = user_fixture(password: @password)
-      raw = Auth.issue_password_reset_token!(user)
-      # 1 day plus 5 minutes is past the window.
-      age_tokens(user.id, 24 * 60 + 5)
-
-      assert {:error, :invalid_or_expired} = Auth.reset_user_password(raw, "brand-new-password-y")
-    end
-
-    # the 12..128 password rule on the
-    # reset path (Users.reset_user_password -> User.Changeset.password).
-    test "accepts a 12-char and a 128-char new password" do
-      for length <- [12, 128] do
-        user = user_fixture(password: @password)
-        raw = Auth.issue_password_reset_token!(user)
-
-        assert {:ok, %User{}} = Auth.reset_user_password(raw, String.duplicate("a", length))
-      end
-    end
-
-    test "rejects an 11-char and a 129-char new password without consuming the token" do
-      for length <- [11, 129] do
-        user = user_fixture(password: @password)
-        raw = Auth.issue_password_reset_token!(user)
-
-        assert {:error, %Ecto.Changeset{} = changeset} =
-                 Auth.reset_user_password(raw, String.duplicate("a", length))
-
-        assert changeset.errors[:password]
-        # The token is not burnt — a valid-length retry on the SAME link works.
-        assert {:ok, %User{}} = Auth.reset_user_password(raw, "valid-length-pass-12")
-      end
-    end
-
-    # closes the remaining soft-delete row at the context.
-    test "a reset link whose user was soft-deleted no longer resets" do
-      user = user_fixture(password: @password)
-      raw = Auth.issue_password_reset_token!(user)
-
-      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
-
-      assert {:error, :invalid_or_expired} = Auth.reset_user_password(raw, "brand-new-password-y")
     end
   end
 
@@ -427,8 +328,8 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      _t1 = Auth.create_session_token!(user, :password, false)
-      _t2 = Auth.create_session_token!(user, :password, false)
+      _t1 = Auth.create_session_token!(user, :magic_link, false)
+      _t2 = Auth.create_session_token!(user, :magic_link, false)
       {:ok, [session | _], _} = Auth.list_sessions_for_user(subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
@@ -443,7 +344,7 @@ defmodule Emisar.AuthTest do
       other = user_fixture()
       _ = membership_fixture(account_id: other_account.id, user_id: other.id, role: "owner")
       other_subject = subject_for(other, other_account, role: :owner)
-      _ = Auth.create_session_token!(other, :password, false)
+      _ = Auth.create_session_token!(other, :magic_link, false)
       {:ok, [other_session], _} = Auth.list_sessions_for_user(other_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
@@ -459,9 +360,9 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      keep = Auth.create_session_token!(user, :password, false)
-      _other1 = Auth.create_session_token!(user, :password, false)
-      _other2 = Auth.create_session_token!(user, :password, false)
+      keep = Auth.create_session_token!(user, :magic_link, false)
+      _other1 = Auth.create_session_token!(user, :magic_link, false)
+      _other2 = Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
 

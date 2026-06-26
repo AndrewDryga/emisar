@@ -107,8 +107,7 @@ defmodule EmisarWeb.AdminGateTest do
       {:ok, user} =
         Emisar.Users.register_user(%{
           email: "fresh-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Fresh User",
-          password: "very-long-password-here"
+          full_name: "Fresh User"
         })
 
       assert user.is_admin == false

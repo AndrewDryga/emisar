@@ -3,8 +3,8 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   The per-account ("branded") sign-in page at `/app/:account_id_or_slug/sign_in`.
   The team is resolved from the slug PRE-AUTH (knowing a slug grants nothing), so
   the load-bearing behaviors are: it offers exactly that account's enabled SSO
-  providers plus the shared email+password path, and an unknown/soft-deleted slug
-  is an indistinguishable 404 — a signed-out prober learns nothing.
+  providers plus the shared passwordless magic-link path, and an unknown/soft-deleted
+  slug is an indistinguishable 404 — a signed-out prober learns nothing.
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -27,10 +27,10 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     provider
   end
 
-  test "offers the account's enabled SSO providers above the userpass form", %{conn: conn} do
+  test "offers the account's enabled SSO providers above the email form", %{conn: conn} do
     # enabled providers render as full-redirect buttons
     # (begin is a controller bounce to the IdP, not live nav), and below them the
-    # email+password form posts to the shared /sign_in with a hidden return_to
+    # email form posts to the shared magic-link start with a hidden return_to
     # pinning this team.
     account = Emisar.Fixtures.account_fixture(%{name: "Branded Co"})
     okta = enabled_provider(account, "Acme Okta")
@@ -41,36 +41,38 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     assert html =~ "Continue with Acme Okta"
     assert html =~ ~p"/sign_in/sso/#{okta.id}"
 
-    # Userpass form posts to the shared endpoint and lands back on THIS team.
-    assert html =~ ~s|action="/sign_in"|
-    assert html =~ ~s|name="user[return_to]"|
+    # The email form posts to the shared magic-link endpoint and lands back on
+    # THIS team via the hidden return_to.
+    assert html =~ ~s|action="/sign_in/magic/start"|
+    assert html =~ ~s|name="return_to"|
     assert html =~ ~s|value="/app/#{account.slug}"|
   end
 
-  test "the forgot-password and magic links thread this team's return_to", %{conn: conn} do
-    # both secondary routes carry ?return_to=/app/<slug> so a
-    # password reset or magic link begun here lands back on the branded page, while
-    # "different team" drops to the generic SSO picker.
+  test "the 'different team' link drops to the generic SSO picker", %{conn: conn} do
+    # The branded page's only secondary route is "different team", which goes to
+    # the generic SSO picker; there's no password/reset link anymore.
     account = Emisar.Fixtures.account_fixture(%{name: "Threaded Co"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
-    assert html =~ ~p"/reset_password?#{[return_to: "/app/#{account.slug}"]}"
-    assert html =~ ~p"/sign_in/magic?#{[return_to: "/app/#{account.slug}"]}"
     assert html =~ ~p"/sign_in/sso"
+    refute html =~ "reset_password"
+    refute html =~ ~s|name="user[password]"|
   end
 
-  test "an account with zero providers hides the SSO block, showing only userpass", %{conn: conn} do
+  test "an account with zero providers hides the SSO block, showing only the email form", %{
+    conn: conn
+  } do
     # with no enabled providers the `:if={@providers != []}`
-    # SSO section and its separator are absent; the email+password form is the only
+    # SSO section and its separator are absent; the email form is the only
     # offered path.
-    account = Emisar.Fixtures.account_fixture(%{name: "Password Only Co"})
+    account = Emisar.Fixtures.account_fixture(%{name: "Email Only Co"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
     refute html =~ "Continue with"
     refute html =~ "or with email"
-    assert html =~ ~s|id="login_form"|
+    assert html =~ ~s|action="/sign_in/magic/start"|
   end
 
   test "an unknown slug is a 404 — and a soft-deleted account is the SAME 404 (no leak)", %{

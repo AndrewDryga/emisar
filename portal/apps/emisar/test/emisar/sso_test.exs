@@ -520,7 +520,6 @@ defmodule Emisar.SSOTest do
       assert user.email == "new@acme.test"
       assert user.full_name == "New Operator"
       assert user.confirmed_at
-      refute user.hashed_password
       assert identity.provider_identifier == "okta|new-1"
       assert identity.created_by == :provider
 

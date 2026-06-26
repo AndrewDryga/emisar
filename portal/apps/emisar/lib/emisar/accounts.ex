@@ -920,58 +920,6 @@ defmodule Emisar.Accounts do
   defp ensure_membership_in_provider_account(_membership, _provider), do: {:error, :not_found}
 
   @doc """
-  Admin-triggered password reset: invalidates every active session for
-  the target user, mints a reset-password token, and emails it. Same
-  authorization shape as membership changes — the admin must be in
-  the target's account and outrank them. Audit-logged.
-
-  Note: the reset email is sent inside the call (mailer dispatch can
-  block ~1s on SMTP) — fine for the team page button, but if it ever
-  needs to be high-throughput, move to an Oban job.
-  """
-  def force_password_reset(%Membership{} = membership, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
-         :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      # Users nulls the hash + inserts our audit atomically under the row
-      # lock; the old credential stops working the moment this commits.
-      # The membership guard runs on a locked re-read in the same
-      # transaction so the hierarchy is judged on the CURRENT role.
-      #
-      # Sending the reset email + broadcasting disconnects are side
-      # effects that must NOT happen if the password-null update rolled
-      # back. We pass `audit: false` to the token mint so it doesn't
-      # ALSO emit a `user.password_reset_requested` row — that row would
-      # attribute the action to the TARGET user as actor, not the admin
-      # who triggered it. The `user.password_reset_forced` event below is
-      # the canonical record with the correct actor → subject pair.
-      Multi.new()
-      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
-        Users.clear_user_password(loaded_membership.user_id,
-          audit: &Audit.Events.user_password_reset_forced(subject, loaded_membership, &1)
-        )
-      end)
-      |> Repo.commit_multi(
-        # On the OUTER commit, not the nested update's — a nested
-        # after_commit fires while this transaction is still open, so a
-        # commit-time failure would kick the user + email a reset for a
-        # rollback. fetch_and_update raises on that misuse now.
-        after_commit: fn %{user: user} ->
-          :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
-          token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
-          _ = Emisar.Mailers.UserNotifier.deliver_password_reset(user, token)
-          :ok
-        end
-      )
-      |> case do
-        {:ok, _changes} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
-  @doc """
   Admin-triggered MFA reset: clears a member's enrolled second factor
   (TOTP secret + recovery codes) so a member locked out of BOTH their
   authenticator and their recovery codes can re-enroll on next sign-in —

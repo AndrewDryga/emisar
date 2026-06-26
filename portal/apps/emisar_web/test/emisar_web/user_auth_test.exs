@@ -101,18 +101,16 @@ defmodule EmisarWeb.UserAuthTest do
       conn: conn
     } do
       # the gate guards the full signed-out
-      # auth surface, not just /sign_in: sign_up, the magic-link + MFA steps, the
-      # branded per-account page, and reset all live under
-      # :redirect_if_user_is_authenticated, so a signed-in user GETting any of them
-      # is redirected to the app before the LiveView mounts.
+      # auth surface, not just /sign_in: sign_up, the magic-link step, and the
+      # branded per-account page all live under :redirect_if_user_is_authenticated,
+      # so a signed-in user GETting any of them is redirected to the app before the
+      # LiveView mounts.
       {conn, _user, account} = register_and_log_in(conn)
 
       for path <- [
             ~p"/sign_up",
             ~p"/sign_in",
             ~p"/sign_in/magic",
-            ~p"/sign_in/mfa",
-            ~p"/reset_password",
             ~p"/app/#{account}/sign_in"
           ] do
         assert redirected_to(get(conn, path)) == ~p"/app"
@@ -120,30 +118,28 @@ defmodule EmisarWeb.UserAuthTest do
     end
 
     test "the auth POST endpoints bounce a signed-in visitor too", %{conn: conn} do
-      # (POST half) — POST /sign_in is in the same guarded
-      # scope, so a signed-in user can't re-drive the password verify; the gate
-      # halts before the controller runs.
+      # (POST half) — the magic-link start POST is in the same
+      # guarded scope, so a signed-in user can't re-drive a sign-in request; the
+      # gate halts before the controller runs.
       {conn, user, _account} = register_and_log_in(conn)
 
-      conn =
-        post(conn, ~p"/sign_in",
-          user: %{"email" => user.email, "password" => "very-long-password-here"}
-        )
+      conn = post(conn, ~p"/sign_in/magic/start", user: %{"email" => user.email})
 
       assert redirected_to(conn) == ~p"/app"
     end
   end
 
   describe "sign-in form CSRF posture" do
-    test "the sign-in form carries a CSRF token for its POST to /sign_in", %{conn: conn} do
-      # the userpass form posts over the CSRF-protected
+    test "the sign-in form carries a CSRF token for its POST to the magic-link start",
+         %{conn: conn} do
+      # the email form posts over the CSRF-protected
       # :browser pipeline (`protect_from_forgery`). Because it renders with an
       # `action`+`method=post`, `<.form>` emits the hidden `_csrf_token` input, so
       # a legitimate browser submit is accepted and a forged cross-site one isn't.
       {:ok, _lv, html} = live(conn, ~p"/sign_in")
 
       assert html =~ "_csrf_token"
-      assert html =~ ~s|action="/sign_in"|
+      assert html =~ ~s|action="/sign_in/magic/start"|
     end
   end
 
@@ -179,7 +175,7 @@ defmodule EmisarWeb.UserAuthTest do
         UserAuth.log_in_user(
           conn,
           Emisar.Fixtures.user_fixture(),
-          :password,
+          :magic_link,
           false,
           %{"remember_me" => "true"}
         )
@@ -194,7 +190,7 @@ defmodule EmisarWeb.UserAuthTest do
     test "without remember_me, only the session token is set — no persistent cookie", %{
       conn: conn
     } do
-      conn = UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture(), :password, false)
+      conn = UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture(), :magic_link, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
       refute conn.resp_cookies[@remember_me_cookie]

@@ -3,7 +3,7 @@ defmodule EmisarWeb.SSOSignInTest do
   Signed-out SSO sign-in routes by SLUG, not email domain: the team picker
   (`/sign_in/sso`) sends the operator to their team's branded sign-in page
   (`/app/:slug/sign_in`), which offers that account's SSO providers plus
-  email/password and the magic link. An out-of-domain member, guest, or
+  the passwordless magic link. An out-of-domain member, guest, or
   contractor signs in the same way as anyone else.
   """
   use EmisarWeb.ConnCase, async: true
@@ -25,6 +25,24 @@ defmodule EmisarWeb.SSOSignInTest do
       )
 
     provider
+  end
+
+  # Drive the real passwordless sign-in carrying a branded `return_to`: request
+  # the link (threading return_to onto both the session and the emailed URL), pull
+  # token_id + the 6-digit secret out of the email, then confirm the link from the
+  # same browser (the nonce cookie rides `recycle`). Returns the post-confirm conn.
+  defp magic_sign_in(email, return_to) do
+    conn =
+      post(build_conn(), ~p"/sign_in/magic/start", %{
+        "user" => %{"email" => email},
+        "return_to" => return_to
+      })
+
+    assert_received {:email, sent}
+    [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+
+    recycle(conn)
+    |> get(~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: return_to]}")
   end
 
   describe "GET /sign_in/sso (team picker)" do
@@ -140,7 +158,7 @@ defmodule EmisarWeb.SSOSignInTest do
   end
 
   describe "GET /app/:account_id_or_slug/sign_in (branded page)" do
-    test "offers the account's enabled SSO providers AND email/password (decision 4)", %{
+    test "offers the account's enabled SSO providers AND the magic-link email form", %{
       conn: conn
     } do
       account = Fixtures.account_fixture()
@@ -152,13 +170,12 @@ defmodule EmisarWeb.SSOSignInTest do
       assert html =~ "Continue with #{provider.name}"
       # Links to that provider's begin-auth redirect…
       assert html =~ ~p"/sign_in/sso/#{provider.id}"
-      # …and the page still offers email/password + the magic link.
-      assert html =~ "Password"
-      assert html =~ ~p"/sign_in/magic"
-
-      # The magic-link + reset links thread this team's return_to so those flows
-      # land back here, not on the user's stale default (follow-up d).
-      assert html =~ "return_to=%2Fapp%2F#{account.slug}"
+      # …and the page offers the passwordless email form, posting to the shared
+      # magic-link start with a hidden return_to pinning this team so the flow
+      # lands back here, not on the user's stale default.
+      assert html =~ ~s|action="/sign_in/magic/start"|
+      assert html =~ ~s|value="/app/#{account.slug}"|
+      refute html =~ "Password"
     end
 
     test "resolves by the account id too (the UUID form)", %{conn: conn} do
@@ -183,18 +200,10 @@ defmodule EmisarWeb.SSOSignInTest do
   end
 
   describe "branded sign-in lands on that team" do
-    test "email/password carrying the branded page's return_to lands on that team", %{conn: conn} do
+    test "a member's branded magic-link sign-in lands on that team", %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
 
-      # A fresh (signed-out) sign-in posting the branded page's hidden return_to.
-      conn =
-        post(build_conn(), ~p"/sign_in",
-          user: %{
-            "email" => user.email,
-            "password" => "very-long-password-here",
-            "return_to" => ~p"/app/#{account}"
-          }
-        )
+      conn = magic_sign_in(user.email, ~p"/app/#{account}")
 
       assert redirected_to(conn) == ~p"/app/#{account}"
     end
@@ -204,40 +213,11 @@ defmodule EmisarWeb.SSOSignInTest do
     } do
       {_conn, user, account} = register_and_log_in(conn)
 
-      conn =
-        post(build_conn(), ~p"/sign_in",
-          user: %{
-            "email" => user.email,
-            "password" => "very-long-password-here",
-            "return_to" => ~p"/app/#{account}"
-          }
-        )
+      conn = magic_sign_in(user.email, ~p"/app/#{account}")
 
       assert redirected_to(conn) == ~p"/app/#{account}"
       # So the next sign-in offers this team as a one-click button.
       assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
-    end
-
-    test "a magic link requested from a branded page lands on that team", %{conn: conn} do
-      {_conn, user, account} = register_and_log_in(conn)
-
-      # Request the link with the branded return_to (the branded page's hidden
-      # field) — it threads onto the email link AND the session, and the nonce
-      # cookie rides along via recycle.
-      conn =
-        post(build_conn(), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "return_to" => ~p"/app/#{account.slug}"
-        })
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
-
-      conn =
-        recycle(conn)
-        |> get(~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
-
-      assert redirected_to(conn) == ~p"/app/#{account}"
     end
 
     test "a non-member's branded sign-in lands on their default account, not a 404", %{conn: conn} do
@@ -245,14 +225,7 @@ defmodule EmisarWeb.SSOSignInTest do
       # A team the user has no membership in (so the branded return_to would 404).
       other = Fixtures.account_fixture()
 
-      conn =
-        post(build_conn(), ~p"/sign_in",
-          user: %{
-            "email" => user.email,
-            "password" => "very-long-password-here",
-            "return_to" => ~p"/app/#{other}"
-          }
-        )
+      conn = magic_sign_in(user.email, ~p"/app/#{other}")
 
       # The branded target is dropped → default landing, never a post-login 404.
       assert redirected_to(conn) == ~p"/app"
@@ -264,14 +237,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "a forged non-local return_to is ignored — no open redirect", %{conn: conn} do
       {_conn, user, _account} = register_and_log_in(conn)
 
-      conn =
-        post(build_conn(), ~p"/sign_in",
-          user: %{
-            "email" => user.email,
-            "password" => "very-long-password-here",
-            "return_to" => "https://evil.test/phish"
-          }
-        )
+      conn = magic_sign_in(user.email, "https://evil.test/phish")
 
       # Falls back to the default landing (bare /app → the user's account), never
       # the external URL.

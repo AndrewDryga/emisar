@@ -310,7 +310,7 @@ defmodule Emisar.AccountsTest do
                Accounts.invite_user_to_account(email, "admin", subject)
 
       assert invitee.email == email
-      refute invitee.hashed_password
+      refute invitee.confirmed_at
       assert is_binary(token)
     end
 
@@ -507,17 +507,16 @@ defmodule Emisar.AccountsTest do
       {:ok, %{membership: membership, user: user}} =
         Accounts.invite_user_to_account(email, "operator", subject)
 
-      # No password change, no full_name set — the signed-in-as-self
-      # path skips the registration changeset entirely.
+      # No full_name set — the signed-in-as-self path skips the registration
+      # changeset entirely.
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, user)
       assert accepted.invitation_accepted_at != nil
       refute accepted.invitation_token_digest
 
-      # User row is untouched: same hashed_password (nil for a placeholder
-      # user), same email.
+      # User row is untouched: same email, same full_name.
       {:ok, reloaded} = Users.fetch_user_by_id(user.id)
       assert reloaded.email == user.email
-      assert reloaded.hashed_password == user.hashed_password
+      assert reloaded.full_name == user.full_name
     end
 
     test "a different signed-in user can't accept (burn) someone else's invite" do
@@ -934,52 +933,6 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "force_password_reset/2" do
-    test "wipes sessions + emails the user + audit-logs" do
-      account = account_fixture()
-      owner = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
-      target_user = user_fixture()
-
-      target =
-        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
-
-      target_subject = subject_for(target_user, account, role: :operator)
-      _ = Emisar.Auth.create_session_token!(target_user, :password, false)
-      assert {:ok, [_], _} = Emisar.Auth.list_sessions_for_user(target_subject)
-
-      owner_subject = subject_for(owner, account, role: :owner)
-      assert :ok = Accounts.force_password_reset(target, owner_subject)
-      assert {:ok, [], _} = Emisar.Auth.list_sessions_for_user(target_subject)
-
-      events =
-        Emisar.Audit.list_events(owner_subject, page: [limit: 10])
-        |> elem(1)
-
-      assert Enum.any?(events, &(&1.event_type == "user.password_reset_forced"))
-    end
-
-    test "an owner of another account can't force-reset this member (cross-account)" do
-      account = account_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
-      target_user = user_fixture()
-
-      target =
-        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
-
-      # A live session whose survival proves the rolled-back path never ran.
-      _ = Emisar.Auth.create_session_token!(target_user, :password, false)
-
-      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
-
-      assert {:error, :unauthorized} = Accounts.force_password_reset(target, subject_b)
-
-      # The session was NOT killed — the guard fired before the lock_target step.
-      target_subject = subject_for(target_user, account, role: :operator)
-      assert {:ok, [_], _} = Emisar.Auth.list_sessions_for_user(target_subject)
-    end
-  end
-
   describe "reset_member_mfa/2" do
     test "an owner clears a member's MFA + writes the user.mfa_reset_by_admin audit row" do
       account = account_fixture()
@@ -1250,7 +1203,7 @@ defmodule Emisar.AccountsTest do
 
       subject = subject_for(owner, account, role: :owner)
 
-      token = Emisar.Auth.create_session_token!(target, :password, false)
+      token = Emisar.Auth.create_session_token!(target, :magic_link, false)
       assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
       assert :ok = Accounts.end_all_sessions_for(membership, subject)

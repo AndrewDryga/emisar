@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ReturnToTest do
   @moduledoc """
   The post-sign-in `return_to` whitelist. Load-bearing for the no-open-redirect
-  property — every branded sign-in path (form, magic link, password reset) runs
+  property — every branded sign-in path (the magic-link request + confirm) runs
   attacker-influenceable input through here.
   """
   use ExUnit.Case, async: true

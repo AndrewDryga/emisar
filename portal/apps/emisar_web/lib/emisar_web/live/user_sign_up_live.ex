@@ -20,35 +20,23 @@ defmodule EmisarWeb.UserSignUpLive do
     <.auth_layout title="Start your free workspace">
       <p class="mb-6 text-sm text-zinc-400">
         Free plan: 3 runners, 7-day audit retention, single user. No credit card.
+        There's no password to set — we'll email you a one-time sign-in link.
       </p>
 
+      <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
+           email to the magic-link request, so the new owner gets a sign-in
+           link immediately (no password, no re-typing their email). --%>
       <.simple_form
         for={@form}
         id="registration_form"
         phx-submit="save"
         phx-change="validate"
         phx-trigger-action={@trigger_submit}
-        action={~p"/sign_in?_action=registered"}
+        action={~p"/sign_in/magic/start"}
         method="post"
       >
         <.input field={@form[:full_name]} type="text" label="Your name" required />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
-        <.input
-          field={@form[:password]}
-          type="password"
-          label="Password"
-          autocomplete="new-password"
-          minlength="12"
-          required
-        />
-        <%!-- Live strength tick — phx-change already streams the value, so
-             flip the hint to a ✓ once it clears the 12-char floor. --%>
-        <% password_ok? = String.length(@form[:password].value || "") >= 12 %>
-        <p class={["text-xs", if(password_ok?, do: "text-brand-400", else: "text-zinc-500")]}>
-          {if password_ok?,
-            do: "✓ At least 12 characters.",
-            else: "Use at least 12 characters. Mix in numbers or symbols for extra safety."}
-        </p>
         <.input
           name="account_name"
           value={@account_name}
@@ -120,6 +108,8 @@ defmodule EmisarWeb.UserSignUpLive do
             # action-required one).
             Mailers.UserNotifier.deliver_welcome(user, account)
 
+            # Flip trigger_submit → the form POSTs the email to magic_link_start,
+            # which mails the sign-in link + lands them on "check your email".
             {:noreply,
              socket
              |> assign(:trigger_submit, true)
@@ -127,20 +117,18 @@ defmodule EmisarWeb.UserSignUpLive do
 
           {:error, _reason} ->
             # Rare race: the user row committed but the workspace didn't. Still
-            # send the confirmation email (the success branch does too) so the
-            # user can verify and sign in — the onboarding redirect then walks
-            # them through creating a workspace. Without this they'd be a
-            # confirmed-account orphan with no link and no way to verify.
+            # send the confirmation email so the user can verify and sign in — the
+            # onboarding redirect then walks them through creating a workspace.
             :ok = Auth.deliver_confirmation_instructions(user)
 
             {:noreply,
              socket
              |> put_flash(
                :info,
-               "Your account is ready — check your email for a confirmation link. " <>
-                 "Confirm it and sign in, and we'll help you finish setting up your workspace."
+               "Your account is ready — check your email for a confirmation link, then " <>
+                 "sign in and we'll help you finish setting up your workspace."
              )
-             |> push_navigate(to: ~p"/sign_in")}
+             |> push_navigate(to: ~p"/sign_in/magic")}
         end
 
       {:error, changeset} ->

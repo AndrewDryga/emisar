@@ -4,8 +4,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
   Three render branches:
 
-    * Not signed in → password-set form, accepting submits + signs the
-      new user in via the standard `/sign_in` controller.
+    * Not signed in → a name form; accepting provisions the member and
+      emails them a magic-link sign-in (no password to set).
     * Signed in AS the invited email → one-click accept (no password
       re-entry); we mark the membership accepted and forward to /app.
     * Signed in as a DIFFERENT email → "this invite is for X, sign out
@@ -63,10 +63,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
         as <.chip>{@membership.role}</.chip>.
       </p>
 
+      <%!-- On accept we flip `trigger_submit` and the form POSTs the invitee's
+           email to the magic-link request, so they get a one-time sign-in link
+           (no password to set). --%>
       <.simple_form
         for={@form}
         id="accept_form"
-        action={~p"/sign_in?_action=invitation_accepted"}
+        action={~p"/sign_in/magic/start"}
         method="post"
         phx-change="validate"
         phx-submit="accept"
@@ -80,18 +83,10 @@ defmodule EmisarWeb.AcceptInvitationLive do
         </div>
 
         <.input field={@form[:full_name]} type="text" label="Your name" required />
-        <.input
-          field={@form[:password]}
-          type="password"
-          label="Set a password"
-          autocomplete="new-password"
-          minlength="12"
-          required
-        />
 
         <:actions>
           <.button phx-disable-with="Joining..." class="w-full">
-            Accept invitation <span aria-hidden="true">→</span>
+            Accept &amp; email me a sign-in link <span aria-hidden="true">→</span>
           </.button>
         </:actions>
       </.simple_form>
@@ -139,26 +134,20 @@ defmodule EmisarWeb.AcceptInvitationLive do
   def handle_event("validate", %{"user" => params}, socket) do
     changeset =
       socket.assigns.membership.user
-      |> Users.change_user(%{
-        "full_name" => params["full_name"] || "",
-        "password" => params["password"] || ""
-      })
+      |> Users.change_user(%{"full_name" => params["full_name"] || ""})
       |> Map.put(:action, :validate)
 
     {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("accept", %{"user" => user_params}, socket) do
-    attrs = %{
-      "full_name" => user_params["full_name"] || "",
-      "password" => user_params["password"] || ""
-    }
+    attrs = %{"full_name" => user_params["full_name"] || ""}
 
     case Accounts.accept_invitation(socket.assigns.membership, attrs) do
       {:ok, _} ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
-      # Field errors (e.g. a too-short password) render inline on the form.
+      # Field errors (e.g. a missing name) render inline on the form.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
@@ -168,9 +157,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
   end
 
   # Signed-in user accepting their own invitation: the user record
-  # already has a password + confirmed_at, so we skip
-  # User.Changeset.registration entirely and just mark the membership
-  # accepted in-place.
+  # already exists + confirmed, so we skip provisioning entirely and
+  # just mark the membership accepted in-place.
   def handle_event("accept_existing", _params, socket) do
     membership = socket.assigns.membership
 

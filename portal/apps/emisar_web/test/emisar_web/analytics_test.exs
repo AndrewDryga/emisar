@@ -90,20 +90,23 @@ defmodule EmisarWeb.AnalyticsTest do
       {:ok, user} =
         Emisar.Users.register_user(%{
           email: "id-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Jane Op",
-          password: "very-long-password-here"
+          full_name: "Jane Op"
         })
 
       {:ok, user: Emisar.Fixtures.confirm_user(user)}
     end
 
-    test "sign-in sets the profile and fires signed_in with the user id", %{
+    test "a magic-link sign-in sets the profile and fires signed_in with the user id", %{
       conn: conn,
       user: user
     } do
-      post(conn, ~p"/sign_in",
-        user: %{"email" => user.email, "password" => "very-long-password-here"}
-      )
+      # Drive the real passwordless flow: request the link, pull token_id + the
+      # 6-digit secret from the email, then confirm from the same browser (the
+      # nonce cookie rides `recycle`). `log_in_user` fires the analytics event.
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert_receive {:mixpanel_engage, [%{"$distinct_id" => id, "$set" => set}]}
       assert id == user.id
@@ -113,17 +116,8 @@ defmodule EmisarWeb.AnalyticsTest do
       assert_receive {:mixpanel_track, [%{"event" => "signed_in", "properties" => props}]}
       assert props["distinct_id"] == user.id
       assert props["$user_id"] == user.id
-      assert props["auth_method"] == "password"
+      assert props["auth_method"] == "magic_link"
       assert props["mfa"] == false
-    end
-
-    test "a registration completion fires sign_up_completed", %{conn: conn, user: user} do
-      post(conn, ~p"/sign_in?_action=registered",
-        user: %{"email" => user.email, "password" => "very-long-password-here"}
-      )
-
-      assert_receive {:mixpanel_track, [%{"event" => "sign_up_completed", "properties" => props}]}
-      assert props["distinct_id"] == user.id
     end
 
     test "logout fires signed_out", %{conn: conn, user: user} do

@@ -99,12 +99,6 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("user.email_changed", p),
     do: from_to(get(p, :from), get(p, :to))
 
-  defp summarize("user.email_change_failed", p),
-    do: pairs(reason: get(p, :reason))
-
-  defp summarize("user.password_change_failed", p),
-    do: pairs(reason: get(p, :reason))
-
   defp summarize("user.profile_updated", p) do
     case get(p, :full_name) do
       nil -> []

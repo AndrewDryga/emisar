@@ -106,12 +106,6 @@ defmodule Emisar.MailTest do
         &(&1.text_body =~ "/sign_in/magic/tok/123456" and not (&1.text_body =~ "return_to"))
       )
     end
-
-    test "deliver_password_reset appends an encoded return_to when given one" do
-      user = user_fixture()
-      UserNotifier.deliver_password_reset(user, "tok", "/app/acme")
-      assert_email_sent(&(&1.text_body =~ "/reset_password/tok?return_to=%2Fapp%2Facme"))
-    end
   end
 
   describe "welcome email" do
@@ -172,10 +166,9 @@ defmodule Emisar.MailTest do
   end
 
   describe "magic-link email content" do
-    # + — the magic-link subject, the
-    # /sign_in/magic/<token> link, and the body copy "15 minutes" which
-    # AGREES with the enforced @magic_link_validity_in_minutes (unlike the
-    # reset email, see).
+    # The magic-link subject, the /sign_in/magic/<token>/<code> link, and the
+    # body copy "15 minutes" which AGREES with the enforced
+    # @magic_link_validity_in_minutes.
     test "carries the subject, link, the 6-digit code, and a 15-minute expiry" do
       user = user_fixture()
       UserNotifier.deliver_magic_link(user, "tok-magic", "123456")
@@ -186,41 +179,6 @@ defmodule Emisar.MailTest do
         # The 6-digit code is shown standalone for cross-device entry.
         assert email.text_body =~ "123456"
         assert email.text_body =~ "15 minutes"
-        true
-      end)
-    end
-  end
-
-  describe "password-reset email content" do
-    # the reset subject, the /reset_password/<token>
-    # link, and the "won't change unless someone clicks" reassurance.
-    test "carries the subject, reset link, and reassurance line" do
-      user = user_fixture()
-      UserNotifier.deliver_password_reset(user, "tok-reset")
-
-      assert_email_sent(fn email ->
-        assert email.subject == "Reset your emisar password"
-        assert email.text_body =~ "/reset_password/tok-reset"
-        assert email.text_body =~ "won't change unless someone clicks"
-        true
-      end)
-    end
-
-    # DOCUMENTED DEFECT CANDIDATE. The body promises the
-    # link is "valid for 1 hour", but the enforced reset-token TTL is
-    # @reset_validity_in_days = 1 (≈24h) at the Auth layer. This test pins the
-    # current copy so the mismatch is visible; once a product decision picks
-    # the correct value, flip this to assert the body and the enforced TTL
-    # AGREE. Not changed in discovery (no production edit).
-    test "body still says '1 hour' though the link actually works ~1 day (mismatch)" do
-      user = user_fixture()
-      UserNotifier.deliver_password_reset(user, "tok")
-
-      assert_email_sent(fn email ->
-        assert email.text_body =~ "valid for 1 hour"
-        # The enforced window is 1 DAY — the body copy and enforcement disagree.
-        refute email.text_body =~ "1 day"
-        refute email.text_body =~ "24 hours"
         true
       end)
     end

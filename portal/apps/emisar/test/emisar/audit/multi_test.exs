@@ -1,7 +1,7 @@
 defmodule Emisar.Audit.MultiTest do
   @moduledoc """
   `Audit.Multi.log_for_user/5` — the transactional audit primitive for
-  user-scoped events (sign-in, session revocation, password reset). It
+  user-scoped events (sign-in, session revocation, email change). It
   derives `account_id` from the user's membership and commits the audit
   row atomically with the parent transaction. These pin its branches
   directly rather than only through the Auth flows that lean on it.

@@ -162,13 +162,6 @@ defmodule Emisar.Audit.Events do
 
   # -- User ------------------------------------------------------------
 
-  def user_password_reset_forced(
-        %Subject{} = subject,
-        %Accounts.Membership{} = membership,
-        %Users.User{} = user
-      ),
-      do: user_event(subject, membership, user, "user.password_reset_forced")
-
   def user_sessions_revoked(
         %Subject{} = subject,
         %Accounts.Membership{} = membership,

@@ -19,8 +19,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
     {:ok, user} =
       Users.register_user(%{
         email: "pending-#{System.unique_integer([:positive])}@example.com",
-        full_name: "Pending Person",
-        password: "very-long-password-here"
+        full_name: "Pending Person"
       })
 
     {:ok, account} =

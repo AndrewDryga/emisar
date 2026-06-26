@@ -15,30 +15,6 @@ defmodule Emisar.Auth do
   alias Emisar.RequestContext
   alias Emisar.Users
 
-  # -- Password sign in -------------------------------------------------
-
-  @doc """
-  Looks up a user by email and verifies the password. Returns
-  `{:ok, user}` on a match or `{:error, :not_found}` for unknown email
-  / wrong password. Pre-auth boundary — no Subject.
-  """
-  def fetch_user_by_email_and_password(email, password)
-      when is_binary(email) and is_binary(password) do
-    user =
-      case Users.fetch_user_by_email(email) do
-        {:ok, user} -> user
-        {:error, :not_found} -> nil
-      end
-
-    # `valid_password?(nil, _)` falls through to Bcrypt.no_user_verify/0
-    # so timing is constant whether or not the email matched a row.
-    if Users.User.valid_password?(user, password) do
-      {:ok, user}
-    else
-      {:error, :not_found}
-    end
-  end
-
   # -- Session tokens ---------------------------------------------------
 
   @doc """
@@ -443,72 +419,6 @@ defmodule Emisar.Auth do
     |> case do
       {:ok, %{outcome: outcome}} -> outcome
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # -- Password reset ---------------------------------------------------
-
-  @doc """
-  Mints a reset-password token for `user` and (by default) audits the
-  request as `user.password_reset_requested` with `user` as both actor
-  and subject.
-
-  Options:
-
-    * `:audit` (boolean, default true) — set to `false` when the caller
-      is an admin-driven path (`Accounts.force_password_reset/2`). Those
-      paths emit their own correctly-attributed event
-      (`user.password_reset_forced` with admin as actor); the inline
-      audit here would otherwise re-record the same action with the
-      TARGET user as actor — which is wrong and confusing in the log.
-  """
-  def issue_password_reset_token!(%Users.User{} = user, opts \\ [], context \\ %RequestContext{}) do
-    {raw, digest} = Crypto.email_token()
-
-    multi =
-      Multi.new()
-      |> Multi.insert(
-        :token,
-        UserToken.Changeset.hashed(user, digest, "reset_password", user.email)
-      )
-
-    multi =
-      if Keyword.get(opts, :audit, true) do
-        Audit.Multi.log_for_user(multi, :audit, user, "user.password_reset_requested",
-          extra: [context: context]
-        )
-      else
-        multi
-      end
-
-    {:ok, _} = Repo.commit_multi(multi)
-    raw
-  end
-
-  def reset_user_password(raw, password, context \\ %RequestContext{})
-      when is_binary(raw) and is_binary(password) do
-    case Crypto.email_token_digest(raw) do
-      :error ->
-        {:error, :invalid_or_expired}
-
-      {:ok, digest} ->
-        verified_token_multi(digest, "reset_password")
-        |> Multi.run(:user, fn _repo, %{token_user: user} ->
-          Users.reset_user_password(user, password)
-        end)
-        |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-        |> Multi.delete_all(:sessions, fn %{token_user: user} ->
-          UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_context("session")
-        end)
-        |> Audit.Multi.log_for_user(:audit, nil, "user.password_reset_completed",
-          extra: [context: context],
-          user_fn: fn %{user: user} -> user end
-        )
-        |> Repo.commit_multi()
-        |> case do
-          {:ok, %{user: updated}} -> {:ok, updated}
-          {:error, reason} -> {:error, reason}
-        end
     end
   end
 

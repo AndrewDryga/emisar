@@ -18,9 +18,9 @@ defmodule Emisar.Auth.Subject do
       request_id / mcp_session). Filled in by the boundary; the
       `Audit.Events` builders read it off the subject and stamp it onto
       every event the caller produces.
-    * `auth_method` — how this session was authenticated (`:password |
-      :magic_link | :sso`), or nil for an API key / runner (the actor IS
-      the credential). Stamped onto every audit row.
+    * `auth_method` — how this session was authenticated (`:magic_link |
+      :sso`), or nil for an API key / runner (the actor IS the credential).
+      Stamped onto every audit row.
     * `mfa` — whether a second factor was verified this session (TOTP, or an
       MFA-enforcing IdP). `true`/`false` for a user session, nil otherwise.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
@@ -31,7 +31,7 @@ defmodule Emisar.Auth.Subject do
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
-  @type auth_method :: :password | :magic_link | :sso
+  @type auth_method :: :magic_link | :sso
   @type actor ::
           Emisar.Users.User.t()
           | Emisar.ApiKeys.ApiKey.t()

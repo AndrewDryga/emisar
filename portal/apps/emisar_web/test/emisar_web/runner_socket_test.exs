@@ -10,8 +10,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     setup do
       {:ok, user} =
         Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com",
-          password: "very-long-password-1234"
+          email: "owner-#{System.unique_integer([:positive])}@example.com"
         })
 
       {:ok, account} =
@@ -62,8 +61,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     setup do
       {:ok, user} =
         Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com",
-          password: "very-long-password-1234"
+          email: "owner-#{System.unique_integer([:positive])}@example.com"
         })
 
       {:ok, account} =
@@ -94,8 +92,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     test "the free plan caps runners at its limit → 402", %{conn: conn} do
       {:ok, user} =
         Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com",
-          password: "very-long-password-1234"
+          email: "owner-#{System.unique_integer([:positive])}@example.com"
         })
 
       {:ok, account} =
@@ -182,8 +179,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     setup do
       {:ok, user} =
         Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com",
-          password: "very-long-password-1234"
+          email: "owner-#{System.unique_integer([:positive])}@example.com"
         })
 
       {:ok, account} =
@@ -943,8 +939,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   defp connected_socket(_ctx) do
     {:ok, user} =
       Emisar.Users.register_user(%{
-        email: "owner-#{System.unique_integer([:positive])}@example.com",
-        password: "very-long-password-1234"
+        email: "owner-#{System.unique_integer([:positive])}@example.com"
       })
 
     {:ok, account} =

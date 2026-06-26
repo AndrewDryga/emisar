@@ -426,7 +426,6 @@ defmodule EmisarWeb.AuditDetailLive do
   # session list, so the audit page and the profile page agree about
   # "what does this string mean." Strips the verbose Mozilla/AppleWebKit
   # cruft into something a reader can scan.
-  defp auth_method_label("password"), do: "Password"
   defp auth_method_label("magic_link"), do: "Magic link"
   defp auth_method_label("sso"), do: "SSO"
   defp auth_method_label(other), do: other

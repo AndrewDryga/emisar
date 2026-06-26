@@ -125,7 +125,6 @@ defmodule Emisar.SSOSCIMTest do
       assert user.email == "prov@acme.test"
       assert user.full_name == "Dir User"
       assert user.confirmed_at
-      refute user.hashed_password
 
       assert identity.created_by == :provider
       assert identity.provisioned_via == :scim

@@ -53,8 +53,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       {:ok, other_user} =
         Users.register_user(%{
           email: "other-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Other",
-          password: "very-long-password-1234"
+          full_name: "Other"
         })
 
       other_user = Emisar.Fixtures.confirm_user(other_user)

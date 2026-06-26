@@ -84,14 +84,13 @@ defmodule Emisar.Fixtures do
 
   # -- User -------------------------------------------------------------
 
-  @doc "Persists a user. Defaults to confirmed with a known password."
+  @doc "Persists a user. Defaults to confirmed."
   def user_fixture(attrs \\ %{}) do
     attrs = Enum.into(attrs, %{})
-    password = attrs[:password] || "password-with-12-chars"
     confirmed? = Map.get(attrs, :confirmed?, true)
 
     cast_attrs =
-      %{email: unique_email(), full_name: "Test User", password: password}
+      %{email: unique_email(), full_name: "Test User"}
       |> Map.merge(attrs)
       |> Map.drop([:confirmed?])
 
