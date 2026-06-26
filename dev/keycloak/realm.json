@@ -1,0 +1,61 @@
+{
+  "realm": "emisar",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "groups": [
+    { "name": "emisar-admins" },
+    { "name": "emisar-operators" }
+  ],
+  "clients": [
+    {
+      "clientId": "emisar-portal",
+      "name": "emisar portal (dev)",
+      "description": "DEV ONLY — confidential OIDC client for the local e2e stack. DO NOT USE IN PROD.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "emisar-oidc-dev-secret-DO-NOT-USE-IN-PROD",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://portal:4000/sign_in/sso/callback",
+        "http://localhost:4000/sign_in/sso/callback",
+        "http://localhost:4010/sign_in/sso/callback",
+        "https://host.docker.internal:4010/sign_in/sso/callback"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@northstar.example",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "Sleep-tight-1234", "temporary": false }
+      ],
+      "groups": ["/emisar-admins"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@northstar.example",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Operator",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "Sleep-tight-1234", "temporary": false }
+      ],
+      "groups": ["/emisar-operators"]
+    }
+  ]
+}

@@ -29,6 +29,10 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   @registry Emisar.SSO.OIDC.Registry
   @supervisor Emisar.SSO.OIDC.ProviderSupervisor
   @default_scopes ["openid", "email", "profile"]
+  # We hold a client secret, not a signing key — restrict client authentication
+  # to the secret-based methods (basic, then post) so oidcc never tries the JWT
+  # methods an IdP may advertise but we can't satisfy.
+  @secret_auth_methods [:client_secret_basic, :client_secret_post]
 
   @impl Emisar.SSO.OIDC
   def begin_authorization(%IdentityProvider{} = provider, opts) do
@@ -42,7 +46,12 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       state: state,
       nonce: nonce,
       pkce_verifier: verifier,
-      require_pkce: true
+      require_pkce: true,
+      # We authenticate with a client SECRET, not a signing key — so constrain
+      # the client-auth method to the secret-based ones. oidcc otherwise prefers
+      # private_key_jwt / client_secret_jwt when the IdP advertises them (Okta,
+      # Keycloak, …), which we can't satisfy → the PAR/token request 401s.
+      preferred_auth_methods: @secret_auth_methods
     }
 
     with {:ok, worker} <- ensure_worker(provider),
@@ -68,7 +77,9 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     token_opts = %{
       redirect_uri: stashed.redirect_uri,
       nonce: stashed.nonce,
-      pkce_verifier: stashed.pkce_verifier
+      pkce_verifier: stashed.pkce_verifier,
+      # Same as begin: secret-based client auth only (see @secret_auth_methods).
+      preferred_auth_methods: @secret_auth_methods
     }
 
     with :ok <- ensure_state_matches(params, stashed),
@@ -137,9 +148,14 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       restart: :transient
     }
 
+    # Hand oidcc the worker PID, not the `{:via, Registry, …}` name: oidcc's
+    # `from_configuration_worker/4` resolves a non-pid via `:erlang.whereis/1`,
+    # which only accepts an atom and raises on a via-tuple. The Registry name
+    # still drives the keyed-by-{id,issuer} `:already_started` resolution above;
+    # we just pass the live pid it returns to `create_redirect_url`/`retrieve_token`.
     case DynamicSupervisor.start_child(@supervisor, spec) do
-      {:ok, _pid} -> {:ok, name}
-      {:error, {:already_started, _pid}} -> {:ok, name}
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, reason} -> {:error, reason}
     end
   end

@@ -66,6 +66,45 @@ services:
       retries: 20
 
   # ----------------------------------------------------------------
+  # Keycloak — self-hosted OIDC provider + SCIM source for the e2e SSO
+  # flow. Serves HTTPS with the dev CA (dev/keycloak/certs); the portal
+  # trusts that CA. Imports the `emisar` realm (dev/keycloak/realm.json):
+  # an `emisar-portal` confidential client + test users alice/bob.
+  # DEV ONLY — hardcoded secrets, self-signed cert.
+  # ----------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command:
+      - start-dev
+      - --import-realm
+      - --https-certificate-file=/certs/tls.crt
+      - --https-certificate-key-file=/certs/tls.key
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "admin"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "admin"
+      KC_HEALTH_ENABLED: "true"
+      # The issuer/frontend URL the portal + e2e driver both reach in-network,
+      # so the discovery doc + token `iss` are consistent (keycloak:8443).
+      KC_HOSTNAME: "https://keycloak:8443"
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./dev/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./dev/keycloak/certs/tls.crt:/certs/tls.crt:ro
+      - ./dev/keycloak/certs/tls.key:/certs/tls.key:ro
+    # Also reachable from the host at https://localhost:8443 (admin/admin) — but
+    # the seeded issuer is the in-network keycloak:8443, so the automated e2e
+    # drives it in-network (see the sso-e2e service).
+    ports:
+      - "8443:8443"
+    # No curl in the Keycloak image; a bash TCP probe confirms the HTTPS listener.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/8443"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+
+  # ----------------------------------------------------------------
   # Portal — Phoenix release (the cloud control plane)
   # ----------------------------------------------------------------
   portal:
@@ -105,7 +144,14 @@ services:
       timeout: 3s
       retries: 12
       start_period: 15s
-    command: ["sh", "-c", "/app/bin/migrate && /app/bin/server"]
+    # DEV: trust the local Keycloak's self-signed CA so oidcc's TLS verify
+    # (verify_peer against the OS CA store, see sso/oidc/oidcc.ex) accepts it.
+    # Runs as root (dev only) so update-ca-certificates can rewrite the bundle
+    # before the BEAM boots and first calls :public_key.cacerts_get/0.
+    user: "root"
+    volumes:
+      - ./dev/keycloak/certs/ca.crt:/usr/local/share/ca-certificates/keycloak-dev-ca.crt:ro
+    command: ["sh", "-c", "update-ca-certificates && /app/bin/migrate && /app/bin/server"]
 
   # ----------------------------------------------------------------
   # Seeder — runs once, exits. Inserts the demo account, default
@@ -132,6 +178,14 @@ services:
       # service below can drive the bridge with no manual key minting. Must
       # start with `emk-` and stay in sync with the mcp service's EMISAR_API_KEY.
       EMISAR_DEV_FIXED_MCP_KEY: "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      # DEV-ONLY Keycloak OIDC + SCIM seed values. The OIDC secret matches the
+      # client secret in dev/keycloak/realm.json; the SCIM token is the fixed
+      # bearer the sso-e2e driver presents. The seed creates an enabled
+      # :keycloak IdentityProvider (fixed id) on the demo account + enables SCIM.
+      EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET: "emisar-oidc-dev-secret-DO-NOT-USE-IN-PROD"
+      EMISAR_DEV_FIXED_SCIM_TOKEN: "ems-scim-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      EMISAR_DEV_KEYCLOAK_ISSUER: "https://keycloak:8443/realms/emisar"
+      EMISAR_DEV_KEYCLOAK_PROVIDER_ID: "11111111-1111-7111-8111-111111111111"
     restart: "no"
     command: ["/app/bin/emisar", "eval", "Emisar.Release.seed()"]
 
@@ -231,6 +285,39 @@ services:
       # The bridge fails closed on cleartext http:// to a non-loopback host;
       # opt in for the in-network portal:4000 (same as the runners' allow_insecure).
       EMISAR_ALLOW_INSECURE: "1"
+
+  # ----------------------------------------------------------------
+  # SSO e2e driver — profile-gated. Shares the portal's network namespace
+  # (so `localhost:4000` IS the portal and `keycloak` resolves), then drives
+  # BOTH round-trips against the seeded Keycloak provider:
+  #   · SCIM  — POST/GET/PATCH a user to /scim/v2 with the fixed dev bearer
+  #   · OIDC  — the full auth-code login as alice → JIT-provision
+  # Run it once the stack is up:  docker compose run --rm sso-e2e
+  # ----------------------------------------------------------------
+  sso-e2e:
+    image: python:3.12-slim
+    profiles: ["test"]
+    network_mode: "service:portal"
+    depends_on:
+      portal:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      PORTAL_URL: "http://localhost:4000"
+      KEYCLOAK_ISSUER: "https://keycloak:8443/realms/emisar"
+      KEYCLOAK_CA: "/certs/ca.crt"
+      PROVIDER_ID: "11111111-1111-7111-8111-111111111111"
+      SCIM_TOKEN: "ems-scim-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      KC_USER: "alice"
+      KC_PASS: "Sleep-tight-1234"
+      KC_EMAIL: "alice@northstar.example"
+    volumes:
+      - ./dev/keycloak/e2e/sso_e2e.py:/sso_e2e.py:ro
+      - ./dev/keycloak/certs/ca.crt:/certs/ca.crt:ro
+    command: ["python", "/sso_e2e.py"]
 
 volumes:
   pg_data:

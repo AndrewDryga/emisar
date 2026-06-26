@@ -1314,6 +1314,65 @@ case Runners.list_auth_keys(owner_subject) do
     :ok
 end
 
+# -- Keycloak OIDC + SCIM provider (docker-compose e2e SSO) ----------
+# Seeds an enabled :keycloak IdentityProvider on the demo (enterprise) account
+# pointing at the local Keycloak, plus a fixed dev SCIM bearer — so `docker
+# compose up` exercises OIDC login AND inbound SCIM provisioning end to end.
+# Gated on the same fixed-dev-value env vars as the auth/MCP keys; a no-op when
+# unset, so a prod-style seed never creates an IdP. Idempotent (skips if the
+# account already has a provider).
+keycloak_secret = System.get_env("EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET")
+
+keycloak_present? =
+  Emisar.SSO.IdentityProvider.Query.not_deleted()
+  |> Emisar.SSO.IdentityProvider.Query.by_account_id(account.id)
+  |> Repo.exists?()
+
+if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "" do
+  issuer = System.get_env("EMISAR_DEV_KEYCLOAK_ISSUER") || "https://keycloak:8443/realms/emisar"
+  # Fixed id so the e2e driver can begin the flow at /sign_in/sso/<id> with no DB lookup.
+  provider_id =
+    System.get_env("EMISAR_DEV_KEYCLOAK_PROVIDER_ID") || "11111111-1111-7111-8111-111111111111"
+
+  {:ok, provider} =
+    Emisar.SSO.IdentityProvider.Changeset.create(account.id, %{
+      kind: :keycloak,
+      name: "Keycloak (dev)",
+      issuer: issuer,
+      client_id: System.get_env("EMISAR_DEV_KEYCLOAK_CLIENT_ID") || "emisar-portal",
+      client_secret: keycloak_secret,
+      identifier_claim: "sub",
+      default_role: :operator,
+      satisfies_mfa: true,
+      provisioner: :jit,
+      enabled: true
+    })
+    |> Ecto.Changeset.put_change(:id, provider_id)
+    |> Repo.insert()
+
+  IO.puts(IO.ANSI.green() <> "✓ Seeded Keycloak OIDC provider (#{issuer})" <> IO.ANSI.reset())
+
+  case System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") do
+    raw when is_binary(raw) and byte_size(raw) > 12 ->
+      {:ok, _} =
+        provider
+        |> Emisar.SSO.IdentityProvider.Changeset.scim_token(
+          String.slice(raw, 0, 12),
+          Emisar.Crypto.hash(raw),
+          true
+        )
+        |> Repo.update()
+
+      IO.puts(
+        IO.ANSI.green() <>
+          "✓ Enabled SCIM on the Keycloak provider (fixed dev token)" <> IO.ANSI.reset()
+      )
+
+    _ ->
+      :ok
+  end
+end
+
 # -- Extra accounts: the plan tiers + an empty one, so the billing / upsell /
 #    runner-limit states AND the SSO-is-Enterprise gate are all visible by
 #    switching accounts in one seeded dev DB. (The main "demo" account is
