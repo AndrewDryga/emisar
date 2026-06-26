@@ -53,12 +53,12 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		Labels:   b.Labels,
 		Packs:    map[string]PackInfo{},
 	}
-	// Advertise enforcement + the trusted key ids / freshness window only when
+	// Advertise enforcement + the trusted CA ids / freshness window only when
 	// the live verifier enforces — meaningless metadata otherwise.
 	if b.GetVerifier != nil {
 		if v := b.GetVerifier(); v != nil && v.Enforces() {
 			msg.EnforceSignatures = true
-			msg.SigningKeyIDs = v.KeyIDs()
+			msg.SigningCAIDs = v.CAIDs()
 			msg.MaxAttestationAgeSeconds = int(v.MaxAge().Seconds())
 		}
 	}

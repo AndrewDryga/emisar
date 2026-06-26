@@ -143,7 +143,7 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 				t.Errorf("exit = %d, want 0; stderr=%q", code, stderr)
 			}
 			// The help must enumerate the subcommands (the operator's map of the CLI).
-			for _, want := range []string{"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "keygen", "state", "version"} {
+			for _, want := range []string{"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "ca", "cert", "signing", "state", "version"} {
 				if !strings.Contains(stdout, want) {
 					t.Errorf("root help missing %q:\n%s", want, stdout)
 				}
@@ -223,7 +223,7 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 		{name: "state", args: []string{"--config", cfg, "state"}, wantOut: `"runner_state"`},
 		{name: "events cat", args: []string{"--config", cfg, "events", "cat"}, wantOut: "linux.ping"},
 		{name: "audit verify", args: []string{"--config", cfg, "audit", "verify"}, wantOut: "chain intact"},
-		{name: "keygen", args: []string{"keygen"}, wantOut: "public_key"},
+		{name: "ca init", args: []string{"ca", "init"}, wantOut: "public_key"},
 		// `doctor` and `connect` are intentionally omitted: doctor exits non-zero
 		// here (no cloud/token to satisfy its preflight checks — its dispatch is
 		// covered by TestDoctorCmd_* in-process), and connect needs a live socket.
@@ -377,7 +377,7 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 		// enforce + a non-hex public key makes buildVerifier
 		// fail; connect surfaces it as `signing: …` and exits 1.
 		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  auth_key_env: EMISAR_AUTH_KEY\n"+
-			"signing:\n  enforce_signatures: true\n  trusted_keys:\n    - key_id: k1\n      public_key: zzzznothex\n")
+			"signing:\n  enforce_signatures: true\n  trusted_cas:\n    - ca_id: k1\n      public_key: zzzznothex\n")
 		// Provide the auth key so we get PAST the credential check to buildVerifier.
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_AUTH_KEY": "ek-test"})
 		if code != 1 {
@@ -490,7 +490,7 @@ func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	// public half is not constrained — any 64 hex chars that decode to 32 bytes
 	// pass NewVerifier's parse), so config load + connect's buildVerifier accept it.
 	validKeyHex := strings.Repeat("ab", 32)
-	extra := "signing:\n  enforce_signatures: true\n  trusted_keys:\n    - key_id: k1\n      public_key: " + validKeyHex + "\n"
+	extra := "signing:\n  enforce_signatures: true\n  trusted_cas:\n    - ca_id: k1\n      public_key: " + validKeyHex + "\n"
 	if err := appendToFile(t, cfg, extra); err != nil {
 		t.Fatalf("append signing config: %v", err)
 	}

@@ -14,6 +14,7 @@ package cloud
 import (
 	"encoding/json"
 
+	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -75,13 +76,14 @@ type RunActionMsg struct {
 // Attestation is the signed envelope binding a dispatch to a real user's MCP
 // call. The runner reconstructs the signed claim from the run_action's
 // action_id + args plus these nonce/issued_at fields and verifies Signature
-// against the trusted key named by KeyID. See internal/attest for the canonical
-// encoding shared with the mcp signer.
+// against the leaf key the CA-signed Cert vouches for. The control plane only
+// relays this — it holds no key and cannot forge or alter it. See internal/attest
+// for the canonical encoding shared with the mcp signer.
 type Attestation struct {
-	KeyID     string `json:"key_id"`
-	Signature string `json:"sig"`
-	Nonce     string `json:"nonce"`
-	IssuedAt  string `json:"issued_at"`
+	Signature string       `json:"sig"`
+	Nonce     string       `json:"nonce"`
+	IssuedAt  string       `json:"issued_at"`
+	Cert      *attest.Cert `json:"cert,omitempty"`
 }
 
 // RunOpts is the per-call override envelope. Each field is clamped to the
@@ -126,12 +128,12 @@ type RunnerStateMsg struct {
 	// on every dispatch and refuses unsigned ones. The cloud responds by
 	// disabling its own (operator/runbook) dispatch to this runner.
 	EnforceSignatures bool `json:"enforce_signatures,omitempty"`
-	// SigningKeyIDs + MaxAttestationAgeSeconds ride along only when enforcing:
-	// the key ids this runner trusts (so an operator can confirm setup — the
+	// SigningCAIDs + MaxAttestationAgeSeconds ride along only when enforcing:
+	// the CA ids this runner trusts (so an operator can confirm setup — the
 	// public-key bytes never leave the host) and the freshness window in seconds
 	// (so the cloud can warn before dispatching a run that would be refused as
 	// stale, e.g. a slow approval).
-	SigningKeyIDs            []string `json:"signing_key_ids,omitempty"`
+	SigningCAIDs             []string `json:"signing_ca_ids,omitempty"`
 	MaxAttestationAgeSeconds int      `json:"max_attestation_age_seconds,omitempty"`
 }
 

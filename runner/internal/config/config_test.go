@@ -99,10 +99,10 @@ func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
 // TestValidate_Signing covers the client-attested-dispatch config gate
 // (config.go validateSigning):
 //
-//	-: enforce_signatures with no trusted_keys is a footgun (the
+//	-: enforce_signatures with no trusted_cas is a footgun (the
 //	  runner would refuse EVERY dispatch) and is rejected.
-//	-: two trusted keys sharing a key_id are rejected.
-//	-: a trusted key missing key_id or public_key is rejected.
+//	-: two trusted CAs sharing a ca_id are rejected.
+//	-: a trusted CA missing ca_id or public_key is rejected.
 //
 // Each case starts from a config that validates and changes only the signing
 // block, so a failure pins the rejection to the signing rule under test.
@@ -117,48 +117,48 @@ func TestValidate_Signing(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "enforce with empty trusted_keys rejected",
+			name:    "enforce with empty trusted_cas rejected",
 			signing: Signing{EnforceSignatures: true},
 			wantErr: true,
 		},
 		{
-			name: "enforce with a trusted key ok",
+			name: "enforce with a trusted CA ok",
 			signing: Signing{
 				EnforceSignatures: true,
-				TrustedKeys:       []TrustedKey{{KeyID: "prod", PublicKey: keyA}},
+				TrustedCAs:        []TrustedCA{{CAID: "acme", PublicKey: keyA}},
 			},
 		},
 		{
-			// enforce off + no keys is fine — signing is simply not in force.
-			name:    "no enforce no keys ok",
+			// enforce off + no CAs is fine — signing is simply not in force.
+			name:    "no enforce no CAs ok",
 			signing: Signing{},
 		},
 		{
-			name: "duplicate key_id rejected",
+			name: "duplicate ca_id rejected",
 			signing: Signing{
-				TrustedKeys: []TrustedKey{
-					{KeyID: "dup", PublicKey: keyA},
-					{KeyID: "dup", PublicKey: keyB},
+				TrustedCAs: []TrustedCA{
+					{CAID: "dup", PublicKey: keyA},
+					{CAID: "dup", PublicKey: keyB},
 				},
 			},
 			wantErr: true,
 		},
 		{
-			// key_id missing.
-			name:    "missing key_id rejected",
-			signing: Signing{TrustedKeys: []TrustedKey{{PublicKey: keyA}}},
+			// ca_id missing.
+			name:    "missing ca_id rejected",
+			signing: Signing{TrustedCAs: []TrustedCA{{PublicKey: keyA}}},
 			wantErr: true,
 		},
 		{
-			// key_id present but whitespace-only.
-			name:    "blank key_id rejected",
-			signing: Signing{TrustedKeys: []TrustedKey{{KeyID: "  ", PublicKey: keyA}}},
+			// ca_id present but whitespace-only.
+			name:    "blank ca_id rejected",
+			signing: Signing{TrustedCAs: []TrustedCA{{CAID: "  ", PublicKey: keyA}}},
 			wantErr: true,
 		},
 		{
 			// public_key missing.
 			name:    "missing public_key rejected",
-			signing: Signing{TrustedKeys: []TrustedKey{{KeyID: "prod"}}},
+			signing: Signing{TrustedCAs: []TrustedCA{{CAID: "acme"}}},
 			wantErr: true,
 		},
 	}

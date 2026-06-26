@@ -169,12 +169,13 @@ env var can be unset after the first successful connect.`,
 }
 
 // buildVerifier constructs the dispatch signature verifier from config: the
-// trusted keys, whether enforcement is on, and the attestation freshness
-// window. Used at connect start and on every SIGHUP rebuild.
+// trusted CAs, whether enforcement is on, the attestation freshness window, and
+// the runner's local group/labels (the cert-scope identity). Used at connect
+// start and on every SIGHUP rebuild.
 func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
-	keys := make([]signing.KeyConfig, len(cfg.Signing.TrustedKeys))
-	for i, k := range cfg.Signing.TrustedKeys {
-		keys[i] = signing.KeyConfig{KeyID: k.KeyID, PublicKeyHex: k.PublicKey}
+	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
+	for i, ca := range cfg.Signing.TrustedCAs {
+		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
 	}
 	// Persist the replay cache under the data dir so a restart or SIGHUP rebuild
 	// reloads the seen nonces instead of clearing them (an emptied cache would let
@@ -184,7 +185,8 @@ func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
 		storePath = filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
 	}
 	return signing.NewVerifier(
-		cfg.Signing.EnforceSignatures, keys, cfg.Signing.MaxAttestationAge.Std(), storePath)
+		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
+		cfg.Runner.Group, cfg.Runner.Labels, storePath)
 }
 
 // reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP

@@ -1,14 +1,17 @@
 // Package signing verifies client-attested dispatches on the runner. With
 // enforcement on (config signing.enforce_signatures), the runner runs a dispatch
-// only if it carries a valid Ed25519 signature from a trusted key, is inside the
-// freshness window, and uses a nonce not seen before. This is the runner's
-// strongest defense: a compromised control plane can relay a real user's
-// MCP-signed action but can neither forge nor replay one.
+// only if it carries a valid Ed25519 attestation whose leaf key is vouched for by
+// a still-valid, in-scope certificate from a trusted CA, is inside the freshness
+// window, and uses a nonce not seen before. This is the runner's strongest
+// defense: a compromised control plane can relay a real user's MCP-signed action
+// but can neither forge, redirect, nor replay one.
 //
-// The runner-target binding is the KEY itself — the runner trusts only the
-// key_id(s) in its config — so a dispatch signed for a different trust domain
-// fails here. The signed claim therefore binds the action, args, nonce, and
-// time, not a runner identity the signer and runner can't agree on.
+// The runner trusts ONE (or a few) certificate authorities, not every leaf key.
+// The runner-target binding is the cert's SCOPE, asserted by the offline CA and
+// matched only against this runner's local group/labels — never a value the
+// control plane supplies, so a compromised portal cannot redirect a certified
+// dispatch to a runner the CA did not scope it to. The leaf public key the
+// attestation verifies under comes from the CA-verified cert, never from config.
 package signing
 
 import (
@@ -22,19 +25,21 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 )
 
-// KeyConfig is one trusted public key as it comes from config.
-type KeyConfig struct {
-	KeyID        string
+// CAConfig is one trusted certificate-authority public key as it comes from config.
+type CAConfig struct {
+	CAID         string
 	PublicKeyHex string
 }
 
 // Attestation is the runner's view of the signed envelope a dispatch carries.
-// A nil *Attestation means the dispatch arrived unsigned.
+// A nil *Attestation means the dispatch arrived unsigned; a nil Cert means it
+// arrived without the certificate the CA model requires. KeyID is gone — the leaf
+// key id now lives in the cert.
 type Attestation struct {
-	KeyID     string
 	Signature string
 	Nonce     string
 	IssuedAt  string
+	Cert      *attest.Cert
 }
 
 // Decision is the outcome of a check. When Allowed is false, Code is a short
@@ -61,42 +66,46 @@ type Verifier struct {
 	now       func() time.Time
 	storePath string // "" = in-memory only (no persistence)
 
-	keys map[string]ed25519.PublicKey // key_id -> public key
+	cas    map[string]ed25519.PublicKey // ca_id -> CA public key
+	group  string                       // this runner's group, for cert scope matching
+	labels map[string]string            // this runner's labels, for cert scope matching
 
 	mu   sync.Mutex
 	seen map[string]time.Time // nonce -> issued_at, pruned by maxAge, mirrored to storePath
 }
 
-// NewVerifier parses the trusted keys and builds a verifier. enforce mirrors
-// config.signing.enforce_signatures; maxAge must be positive. An enforcing
-// verifier with no usable keys is rejected (config validation already guards
-// the empty-keys case, but a key that fails to parse must not silently leave a
-// runner enforcing with nothing to verify against).
+// NewVerifier parses the trusted CA keys and builds a verifier. enforce mirrors
+// config.signing.enforce_signatures; maxAge must be positive. group/labels are
+// this runner's local identity, matched against a cert's scope — they are the
+// ONLY scope input, never anything the control plane supplies. An enforcing
+// verifier with no usable CAs is rejected (config validation already guards the
+// empty case, but a CA key that fails to parse must not silently leave a runner
+// enforcing with nothing to verify against).
 //
 // storePath, when non-empty, is the on-disk replay-cache file: NewVerifier loads
 // the persisted in-window nonces from it (so a restart/SIGHUP can't clear the
 // cache), and every consumed nonce is mirrored back. A present-but-unreadable or
 // corrupt store is a construction error — fail closed rather than enforce with a
 // replay cache we can't trust. Pass "" for in-memory only.
-func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration, storePath string) (*Verifier, error) {
+func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, group string, labels map[string]string, storePath string) (*Verifier, error) {
 	if maxAge <= 0 {
 		return nil, fmt.Errorf("signing: max attestation age must be positive")
 	}
-	ring := make(map[string]ed25519.PublicKey, len(keys))
-	for _, k := range keys {
-		raw, err := hex.DecodeString(k.PublicKeyHex)
+	ring := make(map[string]ed25519.PublicKey, len(cas))
+	for _, ca := range cas {
+		raw, err := hex.DecodeString(ca.PublicKeyHex)
 		if err != nil {
-			return nil, fmt.Errorf("signing: key %q public_key is not valid hex: %w", k.KeyID, err)
+			return nil, fmt.Errorf("signing: CA %q public_key is not valid hex: %w", ca.CAID, err)
 		}
 		if len(raw) != ed25519.PublicKeySize {
 			return nil, fmt.Errorf(
-				"signing: key %q public_key is %d bytes, want %d (an Ed25519 public key)",
-				k.KeyID, len(raw), ed25519.PublicKeySize)
+				"signing: CA %q public_key is %d bytes, want %d (an Ed25519 public key)",
+				ca.CAID, len(raw), ed25519.PublicKeySize)
 		}
-		ring[k.KeyID] = ed25519.PublicKey(raw)
+		ring[ca.CAID] = ed25519.PublicKey(raw)
 	}
 	if enforce && len(ring) == 0 {
-		return nil, fmt.Errorf("signing: enforcement is on with no trusted keys")
+		return nil, fmt.Errorf("signing: enforcement is on with no trusted CAs")
 	}
 
 	seen := make(map[string]time.Time)
@@ -113,7 +122,9 @@ func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration, storePath
 		maxAge:    maxAge,
 		now:       time.Now,
 		storePath: storePath,
-		keys:      ring,
+		cas:       ring,
+		group:     group,
+		labels:    labels,
 		seen:      seen,
 	}, nil
 }
@@ -122,12 +133,12 @@ func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration, storePath
 // cloud so it disables its own (operator/runbook) dispatch to this runner.
 func (v *Verifier) Enforces() bool { return v.enforce }
 
-// KeyIDs returns the trusted key ids in sorted order — advertised to the cloud so
-// an operator can confirm which key(s) this runner accepts. Safe metadata: the
+// CAIDs returns the trusted CA ids in sorted order — advertised to the cloud so
+// an operator can confirm which CA(s) this runner accepts. Safe metadata: the
 // public-key bytes never leave the host, only their ids.
-func (v *Verifier) KeyIDs() []string {
-	ids := make([]string, 0, len(v.keys))
-	for id := range v.keys {
+func (v *Verifier) CAIDs() []string {
+	ids := make([]string, 0, len(v.cas))
+	for id := range v.cas {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
@@ -139,38 +150,78 @@ func (v *Verifier) KeyIDs() []string {
 func (v *Verifier) MaxAge() time.Duration { return v.maxAge }
 
 // Check decides whether a dispatch may run. Enforcement off → always allow
-// (legacy trust). Enforcement on → require a present, in-window, non-replayed,
-// validly-signed attestation. A passing check CONSUMES the nonce so an identical
+// (legacy trust). Enforcement on → the single CA trust path, in this exact
+// order: a present cert, a trusted + valid CA signature over it, the cert inside
+// its own validity window, its scope satisfied by THIS runner's local identity,
+// the attestation inside the (independent) freshness window, the leaf signature
+// valid under the CERT's public key, and a never-seen nonce. The cert-validity
+// and attestation-freshness windows are SEPARATE gates — a long cert TTL must not
+// widen the replay window. A passing check CONSUMES the nonce so an identical
 // replay is refused; a failing check never burns one.
 func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation) Decision {
 	if !v.enforce {
 		return allow
 	}
-	if att == nil {
+	// 1. A signed dispatch must carry both the attestation and its certificate.
+	if att == nil || att.Cert == nil {
 		return refuse("signature_required",
-			"this runner runs only signed dispatches and this call carried no signature")
+			"this runner runs only signed dispatches and this call carried no signed certificate")
 	}
+	cert := att.Cert
+	// 2. Nonce present.
 	if att.Nonce == "" {
 		return refuse("bad_nonce", "the attestation carried no nonce")
 	}
-	pub, ok := v.keys[att.KeyID]
+	// 3. The cert's CA must be one this runner trusts.
+	caPub, ok := v.cas[cert.CAID]
 	if !ok {
-		return refuse("unknown_key", fmt.Sprintf("no trusted key with id %q", att.KeyID))
+		return refuse("cert_untrusted", fmt.Sprintf("no trusted CA with id %q", cert.CAID))
 	}
+	// 4. The CA's signature over the cert must verify.
+	validCert, err := attest.VerifyCert(caPub, *cert)
+	if err != nil {
+		return refuse("cert_untrusted", "certificate signature is malformed")
+	}
+	if !validCert {
+		return refuse("cert_untrusted", "certificate signature does not verify under the trusted CA")
+	}
+	// 5. The cert must be inside its own absolute validity window.
+	from, err := time.Parse(time.RFC3339, cert.ValidFrom)
+	if err != nil {
+		return refuse("cert_expired", fmt.Sprintf("certificate valid_from %q is not RFC3339", cert.ValidFrom))
+	}
+	until, err := time.Parse(time.RFC3339, cert.ValidUntil)
+	if err != nil {
+		return refuse("cert_expired", fmt.Sprintf("certificate valid_until %q is not RFC3339", cert.ValidUntil))
+	}
+	now := v.now()
+	if now.Before(from) || now.After(until) {
+		return refuse("cert_expired",
+			fmt.Sprintf("certificate is valid %s..%s, outside that window now", cert.ValidFrom, cert.ValidUntil))
+	}
+	// 6. The cert's scope must be satisfied by THIS runner's local group/labels
+	//    (never any value the control plane supplies — that is the redirect guard).
+	if !scopeSatisfied(cert.Scope, v.group, v.labels) {
+		return refuse("cert_scope",
+			"this runner's group/labels do not satisfy the certificate's scope")
+	}
+	// 7. The attestation must be fresh — an INDEPENDENT gate from the cert window.
 	issued, err := time.Parse(time.RFC3339, att.IssuedAt)
 	if err != nil {
 		return refuse("bad_issued_at", fmt.Sprintf("issued_at %q is not RFC3339", att.IssuedAt))
 	}
-	if age := v.now().Sub(issued); age > v.maxAge || age < -v.maxAge {
+	if age := now.Sub(issued); age > v.maxAge || age < -v.maxAge {
 		return refuse("stale",
 			fmt.Sprintf("issued_at %s is outside the +/-%s freshness window", att.IssuedAt, v.maxAge))
 	}
-
-	// Verify the signature over the EXACT issued_at/nonce strings (the parse
-	// above is only for the freshness comparison; the signed bytes use the raw
-	// strings the signer sent).
+	// 8. The attestation signature must verify under the leaf key the CERT
+	//    vouches for (validated hex/length before use), not anything from config.
+	leaf, err := hex.DecodeString(cert.PublicKey)
+	if err != nil || len(leaf) != ed25519.PublicKeySize {
+		return refuse("bad_signature", "certificate public_key is not a valid Ed25519 key")
+	}
 	claim := attest.Claim{ActionID: actionID, Args: args, Nonce: att.Nonce, IssuedAt: att.IssuedAt}
-	valid, err := attest.Verify(pub, claim, att.Signature)
+	valid, err := attest.Verify(ed25519.PublicKey(leaf), claim, att.Signature)
 	if err != nil {
 		return refuse("bad_signature", "signature is malformed")
 	}
@@ -178,7 +229,7 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("bad_signature",
 			"signature does not match the dispatched action, args, nonce, or time")
 	}
-
+	// 9. The nonce must not have been seen — consuming it on success.
 	ok, err = v.consumeNonce(att.Nonce, issued)
 	if err != nil {
 		return refuse("nonce_store_unavailable",
@@ -188,6 +239,23 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 		return refuse("replayed", "this attestation nonce was already used")
 	}
 	return allow
+}
+
+// scopeSatisfied reports whether this runner's local identity satisfies the
+// cert's scope. Group: "" = any group; else an exact match. Labels: every k,v in
+// the scope must equal this runner's label for k (a subset constraint). Matched
+// ONLY against the runner's own group/labels — never any value the control plane
+// supplies — so the offline CA, not the portal, decides where a cert is valid.
+func scopeSatisfied(s attest.Scope, group string, labels map[string]string) bool {
+	if s.Group != "" && s.Group != group {
+		return false
+	}
+	for k, v := range s.Labels {
+		if labels[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // consumeNonce records the nonce, returning (false, nil) if it was already used.

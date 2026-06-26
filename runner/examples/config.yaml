@@ -50,31 +50,34 @@ execution: {}
 
 # Signing is the client-attested-dispatch gate — the strongest defense
 # against a compromised control plane. With enforce_signatures on, the
-# runner runs a dispatch ONLY if it carries a valid Ed25519 signature from
-# one of the trusted keys below, is inside the freshness window, and uses a
-# nonce it hasn't seen. The cloud can RELAY a real user's MCP-signed action
-# but can never originate one itself. The runner advertises enforcement to
-# the cloud, which then disables its own (operator/runbook) dispatch here.
+# runner runs a dispatch ONLY if it carries a valid Ed25519 attestation whose
+# leaf key is vouched for by a still-valid, in-scope certificate from one of
+# the trusted CAs below, is inside the freshness window, and uses a nonce it
+# hasn't seen. The cloud can RELAY a real user's MCP-signed action but can
+# never originate one. The runner advertises enforcement to the cloud, which
+# then disables its own (operator/runbook) dispatch here.
 #
-# The key is the trust boundary: the runner accepts only the key_id(s) listed,
-# established out of band. Use a distinct keypair per runner (or per
-# environment — staging vs prod) so a dispatch signed for one can't be
-# redirected to another; a fleet-wide shared key trades that for simpler ops.
+# The trust boundary is the CA: the runner trusts a few offline CA public keys,
+# not every leaf key, so onboarding an operator is one signature and zero
+# runner-config edits. The runner-target binding is the cert's SCOPE, asserted
+# by the offline CA and matched only against this runner's own group/labels —
+# a scoped cert can't be redirected to a runner the CA didn't scope it to.
 #
-# Generate a keypair on this host with `emisar keygen` (offline — the private
-# key is never sent anywhere). Install the PUBLIC key here; give the PRIVATE key
-# to the MCP client as EMISAR_SIGNING_KEY + EMISAR_SIGNING_KEY_ID.
+# Bootstrap with `emisar signing init` (offline — it mints a CA, a leaf, and a
+# cert, prints this trusted_cas block, the CA PRIVATE key to keep offline, and
+# the MCP client's EMISAR_SIGNING_KEY + EMISAR_SIGNING_CERT). The CA private key
+# stays offline and signs new operator certs as they expire (`emisar cert new`).
 #
 # Changing anything under `signing` (enabling enforcement, rotating or revoking
-# a key) takes effect on the next SIGHUP — the runner rebuilds the verifier and
+# a CA) takes effect on the next SIGHUP — the runner rebuilds the verifier and
 # re-advertises — or on a full restart. A rebuild resets the in-memory nonce cache.
 #
 # signing:
 #   enforce_signatures: true
 #   max_attestation_age: 24h   # also caps replay exposure + the nonce cache
-#   trusted_keys:
-#     - key_id: mcp-prod-2026
-#       public_key: 79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664
+#   trusted_cas:
+#     - ca_id: acme-2026
+#       public_key: e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0
 
 events:
   jsonl_path: ./var/log/emisar/events.jsonl

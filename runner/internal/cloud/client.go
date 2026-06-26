@@ -511,10 +511,10 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 	var att *signing.Attestation
 	if m.Attestation != nil {
 		att = &signing.Attestation{
-			KeyID:     m.Attestation.KeyID,
 			Signature: m.Attestation.Signature,
 			Nonce:     m.Attestation.Nonce,
 			IssuedAt:  m.Attestation.IssuedAt,
+			Cert:      m.Attestation.Cert,
 		}
 	}
 

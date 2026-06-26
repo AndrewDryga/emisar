@@ -31,31 +31,39 @@ type Config struct {
 
 // Signing is the client-attested-dispatch gate: the strongest defense against
 // a compromised control plane. When enforce_signatures is on, the runner runs a
-// dispatch ONLY if it carries a valid Ed25519 signature from one of the trusted
-// keys — so the cloud can relay a real user's MCP-signed action but can never
-// originate one itself. The runner ALSO advertises this to the cloud, which then
-// disables its own (operator/runbook) dispatch to this runner.
+// dispatch ONLY if it carries a valid Ed25519 attestation whose leaf key is
+// vouched for by a certificate signed by one of the trusted CAs — so the cloud
+// can relay a real user's MCP-signed action but can never originate one itself.
+// The runner ALSO advertises this to the cloud, which then disables its own
+// (operator/runbook) dispatch to this runner.
 //
-// The runner-target binding is the KEY: a runner trusts only the key_id(s)
-// listed here, established out of band, so a dispatch signed for a different
-// trust domain fails. Use a distinct keypair per runner (or per environment —
-// staging vs prod) for redirect protection; a fleet-wide shared key trades that
-// for simpler ops.
+// The runner-target binding is the cert's SCOPE, asserted by the OFFLINE CA and
+// matched only against this runner's local runner.group/runner.labels — never a
+// value the control plane supplies. Trusting one CA instead of every leaf key
+// makes onboarding an operator one signature and zero runner-config edits; a
+// scoped cert gives redirect protection, an empty-scope cert is the explicit
+// weaker "valid on any runner that trusts the CA" mode.
 type Signing struct {
-	EnforceSignatures bool         `yaml:"enforce_signatures,omitempty"`
-	TrustedKeys       []TrustedKey `yaml:"trusted_keys,omitempty"`
+	EnforceSignatures bool        `yaml:"enforce_signatures,omitempty"`
+	TrustedCAs        []TrustedCA `yaml:"trusted_cas,omitempty"`
 	// MaxAttestationAge bounds how far in the past (or future, for clock skew)
 	// a signed dispatch's issued_at may be — it caps replay exposure and the
 	// nonce cache. A dispatch queued while the runner was offline longer than
-	// this is refused as stale and must be re-issued. Defaults to 24h.
+	// this is refused as stale and must be re-issued. Defaults to 24h. This is
+	// INDEPENDENT of the cert's own validity window: a long cert TTL must never
+	// widen the replay window.
 	MaxAttestationAge actionspec.Duration `yaml:"max_attestation_age,omitempty"`
 }
 
-// TrustedKey is one Ed25519 public key the runner accepts signed dispatches
-// from, addressed by a stable key_id (which the signer echoes so the runner
-// knows which key to check). public_key is hex-encoded (64 chars / 32 bytes).
-type TrustedKey struct {
-	KeyID     string `yaml:"key_id"`
+// TrustedCA is one Ed25519 certificate-authority public key the runner trusts.
+// The offline CA signs short-lived certs that vouch for leaf signing keys; the
+// runner verifies the cert under ca_id's public_key, then verifies the
+// attestation under the leaf key the cert carries. public_key is hex-encoded
+// (64 chars / 32 bytes); ca_id is a stable label the cert echoes so the runner
+// knows which CA to check. The CA PRIVATE key stays offline/customer-held and
+// never touches the runner or the portal.
+type TrustedCA struct {
+	CAID      string `yaml:"ca_id"`
 	PublicKey string `yaml:"public_key"`
 }
 
@@ -215,26 +223,26 @@ func (c *Config) Validate() error {
 }
 
 // validateSigning checks the client-attested-dispatch config. enforce_signatures
-// with no trusted_keys is a footgun — the runner would refuse EVERY dispatch — so
-// it's rejected. Key ids must be present and unique; the public-key bytes are
+// with no trusted_cas is a footgun — the runner would refuse EVERY dispatch — so
+// it's rejected. CA ids must be present and unique; the public-key bytes are
 // parsed and length-checked when the verifier is built at connect.
 func (c *Config) validateSigning() error {
-	if c.Signing.EnforceSignatures && len(c.Signing.TrustedKeys) == 0 {
+	if c.Signing.EnforceSignatures && len(c.Signing.TrustedCAs) == 0 {
 		return fmt.Errorf(
-			"config: signing.enforce_signatures is on but signing.trusted_keys is empty — " +
+			"config: signing.enforce_signatures is on but signing.trusted_cas is empty — " +
 				"the runner would refuse every dispatch")
 	}
-	seen := make(map[string]bool, len(c.Signing.TrustedKeys))
-	for i, k := range c.Signing.TrustedKeys {
-		if strings.TrimSpace(k.KeyID) == "" {
-			return fmt.Errorf("config: signing.trusted_keys[%d].key_id required", i)
+	seen := make(map[string]bool, len(c.Signing.TrustedCAs))
+	for i, ca := range c.Signing.TrustedCAs {
+		if strings.TrimSpace(ca.CAID) == "" {
+			return fmt.Errorf("config: signing.trusted_cas[%d].ca_id required", i)
 		}
-		if seen[k.KeyID] {
-			return fmt.Errorf("config: signing.trusted_keys has duplicate key_id %q", k.KeyID)
+		if seen[ca.CAID] {
+			return fmt.Errorf("config: signing.trusted_cas has duplicate ca_id %q", ca.CAID)
 		}
-		seen[k.KeyID] = true
-		if strings.TrimSpace(k.PublicKey) == "" {
-			return fmt.Errorf("config: signing.trusted_keys[%d].public_key required", i)
+		seen[ca.CAID] = true
+		if strings.TrimSpace(ca.PublicKey) == "" {
+			return fmt.Errorf("config: signing.trusted_cas[%d].public_key required", i)
 		}
 	}
 	if c.Signing.MaxAttestationAge <= 0 {
