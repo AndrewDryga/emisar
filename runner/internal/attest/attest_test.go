@@ -409,6 +409,203 @@ func TestVersionIsTheCrossImplWireContract(t *testing.T) {
 	}
 }
 
+// ----- emisar-cert-v1 cross-impl vectors -----
+
+// CROSS-IMPL CONTRACT for the cert. These are IDENTICAL in mcp/internal/attest,
+// the same obligation as the attestation vectors above: a change to either
+// copy's CertSigningBytes fails its vector test. Fixed CA seed → exact body
+// bytes + the deterministic CA signature.
+const (
+	vectorCASeedHex = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
+	vectorCAPubHex  = "e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0"
+	// the leaf pubkey the certs vouch for — the same real 32-byte key as the
+	// attestation vector, so a signed claim can be checked end-to-end under it.
+	vectorCertLeafPub = vectorPubHex
+)
+
+func vectorCerts() []struct {
+	name  string
+	cert  Cert
+	bytes string
+	sig   string
+} {
+	return []struct {
+		name  string
+		cert  Cert
+		bytes string
+		sig   string
+	}{
+		{
+			name:  "empty scope (any runner)",
+			cert:  Cert{CAID: "ca-acme", KeyID: "op-alice", PublicKey: vectorCertLeafPub, ValidFrom: "2026-06-25T00:00:00Z", ValidUntil: "2026-06-26T00:00:00Z", Scope: Scope{}, Serial: "01J0CERT0000000000000000A"},
+			bytes: "emisar-cert-v1\nca-acme\nop-alice\n79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664\n2026-06-25T00:00:00Z\n2026-06-26T00:00:00Z\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\n01J0CERT0000000000000000A",
+			sig:   "9e69c413be4b0132271d1d28ac15214b861546f4ae68ea64a4f32917bd906c69f749f76b7ac88864ccd53cfcb77185abfcfa6636f8af816f5617f4ffd3ef890d",
+		},
+		{
+			name:  "group scope",
+			cert:  Cert{CAID: "ca-acme", KeyID: "op-bob", PublicKey: vectorCertLeafPub, ValidFrom: "2026-06-25T00:00:00Z", ValidUntil: "2026-06-26T00:00:00Z", Scope: Scope{Group: "prod"}, Serial: "01J0CERT0000000000000000B"},
+			bytes: "emisar-cert-v1\nca-acme\nop-bob\n79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664\n2026-06-25T00:00:00Z\n2026-06-26T00:00:00Z\n871a625f41f8103f3a4cbcb19445ae4a1941ae900da7c6e29cdb4e7bc432e22f\n01J0CERT0000000000000000B",
+			sig:   "50973262a130a51a5bcdb733df180acdadfac1944ddd4deae0ee0cafeb9d873aa402311c46915f2cefb7220388ede784214c99e3212e29173c727597a723d905",
+		},
+		{
+			name:  "group + labels scope (keys sorted)",
+			cert:  Cert{CAID: "ca-acme", KeyID: "op-carol", PublicKey: vectorCertLeafPub, ValidFrom: "2026-06-25T00:00:00Z", ValidUntil: "2026-06-26T00:00:00Z", Scope: Scope{Group: "edge", Labels: map[string]string{"region": "us", "env": "prod"}}, Serial: "01J0CERT0000000000000000C"},
+			bytes: "emisar-cert-v1\nca-acme\nop-carol\n79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664\n2026-06-25T00:00:00Z\n2026-06-26T00:00:00Z\n75d22a7b0f024c454095764648cb9e08de2df93cfed413b76fa0aa74d93fddd4\n01J0CERT0000000000000000C",
+			sig:   "abfd0748e03ad1dbf463702f69f4be20ebb60d0e3237631581f06956513311e1a29ebf55a204ea087314a7498850f58c69fa563f14dfa36a9e627d0902dff40d",
+		},
+	}
+}
+
+func vectorCAKey(t *testing.T) (ed25519.PrivateKey, ed25519.PublicKey) {
+	t.Helper()
+	seed, err := hex.DecodeString(vectorCASeedHex)
+	if err != nil {
+		t.Fatalf("decode CA seed: %v", err)
+	}
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub := priv.Public().(ed25519.PublicKey)
+	if got := hex.EncodeToString(pub); got != vectorCAPubHex {
+		t.Fatalf("CA public key drifted: got %s want %s", got, vectorCAPubHex)
+	}
+	return priv, pub
+}
+
+func TestCertSigningBytesVectors(t *testing.T) {
+	for _, v := range vectorCerts() {
+		t.Run(v.name, func(t *testing.T) {
+			got, err := CertSigningBytes(v.cert)
+			if err != nil {
+				t.Fatalf("CertSigningBytes: %v", err)
+			}
+			if string(got) != v.bytes {
+				t.Fatalf("cert canonical bytes drifted:\n got %q\nwant %q", string(got), v.bytes)
+			}
+		})
+	}
+}
+
+func TestSignCertVectors(t *testing.T) {
+	priv, _ := vectorCAKey(t)
+	for _, v := range vectorCerts() {
+		t.Run(v.name, func(t *testing.T) {
+			got, err := SignCert(priv, v.cert)
+			if err != nil {
+				t.Fatalf("SignCert: %v", err)
+			}
+			if got != v.sig {
+				t.Fatalf("cert signature drifted:\n got %s\nwant %s", got, v.sig)
+			}
+		})
+	}
+}
+
+func TestVerifyCertRoundTrip(t *testing.T) {
+	_, pub := vectorCAKey(t)
+	for _, v := range vectorCerts() {
+		t.Run(v.name, func(t *testing.T) {
+			c := v.cert
+			c.Sig = v.sig
+			ok, err := VerifyCert(pub, c)
+			if err != nil {
+				t.Fatalf("VerifyCert: %v", err)
+			}
+			if !ok {
+				t.Fatal("valid cert signature rejected")
+			}
+		})
+	}
+}
+
+// VerifyCert must bind every field of the cert body: a compromised portal can
+// relay a cert but not edit which key/scope/window the CA vouched for.
+func TestVerifyCertRejectsTampering(t *testing.T) {
+	priv, pub := vectorCAKey(t)
+	base := Cert{CAID: "ca-acme", KeyID: "op-alice", PublicKey: vectorCertLeafPub, ValidFrom: "2026-06-25T00:00:00Z", ValidUntil: "2026-06-26T00:00:00Z", Scope: Scope{Group: "prod", Labels: map[string]string{"env": "prod"}}, Serial: "01J0CERT0000000000000000A"}
+	sig, err := SignCert(priv, base)
+	if err != nil {
+		t.Fatalf("SignCert: %v", err)
+	}
+
+	tampered := map[string]Cert{
+		"ca_id swapped":      {CAID: "ca-evil", KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: base.Scope, Serial: base.Serial},
+		"key_id swapped":     {CAID: base.CAID, KeyID: "op-mallory", PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: base.Scope, Serial: base.Serial},
+		"public_key swapped": {CAID: base.CAID, KeyID: base.KeyID, PublicKey: "00" + base.PublicKey[2:], ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: base.Scope, Serial: base.Serial},
+		"valid_from moved":   {CAID: base.CAID, KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: "2026-01-01T00:00:00Z", ValidUntil: base.ValidUntil, Scope: base.Scope, Serial: base.Serial},
+		"valid_until moved":  {CAID: base.CAID, KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: "2030-01-01T00:00:00Z", Scope: base.Scope, Serial: base.Serial},
+		"scope group edited": {CAID: base.CAID, KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: Scope{Group: "edge", Labels: base.Scope.Labels}, Serial: base.Serial},
+		"scope label edited": {CAID: base.CAID, KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: Scope{Group: base.Scope.Group, Labels: map[string]string{"env": "dev"}}, Serial: base.Serial},
+		"serial swapped":     {CAID: base.CAID, KeyID: base.KeyID, PublicKey: base.PublicKey, ValidFrom: base.ValidFrom, ValidUntil: base.ValidUntil, Scope: base.Scope, Serial: "01J0CERT0000000000000000Z"},
+	}
+	for name, c := range tampered {
+		t.Run(name, func(t *testing.T) {
+			c.Sig = sig
+			ok, err := VerifyCert(pub, c)
+			if err != nil {
+				t.Fatalf("VerifyCert: %v", err)
+			}
+			if ok {
+				t.Fatal("tampered cert accepted — the CA signature is not bound to this field")
+			}
+		})
+	}
+}
+
+// A cert verified under the WRONG CA public key must fail — a runner trusts a
+// specific CA, so a cert minted by a different (e.g. attacker) CA is refused.
+func TestVerifyCertWrongCA(t *testing.T) {
+	priv, _ := vectorCAKey(t)
+	otherPub := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	cert := vectorCerts()[0].cert
+	sig, err := SignCert(priv, cert)
+	if err != nil {
+		t.Fatalf("SignCert: %v", err)
+	}
+	cert.Sig = sig
+	ok, err := VerifyCert(otherPub, cert)
+	if err != nil {
+		t.Fatalf("VerifyCert: %v", err)
+	}
+	if ok {
+		t.Fatal("a cert verified under a CA that did not sign it")
+	}
+}
+
+func TestVerifyCertMalformedSignature(t *testing.T) {
+	_, pub := vectorCAKey(t)
+	c := vectorCerts()[0].cert
+	c.Sig = "not-hex!!"
+	if _, err := VerifyCert(pub, c); err == nil {
+		t.Fatal("expected an error for a non-hex cert signature")
+	}
+}
+
+// the cert-version drift guard, mirroring TestVersionIsTheCrossImplWireContract.
+// CertVersion is exactly "emisar-cert-v1" and is the leading line of every cert
+// vector — a bump to one module's attest.go without the other fails here.
+func TestCertVersionIsTheCrossImplWireContract(t *testing.T) {
+	const wireContract = "emisar-cert-v1"
+	if CertVersion != wireContract {
+		t.Fatalf("CertVersion=%q, want %q — this string is the cross-impl wire contract; "+
+			"a bump must be applied to BOTH runner and mcp attest.go in the same change, "+
+			"with the cert vectors regenerated, or the MCP that signs and the runner that verifies diverge",
+			CertVersion, wireContract)
+	}
+	for _, v := range vectorCerts() {
+		t.Run(v.name, func(t *testing.T) {
+			if !strings.HasPrefix(v.bytes, wireContract+"\n") {
+				t.Fatalf("cert vector %q does not lead with the contract version line %q:\n%q", v.name, wireContract, v.bytes)
+			}
+			got, err := CertSigningBytes(v.cert)
+			if err != nil {
+				t.Fatalf("CertSigningBytes: %v", err)
+			}
+			if !strings.HasPrefix(string(got), wireContract+"\n") {
+				t.Fatalf("CertSigningBytes for %q must lead with %q, got %q", v.name, wireContract, string(got))
+			}
+		})
+	}
+}
+
 // Sign + Verify cost is the deterministic RFC 8032 Ed25519
 // cost plus one SHA-256 over the canonical args — the perf baseline for the
 // signing contract.
