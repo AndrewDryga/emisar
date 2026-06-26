@@ -102,14 +102,13 @@
         your provider uses) — <strong class="text-zinc-200">never by email address</strong>.
         Email-matching an SSO login onto an existing account is a known account-takeover vector, so
         we don't do it. The practical consequence: a just-in-time provisioned SSO user is a
-        distinct principal, not a merge into a pre-existing password account that happens to share
+        distinct principal, not a merge into a pre-existing account that happens to share
         an email. If an SSO email collides with an existing user, sign-in is refused rather than
         silently linked — an admin links the identity deliberately.
       </p>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-200">First login provisions the user</strong>
-        at the connection's default role (with the directory as the email authority — no password
-        is set, so the password path can't be used for an SSO-only user).
+        at the connection's default role (with the directory as the email authority).
       </p>
 
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">
@@ -123,7 +122,8 @@
           requires MFA
         </.link>
         without a second emisar TOTP prompt — your IdP enforces the MFA. Turn it off if you'd
-        rather emisar still challenge. Password sign-in is unaffected and is challenged as usual.
+        rather emisar still challenge. Magic-link sign-in is unaffected and is challenged for 2FA
+        as usual.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
