@@ -87,3 +87,42 @@ cases:
 - action: mongo.top
   args: {}
   expect_exit: 0
+# Added 2026-06-26 (/sweep — datastore coverage): the actions that lacked cases.
+# All pass against the standalone mongo:7 SUT — the replica-set reads degrade to
+# an empty/ok result (exit 0), verified by running the harness.
+- action: mongo.concurrent_transactions
+  args: {}
+  expect_exit: 0
+- action: mongo.connection_stats
+  args: {}
+  expect_exit: 0
+- action: mongo.cursor_stats
+  args: {}
+  expect_exit: 0
+- action: mongo.default_rw_concern
+  args: {}
+  expect_exit: 0
+- action: mongo.election_metrics
+  args: {}
+  expect_exit: 0
+- action: mongo.global_lock
+  args: {}
+  expect_exit: 0
+- action: mongo.index_builds
+  args: {}
+  expect_exit: 0
+- action: mongo.long_running_ops
+  args: {}
+  expect_exit: 0
+- action: mongo.profile_slow_queries
+  args: {}
+  expect_exit: 0
+- action: mongo.replication_info
+  args: {}
+  expect_exit: 0
+- action: mongo.replset_lag
+  args: {}
+  expect_exit: 0
+- action: mongo.wiredtiger_cache
+  args: {}
+  expect_exit: 0

@@ -70,6 +70,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends default-jdk-hea
 RUN apt-get update && apt-get install -y --no-install-recommends snmp \
     && rm -rf /var/lib/apt/lists/*
 
+# mongosh for the mongodb pack (single static tarball — no apt repo).
+RUN set -eux; case "$(dpkg --print-architecture)" in arm64) m=arm64;; amd64) m=x64;; *) m=x64;; esac; \
+    curl -fsSL "https://downloads.mongodb.com/compass/mongosh-2.3.8-linux-$m.tgz" -o /tmp/mongosh.tgz; \
+    tar -xzf /tmp/mongosh.tgz -C /tmp; \
+    mv /tmp/mongosh-*/bin/mongosh /usr/local/bin/mongosh; \
+    rm -rf /tmp/mongosh*; \
+    mongosh --version
+
 # emisar binary (mounted at runtime via volume)
 VOLUME ["/opt/emisar"]
 ENV PATH="/opt/emisar/bin:${PATH}"
