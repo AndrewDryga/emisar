@@ -396,6 +396,22 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).default_role == :viewer
     end
 
+    test "a mutable identifier_claim (email) is rejected; oid is allowed — the (provider, sub) takeover guard" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:error, changeset} =
+               SSO.update_provider(provider, %{identifier_claim: "email"}, subject)
+
+      # identifier_claim is an Ecto.Enum [:sub, :oid] — the cast rejects a mutable
+      # claim like "email", keeping the (provider, sub) identity binding immutable.
+      assert "is invalid" in errors_on(changeset).identifier_claim
+      assert Repo.reload!(provider).identifier_claim == :sub
+
+      assert {:ok, updated} = SSO.update_provider(provider, %{identifier_claim: "oid"}, subject)
+      assert updated.identifier_claim == :oid
+    end
+
     test "a new client_secret rotates the stored value" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "old-secret"})

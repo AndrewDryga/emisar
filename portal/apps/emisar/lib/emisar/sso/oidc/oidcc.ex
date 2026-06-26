@@ -121,7 +121,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp fetch_code(_params), do: {:error, :missing_code}
 
   defp extract_identifier(token, %IdentityProvider{identifier_claim: claim}) do
-    case Map.get(token.id.claims, claim) do
+    # `identifier_claim` is an Ecto.Enum (atom); ID-token claim keys are strings.
+    case Map.get(token.id.claims, to_string(claim)) do
       identifier when is_binary(identifier) and identifier != "" -> {:ok, identifier}
       _ -> {:error, :missing_identifier_claim}
     end

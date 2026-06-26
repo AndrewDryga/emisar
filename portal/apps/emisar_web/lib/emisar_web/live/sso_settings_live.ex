@@ -993,13 +993,14 @@ defmodule EmisarWeb.SSOSettingsLive do
       <div>
         <.input
           field={@form[:identifier_claim]}
-          type="text"
+          type="select"
           label="Identifier claim"
-          placeholder="sub"
+          options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
         />
         <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          The stable claim that identifies a user. Leave as <code>sub</code> unless your
-          provider says otherwise.
+          The stable, provider-issued claim that identifies a user — restricted to immutable
+          subject identifiers (a mutable claim like email would allow account takeover). Leave
+          as <code>sub</code> unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
         </p>
       </div>
       <.input

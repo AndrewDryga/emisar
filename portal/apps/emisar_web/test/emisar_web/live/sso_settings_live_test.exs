@@ -267,7 +267,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # The schema's documented defaults: stable identifier is `sub`, the
       # provider satisfies the account MFA gate, and it's created DISABLED so it
       # can't be signed in through until the admin explicitly turns it on.
-      assert provider.identifier_claim == "sub"
+      assert provider.identifier_claim == :sub
       assert provider.satisfies_mfa == true
       assert provider.enabled == false
       assert provider.provisioner == :jit

@@ -1341,7 +1341,7 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
       issuer: issuer,
       client_id: System.get_env("EMISAR_DEV_KEYCLOAK_CLIENT_ID") || "emisar-portal",
       client_secret: keycloak_secret,
-      identifier_claim: "sub",
+      identifier_claim: :sub,
       default_role: :operator,
       satisfies_mfa: true,
       provisioner: :jit,

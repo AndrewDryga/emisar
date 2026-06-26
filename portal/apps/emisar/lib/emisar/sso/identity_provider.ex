@@ -18,7 +18,12 @@ defmodule Emisar.SSO.IdentityProvider do
     field :issuer, :string
     field :client_id, :string
     field :client_secret, :binary, redact: true
-    field :identifier_claim, :string, default: "sub"
+    # The stable, IdP-issued subject identifier the (provider, sub) account-takeover
+    # guard binds on (see the Emisar.SSO moduledoc). An Ecto.Enum, NOT free text, so
+    # a manage_sso admin can't point it at a mutable/forgeable claim (email,
+    # preferred_username) and re-open the takeover. `sub` is OIDC-standard; `oid` is
+    # Microsoft Entra's immutable object id.
+    field :identifier_claim, Ecto.Enum, values: [:sub, :oid], default: :sub
     field :default_role, Ecto.Enum, values: Auth.Role.all(), default: :viewer
     field :satisfies_mfa, :boolean, default: true
     field :allowed_email_domain, :string
