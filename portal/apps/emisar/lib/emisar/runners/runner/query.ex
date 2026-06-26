@@ -98,6 +98,35 @@ defmodule Emisar.Runners.Runner.Query do
     |> order_by([runners: r], asc: r.group)
   end
 
+  # Connection-record state from the DURABLE `last_connected_at` /
+  # `last_disconnected_at` columns — NOT live Presence. Drives the fleet-wide
+  # ops gauge (`Runners.connection_counts/0`); the per-account UI uses Presence
+  # (`by_connection/3`), which catches an ungraceful socket drop these columns
+  # only learn about on the next `mark_disconnected`/reconnect.
+  def disabled(queryable \\ all()),
+    do: where(queryable, [runners: r], not is_nil(r.disabled_at))
+
+  def never_connected(queryable \\ all()),
+    do: where(queryable, [runners: r], is_nil(r.last_connected_at))
+
+  def connected(queryable \\ all()) do
+    where(
+      queryable,
+      [runners: r],
+      not is_nil(r.last_connected_at) and
+        (is_nil(r.last_disconnected_at) or r.last_connected_at > r.last_disconnected_at)
+    )
+  end
+
+  def disconnected(queryable \\ all()) do
+    where(
+      queryable,
+      [runners: r],
+      not is_nil(r.last_connected_at) and not is_nil(r.last_disconnected_at) and
+        r.last_disconnected_at >= r.last_connected_at
+    )
+  end
+
   # -- Pagination / filters --------------------------------------------
 
   @impl Emisar.Repo.Query

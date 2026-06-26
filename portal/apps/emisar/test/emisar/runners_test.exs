@@ -1078,4 +1078,45 @@ defmodule Emisar.RunnersTest do
       assert Runners.Authorizer.for_subject(query, %Emisar.Auth.Subject{}) == query
     end
   end
+
+  describe "connection_counts/0 (fleet-wide telemetry sampler)" do
+    test "an empty fleet is all zeros" do
+      assert %{connected: 0, disconnected: 0, never_connected: 0, disabled: 0} =
+               Runners.connection_counts()
+    end
+
+    test "classifies each connection-record state, fleet-wide across accounts" do
+      now = DateTime.utc_now()
+      earlier = DateTime.add(now, -60, :second)
+
+      # `connected?: false` skips the fixture's last_connected_at stamp + presence
+      # tracking, so each test sets exactly the connection-record state it wants.
+      never = fn -> runner_fixture(connected?: false) end
+
+      # never-connected: no connection timestamps, across two accounts.
+      _ = never.()
+      _ = runner_fixture(connected?: false, account_id: account_fixture().id)
+
+      # connected: last connect is the most recent event (no disconnect, or older).
+      _ = never.() |> put_connection(last_connected_at: now)
+      _ = never.() |> put_connection(last_connected_at: now, last_disconnected_at: earlier)
+
+      # disconnected: last disconnect is at/after the last connect.
+      _ = never.() |> put_connection(last_connected_at: earlier, last_disconnected_at: now)
+
+      # disabled: counted as disabled regardless of its connection timestamps.
+      _ = never.() |> put_connection(last_connected_at: now, disabled_at: now)
+
+      # deleted: excluded from every bucket.
+      _ = never.() |> put_connection(last_connected_at: now, deleted_at: now)
+
+      assert %{connected: 2, disconnected: 1, never_connected: 2, disabled: 1} =
+               Runners.connection_counts()
+    end
+  end
+
+  # Stamp a runner's durable connection-record columns directly — `register/0`
+  # leaves a fresh runner never-connected, so the connection-state tests set them.
+  defp put_connection(runner, fields),
+    do: runner |> Ecto.Changeset.change(fields) |> Repo.update!()
 end

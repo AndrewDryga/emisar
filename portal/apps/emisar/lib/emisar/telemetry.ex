@@ -18,7 +18,7 @@ defmodule Emisar.Telemetry do
 
   The matching `Telemetry.Metrics` definitions live in `EmisarWeb.Telemetry`.
   """
-  alias Emisar.Approvals
+  alias Emisar.{Approvals, Runners}
 
   @doc """
   A run reached a terminal status. Emits `[:emisar, :run, :finished]` with a
@@ -65,5 +65,16 @@ defmodule Emisar.Telemetry do
   def measure_approval_queue do
     %{count: count, oldest_age_seconds: age} = Approvals.pending_queue_stats()
     :telemetry.execute([:emisar, :approvals, :pending], %{count: count, oldest_age_seconds: age})
+  end
+
+  @doc """
+  Sampler — the fleet-wide runner connection tally from the durable connection
+  record (see `Runners.connection_counts/0`). Emits `[:emisar, :runners,
+  :connection]` with `:connected` / `:disconnected` / `:never_connected` /
+  `:disabled` counts. Poller-invoked; fleet-wide and untagged.
+  """
+  @spec measure_runner_connections() :: :ok
+  def measure_runner_connections do
+    :telemetry.execute([:emisar, :runners, :connection], Runners.connection_counts())
   end
 end

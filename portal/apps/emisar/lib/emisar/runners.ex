@@ -262,6 +262,34 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — telemetry sampler. FLEET-WIDE (no subject, every account) runner
+  connection tally from the DURABLE connection record
+  (`last_connected_at`/`last_disconnected_at`/`disabled_at`), NOT live Presence —
+  Presence is per-account (no fleet view) and an ungraceful socket drop only
+  reaches these columns on the next `mark_disconnected`/reconnect. Good enough
+  for an ops trend gauge; the per-account UI stays Presence-accurate. Drives the
+  `emisar.runners.connection.*` gauges, fleet-wide by design (no `account_id` —
+  series cardinality + tenant enumeration). Returns the four-state tally.
+  """
+  @spec connection_counts() :: %{
+          connected: non_neg_integer(),
+          disconnected: non_neg_integer(),
+          never_connected: non_neg_integer(),
+          disabled: non_neg_integer()
+        }
+  def connection_counts do
+    active = Runner.Query.not_deleted() |> Runner.Query.not_disabled()
+
+    %{
+      connected: active |> Runner.Query.connected() |> Repo.aggregate(:count, :id),
+      disconnected: active |> Runner.Query.disconnected() |> Repo.aggregate(:count, :id),
+      never_connected: active |> Runner.Query.never_connected() |> Repo.aggregate(:count, :id),
+      disabled:
+        Runner.Query.not_deleted() |> Runner.Query.disabled() |> Repo.aggregate(:count, :id)
+    }
+  end
+
+  @doc """
   Internal nil-or-struct lookup by id (`peek` per §1.1) — socket-driven
   state updates and sweep workers, where a vanished runner is a
   meaningful state to branch on rather than an error.

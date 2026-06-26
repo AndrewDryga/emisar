@@ -51,4 +51,22 @@ defmodule Emisar.TelemetryTest do
       assert measurements.oldest_age_seconds >= 0
     end
   end
+
+  describe "measure_runner_connections/0" do
+    test "emits [:emisar, :runners, :connection] with the four-state tally" do
+      # One never-connected runner so the tally is non-empty.
+      _ = runner_fixture(connected?: false)
+
+      measurements =
+        capture(
+          [:emisar, :runners, :connection],
+          &Emisar.Telemetry.measure_runner_connections/0
+        )
+
+      assert is_integer(measurements.connected)
+      assert is_integer(measurements.disconnected)
+      assert measurements.never_connected >= 1
+      assert is_integer(measurements.disabled)
+    end
+  end
 end

@@ -154,6 +154,21 @@ defmodule EmisarWeb.Telemetry do
       last_value("emisar.approvals.pending.oldest_age_seconds",
         description: "Age of the longest-waiting unresolved approval request, in seconds (gauge)"
       ),
+      # Runner connection tally (sampled by Emisar.Telemetry.measure_runner_connections/0)
+      # from the DURABLE connection record — fleet-wide capacity + offline trend.
+      # Presence is the live per-account truth; this trails an ungraceful drop.
+      last_value("emisar.runners.connection.connected",
+        description: "Runners whose last connection-record event was a connect (gauge)"
+      ),
+      last_value("emisar.runners.connection.disconnected",
+        description: "Runners whose last connection-record event was a disconnect (gauge)"
+      ),
+      last_value("emisar.runners.connection.never_connected",
+        description: "Registered runners that have never connected (gauge)"
+      ),
+      last_value("emisar.runners.connection.disabled",
+        description: "Disabled runners (gauge)"
+      ),
 
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
@@ -185,7 +200,8 @@ defmodule EmisarWeb.Telemetry do
     [
       # Fleet-wide domain gauges — each reads an aggregate and emits; the
       # matching `last_value` metric is defined above. Fleet-wide / no account_id.
-      {Emisar.Telemetry, :measure_approval_queue, []}
+      {Emisar.Telemetry, :measure_approval_queue, []},
+      {Emisar.Telemetry, :measure_runner_connections, []}
     ]
   end
 end
