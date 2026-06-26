@@ -1,0 +1,90 @@
+# Prometheus alerting rules for the emisar control plane.
+#
+# Scrape emisar's /metrics endpoint (the TelemetryMetricsPrometheus exporter on
+# METRICS_PORT, default 9091 — a sibling port to the main endpoint) and load
+# these rules. Metric names match the exporter's output exactly: Telemetry.Metrics
+# dotted names become underscores, counters/gauges carry no suffix, and histograms
+# get _bucket/_sum/_count. The source of truth is EmisarWeb.Telemetry.metrics/0;
+# the emitting call sites + label values are in Emisar.Telemetry.
+#
+# Verify after editing:  promtool check rules alerts.yaml
+groups:
+  - name: emisar-control-plane
+    rules:
+      # The core SLO: gated actions must be decided promptly. A long-waiting
+      # approval means dispatch is stalled behind a human who hasn't responded.
+      - alert: EmisarApprovalWaitingTooLong
+        expr: emisar_approvals_pending_oldest_age_seconds > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "An approval has been waiting over 30 minutes"
+          description: "The oldest unresolved approval request has waited {{ $value | humanizeDuration }}. Gated actions are stalled — clear the approvals queue."
+
+      - alert: EmisarApprovalBacklogHigh
+        expr: emisar_approvals_pending_count > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Approval backlog above 20"
+          description: "{{ $value }} approval requests are unresolved fleet-wide."
+
+      # A runner dropped its connection (the durable connection record trails an
+      # ungraceful drop). Actions targeting that host will not dispatch.
+      - alert: EmisarRunnersDisconnected
+        expr: emisar_runners_connection_disconnected > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} runner(s) disconnected"
+          description: "Runners whose last connection event was a disconnect: {{ $value }}. Actions targeting them will not dispatch until they reconnect."
+
+      # Jobs piling up in a queue — the background pipeline (dispatch sweeps,
+      # billing, approval fan-out) is falling behind.
+      - alert: EmisarObanQueueBacklog
+        expr: emisar_oban_queue_available > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oban queue {{ $labels.queue }} backlog above 100"
+          description: "{{ $value }} jobs are waiting in the {{ $labels.queue }} queue."
+
+      # A meaningful share of runs are failing ON THE HOST — genuine execution
+      # failures, not policy denials (denied) or bad input (validation_failed /
+      # unknown_action) or user cancels (cancelled). clamp_min avoids 0/0.
+      - alert: EmisarRunFailureRateHigh
+        expr: |
+          sum(rate(emisar_run_finished_count{status=~"failed|error|timed_out|refused"}[5m]))
+            / clamp_min(sum(rate(emisar_run_finished_count[5m])), 1) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run failure rate above 20%"
+          description: "{{ $value | humanizePercentage }} of finished runs failed on the host over the last 5m."
+
+      # Paddle billing webhooks are failing to apply — subscription state will
+      # drift from Paddle until this clears.
+      - alert: EmisarBillingWebhookFailing
+        expr: increase(emisar_billing_webhook_count{outcome="failed"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Paddle billing webhook failing"
+          description: "{{ $value }} billing webhook(s) failed to apply in the last 15m. Subscription state may be stale."
+
+      # Atom-table growth — the IL-14 failure mode (unbounded String.to_atom on
+      # untrusted runner/LLM input) made visible. The atom table never GCs, so a
+      # steady climb is a leak, and an exhausted table crashes the node.
+      - alert: EmisarAtomTableGrowth
+        expr: vm_system_counts_atom_count > 1000000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BEAM atom count above 1,000,000"
+          description: "Atom count is {{ $value }}. The atom table never GCs — investigate for an unbounded atom-creation path (IL-14)."
