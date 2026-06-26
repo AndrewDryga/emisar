@@ -603,17 +603,18 @@ defmodule Emisar.Runs do
     end
   end
 
-  # Store a denied row for the audit trail even though we never reach
-  # the runner — operators need to see attempts that policy rejected.
+  # Store a denied row even though we never reach the runner — operators need to
+  # see attempts that policy rejected. `create_run` writes the terminal
+  # `action_run.denied` audit row (`:denied` ∈ @audited_run_statuses) carrying the
+  # policy_reason + matched_rules, so the denial IS audited without a separate
+  # `policy.evaluated` row (audit-logging-diet #2 — never zero rows for a denial).
   defp dispatch_deny(attrs, policy, reason, matched) do
     run_attrs =
       attrs
       |> Map.merge(policy_attrs(policy, "deny", reason, matched))
       |> Map.put(:status, :denied)
 
-    audit = &Audit.Events.policy_evaluated(&1, policy, "deny", reason, matched)
-
-    case create_run(run_attrs, audit: audit) do
+    case create_run(run_attrs) do
       {:ok, _denied} ->
         {:error, :denied_by_policy, reason}
 
@@ -629,13 +630,13 @@ defmodule Emisar.Runs do
 
   defp dispatch_allow(attrs, policy, reason, matched) do
     attrs = Map.merge(attrs, policy_attrs(policy, "allow", reason, matched))
-    audit = &Audit.Events.policy_evaluated(&1, policy, "allow", reason, matched)
 
-    # The policy.evaluated decision commits in the SAME transaction as the
-    # run (create_run's Multi), so the trail reads decision → outcome and a
-    # dispatched action can never lack its decision record. Dispatch to the
-    # runner only after that transaction is durable.
-    case create_run(attrs, audit: audit) do
+    # No separate `policy.evaluated "allow"` audit row — it was pure noise (one per
+    # dispatch). The allow decision + matched rules live on the ActionRun itself
+    # (policy_decision/policy_reason/matched_rules), and the run's own terminal
+    # audit row proves it ran (audit-logging-diet #1). Dispatch to the runner only
+    # after the run row is durable.
+    case create_run(attrs) do
       {:ok, run} ->
         with :ok <- dispatch_to_runner(run) do
           {:ok, :running, run}
@@ -701,16 +702,17 @@ defmodule Emisar.Runs do
     end
   end
 
-  # File an approval request (no usable grant). Run + request + policy audit
-  # commit in ONE transaction (MAJOR-2); the approver notification fires
-  # post-commit on the fresh-insert path only.
+  # File an approval request (no usable grant). Run + request commit in ONE
+  # transaction (MAJOR-2); the approver notification fires post-commit on the
+  # fresh-insert path only. No separate `policy.evaluated "require_approval"` row —
+  # the `action_run.pending_approval` terminal row (`:pending_approval` ∈
+  # @audited_run_statuses) + the approval request itself already record that the
+  # action was gated (audit-logging-diet #3).
   defp file_approval_request(attrs, policy, policy_reason, matched) do
     attrs =
       attrs
       |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
       |> Map.merge(%{status: :pending_approval, requires_approval: true})
-
-    audit = &Audit.Events.policy_evaluated(&1, policy, "require_approval", policy_reason, matched)
 
     # Snapshot the approval-gate posture onto the request so a later policy edit
     # can't move this in-flight request's bar (mirrors the run-level
@@ -731,7 +733,6 @@ defmodule Emisar.Runs do
       )
 
     case create_run(attrs,
-           audit: audit,
            compose: compose,
            on_create: &Emisar.Approvals.notify_request_created/1
          ) do
@@ -1161,9 +1162,9 @@ defmodule Emisar.Runs do
         # decide whether the next wave fires — it no-ops while wave
         # peers are still in flight and halts on any failure (the failed
         # run surfaces on the runbook run page). Dispatch failures are
-        # audited inside the engine. The wave's policy.evaluated rows are
-        # system-origin (no `%Subject{}`), so they carry no request
-        # context — the runner's connect IP/UA can't bleed onto them.
+        # audited inside the engine. The wave's run events are system-origin
+        # (no `%Subject{}`), so they carry no caller request context — the
+        # runner's connect IP/UA can't bleed onto them.
         Emisar.Runbooks.dispatch_next_batch(finished)
 
         ok
@@ -1272,12 +1273,14 @@ defmodule Emisar.Runs do
     end)
   end
 
-  # The policy.evaluated / grant_used decision event, committed in the SAME
-  # transaction as the run row (and the run's state-transition event above)
-  # so a dispatched action can't end up with no record of the decision that
-  # let it through. `audit_fn` takes the inserted run and returns the event
-  # changeset. Skipped on the idempotency-replay path (same `fresh?` guard
-  # as the run event) — the original insert already logged the decision.
+  # An optional decision event (today only `grant_used` — the standing-grant
+  # fast path), committed in the SAME transaction as the run row + its terminal
+  # event so a grant-dispatched action can't end up with no record of the grant
+  # that let it through. `audit_fn` takes the inserted run and returns the event
+  # changeset. Skipped on the idempotency-replay path (same `fresh?` guard as the
+  # run event) — the original insert already logged it. (The policy allow/deny/
+  # require_approval decisions no longer write a separate row — audit-logging
+  # diet — their facts live on the run row + its terminal event.)
   defp put_decision_audit(multi, _fresh_request_id, nil), do: multi
 
   defp put_decision_audit(multi, fresh_request_id, audit_fn) when is_function(audit_fn, 1) do

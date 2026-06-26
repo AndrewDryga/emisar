@@ -708,7 +708,7 @@ defmodule EmisarWeb.AuditLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, _} =
-        Audit.log(account.id, "policy.evaluated",
+        Audit.log(account.id, "action_run.denied",
           actor_kind: "system",
           subject_kind: "action_run",
           subject_label: "linux.uptime"

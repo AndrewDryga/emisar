@@ -259,15 +259,6 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("policy.scope_deleted", p),
     do: [scope_chunk(p)] |> Enum.filter(& &1)
 
-  defp summarize("policy.evaluated", p) do
-    base = pairs(decision: get(p, :decision), reason: get(p, :reason))
-
-    case get(p, :policy_version) do
-      v when is_integer(v) -> base ++ [{"policy", "v#{v}"}]
-      _ -> base
-    end
-  end
-
   # Catch-all — events without a special summary fall through.
   defp summarize(_type, _payload), do: []
 

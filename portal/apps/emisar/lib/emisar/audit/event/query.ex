@@ -2,23 +2,14 @@ defmodule Emisar.Audit.Event.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
 
-  # Event types the audit log fires automatically as a byproduct of
-  # normal traffic — one per dispatch (`policy.evaluated`) or per runner
-  # socket reconnect (`runner.connected`/`runner.disconnected`, which
-  # fires on every network blip). High-frequency but useful for
-  # postmortems; they bury the operator-facing events (auth-key minted,
-  # member invited, approval decided) in the default listing, so the
-  # "Hide noisy events" filter excludes this set. Run lifecycle states
-  # (pending/sent/running) are intentionally NOT audited at all — only
-  # terminal outcomes + policy denials leave a row (see
-  # `Runs.@audited_run_statuses`).
-  @noisy_event_types ~w[
-    policy.evaluated
-    runner.connected
-    runner.disconnected
-  ]
-
-  def noisy_event_types, do: @noisy_event_types
+  # What's deliberately NOT audited (so the default listing stays
+  # operator-meaningful): run lifecycle states (pending/sent/running) never leave
+  # a row — only terminal outcomes + denials + pending_approval do (see
+  # `Runs.@audited_run_statuses`); and `policy.evaluated` was retired in the audit
+  # logging diet (every allow/deny/require_approval fact already lives on the run
+  # row + its terminal audit event), which is why there's no "hide noise" toggle.
+  # `runner.connected`/`runner.disconnected` are kept (postmortem value — "when did
+  # db-prod-01 last flap") and now read as ordinary, filterable events.
 
   # The known set of event_type values, ordered by group. Drives the
   # filter dropdown so operators pick from a list instead of typing an
@@ -83,7 +74,6 @@ defmodule Emisar.Audit.Event.Query do
     {"membership.invitation_accepted", "Invitation accepted"},
     {"membership.runner_scopes_changed", "Runner scopes changed"},
     {"policy.updated", "Policy updated"},
-    {"policy.evaluated", "Policy evaluated"},
     {"runbook.created", "Runbook created"},
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
@@ -95,9 +85,6 @@ defmodule Emisar.Audit.Event.Query do
     {"approval.grant_used", "Standing grant used"},
     {"approval.grant_revoked", "Standing grant revoked"},
     {"run.cancel_requested", "Run cancel requested"},
-    {"action_run.pending", "Run queued"},
-    {"action_run.sent", "Run sent to runner"},
-    {"action_run.running", "Run started"},
     {"action_run.success", "Run succeeded"},
     {"action_run.failed", "Run failed"},
     {"action_run.error", "Run errored"},
@@ -225,8 +212,7 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Policy",
      [
-       {"policy.updated", "Updated"},
-       {"policy.evaluated", "Evaluated"}
+       {"policy.updated", "Updated"}
      ]},
     {"Runbook",
      [
@@ -247,9 +233,6 @@ defmodule Emisar.Audit.Event.Query do
     {"Run",
      [
        {"run.cancel_requested", "Cancel requested"},
-       {"action_run.pending", "Queued"},
-       {"action_run.sent", "Sent to runner"},
-       {"action_run.running", "Started"},
        {"action_run.success", "Succeeded"},
        {"action_run.failed", "Failed"},
        {"action_run.error", "Errored"},
@@ -509,14 +492,6 @@ defmodule Emisar.Audit.Event.Query do
         fun: fn queryable, term ->
           pattern = escape_like(term) <> "%"
           {queryable, dynamic([events: e], like(e.request_id, ^pattern))}
-        end
-      },
-      %Filter{
-        name: :hide_noise,
-        title: "Hide noisy events",
-        type: :boolean,
-        fun: fn queryable, true ->
-          {queryable, dynamic([events: e], e.event_type not in ^@noisy_event_types)}
         end
       }
     ]

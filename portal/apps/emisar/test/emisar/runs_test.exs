@@ -169,17 +169,18 @@ defmodule Emisar.RunsTest do
 
       types = events |> Enum.filter(&(&1.subject_id == run.id)) |> Enum.map(& &1.event_type)
 
-      # The decision and the outcome — and none of the intermediate
-      # lifecycle noise (pending/sent/running).
-      assert Enum.sort(types) == ["action_run.success", "policy.evaluated"]
+      # The terminal outcome ONLY — none of the intermediate lifecycle noise
+      # (pending/sent/running) and NO policy.evaluated row: the audit-logging diet
+      # (#1) dropped it because the allow decision + matched rules already live on
+      # the ActionRun itself.
+      assert Enum.sort(types) == ["action_run.success"]
       refute "action_run.pending" in types
       refute "action_run.sent" in types
       refute "action_run.running" in types
+      refute "policy.evaluated" in types
 
-      # Policy is recorded no later than the run it gated.
-      evaluated = Enum.find(events, &(&1.event_type == "policy.evaluated"))
-      success = Enum.find(events, &(&1.event_type == "action_run.success"))
-      assert DateTime.compare(evaluated.occurred_at, success.occurred_at) in [:lt, :eq]
+      # The allow decision survives on the run row (where the diet relies on it).
+      assert run.policy_decision == "allow"
     end
 
     test "wire envelope carries trusted pack hash when one is on file" do
@@ -866,10 +867,10 @@ defmodule Emisar.RunsTest do
   end
 
   describe "dispatch decision-before-outcome atomicity" do
-    # the run row + its policy.evaluated decision audit
-    # commit in ONE Multi. When the :run insert fails (oversized args), the
-    # whole transaction rolls back: no orphan run row, no orphan audit row, and
-    # no broadcast — a dispatched action can never exist without its decision.
+    # the run row + its terminal audit event commit in ONE Multi. When the :run
+    # insert fails (oversized args), the whole transaction rolls back: no orphan
+    # run row, no orphan audit row, and no broadcast — a rolled-back dispatch can
+    # never leave a trace.
     test "a failed run insert leaves no run row, no audit row, and fires no broadcast" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
@@ -889,8 +890,11 @@ defmodule Emisar.RunsTest do
       # No run persisted for this account…
       assert {:ok, [], _} = Runs.list_recent_runs(subject, limit: 50)
 
-      # …no policy.evaluated audit row orphaned by the rolled-back decision step…
-      refute Enum.any?(Repo.all(Emisar.Audit.Event), &(&1.event_type == "policy.evaluated"))
+      # …no run audit row orphaned by the rolled-back transaction…
+      refute Enum.any?(
+               Repo.all(Emisar.Audit.Event),
+               &String.starts_with?(&1.event_type, "action_run")
+             )
 
       # …and a rolled-back transaction announces nothing (broadcasts are after_commit).
       refute_receive {:run_updated, _}, 200
@@ -1221,14 +1225,17 @@ defmodule Emisar.RunsTest do
       assert {:error, :denied_by_policy, reason} = Runs.dispatch_run(attrs, subject)
       assert {:error, :denied_by_policy, ^reason} = Runs.dispatch_run(attrs, subject)
 
-      # Exactly one denied run row and one policy.evaluated audit row — the
-      # replay re-shaped the original, it didn't dispatch or re-audit.
+      # Exactly one denied run row and one action_run.denied audit row — the
+      # replay re-shaped the original, it didn't dispatch or re-audit. The
+      # audit-logging diet dropped the separate policy.evaluated row, so the
+      # action_run.denied terminal row IS the denial's audit trail (#2: a denial
+      # is always audited exactly once — never zero rows).
       assert {:ok, [%ActionRun{status: :denied}], _} = Runs.list_recent_runs(subject, limit: 50)
 
-      evaluated =
-        Repo.all(Emisar.Audit.Event) |> Enum.filter(&(&1.event_type == "policy.evaluated"))
+      denied =
+        Repo.all(Emisar.Audit.Event) |> Enum.filter(&(&1.event_type == "action_run.denied"))
 
-      assert length(evaluated) == 1
+      assert length(denied) == 1
     end
 
     # (pending_approval half) — replaying a previously-PARKED

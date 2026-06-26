@@ -764,27 +764,6 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  # Policy decision tied to a run, so operators can answer "what was the
-  # policy state when this fired?" by querying the trail by run_id —
-  # system actor, with the policy version snapshotted at decision time so
-  # a later edit doesn't lose "this was decided under policy v5".
-  def policy_evaluated(%Runs.ActionRun{} = run, policy, decision, reason, matched) do
-    Audit.changeset(run.account_id, "policy.evaluated",
-      actor_kind: "system",
-      subject_kind: "action_run",
-      subject_id: run.id,
-      subject_label: run.action_id,
-      payload: %{
-        run_id: run.id,
-        policy_id: policy && policy.id,
-        policy_version: policy && policy.vsn,
-        decision: decision,
-        reason: reason,
-        matched_rules: matched
-      }
-    )
-  end
-
   # A run that bypassed approval via a standing grant — the grant + its
   # originating approval ride in the payload so operators can trace why it
   # fired without prompting. System actor.

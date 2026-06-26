@@ -252,8 +252,6 @@ defmodule EmisarWeb.AuditSummaryTest do
         {"action_run.timed_out", %{"duration_ms" => 125_000}, [{"duration_ms", "2m 5s"}]},
         {"action_run.denied", %{"reason" => "policy"}, [{"reason", "policy"}]},
         {"action_run.cancelled", %{"reason" => "operator"}, [{"reason", "operator"}]},
-        {"policy.evaluated", %{"decision" => "allow", "policy_version" => 4},
-         [{"decision", "allow"}, {"policy", "v4"}]},
         {"policy.updated", %{"from_version" => 2, "to_version" => 3}, [{"version", "v2 → v3"}]}
       ]
 

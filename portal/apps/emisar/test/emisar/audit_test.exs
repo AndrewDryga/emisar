@@ -128,11 +128,11 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "system/engine-origin builders carry no request metadata" do
-    # (builder half) — a system-actor builder passes no
-    # :context, so the changeset defaults to an all-nil RequestContext. Engine
-    # rows never inherit a caller's ip/ua (the runner-UA-bleed class of bug).
-    test "policy_evaluated has nil ip/ua/request_id/mcp_session" do
+  describe "system/engine-origin builders carry no caller request metadata" do
+    # An engine-written run event is system-origin (no %Subject{}), so it inherits
+    # NO caller ip/ua/mcp_session — the runner-UA-bleed class of bug. It DOES carry
+    # the run's OWN request_id (the intended audit↔run link, not a context bleed).
+    test "a system-origin run event carries no caller ip/ua/mcp_session" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
 
@@ -145,14 +145,15 @@ defmodule Emisar.AuditTest do
           args: %{}
         })
 
-      {:ok, event} =
-        Audit.record(Audit.Events.policy_evaluated(run, nil, :allow, "ok", []))
+      {:ok, event} = Audit.record(Audit.run_event_changeset(run))
 
       assert event.actor_kind == "system"
       assert event.ip_address == nil
       assert event.user_agent == nil
-      assert event.request_id == nil
       assert event.mcp_session_id == nil
+      # The run's own request_id is correlated (links the audit row to the run);
+      # it is NOT a caller's bled-through request id.
+      assert event.request_id == run.request_id
     end
   end
 
@@ -403,7 +404,7 @@ defmodule Emisar.AuditTest do
 
     test "routine events are :neutral" do
       for t <- ~w[action_run.success approval.approved api_key.created runner.connected
-                  runner.enabled user.signed_in session.account_switched policy.evaluated] do
+                  runner.enabled user.signed_in session.account_switched] do
         assert Audit.Event.Query.outcome(t) == :neutral, "expected #{t} to be :neutral"
       end
     end
@@ -453,14 +454,6 @@ defmodule Emisar.AuditTest do
       assert filter_values(:subject_kind) ==
                ~w[user account runner api_key auth_key action_run approval_request
                   approval_grant runbook policy]
-    end
-
-    # the "Hide noisy events" set is exactly the three
-    # auto-fired-by-traffic types; widening it would silently hide
-    # operator-facing rows.
-    test "the noisy set is exactly the three traffic-byproduct types" do
-      assert Enum.sort(Audit.Event.Query.noisy_event_types()) ==
-               ~w[policy.evaluated runner.connected runner.disconnected]
     end
 
     # `runbook.dispatched` is DECLARED (known list + grouped
@@ -636,21 +629,13 @@ defmodule Emisar.AuditTest do
                Audit.list_events(subject, page: [cursor: cursor])
     end
 
-    test "hide_noise filter excludes the canonical noisy event types" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      # One of each: 2 noisy types + 2 operator-facing types.
-      {:ok, _} = Audit.log(account.id, "policy.evaluated", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
-
-      {:ok, rows, %{count: 2}} =
-        Audit.list_events(subject, filter: [hide_noise: true])
-
-      kept = Enum.map(rows, & &1.event_type) |> Enum.sort()
-      assert kept == ["approval.approved", "user.invited"]
+    # The "Hide noisy events" toggle is retired (audit-logging diet): once
+    # policy.evaluated stopped emitting there was no noise class left to hide.
+    # The filter is gone from the bar, so a stale ?hide_noise=true URL param is
+    # simply dropped at the web boundary (params_to_opts keeps only declared
+    # filters) — no crash, nothing hidden.
+    test "the hide_noise filter is retired" do
+      refute Enum.any?(Audit.Event.Query.filters(), &(&1.name == :hide_noise))
     end
 
     test "outcome filter narrows to failures (danger) and denials (warn) by suffix" do
@@ -669,16 +654,6 @@ defmodule Emisar.AuditTest do
       {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
       kept = Enum.map(both, & &1.event_type) |> Enum.sort()
       assert kept == ["action_run.failed", "approval.denied"]
-    end
-
-    test "hide_noise off (default) keeps everything" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, _} = Audit.log(account.id, "policy.evaluated", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-
-      {:ok, rows, %{count: 2}} = Audit.list_events(subject)
-      assert length(rows) == 2
     end
 
     test "actor_id narrows the list to one identity" do

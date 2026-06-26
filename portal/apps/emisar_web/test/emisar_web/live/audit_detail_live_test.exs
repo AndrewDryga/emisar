@@ -25,12 +25,12 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         args: %{}
       })
 
-    # A policy.evaluated-shaped event (system actor, action_run subject) as
-    # the runbook engine writes — stamped with the runner's connect UA, as it
+    # An action_run.denied event (system actor, action_run subject) the
+    # runbook engine writes — stamped with the runner's connect UA, as it
     # was before the source fix, to prove the device line no longer surfaces
     # "Runner (Go)" for it.
     {:ok, event} =
-      Audit.log(account.id, "policy.evaluated",
+      Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
         subject_kind: "action_run",
         subject_id: run.id,
@@ -94,7 +94,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
       })
 
     {:ok, event} =
-      Audit.log(account.id, "policy.evaluated",
+      Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
         subject_kind: "action_run",
         subject_id: run.id,
@@ -141,7 +141,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     # points at the foreign account's run (a mis-stamped / forged subject id).
     # The event itself is readable (it's in `account`); the run is not.
     {:ok, event} =
-      Audit.log(account.id, "policy.evaluated",
+      Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
         subject_kind: "action_run",
         subject_id: foreign_run.id,
@@ -182,7 +182,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
       })
 
     {:ok, event} =
-      Audit.log(account.id, "policy.evaluated",
+      Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
         subject_kind: "action_run",
         subject_id: run.id,
