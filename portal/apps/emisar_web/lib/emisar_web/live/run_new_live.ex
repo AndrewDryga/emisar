@@ -264,7 +264,7 @@ defmodule EmisarWeb.RunNewLive do
             <ul class="space-y-2">
               <li
                 :for={ex <- action_examples(@action)}
-                class="rounded-lg border border-zinc-900 bg-black/40 p-3"
+                class="rounded-lg border border-zinc-800 bg-black/40 p-3"
               >
                 <div :if={ex["description"]} class="text-xs text-zinc-400">{ex["description"]}</div>
                 <pre class="mt-1 overflow-x-auto font-mono text-[11px] leading-5 text-zinc-200"><%= example_args_json(ex) %></pre>

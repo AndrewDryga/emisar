@@ -865,7 +865,7 @@ defmodule EmisarWeb.AgentsLive do
     assigns = assign(assigns, :config, config)
 
     ~H"""
-    <div class="overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
+    <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30">
       <%!-- Header. The whole rest of the panel responds to which client
            the operator picks, so put the picker FIRST. Anything that
            depends on the choice (install / snippet / URL+token / scope

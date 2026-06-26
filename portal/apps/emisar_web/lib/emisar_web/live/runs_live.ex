@@ -176,7 +176,7 @@ defmodule EmisarWeb.RunsLive do
           <.local_time
             value={run.inserted_at}
             mode={:relative}
-            class="text-xs tabular-nums text-zinc-400"
+            class="text-xs text-zinc-400"
           />
         </:col>
         <:col :let={run} label="Action">

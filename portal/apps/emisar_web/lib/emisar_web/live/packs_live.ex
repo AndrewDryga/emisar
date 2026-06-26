@@ -397,7 +397,7 @@ defmodule EmisarWeb.PacksLive do
         <li
           :for={{dom_id, pack} <- @streams.packs}
           id={dom_id}
-          class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+          class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
         >
           <header class="flex items-center justify-between gap-4 border-b border-zinc-900 px-5 py-3">
             <div class="flex items-center gap-2">
@@ -592,7 +592,7 @@ defmodule EmisarWeb.PacksLive do
                    authorized without waiting for a re-advertise. --%>
               <details
                 :if={v.trust_state == :trusted}
-                class="group rounded border border-zinc-900 bg-zinc-950/40"
+                class="group rounded border border-zinc-800 bg-zinc-950/40"
               >
                 <summary
                   phx-click="inspect_pack"
