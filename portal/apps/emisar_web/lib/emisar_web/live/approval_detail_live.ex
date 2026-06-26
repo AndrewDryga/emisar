@@ -492,11 +492,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.meta_field :if={@request.min_approvals > 1} label="Approvals">
           <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
         </.meta_field>
-        <%!-- Only while held: a pending request auto-cancels at expiry, so the
-             approver sees how long they have; a decided one's expiry is moot. --%>
-        <.meta_field :if={@request.status == :pending} label="Expires">
-          <.approval_expiry expires_at={@request.expires_at} />
-        </.meta_field>
+        <%!-- Expiry isn't a meta field: for a held request the live countdown owns
+             it in the decide panel (more prominent + ticking); a decided request's
+             expiry is moot. --%>
       </.meta_strip>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
