@@ -1,0 +1,51 @@
+schema_version: 1
+id: nomad.alloc_fs_ls
+title: List a directory in an allocation (nomad fs/ls API)
+kind: exec
+risk: low
+description: >
+  List a directory inside one allocation's filesystem — each entry's name,
+  IsDir, size, file mode, and modtime. This is the "what files did my task
+  write to local/ or alloc/logs" read for debugging, with no local CLI session.
+  It calls Nomad's fs/ls API endpoint, which returns directory metadata only and
+  NEVER streams file contents, so it cannot leak a rendered-secret template the
+  way `nomad alloc fs <file>` (cat) would. path defaults to the alloc root (/),
+  is relative to it (Nomad contains it to the alloc dir), and rejects "..",
+  absolute host paths, and shell metacharacters. Requires a Nomad token with the
+  read-fs capability on the namespace.
+side_effects: ["One API call.", "Read-only (directory metadata only — no file contents)."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: path
+    type: string
+    required: false
+    default: "/"
+    description: >
+      Directory to list, relative to the alloc root (e.g. local, alloc/logs,
+      secrets). Defaults to the alloc root "/". No "..", absolute host paths, or
+      shell metacharacters.
+    validation:
+      pattern: "^(/|\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*)$"
+      max_length: 256
+execution:
+  command:
+    binary: nomad
+    argv: ["operator", "api", "/v1/client/fs/ls/{{ args.alloc_id }}?path={{ args.path }}"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: List the alloc root
+    args:
+      alloc_id: "abc12345"
+  - title: List the task's local/ directory
+    args:
+      alloc_id: "abc12345"
+      path: "local"

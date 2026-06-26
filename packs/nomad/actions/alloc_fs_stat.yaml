@@ -1,0 +1,45 @@
+schema_version: 1
+id: nomad.alloc_fs_stat
+title: Stat a path in an allocation (nomad fs/stat API)
+kind: exec
+risk: low
+description: >
+  Show the stat metadata of one path inside an allocation's filesystem — name,
+  IsDir, size, file mode, modtime, and content type. This is the "does this file
+  exist / how big is it / when was it written" read. It calls Nomad's fs/stat API
+  endpoint, which returns metadata only and NEVER streams file contents, so it
+  cannot leak a rendered-secret template the way `nomad alloc fs <file>` (cat)
+  would. path is relative to the alloc root (Nomad contains it to the alloc dir)
+  and rejects "..", absolute host paths, and shell metacharacters. Requires a
+  Nomad token with the read-fs capability on the namespace.
+side_effects: ["One API call.", "Read-only (file metadata only — no file contents)."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: path
+    type: string
+    required: true
+    description: >
+      Path to stat, relative to the alloc root (e.g. local/app.log,
+      secrets/.env). No "..", absolute host paths, or shell metacharacters.
+    validation:
+      pattern: "^(/|\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*)$"
+      max_length: 256
+execution:
+  command:
+    binary: nomad
+    argv: ["operator", "api", "/v1/client/fs/stat/{{ args.alloc_id }}?path={{ args.path }}"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Stat a task's log file
+    args:
+      alloc_id: "abc12345"
+      path: "alloc/logs/app.stdout.0"

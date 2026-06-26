@@ -2,12 +2,13 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.14
+version: 0.1.15
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
   horizontally + vertically, dispatch, revert, promote, stop), per-task
   CPU/memory resource read + set, allocation introspection + health checks +
-  restart + signal + stop, native service discovery (no Consul), node fleet
+  filesystem ls/stat (metadata only, never file contents) + restart + signal +
+  stop, native service discovery (no Consul), node fleet
   management (drain, eligibility, purge), evaluation + deployment status,
   operator raft + autopilot, CSI + host volumes, ACL policies + tokens,
   namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the
@@ -87,6 +88,8 @@ actions:
   # Allocations
   - actions/alloc_status.yaml
   - actions/alloc_checks.yaml
+  - actions/alloc_fs_ls.yaml
+  - actions/alloc_fs_stat.yaml
   - actions/alloc_logs.yaml
   - actions/alloc_logs_stderr.yaml
   - actions/alloc_stats.yaml

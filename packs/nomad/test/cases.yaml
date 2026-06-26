@@ -28,6 +28,16 @@ cases:
   args:
     alloc_id: abc12345
   expect_exit: 0
+- action: nomad.alloc_fs_ls
+  args:
+    alloc_id: abc12345
+    path: local
+  expect_exit: 0
+- action: nomad.alloc_fs_stat
+  args:
+    alloc_id: abc12345
+    path: alloc/logs/app.stdout.0
+  expect_exit: 0
 - action: nomad.alloc_logs
   args:
     alloc_id: abc12345
