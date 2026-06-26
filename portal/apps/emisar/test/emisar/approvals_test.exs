@@ -2035,4 +2035,45 @@ defmodule Emisar.ApprovalsTest do
       assert %Request{status: :pending} = Repo.reload!(request)
     end
   end
+
+  describe "pending_queue_stats/0 (fleet-wide telemetry sampler)" do
+    test "an empty queue reports zero count and zero age" do
+      assert %{count: 0, oldest_age_seconds: 0} = Approvals.pending_queue_stats()
+    end
+
+    test "counts unresolved requests across ALL accounts (fleet-wide, no subject)" do
+      {_account_a, run_a} = run_fixture()
+      {_account_b, run_b} = run_fixture()
+      {:ok, _} = Approvals.create_request(run_a, user_fixture().id, "a")
+      {:ok, _} = Approvals.create_request(run_b, user_fixture().id, "b")
+
+      assert %{count: 2} = Approvals.pending_queue_stats()
+    end
+
+    test "oldest_age_seconds reflects the longest-waiting request" do
+      {_account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+
+      # Backdate the request 90s into the past so the age is deterministic.
+      query = Request.Query.all() |> Request.Query.by_id(request.id)
+      Repo.update_all(query, set: [inserted_at: DateTime.add(DateTime.utc_now(), -90, :second)])
+
+      assert %{count: 1, oldest_age_seconds: age} = Approvals.pending_queue_stats()
+      assert age >= 90
+    end
+
+    test "a resolved (decided) request no longer counts" do
+      {account, run} = run_fixture()
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "owner")
+      subject = subject_for(operator, account, role: :owner)
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+
+      assert %{count: 1} = Approvals.pending_queue_stats()
+
+      {:ok, _} = Approvals.deny_request(request, subject, "no")
+
+      assert %{count: 0, oldest_age_seconds: 0} = Approvals.pending_queue_stats()
+    end
+  end
 end

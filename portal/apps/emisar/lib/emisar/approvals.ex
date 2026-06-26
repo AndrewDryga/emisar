@@ -66,6 +66,33 @@ defmodule Emisar.Approvals do
     end
   end
 
+  @doc """
+  Internal — telemetry sampler. FLEET-WIDE (no subject, every account): the
+  count of unresolved approval requests and the age, in seconds, of the
+  longest-waiting one. Drives the `emisar.approvals.pending.*` ops gauges,
+  which are fleet-wide by design — a per-account series would leak tenant
+  cardinality (see `Emisar.Telemetry`). Returns `%{count: 0, oldest_age_seconds: 0}`
+  when the queue is empty.
+  """
+  @spec pending_queue_stats() :: %{
+          count: non_neg_integer(),
+          oldest_age_seconds: non_neg_integer()
+        }
+  def pending_queue_stats do
+    pending = Request.Query.pending()
+
+    count = Repo.aggregate(pending, :count)
+    oldest = Repo.aggregate(pending, :min, :inserted_at)
+
+    age_seconds =
+      case oldest do
+        %DateTime{} = ts -> max(DateTime.diff(DateTime.utc_now(), ts, :second), 0)
+        nil -> 0
+      end
+
+    %{count: count, oldest_age_seconds: age_seconds}
+  end
+
   def list_approval_requests_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

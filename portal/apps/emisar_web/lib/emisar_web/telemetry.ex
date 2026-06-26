@@ -146,6 +146,14 @@ defmodule EmisarWeb.Telemetry do
         description:
           "Approval requests resolved, by terminal decision (approved / denied / expired)"
       ),
+      # Approval queue gauges (sampled by Emisar.Telemetry.measure_approval_queue/0)
+      # — the SLO signal "are approvals waiting too long?". Fleet-wide, untagged.
+      last_value("emisar.approvals.pending.count",
+        description: "Unresolved approval requests across the fleet (gauge)"
+      ),
+      last_value("emisar.approvals.pending.oldest_age_seconds",
+        description: "Age of the longest-waiting unresolved approval request, in seconds (gauge)"
+      ),
 
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
@@ -175,9 +183,9 @@ defmodule EmisarWeb.Telemetry do
 
   defp periodic_measurements do
     [
-      # A module, function and arguments to be invoked periodically.
-      # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {EmisarWeb, :count_users, []}
+      # Fleet-wide domain gauges — each reads an aggregate and emits; the
+      # matching `last_value` metric is defined above. Fleet-wide / no account_id.
+      {Emisar.Telemetry, :measure_approval_queue, []}
     ]
   end
 end

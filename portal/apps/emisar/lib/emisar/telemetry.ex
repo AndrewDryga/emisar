@@ -11,8 +11,14 @@ defmodule Emisar.Telemetry do
   count and hand out a tenant-enumeration surface; the only tags here are fixed
   enums (a run status, a webhook outcome) the operator can chart.
 
+  Event emitters take their value as arguments (the call site has it). Periodic
+  GAUGES — fleet-wide state sampled on a timer — are the `measure_*/0` functions
+  at the bottom: the telemetry poller invokes them, each reads a fleet-wide
+  domain aggregate and emits it. Same cardinality rule (no `account_id`).
+
   The matching `Telemetry.Metrics` definitions live in `EmisarWeb.Telemetry`.
   """
+  alias Emisar.Approvals
 
   @doc """
   A run reached a terminal status. Emits `[:emisar, :run, :finished]` with a
@@ -45,5 +51,19 @@ defmodule Emisar.Telemetry do
   @spec approval_decided(atom()) :: :ok
   def approval_decided(decision) when is_atom(decision) do
     :telemetry.execute([:emisar, :approval, :decided], %{count: 1}, %{decision: decision})
+  end
+
+  # -- Periodic gauges (poller-invoked samplers) ------------------------
+
+  @doc """
+  Sampler — the fleet-wide approval queue. Reads `Approvals.pending_queue_stats/0`
+  and emits `[:emisar, :approvals, :pending]` with the unresolved `:count` and the
+  `:oldest_age_seconds` of the longest-waiting request. The telemetry poller
+  invokes this; fleet-wide and untagged (the no-`account_id` rule above).
+  """
+  @spec measure_approval_queue() :: :ok
+  def measure_approval_queue do
+    %{count: count, oldest_age_seconds: age} = Approvals.pending_queue_stats()
+    :telemetry.execute([:emisar, :approvals, :pending], %{count: count, oldest_age_seconds: age})
   end
 end
