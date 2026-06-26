@@ -259,6 +259,35 @@ defmodule Emisar.Audit.Event.Query do
 
   def grouped_event_type_values, do: @grouped_event_types
 
+  @doc """
+  The Type filter's grouped options — each group gets a leading, selectable
+  "All <group> events" entry (a `group:<label>` sentinel) so an operator can scope
+  the log to a whole class ("all runner events") in one click, not just one type.
+  `expand_event_type_groups/1` resolves the sentinel back to the group's types at
+  query time.
+  """
+  def event_type_filter_options do
+    Enum.map(@grouped_event_types, fn {label, options} ->
+      {label, [{"group:" <> label, "All " <> label <> " events"} | options]}
+    end)
+  end
+
+  # Resolve a Type-filter selection: a `group:<label>` sentinel expands to every
+  # event type in that group; a plain type passes through. An unknown sentinel
+  # drops to no types — an empty `in` matches nothing, a safe (not crashing) result.
+  defp expand_event_type_groups(types) do
+    Enum.flat_map(types, fn
+      "group:" <> label ->
+        case List.keyfind(@grouped_event_types, label, 0) do
+          {_, options} -> Enum.map(options, &elem(&1, 0))
+          nil -> []
+        end
+
+      type ->
+        [type]
+    end)
+  end
+
   def all,
     do: from(events in Emisar.Audit.Event, as: :events)
 
@@ -419,8 +448,10 @@ defmodule Emisar.Audit.Event.Query do
         name: :event_type,
         title: "Type",
         type: {:list, :string},
-        values: grouped_event_type_values(),
-        fun: fn queryable, types -> {queryable, dynamic([events: e], e.event_type in ^types)} end
+        values: event_type_filter_options(),
+        fun: fn queryable, types ->
+          {queryable, dynamic([events: e], e.event_type in ^expand_event_type_groups(types))}
+        end
       },
       %Filter{
         name: :outcome,

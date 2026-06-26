@@ -656,6 +656,35 @@ defmodule Emisar.AuditTest do
       assert kept == ["action_run.failed", "approval.denied"]
     end
 
+    test "the Type filter scopes to a whole group via the 'All <group>' option" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
+      {:ok, _} = Audit.log(account.id, "runner.disabled", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+
+      # "All Runner events" (the group:Runner sentinel) expands to every type in the
+      # Runner group — both runner rows, not the approval one.
+      {:ok, rows, _} = Audit.list_events(subject, filter: [event_type: ["group:Runner"]])
+
+      assert Enum.map(rows, & &1.event_type) |> Enum.sort() == [
+               "runner.connected",
+               "runner.disabled"
+             ]
+
+      # A plain type still works (and can mix with a group sentinel).
+      {:ok, one, _} = Audit.list_events(subject, filter: [event_type: ["approval.approved"]])
+      assert Enum.map(one, & &1.event_type) == ["approval.approved"]
+    end
+
+    test "each event-type group exposes a selectable 'All <group> events' option" do
+      options = Audit.Event.Query.event_type_filter_options()
+
+      assert {"Runner", [{"group:Runner", "All Runner events"} | _]} =
+               Enum.find(options, fn {label, _} -> label == "Runner" end)
+    end
+
     test "actor_id narrows the list to one identity" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
