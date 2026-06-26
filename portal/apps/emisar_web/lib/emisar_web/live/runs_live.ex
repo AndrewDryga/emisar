@@ -165,10 +165,14 @@ defmodule EmisarWeb.RunsLive do
                   navigate={~p"/app/#{@current_account}/runbooks"}
                   class="text-brand-400 hover:text-brand-300"
                 >runbook</.link>.
-                Runs from an LLM (via the <.link
+                Runs from an
+                <.link
                   navigate={~p"/app/#{@current_account}/settings/agents"}
                   class="text-brand-400 hover:text-brand-300"
-                >MCP API</.link>) land here too.
+                >
+                  LLM agent
+                </.link>
+                (over MCP) land here too.
               </.empty_state>
           <% end %>
         </:empty>
