@@ -136,6 +136,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp request_expired?(_), do: false
 
+  # Server-rendered fallback for the live countdown (no-JS, and the first paint
+  # before the hook mounts). Coarse on purpose — the ExpiryCountdown hook replaces
+  # it with the ticking MM:SS within a second.
+  defp countdown_fallback(%DateTime{} = expires_at) do
+    case DateTime.diff(expires_at, DateTime.utc_now(), :second) do
+      seconds when seconds <= 0 -> "Expired"
+      seconds when seconds < 3600 -> "Expires in #{div(seconds, 60)}m"
+      seconds -> "Expires in #{div(seconds, 3600)}h"
+    end
+  end
+
   def handle_info({:approval_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
     {:noreply,
@@ -156,6 +167,25 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   def handle_event("grant_form_changed", params, socket) do
     {:noreply, assign(socket, :grant_duration, params["duration"] || "once")}
+  end
+
+  # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
+  # panel replaces the Approve form right away instead of waiting for the Oban
+  # sweeper's broadcast. Server-authoritative: the re-fetch + render-time
+  # request_expired?/1 decide using the server clock — a skewed client clock can
+  # only trigger the re-check, never force the outcome (the decide context also
+  # refuses an expired approve, IL-15).
+  def handle_event("expiry_lapsed", _params, socket) do
+    case Approvals.fetch_approval_request_by_id(
+           socket.assigns.request.id,
+           socket.assigns.current_subject
+         ) do
+      {:ok, request} ->
+        {:noreply, socket |> assign(:request, request) |> assign_decisions(request)}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("approve", params, socket) do
@@ -580,6 +610,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 already_decided?={@already_decided?}
                 approved_count={@approved_count}
                 min_approvals={@request.min_approvals}
+                expires_at={@request.expires_at}
+                request_id={@request.id}
                 current_account={@current_account}
               />
             <% true -> %>
@@ -615,12 +647,31 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
   attr :min_approvals, :integer, default: 1
+  attr :expires_at, :any, default: nil
+  attr :request_id, :string, required: true
   attr :current_account, :map, required: true
 
   defp decision_panel(assigns) do
     ~H"""
     <.panel title="Decide">
       <:subtitle>Logged to the audit trail.</:subtitle>
+
+      <%!-- Live countdown so the operator decides against the clock, not a static
+           "expires in 3h". Ticks client-side (ExpiryCountdown hook); at zero it
+           pushes `expiry_lapsed`, which re-fetches and flips to the terminal Expired
+           panel — the server re-checks expires_at, so the clock only triggers it. --%>
+      <div
+        :if={@expires_at}
+        id={"expiry-countdown-#{@request_id}"}
+        phx-hook="ExpiryCountdown"
+        phx-update="ignore"
+        data-expires-at={DateTime.to_iso8601(@expires_at)}
+        data-lapsed-event="expiry_lapsed"
+        class="flex items-center gap-1.5 text-xs font-medium tabular-nums text-zinc-400"
+      >
+        <.icon name="hero-clock" class="h-3.5 w-3.5" />
+        <span data-countdown-text>{countdown_fallback(@expires_at)}</span>
+      </div>
 
       <p
         :if={@min_approvals > 1}

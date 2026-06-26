@@ -83,6 +83,24 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, "button[phx-disable-with]", "Deny")
   end
 
+  test "the decide panel carries a live expiry countdown that lapses server-side", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # The countdown is a JS hook seeded with the request's expiry (so it can tick)
+    # and a lapse event (so it can flip the server to the terminal state at zero).
+    assert html =~ ~s(phx-hook="ExpiryCountdown")
+    assert html =~ ~s(data-lapsed-event="expiry_lapsed")
+    assert html =~ DateTime.to_iso8601(request.expires_at)
+
+    # Firing the lapse event re-fetches server-side; a still-future request stays in
+    # the Decide panel — the server clock decides, not a (possibly skewed) client.
+    lv |> element("#expiry-countdown-#{request.id}") |> render_hook("expiry_lapsed")
+    assert has_element?(lv, "button", "Approve and send")
+  end
+
   test "choosing a reuse window reveals the grant scope fields", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

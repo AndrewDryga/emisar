@@ -60,16 +60,22 @@ const LocalTime = {
 }
 
 function formatRelative(dt, now, sameYear) {
+  // Future-aware, mirroring the server-side TimeHelpers.relative_time/2: a future
+  // instant (an expiry) reads "in 45m", a past one "45m ago". Without the future
+  // branch a future time gave a negative diff → `sec < 5` → a wrong "just now"
+  // (the "expires just now" bug on held approvals).
   const diffMs = now - dt
-  const sec = Math.round(diffMs / 1000)
+  const future = diffMs < 0
+  const sec = Math.round(Math.abs(diffMs) / 1000)
+  const rel = (n, u) => (future ? `in ${n}${u}` : `${n}${u} ago`)
   if (sec < 5) return "just now"
-  if (sec < 60) return `${sec}s ago`
+  if (sec < 60) return rel(sec, "s")
   const min = Math.round(sec / 60)
-  if (min < 60) return `${min}m ago`
+  if (min < 60) return rel(min, "m")
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h ago`
+  if (hr < 24) return rel(hr, "h")
   const day = Math.round(hr / 24)
-  if (day < 7) return `${day}d ago`
+  if (day < 7) return rel(day, "d")
   // > 1w → switch to absolute short form
   return formatAbsolute(dt, sameYear, /*short*/ true)
 }
@@ -142,11 +148,51 @@ const CopyToClipboard = {
   }
 }
 
+// Live expiry countdown for a held approval. Ticks "Expires in MM:SS" (or "Hh MMm"
+// when far out), shifting tone amber→rose as it nears zero. At zero it shows
+// "Expired" and pushes `data-lapsed-event` so the server re-renders the terminal
+// state immediately instead of waiting for the Oban sweeper — the server re-checks
+// expires_at on render, so a skewed client clock can only TRIGGER, never decide.
+const ExpiryCountdown = {
+  mounted() {
+    this.text = this.el.querySelector("[data-countdown-text]") || this.el
+    this.render()
+    this.timer = setInterval(() => this.render(), 1000)
+  },
+  destroyed() { clearInterval(this.timer) },
+  render() {
+    const ms = new Date(this.el.dataset.expiresAt) - new Date()
+    if (ms <= 0) {
+      this.text.textContent = "Expired"
+      this.tone("rose")
+      clearInterval(this.timer)
+      const ev = this.el.dataset.lapsedEvent
+      if (ev) this.pushEvent(ev, {})
+      return
+    }
+    this.text.textContent = "Expires in " + this.format(ms)
+    const min = ms / 60000
+    this.tone(min < 5 ? "rose" : min < 30 ? "amber" : "zinc")
+  },
+  format(ms) {
+    const t = Math.floor(ms / 1000)
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60
+    return h > 0
+      ? `${h}h ${String(m).padStart(2, "0")}m`
+      : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+  },
+  tone(name) {
+    const cls = { rose: "text-rose-400", amber: "text-amber-400", zinc: "text-zinc-400" }
+    this.el.classList.remove("text-rose-400", "text-amber-400", "text-zinc-400")
+    this.el.classList.add(cls[name])
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown }
 })
 
 // Show progress bar on live navigation and form submits
