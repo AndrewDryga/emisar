@@ -101,14 +101,15 @@ defmodule Emisar.Runs do
     :refused
   ]
 
-  # Run statuses that earn an audit row. The intermediate lifecycle
-  # states — pending, sent, running, pending_approval — are already
-  # visible on the run's own timeline (status + queued/sent/started
-  # timestamps + the event stream); duplicating each into the security
-  # log just buried the policy decision and the final outcome under
-  # five-rows-per-run noise. Only terminal results and policy denials
-  # are audited as run events; the decision itself is captured by the
-  # separate `policy.evaluated` row.
+  # Run statuses that earn an audit row. The transient lifecycle states —
+  # pending, sent, running — stay off the security log (they're visible on the
+  # run's own timeline: status + queued/sent/started timestamps + the event
+  # stream); duplicating each just buried the signal under five-rows-per-run
+  # noise. Audited as run events: every terminal result, the policy denial
+  # (`:denied`), AND the approval gating (`:pending_approval`). The gating earns
+  # a row because the `require_approval` policy decision no longer writes its own
+  # `policy.evaluated` row (audit-logging diet #3) — so `action_run.pending_approval`
+  # is the append-only record that a risky action was sent to the approval queue.
   @audited_run_statuses [
     :success,
     :failed,
@@ -118,6 +119,7 @@ defmodule Emisar.Runs do
     :timed_out,
     :cancelled,
     :denied,
+    :pending_approval,
     :refused
   ]
 
@@ -705,7 +707,7 @@ defmodule Emisar.Runs do
   # File an approval request (no usable grant). Run + request commit in ONE
   # transaction (MAJOR-2); the approver notification fires post-commit on the
   # fresh-insert path only. No separate `policy.evaluated "require_approval"` row —
-  # the `action_run.pending_approval` terminal row (`:pending_approval` ∈
+  # the `action_run.pending_approval` gating row (`:pending_approval` ∈
   # @audited_run_statuses) + the approval request itself already record that the
   # action was gated (audit-logging-diet #3).
   defp file_approval_request(attrs, policy, policy_reason, matched) do

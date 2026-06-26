@@ -292,7 +292,7 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run(attrs, subject)
     end
 
-    test "require_approval policy stores the run as pending + creates a request" do
+    test "require_approval policy stores the run as pending, creates a request, + audits the gating" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner)
@@ -325,6 +325,16 @@ defmodule Emisar.RunsTest do
 
       assert {:ok, [_req], _} = Approvals.list_pending_approval_requests(subject)
       assert {:ok, %{status: :pending_approval}} = Runs.fetch_run_by_id(run.id, subject)
+
+      # The gating earns an append-only audit row. `require_approval` no longer
+      # writes a `policy.evaluated` row (diet #3), so `action_run.pending_approval`
+      # IS the record that a risky action was sent to the approval queue — not just
+      # the mutable run-row status. Regression: `:pending_approval` was missing from
+      # `@audited_run_statuses`, so this row was silently never written.
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+      types = events |> Enum.filter(&(&1.subject_id == run.id)) |> Enum.map(& &1.event_type)
+      assert "action_run.pending_approval" in types
+      refute "policy.evaluated" in types
     end
 
     test "policy with no matching allow rule denies and records the attempt for audit" do
