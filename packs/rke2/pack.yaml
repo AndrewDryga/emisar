@@ -2,14 +2,15 @@ schema_version: 1
 
 id: rke2
 name: RKE2 cluster (host-level)
-version: 0.1.2
+version: 0.2.0
 description: >
   RKE2-specific host introspection that kubectl can't give you — embedded-etcd
-  snapshot health, node certificate expiry, and the RKE2-bundled containerd via
-  crictl (containers, pods, images). Runs on an RKE2 server node. Generic
-  Kubernetes API reads are in the kubernetes pack; rke2-server / rke2-agent
-  unit status and logs are covered by the linux-core / systemd-deep packs
-  (systemctl status rke2-server, journalctl -u rke2-server).
+  live health (etcdctl endpoint health/status) and snapshot history, node
+  certificate expiry, and the RKE2-bundled containerd via crictl (containers,
+  pods, images). Runs on an RKE2 server node. Generic Kubernetes API reads are
+  in the kubernetes pack; rke2-server / rke2-agent unit status and logs are
+  covered by the linux-core / systemd-deep packs (systemctl status rke2-server,
+  journalctl -u rke2-server).
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -29,15 +30,17 @@ detect:
 setup:
   summary: >
     Runs on an RKE2 server node, as root (etcd-snapshot, certificate check, and
-    crictl all need root). rke2 reads /etc/rancher/rke2/config.yaml by default;
-    crictl talks to the RKE2 containerd socket via CRI_CONFIG_FILE.
+    crictl — including the etcd_health crictl exec — all need root). rke2 reads
+    /etc/rancher/rke2/config.yaml by default; crictl talks to the RKE2
+    containerd socket via CRI_CONFIG_FILE.
   notes:
     - "Binary-path exception: RKE2 does not add /var/lib/rancher/rke2/bin to PATH, so crictl is invoked by its absolute path inside a /bin/sh command (the same absolute-path-in-a-shell-pipeline pattern other read actions use). rke2 itself installs to /usr/local/bin and is invoked bare."
-    - "Run the runner as root (or grant it the equivalent) on the server node — all three tools need it. On an agent-only node there is no etcd and no rke2 server cert set, so etcd_snapshot_list / certificate_check will not return server data."
-    - "Direct etcdctl health is intentionally not shipped — the etcd client-cert path/name varies by version. Use etcd_snapshot_list (backups current?) + kubernetes.control_plane_health (/readyz includes an etcd check) + the rke2-server unit status as the verified etcd-health proxy."
+    - "Run the runner as root (or grant it the equivalent) on the server node — every action needs it. On an agent-only node there is no etcd and no rke2 server cert set, so etcd_health / etcd_snapshot_list / certificate_check will not return server data."
+    - "etcd_health: RKE2 ships no etcdctl on the host PATH, so the action runs the etcdctl already inside the running etcd static-pod container (resolved via crictl), authenticating to https://127.0.0.1:2379 with this node's own etcd CA + server-client cert under /var/lib/rancher/rke2/server/tls/etcd/. Cert filenames verified against a live RKE2 v1.35.x server (server-ca.crt + server-client.crt/.key) and the kube-apiserver's own --etcd-* flags. Pair with etcd_snapshot_list (backups current?) and kubernetes.control_plane_health (/readyz)."
   verify: rke2.certificate_check
 
 actions:
+  - actions/etcd_health.yaml
   - actions/etcd_snapshot_list.yaml
   - actions/certificate_check.yaml
   - actions/crictl_ps.yaml

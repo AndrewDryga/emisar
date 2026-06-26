@@ -1,0 +1,37 @@
+cases:
+# Verified against a live single-node RKE2 server (v1.35.6+rke2r1, embedded etcd
+# v3.6.12) brought up in a privileged Docker container. Every rke2 action is
+# read-only (risk: low) — there are no mutators in this pack, so nothing is
+# skipped. The harness needs an RKE2 server node as the SUT, running as root.
+#
+# etcd_health resolves the running etcd static-pod container via crictl and runs
+# `etcdctl endpoint health` + `endpoint status` inside it, using this node's etcd
+# CA + server-client cert at /var/lib/rancher/rke2/server/tls/etcd/.
+- action: rke2.etcd_health
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["endpoint health", "endpoint status"]
+# rke2 certificate check — lists every node cert's subject/usage/expiry.
+- action: rke2.certificate_check
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["STATUS"]
+# rke2 etcd-snapshot ls — header always prints; the list is empty until a
+# snapshot is taken, so assert only on the column header, not on a row.
+- action: rke2.etcd_snapshot_list
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["Name"]
+# crictl reads against the RKE2-bundled containerd.
+- action: rke2.crictl_ps
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["CONTAINER"]
+- action: rke2.crictl_pods
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["POD ID"]
+- action: rke2.crictl_images
+  args: {}
+  expect_exit: 0
+  expect_stdout_contains: ["IMAGE"]

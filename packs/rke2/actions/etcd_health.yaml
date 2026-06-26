@@ -1,0 +1,53 @@
+schema_version: 1
+id: rke2.etcd_health
+title: Check embedded etcd health (etcdctl endpoint health + status)
+kind: exec
+risk: low
+description: >
+  Check the embedded etcd's live health and status on this RKE2 server node —
+  `etcdctl endpoint health` (is the member committing proposals?) followed by
+  `endpoint status` (etcd version, DB size, leader, raft term/index). The direct
+  read of etcd that snapshot-list and /readyz only approximate. RKE2 ships no
+  etcdctl on the host PATH, so this runs the etcdctl already inside the running
+  etcd static-pod container (found via crictl), authenticating to the local
+  client endpoint (https://127.0.0.1:2379) with RKE2's own etcd server CA and
+  the etcd server-client cert. Read-only; exits non-zero if etcd is unhealthy.
+side_effects:
+  - One crictl exec into the running etcd container, running two etcdctl reads.
+  - Read-only; no etcd writes, no snapshots, no member changes.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        set -e
+        CR=/var/lib/rancher/rke2/bin/crictl
+        CID=$("$CR" ps --name etcd --state Running -q | head -n1)
+        [ -n "$CID" ] || { echo "no running etcd container on this node — is this an RKE2 server (etcd) node?" >&2; exit 1; }
+        TLS=/var/lib/rancher/rke2/server/tls/etcd
+        echo "=== endpoint health ==="
+        "$CR" exec "$CID" etcdctl \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert="$TLS"/server-ca.crt \
+          --cert="$TLS"/server-client.crt \
+          --key="$TLS"/server-client.key \
+          --write-out=table endpoint health
+        echo "=== endpoint status ==="
+        "$CR" exec "$CID" etcdctl \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert="$TLS"/server-ca.crt \
+          --cert="$TLS"/server-client.crt \
+          --key="$TLS"/server-client.key \
+          --write-out=table endpoint status
+  env:
+    CRI_CONFIG_FILE: /var/lib/rancher/rke2/agent/etc/crictl.yaml
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: Embedded etcd health and status
+    args: {}
