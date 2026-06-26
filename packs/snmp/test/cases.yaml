@@ -20,18 +20,27 @@ cases:
   args:
     host: snmpd
   expect_exit: 0
+# Routing reads target the FRR+AgentX SUT (snmpd-frr), which exports BGP4-MIB /
+# OSPF-MIB over AgentX — so these assert REAL rows, not just clean handling of an
+# absent MIB. (The plain snmpd returns no-such-object for these OIDs.)
 - action: snmp.bgp_peers
   args:
-    host: snmpd
+    host: snmpd-frr
   expect_exit: 0
+  # bgpPeerRemoteAs (.9) for the configured neighbor 10.0.0.2 → AS 65001.
+  expect_stdout_contains: ["iso.3.6.1.2.1.15.3.1.9.10.0.0.2 = INTEGER: 65001"]
 - action: snmp.ospf_neighbors
   args:
-    host: snmpd
+    host: snmpd-frr
   expect_exit: 0
+  # ospfNbrState (.6) = 8 (full) for the peer 192.168.99.2 across the veth adjacency.
+  expect_stdout_contains: ["iso.3.6.1.2.1.14.10.1.6.192.168.99.2.0 = INTEGER: 8"]
 - action: snmp.ospf_general
   args:
-    host: snmpd
+    host: snmpd-frr
   expect_exit: 0
+  # ospfRouterId (.1) = 10.0.0.1.
+  expect_stdout_contains: ["iso.3.6.1.2.1.14.1.1.0 = IpAddress: 10.0.0.1"]
 - action: snmp.get
   args:
     host: snmpd

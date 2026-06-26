@@ -309,6 +309,18 @@ services:
       - ./fixtures/snmpd.conf:/etc/snmp/snmpd.conf:ro
     networks: [packtest]
 
+  # FRR + AgentX + snmpd SUT for the snmp pack's ROUTING reads. The plain `snmpd`
+  # service answers system/interface OIDs but returns "No Such Object" for BGP4-MIB
+  # / OSPF-MIB; FRR exports those over AgentX (see ./snmpd-frr/). NET_ADMIN+SYS_ADMIN
+  # are needed for the dummy/veth links + the peer netns that forms a real OSPF
+  # adjacency (so ospfNbrTable has a row).
+  snmpd-frr:
+    build: ./snmpd-frr
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    networks: [packtest]
+
   # Kubernetes SUT — single-node k3s for the kubernetes pack (43 actions). Privileged
   # (k3s needs cgroup/mount access). --node-name pins the node name (the node_describe
   # target); --tls-san=k3s makes the API cert valid for the `k3s` service name so
