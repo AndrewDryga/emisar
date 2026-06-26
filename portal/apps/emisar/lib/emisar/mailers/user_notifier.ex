@@ -21,6 +21,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   def deliver_confirmation_instructions(%Users.User{} = user, token) do
     url = PublicUrl.url("/confirm/#{token}")
+    sign_in_url = PublicUrl.url("/sign_in")
 
     deliver(user.email, "Confirm your emisar account", """
     Welcome to emisar!
@@ -28,6 +29,11 @@ defmodule Emisar.Mailers.UserNotifier do
     Confirm your email to finish setting up your account:
 
     #{url}
+
+    You can sign in any time — emisar emails you a one-time link, no password
+    to set:
+
+    #{sign_in_url}
 
     If you didn't sign up, you can safely ignore this email.
 
@@ -126,6 +132,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   def deliver_account_invitation(%Users.User{} = invitee, %{} = inviter, account, token) do
     url = PublicUrl.url("/accept_invitation/#{token}")
+    sign_in_url = PublicUrl.url("/app/#{account.slug}/sign_in")
 
     deliver(invitee.email, "You're invited to #{account.name} on emisar", """
     #{inviter.full_name || inviter.email} invited you to join the
@@ -134,6 +141,11 @@ defmodule Emisar.Mailers.UserNotifier do
     Accept the invite:
 
     #{url}
+
+    After you accept, this is where you sign in to #{account.name} — emisar
+    emails you a one-time link, so there's no password to set:
+
+    #{sign_in_url}
 
     What is emisar? It lets your AI safely run pre-approved operational
     actions on your infrastructure with full audit, policy, and approval

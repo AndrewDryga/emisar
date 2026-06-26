@@ -141,14 +141,16 @@ defmodule Emisar.MailTest do
 
   describe "confirmation email" do
     # the sign-up confirmation carries its subject, the
-    # absolute /confirm/<token> link, and the "ignore if you didn't sign up" line.
-    test "carries the subject, confirm link, and reassurance line" do
+    # absolute /confirm/<token> link, a universal sign-in link (so the recipient
+    # is never stranded), and the "ignore if you didn't sign up" line.
+    test "carries the subject, confirm link, sign-in link, and reassurance line" do
       user = user_fixture()
       UserNotifier.deliver_confirmation_instructions(user, "tok-confirm")
 
       assert_email_sent(fn email ->
         assert email.subject == "Confirm your emisar account"
         assert email.text_body =~ "/confirm/tok-confirm"
+        assert email.text_body =~ "/sign_in"
         assert email.text_body =~ "If you didn't sign up"
         true
       end)
@@ -187,8 +189,9 @@ defmodule Emisar.MailTest do
   describe "invitation email" do
     # the invite subject names the workspace, the body
     # names the inviter + workspace, carries the /accept_invitation/<token>
-    # link and the "what is emisar?" pitch.
-    test "names the inviter and workspace and carries the accept link" do
+    # link, the team's branded sign-in link (where they sign in after accepting),
+    # and the "what is emisar?" pitch.
+    test "names the inviter and workspace and carries the accept + sign-in links" do
       inviter = user_fixture(full_name: "Dana Inviter")
       invitee = user_fixture()
       account = account_fixture(name: "Globex")
@@ -200,6 +203,7 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "Dana Inviter"
         assert email.text_body =~ "Globex"
         assert email.text_body =~ "/accept_invitation/tok-invite"
+        assert email.text_body =~ "/app/#{account.slug}/sign_in"
         assert email.text_body =~ "What is emisar?"
         true
       end)
