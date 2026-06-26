@@ -344,7 +344,8 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.disable/1,
-        audit: &Audit.Events.runner_disabled(subject, &1)
+        audit: &Audit.Events.runner_disabled(subject, &1),
+        after_commit: &broadcast_runner_revoked/1
       )
     end
   end
@@ -392,7 +393,8 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.delete/1,
-        audit: &Audit.Events.runner_deleted(subject, &1)
+        audit: &Audit.Events.runner_deleted(subject, &1),
+        after_commit: &broadcast_runner_revoked/1
       )
     end
   end
@@ -852,6 +854,16 @@ defmodule Emisar.Runners do
   # credo:disable-for-lines:3 Emisar.Checks.InlineBroadcast
   def deliver_to_runner(account_id, runner_id, msg),
     do: Emisar.PubSub.broadcast(runner_topic(account_id, runner_id), {:cloud_to_runner, msg})
+
+  # Force any LIVE socket for this runner to disconnect after disable/delete. The
+  # socket authenticates ONLY at connect, so an already-connected (now disabled/
+  # deleted) runner would otherwise keep finalizing in-flight runs + mutating the
+  # pack-trust catalog until its socket happened to drop — Disable/Delete must be a
+  # kill switch, not just a future-dispatch block. The socket stops on
+  # `:runner_socket_revoked` (runner_socket.ex).
+  defp broadcast_runner_revoked(%Runner{} = runner) do
+    Emisar.PubSub.broadcast(runner_topic(runner.account_id, runner.id), :runner_socket_revoked)
+  end
 
   defp runner_topic(account_id, runner_id), do: "account:#{account_id}:runner:#{runner_id}"
 

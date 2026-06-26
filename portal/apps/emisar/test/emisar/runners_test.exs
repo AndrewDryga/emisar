@@ -402,6 +402,30 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "disable_runner / delete_runner — live-socket kill switch" do
+    test "disabling a runner broadcasts :runner_socket_revoked to drop its live socket" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account.id)
+
+      # The live socket subscribes to this transport topic at connect; the
+      # broadcast is what drops an already-open (now disabled) runner's session.
+      Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, _} = Runners.disable_runner(runner, subject)
+      assert_receive :runner_socket_revoked
+    end
+
+    test "deleting a runner broadcasts :runner_socket_revoked to drop its live socket" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account.id)
+
+      Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, _} = Runners.delete_runner(runner, subject)
+      assert_receive :runner_socket_revoked
+    end
+  end
+
   describe "connect_runner / mark_disconnected" do
     test "connect_runner tracks presence and stamps last_connected_at" do
       runner = runner_fixture(connected?: false)

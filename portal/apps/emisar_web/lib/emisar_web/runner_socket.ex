@@ -146,6 +146,22 @@ defmodule EmisarWeb.RunnerSocket do
 
   def handle_info(:stop_after_drain, state), do: {:stop, :normal, state}
 
+  # Sent by `Runners.broadcast_runner_revoked/1` after the runner is disabled or
+  # deleted. Auth runs only at connect, so this is the kill switch for an already-
+  # open socket: push a shutdown envelope, then stop — a revoked runner can no
+  # longer finalize runs, append events, or mutate the pack-trust catalog.
+  def handle_info(:runner_socket_revoked, state) do
+    revoked = %{
+      type: "shutdown",
+      protocol_version: @protocol_version,
+      reason: "runner_revoked",
+      message: "This runner was disabled or removed. Disconnecting."
+    }
+
+    send(self(), :stop_after_drain)
+    {:push, {:text, Jason.encode!(revoked)}, state}
+  end
+
   def handle_info(other, state) do
     Logger.debug("runner_socket #{state.runner_id} unhandled message: #{inspect(other)}")
     {:ok, state}
