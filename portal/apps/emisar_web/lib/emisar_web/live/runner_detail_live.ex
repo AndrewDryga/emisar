@@ -307,35 +307,45 @@ defmodule EmisarWeb.RunnerDetailLive do
                        visually so operators don't queue work that won't run. --%>
                   <%= cond do %>
                     <% @runner.enforce_signatures -> %>
-                      <%!-- Signed-only: the portal can't dispatch here. Lock icon +
-                           aria-disabled carry it without relying on color alone (a11y). --%>
-                      <span
+                      <%!-- Signed-only: the portal can't dispatch here. aria-disabled
+                           (focusable, so the title explains WHY) + the lock icon carry
+                           it without relying on color alone (a11y) — not real `disabled`,
+                           which drops focus and hides the explanation. --%>
+                      <.button
+                        size="sm"
+                        variant="secondary"
                         aria-disabled="true"
+                        icon="hero-lock-closed"
                         title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
-                        class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                        class="shrink-0 cursor-not-allowed opacity-60"
                       >
-                        <.icon name="hero-lock-closed" class="h-3.5 w-3.5" /> Run
-                      </span>
+                        Run
+                      </.button>
                     <% @runner.online? -> %>
-                      <.link
+                      <.button
                         navigate={
                           ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
                         }
-                        class="shrink-0 rounded-lg bg-brand-500/10 px-2.5 py-1 text-xs font-semibold text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/20"
+                        variant="success"
+                        size="sm"
+                        class="shrink-0"
                       >
                         Run
-                      </.link>
+                      </.button>
                     <% true -> %>
-                      <%!-- Offline: not a link. aria-disabled + a signal-slash
-                           icon carry "can't run" without relying on the dimmed
-                           color alone (a11y) or the hover-only title. --%>
-                      <span
+                      <%!-- Offline: aria-disabled (focusable, title explains why) + a
+                           signal-slash icon carry "can't run" without relying on the
+                           dimmed color alone (a11y). --%>
+                      <.button
+                        size="sm"
+                        variant="secondary"
                         aria-disabled="true"
+                        icon="hero-signal-slash"
                         title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
-                        class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                        class="shrink-0 cursor-not-allowed opacity-60"
                       >
-                        <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
-                      </span>
+                        Run
+                      </.button>
                   <% end %>
                 </:actions>
               </.list_row>

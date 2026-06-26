@@ -182,13 +182,14 @@ defmodule EmisarWeb.RunbooksLive do
                   <span class="font-mono">{runbook.slug}</span>
                 </:meta>
                 <:actions>
-                  <.link
+                  <.button
                     :if={runbook.status == :published}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
-                    class="rounded-lg bg-brand-500/10 px-2.5 py-1 text-xs font-semibold text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/20"
+                    variant="success"
+                    size="sm"
                   >
-                    Run →
-                  </.link>
+                    Run
+                  </.button>
                 </:actions>
               </.list_row>
             </:item>
