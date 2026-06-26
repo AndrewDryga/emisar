@@ -488,25 +488,14 @@ defmodule EmisarWeb.DashboardLive do
 
   defp packs_pending_banner(assigns) do
     ~H"""
-    <.link
+    <.attention_banner
       navigate={~p"/app/#{@current_account}/packs"}
-      class="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 transition hover:bg-amber-500/[0.16]"
+      icon="hero-shield-exclamation"
+      title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} trust review"}
     >
-      <.icon name="hero-shield-exclamation" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
-      <div class="flex-1 text-sm">
-        <p class="font-semibold text-amber-100">
-          {@count} pack version{if @count == 1, do: "", else: "s"} need{if @count == 1,
-            do: "s",
-            else: ""} trust review
-        </p>
-        <p class="mt-1 text-xs text-amber-200/90">
-          Dispatch is blocked against these until an admin trusts or rejects the new hash.
-        </p>
-      </div>
-      <span class="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100">
-        Review pack trust →
-      </span>
-    </.link>
+      Dispatch is blocked against these until an admin trusts or rejects the new hash.
+      <:cta>Review pack trust</:cta>
+    </.attention_banner>
     """
   end
 
@@ -581,49 +570,26 @@ defmodule EmisarWeb.DashboardLive do
     assigns = assign(assigns, :headroom, headroom)
 
     ~H"""
-    <div class={[
-      "mb-4 flex items-start gap-3 rounded-xl border p-4",
-      if(@headroom == :at_limit,
-        do: "border-rose-500/40 bg-rose-500/10",
-        else: "border-amber-500/40 bg-amber-500/10"
-      )
-    ]}>
-      <.icon
-        name="hero-exclamation-triangle"
-        class={"mt-0.5 h-5 w-5 flex-none #{if @headroom == :at_limit, do: "text-rose-300", else: "text-amber-300"}"}
-      />
-      <div class="flex-1 text-sm">
-        <%= if @headroom == :at_limit do %>
-          <p class="font-semibold text-rose-100">
-            You're at your runner limit ({@billing.runner_count} of {@billing.runner_limit}).
-          </p>
-          <p class="mt-1 text-xs text-rose-200/90">
-            The next runner that tries to register will get a 402 response and fail to come
-            online. Upgrade the plan to add more, or remove an unused runner first.
-          </p>
-        <% else %>
-          <p class="font-semibold text-amber-100">
-            One runner slot left on the {String.capitalize(@billing.plan)} plan ({@billing.runner_count} of {@billing.runner_limit}).
-          </p>
-          <p class="mt-1 text-xs text-amber-200/90">
-            Heads up — your next install will use the last slot. Upgrade now if you expect to
-            add more.
-          </p>
-        <% end %>
-      </div>
-      <.link
-        navigate={~p"/app/#{@current_account}/settings/billing"}
-        class={[
-          "shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold",
-          if(@headroom == :at_limit,
-            do: "bg-rose-500/20 text-rose-100 hover:bg-rose-500/30",
-            else: "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
-          )
-        ]}
+    <%= if @headroom == :at_limit do %>
+      <.attention_banner
+        tone={:rose}
+        icon="hero-exclamation-triangle"
+        title={"You're at your runner limit (#{@billing.runner_count} of #{@billing.runner_limit})."}
       >
-        See plans →
-      </.link>
-    </div>
+        The next runner that tries to register will get a 402 response and fail to come
+        online. Upgrade the plan to add more, or remove an unused runner first.
+        <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
+      </.attention_banner>
+    <% else %>
+      <.attention_banner
+        icon="hero-exclamation-triangle"
+        title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
+      >
+        Heads up — your next install will use the last slot. Upgrade now if you expect to
+        add more.
+        <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
+      </.attention_banner>
+    <% end %>
     """
   end
 

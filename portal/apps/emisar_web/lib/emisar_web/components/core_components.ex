@@ -973,6 +973,94 @@ defmodule EmisarWeb.CoreComponents do
   defp subscription_alert(_), do: nil
 
   @doc """
+  A tone-colored attention banner: icon, bold title, one-line body, optional CTA.
+  Amber is "heads up", rose is "you're blocked".
+
+  Pass `navigate` to make the whole banner a link (the CTA renders as a static
+  badge); omit it and give the `:cta` its own `navigate` when only the action
+  should link. The trailing `→` is supplied — the CTA slot carries just the label.
+
+      <.attention_banner tone={:rose} icon="hero-exclamation-triangle" title="At your runner limit">
+        The next runner to register gets a 402 and fails to come online.
+        <:cta navigate={~p"/app/\#{@account}/settings/billing"}>See plans</:cta>
+      </.attention_banner>
+  """
+  attr :tone, :atom, default: :amber, values: [:amber, :rose]
+  attr :icon, :string, required: true
+  attr :title, :string, required: true
+  attr :navigate, :any, default: nil
+
+  slot :inner_block, required: true
+
+  slot :cta do
+    attr :navigate, :any
+  end
+
+  def attention_banner(%{navigate: nil} = assigns) do
+    assigns = assign(assigns, :c, attention_banner_classes(assigns.tone))
+
+    ~H"""
+    <div class={["mb-4 flex items-start gap-3 rounded-xl border p-4", @c.box]}>
+      <.icon name={@icon} class={"mt-0.5 h-5 w-5 flex-none #{@c.icon}"} />
+      <div class="flex-1 text-sm">
+        <p class={["font-semibold", @c.title]}>{@title}</p>
+        <p class={["mt-1 text-xs", @c.body]}>{render_slot(@inner_block)}</p>
+      </div>
+      <.link
+        :for={cta <- @cta}
+        navigate={cta[:navigate]}
+        class={["shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold", @c.cta]}
+      >
+        {render_slot(cta)} →
+      </.link>
+    </div>
+    """
+  end
+
+  def attention_banner(assigns) do
+    assigns = assign(assigns, :c, attention_banner_classes(assigns.tone))
+
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class={["mb-4 flex items-start gap-3 rounded-xl border p-4 transition", @c.box, @c.hover]}
+    >
+      <.icon name={@icon} class={"mt-0.5 h-5 w-5 flex-none #{@c.icon}"} />
+      <div class="flex-1 text-sm">
+        <p class={["font-semibold", @c.title]}>{@title}</p>
+        <p class={["mt-1 text-xs", @c.body]}>{render_slot(@inner_block)}</p>
+      </div>
+      <span
+        :for={cta <- @cta}
+        class={["shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold", @c.cta]}
+      >
+        {render_slot(cta)} →
+      </span>
+    </.link>
+    """
+  end
+
+  defp attention_banner_classes(:rose),
+    do: %{
+      box: "border-rose-500/40 bg-rose-500/10",
+      hover: "hover:bg-rose-500/[0.16]",
+      icon: "text-rose-300",
+      title: "text-rose-100",
+      body: "text-rose-200/90",
+      cta: "bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
+    }
+
+  defp attention_banner_classes(:amber),
+    do: %{
+      box: "border-amber-500/40 bg-amber-500/10",
+      hover: "hover:bg-amber-500/[0.16]",
+      icon: "text-amber-300",
+      title: "text-amber-100",
+      body: "text-amber-200/90",
+      cta: "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
+    }
+
+  @doc """
   Renders a [Heroicon](https://heroicons.com).
 
   Heroicons come in three styles – outline, solid, and mini.
