@@ -620,8 +620,14 @@ defmodule Emisar.Approvals do
 
   defp mint_grant(%Request{} = request, run, by_user_id, attrs) do
     case create_grant(request, run, by_user_id, attrs) do
-      {:ok, grant} -> {:ok, grant}
-      {:error, changeset} -> {:error, {:grant_failed, changeset}}
+      {:ok, grant} ->
+        {:ok, grant}
+
+      {:error, :grant_exceeds_account_max_lifetime} ->
+        {:error, :grant_exceeds_account_max_lifetime}
+
+      {:error, changeset} ->
+        {:error, {:grant_failed, changeset}}
     end
   end
 
@@ -859,26 +865,50 @@ defmodule Emisar.Approvals do
     now = DateTime.utc_now()
     duration = attrs[:duration]
 
-    Grant.Changeset.create(%{
-      account_id: request.account_id,
-      api_key_id: run.api_key_id,
-      action_id: run.action_id,
-      runner_id: run.runner_id,
-      args_sha256: if(attrs[:scope] == :any_args, do: nil, else: run.args_sha256),
-      granted_by_id: granted_by_id,
-      granted_at: now,
-      expires_at: expires_at_for(duration, now),
-      max_uses: max_uses_for(duration, attrs[:max_uses]),
-      # Minting a grant also dispatches the run it was approved from —
-      # that execution is the grant's first use. Record it so the UI
-      # never shows "not used yet" for an action that already ran, and
-      # so `max_uses` counts total executions (this one included).
-      uses_count: 1,
-      last_used_at: now,
-      approval_request_id: request.id
-    })
-    |> Repo.insert()
+    with :ok <- check_grant_within_account_cap(request.account_id, duration) do
+      Grant.Changeset.create(%{
+        account_id: request.account_id,
+        api_key_id: run.api_key_id,
+        action_id: run.action_id,
+        runner_id: run.runner_id,
+        args_sha256: if(attrs[:scope] == :any_args, do: nil, else: run.args_sha256),
+        granted_by_id: granted_by_id,
+        granted_at: now,
+        expires_at: expires_at_for(duration, now),
+        max_uses: max_uses_for(duration, attrs[:max_uses]),
+        # Minting a grant also dispatches the run it was approved from —
+        # that execution is the grant's first use. Record it so the UI
+        # never shows "not used yet" for an action that already ran, and
+        # so `max_uses` counts total executions (this one included).
+        uses_count: 1,
+        last_used_at: now,
+        approval_request_id: request.id
+      })
+      |> Repo.insert()
+    end
   end
+
+  # A regulated account can cap the maximum standing-grant DURATION
+  # (Accounts `max_grant_lifetime_seconds`). `:once` is single-use, not a
+  # standing grant, so it is exempt; a windowed grant whose length exceeds the
+  # cap is refused. The approval UI also hides over-cap durations, but this is
+  # the IL-15 server backstop that holds even if the UI is bypassed.
+  defp check_grant_within_account_cap(_account_id, :once), do: :ok
+
+  defp check_grant_within_account_cap(account_id, duration) do
+    cap = Accounts.fetch_account_max_grant_lifetime(account_id)
+
+    if is_nil(cap) or duration_seconds_for(duration) <= cap do
+      :ok
+    else
+      {:error, :grant_exceeds_account_max_lifetime}
+    end
+  end
+
+  defp duration_seconds_for(:one_hour), do: @one_hour_seconds
+  defp duration_seconds_for(:one_day), do: @one_day_seconds
+  defp duration_seconds_for(:thirty_days), do: @thirty_days_seconds
+  defp duration_seconds_for(:ninety_days), do: @ninety_days_seconds
 
   # Deliberately NO catch-all: an unknown duration atom must crash, not
   # silently mint a never-expiring grant (the web layer parses operator

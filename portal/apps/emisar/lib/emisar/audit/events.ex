@@ -84,6 +84,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def account_max_grant_lifetime_set(%Subject{} = subject, %Accounts.Account{} = account) do
+    Audit.changeset(
+      account.id,
+      "account.max_grant_lifetime_set",
+      actor(subject) ++
+        [
+          subject_kind: "account",
+          subject_id: account.id,
+          payload: %{max_grant_lifetime_seconds: account.max_grant_lifetime_seconds}
+        ]
+    )
+  end
+
   # -- Membership ------------------------------------------------------
 
   def membership_role_changed(%Subject{} = subject, %Accounts.Membership{} = membership, new_role) do

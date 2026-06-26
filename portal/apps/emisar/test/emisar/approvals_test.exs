@@ -154,6 +154,65 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "create_grant/4 — account max-grant-lifetime cap" do
+    setup do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      operator = user_fixture()
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: operator.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          api_key_id: key.id,
+          status: :pending_approval
+        })
+
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+      %{account: account, run: run, request: request, operator: operator}
+    end
+
+    test "refuses a windowed duration beyond the cap (the IL-15 server gate)",
+         %{account: account, run: run, request: request, operator: operator} do
+      Ecto.Changeset.change(account, max_grant_lifetime_seconds: 86_400) |> Repo.update!()
+
+      assert {:error, :grant_exceeds_account_max_lifetime} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
+
+      assert {:error, :grant_exceeds_account_max_lifetime} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :thirty_days})
+    end
+
+    test "allows a duration within the cap",
+         %{account: account, run: run, request: request, operator: operator} do
+      Ecto.Changeset.change(account, max_grant_lifetime_seconds: 86_400) |> Repo.update!()
+
+      assert {:ok, %Grant{}} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :one_day})
+
+      assert {:ok, %Grant{}} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :one_hour})
+    end
+
+    test "exempts :once (single-use, not a standing grant) even under a tight cap",
+         %{account: account, run: run, request: request, operator: operator} do
+      Ecto.Changeset.change(account, max_grant_lifetime_seconds: 60) |> Repo.update!()
+
+      assert {:ok, %Grant{}} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :once})
+    end
+
+    test "no cap → any duration allowed",
+         %{run: run, request: request, operator: operator} do
+      assert {:ok, %Grant{}} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
+    end
+  end
+
   describe "create_request/3" do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()

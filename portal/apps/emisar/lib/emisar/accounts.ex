@@ -32,6 +32,17 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc "Internal — Approvals reads an account's grant-lifetime cap to enforce it; nil = no cap. No subject; the approval flow already authorized the approver."
+  def fetch_account_max_grant_lifetime(account_id) do
+    Account.Query.not_deleted()
+    |> Account.Query.by_id(account_id)
+    |> Repo.peek()
+    |> grant_lifetime_cap()
+  end
+
+  defp grant_lifetime_cap(nil), do: nil
+  defp grant_lifetime_cap(%Account{max_grant_lifetime_seconds: cap}), do: cap
+
   @doc """
   Internal — pre-auth: the web session boundary (`UserAuth`) resolves an
   `/app/:account_id_or_slug` segment before anyone is authenticated, so no
@@ -162,9 +173,11 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # require_mfa and require_sso are the security settings.
+  # require_mfa, require_sso, and max_grant_lifetime_seconds are the security settings.
   defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
-    do: Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso)
+    do:
+      Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso) or
+        Map.has_key?(changes, :max_grant_lifetime_seconds)
 
   # A require_mfa / require_sso change is a security event; everything else is a
   # plain account.updated. The UI never changes more than one in a request.
@@ -179,6 +192,9 @@ defmodule Emisar.Accounts do
 
       Map.has_key?(changeset.changes, :require_sso) ->
         Audit.Events.account_require_sso_set(subject, account)
+
+      Map.has_key?(changeset.changes, :max_grant_lifetime_seconds) ->
+        Audit.Events.account_max_grant_lifetime_set(subject, account)
 
       true ->
         Audit.Events.account_updated(subject, account)

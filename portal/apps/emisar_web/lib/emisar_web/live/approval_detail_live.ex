@@ -300,6 +300,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
         "freshness window, so the runner would refuse it. Re-issue it from your MCP client and " <>
         "approve the fresh one."
 
+  defp decision_error_message(:grant_exceeds_account_max_lifetime),
+    do:
+      "This grant's duration exceeds your account's maximum grant-lifetime cap. " <>
+        "Pick a shorter window."
+
   defp decision_error_message(_),
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 

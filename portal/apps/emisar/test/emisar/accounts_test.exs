@@ -292,6 +292,66 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — max_grant_lifetime_seconds (security setting)" do
+    test "an owner can set the grant-lifetime cap" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      assert {:ok, %Account{max_grant_lifetime_seconds: 86_400}} =
+               Accounts.update_account(
+                 account,
+                 %{max_grant_lifetime_seconds: 86_400},
+                 owner_subject
+               )
+    end
+
+    test "an admin can set the cap (security setting)" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:ok, %Account{max_grant_lifetime_seconds: 3_600}} =
+               Accounts.update_account(
+                 account,
+                 %{max_grant_lifetime_seconds: 3_600},
+                 admin_subject
+               )
+    end
+
+    test "an operator cannot set the cap (no manage_security_settings)" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(
+                 account,
+                 %{max_grant_lifetime_seconds: 3_600},
+                 operator_subject
+               )
+
+      refute Repo.reload!(account).max_grant_lifetime_seconds
+    end
+
+    test "the cap must be a positive number of seconds" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      assert {:error, %Ecto.Changeset{}} =
+               Accounts.update_account(account, %{max_grant_lifetime_seconds: 0}, owner_subject)
+    end
+
+    test "an owner of another account can't set this account's cap (cross-account)" do
+      {_owner_a, account_a, _subject_a} = owner_subject_fixture()
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(account_a, %{max_grant_lifetime_seconds: 3_600}, subject_b)
+
+      refute Repo.reload!(account_a).max_grant_lifetime_seconds
+    end
+  end
+
   describe "invite_user_to_account/3" do
     test "creates a placeholder user for an unknown email" do
       inviter = user_fixture()
