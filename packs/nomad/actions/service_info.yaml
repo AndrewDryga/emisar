@@ -1,0 +1,30 @@
+schema_version: 1
+id: nomad.service_info
+title: nomad service info <name>
+kind: exec
+risk: low
+description: >
+  Show the live instances of one service in Nomad's native service discovery
+  (no Consul) — each instance's address, port, node, and allocation ID. This is
+  the "where is this service running, on what address" read for a registered
+  service name (list them with nomad.service_list). Requires a Nomad token with
+  the read-job capability on the namespace.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: service
+    type: string
+    required: true
+    description: Registered service name (from nomad.service_list).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: nomad, argv: ["service", "info", "{{ args.service }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Instances of the "redis" service
+    args:
+      service: "redis"

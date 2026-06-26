@@ -1,0 +1,23 @@
+schema_version: 1
+id: nomad.service_list
+title: nomad service list
+kind: exec
+risk: low
+description: >
+  List the services registered in Nomad's native service discovery (no Consul)
+  — the registered service names and their tags in the current namespace. This
+  is the "what services does Nomad know about" read; use nomad.service_info to
+  see the live instances (address, port, node, alloc) behind one service.
+  Requires a Nomad token with the read-job capability on the namespace.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nomad, argv: ["service", "list"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All Nomad-registered services
+    args: {}

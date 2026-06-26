@@ -1,0 +1,31 @@
+schema_version: 1
+id: nomad.alloc_checks
+title: nomad alloc checks <id>
+kind: exec
+risk: low
+description: >
+  Show the Nomad-native service health-check results for one allocation — each
+  check's name, group/task/service, status (success | failure | pending), and
+  output. This is the Nomad-side health view with no Consul: is the alloc's
+  service actually passing its checks, or failing one? Needs the allocation ID
+  (get it from nomad.job_allocations or nomad.alloc_status). Requires a Nomad
+  token with the read-job capability on the namespace.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: nomad, argv: ["alloc", "checks", "{{ args.alloc_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Health checks for one alloc
+    args:
+      alloc_id: "abc12345"

@@ -24,6 +24,10 @@ cases:
 - action: nomad.agent_self
   args: {}
   expect_exit: 0
+- action: nomad.alloc_checks
+  args:
+    alloc_id: abc12345
+  expect_exit: 0
 - action: nomad.alloc_logs
   args:
     alloc_id: abc12345
@@ -229,6 +233,13 @@ cases:
   skip: mutator skipped by default (critical)
 - action: nomad.quota_list
   args: {}
+  expect_exit: 0
+- action: nomad.service_list
+  args: {}
+  expect_exit: 0
+- action: nomad.service_info
+  args:
+    service: redis
   expect_exit: 0
 - action: nomad.server_members
   args: {}
