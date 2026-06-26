@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.job_status_one
 title: nomad job status <id>
-kind: exec
+kind: script
 risk: low
 description: Show one job's full status — task groups, allocations, deployment.
 side_effects: ["One API call.", "Read-only."]
@@ -12,8 +12,25 @@ args:
     description: Job ID.
     validation:
       pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command: {binary: nomad, argv: ["job", "status", "-verbose", "{{ args.job }}"]}
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "job status -verbose", "{{ args.job }}"]
   timeout: 30s
 output:
   parser: text
@@ -23,3 +40,7 @@ examples:
   - title: One job
     args:
       job: "api"
+  - title: One job in the "prod" namespace
+    args:
+      job: "api"
+      namespace: "prod"

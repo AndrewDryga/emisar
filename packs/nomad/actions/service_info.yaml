@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.service_info
 title: nomad service info <name>
-kind: exec
+kind: script
 risk: low
 description: >
   Show the live instances of one service in Nomad's native service discovery
@@ -17,8 +17,25 @@ args:
     description: Registered service name (from nomad.service_list).
     validation:
       pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command: {binary: nomad, argv: ["service", "info", "{{ args.service }}"]}
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "service info", "{{ args.service }}"]
   timeout: 30s
 output:
   parser: text

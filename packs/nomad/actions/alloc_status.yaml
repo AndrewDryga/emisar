@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.alloc_status
 title: nomad alloc status <id>
-kind: exec
+kind: script
 risk: low
 description: Show one allocation's full state — task states, restarts, last events.
 side_effects: ["One API call.", "Read-only."]
@@ -12,8 +12,25 @@ args:
     description: Allocation ID or prefix.
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command: {binary: nomad, argv: ["alloc", "status", "-verbose", "{{ args.alloc_id }}"]}
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "alloc status -verbose", "{{ args.alloc_id }}"]
   timeout: 30s
 output:
   parser: text
@@ -23,3 +40,7 @@ examples:
   - title: One alloc
     args:
       alloc_id: "abc12345"
+  - title: One alloc in the "prod" namespace
+    args:
+      alloc_id: "abc12345"
+      namespace: "prod"

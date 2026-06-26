@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.alloc_logs
 title: Tail a task's application logs — stdout (nomad alloc logs)
-kind: exec
+kind: script
 risk: low
 description: >
   Tail application logs (stdout) from one task in a Nomad allocation — the last
@@ -33,10 +33,25 @@ args:
     validation:
       min: 1
       max: 10000
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command:
-    binary: nomad
-    argv: ["alloc", "logs", "-tail", "-n", "{{ args.tail }}", "{{ args.alloc_id }}", "{{ args.task }}"]
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "alloc logs -tail -n {{ args.tail }}", "{{ args.alloc_id }}", "{{ args.task }}"]
   timeout: 30s
 output:
   parser: text

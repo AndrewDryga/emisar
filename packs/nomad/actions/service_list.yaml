@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.service_list
 title: nomad service list
-kind: exec
+kind: script
 risk: low
 description: >
   List the services registered in Nomad's native service discovery (no Consul)
@@ -10,9 +10,26 @@ description: >
   see the live instances (address, port, node, alloc) behind one service.
   Requires a Nomad token with the read-job capability on the namespace.
 side_effects: ["One API call.", "Read-only."]
-args: []
+args:
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command: {binary: nomad, argv: ["service", "list"]}
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "service list"]
   timeout: 30s
 output:
   parser: text
@@ -21,3 +38,6 @@ output:
 examples:
   - title: All Nomad-registered services
     args: {}
+  - title: Services in the "prod" namespace
+    args:
+      namespace: "prod"

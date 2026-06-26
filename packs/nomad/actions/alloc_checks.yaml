@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.alloc_checks
 title: nomad alloc checks <id>
-kind: exec
+kind: script
 risk: low
 description: >
   Show the Nomad-native service health-check results for one allocation — each
@@ -18,8 +18,25 @@ args:
     description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+  - name: region
+    type: string
+    required: false
+    default: ""
+    description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
 execution:
-  command: {binary: nomad, argv: ["alloc", "checks", "{{ args.alloc_id }}"]}
+  script:
+    path: scripts/read_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "{{ args.region }}", "alloc checks", "{{ args.alloc_id }}"]
   timeout: 30s
 output:
   parser: text
