@@ -151,13 +151,13 @@ defmodule EmisarWeb.LiveTable do
           <% end %>
         </ul>
 
-        <%!-- Padded footer so the paginator chrome ("N total" + prev/next) keeps the
-             same px-5 inset as the rows above, sitting just below the card list. --%>
+        <%!-- Footer keeps the rows' px-5 inset; no top padding, so the "N total" /
+             prev-next sits tight under the list (the wrapper's space-y is the gap). --%>
         <div
           :if={
             @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0
           }
-          class="px-5 py-3"
+          class="px-5 pb-1"
         >
           <.paginator
             id={@id}
