@@ -19,73 +19,173 @@
         (sign in through your IdP) and
         <strong class="text-zinc-200">directory sync (SCIM)</strong>
         (provision and deprovision from the directory). You can run login on its own; directory
-        sync builds on a configured connection.
+        sync builds on a configured connection. Both are configured from one page —
+        <strong class="text-zinc-200">Settings → Single sign-on</strong>
+        in your emisar workspace; the screenshots below are that page.
       </p>
+
+      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm leading-6 text-zinc-400">
+        <p class="font-semibold text-zinc-200">Where these flows stand</p>
+        <p class="mt-1.5">
+          emisar speaks standards-based OpenID Connect and SCIM 2.0, and the round-trip — OIDC
+          discovery, ID-token validation, the full SCIM provision / update / deactivate / reactivate
+          lifecycle, and group&nbsp;→&nbsp;role recompute — is verified end to end against a live
+          standards IdP. Vendor-specific certification against hosted Okta and JumpCloud tenants is
+          in progress; until it lands, treat the per-vendor admin-console steps below as our best
+          read of each provider's UI, not a vendor-certified runbook. The emisar side — every step
+          and screenshot on this page — is exactly what you'll see.
+        </p>
+      </div>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Setting up SSO login</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Settings → <strong class="text-zinc-200">Single sign-on</strong>
-        (Team or Enterprise; an owner or admin). Create an OAuth/OIDC app at your provider first,
-        then add a connection here:
-      </p>
-      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            <strong class="text-zinc-200">Provider</strong>
-            — Google Workspace, Okta, Keycloak, or generic OpenID Connect. The named ones are
-            presets over one standard discovery-based OIDC flow; there's no separate integration
-            to wait for.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            <strong class="text-zinc-200">Issuer URL</strong>
-            — the provider's OIDC issuer (must be HTTPS). Its discovery document is fetched from
-            there, so you don't paste endpoints by hand.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            <strong class="text-zinc-200">Client ID</strong>
-            and <strong class="text-zinc-200">client secret</strong>
-            from that app. The secret is write-only — it's stored hashed-secret style and never
-            rendered back; leave it blank when editing to keep the current one.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            <strong class="text-zinc-200">Default role</strong>
-            — the role a newly provisioned member lands at (viewer / operator / admin). Sync
-            never grants <span class="text-zinc-300">owner</span>; that stays a deliberate human grant.
-            See <.link
-              navigate={~p"/docs/teams-and-access"}
-              class="text-brand-300 hover:text-brand-200"
-            >roles</.link>.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            <strong class="text-zinc-200">Allowed email domain</strong>
-            (optional) — restricts sign-in to verified addresses on that domain and routes that
-            domain's sign-ins to this connection. Leave blank to accept any address the provider
-            asserts.
-          </span>
-        </li>
-      </ul>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Register one <strong class="text-zinc-200">redirect / callback URL</strong>
-        at your IdP:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-        on your emisar host. That's the fixed value emisar uses — it's never taken from the
-        request.
+        You need an emisar owner or admin on a
+        <strong class="text-zinc-200">Team or Enterprise</strong>
+        plan. Open <strong class="text-zinc-200">Settings → Single sign-on</strong>
+        and click <strong class="text-zinc-200">Add connection</strong>; the form fills the
+        right-hand side and walks you through the provider-side app as you pick a provider type.
       </p>
 
-      <h3 class="mt-8 text-lg font-semibold text-zinc-100">How members sign in</h3>
+      <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
+        <img
+          src="/images/docs/sso/sso-add-connection.webp"
+          alt="The emisar Add-connection form under Settings → Single sign-on: a Provider type dropdown (Google Workspace selected) with a live setup guide showing the fixed redirect URI to register, then fields for Issuer URL, Client ID, Client secret, New-user provisioning, Identifier claim, Default role, Allowed email domain, and toggles for whether the provider satisfies the account's 2FA requirement and whether the connection is enabled."
+          loading="lazy"
+          class="w-full"
+        />
+      </figure>
+
+      <ol class="mt-8 space-y-6">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
+          </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Create an OAuth / OIDC app at your provider.
+            </p>
+            <p class="mt-1.5">
+              A confidential web application with a client secret. emisar uses standard,
+              discovery-based OpenID Connect, so the named providers (Google Workspace, Okta,
+              Keycloak) are presets over one flow — there's no separate integration to wait for, and
+              <strong class="text-zinc-200">Generic OpenID Connect</strong>
+              fits anything compliant. When you pick a provider type in the form, the in-app guide
+              names the exact admin-console path for it. Leave
+              <strong class="text-zinc-200">DPoP</strong>
+              (sender-constrained tokens) off — emisar reads the ID token only and never calls an API
+              with the access token, so DPoP adds nothing here and would break the token request.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Register emisar's redirect URI on that app.
+            </p>
+            <p class="mt-1.5">
+              The form shows the exact value, with a copy button — it's
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+              on your emisar host. This is the fixed URI emisar uses; it's never taken from the
+              request, so paste it verbatim into your app's allowed redirect / callback URLs.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">Fill in the connection and save.</p>
+            <p class="mt-1.5">Back on the emisar form, set:</p>
+            <ul class="mt-2 space-y-2">
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Provider type</strong>
+                  and a <strong class="text-zinc-200">Display name</strong>
+                  (what your members see — e.g. "Acme Okta").
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Issuer URL</strong>
+                  — your provider's OIDC issuer (must be HTTPS). emisar fetches the discovery
+                  document from there, so you never paste individual endpoints. The in-app guide
+                  shows the shape for the selected provider (your Okta org URL, your Keycloak
+                  realm URL, and so on).
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Client ID</strong>
+                  and <strong class="text-zinc-200">Client secret</strong>
+                  from the app you just created. The secret is write-only — stored hashed-secret
+                  style and never rendered back; when you edit the connection later, leave it blank
+                  to keep the current one.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">New-user provisioning</strong>
+                  — <span class="text-zinc-300">Auto-provision</span>
+                  creates a user on first sign-in; <span class="text-zinc-300">Manual</span>
+                  holds each first-time sign-in as a pending request an admin approves. Either way
+                  they land at the default role below.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Identifier claim</strong>
+                  — leave as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+                  unless your provider documents a different stable identifier. This is what an
+                  identity is bound to (see below), and what SCIM's
+                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+                  must match for login and directory sync to converge.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Default role for new users</strong>
+                  — the role a newly provisioned member lands at (viewer / operator / admin). Sync
+                  never grants <span class="text-zinc-300">owner</span>; that stays a deliberate
+                  human grant. See <.link
+                    navigate={~p"/docs/teams-and-access"}
+                    class="text-brand-300 hover:text-brand-200"
+                  >roles</.link>.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  <strong class="text-zinc-200">Allowed email domain</strong>
+                  (optional) — restricts sign-in to verified addresses on that domain and routes
+                  that domain's sign-ins to this connection. Leave blank to accept any address the
+                  provider asserts.
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  Decide whether <strong class="text-zinc-200">this provider satisfies your 2FA
+                    requirement</strong>
+                  (see below), tick <strong class="text-zinc-200">Enabled</strong>, and save. The
+                  connection appears in the list, ready to sign in through.
+                </span>
+              </li>
+            </ul>
+          </div>
+        </li>
+      </ol>
+
+      <h3 class="mt-10 text-lg font-semibold text-zinc-100">How members sign in</h3>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; if you set an
         allowed email domain, entering an address on it routes them straight to your provider. They
@@ -130,29 +230,101 @@
         Directory sync (SCIM 2.0)
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
+        On a configured connection (Enterprise plan), enable
+        <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
-        and JumpCloud all speak as a provisioning client. Enabling it gives you two things
-        to paste into your provider's SCIM connector:
+        and JumpCloud all speak as a provisioning client. The directory-sync panel lives right under
+        each connection on the same Single sign-on page.
       </p>
-      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            a <strong class="text-zinc-200">SCIM base URL</strong>
-            — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
-            on your emisar host, and
+
+      <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
+        <img
+          src="/images/docs/sso/sso-directory-sync.webp"
+          alt="The Single sign-on settings page with a configured connection: the Directory sync (SCIM) panel shows an Enabled badge, the SCIM base URL with a copy button, Rotate token and Disable buttons, a collapsible 'Point your IdP at this connection' setup guide, and a Group → role mapping section for mapping IdP groups to emisar roles."
+          loading="lazy"
+          class="w-full"
+        />
+      </figure>
+
+      <ol class="mt-8 space-y-6">
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            1
           </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Click <span class="text-zinc-300">Enable directory sync</span> on the connection.
+            </p>
+            <p class="mt-1.5">
+              emisar shows you two things to wire into your provider's SCIM connector — both visible
+              in the panel above:
+            </p>
+            <ul class="mt-2 space-y-2">
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  the <strong class="text-zinc-200">SCIM base URL</strong>
+                  — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
+                  on your emisar host (copy button beside it), and
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <span class="flex-none text-zinc-600">—</span>
+                <span>
+                  a <strong class="text-zinc-200">bearer token</strong>, shown
+                  <strong class="text-zinc-200">once</strong>
+                  when you enable or rotate it. Like every emisar secret it's write-only after that
+                  — copy it then. Didn't catch it? Use
+                  <strong class="text-zinc-200">Rotate token</strong>
+                  to mint a fresh one (the old one stops working).
+                </span>
+              </li>
+            </ul>
+          </div>
         </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-600">—</span>
-          <span>
-            a <strong class="text-zinc-200">bearer token</strong>, shown once when you enable or
-            rotate it. Like every emisar secret, it's write-only after that — copy it then.
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
           </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Point your IdP's SCIM connector at that base URL and bearer.
+            </p>
+            <p class="mt-1.5">
+              In your provider, set the SCIM endpoint to the base URL and paste the token as the API
+              token — emisar accepts it in the
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
+              header. Enable Create / Update / Deactivate. The connection's
+              <strong class="text-zinc-200">"Point your IdP at this connection"</strong>
+              guide names the per-provider specifics — for Okta, SCIM lives in a <em>separate</em>
+              app (the OIDC login app can't do SCIM); for JumpCloud it's a Custom SCIM config on the
+              same app.
+            </p>
+          </div>
         </li>
-      </ul>
-      <p class="mt-4 text-sm leading-6 text-zinc-400">What the sync does:</p>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            3
+          </span>
+          <div class="min-w-0 text-sm leading-6 text-zinc-400">
+            <p class="font-semibold text-zinc-100">
+              Match the SCIM externalId to the OIDC subject.
+            </p>
+            <p class="mt-1.5">
+              Configure your IdP so the SCIM
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+              is the same stable identifier as the connection's identifier claim (the OIDC <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>). Then a member's SSO
+              login and their synced directory record resolve to one emisar identity — no
+              email-matching anywhere. Okta and JumpCloud default both to the directory user id, so
+              this usually needs no change; the brand-bordered note further down covers it in full.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <p class="mt-6 text-sm leading-6 text-zinc-400">
+        Once it's wired, here's what the sync does:
+      </p>
       <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>

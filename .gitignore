@@ -39,7 +39,9 @@ erl_crash.dump
 # Local dev compose secrets — copy .env.example to .env and fill in.
 /.env
 
-docs/
+# Local docs working dir at the repo root (notes, not the marketing /docs assets
+# under priv/static — a bare `docs/` would also swallow those).
+/docs/
 
 # .agent/ is local working state — only rules/ (the shared taste KB) and
 # scripts/ (maintained dev tooling) are committed. Tasks, backlog, ideas,
