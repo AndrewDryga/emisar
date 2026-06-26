@@ -1413,6 +1413,10 @@ defmodule EmisarWeb.AgentsLive do
           type="datetime-local"
           label="Expires (UTC)"
         />
+        <p class="mt-1 text-xs text-zinc-500">
+          Leave blank for the default 30-day expiry — a short-lived key limits the
+          blast radius if it leaks. Pick a date to override.
+        </p>
 
         <%!-- Optional per-action allow-list. Blank = the key may run any action
              its runner scope allows; listing ids locks it to exactly those,

@@ -204,6 +204,39 @@ defmodule Emisar.ApiKeysTest do
       refute ApiKey.action_allowed?(key, "cloud-init.clean_logs")
     end
 
+    test "MCP keys default to a 30-day expiry when none is given (a leak self-heals)" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:ok, _raw, %ApiKey{expires_at: exp} = key} =
+               ApiKeys.create_key(%{name: "mcp", scopes: ["actions:execute"]}, subject)
+
+      assert exp
+      assert ApiKey.usable?(key)
+
+      expected = DateTime.add(DateTime.utc_now(), 30 * 24 * 3600, :second)
+      assert_in_delta DateTime.to_unix(exp), DateTime.to_unix(expected), 120
+    end
+
+    test "an explicit expiry is honoured, never overridden by the default" do
+      {_user, _account, subject} = owner_subject_pair()
+      explicit = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      assert {:ok, _raw, %ApiKey{expires_at: exp}} =
+               ApiKeys.create_key(
+                 %{name: "short", scopes: ["actions:execute"], expires_at: explicit},
+                 subject
+               )
+
+      assert DateTime.to_unix(exp) == DateTime.to_unix(explicit)
+    end
+
+    test "audit-export tokens (audit:read) never get a default expiry — it would break log shipping" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:ok, _raw, %ApiKey{expires_at: nil}} =
+               ApiKeys.create_key(%{name: "SIEM", scopes: ["audit:read"]}, subject)
+    end
+
     test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
       # A custom key mints an execute-capable MCP credential, so it gates
       # on `manage_api_keys` — which operators lack (they may only mint
@@ -249,6 +282,10 @@ defmodule Emisar.ApiKeysTest do
       assert %DateTime{} = key.auto_generated_at
       assert "actions:read" in key.scopes
       assert "actions:execute" in key.scopes
+
+      # Quick keys carry the same 30-day default expiry as custom MCP keys.
+      expected = DateTime.add(DateTime.utc_now(), 30 * 24 * 3600, :second)
+      assert_in_delta DateTime.to_unix(key.expires_at), DateTime.to_unix(expected), 120
 
       # Auto-unused keys never show on the operator-facing list.
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(subject)

@@ -45,6 +45,28 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_length(:name, min: 1, max: 80)
     |> validate_subset(:scopes, @valid_scopes)
     |> validate_action_scope()
+    |> put_default_mcp_expiry()
+  end
+
+  # Newly-minted MCP keys default to a 30-day expiry when the operator gives no
+  # explicit one, so a leaked key self-heals (`usable?/1` enforces it). Audit-
+  # export tokens (`audit:read`) are exempt — a log-shipping credential expiring
+  # out from under a SIEM would silently break ingestion. (68a will switch this
+  # scope check to the explicit `kind`.)
+  @default_mcp_key_ttl_s 30 * 24 * 3_600
+
+  defp put_default_mcp_expiry(changeset) do
+    scopes = get_field(changeset, :scopes) || []
+
+    if get_field(changeset, :expires_at) || "audit:read" in scopes do
+      changeset
+    else
+      put_change(
+        changeset,
+        :expires_at,
+        DateTime.add(DateTime.utc_now(), @default_mcp_key_ttl_s, :second)
+      )
+    end
   end
 
   # Each action_scope entry is an action_id (`<pack>.<action>`, exactly one dot).
@@ -82,6 +104,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_change(:key_hash, hash)
     |> put_change(:scopes, ["actions:read", "actions:execute"])
     |> put_change(:auto_generated_at, DateTime.utc_now())
+    |> put_default_mcp_expiry()
     |> validate_required([:account_id, :name])
   end
 
