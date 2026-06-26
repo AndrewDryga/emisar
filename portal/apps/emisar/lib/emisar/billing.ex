@@ -94,21 +94,28 @@ defmodule Emisar.Billing do
   # which run on already-trusted server contexts. Subject-less because
   # the Paddle webhook signature is the auth gate at the edge.
   #
-  # Deliberately peek-then-insert/update rather than an `on_conflict`
-  # true-upsert: webhook payloads carry PARTIAL attr sets (e.g. cancel
-  # carries only `status`), so a replace-set upsert would null fields
-  # the event didn't mention. The shape is race-safe anyway — the
-  # `unique_index(:subscriptions, [:account_id])` makes a concurrent
-  # first-insert lose with a constraint error, and Paddle's redelivery
-  # then takes the update branch.
+  # Deliberately peek-then-insert/update rather than an `on_conflict` true-upsert:
+  # webhook payloads carry PARTIAL attr sets (e.g. cancel carries only `status`),
+  # so a replace-set upsert would null fields the event didn't mention. The INSERT
+  # race is closed by `unique_index(:subscriptions, [:account_id])` (a concurrent
+  # first-insert loses with a constraint error; Paddle's redelivery then takes the
+  # update branch); the UPDATE race is closed by the LOCKED re-read below
+  # (`fetch_and_update` → FOR NO KEY UPDATE), so a concurrent webhook + hourly
+  # BillingSync (or two webhooks) serialize on the row and the loser recomputes
+  # off the committed state, instead of last-write-winning a stale status over a
+  # fresh one.
   def upsert_subscription(account_id, attrs) do
     case peek_subscription_for_account(account_id) do
       nil ->
         Subscription.Changeset.upsert(Map.put(attrs, :account_id, account_id))
         |> Repo.insert()
 
-      %Subscription{} = existing ->
-        existing |> Subscription.Changeset.upsert(attrs) |> Repo.update()
+      %Subscription{} ->
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account_id)
+        |> Repo.fetch_and_update(Subscription.Query,
+          with: &Subscription.Changeset.upsert(&1, attrs)
+        )
     end
   end
 
