@@ -15,6 +15,12 @@ args:
     description: Key file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      denied_paths:
+        - /etc/shadow
+        - /etc/gshadow
+        - /etc/shadow-
+        - /etc/gshadow-
+        - /root/.ssh
 execution:
   command:
     binary: /bin/sh
@@ -26,6 +32,11 @@ output:
   parser: text
   max_stdout_bytes: 1024
   max_stderr_bytes: 8192
+  redact:
+    - name: private-key-pem
+      type: regex
+      pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'
+      replacement: '[REDACTED PRIVATE KEY]'
 examples:
   - title: Modulus hash of key
     args:

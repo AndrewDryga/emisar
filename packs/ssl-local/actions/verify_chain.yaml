@@ -34,6 +34,11 @@ output:
   parser: text
   max_stdout_bytes: 4096
   max_stderr_bytes: 8192
+  redact:
+    - name: private-key-pem
+      type: regex
+      pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'
+      replacement: '[REDACTED PRIVATE KEY]'
 examples:
   - title: Verify cert against system bundle
     args:

@@ -14,6 +14,17 @@ args:
     description: File path.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+      denied_paths:
+        - /etc/shadow
+        - /etc/gshadow
+        - /etc/shadow-
+        - /etc/gshadow-
+        - /etc/ssl/private
+        - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers
+        - /etc/sudoers.d
+        - /proc/kcore
   - name: pattern
     type: string
     required: true
@@ -38,6 +49,11 @@ output:
   parser: text
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
+  redact:
+    - name: private-key-pem
+      type: regex
+      pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'
+      replacement: '[REDACTED PRIVATE KEY]'
 examples:
   - title: grep ERROR in syslog
     args:
