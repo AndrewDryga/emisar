@@ -81,12 +81,12 @@ defmodule Emisar.MailTest do
 
       # The skip path returns {:ok, %{suppressed: true}} without building an
       # email — proof the send was suppressed, not delivered.
-      assert {:ok, %{suppressed: true}} = UserNotifier.deliver_magic_link(user, "tok")
+      assert {:ok, %{suppressed: true}} = UserNotifier.deliver_magic_link(user, "tok", "123456")
     end
 
     test "a normal address is delivered, not suppressed" do
       user = user_fixture()
-      assert {:ok, sent} = UserNotifier.deliver_magic_link(user, "tok")
+      assert {:ok, sent} = UserNotifier.deliver_magic_link(user, "tok", "123456")
       refute match?(%{suppressed: true}, sent)
     end
   end
@@ -94,16 +94,16 @@ defmodule Emisar.MailTest do
   describe "branded return_to threading" do
     test "deliver_magic_link appends an encoded return_to when given one" do
       user = user_fixture()
-      UserNotifier.deliver_magic_link(user, "tok", "/app/acme")
-      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok?return_to=%2Fapp%2Facme"))
+      UserNotifier.deliver_magic_link(user, "tok", "123456", "/app/acme")
+      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok/123456?return_to=%2Fapp%2Facme"))
     end
 
     test "deliver_magic_link without a return_to is unchanged" do
       user = user_fixture()
-      UserNotifier.deliver_magic_link(user, "tok")
+      UserNotifier.deliver_magic_link(user, "tok", "123456")
 
       assert_email_sent(
-        &(&1.text_body =~ "/sign_in/magic/tok" and not (&1.text_body =~ "return_to"))
+        &(&1.text_body =~ "/sign_in/magic/tok/123456" and not (&1.text_body =~ "return_to"))
       )
     end
 
@@ -176,13 +176,15 @@ defmodule Emisar.MailTest do
     # /sign_in/magic/<token> link, and the body copy "15 minutes" which
     # AGREES with the enforced @magic_link_validity_in_minutes (unlike the
     # reset email, see).
-    test "carries the subject, link, and a 15-minute expiry that matches enforcement" do
+    test "carries the subject, link, the 6-digit code, and a 15-minute expiry" do
       user = user_fixture()
-      UserNotifier.deliver_magic_link(user, "tok-magic")
+      UserNotifier.deliver_magic_link(user, "tok-magic", "123456")
 
       assert_email_sent(fn email ->
-        assert email.subject == "Your emisar magic link"
-        assert email.text_body =~ "/sign_in/magic/tok-magic"
+        assert email.subject == "Your emisar sign-in code"
+        assert email.text_body =~ "/sign_in/magic/tok-magic/123456"
+        # The 6-digit code is shown standalone for cross-device entry.
+        assert email.text_body =~ "123456"
         assert email.text_body =~ "15 minutes"
         true
       end)

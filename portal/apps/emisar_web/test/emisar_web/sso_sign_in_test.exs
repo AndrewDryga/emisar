@@ -220,10 +220,22 @@ defmodule EmisarWeb.SSOSignInTest do
 
     test "a magic link requested from a branded page lands on that team", %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
-      token = Emisar.Auth.issue_magic_link_token!(user, %Emisar.RequestContext{})
+
+      # Request the link with the branded return_to (the branded page's hidden
+      # field) — it threads onto the email link AND the session, and the nonce
+      # cookie rides along via recycle.
+      conn =
+        post(build_conn(), ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "return_to" => ~p"/app/#{account.slug}"
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
 
       conn =
-        get(build_conn(), ~p"/sign_in/magic/#{token}?#{[return_to: "/app/#{account.slug}"]}")
+        recycle(conn)
+        |> get(~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
 
       assert redirected_to(conn) == ~p"/app/#{account}"
     end

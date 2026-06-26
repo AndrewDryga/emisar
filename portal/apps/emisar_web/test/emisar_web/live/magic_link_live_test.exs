@@ -1,66 +1,33 @@
 defmodule EmisarWeb.MagicLinkLiveTest do
   @moduledoc """
-  Passwordless sign-in request page. The load-bearing behavior is
-  anti-enumeration: a known and an unknown email get the exact same
-  "check your inbox" response.
+  Passwordless sign-in request page — now render-only. The split-code FLOW
+  (issue the token, set the nonce cookie, verify both halves) lives in
+  `UserSessionController` and is tested there; this LV just renders the email
+  form (POSTs to `:magic_link_start`) and, on `?sent=1`, the 6-digit code form.
   """
   use EmisarWeb.ConnCase, async: true
 
-  test "renders the email form", %{conn: conn} do
+  test "renders the email form that POSTs to the start action", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
 
     assert html =~ "one-time link"
-    assert html =~ "magic_link_form"
-  end
-
-  test "a registered email gets the sent panel", %{conn: conn} do
-    user = Emisar.Fixtures.user_fixture()
-
-    {:ok, lv, _html} = live(conn, ~p"/sign_in/magic")
-
-    html =
-      lv
-      |> form("#magic_link_form", %{"user" => %{"email" => user.email}})
-      |> render_submit()
-
-    assert html =~ "Check your inbox."
-    assert html =~ user.email
-  end
-
-  test "an unknown email gets the IDENTICAL sent panel (no enumeration)", %{conn: conn} do
-    {:ok, lv, _html} = live(conn, ~p"/sign_in/magic")
-
-    html =
-      lv
-      |> form("#magic_link_form", %{"user" => %{"email" => "nobody@example.com"}})
-      |> render_submit()
-
-    assert html =~ "Check your inbox."
-    assert html =~ "nobody@example.com"
-  end
-
-  test "the email field is required (a blank email is blocked client-side, no mint)", %{
-    conn: conn
-  } do
-    # the magic-link send handler has no `else` and never
-    # server-validates the email (a throttled/unknown email falls through to the
-    # same anti-enumeration "sent" panel). So a blank submission is blocked the only
-    # place it can be: the `required` HTML attribute on the email input — there's no
-    # changeset error to assert, the gate is the browser attr.
-    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
-
+    assert html =~ ~s(action="/sign_in/magic/start")
+    # Blank email is gated client-side (the flow has no server-side email error,
+    # by anti-enumeration design) — the `required` attr is the only gate.
     assert html =~ ~r/<input[^>]*name="user\[email\]"[^>]*required/
   end
 
-  test "reset_form returns to the email form", %{conn: conn} do
-    {:ok, lv, _html} = live(conn, ~p"/sign_in/magic")
+  test "?sent=1 shows the check-inbox panel + the 6-digit code form", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
-    lv
-    |> form("#magic_link_form", %{"user" => %{"email" => "someone@example.com"}})
-    |> render_submit()
+    assert html =~ "Check your inbox."
+    assert html =~ ~s(action="/sign_in/magic/code")
+    assert html =~ ~r/<input[^>]*name="code"[^>]*required/
+  end
 
-    html = render_click(lv, "reset_form", %{})
-    assert html =~ "magic_link_form"
-    refute html =~ "Check your inbox."
+  test "the sent panel links back to a fresh email form", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    assert html =~ "Use a different email"
   end
 end

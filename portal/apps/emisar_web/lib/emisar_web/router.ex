@@ -135,7 +135,12 @@ defmodule EmisarWeb.Router do
     end
 
     post "/sign_in", UserSessionController, :create
-    get "/sign_in/magic/:token", UserSessionController, :magic_link_confirm
+    # Split-code magic link: the LV form POSTs the email to :magic_link_start
+    # (issues + sets the nonce cookie + mails the link/code); the email link
+    # carries token_id + secret, the typed code POSTs to :magic_link_verify_code.
+    post "/sign_in/magic/start", UserSessionController, :magic_link_start
+    post "/sign_in/magic/code", UserSessionController, :magic_link_verify_code
+    get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
 
     # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
     get "/sign_in/sso", SSOSignInController, :new

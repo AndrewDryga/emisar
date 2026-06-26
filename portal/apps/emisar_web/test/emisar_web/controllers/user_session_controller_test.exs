@@ -196,64 +196,91 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
   end
 
-  describe "GET /sign_in/magic/:token (token security)" do
-    test "a reset/confirm token presented at the magic endpoint is uniformly invalid (wrong context)",
+  describe "split-code magic link" do
+    # Drive the real request, then pull token_id + the 6-digit secret out of the
+    # email. The returned conn carries the signed nonce cookie (via recycle), so a
+    # follow-up confirm/code request is "the same browser" that requested.
+    defp request_magic_link(conn, email) do
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => email}})
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      {recycle(conn), token_id, secret}
+    end
+
+    test "POST /start sets the nonce cookie and lands on the check-email page", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      assert conn.resp_cookies["emisar_magic"]
+    end
+
+    test "the email link signs in from the originating browser", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert token = get_session(conn, :user_token)
+      assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert signed_in.id == user.id
+    end
+
+    test "the typed 6-digit code signs in from the browser holding the nonce", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      {conn, _token_id, secret} = request_magic_link(conn, user.email)
+
+      conn = post(conn, ~p"/sign_in/magic/code", %{"code" => secret})
+
+      assert token = get_session(conn, :user_token)
+      assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert signed_in.id == user.id
+    end
+
+    test "the link WITHOUT the requesting browser's cookie can't sign in (anti-hijack)",
          %{conn: conn} do
-      # tokens are bound to a `context` and the magic
-      # consumer matches on `context == "magic_link"`. A perfectly valid reset
-      # token (different context) is indistinguishable from an expired one: no
-      # cross-endpoint reuse, no sign-in.
       user = Emisar.Fixtures.user_fixture()
-      reset_token = Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+      {_conn, token_id, secret} = request_magic_link(conn, user.email)
 
-      conn = get(conn, ~p"/sign_in/magic/#{reset_token}")
+      # A DIFFERENT browser (fresh conn, no nonce cookie) clicking the intercepted
+      # link → no sign-in. The core web-level hijack guarantee.
+      conn = get(build_conn(), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert redirected_to(conn) == ~p"/sign_in/magic"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "magic link expired"
       refute get_session(conn, :user_token)
     end
 
-    test "a non-decodable token is uniformly invalid (base64 decode fails first)", %{conn: conn} do
-      # a token that isn't even valid base64 can't resolve to
-      # a row, so the consumer returns the same `:invalid_or_expired` as an expired
-      # or used one: one cause-neutral error, redirect to /sign_in/magic, no sign-in.
-      conn = get(conn, ~p"/sign_in/magic/!!!not-base64!!!")
+    test "a wrong secret is uniformly invalid (no oracle)", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      {conn, token_id, _secret} = request_magic_link(conn, user.email)
+
+      # `tamper` isn't 6 digits, so it can never hash-match the real secret.
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/tamper")
 
       assert redirected_to(conn) == ~p"/sign_in/magic"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "magic link expired"
       refute get_session(conn, :user_token)
     end
 
-    test "a tampered token is uniformly invalid, indistinguishable from expired (no oracle)",
-         %{conn: conn} do
-      # flipping bytes in a real, live token makes its hash
-      # miss every stored token, so the response is byte-identical to the expired/
-      # used case: same flash, same redirect, no signal that a token "almost" worked.
+    test "a soft-deleted user cannot sign in via the link", %{conn: conn} do
       user = Emisar.Fixtures.user_fixture()
-      token = Auth.issue_magic_link_token!(user, %Emisar.RequestContext{})
-      tampered = String.replace(token, String.last(token), "_", global: false) <> "A"
-
-      conn = get(conn, ~p"/sign_in/magic/#{tampered}")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "magic link expired"
-      refute get_session(conn, :user_token)
-    end
-
-    test "a soft-deleted user cannot consume their own magic link", %{conn: conn} do
-      # the token may still be live, but it resolves to no
-      # LIVE user (`fetch_user_by_id` skips soft-deleted rows), so the consume
-      # returns the same uniform invalid-or-expired error and signs no one in.
-      user = Emisar.Fixtures.user_fixture()
-      token = Auth.issue_magic_link_token!(user, %Emisar.RequestContext{})
-
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
       {:ok, _} = user |> Users.User.Changeset.delete() |> Repo.update()
 
-      conn = get(conn, ~p"/sign_in/magic/#{token}")
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert redirected_to(conn) == ~p"/sign_in/magic"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "magic link expired"
       refute get_session(conn, :user_token)
+    end
+
+    test "an unknown email still lands on the check-email page (no account-existence leak)",
+         %{conn: conn} do
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => "nobody@example.test"}})
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      # No email sent, no cookie planted — but the page is identical to a hit.
+      refute_received {:email, _}
+      refute conn.resp_cookies["emisar_magic"]
     end
   end
 

@@ -1,86 +1,88 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Auth, Mailers, Users}
-  alias EmisarWeb.{RequestContext, ReturnTo, Throttle}
+  alias EmisarWeb.ReturnTo
 
+  # Render-only: the email form POSTs to `UserSessionController.magic_link_start`
+  # (a controller, because issuing the split token sets a signed nonce COOKIE a
+  # LiveView can't), and the "?sent=1" code form POSTs to `:magic_link_verify_code`.
   def mount(params, _session, socket) do
     {:ok,
      socket
-     |> assign(:page_title, "Magic link")
-     |> assign(:sent_to, nil)
-     # Captured at mount — `get_connect_info/2` is mount-only, so the
-     # `handle_event` that issues the token reads it from this assign.
-     |> assign(:request_context, RequestContext.from_socket(socket))
-     # A branded page passes ?return_to=/app/<slug> so the emailed link lands there.
+     |> assign(:page_title, "Sign in via email")
+     |> assign(:sent?, params["sent"] == "1")
+     # Branded pages pass ?return_to=/app/<slug>; threaded into the POST as a
+     # hidden field so the emailed link + the code path both land on that team.
      |> assign(:return_to, ReturnTo.app_path(params["return_to"]))
-     |> assign(:form, to_form(%{"email" => ""}, as: "user"))}
+     |> assign(:email_form, to_form(%{"email" => ""}, as: "user"))
+     |> assign(:code_form, to_form(%{"code" => ""}))}
   end
 
   def render(assigns) do
     ~H"""
     <.auth_layout title="Sign in via email">
-      <%= if @sent_to do %>
-        <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-6 text-brand-200">
+      <%= if @sent? do %>
+        <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-5 text-brand-200">
           <h3 class="font-semibold">Check your inbox.</h3>
           <p class="mt-2 text-sm">
-            We sent a one-time login link to <span class="font-mono">{@sent_to}</span>.
-            It expires in 15 minutes.
+            We emailed a sign-in link and a 6-digit code. Enter the code here, or open the
+            link from <em>this same browser</em>. Both expire in 15 minutes.
           </p>
-          <button
-            phx-click="reset_form"
-            class="mt-4 text-xs font-medium text-brand-300 hover:text-brand-100"
-          >
-            Use a different email →
-          </button>
         </div>
+
+        <.simple_form for={@code_form} action={~p"/sign_in/magic/code"} method="post" class="mt-5">
+          <.input
+            field={@code_form[:code]}
+            type="text"
+            label="6-digit code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]*"
+            maxlength="6"
+            required
+          />
+          <:actions>
+            <.button class="w-full">Sign in <span aria-hidden="true">→</span></.button>
+          </:actions>
+        </.simple_form>
+
+        <p class="mt-6 text-center text-sm text-zinc-400">
+          <.link
+            navigate={~p"/sign_in/magic"}
+            class="font-medium text-brand-400 hover:text-brand-300"
+          >
+            Use a different email
+          </.link>
+        </p>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
-          We'll send you a one-time link. It expires in 15 minutes.
+          We'll email you a one-time link and a 6-digit code. They expire in 15 minutes.
         </p>
 
-        <.simple_form for={@form} id="magic_link_form" phx-submit="send">
-          <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
-
+        <.simple_form for={@email_form} action={~p"/sign_in/magic/start"} method="post">
+          <input type="hidden" name="return_to" value={@return_to} />
+          <.input
+            field={@email_form[:email]}
+            type="email"
+            label="Work email"
+            autocomplete="email"
+            required
+          />
           <:actions>
-            <.button phx-disable-with="Sending..." class="w-full">
-              Email me a link <span aria-hidden="true">→</span>
+            <.button class="w-full">
+              Email me a code <span aria-hidden="true">→</span>
             </.button>
           </:actions>
         </.simple_form>
-      <% end %>
 
-      <p class="mt-6 text-center text-sm text-zinc-400">
-        Prefer a password?
-        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
-          Sign in with password
-        </.link>
-      </p>
+        <p class="mt-6 text-center text-sm text-zinc-400">
+          Prefer a password?
+          <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
+            Sign in with password
+          </.link>
+        </p>
+      <% end %>
     </.auth_layout>
     """
-  end
-
-  def handle_event("reset_form", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:sent_to, nil)
-     |> assign(:form, to_form(%{"email" => ""}, as: "user"))}
-  end
-
-  def handle_event("send", %{"user" => %{"email" => email}}, socket) do
-    # Throttle by recipient so this form can't bomb an inbox. The key is the
-    # normalised email — an ETS bucket key, NOT a DB lookup (citext owns the
-    # DB comparison), so the no-app-downcase rule doesn't apply. No `else`:
-    # a throttled OR an unknown email both fall through to the same "sent"
-    # panel below, leaking neither account existence nor the throttle.
-    key = email |> to_string() |> String.trim() |> String.downcase()
-
-    with :ok <- Throttle.check("magic_link", key, 5, 900_000),
-         {:ok, user} <- Users.fetch_user_by_email(email) do
-      token = Auth.issue_magic_link_token!(user, socket.assigns.request_context)
-      Mailers.UserNotifier.deliver_magic_link(user, token, socket.assigns.return_to)
-    end
-
-    {:noreply, assign(socket, :sent_to, email)}
   end
 end

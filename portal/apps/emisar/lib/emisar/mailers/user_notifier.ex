@@ -35,16 +35,24 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_magic_link(%Users.User{} = user, token, return_to \\ nil) do
-    url = PublicUrl.url("/sign_in/magic/#{token}#{return_to_query(return_to)}")
+  def deliver_magic_link(%Users.User{} = user, token_id, secret, return_to \\ nil) do
+    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}#{return_to_query(return_to)}")
 
-    deliver(user.email, "Your emisar magic link", """
-    Click the link below to sign in to emisar. It expires in 15 minutes.
+    deliver(user.email, "Your emisar sign-in code", """
+    Your emisar sign-in code is:
+
+        #{secret}
+
+    Type it into the sign-in page in the browser where you requested it. On that
+    same browser you can also just click:
 
     #{url}
 
-    Didn't request this? You can ignore it — nobody can sign in without
-    clicking the link, and links can only be used once.
+    The code and link only sign in from the browser that made the request, so an
+    intercepted email is useless on its own. They expire in 15 minutes and work
+    once. Didn't request this? You can safely ignore it.
+
+    — emisar
     """)
   end
 

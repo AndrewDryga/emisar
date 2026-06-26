@@ -8,8 +8,16 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
 
-  alias Emisar.{Accounts, Auth, Users}
-  alias EmisarWeb.{RecentAccounts, RequestContext, ReturnTo, UserAuth}
+  alias Emisar.{Accounts, Auth, Mailers, Users}
+  alias EmisarWeb.{RecentAccounts, RequestContext, ReturnTo, Throttle, UserAuth}
+
+  # The split-code magic link keeps its browser-side nonce in this signed,
+  # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
+  # 6-digit secret. Verifying needs BOTH — an intercepted link/code can't sign
+  # in without this cookie. SameSite=Lax so the cookie still rides the top-level
+  # GET when the operator clicks the email link.
+  @magic_cookie "emisar_magic"
+  @magic_cookie_opts [sign: true, max_age: 900, http_only: true, same_site: "Lax"]
 
   # Brute-force / credential-stuffing throttle. `create` is the password
   # verify AND the MFA-code step (the pending-MFA POST lands here too), so
@@ -258,26 +266,92 @@ defmodule EmisarWeb.UserSessionController do
 
   defp verify_second_factor(_, _, _, _), do: {:error, :invalid}
 
-  def magic_link_confirm(conn, %{"token" => token} = params) do
+  @doc """
+  Magic-link request (POST from the email form). Issues a split-code token,
+  emails the link + 6-digit code, and stashes the browser nonce in the signed
+  cookie. Always lands on the "check your email" page — a throttled or unknown
+  email skips the work but shows the same page (no account-existence leak).
+  """
+  def magic_link_start(conn, %{"user" => %{"email" => email}} = params) do
+    context = RequestContext.from_conn(conn)
+    return_to = ReturnTo.app_path(params["return_to"])
+    # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
+    # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
+    # doesn't apply. No `else`: throttled OR unknown both fall through to the
+    # same "sent" page, leaking neither account existence nor the throttle.
+    key = email |> to_string() |> String.trim() |> String.downcase()
+
+    conn =
+      with :ok <- Throttle.check("magic_link", key, 5, 900_000),
+           {:ok, user} <- Users.fetch_user_by_email(email) do
+        {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
+        Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, return_to)
+        put_magic_cookie(conn, token_id, nonce)
+      else
+        _ -> conn
+      end
+
+    conn
+    |> put_magic_return_to(return_to)
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  @doc "Code path — the operator types the 6-digit code into the browser holding the nonce."
+  def magic_link_verify_code(conn, %{"code" => code}) when is_binary(code),
+    do: finish_magic_link(conn, code, & &1)
+
+  def magic_link_verify_code(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
+
+  @doc "Link path — the email link carries `token_id` + the secret; the nonce is the cookie's."
+  def magic_link_confirm(conn, %{"token_id" => token_id, "secret" => secret} = params),
+    do: finish_magic_link(conn, secret, &put_return_to(&1, params), token_id)
+
+  # Shared finish: read the cookie nonce, verify BOTH halves, sign in. `token_id`
+  # comes from the link URL (link path) or the cookie (code path); `prep` threads
+  # the link path's URL return_to before logging in (the code path's was stashed
+  # in the session at `magic_link_start`).
+  defp finish_magic_link(conn, secret, prep, link_token_id \\ nil) do
     context = RequestContext.from_conn(conn)
 
-    case Auth.consume_magic_link_token(token, context) do
-      {:ok, user} ->
-        Users.record_sign_in(user, "magic_link", context)
+    with {:ok, cookie_token_id, nonce} <- read_magic_cookie(conn),
+         token_id = link_token_id || cookie_token_id,
+         {:ok, user} <- Auth.verify_magic_link(token_id, secret, nonce, context) do
+      Users.record_sign_in(user, "magic_link", context)
 
-        # A magic link requested from a branded page carries `?return_to=/app/<slug>`
-        # so it lands on that team — same membership handling as userpass.
+      conn
+      |> delete_resp_cookie(@magic_cookie)
+      |> prep.()
+      |> complete_branded_sign_in(user, &UserAuth.log_in_user(&1, user, :magic_link, false, %{}))
+    else
+      _ ->
         conn
-        |> put_return_to(params)
-        |> complete_branded_sign_in(
-          user,
-          &UserAuth.log_in_user(&1, user, :magic_link, false, %{})
+        |> delete_resp_cookie(@magic_cookie)
+        |> put_flash(
+          :error,
+          "That sign-in code expired or didn't match this browser. Send a fresh one."
         )
-
-      {:error, :invalid_or_expired} ->
-        conn
-        |> put_flash(:error, "That magic link expired. Send a fresh one.")
         |> redirect(to: ~p"/sign_in/magic")
+    end
+  end
+
+  defp put_magic_cookie(conn, token_id, nonce),
+    do: put_resp_cookie(conn, @magic_cookie, "#{token_id}:#{nonce}", @magic_cookie_opts)
+
+  defp put_magic_return_to(conn, nil), do: conn
+  defp put_magic_return_to(conn, path), do: put_session(conn, :user_return_to, path)
+
+  defp read_magic_cookie(conn) do
+    conn = fetch_cookies(conn, signed: [@magic_cookie])
+
+    case conn.cookies[@magic_cookie] do
+      value when is_binary(value) ->
+        case String.split(value, ":", parts: 2) do
+          [token_id, nonce] when token_id != "" and nonce != "" -> {:ok, token_id, nonce}
+          _ -> :error
+        end
+
+      _ ->
+        :error
     end
   end
 
