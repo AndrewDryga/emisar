@@ -514,6 +514,87 @@ defmodule Emisar.SSOTest do
 
       assert errors_on(changeset).scim_token_prefix != []
     end
+
+    test "a non-admin (no manage_sso) is denied → :unauthorized" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      # The account IS enterprise, so this isolates the ROLE gate (manage_sso
+      # fails before the plan check) — not the :directory_sync_not_available
+      # plan denial the test above covers.
+      assert {:error, :unauthorized} = SSO.enable_scim(provider, viewer_in(account))
+      refute Repo.reload!(provider).scim_enabled
+    end
+
+    test "cross-account: account B cannot enable SCIM on account A's provider → :not_found" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, _account_b, sb} = enterprise_owner()
+      provider = provider_fixture(account_a)
+
+      assert {:error, :not_found} = SSO.enable_scim(provider, sb)
+    end
+  end
+
+  describe "rotate_scim_token/2" do
+    test "mints a new bearer and invalidates the old one" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      {:ok, _enabled, raw1} = SSO.enable_scim(provider, subject)
+      assert {:ok, _} = SSO.authenticate_scim_token(raw1)
+
+      assert {:ok, %IdentityProvider{scim_enabled: true}, raw2} =
+               SSO.rotate_scim_token(provider, subject)
+
+      refute raw2 == raw1
+      # The old bearer is dead the instant it's rotated; only the new one works.
+      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw1)
+      assert {:ok, _} = SSO.authenticate_scim_token(raw2)
+    end
+
+    test "a non-admin (no manage_sso) is denied → :unauthorized" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:error, :unauthorized} = SSO.rotate_scim_token(provider, viewer_in(account))
+    end
+
+    test "cross-account: account B cannot rotate account A's SCIM bearer → :not_found" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, _account_b, sb} = enterprise_owner()
+      provider = provider_fixture(account_a)
+
+      assert {:error, :not_found} = SSO.rotate_scim_token(provider, sb)
+    end
+  end
+
+  describe "disable_scim/2" do
+    test "clears the bearer + flag so the token stops authenticating" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      {:ok, _enabled, raw} = SSO.enable_scim(provider, subject)
+      assert {:ok, _} = SSO.authenticate_scim_token(raw)
+
+      assert {:ok, %IdentityProvider{} = disabled} = SSO.disable_scim(provider, subject)
+      refute disabled.scim_enabled
+      assert is_nil(disabled.scim_token_prefix)
+      assert is_nil(disabled.scim_token_hash)
+      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
+    end
+
+    test "a non-admin (no manage_sso) is denied → :unauthorized" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:error, :unauthorized} = SSO.disable_scim(provider, viewer_in(account))
+    end
+
+    test "cross-account: account B cannot disable account A's SCIM sync → :not_found" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, _account_b, sb} = enterprise_owner()
+      provider = provider_fixture(account_a)
+
+      assert {:error, :not_found} = SSO.disable_scim(provider, sb)
+    end
   end
 
   # -- Login resolution + JIT ------------------------------------------
