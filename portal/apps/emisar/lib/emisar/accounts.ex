@@ -151,7 +151,7 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.manage_own_account_permission()
            ),
-         :ok <- ensure_subject_owns_account(subject, account) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       Account.Query.not_deleted()
       |> Account.Query.by_id(account.id)
       |> Authorizer.for_subject(subject)
@@ -218,14 +218,6 @@ defmodule Emisar.Accounts do
         Audit.Events.account_updated(subject, account)
     end
   end
-
-  # Confirms the subject and account align — defense in depth on top of
-  # the role-based permission check. Without this, an admin in account A
-  # could (in theory) call `update_account` against an account B struct
-  # they happened to obtain — the permission check passes but the wrong
-  # row would be touched.
-  defp ensure_subject_owns_account(%Subject{} = subject, %Account{id: id}),
-    do: Subject.ensure_in_account(subject, id, :unauthorized)
 
   @doc """
   Suggests a unique slug for `name`. If the slugified name is taken,

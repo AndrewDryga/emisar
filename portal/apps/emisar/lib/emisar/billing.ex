@@ -170,7 +170,7 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.manage_billing_permission()
            ),
-         :ok <- ensure_subject_owns_account(account, subject) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       cond do
         not Map.has_key?(@plans, plan_name) ->
           {:error, :unknown_plan}
@@ -212,7 +212,7 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.manage_billing_permission()
            ),
-         :ok <- ensure_subject_owns_account(account, subject) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       do_open_billing_portal(account)
     end
   end
@@ -238,9 +238,6 @@ defmodule Emisar.Billing do
       {:ok, return_url <> "?status=stub-portal"}
     end
   end
-
-  defp ensure_subject_owns_account(%Accounts.Account{id: id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, id, :unauthorized)
 
   @doc """
   Ensures the account has a Paddle customer; returns the customer id.
@@ -515,7 +512,7 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.view_billing_permission()
            ),
-         :ok <- ensure_subject_owns_account(account, subject) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       subscription = peek_subscription_for_account(account.id)
       plan_name = plan_from_subscription(subscription)
       plan_def = plan(plan_name) || plan("free")
