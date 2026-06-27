@@ -582,4 +582,18 @@ defmodule Emisar.ApiKeysTest do
       assert Enum.map(matched, & &1.name) == ["Claude Desktop"]
     end
   end
+
+  describe "ApiKey.has_scope?/2 — the scope gate the MCP + audit-export controllers share" do
+    test "true when the scope is in the grant-list" do
+      assert ApiKey.has_scope?(%ApiKey{scopes: ["actions:read", "audit:read"]}, "audit:read")
+    end
+
+    test "false when the scope is absent" do
+      refute ApiKey.has_scope?(%ApiKey{scopes: ["actions:read"]}, "audit:read")
+    end
+
+    test "false (not a crash) when scopes is nil" do
+      refute ApiKey.has_scope?(%ApiKey{scopes: nil}, "actions:read")
+    end
+  end
 end

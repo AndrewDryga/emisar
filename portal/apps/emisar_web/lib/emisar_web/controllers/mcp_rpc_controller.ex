@@ -520,7 +520,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp require_scope(conn, scope) do
     key = conn.assigns.api_key
 
-    if Enum.member?(key.scopes || [], scope) do
+    if ApiKeys.ApiKey.has_scope?(key, scope) do
       :ok
     else
       {:error, -32002, "missing scope", %{required: scope}}

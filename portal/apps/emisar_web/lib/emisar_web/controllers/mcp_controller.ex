@@ -39,6 +39,7 @@ defmodule EmisarWeb.MCPController do
 
   use EmisarWeb, :controller
 
+  alias Emisar.ApiKeys
   alias EmisarWeb.MCP.{Auth, Idempotency, Service}
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
@@ -276,7 +277,7 @@ defmodule EmisarWeb.MCPController do
   defp require_scope(conn, scope) do
     key = conn.assigns.api_key
 
-    if Enum.member?(key.scopes || [], scope) do
+    if ApiKeys.ApiKey.has_scope?(key, scope) do
       conn
     else
       conn

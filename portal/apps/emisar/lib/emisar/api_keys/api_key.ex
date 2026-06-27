@@ -86,4 +86,12 @@ defmodule Emisar.ApiKeys.ApiKey do
   def auto_unused?(%__MODULE__{auto_generated_at: nil}), do: false
   def auto_unused?(%__MODULE__{last_used_at: ts}) when not is_nil(ts), do: false
   def auto_unused?(%__MODULE__{}), do: true
+
+  @doc """
+  Whether the key carries `scope` in its `scopes` grant-list — the broad
+  capability scopes (`actions:read`, `actions:execute`, `audit:read`, …) the MCP
+  and audit-export controllers gate on, distinct from the per-action
+  `action_scope` that `action_allowed?/2` checks.
+  """
+  def has_scope?(%__MODULE__{scopes: scopes}, scope), do: scope in (scopes || [])
 end
