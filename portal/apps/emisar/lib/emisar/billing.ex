@@ -6,6 +6,7 @@ defmodule Emisar.Billing do
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
+  import Emisar.Maps, only: [put_present: 3]
   alias Ecto.Multi
   alias Emisar.{Accounts, Analytics, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
@@ -431,9 +432,6 @@ defmodule Emisar.Billing do
     do: quantity
 
   defp extract_quantity(_), do: nil
-
-  defp put_present(attrs, _key, nil), do: attrs
-  defp put_present(attrs, key, value), do: Map.put(attrs, key, value)
 
   # Paddle subscription payloads nest the price under `items[].price.id`.
   # We bill a single line item, so the first item's price id is the plan.

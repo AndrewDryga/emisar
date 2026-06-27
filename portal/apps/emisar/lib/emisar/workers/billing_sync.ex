@@ -5,6 +5,7 @@ defmodule Emisar.Workers.BillingSync do
   source of truth so we re-fetch every account's subscription.
   """
   use Oban.Worker, queue: :billing, max_attempts: 3
+  import Emisar.Maps, only: [put_present: 3]
   alias Emisar.{Billing, Repo}
   require Logger
 
@@ -34,8 +35,8 @@ defmodule Emisar.Workers.BillingSync do
         # loses — the guard only blocks a stale webhook).
         attrs =
           %{status: subscription_data["status"]}
-          |> maybe_put(:current_period_end, Billing.extract_next_billed_at(subscription_data))
-          |> maybe_put(:paddle_updated_at, Billing.extract_paddle_updated_at(subscription_data))
+          |> put_present(:current_period_end, Billing.extract_next_billed_at(subscription_data))
+          |> put_present(:paddle_updated_at, Billing.extract_paddle_updated_at(subscription_data))
 
         case Billing.upsert_subscription(account_id, attrs) do
           {:ok, _subscription} ->
@@ -66,7 +67,4 @@ defmodule Emisar.Workers.BillingSync do
         :ok
     end
   end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

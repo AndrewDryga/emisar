@@ -22,7 +22,11 @@ defmodule Emisar.Analytics do
   device id). Product builders live in `Emisar.Analytics.Events`.
   """
 
+  import Emisar.Maps, only: [put_present: 4]
   alias Emisar.Analytics.MixpanelClient
+
+  # Values dropped from analytics payloads — never send a null/empty property.
+  @blanks [nil, ""]
 
   @doc """
   Track `event` for `distinct_id` with flat `properties`. `opts`:
@@ -44,9 +48,9 @@ defmodule Emisar.Analytics do
           # UUID, not a DB id (Mixpanel allows `[a-zA-Z0-9-]`).
           "$insert_id" => Ecto.UUID.generate()
         })
-        |> put_present("$device_id", opts[:device_id])
-        |> put_present("$user_id", opts[:user_id])
-        |> put_present("ip", opts[:ip])
+        |> put_present("$device_id", opts[:device_id], blank: @blanks)
+        |> put_present("$user_id", opts[:user_id], blank: @blanks)
+        |> put_present("ip", opts[:ip], blank: @blanks)
 
       MixpanelClient.track([%{"event" => event, "properties" => props}])
     end)
@@ -62,7 +66,7 @@ defmodule Emisar.Analytics do
     enabled_dispatch(fn ->
       update =
         %{"$distinct_id" => distinct_id, "$ip" => "0", "$set" => compact(set_properties)}
-        |> put_present("$set_once", opts[:set_once] && compact(opts[:set_once]))
+        |> put_present("$set_once", opts[:set_once] && compact(opts[:set_once]), blank: @blanks)
 
       MixpanelClient.engage([update])
     end)
@@ -120,9 +124,6 @@ defmodule Emisar.Analytics do
   # Omit absent properties entirely — Mixpanel guidance: never send null
   # or "". Keeps numbers/booleans (incl. `false`/`0`), drops nil + "".
   defp compact(map) do
-    Map.reject(map, fn {_k, v} -> v in [nil, ""] end)
+    Map.reject(map, fn {_k, v} -> v in @blanks end)
   end
-
-  defp put_present(map, _key, value) when value in [nil, ""], do: map
-  defp put_present(map, key, value), do: Map.put(map, key, value)
 end
