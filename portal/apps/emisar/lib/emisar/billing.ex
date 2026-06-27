@@ -357,8 +357,15 @@ defmodule Emisar.Billing do
       nil ->
         :ok
 
-      %Subscription{} = subscription ->
-        Repo.update(Subscription.Changeset.upsert(subscription, %{status: "canceled"}))
+      %Subscription{account_id: account_id} ->
+        # Route through the LOCKED upsert (not a bare peek-then-update) so a
+        # concurrent webhook serializes on the row, and carry `updated_at` so a
+        # late cancel that predates a fresher event is dropped by the
+        # stale-update guard rather than clobbering the row to canceled.
+        upsert_subscription(account_id, %{
+          status: "canceled",
+          paddle_updated_at: extract_paddle_updated_at(subscription_data)
+        })
     end
   end
 
@@ -392,6 +399,7 @@ defmodule Emisar.Billing do
           |> put_present(:current_period_end, period_end(subscription_data, cancel_scheduled?))
           |> put_present(:current_period_start, extract_current_period_start(subscription_data))
           |> put_present(:quantity, extract_quantity(subscription_data))
+          |> put_present(:paddle_updated_at, extract_paddle_updated_at(subscription_data))
 
         upsert_subscription(account.id, attrs)
     end
@@ -476,6 +484,17 @@ defmodule Emisar.Billing do
       do: parse_iso8601(iso)
 
   def extract_next_billed_at(_), do: nil
+
+  @doc """
+  Internal — the subscription's Paddle `updated_at` (used by the webhook
+  upsert + `Workers.BillingSync`, no Subject). A monotonic per-subscription
+  timestamp the stale-update guard compares to drop an out-of-order delivery;
+  present on both the webhook payload and the live `retrieve_subscription`.
+  """
+  def extract_paddle_updated_at(%{"updated_at" => iso}) when is_binary(iso),
+    do: parse_iso8601(iso)
+
+  def extract_paddle_updated_at(_), do: nil
 
   defp parse_iso8601(iso) do
     case DateTime.from_iso8601(iso) do

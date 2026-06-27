@@ -423,6 +423,64 @@ defmodule Emisar.BillingTest do
                |> Subscription.Query.by_account_id(nested.id)
                |> Repo.one()
     end
+
+    test "an out-of-order event (older Paddle updated_at) is dropped, not applied over fresher state" do
+      account = account_fixture(%{paddle_customer_id: "ctm_ooo_01"})
+      created = subscription_created_event("evt_ooo", account.paddle_customer_id, "pri_team_01")
+      assert :ok = Billing.record_and_apply_event("evt_ooo", "subscription.created", created)
+
+      # A fresh active update stamps the row's monotonic paddle_updated_at = T2.
+      fresh = %{
+        "event_type" => "subscription.updated",
+        "data" => %{
+          "id" => "sub_evt_ooo",
+          "customer_id" => account.paddle_customer_id,
+          "status" => "active",
+          "updated_at" => "2026-08-15T00:00:00Z",
+          "items" => [%{"price" => %{"id" => "pri_team_01"}}]
+        }
+      }
+
+      assert :ok = Billing.record_and_apply_event("evt_ooo_fresh", "subscription.updated", fresh)
+
+      # A late cancel that OCCURRED EARLIER (updated_at T1 < T2) must be dropped,
+      # not clobber the row to canceled.
+      stale_cancel = %{
+        "event_type" => "subscription.canceled",
+        "data" => %{"id" => "sub_evt_ooo", "updated_at" => "2026-08-10T00:00:00Z"}
+      }
+
+      assert :ok =
+               Billing.record_and_apply_event(
+                 "evt_ooo_stale",
+                 "subscription.canceled",
+                 stale_cancel
+               )
+
+      assert %Subscription{status: "active"} =
+               Subscription.Query.all()
+               |> Subscription.Query.by_account_id(account.id)
+               |> Repo.one()
+
+      # A cancel that OCCURRED LATER (updated_at T3 > T2) applies — the guard
+      # drops only stale events, never fresher ones.
+      newer_cancel = %{
+        "event_type" => "subscription.canceled",
+        "data" => %{"id" => "sub_evt_ooo", "updated_at" => "2026-08-20T00:00:00Z"}
+      }
+
+      assert :ok =
+               Billing.record_and_apply_event(
+                 "evt_ooo_newer",
+                 "subscription.canceled",
+                 newer_cancel
+               )
+
+      assert %Subscription{status: "canceled"} =
+               Subscription.Query.all()
+               |> Subscription.Query.by_account_id(account.id)
+               |> Repo.one()
+    end
   end
 
   describe "apply_webhook_event/1 — subscription.updated" do

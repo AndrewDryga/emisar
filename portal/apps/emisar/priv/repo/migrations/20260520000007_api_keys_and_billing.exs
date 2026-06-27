@@ -104,6 +104,10 @@ defmodule Emisar.Repo.Migrations.ApiKeysAndBilling do
       add :current_period_end, :utc_datetime_usec
       add :cancel_at_period_end, :boolean, null: false, default: false
       add :trial_end, :utc_datetime_usec
+      # The subscription's Paddle `updated_at` — a monotonic per-subscription
+      # timestamp used to drop an out-of-order webhook (a late `canceled` whose
+      # state predates a fresh `active`) instead of clobbering the row.
+      add :paddle_updated_at, :utc_datetime_usec
       timestamps(type: :utc_datetime_usec)
     end
 
