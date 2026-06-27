@@ -14,6 +14,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 const echoAction = `
@@ -203,7 +204,7 @@ func TestStateBuilder_Build_ReflectsSwappedVerifier(t *testing.T) {
 
 func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 	reg := setupRegistry(t)
-	pol, err := admission.New(nil, []string{"t.echo"})
+	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,9 +225,72 @@ func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 	}
 }
 
+const highRiskAction = `
+schema_version: 1
+id: t.reboot
+title: Reboot
+kind: exec
+risk: high
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/true
+    argv: []
+  timeout: 5s
+  timeout_min: 1s
+  timeout_max: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+// A risk ceiling hides actions above the tier from the advertised catalog,
+// exactly like an allow/deny rule — the read-only-demo switch.
+func TestStateBuilder_MaxRiskHidesActionsAboveCeiling(t *testing.T) {
+	root := t.TempDir()
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := `schema_version: 1
+id: t
+name: t
+version: 0.0.1
+description: t
+actions:
+  - actions/echo.yaml
+  - actions/reboot.yaml
+`
+	must(os.MkdirAll(filepath.Join(root, "p", "actions"), 0o755))
+	must(os.WriteFile(filepath.Join(root, "p", "pack.yaml"), []byte(manifest), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "echo.yaml"), []byte(echoAction), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "reboot.yaml"), []byte(highRiskAction), 0o644))
+	reg, err := packs.LoadAll([]string{root}, packs.LoadOptions{})
+	must(err)
+
+	pol, err := admission.New(nil, nil, actionspec.RiskMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &StateBuilder{
+		AgentID:     "agt_test",
+		Version:     "0.2.0",
+		GetRegistry: func() *packs.Registry { return reg },
+		Admission:   pol,
+	}
+	msg := b.Build()
+	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
+		t.Fatalf("expected only the low-risk t.echo under a medium ceiling, got %+v", msg.Actions)
+	}
+}
+
 func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 	reg := setupRegistry(t)
-	pol, err := admission.New([]string{"t.*"}, nil)
+	pol, err := admission.New([]string{"t.*"}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

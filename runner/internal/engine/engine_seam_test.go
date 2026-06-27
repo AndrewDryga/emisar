@@ -55,7 +55,7 @@ func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 	e, j, root := setupEngine(t)
 	defer j.Close()
 
-	pol, err := admission.New(nil, []string{"t.echo"})
+	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

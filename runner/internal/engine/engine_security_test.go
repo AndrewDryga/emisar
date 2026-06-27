@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/internal/admission"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // TestEngine_ScalarArgIsLiteralArgvNoShell proves an LLM-supplied arg with
@@ -110,3 +113,70 @@ output:
   max_stderr_bytes: 1024
 `, id, exitCode, exitCode, successExitCodes)
 }
+
+// TestEngine_MaxRiskBlocksAboveCeiling proves the risk ceiling is enforced at
+// dispatch, not just hidden from the catalog: a resolvable, trusted high-risk
+// action is refused with StatusBlockedByAdmission + a journal entry when the
+// runner's ceiling is below it, so a stale or compromised portal cannot run
+// what a read-only demo suppressed. The low-risk action still passes.
+func TestEngine_MaxRiskBlocksAboveCeiling(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"reboot.yaml": rebootHighRiskAction})
+	defer j.Close()
+
+	pol, err := admission.New(nil, nil, actionspec.RiskMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Admission = pol
+
+	low, err := e.Run(context.Background(), Request{
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "hi"},
+		Reason:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if low.Status == StatusBlockedByAdmission {
+		t.Fatalf("low-risk action should pass a medium ceiling, got blocked: %s", low.Reason)
+	}
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.reboot",
+		Reason:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusBlockedByAdmission {
+		t.Fatalf("expected blocked, got status=%s reason=%s", res.Status, res.Reason)
+	}
+	if !strings.Contains(res.Reason, "ceiling") {
+		t.Fatalf("expected a risk-ceiling reason, got %q", res.Reason)
+	}
+	if res.EventID == "" {
+		t.Fatal("expected an event id on the blocked result")
+	}
+}
+
+const rebootHighRiskAction = `
+schema_version: 1
+id: t.reboot
+title: Reboot
+kind: exec
+risk: high
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/true
+    argv: []
+  timeout: 5s
+  timeout_min: 1s
+  timeout_max: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`

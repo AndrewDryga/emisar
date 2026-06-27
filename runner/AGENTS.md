@@ -28,7 +28,7 @@ Top-level files are the cobra CLI commands: `connect` (the long-running daemon),
 | `internal/executor/` | the `os/exec` wrapper — ctx cancellation, stdout/stderr streaming, SIGTERM→SIGKILL grace |
 | `internal/packs/` | pack loader + in-memory registry (YAML parse, SHA-256 content hash) |
 | `internal/validation/` | argument coercion + schema enforcement; path & duration validation |
-| `internal/admission/` | the local allow/deny glob gate, compiled once at boot |
+| `internal/admission/` | the local allow/deny glob + risk-ceiling gate, compiled once at boot |
 | `internal/redact/` | streaming output redaction (regex + named rules) |
 | `internal/audit/` | append-only JSONL journal + cursor sidecar |
 | `internal/config`, `internal/expressions`, `internal/hostscan` | config load; `{{ args.x }}` text substitution; host service detection |

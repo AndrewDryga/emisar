@@ -250,6 +250,26 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		}, nil
 	}
 
+	// Risk-ceiling admission — defense in depth on the advertised catalog
+	// filter. A too-risky action is hidden from cloud, but a stale or
+	// compromised portal that dispatches it anyway is refused here, with a
+	// host-side journal entry, exactly like an allow/deny block.
+	if ok, reason := e.Admission.AdmitRisk(act.Risk); !ok {
+		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
+		ev.PackID = act.PackID
+		ev.ActionID = act.ID
+		ev.Metadata = metaFor(act)
+		ev.Request = &audit.RequestInfo{Reason: req.Reason}
+		ev.Error = reason
+		journaled := e.journal(ctx, ev)
+		return &Result{
+			Status:   StatusBlockedByAdmission,
+			EventID:  journaled.EventID,
+			ActionID: act.ID,
+			Reason:   reason,
+		}, nil
+	}
+
 	cleanArgs, err := validation.Validate(act.Args, req.Args)
 	if err != nil {
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)

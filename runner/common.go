@@ -118,7 +118,7 @@ func boot() (*runtime, error) {
 	exec := executor.New()
 	exec.AllowInheritEnv(cfg.Execution.InheritEnv...)
 
-	admit, err := admission.New(cfg.Admission.Allow, cfg.Admission.Deny)
+	admit, err := admission.New(cfg.Admission.Allow, cfg.Admission.Deny, cfg.Admission.MaxRisk)
 	if err != nil {
 		return nil, fmt.Errorf("admission: %w", err)
 	}

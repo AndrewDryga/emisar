@@ -127,6 +127,12 @@ type Execution struct {
 type Admission struct {
 	Allow []string `yaml:"allow,omitempty"`
 	Deny  []string `yaml:"deny,omitempty"`
+	// MaxRisk is an optional risk ceiling. When set, any action whose risk
+	// exceeds it is hidden from the advertised catalog AND refused at dispatch
+	// (defense-in-depth, like Allow/Deny). Empty = no ceiling. Setting it to
+	// e.g. `medium` is the one-flag "read-only demo" switch — high/critical
+	// actions never reach the portal.
+	MaxRisk actionspec.Risk `yaml:"max_risk,omitempty"`
 }
 
 // Events configures the local JSONL journal and ack cursor.
@@ -213,6 +219,12 @@ func (c *Config) Validate() error {
 	}
 	if err := c.validateSigning(); err != nil {
 		return err
+	}
+	if c.Admission.MaxRisk != "" && !c.Admission.MaxRisk.Valid() {
+		return fmt.Errorf(
+			"config: admission.max_risk %q is not a valid risk (low|medium|high|critical)",
+			c.Admission.MaxRisk,
+		)
 	}
 	for i := range c.Redaction.Rules {
 		if err := c.Redaction.Rules[i].Validate(); err != nil {

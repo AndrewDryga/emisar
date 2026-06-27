@@ -25,20 +25,28 @@ paths:
 
 execution: {}
 
-# Admission is the runner-local allow/deny for action ids. The cloud
-# already decides which actions are safe; this is defense-in-depth on
-# the host side. If the portal is compromised, a malicious dispatch
-# still has to clear this list before the runner will execute. Both
-# lists use shell-style globs over action ids.
+# Admission is the runner-local gate over which actions this host will
+# expose and run. The cloud already decides which actions are safe; this
+# is defense-in-depth on the host side. If the portal is compromised, a
+# malicious dispatch still has to clear admission before the runner will
+# execute. Two axes — action id (allow/deny globs) and risk ceiling.
 #
-# Behavior:
+# Behavior (action id):
 #   - Both empty (the default) → admit every action the registry knows.
 #   - allow non-empty → action MUST match at least one allow pattern.
 #   - deny non-empty → action MUST NOT match any deny pattern.
 #   - When both are set, allow is checked first, then deny.
 #
-# Blocked actions are also hidden from the catalog this runner
-# advertises to cloud, so they won't appear in the portal at all.
+# Risk ceiling (max_risk): when set, any action whose risk exceeds the
+# tier is dropped — one flag turns the fleet read-only for a customer
+# demo (low|medium|high|critical; empty = no ceiling). The whole linux
+# pack can be installed, but high/critical actions (reboot, restart,
+# repair) simply never appear.
+#
+# Both axes hide a rejected action from the catalog this runner
+# advertises to cloud (so it never appears in the portal) AND refuse it
+# at dispatch, so neither a stale catalog nor a compromised portal can
+# run what the operator suppressed.
 #
 # admission:
 #   allow:
@@ -47,6 +55,7 @@ execution: {}
 #   deny:
 #     - "*.repair"           # no matter the pack, never repair
 #     - "linux.systemctl_restart"
+#   max_risk: medium         # read-only demo: hide/refuse high + critical
 
 # Signing is the client-attested-dispatch gate — the strongest defense
 # against a compromised control plane. With enforce_signatures on, the

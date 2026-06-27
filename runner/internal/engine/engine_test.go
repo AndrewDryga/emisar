@@ -129,7 +129,7 @@ func TestEngine_UnknownAction(t *testing.T) {
 func TestEngine_AdmissionDenylistBlocks(t *testing.T) {
 	e, j, _ := setupEngine(t)
 	defer j.Close()
-	pol, err := admission.New(nil, []string{"t.echo"})
+	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestEngine_AdmissionAllowlistGate(t *testing.T) {
 	e, j, _ := setupEngine(t)
 	defer j.Close()
 	// Allowlist that doesn't include t.echo.
-	pol, err := admission.New([]string{"linux.*"}, nil)
+	pol, err := admission.New([]string{"linux.*"}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestEngine_AdmissionPassesThrough(t *testing.T) {
 	e, j, _ := setupEngine(t)
 	defer j.Close()
 	// Allowlist that DOES include t.echo.
-	pol, err := admission.New([]string{"t.*"}, []string{"t.dangerous"})
+	pol, err := admission.New([]string{"t.*"}, []string{"t.dangerous"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

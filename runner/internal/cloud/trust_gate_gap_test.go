@@ -234,7 +234,7 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	// Host operator denies t.echo locally. Setting the engine's public Admission
 	// field before Run starts is test wiring only — no production change; it is
 	// the same field connect.go populates from config at boot.
-	pol, err := admission.New(nil, []string{"t.echo"})
+	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -80,6 +80,12 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		if ok, _ := b.Admission.Admit(a.ID); !ok {
 			continue
 		}
+		// Risk ceiling: a too-risky action is hidden from the catalog (and
+		// refused at dispatch, in the engine), so a read-only demo never shows
+		// high/critical actions to the operator or the LLM.
+		if ok, _ := b.Admission.AdmitRisk(a.Risk); !ok {
+			continue
+		}
 		msg.Actions = append(msg.Actions, descriptorFor(a))
 	}
 	return msg

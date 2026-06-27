@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 func TestAdmit_EmptyPolicyAllowsAll(t *testing.T) {
-	p, err := New(nil, nil)
+	p, err := New(nil, nil, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -28,7 +30,7 @@ func TestAdmit_NilPolicyAllowsAll(t *testing.T) {
 }
 
 func TestAdmit_AllowlistRequiresMatch(t *testing.T) {
-	p, err := New([]string{"linux.*", "cassandra.nodetool_status"}, nil)
+	p, err := New([]string{"linux.*", "cassandra.nodetool_status"}, nil, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestAdmit_AllowlistRequiresMatch(t *testing.T) {
 }
 
 func TestAdmit_DenylistBlocks(t *testing.T) {
-	p, err := New(nil, []string{"cassandra.nodetool_repair", "*.drop_database"})
+	p, err := New(nil, []string{"cassandra.nodetool_repair", "*.drop_database"}, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -68,7 +70,7 @@ func TestAdmit_DenylistBlocks(t *testing.T) {
 
 func TestAdmit_AllowlistThenDenylist(t *testing.T) {
 	// Allow everything in linux except the destructive systemctl_restart.
-	p, err := New([]string{"linux.*"}, []string{"linux.systemctl_restart"})
+	p, err := New([]string{"linux.*"}, []string{"linux.systemctl_restart"}, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestAdmit_AllowlistThenDenylist(t *testing.T) {
 }
 
 func TestAdmit_StarMatchesEverything(t *testing.T) {
-	p, err := New([]string{"*"}, []string{"cassandra.nodetool_repair"})
+	p, err := New([]string{"*"}, []string{"cassandra.nodetool_repair"}, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -102,33 +104,73 @@ func TestAdmit_StarMatchesEverything(t *testing.T) {
 }
 
 func TestNew_RejectsEmptyPattern(t *testing.T) {
-	if _, err := New([]string{""}, nil); err == nil {
+	if _, err := New([]string{""}, nil, ""); err == nil {
 		t.Fatal("expected empty pattern in allow to error")
 	}
-	if _, err := New(nil, []string{""}); err == nil {
+	if _, err := New(nil, []string{""}, ""); err == nil {
 		t.Fatal("expected empty pattern in deny to error")
 	}
 }
 
 func TestNew_RejectsMalformedPattern(t *testing.T) {
 	// Unterminated character class — filepath.Match returns ErrBadPattern.
-	if _, err := New([]string{"linux.[uptime"}, nil); err == nil {
+	if _, err := New([]string{"linux.[uptime"}, nil, ""); err == nil {
 		t.Fatal("expected malformed pattern to error")
 	}
 }
 
 func TestActive(t *testing.T) {
-	empty, _ := New(nil, nil)
+	empty, _ := New(nil, nil, "")
 	if empty.Active() {
 		t.Fatal("empty policy should not be Active")
 	}
-	allow, _ := New([]string{"linux.*"}, nil)
+	allow, _ := New([]string{"linux.*"}, nil, "")
 	if !allow.Active() {
 		t.Fatal("allow-only policy should be Active")
 	}
-	deny, _ := New(nil, []string{"*.repair"})
+	deny, _ := New(nil, []string{"*.repair"}, "")
 	if !deny.Active() {
 		t.Fatal("deny-only policy should be Active")
+	}
+	risk, _ := New(nil, nil, actionspec.RiskMedium)
+	if !risk.Active() {
+		t.Fatal("risk-ceiling-only policy should be Active")
+	}
+}
+
+// TestAdmitRisk covers the risk ceiling: with no ceiling everything passes;
+// with a ceiling, an action at or below it is admitted and one above it is
+// rejected with a reason. An invalid risk fails closed.
+func TestAdmitRisk(t *testing.T) {
+	tests := []struct {
+		name    string
+		ceiling actionspec.Risk
+		risk    actionspec.Risk
+		admit   bool
+	}{
+		{"no ceiling admits critical", "", actionspec.RiskCritical, true},
+		{"medium ceiling admits low", actionspec.RiskMedium, actionspec.RiskLow, true},
+		{"medium ceiling admits medium", actionspec.RiskMedium, actionspec.RiskMedium, true},
+		{"medium ceiling rejects high", actionspec.RiskMedium, actionspec.RiskHigh, false},
+		{"medium ceiling rejects critical", actionspec.RiskMedium, actionspec.RiskCritical, false},
+		{"low ceiling rejects medium", actionspec.RiskLow, actionspec.RiskMedium, false},
+		{"critical ceiling admits high", actionspec.RiskCritical, actionspec.RiskHigh, true},
+		{"invalid risk fails closed under a ceiling", actionspec.RiskMedium, actionspec.Risk("bogus"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := New(nil, nil, tc.ceiling)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			ok, reason := p.AdmitRisk(tc.risk)
+			if ok != tc.admit {
+				t.Fatalf("AdmitRisk(ceiling=%q, risk=%q): got %v, want %v", tc.ceiling, tc.risk, ok, tc.admit)
+			}
+			if !ok && reason == "" {
+				t.Fatal("a rejection must carry an operator-readable reason")
+			}
+		})
 	}
 }
 
@@ -155,7 +197,7 @@ func TestAdmit_DotIsNotPathSeparator(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Drive it through the allowlist gate: a match means admitted.
-			p, err := New([]string{tc.pattern}, nil)
+			p, err := New([]string{tc.pattern}, nil, "")
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -164,7 +206,7 @@ func TestAdmit_DotIsNotPathSeparator(t *testing.T) {
 				t.Fatalf("allow=%q Admit(%q): got %v, want %v", tc.pattern, tc.id, ok, tc.match)
 			}
 			// And through the denylist gate: a match means blocked.
-			pd, err := New(nil, []string{tc.pattern})
+			pd, err := New(nil, []string{tc.pattern}, "")
 			if err != nil {
 				t.Fatalf("New (deny): %v", err)
 			}
@@ -216,7 +258,7 @@ func TestAdmit_FailsClosedOnMatchError(t *testing.T) {
 func TestNew_StoresDefensiveCopies(t *testing.T) {
 	allow := []string{"linux.*"}
 	deny := []string{"linux.systemctl_restart"}
-	p, err := New(allow, deny)
+	p, err := New(allow, deny, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -245,7 +287,7 @@ func BenchmarkAdmit_LargeRuleSet(b *testing.B) {
 		allow[i] = fmt.Sprintf("pack%03d.*", i)
 		deny[i] = fmt.Sprintf("pack%03d.drop_database", i)
 	}
-	p, err := New(allow, deny)
+	p, err := New(allow, deny, "")
 	if err != nil {
 		b.Fatalf("New: %v", err)
 	}

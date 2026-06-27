@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // TestValidateCloudTransportSecurity covers the cleartext-credential guard:
@@ -93,6 +95,29 @@ func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
 	cfg.Execution.InheritEnv = []string{"NOMAD_ADDR"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("config without the overlap should validate, got %v", err)
+	}
+}
+
+// TestValidate_MaxRisk covers the admission risk ceiling: a valid tier (or
+// empty = no ceiling) validates; a bogus tier is rejected so a typo can't
+// silently disable the read-only-demo switch.
+func TestValidate_MaxRisk(t *testing.T) {
+	cfg := validConfig()
+	cfg.Admission.MaxRisk = actionspec.RiskMedium
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a valid admission.max_risk should validate, got %v", err)
+	}
+
+	cfg = validConfig()
+	cfg.Admission.MaxRisk = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("an empty admission.max_risk should validate, got %v", err)
+	}
+
+	cfg = validConfig()
+	cfg.Admission.MaxRisk = actionspec.Risk("bogus")
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("an invalid admission.max_risk must be rejected")
 	}
 }
 
