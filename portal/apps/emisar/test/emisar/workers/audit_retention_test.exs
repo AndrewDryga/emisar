@@ -124,4 +124,18 @@ defmodule Emisar.Workers.AuditRetentionTest do
       assert Map.has_key?(follow_up.args, "after_account_id")
     end)
   end
+
+  test "a re-walk at the same cursor dedups the follow-up (no overlapping chains)" do
+    _accounts = for _ <- 1..2, do: account_fixture()
+
+    Oban.Testing.with_testing_mode(:manual, fn ->
+      # Two full-page walks from the same cursor produce the same last-account-id
+      # follow-up; the unique guard collapses them, so a slow chain and the next
+      # nightly tick can't double-walk the account set.
+      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 2}})
+      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 2}})
+
+      assert [_only_one] = Oban.Testing.all_enqueued(repo: Repo, worker: AuditRetention)
+    end)
+  end
 end

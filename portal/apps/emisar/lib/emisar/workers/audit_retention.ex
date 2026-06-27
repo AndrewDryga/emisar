@@ -7,7 +7,15 @@ defmodule Emisar.Workers.AuditRetention do
   Each account's expired rows are deleted in bounded batches rather than one
   long-locking DELETE, mirroring `Workers.ActionRunEventRetention`.
   """
-  use Oban.Worker, queue: :audit, max_attempts: 2
+  # `unique` on the cursor key keeps a slow chain and the next nightly tick from
+  # double-walking the account set: a follow-up for a cursor already in flight
+  # collapses onto the existing job. Idempotent either way (the prunable set only
+  # shrinks) — this just spares the wasted scan + `:audit`-queue contention.
+  use Oban.Worker,
+    queue: :audit,
+    max_attempts: 2,
+    unique: [period: :infinity, states: :incomplete, keys: [:after_account_id]]
+
   alias Emisar.{Accounts, Audit, Billing, Repo}
   require Logger
 
