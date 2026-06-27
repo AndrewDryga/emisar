@@ -991,6 +991,39 @@ defmodule Emisar.AccountsTest do
       assert {:error, :unauthorized} = Accounts.suspend_membership(target, subject_b)
       refute Membership.disabled?(fetch_membership(account.id, target.user_id))
     end
+
+    test "operator cannot reinstate anyone", %{
+      account: account,
+      target: target,
+      owner_subject: owner_subject
+    } do
+      # Suspend as owner first so there's a disabled row to reinstate; reinstate
+      # shares suspend's manage_team gate, so a non-manager is refused — and the
+      # row stays disabled.
+      {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
+
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = Accounts.reinstate_membership(suspended, operator_subject)
+      assert Membership.disabled?(fetch_membership(account.id, target.user_id))
+    end
+
+    test "an owner of another account can't reinstate this member (cross-account)", %{
+      account: account,
+      target: target,
+      owner_subject: owner_subject
+    } do
+      {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      # :unauthorized (not :not_found) — accounts gates struct-taking writes with
+      # ensure_subject_in_account(:unauthorized) before the for_subject fetch, so
+      # account B is refused and the member stays suspended in account A.
+      assert {:error, :unauthorized} = Accounts.reinstate_membership(suspended, subject_b)
+      assert Membership.disabled?(fetch_membership(account.id, target.user_id))
+    end
   end
 
   describe "reset_member_mfa/2" do
