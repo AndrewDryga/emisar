@@ -1,6 +1,7 @@
 defmodule Emisar.Runners.Runner.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
+  alias Emisar.Repo.Like
 
   def all,
     do: from(runners in Emisar.Runners.Runner, as: :runners)
@@ -150,7 +151,7 @@ defmodule Emisar.Runners.Runner.Query do
         title: "Name contains",
         type: :string,
         fun: fn queryable, name ->
-          {queryable, dynamic([runners: r], ilike(r.name, ^"%#{name}%"))}
+          {queryable, dynamic([runners: r], ilike(r.name, ^Like.contains(name)))}
         end
       }
     ]

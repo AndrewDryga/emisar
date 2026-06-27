@@ -1,6 +1,7 @@
 defmodule Emisar.Runs.ActionRun.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
+  alias Emisar.Repo.Like
 
   def all,
     do: from(runs in Emisar.Runs.ActionRun, as: :runs)
@@ -176,8 +177,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         # leak across to other columns. ILIKE for case-insensitive
         # match — most operators don't bother shift-keying.
         fun: fn queryable, action ->
-          pattern = "%" <> action <> "%"
-          {queryable, dynamic([runs: r], ilike(r.action_id, ^pattern))}
+          {queryable, dynamic([runs: r], ilike(r.action_id, ^Like.contains(action)))}
         end
       },
       %Filter{

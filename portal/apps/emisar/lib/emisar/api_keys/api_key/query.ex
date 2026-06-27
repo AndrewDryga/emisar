@@ -2,6 +2,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   use Emisar, :query
 
   alias Emisar.Repo.Filter
+  alias Emisar.Repo.Like
 
   def all,
     do: from(api_keys in Emisar.ApiKeys.ApiKey, as: :api_keys)
@@ -118,7 +119,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
         title: "Name contains",
         type: :string,
         fun: fn queryable, name ->
-          {queryable, dynamic([api_keys: k], ilike(k.name, ^"%#{name}%"))}
+          {queryable, dynamic([api_keys: k], ilike(k.name, ^Like.contains(name)))}
         end
       },
       %Filter{
