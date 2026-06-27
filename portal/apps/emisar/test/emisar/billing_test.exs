@@ -324,11 +324,11 @@ defmodule Emisar.BillingTest do
       assert :ok = Billing.record_and_apply_event("evt_created_3", "subscription.created", event)
     end
 
-    test "cycle-note columns are never written (documented dead-write)" do
-      # `upsert_from_subscription/1` writes only id/price/plan/status/period_end —
-      # never `cancel_at_period_end` / `trial_end` / `current_period_start`. The
-      # billing dashboard's cycle-note UI reads those, so it is dead in prod.
-      # Assert the documented gap so a future write-path can't regress it silently.
+    test "a created event with no scheduled cancel / billing-period / quantity leaves those columns at defaults" do
+      # `upsert_from_subscription/1` now maps cancel_at_period_end / current_period_start
+      # / quantity from the Paddle payload (see the scheduled-cancel test below), but a
+      # plain subscription.created carrying none of those must leave them at their
+      # defaults, not invent values. `trial_end` is not yet mapped (BACKLOG).
       account = account_fixture(%{paddle_customer_id: "ctm_cyclenote_01"})
 
       event =
@@ -346,6 +346,41 @@ defmodule Emisar.BillingTest do
       assert subscription.cancel_at_period_end == false
       assert is_nil(subscription.trial_end)
       assert is_nil(subscription.current_period_start)
+    end
+
+    test "a scheduled cancel + billing period + quantity land on the mirror (the cancel banner's source)" do
+      account = account_fixture(%{paddle_customer_id: "ctm_sched_cancel_01"})
+      created = subscription_created_event("evt_sc", account.paddle_customer_id, "pri_team_01")
+      assert :ok = Billing.record_and_apply_event("evt_sc", "subscription.created", created)
+
+      updated = %{
+        "event_id" => "evt_sc_upd",
+        "event_type" => "subscription.updated",
+        "data" => %{
+          "id" => "sub_evt_sc",
+          "customer_id" => account.paddle_customer_id,
+          "status" => "active",
+          "scheduled_change" => %{"action" => "cancel", "effective_at" => "2026-09-01T00:00:00Z"},
+          "current_billing_period" => %{
+            "starts_at" => "2026-08-01T00:00:00Z",
+            "ends_at" => "2026-09-01T00:00:00Z"
+          },
+          "items" => [%{"price" => %{"id" => "pri_team_01"}, "quantity" => 5}]
+        }
+      }
+
+      assert :ok = Billing.record_and_apply_event("evt_sc_upd", "subscription.updated", updated)
+
+      subscription =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
+
+      assert subscription.cancel_at_period_end == true
+      # access-until = the scheduled cancel's effective_at, not next_billed_at
+      assert %DateTime{year: 2026, month: 9, day: 1} = subscription.current_period_end
+      assert %DateTime{year: 2026, month: 8, day: 1} = subscription.current_period_start
+      assert subscription.quantity == 5
     end
 
     test "current_period_end is extracted through the apply path from either source" do

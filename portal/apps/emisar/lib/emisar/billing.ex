@@ -371,23 +371,58 @@ defmodule Emisar.Billing do
 
       %Accounts.Account{} = account ->
         price_id = extract_price_id(subscription_data)
+        cancel_scheduled? = scheduled_cancel?(subscription_data)
 
         # A partial subscription.updated (status-only, no items / next_billed_at)
-        # must not null price/period — omit those keys so the peek-then-update
-        # preserves the stored values rather than casting them to nil. `plan`
-        # stays put: plan_for_subscription/2 falls back to account_plan/1.
+        # must not null price/period — omit those keys via put_present so the
+        # peek-then-update preserves the stored values rather than casting them to
+        # nil. `plan` stays put: plan_for_subscription/2 falls back to account_plan/1.
+        # `cancel_at_period_end` IS always set: Paddle's payload carries the full
+        # object, so it reflects the current scheduled state, and the billing
+        # dashboard's "cancels on …" banner must CLEAR when a scheduled cancel is
+        # removed — not just appear when one is added.
         attrs =
           %{
             paddle_subscription_id: subscription_data["id"],
             plan: plan_for_subscription(account, price_id),
-            status: subscription_data["status"]
+            status: subscription_data["status"],
+            cancel_at_period_end: cancel_scheduled?
           }
           |> put_present(:paddle_price_id, price_id)
-          |> put_present(:current_period_end, extract_next_billed_at(subscription_data))
+          |> put_present(:current_period_end, period_end(subscription_data, cancel_scheduled?))
+          |> put_present(:current_period_start, extract_current_period_start(subscription_data))
+          |> put_present(:quantity, extract_quantity(subscription_data))
 
         upsert_subscription(account.id, attrs)
     end
   end
+
+  # A Paddle `scheduled_change` with action "cancel" means the subscription ends at
+  # period end (the operator scheduled a cancel in the portal) — drives the billing
+  # dashboard's cancel banner. Paddle sends the full object, so an absent/null
+  # scheduled_change means "no scheduled cancel".
+  defp scheduled_cancel?(%{"scheduled_change" => %{"action" => "cancel"}}), do: true
+  defp scheduled_cancel?(_), do: false
+
+  # Access-until date: a scheduled cancel ends access at its `effective_at` (a
+  # non-renewing sub has no next_billed_at), otherwise the next charge date.
+  defp period_end(%{"scheduled_change" => %{"effective_at" => iso}}, true) when is_binary(iso),
+    do: parse_iso8601(iso)
+
+  defp period_end(subscription_data, _cancel_scheduled?),
+    do: extract_next_billed_at(subscription_data)
+
+  defp extract_current_period_start(%{"current_billing_period" => %{"starts_at" => iso}})
+       when is_binary(iso),
+       do: parse_iso8601(iso)
+
+  defp extract_current_period_start(_), do: nil
+
+  # Paddle bills a single line item; its quantity is the seat/runner count.
+  defp extract_quantity(%{"items" => [%{"quantity" => quantity} | _]}) when is_integer(quantity),
+    do: quantity
+
+  defp extract_quantity(_), do: nil
 
   defp put_present(attrs, _key, nil), do: attrs
   defp put_present(attrs, key, value), do: Map.put(attrs, key, value)
