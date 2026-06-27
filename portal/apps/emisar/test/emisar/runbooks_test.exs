@@ -427,6 +427,27 @@ defmodule Emisar.RunbooksTest do
       assert runbook.status == :draft
       assert {:error, :duplicate_step_ids} = Runbooks.dispatch_runbook(runbook, "go", subject)
     end
+
+    test "denies a subject without dispatch permission → :unauthorized" do
+      {account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "rb", uptime_steps(1, group_target(runner.group)))
+
+      # Dispatch gates on dispatch_run; a viewer holds only view_runbooks, so the
+      # permission check refuses before a single run is created.
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+      assert {:error, :unauthorized} = Runbooks.dispatch_runbook(runbook, "release", viewer)
+    end
+
+    test "refuses a runbook from another account → :not_found" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "rb", uptime_steps(1, group_target(runner.group)))
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      # :not_found, not :unauthorized — Subject.ensure_in_account hides A's runbook
+      # from B (same blind as resolve_plan); B can't tell it exists, and no run is
+      # created in either account.
+      assert {:error, :not_found} = Runbooks.dispatch_runbook(runbook, "release", subject_b)
+    end
   end
 
   describe "definition bounds (save-time DoS caps)" do
@@ -1240,6 +1261,17 @@ defmodule Emisar.RunbooksTest do
 
       assert {:error, :unauthorized} = Runbooks.publish(draft, viewer)
       assert {:error, :unauthorized} = Runbooks.publish(draft, operator)
+    end
+
+    test "cross-account: account B cannot publish account A's runbook → :not_found" do
+      {_user, _account, owner} = owner_subject_fixture()
+      draft = draft_runbook!(owner, "a-book")
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      # B is an owner (so it clears the manage_runbooks gate), but for_subject
+      # scopes the locked fetch to account B — A's draft isn't visible, so the
+      # publish never reaches the changeset: :not_found, not :unauthorized.
+      assert {:error, :not_found} = Runbooks.publish(draft, subject_b)
     end
   end
 end
