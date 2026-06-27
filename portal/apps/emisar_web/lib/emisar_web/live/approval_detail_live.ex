@@ -4,6 +4,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
   alias EmisarWeb.Permissions
 
+  # The full grant-reuse duration menu (label + posted value), in display order.
+  # `grant_duration_options/1` narrows it to what the account's lifetime cap
+  # permits before it reaches the form.
+  @grant_duration_options [
+    {"Just this call (no grant)", "once"},
+    {"Next 1 hour", "one_hour"},
+    {"Next 24 hours", "one_day"},
+    {"Next 30 days", "thirty_days"},
+    {"Next 90 days", "ninety_days"}
+  ]
+
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
     subject = socket.assigns.current_subject
@@ -59,8 +70,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # Tracks the duration the operator picked in the grant-reuse
          # disclosure. "once" (the default) means "no grant" — in that
          # mode the Match / Limit-to fields are irrelevant and hidden.
-         |> assign(:grant_duration, "once")}
+         |> assign(:grant_duration, "once")
+         # Only offer durations the account's lifetime cap allows, so an
+         # approver can't pick one the server would reject (the cap is account
+         # config, fixed for this session — compute it once at mount).
+         |> assign(:grant_duration_options, grant_duration_options(account_id))}
     end
+  end
+
+  defp grant_duration_options(account_id) do
+    allowed = Approvals.allowed_grant_durations(account_id)
+
+    Enum.filter(@grant_duration_options, fn {_label, value} ->
+      parse_duration(value) in allowed
+    end)
   end
 
   # Loads the recorded votes + the distinct-approve tally and derives the two
@@ -614,6 +637,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <.decision_panel
                 can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
                 grant_duration={@grant_duration}
+                grant_duration_options={@grant_duration_options}
                 runner_state={@runner_connection}
                 self_blocked?={@self_blocked?}
                 already_decided?={@already_decided?}
@@ -646,6 +670,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
   attr :grant_duration, :string, default: "once"
+  # The duration menu, already narrowed to the account's lifetime cap by the
+  # caller. Defaulted to the full menu so a caller that forgets to thread it
+  # through degrades to the server-backstopped behavior, not a crash.
+  attr :grant_duration_options, :list, default: @grant_duration_options
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
@@ -759,13 +787,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     label="For"
                     label_variant={:eyebrow}
                     value={@grant_duration}
-                    options={[
-                      {"Just this call (no grant)", "once"},
-                      {"Next 1 hour", "one_hour"},
-                      {"Next 24 hours", "one_day"},
-                      {"Next 30 days", "thirty_days"},
-                      {"Next 90 days", "ninety_days"}
-                    ]}
+                    options={@grant_duration_options}
                   />
                 </div>
                 <%!-- Match / Limit-to only matter when an actual grant is

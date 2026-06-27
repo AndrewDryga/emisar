@@ -211,6 +211,19 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
     end
+
+    test "allowed_grant_durations/1 offers only the in-cap durations (:once always); shares the gate's predicate",
+         %{account: account} do
+      # Uncapped → every duration is offered.
+      assert Approvals.allowed_grant_durations(account.id) ==
+               [:once, :one_hour, :one_day, :thirty_days, :ninety_days]
+
+      # A 1-day cap drops the over-cap windows but keeps :once + the in-cap ones,
+      # matching exactly what create_grant/4's server gate would accept.
+      Ecto.Changeset.change(account, max_grant_lifetime_seconds: 86_400) |> Repo.update!()
+
+      assert Approvals.allowed_grant_durations(account.id) == [:once, :one_hour, :one_day]
+    end
   end
 
   describe "create_request/3" do

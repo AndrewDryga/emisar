@@ -83,6 +83,21 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, "button[phx-disable-with]", "Deny")
   end
 
+  test "the duration menu hides options above the account's grant-lifetime cap", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    # Cap standing grants at 1 day — the 30/90-day windows must not be offered.
+    Ecto.Changeset.change(account, max_grant_lifetime_seconds: 86_400) |> Emisar.Repo.update!()
+
+    request = pending_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Just this call (no grant)"
+    assert html =~ "Next 24 hours"
+    refute html =~ "Next 30 days"
+    refute html =~ "Next 90 days"
+  end
+
   test "the decide panel carries a live expiry countdown that lapses server-side", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

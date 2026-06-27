@@ -211,6 +211,10 @@ defmodule Emisar.Approvals do
   @thirty_days_seconds 30 * @one_day_seconds
   @ninety_days_seconds 90 * @one_day_seconds
 
+  # The standing-grant durations, in display order. `:once` is single-use (no
+  # grant); the rest are windowed and subject to the account's lifetime cap.
+  @grant_durations [:once, :one_hour, :one_day, :thirty_days, :ninety_days]
+
   @doc """
   Internal — called from `Runs.dispatch_run` (already authorized via its
   own Subject) to file an approval request for a gated run.
@@ -888,22 +892,38 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # A regulated account can cap the maximum standing-grant DURATION
-  # (Accounts `max_grant_lifetime_seconds`). `:once` is single-use, not a
-  # standing grant, so it is exempt; a windowed grant whose length exceeds the
-  # cap is refused. The approval UI also hides over-cap durations, but this is
-  # the IL-15 server backstop that holds even if the UI is bypassed.
-  defp check_grant_within_account_cap(_account_id, :once), do: :ok
+  @doc """
+  The standing-grant durations an account may pick, in display order, filtered
+  by its max-grant-lifetime cap. `:once` (single-use, not a standing grant) is
+  always allowed. The approval form renders only these, so an approver can't
+  pick a duration the server would reject — both this and the
+  `check_grant_within_account_cap/2` backstop share `grant_duration_within_cap?/2`,
+  so the UI and the gate can't drift apart.
+  """
+  def allowed_grant_durations(account_id) when is_binary(account_id) do
+    cap = Accounts.fetch_account_max_grant_lifetime(account_id)
+    Enum.filter(@grant_durations, &grant_duration_within_cap?(&1, cap))
+  end
 
+  # A regulated account can cap the maximum standing-grant DURATION
+  # (Accounts `max_grant_lifetime_seconds`). The approval UI hides over-cap
+  # durations (`allowed_grant_durations/1`), but this is the IL-15 server
+  # backstop that holds even if the UI is bypassed.
   defp check_grant_within_account_cap(account_id, duration) do
     cap = Accounts.fetch_account_max_grant_lifetime(account_id)
 
-    if is_nil(cap) or duration_seconds_for(duration) <= cap do
+    if grant_duration_within_cap?(duration, cap) do
       :ok
     else
       {:error, :grant_exceeds_account_max_lifetime}
     end
   end
+
+  # `:once` is single-use (exempt); an uncapped account allows everything; a
+  # windowed duration is allowed only when it fits inside the cap.
+  defp grant_duration_within_cap?(:once, _cap), do: true
+  defp grant_duration_within_cap?(_duration, nil), do: true
+  defp grant_duration_within_cap?(duration, cap), do: duration_seconds_for(duration) <= cap
 
   defp duration_seconds_for(:one_hour), do: @one_hour_seconds
   defp duration_seconds_for(:one_day), do: @one_day_seconds
