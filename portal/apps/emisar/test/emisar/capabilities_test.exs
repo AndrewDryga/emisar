@@ -8,7 +8,7 @@ defmodule Emisar.CapabilitiesTest do
   """
   use ExUnit.Case, async: true
 
-  alias Emisar.Auth.{Authorizer, Subject}
+  alias Emisar.Auth.Subject
 
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog}
   alias Emisar.{Policies, Runbooks, Runners, Runs}
