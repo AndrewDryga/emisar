@@ -118,24 +118,8 @@ defmodule Emisar.Runners.Runner.Changeset do
     changeset
     |> validate_length(:hostname, max: @max_hostname_length)
     |> validate_length(:runner_version, max: @max_runner_version_length)
-    |> validate_json_size(:labels)
-    |> validate_json_size(:packs)
-  end
-
-  defp validate_json_size(changeset, field) do
-    case get_change(changeset, field) do
-      nil ->
-        changeset
-
-      value ->
-        case Jason.encode(value) do
-          {:ok, json} when byte_size(json) > @max_json_bytes ->
-            add_error(changeset, field, "is too large (max #{@max_json_bytes} bytes serialized)")
-
-          _ ->
-            changeset
-        end
-    end
+    |> validate_json_size(:labels, @max_json_bytes)
+    |> validate_json_size(:packs, @max_json_bytes)
   end
 
   # Connect/disconnect stamp the durable "last seen" history only.

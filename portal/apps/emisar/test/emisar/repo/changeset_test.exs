@@ -1,9 +1,9 @@
 defmodule Emisar.Repo.ChangesetTest do
   @moduledoc """
-  `Repo.Changeset.put_default_value/3` — the shared "fill this field only if
-  it's unset" helper. Each context hits just one value-form, so the literal,
-  lazy 0-arity fn, changeset-aware 1-arity fn, and copy-from-another-field
-  forms are exercised together here. Schemaless changesets keep it pure.
+  The shared `Emisar.Repo.Changeset` helpers, exercised on schemaless changesets
+  to keep them pure: `put_default_value/3` (fill a field only if it's unset — the
+  literal, lazy 0-arity fn, changeset-aware 1-arity fn, and copy-from-another-
+  field forms together) and `validate_json_size/3` (cap a serialized field size).
   """
   use ExUnit.Case, async: true
 
@@ -58,6 +58,35 @@ defmodule Emisar.Repo.ChangesetTest do
     test "from: a field that doesn't resolve leaves the target untouched" do
       result = RepoChangeset.put_default_value(changeset(), :legal_name, from: :nonexistent)
       assert get_field(result, :legal_name) == nil
+    end
+  end
+
+  describe "validate_json_size/3" do
+    defp json_change(value) do
+      {%{config: nil}, %{config: :map}} |> change() |> put_change(:config, value)
+    end
+
+    test "an unset field passes through" do
+      result =
+        RepoChangeset.validate_json_size(change({%{config: nil}, %{config: :map}}), :config, 100)
+
+      assert result.valid?
+    end
+
+    test "a value within the byte budget passes" do
+      assert RepoChangeset.validate_json_size(json_change(%{"a" => "x"}), :config, 100).valid?
+    end
+
+    test "a value whose serialized JSON exceeds max_bytes errors on the field" do
+      result =
+        RepoChangeset.validate_json_size(
+          json_change(%{"a" => String.duplicate("x", 200)}),
+          :config,
+          100
+        )
+
+      refute result.valid?
+      assert {"is too large (max 100 bytes serialized)", _} = result.errors[:config]
     end
   end
 end

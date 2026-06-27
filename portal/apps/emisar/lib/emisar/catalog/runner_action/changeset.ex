@@ -47,22 +47,6 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   end
 
   defp validate_json_sizes(changeset) do
-    Enum.reduce(@json_fields, changeset, &validate_json_size(&2, &1))
-  end
-
-  defp validate_json_size(changeset, field) do
-    case get_change(changeset, field) do
-      nil ->
-        changeset
-
-      value ->
-        case Jason.encode(value) do
-          {:ok, json} when byte_size(json) > @max_json_bytes ->
-            add_error(changeset, field, "is too large (max #{@max_json_bytes} bytes serialized)")
-
-          _ ->
-            changeset
-        end
-    end
+    Enum.reduce(@json_fields, changeset, &validate_json_size(&2, &1, @max_json_bytes))
   end
 end

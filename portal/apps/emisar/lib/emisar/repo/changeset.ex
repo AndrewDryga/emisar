@@ -43,4 +43,25 @@ defmodule Emisar.Repo.Changeset do
   def unique_constraint_error?(%Ecto.Changeset{errors: errors}) do
     Enum.any?(errors, fn {_field, {_msg, opts}} -> opts[:constraint] == :unique end)
   end
+
+  @doc """
+  Adds an error to `field` when its change serializes to more than `max_bytes`
+  of JSON — a DoS guard on `:map`/`:array` columns fed by external input. A field
+  left unset, and a value Jason can't encode, both pass through unchanged.
+  """
+  def validate_json_size(%Ecto.Changeset{} = changeset, field, max_bytes) do
+    case get_change(changeset, field) do
+      nil ->
+        changeset
+
+      value ->
+        case Jason.encode(value) do
+          {:ok, json} when byte_size(json) > max_bytes ->
+            add_error(changeset, field, "is too large (max #{max_bytes} bytes serialized)")
+
+          _ ->
+            changeset
+        end
+    end
+  end
 end
