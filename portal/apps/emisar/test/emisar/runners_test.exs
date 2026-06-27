@@ -1143,4 +1143,85 @@ defmodule Emisar.RunnersTest do
   # leaves a fresh runner never-connected, so the connection-state tests set them.
   defp put_connection(runner, fields),
     do: runner |> Ecto.Changeset.change(fields) |> Repo.update!()
+
+  defp viewer_subject_for(account) do
+    viewer = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    subject_for(viewer, account, role: :viewer)
+  end
+
+  # §7: every Subject-gated management write must reject a role lacking its
+  # permission (→ :unauthorized) and an entity in another account. The
+  # runner/auth-key writes scope via fetch_and_update, so cross-account is
+  # :not_found; enable_runner's pair lives in its own describe — these complete
+  # the set for create/disable/delete runner + create/mint/revoke auth keys.
+  describe "management-write authorization (§7 denial + cross-account)" do
+    test "create_runner: a viewer (no manage_runners) is refused" do
+      account = account_fixture()
+
+      assert {:error, :unauthorized} =
+               Runners.create_runner(
+                 %{"name" => "v-1", "group" => "g"},
+                 viewer_subject_for(account)
+               )
+    end
+
+    test "disable_runner: a viewer (no manage_runners) is refused" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      assert {:error, :unauthorized} = Runners.disable_runner(runner, viewer_subject_for(account))
+    end
+
+    test "disable_runner: won't touch a runner in another account" do
+      {account_a, _ua, _owner_a} = account_with_owner_subject()
+      {_account_b, _ub, owner_b} = account_with_owner_subject()
+      runner_a = runner_fixture(account_id: account_a.id)
+
+      assert {:error, :not_found} = Runners.disable_runner(runner_a, owner_b)
+    end
+
+    test "delete_runner: a viewer (no manage_runners) is refused" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      assert {:error, :unauthorized} = Runners.delete_runner(runner, viewer_subject_for(account))
+    end
+
+    test "delete_runner: won't touch a runner in another account" do
+      {account_a, _ua, _owner_a} = account_with_owner_subject()
+      {_account_b, _ub, owner_b} = account_with_owner_subject()
+      runner_a = runner_fixture(account_id: account_a.id)
+
+      assert {:error, :not_found} = Runners.delete_runner(runner_a, owner_b)
+    end
+
+    test "create_auth_key: a viewer (no manage_auth_keys) is refused" do
+      account = account_fixture()
+
+      assert {:error, :unauthorized} =
+               Runners.create_auth_key(%{reusable: true}, viewer_subject_for(account))
+    end
+
+    test "mint_install_key: a viewer (no issue_install_key) is refused" do
+      account = account_fixture()
+
+      assert {:error, :unauthorized} = Runners.mint_install_key(viewer_subject_for(account))
+    end
+
+    test "revoke_auth_key: a viewer (no manage_auth_keys) is refused" do
+      {account, _user, owner} = account_with_owner_subject()
+      {:ok, _raw, key} = Runners.create_auth_key(%{reusable: true}, owner)
+
+      assert {:error, :unauthorized} = Runners.revoke_auth_key(key, viewer_subject_for(account))
+    end
+
+    test "revoke_auth_key: won't touch an auth key in another account" do
+      {_account_a, _ua, owner_a} = account_with_owner_subject()
+      {_account_b, _ub, owner_b} = account_with_owner_subject()
+      {:ok, _raw, key_a} = Runners.create_auth_key(%{reusable: true}, owner_a)
+
+      assert {:error, :not_found} = Runners.revoke_auth_key(key_a, owner_b)
+    end
+  end
 end

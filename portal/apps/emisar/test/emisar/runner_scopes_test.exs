@@ -62,6 +62,14 @@ defmodule Emisar.RunnerScopesTest do
       assert {:error, :unauthorized} =
                Runners.replace_runner_scopes(membership, [{"group", "dba"}], operator_subject)
     end
+
+    test "cross-account: can't replace scopes for a membership in another account" do
+      {_account_a, _user_a, subject_a} = account_with_owner()
+      {_account_b, user_b, _subject_b} = account_with_owner()
+      {:ok, membership_b} = Accounts.fetch_membership_for_session(user_b, nil)
+
+      assert {:error, :unauthorized} = Runners.replace_runner_scopes(membership_b, [], subject_a)
+    end
   end
 
   describe "Runners.list_runners_for_account/2 with :membership_id" do
