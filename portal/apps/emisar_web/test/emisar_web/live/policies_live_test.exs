@@ -763,6 +763,32 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.scope_value == runner.id
     end
 
+    test "save rejects a :runner scope not in the account (crafted set_target)", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      # A crafted set_target carrying a runner id outside the account (IL-15) must
+      # not persist an inert `(account, :runner, <foreign>)` row. Driven via
+      # render_hook (a raw event) because the real picker only offers in-account
+      # runners — which is exactly the gate a crafted event tries to skip.
+      foreign_runner_id = Ecto.UUID.generate()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      html = lv |> render_click("add_ruleset", %{})
+      [uid] = Regex.run(~r/new-\d+/, html)
+
+      render_hook(lv, "set_target", %{"uid" => uid, "target" => "runner:" <> foreign_runner_id})
+
+      html = lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
+
+      assert html =~ "in this account"
+
+      assert {:error, :not_found} =
+               Policies.fetch_scoped_policy(:runner, foreign_runner_id, subject)
+    end
+
     test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
       conn: conn,
       account: account,
