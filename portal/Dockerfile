@@ -35,6 +35,14 @@ RUN mix local.hex --force && mix local.rebar --force
 
 ENV MIX_ENV="prod"
 
+# Optional dev-only build flag: the docker-compose dev/e2e stack passes
+# EMISAR_DEV_HOST_EXCLUDES=1 so config/prod.exs lets its plain-HTTP internal
+# hosts (localhost / 127.0.0.1 / the `portal` service) through force_ssl. A real
+# Fly build leaves it empty, so prod enforces HTTPS for every request host.
+# force_ssl is a compile_env, so this must be set before `mix compile` below.
+ARG EMISAR_DEV_HOST_EXCLUDES=""
+ENV EMISAR_DEV_HOST_EXCLUDES=${EMISAR_DEV_HOST_EXCLUDES}
+
 # Place install.sh / install-mcp.sh where InstallController +
 # InstallMcpController's compile-time `Path.expand` resolves to (six
 # levels up from each controller's source dir => container root).

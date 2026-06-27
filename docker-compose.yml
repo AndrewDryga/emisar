@@ -127,6 +127,11 @@ services:
     build:
       context: .
       dockerfile: portal/Dockerfile
+      args:
+        # DEV-ONLY: let this stack's plain-HTTP internal hosts (localhost / the
+        # `portal` service) through prod.exs force_ssl. A real Fly build never
+        # sets this, so prod enforces HTTPS for every request host.
+        EMISAR_DEV_HOST_EXCLUDES: "1"
     image: emisar/portal:dev
     depends_on:
       db:
