@@ -25,10 +25,17 @@ defmodule Emisar.Workers.BillingSync do
        }) do
     case Billing.PaddleClient.retrieve_subscription(paddle_subscription_id) do
       {:ok, subscription_data} ->
-        Billing.upsert_subscription(account_id, %{
-          status: subscription_data["status"],
-          current_period_end: Billing.extract_next_billed_at(subscription_data)
-        })
+        # Only set current_period_end when Paddle reports one: a non-renewing sub
+        # (canceled/paused) has NO next-billed date, and passing an explicit nil
+        # would NULL the stored access-until on every hourly tick (a paying account
+        # mid-cancel silently loses its "access until"). Status always updates.
+        attrs =
+          case Billing.extract_next_billed_at(subscription_data) do
+            nil -> %{status: subscription_data["status"]}
+            period_end -> %{status: subscription_data["status"], current_period_end: period_end}
+          end
+
+        Billing.upsert_subscription(account_id, attrs)
 
       {:error, reason} ->
         # Don't fail the whole sweep — a single bad subscription must

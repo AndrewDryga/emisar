@@ -286,3 +286,71 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
     assert %Subscription{status: "some_new_paddle_status"} = Repo.reload!(subscription)
   end
 end
+
+# A Paddle client that reports a subscription with NO next-billed date (a
+# non-renewing / canceled sub), so the sweep's preserve-stored-period behaviour
+# can be exercised.
+defmodule Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient do
+  @behaviour Emisar.Billing.PaddleClient
+
+  @impl true
+  def retrieve_subscription(id), do: {:ok, %{"id" => id, "status" => "active"}}
+  @impl true
+  def create_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  @impl true
+  def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
+end
+
+defmodule Emisar.Workers.BillingSyncNoPeriodTest do
+  @moduledoc """
+  When Paddle reports a subscription with no next-billed date (a non-renewing /
+  canceled sub), the sweep must NOT NULL the stored current_period_end — a paying
+  account mid-cancel keeps its "access until" date. `async: false` — swaps the
+  process-global `:paddle_client`.
+  """
+  use Emisar.DataCase, async: false
+
+  import Emisar.Fixtures
+
+  alias Emisar.{Billing, Repo}
+  alias Emisar.Workers.BillingSync
+  alias Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient
+
+  setup do
+    prev_client = Application.get_env(:emisar, :paddle_client)
+    Application.put_env(:emisar, :paddle_client, NoPeriodPaddleClient)
+
+    on_exit(fn ->
+      case prev_client do
+        nil -> Application.delete_env(:emisar, :paddle_client)
+        value -> Application.put_env(:emisar, :paddle_client, value)
+      end
+    end)
+
+    :ok
+  end
+
+  test "perform/1 preserves a stored current_period_end when Paddle reports no next-billed date" do
+    account = account_fixture()
+    stored = ~U[2026-09-01 00:00:00.000000Z]
+
+    {:ok, subscription} =
+      Billing.upsert_subscription(account.id, %{
+        paddle_subscription_id: "sub_no_period",
+        plan: "team",
+        status: "active",
+        current_period_end: stored
+      })
+
+    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+
+    synced = Repo.reload!(subscription)
+    assert synced.status == "active"
+    # The hourly tick must NOT clobber the access-until date to nil.
+    assert synced.current_period_end == stored
+  end
+end
