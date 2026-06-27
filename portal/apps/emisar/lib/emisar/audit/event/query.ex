@@ -1,7 +1,6 @@
 defmodule Emisar.Audit.Event.Query do
   use Emisar, :query
-  alias Emisar.Repo.Filter
-  alias Emisar.Repo.Like
+  alias Emisar.Repo.{Filter, Like}
 
   # What's deliberately NOT audited (so the default listing stays
   # operator-meaningful): run lifecycle states (pending/sent/running) never leave

@@ -29,8 +29,12 @@ defmodule Emisar.Checks.IL06QueryModulePure do
       not String.contains?(filename, "lib/emisar/repo/")
   end
 
+  # `fun != :{}` skips a grouped alias/import/require — `alias Emisar.Repo.{A, B}`
+  # quotes to a dot-node `{:., _, [{:__aliases__, _, [:Emisar, :Repo]}, :{}]}`,
+  # which ends in `:Repo` but is NOT a `Repo.<fn>()` call. A real call's `fun` is
+  # the function name (`:all`, `:fetch`), never the `:{}` brace constructor.
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
-       when is_atom(fun) and is_list(args) do
+       when is_atom(fun) and fun != :{} and is_list(args) do
     if List.last(parts) == :Repo do
       {ast, put_issue(ctx, issue_for(ctx, meta, "Repo.#{fun}"))}
     else

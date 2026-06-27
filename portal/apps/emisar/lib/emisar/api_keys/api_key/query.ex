@@ -1,8 +1,7 @@
 defmodule Emisar.ApiKeys.ApiKey.Query do
   use Emisar, :query
 
-  alias Emisar.Repo.Filter
-  alias Emisar.Repo.Like
+  alias Emisar.Repo.{Filter, Like}
 
   def all,
     do: from(api_keys in Emisar.ApiKeys.ApiKey, as: :api_keys)
