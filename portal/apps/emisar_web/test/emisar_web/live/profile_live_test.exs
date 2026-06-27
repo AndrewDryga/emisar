@@ -64,6 +64,21 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == user.email
     end
 
+    test "a confirm_email_change with no step-up in progress fails closed (no LiveView crash)", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      # email_step is :idle (no save started) and the confirm form isn't even
+      # rendered. A crafted confirm event over the socket must NOT crash the
+      # LiveView (IL-15: never trust the rendered UI) — it fails closed.
+      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "123456"}})
+
+      assert html =~ "wrong or expired"
+      assert Emisar.Repo.reload!(user).email == user.email
+    end
+
     test "an MFA-on user confirms with a TOTP code, then the email changes", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       secret = Auth.generate_mfa_secret()

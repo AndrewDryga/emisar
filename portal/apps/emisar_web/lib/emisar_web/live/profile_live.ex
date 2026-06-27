@@ -325,6 +325,13 @@ defmodule EmisarWeb.ProfileLive do
 
       :code ->
         Auth.verify_email_change_code(code, socket.assigns.current_subject)
+
+      # Out-of-sequence confirm_email_change (e.g. fired over the socket while
+      # :idle, before any save_email started a step-up) — fail closed instead of
+      # crashing the LiveView with a CaseClauseError (IL-15: a handler is reachable
+      # over the socket regardless of what's rendered). The else-branch flashes.
+      _ ->
+        {:error, :invalid}
     end
   end
 
