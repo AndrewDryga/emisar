@@ -21,8 +21,7 @@ defmodule Emisar.Billing.Subscription.Changeset do
       # inclusion list): Paddle owns the value space, and a status this
       # code has never seen must still persist — a validation error here
       # would 500 the webhook and strand the account's entitlement on
-      # every redelivery. `Subscription.active?/1` names the statuses we
-      # actually branch on.
+      # every redelivery.
       subscription
       |> cast(attrs, @fields)
       |> validate_required([:account_id, :plan, :status])
