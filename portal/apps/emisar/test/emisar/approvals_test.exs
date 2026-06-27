@@ -2211,4 +2211,14 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, approver_subject, "go")
     end
   end
+
+  describe "subject_can_manage_grants?/1" do
+    test "owner may; operator may not — matches revoke_grant/2's manage_grants gate" do
+      {_user, account, owner} = owner_subject_fixture()
+      operator = subject_for(user_fixture(), account, role: :operator)
+
+      assert Approvals.subject_can_manage_grants?(owner)
+      refute Approvals.subject_can_manage_grants?(operator)
+    end
+  end
 end

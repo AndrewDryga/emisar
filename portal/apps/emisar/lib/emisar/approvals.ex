@@ -1023,6 +1023,10 @@ defmodule Emisar.Approvals do
   def subject_can_decide_approval?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.decide_approval_permission())
 
+  @doc "Whether `subject` may manage (revoke) standing grants (owner/admin) — matches `revoke_grant/2`'s gate."
+  def subject_can_manage_grants?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_grants_permission())
+
   # -- Expiry sweep ---------------------------------------------------
 
   @doc """

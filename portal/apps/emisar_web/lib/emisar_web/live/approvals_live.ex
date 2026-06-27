@@ -37,7 +37,7 @@ defmodule EmisarWeb.ApprovalsLive do
   def handle_event("revoke_grant", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
+      Approvals.subject_can_manage_grants?(socket.assigns.current_subject),
       fn socket ->
         case Approvals.fetch_grant_by_id(id, socket.assigns.current_subject) do
           {:error, :not_found} ->
@@ -405,7 +405,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </:meta>
                 <:actions>
                   <.button
-                    :if={Approvals.subject_can_decide_approval?(@current_subject)}
+                    :if={Approvals.subject_can_manage_grants?(@current_subject)}
                     variant="danger"
                     size="sm"
                     phx-click="revoke_grant"
