@@ -342,15 +342,18 @@ defmodule Emisar.SSO do
   # domain-authoritative `hd` is present). Otherwise nil — the user is
   # identified solely by `(provider, sub)`.
   defp verified_email(%{"email" => email} = claims) when is_binary(email) do
-    # `email_verified` arrives as a boolean from a JWT-decoded ID token but as
-    # the string "true" from some IdPs / the SCIM query-param path — accept both.
-    # A domain-authoritative Google `hd` is the other accepted signal (R6/§9 C2),
-    # but an explicit `email_verified: false` overrides it (#7 — don't trust a
-    # forged `hd` paired with an unverified email).
-    if claims["email_verified"] in [true, "true"] or
-         (is_binary(claims["hd"]) and claims["email_verified"] != false),
-       do: email,
-       else: nil
+    # `email_verified` arrives as a boolean from a JWT-decoded ID token but as the
+    # string "true"/"false" from some IdPs / the SCIM query-param path — normalize
+    # BOTH forms. A domain-authoritative Google `hd` is the other accepted signal
+    # (R6/§9 C2), but an EXPLICIT unverified (`false` OR the string `"false"`)
+    # overrides it (#7 — don't trust a forged `hd` paired with an unverified email;
+    # comparing only against the boolean `false` let the string slip through).
+    verified? = claims["email_verified"] in [true, "true"]
+    unverified? = claims["email_verified"] in [false, "false"]
+
+    if verified? or (is_binary(claims["hd"]) and not unverified?),
+      do: email,
+      else: nil
   end
 
   defp verified_email(_claims), do: nil

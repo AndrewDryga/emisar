@@ -823,6 +823,24 @@ defmodule Emisar.SSOTest do
       assert request.matched_user_id == member.id
     end
 
+    test "a string \"false\" email_verified is NOT trusted even with an hd claim (the email is dropped)" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :jit)
+
+      # email_verified is the STRING "false" (some IdPs / the SCIM path send strings)
+      # paired with a Google-style `hd` — a forged hd must not launder an unverified
+      # email. The user still provisions (identity binds by sub), but with NO email.
+      claims = %{
+        "sub" => "okta|strfalse",
+        "email" => "unverified@acme.test",
+        "email_verified" => "false",
+        "hd" => "acme.test"
+      }
+
+      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert is_nil(user.email)
+    end
+
     test "approving a matched request links the identity to the EXISTING user — no dup, role kept",
          %{account: account, subject: subject, provider: provider, member: member} do
       request =
