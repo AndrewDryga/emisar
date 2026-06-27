@@ -471,29 +471,19 @@ defmodule EmisarWeb.UserAuth do
   # `presence_diff` (the dashboard reloads on it) but `{:halt}`s its own debounce
   # tick. The fleet recompute is debounced (the connections topic is hot).
   def on_mount(:track_pending_approvals, _params, _session, socket) do
-    socket =
-      socket
-      |> Phoenix.Component.assign_new(:pending_approvals_count, fn ->
-        approval_count_for(socket.assigns[:current_subject])
-      end)
-      |> Phoenix.Component.assign_new(:pending_packs_count, fn ->
-        pack_pending_count_for(socket.assigns[:current_subject])
-      end)
-      |> Phoenix.Component.assign_new(:fleet_all_offline?, fn ->
-        fleet_offline_for(socket.assigns[:current_subject])
-      end)
-      |> Phoenix.Component.assign_new(:no_agents?, fn ->
-        no_agents_for(socket.assigns[:current_subject])
-      end)
-
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
+      subject = socket.assigns[:current_subject]
       Emisar.Approvals.subscribe_account_approvals(account_id)
       Emisar.Catalog.subscribe_account_packs(account_id)
       Emisar.Runners.subscribe_connections(account_id)
 
       {:cont,
        socket
+       |> Phoenix.Component.assign(:pending_approvals_count, approval_count_for(subject))
+       |> Phoenix.Component.assign(:pending_packs_count, pack_pending_count_for(subject))
+       |> Phoenix.Component.assign(:fleet_all_offline?, fleet_offline_for(subject))
+       |> Phoenix.Component.assign(:no_agents?, no_agents_for(subject))
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
          :handle_info,
@@ -510,7 +500,15 @@ defmodule EmisarWeb.UserAuth do
          &refresh_fleet_offline/2
        )}
     else
-      {:cont, socket}
+      # Dead mount (and the no-account edge): rest the nav cues at their empty
+      # state — the connected mount above computes the real counts + subscribes,
+      # so these four reads run once per live socket, not on the dead render too.
+      {:cont,
+       socket
+       |> Phoenix.Component.assign(:pending_approvals_count, 0)
+       |> Phoenix.Component.assign(:pending_packs_count, 0)
+       |> Phoenix.Component.assign(:fleet_all_offline?, false)
+       |> Phoenix.Component.assign(:no_agents?, false)}
     end
   end
 
