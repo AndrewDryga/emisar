@@ -6,7 +6,7 @@ OG cards (1200×630), referenced as `og:image` / `twitter:image`.
   (real Inter via the self-hosted woff2) screenshotted with headless Chrome
   at 2× and encoded to webp. Brand source: ../brand/ (emisar-logo.svg).
 
-- `og-ai.png`, `og-security.png`, `og-guides.png`, `og-pricing.png` —
+- `og-security.png`, `og-guides.png`, `og-pricing.png` —
   per-section cards with a tailored headline. Wired via the controller:
   bespoke actions set `og_image` inline; generated pages map through
   `@og_images` (security/trust/zero-trust share og-security). Generated with

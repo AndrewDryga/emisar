@@ -427,7 +427,7 @@ defmodule EmisarWeb.MarketingController do
 
   # Per-section OG card (in priv/static/images/og/) for the generated pages;
   # everything else falls back to the default emisar-og.webp in the layout.
-  # Bespoke actions (ai, pricing, guides) set :og_image inline.
+  # Bespoke actions (pricing, guides) set :og_image inline.
   @og_images %{security: "og-security", trust: "og-security", zero_trust: "og-security"}
 
   # Generate one `def <action>(conn, _)` per row. Keeping this in module
