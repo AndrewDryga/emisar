@@ -23,10 +23,6 @@ config :emisar_web, EmisarWeb.Endpoint,
 # Print only warnings and errors during test
 config :logger, level: :warning
 
-# Use a tiny bcrypt cost factor in tests — defaults to 12 which adds
-# ~250ms per password hash and makes the suite glacial.
-config :bcrypt_elixir, :log_rounds, 4
-
 # Background jobs disabled in tests; assert on side-effects inline. The
 # `queues: false, plugins: false` is required for sandboxed tests — without it
 # Oban tries to verify migrations during Application startup, holding

@@ -53,8 +53,7 @@ defmodule Emisar.MixProject do
       {:recon, "~> 2.5"},
       {:observer_cli, "~> 1.8"},
 
-      # Auth — password hashing and TOTP for MFA
-      {:bcrypt_elixir, "~> 3.3"},
+      # Auth — TOTP for MFA
       {:nimble_totp, "~> 1.0"},
       # OIDC relying-party (SSO). OpenID-certified Erlang lib (EEF
       # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
