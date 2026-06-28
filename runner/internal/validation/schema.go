@@ -11,7 +11,6 @@
 package validation
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -28,12 +27,6 @@ func (e *Error) Error() string {
 		return e.Reason
 	}
 	return fmt.Sprintf("argument %s: %s", e.Arg, e.Reason)
-}
-
-// IsError reports whether err is a validation Error.
-func IsError(err error) bool {
-	var ve *Error
-	return errors.As(err, &ve)
 }
 
 func newError(arg, code, format string, args ...any) *Error {

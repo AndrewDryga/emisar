@@ -60,9 +60,6 @@ func New(allow, deny []string, maxRisk actionspec.Risk) (*Policy, error) {
 	}, nil
 }
 
-// Allow always passes. Used by callers that have no admission config.
-func Allow() *Policy { return &Policy{} }
-
 // Admit reports whether actionID is permitted by the policy.
 //
 // Returns (true, "") on admission, (false, reason) on rejection. The

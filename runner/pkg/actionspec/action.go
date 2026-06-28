@@ -388,13 +388,3 @@ func (r RedactionRule) Validate() error {
 	}
 	return nil
 }
-
-// ArgByName returns a pointer to the arg with the given name, or nil.
-func (a *Action) ArgByName(name string) *Arg {
-	for i := range a.Args {
-		if a.Args[i].Name == name {
-			return &a.Args[i]
-		}
-	}
-	return nil
-}
