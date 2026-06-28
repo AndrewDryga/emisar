@@ -12,9 +12,6 @@ defmodule Emisar.PubSub do
   """
   @pubsub Emisar.PubSub.Server
 
-  @doc "The PubSub server name — for supervision/config wiring only."
-  def server, do: @pubsub
-
   def subscribe(topic) when is_binary(topic), do: Phoenix.PubSub.subscribe(@pubsub, topic)
 
   def unsubscribe(topic) when is_binary(topic), do: Phoenix.PubSub.unsubscribe(@pubsub, topic)

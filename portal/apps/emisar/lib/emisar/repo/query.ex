@@ -11,7 +11,6 @@ defmodule Emisar.Repo.Query do
     * `filters/0` — `Emisar.Repo.Filter.t()` definitions surfaced by
       `LiveTable` and applied via `Repo.list/3`'s `:filter` option.
   """
-  import Ecto.Query
   alias Emisar.Repo.Filter
 
   @type direction :: :after | :before
@@ -51,24 +50,5 @@ defmodule Emisar.Repo.Query do
     else
       []
     end
-  end
-
-  # -- Filter helpers --------------------------------------------------
-
-  @doc """
-  Helper for the `t:Filter.fun/0` shape — apply a filter callback
-  return value to the queryable as a `where` clause.
-  """
-  def apply_filter({%Ecto.Query{} = queryable, %Ecto.Query.DynamicExpr{} = dynamic}) do
-    where(queryable, ^dynamic)
-  end
-
-  @doc """
-  Chains multiple filter callbacks against the same queryable, ANDing
-  the returned dynamic expressions together.
-  """
-  def append_filter(queryable, fun) when is_function(fun, 1) do
-    {queryable, dynamic} = fun.(queryable)
-    apply_filter({queryable, dynamic})
   end
 end

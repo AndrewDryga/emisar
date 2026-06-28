@@ -15,9 +15,6 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runbooks: r], r.account_id == ^account_id)
 
-  def by_status(queryable, status),
-    do: where(queryable, [runbooks: r], r.status == ^status)
-
   def ordered_by_title_version(queryable),
     do: order_by(queryable, [runbooks: r], asc: r.title, desc: r.version)
 

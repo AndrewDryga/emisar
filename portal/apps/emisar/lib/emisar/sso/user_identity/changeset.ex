@@ -33,7 +33,4 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   @doc "Flip the SCIM lifecycle flag (provision/deprovision), independent of the membership's `disabled_at`."
   def set_scim_active(%UserIdentity{} = identity, active) when is_boolean(active),
     do: change(identity, scim_active: active)
-
-  def delete(%UserIdentity{} = identity),
-    do: change(identity, deleted_at: DateTime.utc_now())
 end
