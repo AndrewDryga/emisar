@@ -3686,58 +3686,14 @@ defmodule EmisarWeb.CoreComponents do
   # ============================================================
   #  Marketing "gate" kit
   #
-  #  The brand mark is an emerald gate (images/brand/emisar-icon.svg); these four
+  #  The brand mark is an emerald gate (images/brand/emisar-icon.svg); these
   #  primitives carry it across the marketing site (see creative-director):
-  #  `gate_frame` brackets content like the logo, `scan_line` marks the
-  #  decision point, `state_chip` shows what the gate decided, and
-  #  `code_block` is the one framed code/terminal surface. The accent is
-  #  `brand-*` (the exact logo green); pass/pending/deny stay emerald/amber/
-  #  rose so they match `<.chip>`/`<.risk_pill>`. Marketing-only — the
-  #  operator console keeps its own calm system.
+  #  `gate_mark` is the logo icon, `scan_line` marks the decision point, and
+  #  `state_chip` shows what the gate decided. The accent is `brand-*` (the
+  #  exact logo green); pass/pending/deny stay emerald/amber/rose so they
+  #  match `<.chip>`/`<.risk_pill>`. Marketing-only — the operator console
+  #  keeps its own calm system.
   # ============================================================
-
-  @doc """
-  Brackets content in the emisar gate — two vertical brackets flanking the
-  slot, echoing the logo. `state` tints the brackets to a policy outcome
-  (`:pass` brand-green default, `:pending` amber, `:deny` rose, `:neutral`
-  zinc); the brackets are decorative, so they are `aria-hidden`.
-
-      <.gate_frame>An approved action.</.gate_frame>
-      <.gate_frame state={:deny}>…raw shell, ungated…</.gate_frame>
-  """
-  attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
-  attr :class, :string, default: nil
-  attr :rest, :global
-  slot :inner_block, required: true
-
-  def gate_frame(assigns) do
-    ~H"""
-    <div class={["flex items-stretch gap-3 sm:gap-4", @class]} {@rest}>
-      <span
-        aria-hidden="true"
-        class={[
-          "w-2 shrink-0 self-stretch rounded-l-sm border-y-2 border-l-2 sm:w-3",
-          gate_bracket_class(@state)
-        ]}
-      >
-      </span>
-      <div class="min-w-0 flex-1">{render_slot(@inner_block)}</div>
-      <span
-        aria-hidden="true"
-        class={[
-          "w-2 shrink-0 self-stretch rounded-r-sm border-y-2 border-r-2 sm:w-3",
-          gate_bracket_class(@state)
-        ]}
-      >
-      </span>
-    </div>
-    """
-  end
-
-  defp gate_bracket_class(:pass), do: "border-brand-500/40"
-  defp gate_bracket_class(:pending), do: "border-amber-500/40"
-  defp gate_bracket_class(:deny), do: "border-rose-500/40"
-  defp gate_bracket_class(:neutral), do: "border-zinc-700/60"
 
   @doc """
   The emisar gate mark — the logo icon as an inline SVG: an ink chevron and an
@@ -3872,54 +3828,6 @@ defmodule EmisarWeb.CoreComponents do
   defp state_label(:pass), do: "Allowed"
   defp state_label(:pending), do: "Approval"
   defp state_label(:deny), do: "Denied"
-
-  @doc """
-  The one framed code / terminal surface for marketing pages — a rounded panel
-  with an optional label bar (filename or title), an optional right-aligned
-  `status` word, and optional macOS `window` dots. The slot is the `<pre>`, so
-  callers keep their own syntax coloring. Replaces the border+label-bar markup
-  hand-rolled across the marketing templates.
-
-      <.code_block label="packs/cassandra/actions/nodetool_repair.yaml" status="trusted">
-        <pre class="p-4 font-mono text-xs leading-6 text-zinc-300">…</pre>
-      </.code_block>
-  """
-  attr :label, :string, default: nil
-  attr :status, :string, default: nil
-  attr :status_tone, :atom, default: :neutral, values: [:pass, :pending, :deny, :neutral]
-  attr :window, :boolean, default: false, doc: "macOS traffic-light dots"
-  attr :class, :string, default: nil
-  attr :rest, :global
-  slot :inner_block, required: true
-
-  def code_block(assigns) do
-    ~H"""
-    <div class={["overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60", @class]} {@rest}>
-      <div
-        :if={@label || @status || @window}
-        class="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/50 px-3 py-2"
-      >
-        <span :if={@window} aria-hidden="true" class="flex items-center gap-1.5">
-          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-        </span>
-        <span :if={@label} class="min-w-0 truncate font-mono text-[11px] text-zinc-500">
-          {@label}
-        </span>
-        <span :if={@status} class={["ml-auto font-mono text-[11px]", code_status_class(@status_tone)]}>
-          {@status}
-        </span>
-      </div>
-      <div class="overflow-x-auto">{render_slot(@inner_block)}</div>
-    </div>
-    """
-  end
-
-  defp code_status_class(:pass), do: "text-brand-300"
-  defp code_status_class(:pending), do: "text-amber-300"
-  defp code_status_class(:deny), do: "text-rose-300"
-  defp code_status_class(:neutral), do: "text-zinc-500"
 
   # Version of the emisar_web app, read at compile time from mix.exs so
   # the footer never drifts from the actual release. `vsn` comes back as
