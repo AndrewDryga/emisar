@@ -25,22 +25,18 @@ defmodule Emisar.PoliciesScopesTest do
     "overrides" => []
   }
 
-  describe "scoped CRUD (save / fetch / list / delete)" do
-    test "saves, fetches, lists (account default excluded), and deletes an override" do
+  describe "scoped CRUD (save / list / delete)" do
+    test "saves, lists (account default excluded), and deletes an override" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, policy} = Policies.save_scoped_rules(@deny_all, :runner, "runner-1", subject)
       assert policy.scope_type == :runner
       assert policy.scope_value == "runner-1"
 
-      assert {:ok, fetched} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
-      assert fetched.id == policy.id
-
       assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
       assert listed.id == policy.id
 
       assert {:ok, _} = Policies.delete_scoped_policy(policy, subject)
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
       assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 
@@ -71,7 +67,7 @@ defmodule Emisar.PoliciesScopesTest do
 
       {_user, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "r1", subject_b)
+      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
       assert {:error, :not_found} = Policies.delete_scoped_policy(policy_a, subject_b)
     end
 
@@ -155,8 +151,9 @@ defmodule Emisar.PoliciesScopesTest do
   describe "cross-account write isolation (a subject only ever writes its OWN account)" do
     # the account/default policy WRITE derives account_id
     # from the subject, so account B's owner saving rules lands on B's policy and
-    # can NEVER touch account A's. (Cross-account READ/DELETE return :not_found —
-    # see fetch/delete tests above; the WRITE path's isolation is the row scoping.)
+    # can NEVER touch account A's. (Cross-account READ shows an empty list and
+    # DELETE returns :not_found — see the list/delete tests above; the WRITE
+    # path's isolation is the row scoping.)
     test "account B's save_rules never mutates account A's default policy" do
       {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       {:ok, policy_a} = Policies.save_rules(@deny_all, subject_a)
@@ -195,20 +192,23 @@ defmodule Emisar.PoliciesScopesTest do
       refute runner_b.id == runner_a.id
       refute group_b.id == group_a.id
 
-      # A still resolves its OWN (deny) overrides for the colliding scope names.
-      assert {:ok, fetched_runner_a} =
-               Policies.fetch_scoped_policy(:runner, "runner-1", subject_a)
+      # A still resolves its OWN (deny) overrides for the colliding scope names,
+      # and sees exactly its two — none of B's leaked in.
+      {:ok, a_scoped} = Policies.list_scoped_policies(subject_a)
+
+      fetched_runner_a =
+        Enum.find(a_scoped, &(&1.scope_type == :runner and &1.scope_value == "runner-1"))
 
       assert fetched_runner_a.id == runner_a.id
       assert fetched_runner_a.rules["defaults"]["low"] == "deny"
       assert fetched_runner_a.vsn == runner_a.vsn
 
-      assert {:ok, fetched_group_a} = Policies.fetch_scoped_policy(:group, "prod", subject_a)
+      fetched_group_a =
+        Enum.find(a_scoped, &(&1.scope_type == :group and &1.scope_value == "prod"))
+
       assert fetched_group_a.id == group_a.id
       assert fetched_group_a.rules["defaults"]["low"] == "deny"
 
-      # Sanity: A sees exactly its two overrides, none of B's leaked in.
-      {:ok, a_scoped} = Policies.list_scoped_policies(subject_a)
       assert Enum.map(a_scoped, & &1.id) |> Enum.sort() == Enum.sort([runner_a.id, group_a.id])
     end
 

@@ -410,44 +410,6 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "fetch_scoped_policy/3" do
-    test "fetches a runner/group override by its scope; :not_found when absent" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject)
-
-      assert {:ok, fetched} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
-      assert fetched.id == policy.id
-
-      # No override for this scope yet → the editor starts from the account default.
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:group, "db", subject)
-    end
-
-    test "a viewer (view_policies) can fetch; an api_client cannot" do
-      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      {:ok, _} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", owner)
-
-      viewer =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
-
-      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", viewer)
-
-      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      api_subject = Subject.for_api_key(api_key, account)
-
-      assert {:error, :unauthorized} =
-               Policies.fetch_scoped_policy(:runner, "runner-1", api_subject)
-    end
-
-    test "cross-account: B can't fetch A's same-named override" do
-      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {:ok, _} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject_a)
-
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "runner-1", subject_b)
-    end
-  end
-
   describe "delete_scoped_policy/2" do
     test "soft-deletes an override so its scope falls back to the next-broader scope" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -458,7 +420,6 @@ defmodule Emisar.PoliciesTest do
       refute is_nil(deleted.deleted_at)
 
       # Gone from the editor's list; the scope now resolves to the broader default.
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
       assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 
@@ -471,7 +432,7 @@ defmodule Emisar.PoliciesTest do
 
       assert {:error, :unauthorized} = Policies.delete_scoped_policy(policy, viewer)
       # The row is untouched — still live.
-      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", owner)
+      assert {:ok, [_]} = Policies.list_scoped_policies(owner)
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
@@ -485,7 +446,7 @@ defmodule Emisar.PoliciesTest do
       # delete_scoped_policy guards with Subject.ensure_in_account (default
       # :not_found), so B is refused without A's override being touched.
       assert {:error, :not_found} = Policies.delete_scoped_policy(policy_a, subject_b)
-      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", subject_a)
+      assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
     end
   end
 
@@ -538,7 +499,7 @@ defmodule Emisar.PoliciesTest do
       assert runner_b.account_id == account_b.id
       refute runner_b.id == runner_a.id
 
-      assert {:ok, fetched_a} = Policies.fetch_scoped_policy(:runner, "r1", subject_a)
+      assert {:ok, [fetched_a]} = Policies.list_scoped_policies(subject_a)
       assert fetched_a.id == runner_a.id
       assert fetched_a.rules["defaults"]["low"] == "deny"
     end

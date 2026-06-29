@@ -230,22 +230,6 @@ defmodule Emisar.Policies do
   end
 
   @doc """
-  Fetch one runner/group override by its scope, for the editor. `:not_found`
-  when no override exists for that scope yet (the form starts from the
-  account default in that case).
-  """
-  def fetch_scoped_policy(scope_type, scope_value, %Subject{} = subject)
-      when scope_type in [:runner, :group] do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
-      Policy.Query.not_deleted()
-      |> Policy.Query.by_scope(scope_type, scope_value)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Policy.Query)
-    end
-  end
-
-  @doc """
   Soft-delete a runner/group override: that runner/group falls back to the
   next-broader scope (group, then the account default) on the next dispatch.
   The account default itself isn't deletable through this path.
@@ -358,11 +342,11 @@ defmodule Emisar.Policies do
   end
 
   @doc """
-  Internal default-deny lookup. Returns the policy or `nil` — `nil` is
-  the meaningful "no policy configured" signal that `evaluate/3`
-  consumes to default-deny every dispatch. Use `fetch_policy/1` (Subject-
-  threaded) from LiveView / controllers / MCP — this helper is the
-  pre-Subject dispatch fast path.
+  Internal — the account-default (account-scoped) policy row, or `nil`
+  when none is configured. Read by the seeds + test fixtures to bootstrap
+  or inspect the default; the dispatch path resolves the governing policy
+  via `resolve_policy/3`, and LiveView / controllers / MCP read the
+  default through the Subject-threaded `fetch_policy/1`.
   """
   def peek_policy_for_account(account_id) do
     Policy.Query.not_deleted()

@@ -757,7 +757,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, policy} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
+      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
       assert policy.scope_type == :runner
       assert policy.scope_value == runner.id
     end
@@ -784,8 +784,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~ "in this account"
 
-      assert {:error, :not_found} =
-               Policies.fetch_scoped_policy(:runner, foreign_runner_id, subject)
+      # The crafted scope persisted nothing — no override exists.
+      assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 
     test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
@@ -806,7 +806,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, policy} = Policies.fetch_scoped_policy(:group, "prod", subject)
+      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
       assert policy.scope_type == :group
       assert policy.scope_value == "prod"
     end
@@ -867,7 +867,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed"
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
+      assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 
     test "a viewer sees the policy read-only and a forged save is denied", %{account: account} do
@@ -922,7 +922,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
                "have permission to do that"
 
       # The ruleset is still there.
-      assert {:ok, _policy} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
+      assert {:ok, [_]} = Policies.list_scoped_policies(subject)
     end
 
     test "a viewer's crafted remove_ruleset is denied", %{
@@ -950,7 +950,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert render_hook(lv, "remove_ruleset", %{"uid" => saved.id}) =~
                "have permission to do that"
 
-      assert {:ok, _policy} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
+      assert {:ok, [_]} = Policies.list_scoped_policies(subject)
     end
 
     test "an operator's crafted add_ruleset is a no-op — no card added", %{
@@ -999,7 +999,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # First save persists the row and rebuilds the card under the policy id.
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
-      assert {:ok, policy} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
+      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
 
       # The card now submits under the policy id, not `new-…`.
       html = render(lv)
