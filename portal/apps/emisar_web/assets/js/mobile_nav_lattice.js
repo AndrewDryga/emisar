@@ -1,13 +1,14 @@
 // Marketing mobile-nav lattice — a quiet "plotter" open animation.
 //
 // When the drawer opens, a few small heads walk ALONG the grid lines — node to node
-// down each edge — drawing the blueprint line they trace, like a plotter following
-// the grid. They prefer not-yet-drawn edges, so they fan out and ink the grid in a
-// calm walk; whatever they haven't reached by a short time budget simply fades in.
-// Diamond nodes light as a head passes a crossing. Settles into the same faint grid +
-// nodes, kept in the hero's restrained key — neat and subtle, no wild arcs.
+// down each edge — drawing the blueprint line they trace, like a plotter following the
+// grid. Each head prefers an undrawn neighbour; when it runs out, it routes (shortest
+// path along the grid) to the nearest line still missing and keeps going, so together
+// they draw the ENTIRE grid before stopping — nothing is faded in. Diamond nodes light
+// as a head passes a crossing. Settles into the same faint grid + nodes, in the hero's
+// restrained key — neat and subtle, no wild arcs.
 //
-// One <canvas>; the loop stops once everything's drawn. Grid lines are phased off the
+// One <canvas>; the loop stops once every edge is drawn. Grid lines are phased off the
 // page nav's height so they match the hero's grid below the nav, and run full-bleed
 // under the transparent bar. prefers-reduced-motion paints it settled, no heads.
 // No-ops when the markup is absent.
@@ -20,10 +21,9 @@ const GRID_V = 0.52 // vertical line alpha
 const ZINC = "180, 184, 196" // faint node base
 const BRAND = "54, 230, 165" // emerald — #36E6A5 (accents + heads)
 
-const HEADS = 5 // plotter heads
-const SPEED = 820 // px/s along an edge — a calm glide
-const RAMP = 280 // ms — a node / budget-filled segment fades in over this
-const BUDGET = 1300 // ms — by now, fade in whatever the heads haven't reached
+const HEADS = 8 // plotter heads
+const SPEED = 1200 // px/s along an edge — quick but still a glide
+const RAMP = 280 // ms — a node fades up over this once a head reaches it
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
 
@@ -53,9 +53,9 @@ export function initMobileNavLattice() {
   let start = null
   let last = 0
 
-  // Build the grid graph: a node on each phased crossing, plus a shared edge object
-  // per right/down link (geometric draw progress + which end it's drawn from). One
-  // extra row above the top so the vertical lines reach up under the bar.
+  // Build the grid graph: a node on each phased crossing, plus a shared edge object per
+  // right/down link (geometric draw progress + which end it's drawn from). One extra row
+  // above the top so the vertical lines reach up under the bar.
   const build = (w, h) => {
     const map = new Map()
     nodes = []
@@ -78,7 +78,7 @@ export function initMobileNavLattice() {
       }
     }
     const link = (a, b, kind) => {
-      const e = {a, b, kind, drawn: 0, from: null, fadeAt: null}
+      const e = {a, b, kind, drawn: 0, from: null}
       edges.push(e)
       a.links.push({to: b, edge: e})
       b.links.push({to: a, edge: e})
@@ -106,18 +106,47 @@ export function initMobileNavLattice() {
     build(w, h)
   }
 
-  // Point a head down a fresh edge from its current node — prefer an undrawn one so the
-  // heads keep inking new lines; otherwise wander down any edge to reach new ground.
-  const route = (head) => {
-    const links = head.at.links
-    if (!links.length) return
-    const open = links.filter((l) => l.edge.drawn === 0 && l.edge.fadeAt === null)
-    const pool = open.length ? open : links
-    const l = pool[(Math.random() * pool.length) | 0]
-    head.edge = l.edge
-    head.next = l.to
-    head.t = 0
-    if (l.edge.drawn === 0 && l.edge.fadeAt === null) l.edge.from = head.at
+  // Shortest path (along the grid) from `start` to the nearest node that still has an
+  // undrawn edge — the route a head walks to reach the next line to draw. [] if none.
+  const routeToUndrawn = (from) => {
+    const prev = new Map([[from, null]])
+    const queue = [from]
+    for (let i = 0; i < queue.length; i++) {
+      const n = queue[i]
+      if (n !== from && n.links.some((l) => l.edge.drawn === 0)) {
+        const path = []
+        for (let cur = n; cur !== from; cur = prev.get(cur)) path.unshift(cur)
+        return path
+      }
+      for (const l of n.links) if (!prev.has(l.to)) prev.set(l.to, n), queue.push(l.to)
+    }
+    return []
+  }
+
+  // Aim a head down its next edge: an undrawn neighbour if any (draw it), else the next
+  // step of a planned walk to the nearest undrawn line. Returns false once nothing is
+  // left to draw.
+  const nextEdge = (head) => {
+    const open = head.at.links.filter((l) => l.edge.drawn === 0)
+    if (open.length) {
+      head.path = null
+      const l = open[(Math.random() * open.length) | 0]
+      head.edge = l.edge
+      head.next = l.to
+      head.t = 0
+      l.edge.from = head.at
+      return true
+    }
+    if (!head.path || !head.path.length) head.path = routeToUndrawn(head.at)
+    if (head.path.length) {
+      const to = head.path.shift()
+      head.edge = head.at.links.find((l) => l.to === to).edge
+      head.next = to
+      head.t = 0
+      return true
+    }
+    head.done = true
+    return false
   }
 
   const spawn = () => {
@@ -125,36 +154,28 @@ export function initMobileNavLattice() {
     for (let i = 0; i < HEADS; i++) {
       const at = nodes[(Math.random() * nodes.length) | 0]
       at.litAt = 0
-      const head = {at, next: at, edge: null, t: 1, x: at.x, y: at.y}
-      route(head)
+      const head = {at, next: at, edge: null, t: 0, path: null, done: false, x: at.x, y: at.y}
+      nextEdge(head)
       heads.push(head)
     }
   }
 
   const move = (now, dt) => {
-    const step = (SPEED * dt) / SPACING
+    const stepLen = (SPEED * dt) / SPACING
     for (const head of heads) {
-      if (!head.edge) {
-        route(head)
-        if (!head.edge) continue
-      }
-      head.t += step
-      if (head.edge.from === head.at && head.edge.drawn < 1) {
-        head.edge.drawn = clamp01(head.t)
-      }
+      if (head.done) continue
+      if (!head.edge && !nextEdge(head)) continue
+      head.t += stepLen
+      if (head.edge.from === head.at && head.edge.drawn < 1) head.edge.drawn = clamp01(head.t)
       if (head.t >= 1) {
         if (head.edge.from === head.at) head.edge.drawn = 1
         head.at = head.next
         if (head.at.litAt === null) head.at.litAt = now
-        route(head)
+        nextEdge(head)
       }
       const tt = head.t < 1 ? head.t : 1
       head.x = head.at.x + (head.next.x - head.at.x) * tt
       head.y = head.at.y + (head.next.y - head.at.y) * tt
-    }
-    if (now >= BUDGET) {
-      for (const e of edges) if (e.drawn === 0 && e.fadeAt === null) e.fadeAt = now
-      for (const n of nodes) if (n.litAt === null) n.litAt = now
     }
   }
 
@@ -170,32 +191,27 @@ export function initMobileNavLattice() {
     ctx.shadowBlur = 0
     ctx.lineWidth = 1
 
-    // Blueprint grid — pen-traced edges grow from their entry end; the rest fades in.
+    // Blueprint grid — each edge grows from the end the head entered it.
+    let plotting = false
     for (const e of edges) {
+      if (e.drawn < 1) plotting = true
+      if (e.drawn <= 0) continue
+      const s = e.from || e.a
+      const o = s === e.a ? e.b : e.a
       const alpha = (e.kind === "h" ? GRID_H : GRID_V) * yFade((e.a.y + e.b.y) / 2, h)
-      if (e.drawn > 0) {
-        const s = e.from || e.a
-        const o = s === e.a ? e.b : e.a
-        ctx.strokeStyle = `rgba(${GRID}, ${alpha})`
-        ctx.beginPath()
-        ctx.moveTo(s.x, s.y)
-        ctx.lineTo(s.x + (o.x - s.x) * e.drawn, s.y + (o.y - s.y) * e.drawn)
-        ctx.stroke()
-      } else if (e.fadeAt !== null) {
-        const f = ease(clamp01((now - e.fadeAt) / RAMP))
-        if (f <= 0) continue
-        ctx.strokeStyle = `rgba(${GRID}, ${alpha * f})`
-        ctx.beginPath()
-        ctx.moveTo(e.a.x, e.a.y)
-        ctx.lineTo(e.b.x, e.b.y)
-        ctx.stroke()
-      }
+      ctx.strokeStyle = `rgba(${GRID}, ${alpha})`
+      ctx.beginPath()
+      ctx.moveTo(s.x, s.y)
+      ctx.lineTo(s.x + (o.x - s.x) * e.drawn, s.y + (o.y - s.y) * e.drawn)
+      ctx.stroke()
     }
 
     // Diamond nodes on the crossings — emerald accents glow softly, the rest faint.
+    let live = plotting
     for (const n of nodes) {
       if (n.litAt === null) continue
       const p = clamp01((now - n.litAt) / RAMP)
+      if (p < 1) live = true
       const a = ease(p) * yFade(n.y, h)
       const s = NODE * pop(p)
       if (n.brand) {
@@ -215,20 +231,21 @@ export function initMobileNavLattice() {
       ctx.fill()
     }
 
-    // Heads — a small dim emerald dot at each pen tip, only while plotting.
-    if (now < BUDGET + RAMP) {
+    // Heads — a small dim emerald dot at each pen tip, while any line is still being drawn.
+    if (plotting) {
       ctx.shadowColor = `rgba(${BRAND}, 0.5)`
       ctx.shadowBlur = 4
       ctx.fillStyle = `rgba(${BRAND}, 0.85)`
       for (const head of heads) {
+        if (head.done) continue
         ctx.beginPath()
         ctx.arc(head.x, head.y, 1.6, 0, Math.PI * 2)
         ctx.fill()
       }
       ctx.shadowBlur = 0
-      return true
     }
-    return false
+
+    return live
   }
 
   const frame = (ts) => {
@@ -249,7 +266,7 @@ export function initMobileNavLattice() {
     if (reduce.matches) {
       for (const n of nodes) n.litAt = 0
       for (const e of edges) e.drawn = 1
-      draw(BUDGET + RAMP + 1) // settled, no heads
+      draw(RAMP + 1) // settled, no heads
       raf = 0
       return
     }
@@ -276,7 +293,7 @@ export function initMobileNavLattice() {
       size()
       for (const n of nodes) n.litAt = 0
       for (const e of edges) e.drawn = 1
-      draw(BUDGET + RAMP + 1)
+      draw(RAMP + 1)
     }
   })
 
