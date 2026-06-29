@@ -734,13 +734,16 @@ defmodule EmisarWeb.TeamLive do
             <% end %>
           </:actions>
 
-          <%!-- Status chip — "Required" only when enforced; no "Optional" noise
-               when it's off (the "Require SSO" button already says that). --%>
-          <div
-            :if={@current_account.settings.require_sso}
-            class="flex flex-wrap items-center gap-2 text-xs"
-          >
-            <.chip tone={:brand}>Required</.chip>
+          <%!-- Current state — always shown so the card is never a header over
+               empty space (the 2FA panel always has its enrollment row). The
+               brand "Required" chip only when enforced; otherwise a quiet note,
+               not an "Optional" label. --%>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <%= if @current_account.settings.require_sso do %>
+              <.chip tone={:brand}>Required</.chip>
+            <% else %>
+              <span class="text-zinc-500">Members can sign in with a magic link.</span>
+            <% end %>
           </div>
         </.panel>
 
