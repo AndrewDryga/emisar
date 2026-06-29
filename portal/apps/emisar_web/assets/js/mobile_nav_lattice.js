@@ -1,24 +1,21 @@
-// Marketing mobile-nav lattice — a quiet "plotter" open animation.
+// Marketing mobile-nav lattice — the blueprint grid drawing itself in.
 //
-// When the drawer opens, the blueprint grid draws itself in: a few unseen plotter heads
-// walk ALONG the grid lines — node to node down each edge — and each line grows behind
-// the head tracing it. When a head runs out of undrawn neighbours it routes (shortest
-// path along the grid) to the nearest line still missing and keeps going, so together
-// they trace the ENTIRE grid before stopping. Settles into a faint grid of lines, in the
-// hero's restrained key — neat and subtle, only the lines moving.
+// When the drawer opens, a 45° wavefront sweeps from the gate mark (top-left) toward the
+// bottom-right, and each grid line draws in as the front crosses it — horizontals growing
+// left-to-right, verticals top-to-bottom — so the whole grid plots in in one clean,
+// organized diagonal pass. Settles into a faint grid of lines, in the hero's restrained
+// key.
 //
-// One <canvas>; the loop stops once every edge is drawn. Grid lines are phased off the
-// page nav's height so they match the hero's grid below the nav, and run full-bleed under
-// the transparent bar. prefers-reduced-motion paints the grid settled, no motion.
-// No-ops when the markup is absent.
+// One <canvas>; the loop stops once the wavefront has crossed everything. Grid lines are
+// phased off the page nav's height so they match the hero's grid below the nav, and run
+// full-bleed under the transparent bar. prefers-reduced-motion paints the grid settled,
+// no motion. No-ops when the markup is absent.
 
 const SPACING = 72 // px — grid cell, matching the hero's .contract-grid
 const GRID = "39, 39, 42" // blueprint line — matches .contract-grid
 const GRID_H = 0.42 // horizontal line alpha
 const GRID_V = 0.52 // vertical line alpha
-
-const HEADS = 8 // plotter heads
-const SPEED = 1200 // px/s along an edge — quick but still a glide
+const SWEEP_MS = 1500 // time for the wavefront to cross the whole grid
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
 
@@ -30,42 +27,32 @@ export function initMobileNavLattice() {
   if (!ctx) return
 
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)")
-  let nodes = []
-  let edges = []
-  let heads = []
+  let segs = []
   let view = {w: 0, h: 0}
   let yOffset = 0 // px — grid phase, so a line lands where the bar meets the body
+  let maxFront = 1 // x+y the wavefront must reach to finish
   let raf = 0
-  let lastTs = null
+  let start = null
 
-  // Build the grid graph: a node on each phased crossing, plus a shared edge object per
-  // right/down link (geometric draw progress + which end it's drawn from). One extra row
-  // above the top so the vertical lines reach up under the bar.
+  // Lay out the grid segments, each tagged with `front` = the x+y of the end the
+  // wavefront reaches first (its left/top end), so it draws in diagonal order. One extra
+  // row above the top so the vertical lines reach up under the bar.
   const build = (w, h) => {
-    const map = new Map()
-    nodes = []
-    edges = []
+    segs = []
+    maxFront = 1
     const cols = Math.ceil(w / SPACING) + 1
     const rows = Math.ceil(h / SPACING) + 1
     for (let r = -1; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const node = {x: c * SPACING, y: yOffset + r * SPACING, c, r, links: []}
-        nodes.push(node)
-        map.set(c + "," + r, node)
+        const x = c * SPACING
+        const y = yOffset + r * SPACING
+        const front = x + y
+        segs.push({x, y, dx: SPACING, dy: 0, kind: "h", front})
+        segs.push({x, y, dx: 0, dy: SPACING, kind: "v", front})
+        if (front > maxFront) maxFront = front
       }
     }
-    const link = (a, b, kind) => {
-      const e = {a, b, kind, drawn: 0, from: null}
-      edges.push(e)
-      a.links.push({to: b, edge: e})
-      b.links.push({to: a, edge: e})
-    }
-    for (const n of nodes) {
-      const right = map.get(n.c + 1 + "," + n.r)
-      const down = map.get(n.c + "," + (n.r + 1))
-      if (right) link(n, right, "h")
-      if (down) link(n, down, "v")
-    }
+    maxFront += SPACING // so the last segment finishes growing too
   }
 
   const size = () => {
@@ -83,120 +70,46 @@ export function initMobileNavLattice() {
     build(w, h)
   }
 
-  // Shortest path (along the grid) from `from` to the nearest node that still has an
-  // undrawn edge — the route a head walks to reach the next line to draw. [] if none.
-  const routeToUndrawn = (from) => {
-    const prev = new Map([[from, null]])
-    const queue = [from]
-    for (let i = 0; i < queue.length; i++) {
-      const n = queue[i]
-      if (n !== from && n.links.some((l) => l.edge.drawn === 0)) {
-        const path = []
-        for (let cur = n; cur !== from; cur = prev.get(cur)) path.unshift(cur)
-        return path
-      }
-      for (const l of n.links) if (!prev.has(l.to)) prev.set(l.to, n), queue.push(l.to)
-    }
-    return []
-  }
-
-  // Aim a head down its next edge: an undrawn neighbour if any (draw it), else the next
-  // step of a planned walk to the nearest undrawn line. False once nothing's left.
-  const nextEdge = (head) => {
-    const open = head.at.links.filter((l) => l.edge.drawn === 0)
-    if (open.length) {
-      head.path = null
-      const l = open[(Math.random() * open.length) | 0]
-      head.edge = l.edge
-      head.next = l.to
-      head.t = 0
-      l.edge.from = head.at
-      return true
-    }
-    if (!head.path || !head.path.length) head.path = routeToUndrawn(head.at)
-    if (head.path.length) {
-      const to = head.path.shift()
-      head.edge = head.at.links.find((l) => l.to === to).edge
-      head.next = to
-      head.t = 0
-      return true
-    }
-    head.done = true
-    return false
-  }
-
-  const spawn = () => {
-    heads = []
-    for (let i = 0; i < HEADS; i++) {
-      const at = nodes[(Math.random() * nodes.length) | 0]
-      const head = {at, next: at, edge: null, t: 0, path: null, done: false}
-      nextEdge(head)
-      heads.push(head)
-    }
-  }
-
-  const move = (dt) => {
-    const stepLen = (SPEED * dt) / SPACING
-    for (const head of heads) {
-      if (head.done) continue
-      if (!head.edge && !nextEdge(head)) continue
-      head.t += stepLen
-      if (head.edge.from === head.at && head.edge.drawn < 1) head.edge.drawn = clamp01(head.t)
-      if (head.t >= 1) {
-        if (head.edge.from === head.at) head.edge.drawn = 1
-        head.at = head.next
-        nextEdge(head)
-      }
-    }
-  }
-
   // Fade the lattice out over the bottom quarter so it never competes with the CTAs.
   const yFade = (y, h) => {
     const edge = h * 0.74
     return y <= edge ? 1 : Math.max(0, 1 - (y - edge) / (h - edge))
   }
 
-  // Draw the grid; each edge grows from the end its head entered. True while any line
-  // is still being traced.
-  const draw = () => {
+  // Draw the grid at the wavefront for `elapsed`; each segment grows as the front passes
+  // over it. Returns true while the front hasn't cleared the whole grid.
+  const draw = (elapsed) => {
     const {w, h} = view
     ctx.clearRect(0, 0, w, h)
     ctx.lineWidth = 1
-    let plotting = false
-    for (const e of edges) {
-      if (e.drawn < 1) plotting = true
-      if (e.drawn <= 0) continue
-      const s = e.from || e.a
-      const o = s === e.a ? e.b : e.a
-      const alpha = (e.kind === "h" ? GRID_H : GRID_V) * yFade((e.a.y + e.b.y) / 2, h)
+    const front = (elapsed / SWEEP_MS) * maxFront
+    for (const s of segs) {
+      const p = clamp01((front - s.front) / SPACING)
+      if (p <= 0) continue
+      const alpha = (s.kind === "h" ? GRID_H : GRID_V) * yFade(s.y + s.dy / 2, h)
       ctx.strokeStyle = `rgba(${GRID}, ${alpha})`
       ctx.beginPath()
       ctx.moveTo(s.x, s.y)
-      ctx.lineTo(s.x + (o.x - s.x) * e.drawn, s.y + (o.y - s.y) * e.drawn)
+      ctx.lineTo(s.x + s.dx * p, s.y + s.dy * p)
       ctx.stroke()
     }
-    return plotting
+    return front < maxFront
   }
 
   const frame = (ts) => {
-    if (lastTs === null) lastTs = ts
-    const dt = Math.min(ts - lastTs, 50) / 1000
-    lastTs = ts
-    move(dt)
-    raf = draw() ? requestAnimationFrame(frame) : 0
+    if (start === null) start = ts
+    raf = draw(ts - start) ? requestAnimationFrame(frame) : 0
   }
 
   const run = () => {
     size()
     cancelAnimationFrame(raf)
     if (reduce.matches) {
-      for (const e of edges) e.drawn = 1
-      draw() // settled grid, no motion
+      draw(SWEEP_MS + 1) // settled grid, no motion
       raf = 0
       return
     }
-    spawn()
-    lastTs = null
+    start = null
     raf = requestAnimationFrame(frame)
   }
 
@@ -208,7 +121,7 @@ export function initMobileNavLattice() {
   }
 
   // mobile_nav.js toggles the panel's `hidden` class; mirror that here without
-  // coupling the two — plot on open, clear on close.
+  // coupling the two — sweep on open, clear on close.
   const sync = () => (panel.classList.contains("hidden") ? stop() : run())
   new MutationObserver(sync).observe(panel, {attributes: true, attributeFilter: ["class"]})
 
@@ -216,8 +129,7 @@ export function initMobileNavLattice() {
   window.addEventListener("resize", () => {
     if (!panel.classList.contains("hidden")) {
       size()
-      for (const e of edges) e.drawn = 1
-      draw()
+      draw(SWEEP_MS + 1)
     }
   })
 
