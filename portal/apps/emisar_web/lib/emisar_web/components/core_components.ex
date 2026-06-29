@@ -3372,26 +3372,21 @@ defmodule EmisarWeb.CoreComponents do
            logo from frame 0 so the menu's logo can't double-draw under it and flicker. --%>
       <div class="absolute inset-0 bg-[#07080a]" aria-hidden="true"></div>
 
-      <%!-- Gate texture, full-bleed UNDER the bar — the SAME .contract-grid + .grain as the
-           hero, shown at rest the instant it opens, with the lattice drawing in over them.
-           mobile_nav_lattice.js phases the grid by the bar's height so a line lands at the
-           bar's bottom, matching the hero's grid below the nav — the lines align while the
-           texture still runs up under the bar. --%>
+      <%!-- Gate texture, full-bleed under the bar — the canvas draws BOTH the blueprint
+           grid and the diamond nodes at its crossings, fading them in together in a radial
+           cascade from the gate mark (mobile_nav_lattice.js). It phases off the page nav's
+           height so the grid lines match the hero's (which sits below an equal-height nav),
+           and runs seamlessly up under the transparent bar. .grain stays as static noise. --%>
       <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div id="mobile-nav-grid" class="contract-grid absolute inset-0"></div>
         <div class="grain absolute inset-0"></div>
         <canvas id="mobile-nav-lattice" class="absolute inset-0 h-full w-full"></canvas>
       </div>
 
       <div class="relative flex h-full flex-col">
-        <%!-- Top bar — transparent bg so the gate texture runs under it, but it keeps the
-             nav's border-b: that holds it at the nav's exact height (which the lattice
-             phases the grid to) and lands right on the grid line there. Same px-6 py-5 +
-             <.brand size={:md}/> as the nav, so the logo lands on the identical y. --%>
-        <div
-          data-mobile-nav-bar
-          class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 px-6 py-5"
-        >
+        <%!-- Top bar — transparent and borderless so the gate texture runs seamlessly under
+             it, with no seam where it meets the body. Same px-6 py-5 + <.brand size={:md}/>
+             as the nav, so the logo lands on the identical y. --%>
+        <div class="flex shrink-0 items-center justify-between px-6 py-5">
           <.link href={~p"/"}>
             <.brand size={:md} />
           </.link>

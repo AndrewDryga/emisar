@@ -1,25 +1,27 @@
-// Marketing mobile-nav lattice — a faint "gate coming online" open animation.
+// Marketing mobile-nav lattice — the "gate coming online" open animation.
 //
-// When the drawer opens, the grid's intersections light up as diamond nodes in a
-// quiet radial cascade from the gate mark (top-left) — a subtle enrichment of the
-// static blueprint grid, kept in the hero's restrained key. Drawn on one <canvas>
-// so ~70 nodes cost a single element and one short rAF burst, not 70 staggered DOM
-// nodes.
+// When the drawer opens, the blueprint grid AND the diamond nodes at its crossings
+// fade in together in a quiet radial cascade from the gate mark (top-left): each grid
+// segment and node blooms as the wavefront reaches it, so the whole surface draws
+// itself in rather than popping. Kept in the hero's restrained key. Drawn on one
+// <canvas> so ~80 nodes + their links cost a single element and one short rAF burst.
 //
-// It also aligns the texture to the hero: the grid runs full-bleed under the bar, so
-// to keep its lines matching the hero's (whose grid sits below an equal-height nav)
-// the grid is phased down by the bar's measured height — a line then lands exactly at
-// the bar's bottom, and the nodes sit on the phased lines.
+// It aligns to the hero: the grid runs full-bleed under a transparent, borderless bar,
+// so to keep its lines matching the hero's (whose grid sits below the nav) the lattice
+// is phased down by the page nav's measured height — a line then lands where the bar
+// meets the body, seamlessly.
 //
-// The static `.contract-grid` is shown at rest the instant the menu opens; this only
-// adds the nodes. The drawer is JS-only to open, so there's no no-canvas case to design
-// for — but prefers-reduced-motion still paints the settled nodes with no motion.
-// No-ops when the markup is absent.
+// The drawer is JS-only to open, so there's no no-canvas case to design for — but
+// prefers-reduced-motion still paints the settled lattice with no motion. No-ops when
+// the markup is absent.
 
-const SPACING = 72 // px — matches .contract-grid background-size, so nodes land on intersections
+const SPACING = 72 // px — grid cell, matching the hero's .contract-grid
 const NODE = 2.6 // diamond half-extent, px
 const STAGGER = 26 // ms between radial rings out from the gate mark
-const GROW = 360 // ms each node takes to bloom in
+const GROW = 360 // ms each segment/node takes to bloom in
+const GRID = "39, 39, 42" // blueprint line — matches .contract-grid
+const GRID_H = 0.42 // horizontal line alpha (matches .contract-grid)
+const GRID_V = 0.52 // vertical line alpha
 const ZINC = "180, 184, 196" // faint node base
 const BRAND = "54, 230, 165" // emerald accent — #36E6A5
 
@@ -39,42 +41,47 @@ export function initMobileNavLattice() {
   const ctx = canvas.getContext("2d")
   if (!ctx) return
 
-  const grid = document.getElementById("mobile-nav-grid")
-  const bar = panel.querySelector("[data-mobile-nav-bar]")
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)")
   let nodes = []
   let view = {w: 0, h: 0}
-  let yOffset = 0 // px — grid phase, so nodes sit on the phased lines (set in size())
+  let yOffset = 0 // px — grid phase, so a line lands where the bar meets the body (set in size())
   let raf = 0
   let start = null
 
-  // Lay a node on each phased grid intersection; each carries its cascade delay (distance
-  // from the gate mark at the top-left, so the lattice radiates from it) and a stable
-  // emerald flag for the occasional accent.
+  // Lay a node on each phased grid crossing, with right/down neighbour refs for the
+  // grid segments. One extra row above the top (r = -1) so the vertical lines reach up
+  // under the bar. Each node carries its cascade delay (distance from the gate mark) and
+  // a stable emerald flag.
   const build = (w, h) => {
+    const map = new Map()
     nodes = []
     const cols = Math.ceil(w / SPACING) + 1
     const rows = Math.ceil(h / SPACING) + 1
-    for (let r = 0; r < rows; r++) {
+    for (let r = -1; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const x = c * SPACING
-        const y = yOffset + r * SPACING
-        nodes.push({
-          x,
-          y,
-          delay: (Math.hypot(x, y) / SPACING) * STAGGER,
-          brand: (c * 7 + r * 13) % 11 === 0,
-        })
+        const node = {
+          x: c * SPACING,
+          y: yOffset + r * SPACING,
+          c,
+          r,
+          brand: (c * 7 + (r + 2) * 13) % 11 === 0,
+        }
+        node.delay = (Math.hypot(node.x, Math.max(0, node.y)) / SPACING) * STAGGER
+        nodes.push(node)
+        map.set(c + "," + r, node)
       }
+    }
+    for (const node of nodes) {
+      node.right = map.get(node.c + 1 + "," + node.r) || null
+      node.down = map.get(node.c + "," + (node.r + 1)) || null
     }
   }
 
   const size = () => {
-    // Align the texture to the bar: phase the grid down by the bar's height so a line
-    // lands at its bottom (matching the hero), and offset the nodes onto those lines.
-    const barH = bar ? bar.offsetHeight : 0
-    if (grid) grid.style.backgroundPositionY = barH + "px"
-    yOffset = barH % SPACING
+    // Phase off the page nav's height so a grid line lands where the bar meets the body
+    // (matching the hero's grid, which sits below an equal-height nav).
+    const nav = document.querySelector("header")
+    yOffset = (nav ? nav.offsetHeight : 0) % SPACING
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const w = canvas.clientWidth
@@ -86,17 +93,39 @@ export function initMobileNavLattice() {
     build(w, h)
   }
 
-  // Fade the nodes out over the bottom quarter, matching the grid's own mask, so they
-  // never compete with the CTAs.
+  // Fade the lattice out over the bottom quarter so it never competes with the CTAs.
   const yFade = (y, h) => {
     const edge = h * 0.74
     return y <= edge ? 1 : Math.max(0, 1 - (y - edge) / (h - edge))
   }
 
-  // Paint one frame at `elapsed` ms; returns true while any node is still blooming.
+  // Paint one frame at `elapsed` ms; returns true while anything is still blooming.
   const draw = (elapsed) => {
     const {w, h} = view
     ctx.clearRect(0, 0, w, h)
+    ctx.shadowBlur = 0
+    ctx.lineWidth = 1
+
+    // Blueprint grid — each segment fades in with the later of its two endpoints.
+    for (const node of nodes) {
+      const p = clamp01((elapsed - node.delay) / GROW)
+      if (p <= 0) continue
+      for (const [m, alpha] of [
+        [node.right, GRID_H],
+        [node.down, GRID_V],
+      ]) {
+        if (!m) continue
+        const lp = Math.min(p, clamp01((elapsed - m.delay) / GROW))
+        if (lp <= 0) continue
+        ctx.strokeStyle = `rgba(${GRID}, ${alpha * lp * yFade(node.y, h)})`
+        ctx.beginPath()
+        ctx.moveTo(node.x, node.y)
+        ctx.lineTo(m.x, m.y)
+        ctx.stroke()
+      }
+    }
+
+    // Diamond nodes on the crossings, over the grid — emerald accents glow, the rest faint.
     let live = false
     for (const node of nodes) {
       const p = clamp01((elapsed - node.delay) / GROW)
@@ -133,7 +162,7 @@ export function initMobileNavLattice() {
     size()
     cancelAnimationFrame(raf)
     if (reduce.matches) {
-      draw(1e9) // settled nodes, no motion
+      draw(1e9) // settled lattice, no motion
       raf = 0
       return
     }
