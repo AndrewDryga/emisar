@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Catalog, Runners, Users}
+  alias Emisar.{Accounts, Approvals, Catalog, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(_params, _session, socket) do
@@ -62,6 +62,17 @@ defmodule EmisarWeb.ApprovalsLive do
         end
       end
     )
+  end
+
+  # The max grant-lifetime cap (account setting) governs how long the standing
+  # grants below can keep auto-approving, so it's edited here, beside them —
+  # owner/admin only; server-enforced in Approvals.create_grant.
+  def handle_event("set_max_grant_lifetime", %{"seconds" => raw}, socket) do
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+      apply_grant_lifetime_cap(socket, parse_grant_lifetime(raw))
+    else
+      {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+    end
   end
 
   defp load(socket, params) do
@@ -229,6 +240,49 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_arg_value(v) when is_binary(v), do: v
   defp grant_arg_value(v), do: inspect(v)
 
+  defp apply_grant_lifetime_cap(socket, :error) do
+    {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}
+  end
+
+  defp apply_grant_lifetime_cap(socket, {:ok, seconds}) do
+    case Accounts.update_account(
+           socket.assigns.current_account,
+           %{settings: %{max_grant_lifetime_seconds: seconds}},
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> put_flash(:info, grant_lifetime_flash(seconds))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
+    end
+  end
+
+  defp parse_grant_lifetime(""), do: {:ok, nil}
+
+  defp parse_grant_lifetime(raw) do
+    case Integer.parse(raw) do
+      {seconds, ""} when seconds > 0 -> {:ok, seconds}
+      _ -> :error
+    end
+  end
+
+  defp grant_lifetime_flash(nil), do: "Grant-lifetime cap removed — grants can use any window."
+  defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
+
+  defp grant_lifetime_label(nil), do: "No cap"
+  defp grant_lifetime_label(3_600), do: "1 hour"
+  defp grant_lifetime_label(86_400), do: "1 day"
+  defp grant_lifetime_label(2_592_000), do: "30 days"
+  defp grant_lifetime_label(7_776_000), do: "90 days"
+  defp grant_lifetime_label(seconds), do: "#{seconds} s"
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -355,6 +409,69 @@ defmodule EmisarWeb.ApprovalsLive do
               </p>
             </:actions>
           </.section_header>
+
+          <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
+               standing grant can keep skipping the prompt; single-use ("once") is
+               always exempt. Server-enforced in Approvals.create_grant. --%>
+          <.panel title="Maximum grant lifetime" class="mb-5">
+            <:subtitle>
+              Cap how long an approved grant can keep skipping the prompt. Single-use
+              ("once") approvals are always allowed; the limit is enforced server-side.
+            </:subtitle>
+            <:actions>
+              <%= cond do %>
+                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                  <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
+                <% true -> %>
+                  <form phx-change="set_max_grant_lifetime" class="shrink-0">
+                    <select
+                      name="seconds"
+                      aria-label="Maximum grant lifetime"
+                      class="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-100"
+                    >
+                      <option
+                        value=""
+                        selected={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
+                      >
+                        No cap
+                      </option>
+                      <option
+                        value="3600"
+                        selected={@current_account.settings.max_grant_lifetime_seconds == 3600}
+                      >
+                        1 hour
+                      </option>
+                      <option
+                        value="86400"
+                        selected={@current_account.settings.max_grant_lifetime_seconds == 86_400}
+                      >
+                        1 day
+                      </option>
+                      <option
+                        value="2592000"
+                        selected={@current_account.settings.max_grant_lifetime_seconds == 2_592_000}
+                      >
+                        30 days
+                      </option>
+                      <option
+                        value="7776000"
+                        selected={@current_account.settings.max_grant_lifetime_seconds == 7_776_000}
+                      >
+                        90 days
+                      </option>
+                    </select>
+                  </form>
+              <% end %>
+            </:actions>
+
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <.chip tone={
+                if @current_account.settings.max_grant_lifetime_seconds, do: :brand, else: :neutral
+              }>
+                {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
+              </.chip>
+            </div>
+          </.panel>
 
           <LiveTable.live_table
             layout={:cards}

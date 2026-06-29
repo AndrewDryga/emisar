@@ -377,4 +377,51 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "You don&#39;t have permission to do that."
     {:ok, [%{revoked_at: nil}], _meta} = Approvals.list_grants_for_account(subject)
   end
+
+  describe "max grant-lifetime cap" do
+    setup %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "an owner sets the cap", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "86400"}) =~
+               "Grant-lifetime cap updated."
+
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 86_400
+    end
+
+    test "an owner removes the cap", %{conn: conn, account: account} do
+      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 3600})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => ""}) =~
+               "Grant-lifetime cap removed"
+
+      refute Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds
+    end
+
+    test "an operator is refused at the event level (IL-15 — owners + admins only)", %{
+      account: account
+    } do
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
+
+      html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "86400"})
+
+      assert html =~ "Only owners and admins can change this setting."
+      refute Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds
+    end
+  end
 end
