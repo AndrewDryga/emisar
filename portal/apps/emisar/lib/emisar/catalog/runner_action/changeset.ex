@@ -4,7 +4,7 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
 
   @fields ~w[
     account_id runner_id action_id pack_id pack_version title kind risk
-    description side_effects args_schema limits output examples
+    description side_effects args_schema examples
     first_seen_at last_seen_at
   ]a
 
@@ -17,13 +17,13 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   # ~1 MB by the socket, but a hostile authenticated runner could advertise
   # many fat actions to grow its account's catalog (and every UI/MCP render of
   # it). `title` is a short label (255); a `description` is prose (4 KB). The
-  # jsonb/array fields (args_schema, limits, output, examples, side_effects)
-  # are structured data a real pack keeps to a few KB, so 64 KB serialized each
-  # is well above any honest descriptor while bounding the gross-abuse row.
+  # jsonb/array fields (args_schema, examples, side_effects) are structured
+  # data a real pack keeps to a few KB, so 64 KB serialized each is well above
+  # any honest descriptor while bounding the gross-abuse row.
   @max_title_length 255
   @max_description_length 4_096
   @max_json_bytes 65_536
-  @json_fields ~w[args_schema limits output examples side_effects]a
+  @json_fields ~w[args_schema examples side_effects]a
 
   def upsert(attrs) do
     %RunnerAction{}

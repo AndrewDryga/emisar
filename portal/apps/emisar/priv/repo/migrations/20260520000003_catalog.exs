@@ -43,8 +43,6 @@ defmodule Emisar.Repo.Migrations.Catalog do
       add :description, :text
       add :side_effects, {:array, :string}, null: false, default: []
       add :args_schema, :map, null: false, default: %{}
-      add :limits, :map, null: false, default: %{}
-      add :output, :map, null: false, default: %{}
       add :examples, {:array, :map}, null: false, default: []
 
       add :first_seen_at, :utc_datetime_usec, null: false

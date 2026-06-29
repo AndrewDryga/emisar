@@ -456,8 +456,6 @@ defmodule Emisar.Catalog do
       description: descriptor["description"],
       side_effects: descriptor["side_effects"] || [],
       args_schema: %{"args" => descriptor["args"] || []},
-      limits: descriptor["limits"] || %{},
-      output: descriptor["output"] || %{},
       examples: descriptor["examples"] || [],
       first_seen_at: now,
       last_seen_at: now

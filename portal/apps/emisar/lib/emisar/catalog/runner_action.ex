@@ -16,8 +16,6 @@ defmodule Emisar.Catalog.RunnerAction do
     field :description, :string
     field :side_effects, {:array, :string}, default: []
     field :args_schema, :map, default: %{}
-    field :limits, :map, default: %{}
-    field :output, :map, default: %{}
     field :examples, {:array, :map}, default: []
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec

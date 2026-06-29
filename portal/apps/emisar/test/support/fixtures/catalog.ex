@@ -26,8 +26,6 @@ defmodule Emisar.Fixtures.Catalog do
       description: attrs[:description] || "Reports uptime + load.",
       side_effects: attrs[:side_effects] || ["reads /proc"],
       args_schema: attrs[:args_schema] || %{"args" => []},
-      limits: attrs[:limits] || %{},
-      output: attrs[:output] || %{},
       examples: attrs[:examples] || [],
       first_seen_at: DateTime.utc_now(),
       last_seen_at: DateTime.utc_now()
