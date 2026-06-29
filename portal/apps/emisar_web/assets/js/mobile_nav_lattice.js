@@ -1,19 +1,18 @@
-// Marketing mobile-nav lattice — the "gate coming online" open animation.
+// Marketing mobile-nav lattice — a faint "gate coming online" open animation.
 //
-// When the drawer opens, a grid of diamond nodes lights up in a radial cascade
-// from the gate mark (top-left) and wires together with faint emerald links —
-// the control plane's network assembling itself over the static blueprint grid.
-// Drawn on one <canvas> so ~70 nodes + links cost a single element and one short
-// rAF burst, not 70 staggered DOM nodes.
+// When the drawer opens, the grid's intersections light up as diamond nodes in a
+// quiet radial cascade from the gate mark (top-left) — a subtle enrichment of the
+// static blueprint grid, kept in the hero's restrained key. Drawn on one <canvas>
+// so ~70 nodes cost a single element and one short rAF burst, not 70 staggered DOM
+// nodes.
 //
-// The static `.contract-grid` underneath is shown at rest the instant the menu
-// opens ("checkered texture right away"); this only enriches it. The drawer is
-// JS-only to open, so there's no no-canvas case to design for — but
-// prefers-reduced-motion still paints the settled lattice with no motion.
-// No-ops when the markup is absent.
+// The static `.contract-grid` underneath is shown at rest the instant the menu opens;
+// this only adds the nodes. The drawer is JS-only to open, so there's no no-canvas
+// case to design for — but prefers-reduced-motion still paints the settled nodes with
+// no motion. No-ops when the markup is absent.
 
 const SPACING = 72 // px — matches .contract-grid background-size, so nodes land on intersections
-const NODE = 3.2 // diamond half-extent, px
+const NODE = 2.6 // diamond half-extent, px
 const STAGGER = 26 // ms between radial rings out from the gate mark
 const GROW = 360 // ms each node takes to bloom in
 const ZINC = "180, 184, 196" // faint node base
@@ -41,31 +40,22 @@ export function initMobileNavLattice() {
   let raf = 0
   let start = null
 
-  // Lay nodes on the grid; each carries its cascade delay (distance from the
-  // gate mark at the top-left, so the lattice radiates from it) and a stable
-  // emerald flag, plus right/down neighbour refs for the wiring.
+  // Lay a node on each grid intersection; each carries its cascade delay (distance
+  // from the gate mark at the top-left, so the lattice radiates from it) and a stable
+  // emerald flag for the occasional accent.
   const build = (w, h) => {
-    const grid = new Map()
     nodes = []
     const cols = Math.ceil(w / SPACING) + 1
     const rows = Math.ceil(h / SPACING) + 1
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const node = {
+        nodes.push({
           x: c * SPACING,
           y: r * SPACING,
           delay: (Math.hypot(c * SPACING, r * SPACING) / SPACING) * STAGGER,
-          brand: (c * 7 + r * 13) % 9 === 0,
-          c,
-          r,
-        }
-        nodes.push(node)
-        grid.set(c + "," + r, node)
+          brand: (c * 7 + r * 13) % 11 === 0,
+        })
       }
-    }
-    for (const node of nodes) {
-      node.right = grid.get(node.c + 1 + "," + node.r) || null
-      node.down = grid.get(node.c + "," + (node.r + 1)) || null
     }
   }
 
@@ -80,8 +70,8 @@ export function initMobileNavLattice() {
     build(w, h)
   }
 
-  // Fade the lattice out over the bottom quarter, matching the grid's own mask,
-  // so it never competes with the CTAs.
+  // Fade the nodes out over the bottom quarter, matching the grid's own mask, so they
+  // never compete with the CTAs.
   const yFade = (y, h) => {
     const edge = h * 0.74
     return y <= edge ? 1 : Math.max(0, 1 - (y - edge) / (h - edge))
@@ -91,26 +81,6 @@ export function initMobileNavLattice() {
   const draw = (elapsed) => {
     const {w, h} = view
     ctx.clearRect(0, 0, w, h)
-
-    // Emerald wiring under the nodes, each growing from its node toward the
-    // right/down neighbour as both bloom in.
-    ctx.lineWidth = 1
-    for (const node of nodes) {
-      const p = clamp01((elapsed - node.delay) / GROW)
-      if (p <= 0) continue
-      for (const m of [node.right, node.down]) {
-        if (!m) continue
-        const lp = Math.min(p, clamp01((elapsed - m.delay) / GROW))
-        if (lp <= 0) continue
-        ctx.strokeStyle = `rgba(${BRAND}, ${0.14 * lp * yFade(node.y, h)})`
-        ctx.beginPath()
-        ctx.moveTo(node.x, node.y)
-        ctx.lineTo(node.x + (m.x - node.x) * lp, node.y + (m.y - node.y) * lp)
-        ctx.stroke()
-      }
-    }
-
-    // Diamond nodes over the wiring — emerald accents glow, the rest are faint.
     let live = false
     for (const node of nodes) {
       const p = clamp01((elapsed - node.delay) / GROW)
@@ -119,12 +89,12 @@ export function initMobileNavLattice() {
       const a = p * yFade(node.y, h)
       const s = NODE * pop(p)
       if (node.brand) {
-        ctx.shadowColor = `rgba(${BRAND}, ${0.9 * a})`
-        ctx.shadowBlur = 10
-        ctx.fillStyle = `rgba(${BRAND}, ${0.95 * a})`
+        ctx.shadowColor = `rgba(${BRAND}, ${0.6 * a})`
+        ctx.shadowBlur = 6
+        ctx.fillStyle = `rgba(${BRAND}, ${0.6 * a})`
       } else {
         ctx.shadowBlur = 0
-        ctx.fillStyle = `rgba(${ZINC}, ${0.5 * a})`
+        ctx.fillStyle = `rgba(${ZINC}, ${0.32 * a})`
       }
       ctx.beginPath()
       ctx.moveTo(node.x, node.y - s)
@@ -147,7 +117,7 @@ export function initMobileNavLattice() {
     size()
     cancelAnimationFrame(raf)
     if (reduce.matches) {
-      draw(1e9) // settled lattice, no motion
+      draw(1e9) // settled nodes, no motion
       raf = 0
       return
     }

@@ -3368,97 +3368,100 @@ defmodule EmisarWeb.CoreComponents do
       aria-modal="true"
       aria-label="Site menu"
     >
-      <%!-- Background — the dark surface stays opaque from frame 0 (page + header logo
-           hidden instantly, so the menu's logo can't double-draw under it and flicker).
-           The checkered grid + grain + emerald bloom show at rest the instant the menu
-           opens; over them the gate lattice draws itself in on the canvas below
-           (mobile_nav_lattice.js) — diamond nodes lighting up and wiring together. --%>
-      <div class="absolute inset-0 bg-zinc-950" aria-hidden="true">
-        <div class="contract-grid pointer-events-none absolute inset-0"></div>
-        <div class="grain pointer-events-none absolute inset-0"></div>
-        <div class="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl">
+      <%!-- Opaque base — #07080a like the hero, covering the page and the header's own
+           logo from frame 0 so the menu's logo can't double-draw under it and flicker. --%>
+      <div class="absolute inset-0 bg-[#07080a]" aria-hidden="true"></div>
+
+      <div class="relative flex h-full flex-col">
+        <%!-- Top bar — mirrors the page nav exactly (same border-b + bg-zinc-950/80
+             backdrop-blur, same px-6 py-5 and <.brand size={:md}/>), so the menu reads as
+             the same chrome AND the gate texture below it starts at the same offset as the
+             hero's grid — which also sits below an equal-height nav — so the two align. --%>
+        <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
+          <.link href={~p"/"}>
+            <.brand size={:md} />
+          </.link>
+          <button
+            type="button"
+            aria-label="Close menu"
+            data-mobile-nav-close
+            class="-mr-1.5 rounded-md p-2.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
+          >
+            <.icon name="hero-x-mark" class="h-5 w-5" />
+          </button>
         </div>
-        <canvas
-          id="mobile-nav-lattice"
-          class="pointer-events-none absolute inset-0 h-full w-full"
-          aria-hidden="true"
-        >
-        </canvas>
-      </div>
 
-      <div class="absolute inset-0 overflow-y-auto">
-        <div class="relative flex min-h-full flex-col">
-          <%!-- Top bar — transparent (no fill) so the gate texture wipes across it as
-               the menu opens, rather than staying a flat black bar. Same px-6 py-5 and
-               <.link><.brand size={:md}/> as <header> so the logo lands on the identical
-               y; the scan-line below is the only separator. --%>
-          <div class="flex shrink-0 items-center justify-between px-6 py-5">
-            <.link href={~p"/"}>
-              <.brand size={:md} />
-            </.link>
-            <button
-              type="button"
-              aria-label="Close menu"
-              data-mobile-nav-close
-              class="-mr-1.5 rounded-md p-2.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
-            >
-              <%!-- h-5 to match the header's hamburger exactly, so the row is the
-                   same height and the pinned logo lands on the identical y. --%>
-              <.icon name="hero-x-mark" class="h-5 w-5" />
-            </button>
-          </div>
+        <%!-- Body — the hero surface below the bar: the SAME .contract-grid + .grain,
+             shown at rest the instant it opens, with the gate lattice drawing in faintly
+             over them on canvas (mobile_nav_lattice.js). The texture is a fixed layer; the
+             routes + CTAs scroll over it. --%>
+        <div class="relative flex-1">
+          <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
+          <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
+          <canvas
+            id="mobile-nav-lattice"
+            class="pointer-events-none absolute inset-0 h-full w-full"
+            aria-hidden="true"
+          >
+          </canvas>
 
-          <.scan_line class="mobile-nav-scan opacity-80" />
+          <div class="absolute inset-0 overflow-y-auto">
+            <div class="flex min-h-full flex-col">
+              <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
+                <%!-- the gate track the route-nodes sit on --%>
+                <span
+                  class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-zinc-700/60 to-transparent"
+                  aria-hidden="true"
+                >
+                </span>
+                <ul class="flex flex-1 flex-col justify-around">
+                  <li>
+                    <.marketing_gate_link
+                      href={~p"/use-cases"}
+                      active={@current == :use_cases}
+                      idx={1}
+                    >
+                      Use cases
+                    </.marketing_gate_link>
+                  </li>
+                  <li>
+                    <.marketing_gate_link href={~p"/security"} active={@current == :security} idx={2}>
+                      Security
+                    </.marketing_gate_link>
+                  </li>
+                  <li>
+                    <.marketing_gate_link href={~p"/pricing"} active={@current == :pricing} idx={3}>
+                      Pricing
+                    </.marketing_gate_link>
+                  </li>
+                  <li>
+                    <.marketing_gate_link href={~p"/packs"} active={@current == :packs} idx={4}>
+                      Packs
+                    </.marketing_gate_link>
+                  </li>
+                  <li>
+                    <.marketing_gate_link href={~p"/docs"} active={@current == :docs} idx={5}>
+                      Docs
+                    </.marketing_gate_link>
+                  </li>
+                </ul>
+              </nav>
 
-          <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
-            <%!-- the gate track the route-nodes sit on --%>
-            <span
-              class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-zinc-700/60 to-transparent"
-              aria-hidden="true"
-            >
-            </span>
-            <ul class="flex flex-1 flex-col justify-around">
-              <li>
-                <.marketing_gate_link href={~p"/use-cases"} active={@current == :use_cases} idx={1}>
-                  Use cases
-                </.marketing_gate_link>
-              </li>
-              <li>
-                <.marketing_gate_link href={~p"/security"} active={@current == :security} idx={2}>
-                  Security
-                </.marketing_gate_link>
-              </li>
-              <li>
-                <.marketing_gate_link href={~p"/pricing"} active={@current == :pricing} idx={3}>
-                  Pricing
-                </.marketing_gate_link>
-              </li>
-              <li>
-                <.marketing_gate_link href={~p"/packs"} active={@current == :packs} idx={4}>
-                  Packs
-                </.marketing_gate_link>
-              </li>
-              <li>
-                <.marketing_gate_link href={~p"/docs"} active={@current == :docs} idx={5}>
-                  Docs
-                </.marketing_gate_link>
-              </li>
-            </ul>
-          </nav>
-
-          <div class="rise-5 relative px-6 pb-9">
-            <.scan_line class="mobile-nav-scan mb-7 opacity-50" />
-            <div class="space-y-3">
-              <%= if @current_user do %>
-                <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
-                  Dashboard
-                </.marketing_button>
-              <% else %>
-                <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
-                <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
-                  Sign in
-                </.marketing_button>
-              <% end %>
+              <div class="rise-5 relative px-6 pb-9">
+                <.scan_line class="mobile-nav-scan mb-7 opacity-50" />
+                <div class="space-y-3">
+                  <%= if @current_user do %>
+                    <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
+                      Dashboard
+                    </.marketing_button>
+                  <% else %>
+                    <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
+                    <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
+                      Sign in
+                    </.marketing_button>
+                  <% end %>
+                </div>
+              </div>
             </div>
           </div>
         </div>
