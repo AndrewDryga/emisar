@@ -3372,12 +3372,26 @@ defmodule EmisarWeb.CoreComponents do
            logo from frame 0 so the menu's logo can't double-draw under it and flicker. --%>
       <div class="absolute inset-0 bg-[#07080a]" aria-hidden="true"></div>
 
+      <%!-- Gate texture, full-bleed UNDER the bar — the SAME .contract-grid + .grain as the
+           hero, shown at rest the instant it opens, with the lattice drawing in over them.
+           mobile_nav_lattice.js phases the grid by the bar's height so a line lands at the
+           bar's bottom, matching the hero's grid below the nav — the lines align while the
+           texture still runs up under the bar. --%>
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div id="mobile-nav-grid" class="contract-grid absolute inset-0"></div>
+        <div class="grain absolute inset-0"></div>
+        <canvas id="mobile-nav-lattice" class="absolute inset-0 h-full w-full"></canvas>
+      </div>
+
       <div class="relative flex h-full flex-col">
-        <%!-- Top bar — mirrors the page nav exactly (same border-b + bg-zinc-950/80
-             backdrop-blur, same px-6 py-5 and <.brand size={:md}/>), so the menu reads as
-             the same chrome AND the gate texture below it starts at the same offset as the
-             hero's grid — which also sits below an equal-height nav — so the two align. --%>
-        <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
+        <%!-- Top bar — transparent bg so the gate texture runs under it, but it keeps the
+             nav's border-b: that holds it at the nav's exact height (which the lattice
+             phases the grid to) and lands right on the grid line there. Same px-6 py-5 +
+             <.brand size={:md}/> as the nav, so the logo lands on the identical y. --%>
+        <div
+          data-mobile-nav-bar
+          class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 px-6 py-5"
+        >
           <.link href={~p"/"}>
             <.brand size={:md} />
           </.link>
@@ -3391,20 +3405,7 @@ defmodule EmisarWeb.CoreComponents do
           </button>
         </div>
 
-        <%!-- Body — the hero surface below the bar: the SAME .contract-grid + .grain,
-             shown at rest the instant it opens, with the gate lattice drawing in faintly
-             over them on canvas (mobile_nav_lattice.js). The texture is a fixed layer; the
-             routes + CTAs scroll over it. --%>
         <div class="relative flex-1">
-          <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
-          <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
-          <canvas
-            id="mobile-nav-lattice"
-            class="pointer-events-none absolute inset-0 h-full w-full"
-            aria-hidden="true"
-          >
-          </canvas>
-
           <div class="absolute inset-0 overflow-y-auto">
             <div class="flex min-h-full flex-col">
               <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">

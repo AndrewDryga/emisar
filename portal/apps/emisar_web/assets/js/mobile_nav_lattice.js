@@ -6,10 +6,15 @@
 // so ~70 nodes cost a single element and one short rAF burst, not 70 staggered DOM
 // nodes.
 //
-// The static `.contract-grid` underneath is shown at rest the instant the menu opens;
-// this only adds the nodes. The drawer is JS-only to open, so there's no no-canvas
-// case to design for — but prefers-reduced-motion still paints the settled nodes with
-// no motion. No-ops when the markup is absent.
+// It also aligns the texture to the hero: the grid runs full-bleed under the bar, so
+// to keep its lines matching the hero's (whose grid sits below an equal-height nav)
+// the grid is phased down by the bar's measured height — a line then lands exactly at
+// the bar's bottom, and the nodes sit on the phased lines.
+//
+// The static `.contract-grid` is shown at rest the instant the menu opens; this only
+// adds the nodes. The drawer is JS-only to open, so there's no no-canvas case to design
+// for — but prefers-reduced-motion still paints the settled nodes with no motion.
+// No-ops when the markup is absent.
 
 const SPACING = 72 // px — matches .contract-grid background-size, so nodes land on intersections
 const NODE = 2.6 // diamond half-extent, px
@@ -34,13 +39,16 @@ export function initMobileNavLattice() {
   const ctx = canvas.getContext("2d")
   if (!ctx) return
 
+  const grid = document.getElementById("mobile-nav-grid")
+  const bar = panel.querySelector("[data-mobile-nav-bar]")
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)")
   let nodes = []
   let view = {w: 0, h: 0}
+  let yOffset = 0 // px — grid phase, so nodes sit on the phased lines (set in size())
   let raf = 0
   let start = null
 
-  // Lay a node on each grid intersection; each carries its cascade delay (distance
+  // Lay a node on each phased grid intersection; each carries its cascade delay (distance
   // from the gate mark at the top-left, so the lattice radiates from it) and a stable
   // emerald flag for the occasional accent.
   const build = (w, h) => {
@@ -49,10 +57,12 @@ export function initMobileNavLattice() {
     const rows = Math.ceil(h / SPACING) + 1
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
+        const x = c * SPACING
+        const y = yOffset + r * SPACING
         nodes.push({
-          x: c * SPACING,
-          y: r * SPACING,
-          delay: (Math.hypot(c * SPACING, r * SPACING) / SPACING) * STAGGER,
+          x,
+          y,
+          delay: (Math.hypot(x, y) / SPACING) * STAGGER,
           brand: (c * 7 + r * 13) % 11 === 0,
         })
       }
@@ -60,6 +70,12 @@ export function initMobileNavLattice() {
   }
 
   const size = () => {
+    // Align the texture to the bar: phase the grid down by the bar's height so a line
+    // lands at its bottom (matching the hero), and offset the nodes onto those lines.
+    const barH = bar ? bar.offsetHeight : 0
+    if (grid) grid.style.backgroundPositionY = barH + "px"
+    yOffset = barH % SPACING
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const w = canvas.clientWidth
     const h = canvas.clientHeight
