@@ -34,6 +34,11 @@ const pop = (t) => {
   return 1 + (c + 1) * x * x * x + c * x * x
 }
 
+// easeOutExpo — front-loads the fade to match the route links' ease-out
+// (.rise-N is cubic-bezier(0.16, 1, 0.3, 1)), so a linear lattice fade can't lag
+// behind them and read as a race.
+const ease = (t) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t))
+
 export function initMobileNavLattice() {
   const panel = document.getElementById("marketing-mobile-nav")
   const canvas = document.getElementById("mobile-nav-lattice")
@@ -117,7 +122,7 @@ export function initMobileNavLattice() {
         if (!m) continue
         const lp = Math.min(p, clamp01((elapsed - m.delay) / GROW))
         if (lp <= 0) continue
-        ctx.strokeStyle = `rgba(${GRID}, ${alpha * lp * yFade(node.y, h)})`
+        ctx.strokeStyle = `rgba(${GRID}, ${alpha * ease(lp) * yFade(node.y, h)})`
         ctx.beginPath()
         ctx.moveTo(node.x, node.y)
         ctx.lineTo(m.x, m.y)
@@ -131,7 +136,7 @@ export function initMobileNavLattice() {
       const p = clamp01((elapsed - node.delay) / GROW)
       if (p < 1) live = true
       if (p <= 0) continue
-      const a = p * yFade(node.y, h)
+      const a = ease(p) * yFade(node.y, h)
       const s = NODE * pop(p)
       if (node.brand) {
         ctx.shadowColor = `rgba(${BRAND}, ${0.6 * a})`
