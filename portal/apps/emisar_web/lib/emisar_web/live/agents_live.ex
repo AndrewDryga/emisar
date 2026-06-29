@@ -1540,6 +1540,7 @@ defmodule EmisarWeb.AgentsLive do
     groups =
       assigns.runners
       |> Enum.map(& &1.group)
+      |> Enum.reject(&(&1 in [nil, ""]))
       |> Enum.uniq()
       |> Enum.sort()
 
@@ -1555,9 +1556,11 @@ defmodule EmisarWeb.AgentsLive do
     <div class="border-b border-zinc-900 bg-zinc-950/40">
       <form phx-change="update_scope" class="space-y-4 px-6 py-4">
         <%!-- Allowed groups — picked first because they scale better
-             than per-runner ticks. Skipped when every runner is in
-             the same default group. --%>
-        <fieldset :if={length(@groups) > 1}>
+             than per-runner ticks. Shown whenever any runner declares a
+             group (a single group is a valid, useful scope: it durably
+             covers runners later added to it); hidden only when every
+             runner is ungrouped. --%>
+        <fieldset :if={@groups != []}>
           <legend class="text-sm font-medium text-zinc-200">Allowed runner groups</legend>
           <p class="mt-1 text-xs text-zinc-500">
             Tick groups this key may target. Auto-includes runners later added to the same group.
@@ -1577,9 +1580,12 @@ defmodule EmisarWeb.AgentsLive do
 
         <fieldset>
           <legend class="text-sm font-medium text-zinc-200">Allowed individual runners</legend>
-          <p class="mt-1 text-xs text-zinc-500">
-            Empty groups AND empty individual list = all runners. Tick to add specific runners on
-            top of any group selection above.
+          <p :if={@groups != []} class="mt-1 text-xs text-zinc-500">
+            Leave groups and runners unticked to allow all runners. Tick specific runners to
+            narrow on top of any groups ticked above.
+          </p>
+          <p :if={@groups == []} class="mt-1 text-xs text-zinc-500">
+            Leave unticked to allow all runners. Tick specific runners to restrict this key.
           </p>
           <%= if @runners == [] do %>
             <p class="mt-2 rounded-lg bg-zinc-900/60 p-3 text-xs text-zinc-400">
