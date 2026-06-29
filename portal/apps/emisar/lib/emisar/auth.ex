@@ -78,33 +78,6 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Audit-records a failed sign-in attempt. If `email` matches a known
-  user, the event lands on that user's primary account so an admin can
-  see "someone is probing this team member". Unknown emails are silently
-  dropped — auditing them would let an attacker enumerate accounts by
-  watching their own org's audit log.
-  """
-  def record_failed_sign_in(email, reason, context \\ %RequestContext{})
-
-  def record_failed_sign_in(email, reason, context) when is_binary(email) do
-    case Users.fetch_user_by_email(email) do
-      {:ok, user} ->
-        _ =
-          Audit.log_for_user(user, "user.sign_in_failed",
-            context: context,
-            payload: %{reason: reason}
-          )
-
-        :ok
-
-      {:error, :not_found} ->
-        :ok
-    end
-  end
-
-  def record_failed_sign_in(_, _, _), do: :ok
-
-  @doc """
   Internal — `EmisarWeb.UserAuth` (and sibling revoke-all paths) calls this
   for the user already resolved from their session, so no Subject. Deletes
   every session token for the user. Returns `{:ok, count}` so a caller can
@@ -620,9 +593,6 @@ defmodule Emisar.Auth do
     |> Enum.map(fn _ -> Crypto.mfa_recovery_code() end)
     |> Enum.unzip()
   end
-
-  def mfa_required?(%Users.User{mfa_enabled_at: nil}), do: false
-  def mfa_required?(%Users.User{}), do: true
 
   @doc """
   Verifies a second-factor TOTP code with replay protection. A bare

@@ -335,7 +335,7 @@ defmodule Emisar.UsersTest do
       assert is_nil(disabled.mfa_secret)
       assert is_nil(disabled.mfa_enabled_at)
       assert disabled.mfa_recovery_codes == []
-      refute Emisar.Auth.mfa_required?(Repo.reload!(user))
+      assert is_nil(Repo.reload!(user).mfa_enabled_at)
     end
   end
 
@@ -571,7 +571,6 @@ defmodule Emisar.UsersTest do
 
       reloaded = Repo.reload!(member)
       assert is_nil(reloaded.mfa_enabled_at)
-      refute Emisar.Auth.mfa_required?(reloaded)
     end
   end
 

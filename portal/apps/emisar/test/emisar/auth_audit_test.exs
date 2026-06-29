@@ -21,27 +21,10 @@ defmodule Emisar.AuthAuditTest do
     events
   end
 
-  describe "sign-in / sign-out / failed sign-in" do
+  describe "sign-out" do
     setup do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
       %{user: user, account: account}
-    end
-
-    test "record_failed_sign_in audits when email is known", %{user: user, account: account} do
-      assert :ok = Auth.record_failed_sign_in(user.email, "bad_credentials")
-
-      assert [event] = events_of(account, "user.sign_in_failed")
-      assert event.actor_id == user.id
-      assert event.payload["reason"] == "bad_credentials"
-    end
-
-    test "record_failed_sign_in silently drops unknown emails (anti-enumeration)" do
-      assert :ok =
-               Auth.record_failed_sign_in("ghost-#{System.unique_integer()}@nowhere.test", "x")
-
-      # Nothing to assert against — the absence of a crash + the audit-log
-      # silence is the contract. If it leaked into ANY account we'd have a
-      # security bug; harder to prove a negative cheaply here.
     end
 
     test "record_sign_out audits", %{user: user, account: account} do

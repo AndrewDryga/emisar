@@ -135,36 +135,6 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "record_failed_sign_in/3" do
-    test "audits on a KNOWN email, landing on that user's account" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-
-      assert :ok = Auth.record_failed_sign_in(user.email, "bad_credentials")
-
-      {:ok, events, _} =
-        Emisar.Audit.list_events(
-          Fixtures.Subjects.subject_for(user, account, role: :owner),
-          filter: [event_type: ["user.sign_in_failed"]]
-        )
-
-      assert [event] = events
-      assert event.actor_id == user.id
-      assert event.payload["reason"] == "bad_credentials"
-    end
-
-    test "silently drops an UNKNOWN email (anti-enumeration) — no crash" do
-      # An unknown email must not be auditable anywhere, or an attacker could
-      # enumerate accounts by watching their own org's log; the contract is the
-      # quiet :ok.
-      assert :ok =
-               Auth.record_failed_sign_in("ghost-#{System.unique_integer()}@nowhere.test", "x")
-    end
-
-    test "a non-binary email is the catch-all :ok" do
-      assert :ok = Auth.record_failed_sign_in(nil, "x")
-    end
-  end
-
   describe "delete_all_session_tokens/1" do
     test "removes every session token for the user and returns the count" do
       user = Fixtures.Users.create_user()
@@ -674,16 +644,6 @@ defmodule Emisar.AuthTest do
       # MFA stays enabled; the old plaintext code no longer matches, a new one does.
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, old_code)
       assert :ok = Auth.consume_mfa_recovery_code(Repo.reload!(user), hd(new_codes))
-    end
-  end
-
-  describe "mfa_required?/1" do
-    test "false for a user with MFA not enabled" do
-      refute Auth.mfa_required?(%User{mfa_enabled_at: nil})
-    end
-
-    test "true once mfa_enabled_at is set" do
-      assert Auth.mfa_required?(%User{mfa_enabled_at: DateTime.utc_now()})
     end
   end
 

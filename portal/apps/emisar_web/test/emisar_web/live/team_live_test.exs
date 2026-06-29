@@ -654,7 +654,6 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "2FA reset"
       reloaded = Emisar.Repo.reload!(member)
       assert is_nil(reloaded.mfa_enabled_at)
-      refute Emisar.Auth.mfa_required?(reloaded)
     end
   end
 

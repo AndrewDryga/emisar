@@ -1681,7 +1681,6 @@ defmodule Emisar.AccountsTest do
       # And it's persisted, not just on the returned struct.
       {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
       assert is_nil(reloaded.mfa_enabled_at)
-      refute Emisar.Auth.mfa_required?(reloaded)
 
       events = Emisar.Audit.list_events(owner_subject, page: [limit: 10]) |> elem(1)
       assert Enum.any?(events, &(&1.event_type == "user.mfa_reset_by_admin"))
