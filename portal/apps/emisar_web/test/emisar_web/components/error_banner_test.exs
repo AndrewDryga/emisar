@@ -7,10 +7,8 @@ defmodule EmisarWeb.Components.ErrorBannerTest do
   (it can carry a changeset/validation string — IL-16).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_error_banner(attrs, message) do

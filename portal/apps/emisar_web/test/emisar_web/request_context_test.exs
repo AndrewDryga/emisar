@@ -1,8 +1,6 @@
 defmodule EmisarWeb.RequestContextTest do
   use ExUnit.Case, async: true
-
   import Plug.Conn
-
   alias Emisar.RequestContext
   alias EmisarWeb.RequestContext, as: Builder
 

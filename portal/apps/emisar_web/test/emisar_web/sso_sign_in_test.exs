@@ -7,7 +7,6 @@ defmodule EmisarWeb.SSOSignInTest do
   contractor signs in the same way as anyone else.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Fixtures, Repo}
   alias Emisar.SSO.IdentityProvider
 
@@ -57,7 +56,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "a returning browser's recent-team button shows the slug, not just the name", %{
       conn: conn
     } do
-      account = Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
 
       # secret_key_base is needed to sign the recent-accounts cookie; a bare test
       # conn doesn't carry it until it's been through the endpoint.
@@ -78,7 +77,7 @@ defmodule EmisarWeb.SSOSignInTest do
 
   describe "POST /sign_in/sso (team picker)" do
     test "a known team address routes to that team's branded sign-in page", %{conn: conn} do
-      account = Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
 
       conn = post(conn, ~p"/sign_in/sso", team: %{slug: account.slug})
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
@@ -108,7 +107,7 @@ defmodule EmisarWeb.SSOSignInTest do
       # (200, no redirect). The signed-out prober learns only "this slug routes
       # somewhere" vs "not found" — never anything an account holder's session would
       # reveal, and knowing a slug grants nothing (the branded page is public).
-      account = Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
 
       real = post(conn, ~p"/sign_in/sso", team: %{slug: account.slug})
       assert redirected_to(real) == ~p"/app/#{account}/sign_in"
@@ -161,7 +160,7 @@ defmodule EmisarWeb.SSOSignInTest do
     test "offers the account's enabled SSO providers AND the magic-link email form", %{
       conn: conn
     } do
-      account = Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
       provider = enabled_provider(account, "Acme Okta")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
@@ -179,7 +178,7 @@ defmodule EmisarWeb.SSOSignInTest do
     end
 
     test "resolves by the account id too (the UUID form)", %{conn: conn} do
-      account = Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
       assert {:ok, _lv, html} = live(conn, ~p"/app/#{account.id}/sign_in")
       assert html =~ "Sign in to #{account.name}"
     end
@@ -200,19 +199,24 @@ defmodule EmisarWeb.SSOSignInTest do
   end
 
   describe "branded sign-in lands on that team" do
-    test "a member's branded magic-link sign-in lands on that team", %{conn: conn} do
+    setup %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
+      %{user: user, account: account}
+    end
 
+    test "a member's branded magic-link sign-in lands on that team", %{
+      user: user,
+      account: account
+    } do
       conn = magic_sign_in(user.email, ~p"/app/#{account}")
 
       assert redirected_to(conn) == ~p"/app/#{account}"
     end
 
     test "a member's branded sign-in is remembered (recent-accounts cookie written)", %{
-      conn: conn
+      user: user,
+      account: account
     } do
-      {_conn, user, account} = register_and_log_in(conn)
-
       conn = magic_sign_in(user.email, ~p"/app/#{account}")
 
       assert redirected_to(conn) == ~p"/app/#{account}"
@@ -220,10 +224,9 @@ defmodule EmisarWeb.SSOSignInTest do
       assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
     end
 
-    test "a non-member's branded sign-in lands on their default account, not a 404", %{conn: conn} do
-      {_conn, user, _account} = register_and_log_in(conn)
+    test "a non-member's branded sign-in lands on their default account, not a 404", %{user: user} do
       # A team the user has no membership in (so the branded return_to would 404).
-      other = Fixtures.account_fixture()
+      other = Fixtures.Accounts.create_account()
 
       conn = magic_sign_in(user.email, ~p"/app/#{other}")
 
@@ -234,9 +237,7 @@ defmodule EmisarWeb.SSOSignInTest do
       refute Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
     end
 
-    test "a forged non-local return_to is ignored — no open redirect", %{conn: conn} do
-      {_conn, user, _account} = register_and_log_in(conn)
-
+    test "a forged non-local return_to is ignored — no open redirect", %{user: user} do
       conn = magic_sign_in(user.email, "https://evil.test/phish")
 
       # Falls back to the default landing (bare /app → the user's account), never

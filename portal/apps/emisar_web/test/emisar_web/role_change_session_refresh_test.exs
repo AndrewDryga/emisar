@@ -6,19 +6,29 @@ defmodule EmisarWeb.RoleChangeSessionRefreshTest do
   powers until they navigate. An elevation or no-op keeps the sockets.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Accounts, Auth, Fixtures}
 
   setup do
-    account = Fixtures.account_fixture()
-    owner = Fixtures.user_fixture()
-    _ = Fixtures.membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
-    owner_subject = Fixtures.subject_for(owner, account, role: :owner)
+    account = Fixtures.Accounts.create_account()
+    owner = Fixtures.Users.create_user()
 
-    member = Fixtures.user_fixture()
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+    owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+    member = Fixtures.Users.create_user()
 
     membership =
-      Fixtures.membership_fixture(account_id: account.id, user_id: member.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
 
     # A live session for the member → the socket topic a disconnect targets.
     token = Auth.create_session_token!(member, :magic_link, false)

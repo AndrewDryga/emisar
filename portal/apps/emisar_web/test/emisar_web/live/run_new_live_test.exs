@@ -5,17 +5,14 @@ defmodule EmisarWeb.RunNewLiveTest do
   field (rose border, message beneath it), not in a flash banner.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Auth.Subject
   alias Emisar.{Repo, Runners, Runs}
 
   defp action_with_required_arg(account) do
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.tail_log",
         args_schema: %{
@@ -36,10 +33,10 @@ defmodule EmisarWeb.RunNewLiveTest do
   # An action declaring two integer args, so a single submit can exercise
   # both the bad-integer parse error and the all-errors-at-once collection.
   defp action_with_two_int_args(account) do
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.kill_pid",
         risk: "low",
@@ -87,10 +84,10 @@ defmodule EmisarWeb.RunNewLiveTest do
   # plus the reason textarea.
   test "renders the action context panel + meta strip + an input per arg", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.tail_log",
         title: "Tail a log file",
@@ -132,10 +129,10 @@ defmodule EmisarWeb.RunNewLiveTest do
   # "Side effects" warning panel listing each effect.
   test "renders the side-effects warning when the action declares any", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.reboot",
         side_effects: ["restarts the host", "drops all active connections"]
@@ -150,8 +147,15 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "an enforcing runner replaces the Dispatch button with a signed-only notice", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: true)
-    action = action_fixture(runner: runner, action_id: "linux.uptime")
+
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        enforce_signatures: true,
+        connected?: true
+      )
+
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
@@ -179,7 +183,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "an unknown action bounces back to the runner page", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
              live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/no.such_action")
@@ -190,7 +194,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a blank reason refuses to dispatch", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -205,7 +209,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a valid dispatch navigates to the run detail page", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -226,7 +230,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     # Deny everything at every risk tier.
     _ =
-      policy_fixture(
+      Fixtures.Policies.create_policy(
         account_id: account.id,
         created_by_id: user.id,
         rules: %{
@@ -258,8 +262,14 @@ defmodule EmisarWeb.RunNewLiveTest do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
 
-    viewer = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, lv, _html} =
       build_conn()
@@ -279,8 +289,10 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a high-risk action's dispatch button asks for confirmation", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
-    action = action_fixture(runner: runner, action_id: "linux.reboot", risk: "critical")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
@@ -290,10 +302,10 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.tail_log",
         risk: "high",
@@ -323,8 +335,10 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a low-risk action's dispatch button does not confirm", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
-    action = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
@@ -334,8 +348,8 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "an offline runner warns the run will queue", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id, connected?: false)
-    action = action_fixture(runner: runner, action_id: "linux.uptime")
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     # The runner is only looked up on the connected render, so assert
     # against render/1.
@@ -348,11 +362,17 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a viewer sees a note instead of the dispatch button", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
-    action = action_fixture(runner: runner, action_id: "linux.uptime")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
-    viewer = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, lv, html} =
       build_conn()
@@ -386,7 +406,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # server check and flash.)
   test "a runner that's gone at dispatch time → :runner_not_found flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -408,7 +428,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # the operator at reloading for a current action.
   test "an action gone at dispatch time → :action_not_found flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -430,12 +450,16 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a runner outside the operator's scope → :runner_out_of_scope flash, no run", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
-    _ = policy_fixture(account_id: account.id, created_by_id: owner.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
 
-    operator = user_fixture()
+    operator = Fixtures.Users.create_user()
 
     membership =
-      membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     # Scope the operator to a group that ISN'T this runner's ("default").
     {:ok, _} =
@@ -461,8 +485,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   # is advertised so mount loads; `check_pack_trust` refuses at dispatch.
   test "an untrusted pack → :pack_untrusted flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
-    runner = runner_fixture(account_id: account.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # A custom (no-baseline) pack advertises an action and lands :pending —
     # the runner advertises a hash no operator has trusted.
@@ -500,9 +524,16 @@ defmodule EmisarWeb.RunNewLiveTest do
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
-    runner = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: true)
-    action = action_fixture(runner: runner, action_id: "linux.uptime")
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        enforce_signatures: true,
+        connected?: true
+      )
+
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
@@ -524,7 +555,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {conn, user, account} = register_and_log_in(conn)
 
     _ =
-      policy_fixture(
+      Fixtures.Policies.create_policy(
         account_id: account.id,
         created_by_id: user.id,
         rules: %{
@@ -560,7 +591,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {conn, user, account} = register_and_log_in(conn)
 
     _ =
-      policy_fixture(
+      Fixtures.Policies.create_policy(
         account_id: account.id,
         created_by_id: user.id,
         rules: %{
@@ -596,7 +627,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # the underlying capability predicate the gate relies on.
   test "a :runner subject is excluded from the dispatch permission", %{conn: conn} do
     {_conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     runner_subject = Subject.for_runner(runner, account)
 
@@ -608,7 +639,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # is dispatched.
   test "a bad integer arg renders an inline error on the field, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = policy_fixture(account_id: account.id, created_by_id: user.id)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_two_int_args(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -653,10 +684,14 @@ defmodule EmisarWeb.RunNewLiveTest do
   # key; validate must default to the existing params, not FunctionClauseError.
   test "validate on a zero-arg action (no args key) doesn't crash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
-      action_fixture(runner: runner, action_id: "linux.uptime", args_schema: %{"args" => []})
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        args_schema: %{"args" => []}
+      )
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
@@ -675,7 +710,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     conn: conn
   } do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # A deliberately weird arg name that is very unlikely to already exist as an
     # atom in the VM. `to_existing_atom` raising on it AFTER the form renders
@@ -683,7 +718,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     arg_name = "zztop_#{System.unique_integer([:positive])}_arg"
 
     action =
-      action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "custom.weird",
         args_schema: %{

@@ -2,8 +2,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   use EmisarWeb.ConnCase, async: true
 
   describe "GET /app/runbooks/new" do
-    test "renders the visual step builder", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "renders the visual step builder", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       # Top-level shape: step list with add button. Each step is an
@@ -21,8 +25,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert after_count == before_count + 1
     end
 
-    test "step-card fields associate their label with the control via for/id", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "step-card fields associate their label with the control via for/id", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       # The new editor renders one step (index 0); each labelled field carries a
@@ -34,8 +40,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       end
     end
 
-    test "Action field renders before Step ID — picking action auto-derives id", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "Action field renders before Step ID — picking action auto-derives id", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       # In the rendered step card, the Action <input name="action_id">
@@ -61,8 +69,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html2 =~ ~s(value="step123")
     end
 
-    test "custom step id is preserved when action changes", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "custom step id is preserved when action changes", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       # Operator types a custom id first.
@@ -89,11 +96,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "runner targets are a multi-select of the account's groups, saved as a list", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-us")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-us")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -122,10 +129,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert step["runner_selector"] == %{"group" => ["edge-eu", "edge-us"]}
     end
 
-    test "the kind + targets selects reflect the picked values after a change", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-us")
+    test "the kind + targets selects reflect the picked values after a change", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-us")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -146,9 +155,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ ~r/<option(?=[^>]*\bvalue="edge-us")(?=[^>]*\bselected)[^>]*>/
     end
 
-    test "a step with no target selected is flagged inline, not only at publish", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+    test "a step with no target selected is flagged inline, not only at publish", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -180,11 +191,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "GET /app/runbooks/:id/edit (open by id)" do
-    test "a non-existent (well-formed) id flashes not-found and redirects to the library", %{
-      conn: conn
-    } do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
 
+    test "a non-existent (well-formed) id flashes not-found and redirects to the library", %{
+      conn: conn,
+      account: account
+    } do
       missing = Emisar.Repo.generate_id()
       to = ~p"/app/#{account}/runbooks"
 
@@ -194,9 +209,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert flash["error"] =~ "not found"
     end
 
-    test "a garbage (non-uuid) id flashes not-found and redirects to the library", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "a garbage (non-uuid) id flashes not-found and redirects to the library", %{
+      conn: conn,
+      account: account
+    } do
       to = ~p"/app/#{account}/runbooks"
 
       assert {:error, {:live_redirect, %{to: ^to, flash: flash}}} =
@@ -207,10 +223,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "metadata validation" do
-    test "blank title shows an inline field error on save, not a flash", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv, html: html}
+    end
 
+    test "blank title shows an inline field error on save, not a flash", %{lv: lv} do
       # Title starts blank; saving fails the changeset's title requirement. The
       # error renders inline under the Title input via <.error>…
       html = render_click(lv, "save", %{})
@@ -223,10 +242,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
     end
 
-    test "an invalid slug shows an inline error live on change", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "an invalid slug shows an inline error live on change", %{lv: lv} do
       # Slugs must start with a lowercase letter — an UPPERCASE value is
       # rejected and surfaces inline as the operator types, before any save.
       html =
@@ -236,10 +252,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "Could not save runbook"
     end
 
-    test "a fresh form paints no field error before any change/save", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "a fresh form paints no field error before any change/save", %{html: html} do
       # Title is required + blank on a new form, but `<.input>` gates errors on
       # `used_input?` — an untouched field shows nothing until validate/save.
       refute html =~ "can&#39;t be blank"
@@ -247,10 +260,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "has invalid format"
     end
 
-    test "a valid title + slug round-trips through meta_change with no error", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "a valid title + slug round-trips through meta_change with no error", %{lv: lv} do
       html = render_change(lv, "meta_change", %{"title" => "Repair", "slug" => "rolling-repair"})
 
       # The typed values are reflected back into the inputs…
@@ -262,10 +272,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "can't be blank"
     end
 
-    test "an 81-character title is rejected inline (length 1–80)", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "an 81-character title is rejected inline (length 1–80)", %{lv: lv} do
       # The form changeset bounds the title to 80 chars — an 81-char one surfaces
       # the length violation inline on the Title field once validate runs (no flash).
       html = render_change(lv, "meta_change", %{"title" => String.duplicate("a", 81)})
@@ -276,6 +283,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "save / publish lifecycle" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
     defp fill_minimal_runbook(lv) do
       render_change(lv, "meta_change", %{"title" => "Disk triage", "slug" => ""})
 
@@ -288,8 +300,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       })
     end
 
-    test "save persists a draft and navigates to the index", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "save persists a draft and navigates to the index", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       fill_minimal_runbook(lv)
@@ -305,8 +316,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                runbook.definition["steps"]
     end
 
-    test "publish persists and marks the runbook published", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "publish persists and marks the runbook published", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       fill_minimal_runbook(lv)
@@ -316,9 +326,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert [%{status: :published}] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
     end
 
-    test "editing an existing runbook saves a NEW version, not an overwrite", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+    test "editing an existing runbook saves a NEW version, not an overwrite", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, original} =
         Emisar.Runbooks.create_runbook(
@@ -345,13 +358,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Enum.max_by(runbooks, & &1.version).title == "Patch night v2"
     end
 
-    test "a viewer cannot save", %{conn: conn} do
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
-
-      viewer = Emisar.Fixtures.user_fixture()
+    test "a viewer cannot save", %{account: account} do
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -365,9 +376,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "a structural definition error surfaces on the Steps panel, not as a flash", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
-      {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       render_change(lv, "meta_change", %{"title" => "Too many targets", "slug" => ""})
@@ -395,9 +406,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
     end
 
-    test "the success flash names the new version saved", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+    test "the success flash names the new version saved", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, v1} =
         Emisar.Runbooks.create_runbook(
@@ -422,10 +436,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "editing a published runbook shows the immutability note in the version aside", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, published} =
         Emisar.Runbooks.create_runbook(
@@ -457,9 +472,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "v#{published.version + 1}"
     end
 
-    test "there is no unpublish — a published runbook offers only save/publish", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+    test "there is no unpublish — a published runbook offers only save/publish", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, published} =
         Emisar.Runbooks.create_runbook(
@@ -497,9 +515,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   describe "per-step risk" do
     test "each step card shows its action's risk tier from the catalog", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
 
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
@@ -524,10 +542,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "step manipulation" do
-    test "remove, move, and arg add/remove reshape the step list", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv}
+    end
 
+    test "remove, move, and arg add/remove reshape the step list", %{lv: lv} do
       # Two steps: give them distinct ids, then move step 1 up.
       render_change(lv, "step_change", %{
         "index" => "0",
@@ -565,10 +586,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert count_step_cards(render(lv)) == before_count - 1
     end
 
-    test "a crafted non-numeric index is a no-op, not a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "a crafted non-numeric index is a no-op, not a crash", %{lv: lv} do
       before_html = render(lv)
       render_click(lv, "remove_step", %{"index" => "NaN"})
       render_click(lv, "move_step", %{"index" => "-1", "dir" => "up"})
@@ -578,10 +596,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "add a step (RBK-011)" do
-    test "add appends a BLANK card with an auto-derivable placeholder id", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv}
+    end
 
+    test "add appends a BLANK card with an auto-derivable placeholder id", %{lv: lv} do
       before_count = count_step_cards(render(lv))
       html = render_click(lv, "add_action_step", %{})
       assert count_step_cards(html) == before_count + 1
@@ -597,10 +618,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Enum.all?(step_id_values(html), &(&1 =~ ~r/^step\d+$/))
     end
 
-    test "two added steps never collide on id", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "two added steps never collide on id", %{lv: lv} do
       render_click(lv, "add_action_step", %{})
       html = render_click(lv, "add_action_step", %{})
 
@@ -611,10 +629,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert ids == Enum.uniq(ids)
     end
 
-    test "a blank added step saves as a draft (completeness deferred to publish)", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "a blank added step saves as a draft (completeness deferred to publish)", %{
+      account: account,
+      lv: lv
+    } do
       # Title is required for any save; the steps stay blank (seeded + added).
       render_change(lv, "meta_change", %{"title" => "Draft with blanks", "slug" => ""})
       render_click(lv, "add_action_step", %{})
@@ -628,10 +646,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert length(runbook.definition["steps"]) == 2
     end
 
-    test "adding from an empty list replaces the empty-state", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "adding from an empty list replaces the empty-state", %{lv: lv} do
       # Drop the single seeded step → the Steps panel shows its empty-state.
       empty = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(empty) == 0
@@ -645,17 +660,17 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "remove a step (RBK-012)" do
-    test "the trash button carries a confirm", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv, html: html}
+    end
 
+    test "the trash button carries a confirm", %{html: html} do
       assert html =~ ~s(data-confirm="Remove this step?")
     end
 
-    test "removing the only step returns the empty-state", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "removing the only step returns the empty-state", %{lv: lv} do
       # A fresh :new editor seeds exactly one step; removing it leaves none.
       html = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(html) == 0
@@ -664,11 +679,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "reorder a step (RBK-013)" do
-    test "move-up at the first / move-down at the last are no-ops with the end buttons disabled",
-         %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv, html: html}
+    end
 
+    test "move-up at the first / move-down at the last are no-ops with the end buttons disabled",
+         %{lv: lv} do
       # Give the seeded step a stable id, then add a second so first/last differ.
       render_change(lv, "step_change", %{
         "index" => "0",
@@ -706,10 +724,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~r/<button(?=[^>]*phx-value-dir="down")(?=[^>]*phx-value-index="1")(?=[^>]*\bdisabled)[^>]*>/
     end
 
-    test "a single-step list disables both move buttons", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "a single-step list disables both move buttons", %{html: html} do
       # The lone seeded step is both first (index 0) and last (total-1), so
       # its up AND down buttons are disabled.
       assert html =~
@@ -721,17 +736,25 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "edit a step's action (RBK-014)" do
-    test "the action datalist lists the COMPLETE catalog with no truncation", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "the action datalist lists the COMPLETE catalog with no truncation", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # Advertise > 35 actions; the picker must offer every one (the same
       # complete set MCP reads), never a paginated page.
       action_ids = for n <- 1..40, do: "pack.action_#{String.pad_leading("#{n}", 3, "0")}"
 
       for action_id <- action_ids do
-        Emisar.Fixtures.action_fixture(runner: runner, action_id: action_id)
+        Fixtures.Catalog.create_action(runner: runner, action_id: action_id)
       end
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
@@ -744,13 +767,16 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       end
     end
 
-    test "an uncataloged typed action shows no risk pill", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "an uncataloged typed action shows no risk pill", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       # A high-risk action IS cataloged, so a rose pill is what shows when it's
       # the chosen action — proving the absence below is the unknown-action path.
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
       assert is_struct(subject, Emisar.Auth.Subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
@@ -771,8 +797,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "ring-brand-500/30"
     end
 
-    test "a blank/unknown action is allowed in a draft save", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "a blank/unknown action is allowed in a draft save", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       render_change(lv, "meta_change", %{"title" => "Blank action", "slug" => ""})
@@ -796,10 +821,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "edit a step's id (RBK-015)" do
-    test "a blank action does not auto-derive the step id", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv}
+    end
 
+    test "a blank action does not auto-derive the step id", %{lv: lv} do
       # Placeholder id is still in place, but the auto-derive guard requires a
       # non-blank action_id — with a blank action the placeholder must stand.
       [seeded_id] = step_id_values(render(lv))
@@ -816,10 +844,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert step_id_values(html) == [seeded_id]
     end
 
-    test "the auto-derived step id is capped at 40 chars", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "the auto-derived step id is capped at 40 chars", %{lv: lv} do
       [seeded_id] = step_id_values(render(lv))
 
       # A very long action id (non-alnum → "_") derives a step id sliced to 40.
@@ -838,10 +863,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert String.length(derived) == 40
     end
 
-    test "typing `step5` is treated as not-customized and still auto-derives", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "typing `step5` is treated as not-customized and still auto-derives", %{lv: lv} do
       # `step5` matches the `^step\d+$` placeholder regex, so picking an action
       # overwrites it (acceptable — it reads like an auto id, not a deliberate name).
       html =
@@ -856,10 +878,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert step_id_values(html) == ["linux_df"]
     end
 
-    test "the step_id form key remaps to the canonical id key", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "the step_id form key remaps to the canonical id key", %{account: account, lv: lv} do
       render_change(lv, "meta_change", %{"title" => "Remap", "slug" => ""})
 
       # The form posts `step_id` (to avoid clashing with the HTML element id);
@@ -881,14 +900,22 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "edit a step's args (RBK-016)" do
-    test "per-action arg suggestions render in a datalist", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "per-action arg suggestions render in a datalist", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # The action advertises two args → the editor builds a per-action datalist
       # (`args-{action}`) listing the union of advertised arg names.
-      Emisar.Fixtures.action_fixture(
+      Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.tail",
         args_schema: %{"args" => [%{"name" => "path"}, %{"name" => "lines"}]}
@@ -903,15 +930,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert datalist =~ ~s(value="lines")
     end
 
-    test "an action with no advertised args hides the \"Known for\" hint", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "an action with no advertised args hides the \"Known for\" hint", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # linux.uptime is cataloged but advertises NO args (the default empty
       # args_schema) → its args_by_action entry is [], so the arg editor's
       # `:if={@known_args != []}` "Known for …" hint must not render.
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       assert is_struct(subject, Emisar.Auth.Subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
@@ -932,10 +962,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
 
     test "step add/remove are socket-only — nothing persists, no audit row, until Save", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -952,8 +983,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute Enum.any?(events, &(&1.event_type == "runbook.created"))
     end
 
-    test "blank arg-key pairs are dropped on flatten; values are stored as strings", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "blank arg-key pairs are dropped on flatten; values are stored as strings", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       render_change(lv, "meta_change", %{"title" => "Arg flatten", "slug" => ""})
@@ -997,9 +1030,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "set a step's target (RBK-017)" do
-    test "a kind switch clears stale selected values", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+      %{conn: conn, account: account}
+    end
+
+    test "a kind switch clears stale selected values", %{conn: conn, account: account} do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
@@ -1027,9 +1064,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ ~r/<option(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bselected)[^>]*>/
     end
 
-    test "an empty multi-select posts nothing and defaults values to []", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+    test "an empty multi-select posts nothing and defaults values to []", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
       render_change(lv, "meta_change", %{"title" => "No target", "slug" => ""})
@@ -1062,8 +1101,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert step["runner_selector"] == %{"group" => []}
     end
 
-    test "no runners/groups yet → the picker shows guidance", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "no runners/groups yet → the picker shows guidance", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       # Default kind is "group" and the account has none yet.
@@ -1082,9 +1120,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "No runners connected yet."
     end
 
-    test "a selected-but-now-absent target is preserved in the options", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+    test "a selected-but-now-absent target is preserved in the options", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge-eu")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
       render_change(lv, "meta_change", %{"title" => "Ghost target", "slug" => ""})
@@ -1113,10 +1153,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   describe "edit metadata (RBK-018)" do
-    test "a blank slug surfaces no slug error (nilified for auto-derive)", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      %{conn: conn, account: account, lv: lv, html: html}
+    end
 
+    test "a blank slug surfaces no slug error (nilified for auto-derive)", %{lv: lv} do
       # A valid title with a blank slug must not raise a format error — the
       # changeset nilifies the empty slug; Save derives it from the title.
       html = render_change(lv, "meta_change", %{"title" => "Rolling repair", "slug" => ""})
@@ -1126,10 +1169,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "can't be blank"
     end
 
-    test "the metadata form posts FLAT keys, not runbook[...] keys", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "the metadata form posts FLAT keys, not runbook[...] keys", %{html: html} do
       # Each metadata <.input> carries an explicit flat name + id so meta_change
       # reads top-level "title"/"slug"/"description" (no `runbook[title]` nesting).
       assert html =~ ~s(name="title")
@@ -1139,10 +1179,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ ~s(name="runbook[title]")
     end
 
-    test "the metadata changeset never validates the step definition", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
-
+    test "the metadata changeset never validates the step definition", %{lv: lv} do
       # The step in socket state is blank (no action, no target) — a definition
       # changeset would reject it — but the form-only changeset casts just
       # title/slug/description, so meta_change surfaces no Steps error.

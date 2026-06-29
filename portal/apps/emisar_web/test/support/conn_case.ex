@@ -6,21 +6,18 @@ defmodule EmisarWeb.ConnCase do
   """
 
   use ExUnit.CaseTemplate
+  alias Emisar.Fixtures
 
   using do
     quote do
       @endpoint EmisarWeb.Endpoint
 
       use EmisarWeb, :verified_routes
-
       import Plug.Conn
       import Phoenix.ConnTest
       import Phoenix.LiveViewTest
       import EmisarWeb.ConnCase
-
-      if Code.ensure_loaded?(Emisar.Fixtures) do
-        import Emisar.Fixtures
-      end
+      alias Emisar.Fixtures
     end
   end
 
@@ -57,14 +54,14 @@ defmodule EmisarWeb.ConnCase do
 
     # Plan lives on the account's subscription now (no `accounts.plan`
     # column). Pop a `:plan` override and mint a matching subscription for a
-    # paid tier, mirroring `Fixtures.account_fixture`'s shim.
+    # paid tier, mirroring `Fixtures.Accounts.create_account`'s shim.
     {plan, account_overrides} =
       attrs |> Map.get(:account, %{}) |> Map.new() |> Map.pop(:plan, "free")
 
     account_attrs = Map.merge(%{name: "Test Co"}, account_overrides)
 
     {:ok, user} = Emisar.Users.register_user(user_attrs)
-    user = Emisar.Fixtures.confirm_user(user)
+    user = Fixtures.Users.confirm_user(user)
 
     {:ok, account} =
       Emisar.Accounts.create_account_with_owner(
@@ -72,14 +69,14 @@ defmodule EmisarWeb.ConnCase do
         user
       )
 
-    if plan != "free", do: Emisar.Fixtures.subscription_fixture(account, plan)
+    if plan != "free", do: Fixtures.Accounts.create_subscription(account, plan)
 
     {log_in_user(conn, user), user, account}
   end
 
   @doc "Builds an owner `%Subject{}` for a user + account pair (test convenience)."
   def owner_subject(user, account) do
-    Emisar.Fixtures.subject_for(user, account, role: :owner)
+    Fixtures.Subjects.subject_for(user, account, role: :owner)
   end
 
   @doc """

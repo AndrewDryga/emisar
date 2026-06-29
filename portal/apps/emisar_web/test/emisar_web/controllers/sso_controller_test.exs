@@ -5,7 +5,6 @@ defmodule EmisarWeb.SSOControllerTest do
   begin/stash + callback/login plumbing with canned claims and no live IdP.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Fixtures, Repo}
   alias Emisar.SSO.IdentityProvider
 
@@ -16,10 +15,9 @@ defmodule EmisarWeb.SSOControllerTest do
     @behaviour Emisar.SSO.OIDC
 
     @impl Emisar.SSO.OIDC
-    def begin_authorization(_provider, _opts),
-      do:
-        {:ok,
-         %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    def begin_authorization(_provider, _opts) do
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
 
     # The test supplies the validated claims via `params["_claims"]`.
     @impl Emisar.SSO.OIDC
@@ -35,10 +33,9 @@ defmodule EmisarWeb.SSOControllerTest do
     @behaviour Emisar.SSO.OIDC
 
     @impl Emisar.SSO.OIDC
-    def begin_authorization(_provider, _opts),
-      do:
-        {:ok,
-         %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    def begin_authorization(_provider, _opts) do
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
 
     @impl Emisar.SSO.OIDC
     def verify_callback(_provider, _params, _stashed), do: {:error, :token_endpoint_unreachable}
@@ -63,7 +60,7 @@ defmodule EmisarWeb.SSOControllerTest do
   end
 
   defp enterprise_account do
-    {_user, account, _subject} = Fixtures.owner_subject_fixture(%{plan: "enterprise"})
+    {_user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     account
   end
 
@@ -248,7 +245,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
     test "an SSO session is exempt from the account's require_mfa (decision 4)", %{conn: conn} do
       account = enterprise_account()
-      {:ok, account} = account |> Ecto.Changeset.change(require_mfa: true) |> Repo.update()
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|mfa-exempt", "email" => "exempt@acme.test", "hd" => "acme.test"}
 
@@ -274,7 +271,7 @@ defmodule EmisarWeb.SSOControllerTest do
       conn: conn
     } do
       account = enterprise_account()
-      {:ok, account} = account |> Ecto.Changeset.change(require_mfa: true) |> Repo.update()
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       provider = provider_fixture(account, satisfies_mfa: false)
       claims = %{"sub" => "okta|nomfa", "email" => "nomfa@acme.test", "hd" => "acme.test"}
 

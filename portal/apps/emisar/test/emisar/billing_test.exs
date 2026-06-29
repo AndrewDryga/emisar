@@ -25,13 +25,11 @@ end
 
 defmodule Emisar.BillingTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Auth.Subject
   alias Emisar.Billing
   alias Emisar.Billing.Subscription
   alias Emisar.BillingTest.ErrorPaddleClient
+  alias Emisar.Fixtures
 
   describe "plans/0" do
     test "has free, team, enterprise" do
@@ -42,18 +40,34 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "account_plan/1 + sso_available?/1 + directory_sync_available?/1 — derived from the subscription" do
-    test "no subscription → free, SSO + directory sync locked" do
-      account = account_fixture()
+  describe "plan/1" do
+    test "maps a known plan name to its definition" do
+      # Each name resolves to the same map plans/0 exposes — the per-name accessor.
+      assert Billing.plan("free") == Billing.plans()["free"]
+      assert Billing.plan("team").monthly_price_cents == 2000
+      assert Billing.plan("enterprise").runners_limit == :unlimited
+    end
 
+    test "an unknown plan name is nil (callers degrade it to free-tier limits)" do
+      # A renamed/legacy plan name isn't in the map — plan/1 returns nil and the
+      # callers (check_limit, billing_summary) fall back to plan("free").
+      assert is_nil(Billing.plan("platinum"))
+    end
+  end
+
+  describe "account_plan/1" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "no subscription → free, SSO + directory sync locked", %{account: account} do
       assert Billing.account_plan(account) == "free"
       refute Billing.sso_available?(account)
       refute Billing.directory_sync_available?(account)
     end
 
-    test "Team unlocks OIDC SSO but not SCIM directory sync" do
-      account = account_fixture()
-      subscription_fixture(account, "team")
+    test "Team unlocks OIDC SSO but not SCIM directory sync", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
 
       assert Billing.account_plan(account) == "team"
       assert Billing.sso_available?(account)
@@ -61,21 +75,19 @@ defmodule Emisar.BillingTest do
       refute Billing.directory_sync_available?(account)
     end
 
-    test "an enterprise subscription unlocks SSO + SCIM directory sync" do
-      account = account_fixture()
-      subscription_fixture(account, "enterprise")
+    test "an enterprise subscription unlocks SSO + SCIM directory sync", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "enterprise")
 
       assert Billing.account_plan(account) == "enterprise"
       assert Billing.sso_available?(account)
       assert Billing.directory_sync_available?(account)
     end
 
-    test "status-agnostic: a canceled subscription still grants its plan" do
+    test "status-agnostic: a canceled subscription still grants its plan", %{account: account} do
       # Billing status is advisory today — it informs (banners), it never
       # restricts — so a lapsed subscription keeps resolving to its plan
       # until status enforcement becomes a deliberate product decision.
-      account = account_fixture()
-      subscription_fixture(account, "enterprise", status: "canceled")
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
 
       assert Billing.account_plan(account) == "enterprise"
       assert Billing.sso_available?(account)
@@ -89,7 +101,7 @@ defmodule Emisar.BillingTest do
       Application.put_env(:emisar, :paddle_price_ids, %{"enterprise" => "pri_ent_01"})
       on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
 
-      account = account_fixture(%{paddle_customer_id: "ctm_upgrade_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upgrade_01"})
       refute Billing.sso_available?(account)
 
       event = subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01")
@@ -102,34 +114,303 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "headroom/2" do
-    test ":ok when more than one slot free" do
-      assert Billing.headroom(%{runner_count: 1, runner_limit: 3}, :runners) == :ok
+  describe "sso_available?/1" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
     end
 
-    test ":warning when exactly one slot free" do
-      assert Billing.headroom(%{runner_count: 2, runner_limit: 3}, :runners) == :warning
+    test "true on Team and Enterprise (both include OIDC SSO)", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
+      assert Billing.sso_available?(account)
+
+      enterprise = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(enterprise, "enterprise")
+      assert Billing.sso_available?(enterprise)
     end
 
-    test ":at_limit when used == limit" do
-      assert Billing.headroom(%{runner_count: 3, runner_limit: 3}, :runners) == :at_limit
+    test "false on Free (never subscribed) — SSO is a paid feature", %{account: account} do
+      refute Billing.sso_available?(account)
+    end
+  end
+
+  describe "directory_sync_available?/1" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
     end
 
-    test ":at_limit also when used > limit (operator deleted plan-tier-gated rows)" do
-      assert Billing.headroom(%{runner_count: 5, runner_limit: 3}, :runners) == :at_limit
+    test "true only on Enterprise (SCIM directory sync is Enterprise-only)", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+      assert Billing.directory_sync_available?(account)
     end
 
-    test ":unlimited bypasses everything" do
-      assert Billing.headroom(%{runner_count: 100, runner_limit: :unlimited}, :runners) ==
-               :unlimited
+    test "false on Free and on Team (SCIM stays above Team)", %{account: account} do
+      # Free (never subscribed) is locked…
+      refute Billing.directory_sync_available?(account)
+
+      # …and so is Team — SSO unlocks at Team but SCIM does not.
+      team = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(team, "team")
+      refute Billing.directory_sync_available?(team)
+    end
+  end
+
+  describe "upsert_subscription/2 — unique_constraint backstop" do
+    test "a concurrent first-insert loses on the per-account unique index" do
+      # upsert_subscription peeks-then-inserts, so two callers that both peek-miss
+      # would both try to INSERT for the same account. unique_index(:subscriptions,
+      # [:account_id]) backstops the race: the second insert hits the constraint and
+      # is mapped to an invalid changeset (Paddle's redelivery then takes the update
+      # branch). Drive both inserts directly to exercise the constraint.
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, %Subscription{}} =
+               Subscription.Changeset.upsert(%{
+                 account_id: account.id,
+                 plan: "team",
+                 status: "active"
+               })
+               |> Repo.insert()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Subscription.Changeset.upsert(%{
+                 account_id: account.id,
+                 plan: "team",
+                 status: "active"
+               })
+               |> Repo.insert()
+
+      assert {"has already been taken", _} = changeset.errors[:account_id]
+    end
+  end
+
+  describe "upsert_subscription/2 — partial reconciliation preserves untouched fields" do
+    test "a status+period-only upsert leaves plan + cycle-note columns intact" do
+      # The BillingSync worker upserts ONLY %{status, current_period_end} — exactly
+      # the partial attr set the peek-then-update path is built for. The existing
+      # row's plan/paddle_price_id/cancel_at_period_end/trial_end are keys ABSENT
+      # from those attrs, so they survive (the documented "relies on existing plan"
+      # write-gap: the sweep never refreshes plan/cycle fields).
+      account = Fixtures.Accounts.create_account()
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_partial_recon",
+          paddle_price_id: "pri_team_01",
+          plan: "team",
+          status: "active"
+        })
+
+      period_end = DateTime.utc_now() |> DateTime.add(30 * 86_400, :second)
+
+      assert {:ok, %Subscription{}} =
+               Billing.upsert_subscription(account.id, %{
+                 status: "past_due",
+                 current_period_end: period_end
+               })
+
+      reloaded =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
+
+      # Only the two reconciled fields moved…
+      assert reloaded.status == "past_due"
+      assert %DateTime{} = reloaded.current_period_end
+      # …plan + price + the cycle-note defaults are untouched (absent from the attrs).
+      assert reloaded.plan == "team"
+      assert reloaded.paddle_price_id == "pri_team_01"
+      assert reloaded.cancel_at_period_end == false
+      assert is_nil(reloaded.trial_end)
+    end
+  end
+
+  describe "check_limit/2 — downgrade past current usage is not reconciled" do
+    test "FINDING: existing over-cap runners keep running; only NEW ones are blocked" do
+      # Downgrading below current usage (Team→Free here, via cancel) does NOT sweep
+      # the excess runners — check_limit only gates the fresh-insert / re-enable
+      # path. So an account that drops to a smaller cap keeps every already-counted
+      # runner, and the NEXT register is what's refused. Assert the documented
+      # un-reconciled state.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_downgrade_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_downgrade_01",
+          plan: "team",
+          status: "active"
+        })
+
+      # Five billable runners — fine under Team's 100 cap.
+      for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      assert :ok = Billing.check_limit(account, :runners)
+
+      # Cancel drops the entitlement back to free (cap 3). The five existing runners
+      # are NOT touched — count is still 5, well over the new cap.
+      assert {:ok, _} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_downgrade_01"}
+               })
+
+      assert Emisar.Runners.count_billable_runners(account.id) == 5
+
+      # account_plan is status-agnostic, so "team" still resolves even after cancel;
+      # set the plan to free to model the real downgrade and prove the gate then
+      # blocks only the NEXT runner while the over-cap five keep running.
+      {:ok, _} = Billing.upsert_subscription(account.id, %{plan: "free", status: "canceled"})
+
+      assert Billing.account_plan(account) == "free"
+      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+    end
+  end
+
+  describe "start_checkout/3" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
     end
 
-    test "members uses the member_count/limit fields" do
-      assert Billing.headroom(%{member_count: 0, member_limit: 1}, :members) == :warning
-      assert Billing.headroom(%{member_count: 1, member_limit: 1}, :members) == :at_limit
+    test "rejects a plan name we do not sell", %{account: account, subject: subject} do
+      assert {:error, :unknown_plan} = Billing.start_checkout(account, "platinum", subject)
+    end
 
-      assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) ==
-               :unlimited
+    test "returns the stub checkout URL when no Paddle price id is configured", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:ok, "/paddle-checkout-stub?plan=team"} =
+               Billing.start_checkout(account, "team", subject)
+    end
+
+    test "an admin (manage_billing is owner-only) is refused with :unauthorized", %{
+      account: account
+    } do
+      admin = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+
+      assert {:error, :unauthorized} = Billing.start_checkout(account, "team", admin_subject)
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account, admin_subject)
+    end
+
+    test "the owner of another account is denied checkout AND portal for account A" do
+      # Account-B's owner holds manage_billing on B, but ensure_subject_owns_account
+      # binds the gate to the subject's own account — so acting on A is :unauthorized.
+      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :unauthorized} = Billing.start_checkout(account_a, "team", subject_b)
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account_a, subject_b)
+    end
+  end
+
+  describe "open_billing_portal/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "an account that never subscribed has no portal", %{account: account, subject: subject} do
+      assert {:error, :no_customer} = Billing.open_billing_portal(account, subject)
+    end
+
+    test "returns the stub portal URL when no Paddle key is configured", %{
+      account: account,
+      subject: subject
+    } do
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:ok, url} = Billing.open_billing_portal(account, subject)
+      assert url =~ "/app/settings/billing?status=stub-portal"
+    end
+
+    test "an owner of another account is refused", %{account: account} do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account, subject_b)
+    end
+  end
+
+  describe "ensure_paddle_customer/2" do
+    test "threads the acting user's email to Paddle on first creation" do
+      # The test stub derives the customer id from the email it receives,
+      # so two owners with different emails must yield different customer
+      # ids. Before the fix (email: nil) both produced the same id.
+      {_user_a, account_a, subject_a} =
+        Fixtures.Subjects.owner_subject(%{name: "Acct A"})
+
+      {_user_b, account_b, subject_b} =
+        Fixtures.Subjects.owner_subject(%{name: "Acct B"})
+
+      assert {:ok, cid_a, _} = Billing.ensure_paddle_customer(account_a, subject_a)
+      assert {:ok, cid_b, _} = Billing.ensure_paddle_customer(account_b, subject_b)
+
+      assert String.starts_with?(cid_a, "ctm_stub_")
+      refute cid_a == cid_b
+    end
+
+    test "is idempotent — returns the existing customer id without re-creating" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:ok, "ctm_existing_01", ^account} =
+               Billing.ensure_paddle_customer(account, subject)
+    end
+  end
+
+  describe "ensure_paddle_customer/2 — internal helper has no own Subject gate" do
+    test "it takes a %Subject{} for its email only — authz is the start_checkout caller's" do
+      # ensure_paddle_customer/2 runs NO ensure_has_permissions of its own: by
+      # design the manage_billing gate lives in its caller (start_checkout/3), and
+      # the helper just threads the acting user's email onto the Paddle customer.
+      # The contract is arity-2 (account, subject) with no permission-bearing
+      # arity-3 variant, and it succeeds for any owner subject without a gate of
+      # its own. (start_checkout's gate is proven by the admin/cross-account
+      # denial tests above.)
+      assert function_exported?(Billing, :ensure_paddle_customer, 2)
+      refute function_exported?(Billing, :ensure_paddle_customer, 3)
+
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, customer_id, _account} = Billing.ensure_paddle_customer(account, subject)
+      assert String.starts_with?(customer_id, "ctm_stub_")
+    end
+  end
+
+  describe "ensure_paddle_customer/2 first-wins" do
+    test "a stale struct cannot clobber an already-linked customer id" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, first_customer_id, linked} = Billing.ensure_paddle_customer(account, subject)
+      assert linked.paddle_customer_id == first_customer_id
+
+      # Simulate the race: a second checkout still holds the pre-link
+      # snapshot (nil customer id) and a DIFFERENT acting user, so the
+      # stub would mint a different vendor customer. The locked row wins.
+      other_owner = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: other_owner.id,
+          role: "owner"
+        )
+
+      other_subject = Fixtures.Subjects.subject_for(other_owner, account, role: :owner)
+      stale_account = %{account | paddle_customer_id: nil}
+
+      assert {:ok, ^first_customer_id, relinked} =
+               Billing.ensure_paddle_customer(stale_account, other_subject)
+
+      assert relinked.paddle_customer_id == first_customer_id
     end
   end
 
@@ -170,79 +451,6 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "open_billing_portal/2" do
-    test "an account that never subscribed has no portal" do
-      {_user, account, subject} = owner_subject_fixture()
-
-      assert {:error, :no_customer} = Billing.open_billing_portal(account, subject)
-    end
-
-    test "returns the stub portal URL when no Paddle key is configured" do
-      {_user, account, subject} = owner_subject_fixture()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
-
-      assert {:ok, url} = Billing.open_billing_portal(account, subject)
-      assert url =~ "/app/settings/billing?status=stub-portal"
-    end
-
-    test "an owner of another account is refused" do
-      {_user, account, _subject} = owner_subject_fixture()
-      {_user_b, _account_b, subject_b} = owner_subject_fixture()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
-
-      assert {:error, :unauthorized} = Billing.open_billing_portal(account, subject_b)
-    end
-  end
-
-  describe "ensure_paddle_customer/2" do
-    test "threads the acting user's email to Paddle on first creation" do
-      # The test stub derives the customer id from the email it receives,
-      # so two owners with different emails must yield different customer
-      # ids. Before the fix (email: nil) both produced the same id.
-      {_user_a, account_a, subject_a} =
-        owner_subject_fixture(%{name: "Acct A"})
-
-      {_user_b, account_b, subject_b} =
-        owner_subject_fixture(%{name: "Acct B"})
-
-      assert {:ok, cid_a, _} = Billing.ensure_paddle_customer(account_a, subject_a)
-      assert {:ok, cid_b, _} = Billing.ensure_paddle_customer(account_b, subject_b)
-
-      assert String.starts_with?(cid_a, "ctm_stub_")
-      refute cid_a == cid_b
-    end
-
-    test "is idempotent — returns the existing customer id without re-creating" do
-      {_user, account, subject} = owner_subject_fixture()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
-
-      assert {:ok, "ctm_existing_01", ^account} =
-               Billing.ensure_paddle_customer(account, subject)
-    end
-  end
-
-  describe "extract_next_billed_at/1" do
-    test "parses ISO8601 from next_billed_at" do
-      iso = "2026-07-01T00:00:00Z"
-
-      assert %DateTime{year: 2026, month: 7, day: 1} =
-               Billing.extract_next_billed_at(%{"next_billed_at" => iso})
-    end
-
-    test "falls back to current_billing_period.ends_at" do
-      iso = "2026-08-15T12:34:56Z"
-
-      assert %DateTime{year: 2026, month: 8, day: 15} =
-               Billing.extract_next_billed_at(%{
-                 "current_billing_period" => %{"ends_at" => iso}
-               })
-    end
-
-    test "nil when neither field present" do
-      assert Billing.extract_next_billed_at(%{}) == nil
-    end
-  end
-
   describe "record_and_apply_event/3 — subscription.created" do
     setup do
       # Map the team price id to the "team" plan, exactly as the webhook
@@ -253,7 +461,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "persists a subscription with the plan derived from the price id" do
-      account = account_fixture(%{paddle_customer_id: "ctm_team_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_team_01"})
 
       event =
         subscription_created_event("evt_created_1", account.paddle_customer_id, "pri_team_01")
@@ -272,7 +480,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "emits [:emisar, :billing, :webhook] tagged by outcome (applied, then duplicate)" do
-      account = account_fixture(%{paddle_customer_id: "ctm_tel_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_tel_01"})
 
       event =
         subscription_created_event("evt_tel_1", account.paddle_customer_id, "pri_team_01")
@@ -302,7 +510,8 @@ defmodule Emisar.BillingTest do
     end
 
     test "falls back to the account's current plan when the price id is unknown" do
-      account = account_fixture(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
+      account =
+        Fixtures.Accounts.create_account(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
 
       # Enterprise is sales-led; no configured price id maps to it.
       event =
@@ -329,7 +538,7 @@ defmodule Emisar.BillingTest do
       # / quantity from the Paddle payload (see the scheduled-cancel test below), but a
       # plain subscription.created carrying none of those must leave them at their
       # defaults, not invent values. `trial_end` is not yet mapped (BACKLOG).
-      account = account_fixture(%{paddle_customer_id: "ctm_cyclenote_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cyclenote_01"})
 
       event =
         subscription_created_event("evt_cyclenote", account.paddle_customer_id, "pri_team_01")
@@ -349,7 +558,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "a scheduled cancel + billing period + quantity land on the mirror (the cancel banner's source)" do
-      account = account_fixture(%{paddle_customer_id: "ctm_sched_cancel_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_sched_cancel_01"})
       created = subscription_created_event("evt_sc", account.paddle_customer_id, "pri_team_01")
       assert :ok = Billing.record_and_apply_event("evt_sc", "subscription.created", created)
 
@@ -387,7 +596,7 @@ defmodule Emisar.BillingTest do
       # The apply path (not just extract_next_billed_at/1 in isolation) populates
       # current_period_end. Paddle puts the next charge under `next_billed_at` OR
       # `current_billing_period.ends_at` — both must land on the mirror row.
-      top_level = account_fixture(%{paddle_customer_id: "ctm_period_top_01"})
+      top_level = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_period_top_01"})
 
       # The created envelope carries `next_billed_at` (top-level source).
       top_event =
@@ -403,7 +612,7 @@ defmodule Emisar.BillingTest do
 
       # A payload with ONLY current_billing_period.ends_at (no next_billed_at) —
       # the nested fallback source the apply path also reads.
-      nested = account_fixture(%{paddle_customer_id: "ctm_period_nested_01"})
+      nested = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_period_nested_01"})
 
       nested_event = %{
         "event_type" => "subscription.created",
@@ -425,7 +634,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an out-of-order event (older Paddle updated_at) is dropped, not applied over fresher state" do
-      account = account_fixture(%{paddle_customer_id: "ctm_ooo_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ooo_01"})
       created = subscription_created_event("evt_ooo", account.paddle_customer_id, "pri_team_01")
       assert :ok = Billing.record_and_apply_event("evt_ooo", "subscription.created", created)
 
@@ -483,6 +692,129 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "record_and_apply_event/3 — dedup + apply commit atomically" do
+    setup do
+      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
+      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
+      :ok
+    end
+
+    test "on success the dedup row AND the subscription mutation commit together" do
+      # The dedup insert and apply run in ONE Multi (record_and_apply_event), so a
+      # successful delivery leaves BOTH the processed-events row AND the mirror row
+      # — never a half state. (The failure-rollback companion is asserted in the
+      # "dedup + rollback" describe: a failed apply leaves NEITHER.)
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_atomic_01"})
+      event = subscription_created_event("evt_atomic", account.paddle_customer_id, "pri_team_01")
+
+      assert :ok = Billing.record_and_apply_event("evt_atomic", "subscription.created", event)
+
+      assert processed_event?("evt_atomic")
+
+      assert %Subscription{plan: "team", paddle_subscription_id: "sub_evt_atomic"} =
+               Subscription.Query.all()
+               |> Subscription.Query.by_account_id(account.id)
+               |> Repo.one()
+    end
+  end
+
+  describe "record_and_apply_event/3 — unhandled event type" do
+    test "a well-formed unmodeled event_type is a no-op that still commits the dedup row" do
+      # `apply_webhook_event(_event), do: :ok` catches any type we don't model.
+      # The apply succeeds (no DB write, no account resolve), so the dedup row
+      # DOES commit — distinct from the apply-failure rollback path (asserted by
+      # the next describe block: a failure leaves NO processed-events row).
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_unhandled_01"})
+
+      event = %{
+        "event_id" => "evt_unhandled",
+        "event_type" => "transaction.completed",
+        "data" => %{"id" => "txn_01", "customer_id" => account.paddle_customer_id}
+      }
+
+      assert :ok =
+               Billing.record_and_apply_event("evt_unhandled", "transaction.completed", event)
+
+      # No subscription written by the no-op.
+      assert Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one() == nil
+
+      # The dedup row committed (the no-op is a success), so a redelivery dedups.
+      assert processed_event?("evt_unhandled")
+
+      assert {:duplicate, "evt_unhandled"} =
+               Billing.record_and_apply_event("evt_unhandled", "transaction.completed", event)
+    end
+
+    test "a brand-new, never-seen future Paddle event type is a no-op (forward-compatible)" do
+      # The total `apply_webhook_event(_event)` clause cannot fail, so an event
+      # type this code has never seen (a future Paddle addition) is accepted as a
+      # no-op rather than 500-ing — forward-compatible by construction. No account
+      # resolve, no subscription write; the dedup row still commits.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_future_01"})
+
+      event = %{
+        "event_id" => "evt_future",
+        "event_type" => "subscription.future_capability_2099",
+        "data" => %{"id" => "sub_future", "customer_id" => account.paddle_customer_id}
+      }
+
+      assert :ok =
+               Billing.record_and_apply_event(
+                 "evt_future",
+                 "subscription.future_capability_2099",
+                 event
+               )
+
+      assert Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one() == nil
+
+      assert processed_event?("evt_future")
+    end
+  end
+
+  describe "record_and_apply_event/3 — dedup + rollback" do
+    test "a second delivery of the same event id is a duplicate and does not re-apply" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_dup_01"})
+      event = subscription_created_event("evt_dup", account.paddle_customer_id, nil)
+
+      assert :ok = Billing.record_and_apply_event("evt_dup", "subscription.created", event)
+
+      assert {:duplicate, "evt_dup"} =
+               Billing.record_and_apply_event("evt_dup", "subscription.created", event)
+    end
+
+    test "an apply failure rolls back the dedup row so redelivery reprocesses" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_fail_01"})
+
+      # A payload with no status fails `validate_required(:status)` inside
+      # the same transaction — the apply returns {:error, changeset}. (An
+      # UNKNOWN status string deliberately persists — Paddle owns the value
+      # space — so a missing field is the failure mode to exercise here.)
+      bad_event =
+        subscription_created_event("evt_fail", account.paddle_customer_id, nil)
+        |> put_in(["data", "status"], nil)
+
+      assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
+               Billing.record_and_apply_event("evt_fail", "subscription.created", bad_event)
+
+      # The dedup row MUST be absent — otherwise Paddle's retry is swallowed.
+      refute processed_event?("evt_fail")
+
+      # No subscription leaked from the rolled-back transaction either.
+      assert Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one() == nil
+
+      # Redelivery with a now-valid payload reprocesses and persists.
+      good_event = subscription_created_event("evt_fail", account.paddle_customer_id, nil)
+      assert :ok = Billing.record_and_apply_event("evt_fail", "subscription.created", good_event)
+      assert processed_event?("evt_fail")
+    end
+  end
+
   describe "apply_webhook_event/1 — subscription.updated" do
     setup do
       # Two plans mapped so an update can move a row from team → enterprise.
@@ -496,7 +828,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "re-derives the plan on the existing row (no new row inserted)" do
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_plan_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_plan_01"})
 
       created =
         subscription_created_event("evt_upd_plan_c", account.paddle_customer_id, "pri_team_01")
@@ -530,7 +862,7 @@ defmodule Emisar.BillingTest do
       # through. Paddle sends the FULL subscription object on subscription.updated,
       # so this is the realistic shape. (A truly items-less payload is a separate,
       # narrower case asserted below — the apply path preserves those columns.)
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_full_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_full_01"})
 
       created =
         subscription_created_event("evt_upd_full_c", account.paddle_customer_id, "pri_team_01")
@@ -573,7 +905,7 @@ defmodule Emisar.BillingTest do
       # NOT null price/period: `upsert_from_subscription/1` omits those keys when
       # the payload doesn't carry them, so the peek-then-update preserves the
       # stored values. `plan` is preserved via the account_plan/1 fallback.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_partial_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_partial_01"})
 
       created =
         subscription_created_event("evt_upd_partial_c", account.paddle_customer_id, "pri_team_01")
@@ -610,7 +942,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an unknown/foreign customer is a no-op (no write, still :ok)" do
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_known_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_known_01"})
 
       created =
         subscription_created_event("evt_upd_known_c", account.paddle_customer_id, "pri_team_01")
@@ -636,7 +968,7 @@ defmodule Emisar.BillingTest do
       # upsert_subscription/2 peeks for an existing row; with none, a
       # subscription.updated inserts (the same clause as subscription.created),
       # so a first-seen update still lands the mirror rather than no-opping.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_noprior_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_noprior_01"})
 
       # No created event first — the very first event is an `updated`.
       updated =
@@ -656,7 +988,7 @@ defmodule Emisar.BillingTest do
       # plan_for_subscription/2 can't resolve an unmapped price id, so it falls
       # back to account_plan/1 — the existing subscription's plan. A sales-led
       # price the map doesn't carry keeps the row on its current (team) plan.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_unmapped_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_unmapped_01"})
 
       created =
         subscription_created_event(
@@ -688,7 +1020,7 @@ defmodule Emisar.BillingTest do
       # status is an open :string — Paddle owns the value space — so a status this
       # code has never seen still persists rather than failing the changeset and
       # 500-ing the webhook on every redelivery.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_unseen_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_unseen_01"})
 
       created =
         subscription_created_event("evt_upd_unseen_c", account.paddle_customer_id, "pri_team_01")
@@ -717,7 +1049,7 @@ defmodule Emisar.BillingTest do
       # as a created does (the upsert changeset is shared), so the apply returns
       # {:error, changeset}, record_and_apply_event rolls the dedup row back, and
       # Paddle's redelivery reprocesses rather than being swallowed.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_nostatus_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_nostatus_01"})
 
       created =
         subscription_created_event(
@@ -760,7 +1092,7 @@ defmodule Emisar.BillingTest do
       # `subscription.updated` AFTER a newer one rewinds the row to the stale
       # state. Assert the documented stale-clobber risk so a future ordering
       # guard is a deliberate change, not an accidental regression.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_stale_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_stale_01"})
 
       created =
         subscription_created_event("evt_upd_stale_c", account.paddle_customer_id, "pri_team_01")
@@ -815,7 +1147,7 @@ defmodule Emisar.BillingTest do
       assert function_exported?(Billing, :record_and_apply_event, 3)
 
       # And it actually applies with no subject in scope.
-      account = account_fixture(%{paddle_customer_id: "ctm_nosubj_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_nosubj_01"})
       event = subscription_created_event("evt_nosubj", account.paddle_customer_id, "pri_team_01")
 
       assert {:ok, %Subscription{plan: "team"}} = Billing.apply_webhook_event(event)
@@ -824,9 +1156,9 @@ defmodule Emisar.BillingTest do
     test "FINDING: a subscription mutation writes no audit event (invisible in the trail)" do
       # The apply path writes only the subscriptions mirror — it never inserts an
       # Audit.Event. A plan change therefore leaves no audit trace. Assert the
-      # documented gap (account_fixture itself writes no audit rows, so a count of
+      # documented gap (Fixtures.Accounts.create_account itself writes no audit rows, so a count of
       # 0 after the apply isolates the apply's own emission).
-      account = account_fixture(%{paddle_customer_id: "ctm_noaudit_01"})
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_noaudit_01"})
       event = subscription_created_event("evt_noaudit", account.paddle_customer_id, "pri_team_01")
 
       assert {:ok, %Subscription{}} = Billing.apply_webhook_event(event)
@@ -840,255 +1172,143 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "record_and_apply_event/3 — dedup + apply commit atomically" do
+  describe "apply_webhook_event/1 — subscription.canceled keeps entitlement" do
+    test "a canceled subscription still resolves to its plan (advisory-only status)" do
+      # Cancel writes ONLY status: "canceled"; account_plan/1 is status-agnostic,
+      # so the plan/limits are unchanged and a runner under the (Team) cap still
+      # registers. Status is an advisory banner, never an entitlement gate.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_ent_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_cancel_ent_01",
+          plan: "team",
+          status: "active"
+        })
+
+      assert {:ok, %Subscription{status: "canceled"}} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_cancel_ent_01"}
+               })
+
+      # Entitlement untouched: still Team, still well under the 100-runner cap.
+      assert Billing.account_plan(account) == "team"
+      assert :ok = Billing.check_limit(account, :runners)
+    end
+
+    test "the cancel's partial %{status} satisfies validate_required via the stored row" do
+      # Cancel applies `Subscription.Changeset.upsert(existing, %{status: "canceled"})`
+      # — only `status` is cast. validate_required([:account_id, :plan, :status]) is
+      # still satisfied because account_id + plan come from the EXISTING struct's
+      # loaded fields, so the one-field update commits (and would NOT on a bare
+      # %Subscription{} with no plan — which is why the on-miss branch no-ops).
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_partial_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_cancel_partial_01",
+          plan: "team",
+          status: "active"
+        })
+
+      assert {:ok, %Subscription{status: "canceled", plan: "team", account_id: account_id}} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_cancel_partial_01"}
+               })
+
+      assert account_id == account.id
+    end
+  end
+
+  describe "apply_webhook_event/1 — subscription.updated status transition" do
     setup do
       Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
       on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
       :ok
     end
 
-    test "on success the dedup row AND the subscription mutation commit together" do
-      # The dedup insert and apply run in ONE Multi (record_and_apply_event), so a
-      # successful delivery leaves BOTH the processed-events row AND the mirror row
-      # — never a half state. (The failure-rollback companion is asserted in the
-      # "dedup + rollback" describe: a failed apply leaves NEITHER.)
-      account = account_fixture(%{paddle_customer_id: "ctm_atomic_01"})
-      event = subscription_created_event("evt_atomic", account.paddle_customer_id, "pri_team_01")
+    test "a status-only transition rewrites status on the existing row" do
+      # An update re-sending the same price/items but a new status rewrites
+      # status on the same mirror row (peek-then-update), plan unchanged.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_status_01"})
 
-      assert :ok = Billing.record_and_apply_event("evt_atomic", "subscription.created", event)
+      created =
+        subscription_created_event("evt_upd_status_c", account.paddle_customer_id, "pri_team_01")
 
-      assert processed_event?("evt_atomic")
+      assert {:ok, %Subscription{status: "active"}} = Billing.apply_webhook_event(created)
 
-      assert %Subscription{plan: "team", paddle_subscription_id: "sub_evt_atomic"} =
+      updated =
+        subscription_updated_event("evt_upd_status_c", account.paddle_customer_id, "pri_team_01",
+          status: "past_due"
+        )
+
+      assert {:ok, %Subscription{status: "past_due", plan: "team"}} =
+               Billing.apply_webhook_event(updated)
+    end
+  end
+
+  describe "apply_webhook_event/1 — unmodeled subscription event types" do
+    test "pause/resume/trialing are unhandled no-ops that leave the mirror untouched" do
+      # emisar does NOT mirror subscription.paused/resumed/trialing — they hit
+      # the catch-all `apply_webhook_event(_event), do: :ok`. The existing row's
+      # status is preserved (those banner statuses only arise via a
+      # subscription.updated payload, which IS modeled).
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_unmodeled_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_unmodeled_01",
+          plan: "team",
+          status: "active"
+        })
+
+      for event_type <- ["subscription.paused", "subscription.resumed", "subscription.trialing"] do
+        assert :ok =
+                 Billing.apply_webhook_event(%{
+                   "event_type" => event_type,
+                   "data" => %{
+                     "id" => "sub_unmodeled_01",
+                     "customer_id" => account.paddle_customer_id,
+                     "status" => "paused"
+                   }
+                 })
+      end
+
+      # The mirror still reads its pre-event status — none of the three wrote.
+      assert %Subscription{status: "active"} =
                Subscription.Query.all()
                |> Subscription.Query.by_account_id(account.id)
                |> Repo.one()
     end
   end
 
-  describe "upsert_subscription/2 — unique_constraint backstop" do
-    test "a concurrent first-insert loses on the per-account unique index" do
-      # upsert_subscription peeks-then-inserts, so two callers that both peek-miss
-      # would both try to INSERT for the same account. unique_index(:subscriptions,
-      # [:account_id]) backstops the race: the second insert hits the constraint and
-      # is mapped to an invalid changeset (Paddle's redelivery then takes the update
-      # branch). Drive both inserts directly to exercise the constraint.
-      account = account_fixture()
-
-      assert {:ok, %Subscription{}} =
-               Subscription.Changeset.upsert(%{
-                 account_id: account.id,
-                 plan: "team",
-                 status: "active"
-               })
-               |> Repo.insert()
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Subscription.Changeset.upsert(%{
-                 account_id: account.id,
-                 plan: "team",
-                 status: "active"
-               })
-               |> Repo.insert()
-
-      assert {"has already been taken", _} = changeset.errors[:account_id]
-    end
-  end
-
-  describe "upsert_subscription/2 — partial reconciliation preserves untouched fields" do
-    test "a status+period-only upsert leaves plan + cycle-note columns intact" do
-      # The BillingSync worker upserts ONLY %{status, current_period_end} — exactly
-      # the partial attr set the peek-then-update path is built for. The existing
-      # row's plan/paddle_price_id/cancel_at_period_end/trial_end are keys ABSENT
-      # from those attrs, so they survive (the documented "relies on existing plan"
-      # write-gap: the sweep never refreshes plan/cycle fields).
-      account = account_fixture()
+  describe "apply_webhook_event/1 subscription.canceled" do
+    test "flips the mirrored status, and an unknown subscription id is a no-op" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, _} =
         Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_partial_recon",
-          paddle_price_id: "pri_team_01",
+          paddle_subscription_id: "sub_live_1",
           plan: "team",
           status: "active"
         })
 
-      period_end = DateTime.utc_now() |> DateTime.add(30 * 86_400, :second)
-
-      assert {:ok, %Subscription{}} =
-               Billing.upsert_subscription(account.id, %{
-                 status: "past_due",
-                 current_period_end: period_end
-               })
-
-      reloaded =
-        Subscription.Query.all()
-        |> Subscription.Query.by_account_id(account.id)
-        |> Repo.one()
-
-      # Only the two reconciled fields moved…
-      assert reloaded.status == "past_due"
-      assert %DateTime{} = reloaded.current_period_end
-      # …plan + price + the cycle-note defaults are untouched (absent from the attrs).
-      assert reloaded.plan == "team"
-      assert reloaded.paddle_price_id == "pri_team_01"
-      assert reloaded.cancel_at_period_end == false
-      assert is_nil(reloaded.trial_end)
-    end
-  end
-
-  describe "ensure_paddle_customer/2 — internal helper has no own Subject gate" do
-    test "it takes a %Subject{} for its email only — authz is the start_checkout caller's" do
-      # ensure_paddle_customer/2 runs NO ensure_has_permissions of its own: by
-      # design the manage_billing gate lives in its caller (start_checkout/3), and
-      # the helper just threads the acting user's email onto the Paddle customer.
-      # The contract is arity-2 (account, subject) with no permission-bearing
-      # arity-3 variant, and it succeeds for any owner subject without a gate of
-      # its own. (start_checkout's gate is proven by the admin/cross-account
-      # denial tests above.)
-      assert function_exported?(Billing, :ensure_paddle_customer, 2)
-      refute function_exported?(Billing, :ensure_paddle_customer, 3)
-
-      {_user, account, subject} = owner_subject_fixture()
-
-      assert {:ok, customer_id, _account} = Billing.ensure_paddle_customer(account, subject)
-      assert String.starts_with?(customer_id, "ctm_stub_")
-    end
-  end
-
-  describe "check_limit/2 — downgrade past current usage is not reconciled" do
-    test "FINDING: existing over-cap runners keep running; only NEW ones are blocked" do
-      # Downgrading below current usage (Team→Free here, via cancel) does NOT sweep
-      # the excess runners — check_limit only gates the fresh-insert / re-enable
-      # path. So an account that drops to a smaller cap keeps every already-counted
-      # runner, and the NEXT register is what's refused. Assert the documented
-      # un-reconciled state.
-      account = account_fixture(%{paddle_customer_id: "ctm_downgrade_01"})
-
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_downgrade_01",
-          plan: "team",
-          status: "active"
-        })
-
-      # Five billable runners — fine under Team's 100 cap.
-      for _ <- 1..5, do: runner_fixture(account_id: account.id, connected?: false)
-      assert :ok = Billing.check_limit(account, :runners)
-
-      # Cancel drops the entitlement back to free (cap 3). The five existing runners
-      # are NOT touched — count is still 5, well over the new cap.
       assert {:ok, _} =
                Billing.apply_webhook_event(%{
                  "event_type" => "subscription.canceled",
-                 "data" => %{"id" => "sub_downgrade_01"}
+                 "data" => %{"id" => "sub_live_1"}
                })
 
-      assert Emisar.Runners.count_billable_runners(account.id) == 5
-
-      # account_plan is status-agnostic, so "team" still resolves even after cancel;
-      # set the plan to free to model the real downgrade and prove the gate then
-      # blocks only the NEXT runner while the over-cap five keep running.
-      {:ok, _} = Billing.upsert_subscription(account.id, %{plan: "free", status: "canceled"})
-
-      assert Billing.account_plan(account) == "free"
-      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
-    end
-  end
-
-  describe "record_and_apply_event/3 — unhandled event type" do
-    test "a well-formed unmodeled event_type is a no-op that still commits the dedup row" do
-      # `apply_webhook_event(_event), do: :ok` catches any type we don't model.
-      # The apply succeeds (no DB write, no account resolve), so the dedup row
-      # DOES commit — distinct from the apply-failure rollback path (asserted by
-      # the next describe block: a failure leaves NO processed-events row).
-      account = account_fixture(%{paddle_customer_id: "ctm_unhandled_01"})
-
-      event = %{
-        "event_id" => "evt_unhandled",
-        "event_type" => "transaction.completed",
-        "data" => %{"id" => "txn_01", "customer_id" => account.paddle_customer_id}
-      }
+      assert %Subscription{status: "canceled"} =
+               Repo.one(from(s in Subscription, where: s.account_id == ^account.id))
 
       assert :ok =
-               Billing.record_and_apply_event("evt_unhandled", "transaction.completed", event)
-
-      # No subscription written by the no-op.
-      assert Subscription.Query.all()
-             |> Subscription.Query.by_account_id(account.id)
-             |> Repo.one() == nil
-
-      # The dedup row committed (the no-op is a success), so a redelivery dedups.
-      assert processed_event?("evt_unhandled")
-
-      assert {:duplicate, "evt_unhandled"} =
-               Billing.record_and_apply_event("evt_unhandled", "transaction.completed", event)
-    end
-
-    test "a brand-new, never-seen future Paddle event type is a no-op (forward-compatible)" do
-      # The total `apply_webhook_event(_event)` clause cannot fail, so an event
-      # type this code has never seen (a future Paddle addition) is accepted as a
-      # no-op rather than 500-ing — forward-compatible by construction. No account
-      # resolve, no subscription write; the dedup row still commits.
-      account = account_fixture(%{paddle_customer_id: "ctm_future_01"})
-
-      event = %{
-        "event_id" => "evt_future",
-        "event_type" => "subscription.future_capability_2099",
-        "data" => %{"id" => "sub_future", "customer_id" => account.paddle_customer_id}
-      }
-
-      assert :ok =
-               Billing.record_and_apply_event(
-                 "evt_future",
-                 "subscription.future_capability_2099",
-                 event
-               )
-
-      assert Subscription.Query.all()
-             |> Subscription.Query.by_account_id(account.id)
-             |> Repo.one() == nil
-
-      assert processed_event?("evt_future")
-    end
-  end
-
-  describe "record_and_apply_event/3 — dedup + rollback" do
-    test "a second delivery of the same event id is a duplicate and does not re-apply" do
-      account = account_fixture(%{paddle_customer_id: "ctm_dup_01"})
-      event = subscription_created_event("evt_dup", account.paddle_customer_id, nil)
-
-      assert :ok = Billing.record_and_apply_event("evt_dup", "subscription.created", event)
-
-      assert {:duplicate, "evt_dup"} =
-               Billing.record_and_apply_event("evt_dup", "subscription.created", event)
-    end
-
-    test "an apply failure rolls back the dedup row so redelivery reprocesses" do
-      account = account_fixture(%{paddle_customer_id: "ctm_fail_01"})
-
-      # A payload with no status fails `validate_required(:status)` inside
-      # the same transaction — the apply returns {:error, changeset}. (An
-      # UNKNOWN status string deliberately persists — Paddle owns the value
-      # space — so a missing field is the failure mode to exercise here.)
-      bad_event =
-        subscription_created_event("evt_fail", account.paddle_customer_id, nil)
-        |> put_in(["data", "status"], nil)
-
-      assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
-               Billing.record_and_apply_event("evt_fail", "subscription.created", bad_event)
-
-      # The dedup row MUST be absent — otherwise Paddle's retry is swallowed.
-      refute processed_event?("evt_fail")
-
-      # No subscription leaked from the rolled-back transaction either.
-      assert Subscription.Query.all()
-             |> Subscription.Query.by_account_id(account.id)
-             |> Repo.one() == nil
-
-      # Redelivery with a now-valid payload reprocesses and persists.
-      good_event = subscription_created_event("evt_fail", account.paddle_customer_id, nil)
-      assert :ok = Billing.record_and_apply_event("evt_fail", "subscription.created", good_event)
-      assert processed_event?("evt_fail")
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_never_seen"}
+               })
     end
   end
 
@@ -1125,10 +1345,47 @@ defmodule Emisar.BillingTest do
     }
   end
 
+  describe "extract_next_billed_at/1" do
+    test "parses ISO8601 from next_billed_at" do
+      iso = "2026-07-01T00:00:00Z"
+
+      assert %DateTime{year: 2026, month: 7, day: 1} =
+               Billing.extract_next_billed_at(%{"next_billed_at" => iso})
+    end
+
+    test "falls back to current_billing_period.ends_at" do
+      iso = "2026-08-15T12:34:56Z"
+
+      assert %DateTime{year: 2026, month: 8, day: 15} =
+               Billing.extract_next_billed_at(%{
+                 "current_billing_period" => %{"ends_at" => iso}
+               })
+    end
+
+    test "nil when neither field present" do
+      assert Billing.extract_next_billed_at(%{}) == nil
+    end
+  end
+
+  describe "extract_paddle_updated_at/1" do
+    test "parses ISO8601 from updated_at (the monotonic stale-update guard's input)" do
+      assert %DateTime{year: 2026, month: 8, day: 15, hour: 12} =
+               Billing.extract_paddle_updated_at(%{"updated_at" => "2026-08-15T12:34:56Z"})
+    end
+
+    test "nil when updated_at is absent" do
+      assert Billing.extract_paddle_updated_at(%{}) == nil
+    end
+
+    test "nil on a malformed updated_at (parse failure degrades, never raises)" do
+      assert Billing.extract_paddle_updated_at(%{"updated_at" => "not-a-date"}) == nil
+    end
+  end
+
   describe "billing_summary/2" do
     test "rolls plan limits + live counts + subscription mirror into one map" do
-      {_user, account, subject} = owner_subject_fixture()
-      _ = runner_fixture(account_id: account.id)
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _ = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert {:ok, summary} = Billing.billing_summary(account, subject)
       assert summary.plan == "free"
@@ -1143,170 +1400,36 @@ defmodule Emisar.BillingTest do
     end
 
     test "an owner of account B cannot read account A's summary (cross-account)" do
-      {_user_a, account_a, _subject_a} = owner_subject_fixture()
-      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert {:error, :unauthorized} = Billing.billing_summary(account_a, subject_b)
     end
   end
 
-  describe "start_checkout/3" do
-    test "rejects a plan name we do not sell" do
-      {_user, account, subject} = owner_subject_fixture()
-
-      assert {:error, :unknown_plan} = Billing.start_checkout(account, "platinum", subject)
-    end
-
-    test "returns the stub checkout URL when no Paddle price id is configured" do
-      {_user, account, subject} = owner_subject_fixture()
-
-      assert {:ok, "/paddle-checkout-stub?plan=team"} =
-               Billing.start_checkout(account, "team", subject)
-    end
-
-    test "an admin (manage_billing is owner-only) is refused with :unauthorized" do
-      {_user, account, _subject} = owner_subject_fixture()
-      admin = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
-      admin_subject = subject_for(admin, account, role: :admin)
-
-      assert {:error, :unauthorized} = Billing.start_checkout(account, "team", admin_subject)
-      assert {:error, :unauthorized} = Billing.open_billing_portal(account, admin_subject)
-    end
-
-    test "the owner of another account is denied checkout AND portal for account A" do
-      # Account-B's owner holds manage_billing on B, but ensure_subject_owns_account
-      # binds the gate to the subject's own account — so acting on A is :unauthorized.
-      {_user_a, account_a, _subject_a} = owner_subject_fixture()
-      {_user_b, _account_b, subject_b} = owner_subject_fixture()
-
-      assert {:error, :unauthorized} = Billing.start_checkout(account_a, "team", subject_b)
-      assert {:error, :unauthorized} = Billing.open_billing_portal(account_a, subject_b)
-    end
-  end
-
-  describe "apply_webhook_event/1 — subscription.canceled keeps entitlement" do
-    test "a canceled subscription still resolves to its plan (advisory-only status)" do
-      # Cancel writes ONLY status: "canceled"; account_plan/1 is status-agnostic,
-      # so the plan/limits are unchanged and a runner under the (Team) cap still
-      # registers. Status is an advisory banner, never an entitlement gate.
-      account = account_fixture(%{paddle_customer_id: "ctm_cancel_ent_01"})
-
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_cancel_ent_01",
-          plan: "team",
-          status: "active"
-        })
-
-      assert {:ok, %Subscription{status: "canceled"}} =
-               Billing.apply_webhook_event(%{
-                 "event_type" => "subscription.canceled",
-                 "data" => %{"id" => "sub_cancel_ent_01"}
-               })
-
-      # Entitlement untouched: still Team, still well under the 100-runner cap.
-      assert Billing.account_plan(account) == "team"
-      assert :ok = Billing.check_limit(account, :runners)
-    end
-
-    test "the cancel's partial %{status} satisfies validate_required via the stored row" do
-      # Cancel applies `Subscription.Changeset.upsert(existing, %{status: "canceled"})`
-      # — only `status` is cast. validate_required([:account_id, :plan, :status]) is
-      # still satisfied because account_id + plan come from the EXISTING struct's
-      # loaded fields, so the one-field update commits (and would NOT on a bare
-      # %Subscription{} with no plan — which is why the on-miss branch no-ops).
-      account = account_fixture(%{paddle_customer_id: "ctm_cancel_partial_01"})
-
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_cancel_partial_01",
-          plan: "team",
-          status: "active"
-        })
-
-      assert {:ok, %Subscription{status: "canceled", plan: "team", account_id: account_id}} =
-               Billing.apply_webhook_event(%{
-                 "event_type" => "subscription.canceled",
-                 "data" => %{"id" => "sub_cancel_partial_01"}
-               })
-
-      assert account_id == account.id
-    end
-  end
-
-  describe "apply_webhook_event/1 — subscription.updated status transition" do
-    setup do
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
-    test "a status-only transition rewrites status on the existing row" do
-      # An update re-sending the same price/items but a new status rewrites
-      # status on the same mirror row (peek-then-update), plan unchanged.
-      account = account_fixture(%{paddle_customer_id: "ctm_upd_status_01"})
-
-      created =
-        subscription_created_event("evt_upd_status_c", account.paddle_customer_id, "pri_team_01")
-
-      assert {:ok, %Subscription{status: "active"}} = Billing.apply_webhook_event(created)
-
-      updated =
-        subscription_updated_event("evt_upd_status_c", account.paddle_customer_id, "pri_team_01",
-          status: "past_due"
-        )
-
-      assert {:ok, %Subscription{status: "past_due", plan: "team"}} =
-               Billing.apply_webhook_event(updated)
-    end
-  end
-
-  describe "apply_webhook_event/1 — unmodeled subscription event types" do
-    test "pause/resume/trialing are unhandled no-ops that leave the mirror untouched" do
-      # emisar does NOT mirror subscription.paused/resumed/trialing — they hit
-      # the catch-all `apply_webhook_event(_event), do: :ok`. The existing row's
-      # status is preserved (those banner statuses only arise via a
-      # subscription.updated payload, which IS modeled).
-      account = account_fixture(%{paddle_customer_id: "ctm_unmodeled_01"})
-
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_unmodeled_01",
-          plan: "team",
-          status: "active"
-        })
-
-      for event_type <- ["subscription.paused", "subscription.resumed", "subscription.trialing"] do
-        assert :ok =
-                 Billing.apply_webhook_event(%{
-                   "event_type" => event_type,
-                   "data" => %{
-                     "id" => "sub_unmodeled_01",
-                     "customer_id" => account.paddle_customer_id,
-                     "status" => "paused"
-                   }
-                 })
-      end
-
-      # The mirror still reads its pre-event status — none of the three wrote.
-      assert %Subscription{status: "active"} =
-               Subscription.Query.all()
-               |> Subscription.Query.by_account_id(account.id)
-               |> Repo.one()
-    end
-  end
-
   describe "billing_summary/2 — view_billing role matrix" do
-    test "owner, admin, operator and viewer can all read the billing summary" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "owner, admin, operator and viewer can all read the billing summary", %{
+      account: account,
+      subject: owner_subject
+    } do
       # view_billing_permission is held by owner/admin/operator/viewer
       # (authorizer.ex:10-19), so every human role can read the dashboard.
-      {_owner_user, account, owner_subject} = owner_subject_fixture()
-
       for role <- [:admin, :operator, :viewer] do
-        member = user_fixture()
-        _ = membership_fixture(account_id: account.id, user_id: member.id, role: to_string(role))
-        member_subject = subject_for(member, account, role: role)
+        member = Fixtures.Users.create_user()
+
+        _ =
+          Fixtures.Memberships.create_membership(
+            account_id: account.id,
+            user_id: member.id,
+            role: to_string(role)
+          )
+
+        member_subject = Fixtures.Subjects.subject_for(member, account, role: role)
 
         assert {:ok, %{plan: "free"}} = Billing.billing_summary(account, member_subject)
       end
@@ -1314,68 +1437,77 @@ defmodule Emisar.BillingTest do
       assert {:ok, %{plan: "free"}} = Billing.billing_summary(account, owner_subject)
     end
 
-    test "an api_client and a runner subject are denied the billing summary" do
+    test "an api_client and a runner subject are denied the billing summary", %{account: account} do
       # Neither api_client nor runner appears in list_permissions_for_role, so
       # view_billing is absent and the read is refused.
-      {_user, account, _subject} = owner_subject_fixture()
-
-      {_raw, api_key} = api_key_fixture(account_id: account.id)
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Subject.for_api_key(api_key, account)
       assert {:error, :unauthorized} = Billing.billing_summary(account, api_subject)
 
-      runner = runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       runner_subject = Subject.for_runner(runner, account)
       assert {:error, :unauthorized} = Billing.billing_summary(account, runner_subject)
     end
   end
 
-  describe "apply_webhook_event/1 subscription.canceled" do
-    test "flips the mirrored status, and an unknown subscription id is a no-op" do
-      {_user, account, _subject} = owner_subject_fixture()
+  describe "subject_can_manage_billing?/1" do
+    setup do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, owner_subject: owner_subject}
+    end
 
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{
-          paddle_subscription_id: "sub_live_1",
-          plan: "team",
-          status: "active"
-        })
+    test "true for an owner (manage_billing is owner-only)", %{owner_subject: owner_subject} do
+      assert Billing.subject_can_manage_billing?(owner_subject)
+    end
 
-      assert {:ok, _} =
-               Billing.apply_webhook_event(%{
-                 "event_type" => "subscription.canceled",
-                 "data" => %{"id" => "sub_live_1"}
-               })
+    test "false for admin, operator and viewer (they hold view, not manage)", %{account: account} do
+      # The UI calls this to show/hide the checkout + portal controls — only the
+      # owner role grants manage_billing, so every other human role is false.
+      for role <- [:admin, :operator, :viewer] do
+        member = Fixtures.Users.create_user()
 
-      assert %Subscription{status: "canceled"} =
-               Repo.one(from(s in Subscription, where: s.account_id == ^account.id))
+        _ =
+          Fixtures.Memberships.create_membership(
+            account_id: account.id,
+            user_id: member.id,
+            role: to_string(role)
+          )
 
-      assert :ok =
-               Billing.apply_webhook_event(%{
-                 "event_type" => "subscription.canceled",
-                 "data" => %{"id" => "sub_never_seen"}
-               })
+        member_subject = Fixtures.Subjects.subject_for(member, account, role: role)
+
+        refute Billing.subject_can_manage_billing?(member_subject)
+      end
     end
   end
 
-  describe "ensure_paddle_customer/2 first-wins" do
-    test "a stale struct cannot clobber an already-linked customer id" do
-      {_user, account, subject} = owner_subject_fixture()
+  describe "headroom/2" do
+    test ":ok when more than one slot free" do
+      assert Billing.headroom(%{runner_count: 1, runner_limit: 3}, :runners) == :ok
+    end
 
-      {:ok, first_customer_id, linked} = Billing.ensure_paddle_customer(account, subject)
-      assert linked.paddle_customer_id == first_customer_id
+    test ":warning when exactly one slot free" do
+      assert Billing.headroom(%{runner_count: 2, runner_limit: 3}, :runners) == :warning
+    end
 
-      # Simulate the race: a second checkout still holds the pre-link
-      # snapshot (nil customer id) and a DIFFERENT acting user, so the
-      # stub would mint a different vendor customer. The locked row wins.
-      other_owner = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: other_owner.id, role: "owner")
-      other_subject = subject_for(other_owner, account, role: :owner)
-      stale_account = %{account | paddle_customer_id: nil}
+    test ":at_limit when used == limit" do
+      assert Billing.headroom(%{runner_count: 3, runner_limit: 3}, :runners) == :at_limit
+    end
 
-      assert {:ok, ^first_customer_id, relinked} =
-               Billing.ensure_paddle_customer(stale_account, other_subject)
+    test ":at_limit also when used > limit (operator deleted plan-tier-gated rows)" do
+      assert Billing.headroom(%{runner_count: 5, runner_limit: 3}, :runners) == :at_limit
+    end
 
-      assert relinked.paddle_customer_id == first_customer_id
+    test ":unlimited bypasses everything" do
+      assert Billing.headroom(%{runner_count: 100, runner_limit: :unlimited}, :runners) ==
+               :unlimited
+    end
+
+    test "members uses the member_count/limit fields" do
+      assert Billing.headroom(%{member_count: 0, member_limit: 1}, :members) == :warning
+      assert Billing.headroom(%{member_count: 1, member_limit: 1}, :members) == :at_limit
+
+      assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) ==
+               :unlimited
     end
   end
 
@@ -1393,11 +1525,9 @@ defmodule Emisar.BillingVendorErrorTest do
   `Workers.BillingSync`) must not observe the failing client mid-run.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
   alias Emisar.Billing
   alias Emisar.BillingTest.ErrorPaddleClient
+  alias Emisar.Fixtures
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
@@ -1420,7 +1550,7 @@ defmodule Emisar.BillingVendorErrorTest do
       # An already-linked customer skips create_customer, so the only failing
       # call is create_checkout_session — its {:error, term} propagates out of
       # start_checkout unchanged (the LV turns it into a flash, no redirect).
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
       assert {:error, :paddle_unavailable} = Billing.start_checkout(account, "team", subject)
@@ -1430,7 +1560,7 @@ defmodule Emisar.BillingVendorErrorTest do
       # ensure_paddle_customer/2 runs first; when create_customer errors, the
       # `with` in start_checkout bails on it — no checkout session is attempted
       # and no customer id is ever persisted.
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       refute account.paddle_customer_id
 
       assert {:error, :paddle_unavailable} = Billing.start_checkout(account, "team", subject)
@@ -1443,7 +1573,7 @@ defmodule Emisar.BillingVendorErrorTest do
 
   describe "ensure_paddle_customer/2 — vendor failure" do
     test "a create_customer error returns {:error, term} and links nothing" do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:error, :paddle_unavailable} = Billing.ensure_paddle_customer(account, subject)
 
@@ -1464,7 +1594,7 @@ defmodule Emisar.BillingVendorErrorTest do
     end
 
     test "a non-url portal-session result is passed through, not crashed" do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
       assert {:error, :paddle_unavailable} = Billing.open_billing_portal(account, subject)
@@ -1520,12 +1650,10 @@ defmodule Emisar.BillingCheckoutArgsTest do
   a capture pid the client reports to), so `async: false`.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
   import ExUnit.CaptureLog
-
   alias Emisar.Billing
   alias Emisar.BillingTest.CapturingPaddleClient
+  alias Emisar.Fixtures
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
@@ -1553,9 +1681,9 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # Team is per-runner pricing, so start_checkout passes
     # `quantity: current_count(account, :runners)` — the live billable count. Five
     # runners → quantity 5 on the created checkout session.
-    {_user, account, subject} = owner_subject_fixture()
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_seat_count_01"}
-    for _ <- 1..5, do: runner_fixture(account_id: account.id, connected?: false)
+    for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
 
@@ -1567,7 +1695,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # bare `/app/settings/billing`, NOT the real account-scoped
     # `/app/:account/settings/billing`. Assert the documented redirect-target
     # mismatch (whether Paddle's post-checkout return resolves it is UNVERIFIED).
-    {_user, account, subject} = owner_subject_fixture()
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_urls_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
@@ -1586,10 +1714,16 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # ensure_paddle_customer threads the subject's email + the account name (incl.
     # special characters) straight onto the Paddle customer with no mangling —
     # invoices reach a real inbox and the customer is recognisable in Paddle.
-    user = user_fixture(%{email: "billing-owner@example.test"})
-    {_u, account, subject} = owner_subject_fixture(%{name: "Acme & Co. (Ops)"})
+    user = Fixtures.Users.create_user(%{email: "billing-owner@example.test"})
+    {_u, account, subject} = Fixtures.Subjects.owner_subject(%{name: "Acme & Co. (Ops)"})
     # Re-bind the subject to the known-email user as owner of the account.
-    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
     subject = %{subject | actor: user}
 
     assert {:ok, "ctm_captured_01", _account} = Billing.ensure_paddle_customer(account, subject)
@@ -1609,7 +1743,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     Application.put_env(:emisar, :paddle_api_key, "pdl_live_secret_key")
     on_exit(fn -> restore(:paddle_api_key, prev_key) end)
 
-    {_user, account, subject} = owner_subject_fixture()
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_logsafe_01"}
 
     log =

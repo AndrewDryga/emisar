@@ -5,10 +5,8 @@ defmodule EmisarWeb.Components.StatTest do
   read failed reads "couldn't load" instead of a misleading 0.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   test "renders the value (bright) + label + hint" do

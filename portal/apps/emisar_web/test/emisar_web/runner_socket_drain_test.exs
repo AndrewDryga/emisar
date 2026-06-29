@@ -6,7 +6,6 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
   sockets subscribe to.
   """
   use ExUnit.Case, async: true
-
   alias EmisarWeb.RunnerSocketDrain
 
   test "the supervised process traps exits so terminate/2 fires" do

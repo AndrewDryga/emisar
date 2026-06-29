@@ -89,11 +89,19 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "dispatch + live results" do
-    test "the whole plan renders up front as a static list of planned rows", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "the whole plan renders up front as a static list of planned rows", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_with_steps!(user, account, runner, 6)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -108,11 +116,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "ring-zinc-500/20"
     end
 
-    test "a halted execution says so instead of leaving planned rows grey", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "a halted execution says so instead of leaving planned rows grey", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       # 6 steps → 6 runs across 2 waves (batch size 5); wave 2 fires only if
       # the whole first wave succeeds.
       runbook = published_runbook_with_steps!(user, account, runner, 6)
@@ -148,14 +159,15 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a partial first-wave dispatch failure marks the failed row, one honest flash", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       # A second runner that never advertised the action → its slot can't dispatch.
-      other = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      other = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject(user, account)
 
       {:ok, runbook} =
@@ -195,11 +207,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "failed to dispatch"
     end
 
-    test "a run on an offline runner is flagged on its execution row", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "a run on an offline runner is flagged on its execution row", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -212,11 +227,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert render(lv) =~ "offline"
     end
 
-    test "dispatching stays on the page and streams the execution's runs in", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "dispatching stays on the page and streams the execution's runs in", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, idle_html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -241,11 +259,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "the dispatch form is hidden while a run is in progress (no double-dispatch mid-run)",
-         %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+         %{conn: conn, user: user, account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, idle} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -261,13 +278,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ "Start runbook"
     end
 
-    test "the plan surfaces each step's action risk before dispatch", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "the plan surfaces each step's action risk before dispatch", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       # The runbook's lone step is linux.uptime — advertise it as high-risk
       # so the plan must show a high (rose) risk pill, the cue that this step
       # will stop for approval before a fleet-wide dispatch.
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
       runbook = published_runbook!(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -278,13 +298,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "ring-rose-500/30"
     end
 
-    test "the plan headline shows the runbook's most-severe step risk", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "the plan headline shows the runbook's most-severe step risk", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       # Two steps at different risks — the headline must show the WORST
       # (critical), not the first or whichever was seen last.
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "critical")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
       subject = owner_subject(user, account)
 
       {:ok, runbook} =
@@ -324,15 +347,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "the plan marks a step that will pause for approval, but not an allowed one", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "default")
       # The account's default policy (seeded on creation) gates high → approval,
       # low → allow. Advertise one low and one high action so the plan marks the
       # high step "Pauses for approval" and leaves the low one unmarked.
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "high")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "high")
       subject = owner_subject(user, account)
 
       {:ok, runbook} =
@@ -371,10 +395,13 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html |> String.split("Pauses for approval") |> length() == 2
     end
 
-    test "a step with no catalog entry shows no risk pill", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id)
-      # No action_fixture for linux.uptime — the catalog hasn't observed it,
+    test "a step with no catalog entry shows no risk pill", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id)
+      # No Fixtures.Catalog.create_action for linux.uptime — the catalog hasn't observed it,
       # so the plan step renders without a risk pill (no rose/amber/emerald).
       runbook = published_runbook!(user, account)
 
@@ -385,9 +412,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ "ring-brand-500/30"
     end
 
-    test "the plan shows each step's own runner target (no run-time picker)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "the plan shows each step's own runner target (no run-time picker)", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      _runner = Fixtures.Runners.create_runner(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -399,14 +429,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ ~s(name="target")
     end
 
-    test "the idle plan shows the blast radius — runner count per step + run total", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "the idle plan shows the blast radius — runner count per step + run total", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # Two runners in the "default" group the runbook's lone step targets.
-      r1 = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
-      Emisar.Fixtures.action_fixture(runner: r1, action_id: "linux.uptime")
-      r2 = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
-      Emisar.Fixtures.action_fixture(runner: r2, action_id: "linux.uptime")
+      r1 = Fixtures.Runners.create_runner(account_id: account.id, group: "default")
+      Fixtures.Catalog.create_action(runner: r1, action_id: "linux.uptime")
+      r2 = Fixtures.Runners.create_runner(account_id: account.id, group: "default")
+      Fixtures.Catalog.create_action(runner: r2, action_id: "linux.uptime")
       runbook = published_runbook!(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -417,12 +449,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "2 runners"
     end
 
-    test "the idle plan warns when a step's group has no active runners", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "the idle plan warns when a step's group has no active runners", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # A runner exists (so the page loads) but not in the "default" group the
       # step targets — it resolves to zero runners, surfaced before Start.
-      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "elsewhere")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "elsewhere")
       runbook = published_runbook!(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -430,11 +464,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "no active runners"
     end
 
-    test "a finished run shows an inline preview of its tail output", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "a finished run shows an inline preview of its tail output", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -465,12 +502,13 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a refresh rehydrates a live execution instead of resetting to a blank Plan", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
       # Dispatch — the execution is now in flight (its run is non-terminal).
@@ -486,12 +524,13 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a refresh keeps dispatched runs in step order, not shoved below the planned rows", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       # 7 steps, 1 runner → wave 1 dispatches steps 1-5; steps 6-7 stay planned.
       runbook = published_runbook_with_steps!(user, account, runner, 7)
 
@@ -511,10 +550,18 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "preflight plan (RBK-007)" do
-    test "a runner_id-targeted step resolves its runner ids to names in the plan", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "edge-eu-1")
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "a runner_id-targeted step resolves its runner ids to names in the plan", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-eu-1")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -526,16 +573,17 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "the idle plan warns that an offline target will queue until it reconnects", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
       # An offline runner targeted by id stays in the plan (a runner-id selector
       # passes offline members through; a group selector would skip them). Before
       # Start, the plan flags that its steps will QUEUE — a heads-up, not a blocker.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "sleepy", connected?: false)
+        Fixtures.Runners.create_runner(account_id: account.id, name: "sleepy", connected?: false)
 
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -545,10 +593,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a fan-out beyond the cap is refused with a humanized flash, not a raw atom", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
       # (LV half)
-      {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
       # 21 steps × 50 runner-ids = 1050 resolved runs, over the 1000 cap. Each step
@@ -586,9 +635,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "a stepless runbook shows the empty-state nudge to the editor, not a dispatch", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
       # Publish enforces ≥1 step, so a stepless runbook is a draft (the run screen
@@ -613,11 +663,19 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "live progress (RBK-010)" do
-    test "the header shows finished/total and the failed count as runs settle", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "the header shows finished/total and the failed count as runs settle", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       # 3 steps × 1 runner = 3 runs in one wave — finishing one as failed shows
       # both the finished/total tally and the failed count in the header.
       runbook = published_runbook_with_steps!(user, account, runner, 3)
@@ -642,11 +700,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "1 failed"
     end
 
-    test "a run_updated for a DIFFERENT execution is ignored", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "a run_updated for a DIFFERENT execution is ignored", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -672,9 +733,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert render(lv) =~ "Execution"
     end
 
-    test "an unrelated forwarded broadcast is swallowed by the catch-all", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "an unrelated forwarded broadcast is swallowed by the catch-all", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -689,17 +753,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
 
     test "on refresh, a dispatched run whose plan slot no longer resolves is appended, not dropped",
-         %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+         %{conn: conn, user: user, account: account} do
       subject = owner_subject(user, account)
 
       # published_runbook!'s lone step targets group "default". Dispatch fans it to
       # the one active member (runner_b); the run is created against runner_b.
       runner_b =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default", name: "node-b")
+        Fixtures.Runners.create_runner(account_id: account.id, group: "default", name: "node-b")
 
-      Emisar.Fixtures.action_fixture(runner: runner_b, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner_b, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -715,9 +778,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, _} = Emisar.Runners.disable_runner(runner_b, subject)
 
       runner_c =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default", name: "node-c")
+        Fixtures.Runners.create_runner(account_id: account.id, group: "default", name: "node-c")
 
-      Emisar.Fixtures.action_fixture(runner: runner_c, action_id: "linux.uptime")
+      Fixtures.Catalog.create_action(runner: runner_c, action_id: "linux.uptime")
 
       {:ok, _lv2, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
@@ -729,11 +792,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "run-uptime-#{runner_c.id}"
     end
 
-    test "markup in a run's output is escaped, never rendered as raw HTML", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
-      Emisar.Fixtures.policy_fixture(account_id: account.id)
+    test "markup in a run's output is escaped, never rendered as raw HTML", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      Fixtures.Policies.create_policy(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -768,9 +834,17 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "dispatch validation" do
-    test "a blank reason shows an inline field error, not a flash", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "a blank reason shows an inline field error, not a flash", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -786,9 +860,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ ~s(id="flash-error")
     end
 
-    test "typing a reason clears the inline error live", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "typing a reason clears the inline error live", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")

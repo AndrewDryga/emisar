@@ -5,13 +5,11 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   and per-user runner scope both read as "not found", never 403.
   """
   use EmisarWeb.ConnCase, async: true
-
-  alias Emisar.Fixtures
   alias Emisar.Runners
 
   setup %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    runner = Fixtures.runner_fixture(account_id: account.id, connected?: false)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     %{conn: conn, user: user, account: account, runner: runner}
   end
 
@@ -66,7 +64,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   test "an offline runner's Run affordance is aria-disabled with a non-color cue",
        %{conn: conn, account: account, runner: runner} do
     # setup's runner is offline, so the action row renders the disabled span.
-    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -80,9 +78,13 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account
   } do
     runner =
-      Fixtures.runner_fixture(account_id: account.id, enforce_signatures: true, connected?: true)
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        enforce_signatures: true,
+        connected?: true
+      )
 
-    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -99,8 +101,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     conn: conn,
     account: account
   } do
-    runner = Fixtures.runner_fixture(account_id: account.id, connected?: true)
-    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -118,7 +120,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   end
 
   test "a cross-account runner reads as not-found", %{conn: conn, account: account} do
-    foreign_runner = Fixtures.runner_fixture()
+    foreign_runner = Fixtures.Runners.create_runner()
 
     dest = ~p"/app/#{account}/runners"
 
@@ -132,18 +134,22 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    in_scope_runner = Fixtures.runner_fixture(account_id: account.id)
+    in_scope_runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-    operator = Fixtures.user_fixture()
+    operator = Fixtures.Users.create_user()
 
     membership =
-      Fixtures.membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, :ok} =
       Runners.replace_runner_scopes(
         membership,
         [{"runner", in_scope_runner.id}],
-        Fixtures.subject_for(owner, account)
+        Fixtures.Subjects.subject_for(owner, account)
       )
 
     operator_conn = build_conn() |> log_in_user(operator)
@@ -173,7 +179,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   # disabling an ONLINE runner is allowed (a soft "stop",
   # distinct from delete which requires the runner be offline first).
   test "disabling a connected runner is allowed (soft-stop)", %{conn: conn, account: account} do
-    runner = Fixtures.runner_fixture(account_id: account.id, connected?: true)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -185,7 +191,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   # modal) are not rendered; you must disable it first. Disable + Enable zones
   # gate on disabled_at, not online state, so the Disable zone still shows.
   test "the delete zone is hidden while the runner is online", %{conn: conn, account: account} do
-    runner = Fixtures.runner_fixture(account_id: account.id, connected?: true)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -203,9 +209,9 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     # The fixture account is on "free" (limit 3): disable the target, then
     # fill the remaining slots so re-enabling would exceed the plan.
-    subject = Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
     {:ok, _disabled} = Runners.disable_runner(runner, subject)
-    for _ <- 1..3, do: Fixtures.runner_fixture(account_id: account.id)
+    for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -217,8 +223,14 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    viewer = Fixtures.user_fixture()
-    _ = Fixtures.membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/#{runner.id}")
@@ -236,10 +248,14 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    operator = Fixtures.user_fixture()
+    operator = Fixtures.Users.create_user()
 
     _ =
-      Fixtures.membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
@@ -311,10 +327,14 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    operator = Fixtures.user_fixture()
+    operator = Fixtures.Users.create_user()
 
     _ =
-      Fixtures.membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, _lv, html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
@@ -336,7 +356,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    {:ok, _disabled} = Runners.disable_runner(runner, Fixtures.subject_for(user, account))
+    {:ok, _disabled} =
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -365,12 +386,17 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    {:ok, _disabled} = Runners.disable_runner(runner, Fixtures.subject_for(owner, account))
+    {:ok, _disabled} =
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(owner, account))
 
-    operator = Fixtures.user_fixture()
+    operator = Fixtures.Users.create_user()
 
     _ =
-      Fixtures.membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
@@ -390,7 +416,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    {:ok, _disabled} = Runners.disable_runner(runner, Fixtures.subject_for(user, account))
+    {:ok, _disabled} =
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 

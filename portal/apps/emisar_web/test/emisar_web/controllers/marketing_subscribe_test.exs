@@ -1,6 +1,5 @@
 defmodule EmisarWeb.MarketingSubscribeTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Marketing.Signup
   alias Emisar.Repo
 

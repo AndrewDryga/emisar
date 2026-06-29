@@ -7,9 +7,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   """
 
   use EmisarWeb.ConnCase, async: true
-
   import Ecto.Query
-
   alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners, Runs, Users}
   alias Emisar.Accounts.Account
   alias Emisar.Catalog.RunnerAction
@@ -26,7 +24,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         full_name: "Test Owner"
       })
 
-    user = Emisar.Fixtures.confirm_user(user)
+    user = Fixtures.Users.confirm_user(user)
 
     {:ok, account} =
       Accounts.create_account_with_owner(
@@ -90,7 +88,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   defp make_api_key!(account, user, opts \\ []) do
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
     {:ok, raw, _key} =
       ApiKeys.create_key(
@@ -151,7 +149,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a revoked emk- key is unauthorized", %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, raw, key} = ApiKeys.create_key(%{name: "to-revoke-#{unique()}"}, subject)
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
@@ -376,9 +374,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "notifications (silent drop)" do
+    setup %{account: account, user: user} do
+      {:ok, raw: make_api_key!(account, user)}
+    end
+
     test "an unknown notification name is still a 202 silent drop (not -32601)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user)
+         %{conn: conn, raw: raw} do
       # The prefix match on "notifications/" wins over the unknown-method clause,
       # so a never-heard-of notification is dropped, never a method-not-found error.
       payload = %{jsonrpc: "2.0", method: "notifications/whatever_unknown"}
@@ -391,8 +392,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a notification carrying an id is still dropped (prefix match wins)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user)
+         %{conn: conn, raw: raw} do
       # An id on a notifications/* frame doesn't promote it to a request — the
       # method prefix decides, so it's a no-reply 202 with an empty body.
       payload = %{jsonrpc: "2.0", id: 99, method: "notifications/initialized"}
@@ -482,7 +482,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "captures the client's name + version from clientInfo (sanitized)",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
         ApiKeys.create_key(
@@ -657,7 +657,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
       raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       body =
         conn
@@ -679,7 +679,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
@@ -699,7 +699,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       attestation = %{
         "sig" => "deadbeef",
@@ -742,7 +742,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
@@ -774,7 +774,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
@@ -889,7 +889,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "list_runbooks + get_runbook expose a published runbook with resolved runner names",
          %{conn: conn, account: account, user: user} do
       make_runner!(account, name: "edge-1", group: "edge-eu")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
@@ -958,7 +958,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an emo- OAuth token (the Claude/ChatGPT connector path) sees the runbook tools",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # Drive the exact OAuth flow Claude.ai / ChatGPT connectors run: register
       # a PKCE client, issue an auth code, exchange it for an emo- access token.
@@ -1032,7 +1032,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "an actions:read key gets its own dispatched runs back",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
         ApiKeys.create_key(%{name: "reader-#{unique()}", scopes: ["actions:read"]}, subject)
@@ -1161,9 +1161,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "wait_for_run argument + lookup errors" do
-    test "missing run_id is an in-band tool error", %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user)
+    setup %{account: account, user: user} do
+      {:ok, raw: make_api_key!(account, user)}
+    end
 
+    test "missing run_id is an in-band tool error", %{conn: conn, raw: raw} do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1174,13 +1176,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "requires `run_id`"
     end
 
-    test "an unparseable timeout is an in-band tool error", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      raw = make_api_key!(account, user)
-
+    test "an unparseable timeout is an in-band tool error", %{conn: conn, raw: raw} do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1194,9 +1190,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "duration"
     end
 
-    test "an unknown run id reads as not found", %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user)
-
+    test "an unknown run id reads as not found", %{conn: conn, raw: raw} do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1213,10 +1207,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "the long-poll returns the terminal result when the run finalizes mid-wait", %{
       conn: conn,
       account: account,
-      user: user
+      raw: raw
     } do
       runner = make_runner!(account, [])
-      raw = make_api_key!(account, user)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1264,10 +1257,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "a still-running run with zero wait reports waiting, not an error", %{
       conn: conn,
       account: account,
-      user: user
+      raw: raw
     } do
       runner = make_runner!(account, [])
-      raw = make_api_key!(account, user)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1293,13 +1285,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "get_runbook argument errors" do
-    test "missing runbook arg is an in-band tool error", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      raw = make_api_key!(account, user)
+    setup %{account: account, user: user} do
+      {:ok, raw: make_api_key!(account, user)}
+    end
 
+    test "missing runbook arg is an in-band tool error", %{conn: conn, raw: raw} do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1310,9 +1300,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "requires `runbook`"
     end
 
-    test "an unknown slug reads as not found", %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user)
-
+    test "an unknown slug reads as not found", %{conn: conn, raw: raw} do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1368,7 +1356,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "a reason-denied dispatch leaves no orphan run row",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
@@ -1391,7 +1379,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       make_runner!(other.account, name: "b-host") |> advertise_action!(action_id: "b.only.action")
 
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       body =
         conn
@@ -1559,7 +1547,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       end
 
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       body =
         conn
@@ -1587,7 +1575,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       end
 
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       body =
         conn
@@ -1671,7 +1659,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "a returned run carries run_id, action_id, runner, status, exit_code, reason, finished_at",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
         ApiKeys.create_key(%{name: "reader-#{unique()}", scopes: ["actions:read"]}, subject)
@@ -1715,7 +1703,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       raw_a = make_api_key!(account, user)
       raw_b = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       call = fn raw ->
         conn
@@ -1744,13 +1732,16 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "idempotency replay preserves the original outcome" do
-    test "a replayed denied run surfaces denied_by_policy again",
-         %{conn: conn, account: account, user: user} do
+    setup %{account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      {:ok, raw: raw, subject: subject}
+    end
 
+    test "a replayed denied run surfaces denied_by_policy again",
+         %{conn: conn, raw: raw, subject: subject} do
       # Flip the account policy so the low-risk action is denied.
       {:ok, _} =
         Policies.save_rules(
@@ -1798,12 +1789,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a replayed pending_approval run routes back to wait_for_run",
-         %{conn: conn, account: account, user: user} do
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
-
+         %{conn: conn, raw: raw, subject: subject} do
       # Low-risk action now requires approval, so the dispatch parks pending.
       {:ok, _} =
         Policies.save_rules(
@@ -1855,7 +1841,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   describe "clientInfo capture (initialize)" do
     setup %{account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
         ApiKeys.create_key(
@@ -1975,7 +1961,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a draft runbook is not resolvable (only published) → not found",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, draft} =
         Emisar.Runbooks.create_runbook(
@@ -2013,7 +1999,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "scope=own isolates per api_key — key B never sees key A's runs",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw_a, key_a} =
         ApiKeys.create_key(%{name: "a-#{unique()}", scopes: ["actions:read"]}, subject)
@@ -2054,7 +2040,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "scope=account widens to a sibling key's runs (same tenant)",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, _raw_a, key_a} =
         ApiKeys.create_key(%{name: "a-#{unique()}", scopes: ["actions:read"]}, subject)
@@ -2152,7 +2138,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "denied_by_policy renders the override reason verbatim + isError",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # A named override deny gives a deterministic verbatim reason
       # ("Override: <name>") the renderer must echo unaltered.
@@ -2193,7 +2179,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "pending_approval is a tip, not an error (isError=false)",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -2259,7 +2245,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "error taxonomy — pack trust + attestation (RPC, end-to-end)" do
     test "pack_untrusted renders the directing block + isError, no run created",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # A custom (no-baseline) pack lands :pending — untrusted — so dispatch
       # is refused before any run row is created.
@@ -2289,7 +2275,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "runner_requires_attestation renders + the run isn't created",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       runner = make_runner!(account, name: "signed-host")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
@@ -2323,7 +2309,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
@@ -2504,7 +2490,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   describe "clientInfo capture (title + dispatch propagation)" do
     test "the optional `title` field is captured alongside name + version",
          %{conn: conn, account: account, user: user} do
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
         ApiKeys.create_key(
@@ -2536,7 +2522,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, _key} =
         ApiKeys.create_key(
@@ -3487,14 +3473,14 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   # narrowed by the per-user scope layer. Mirrors the team page's scope editor.
   defp restrict_creator_scope!(account, user, scopes) do
     subject = subject_for(account, user)
-    membership = Emisar.Fixtures.fetch_membership(account.id, user.id)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     {:ok, :ok} = Runners.replace_runner_scopes(membership, scopes, subject)
     :ok
   end
 
   # Create + publish a one-step runbook in `account`, returning the runbook.
   defp publish_runbook!(account, user, opts) do
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     slug = opts[:slug] || "rb-#{unique()}"
 
     {:ok, runbook} =
@@ -3568,7 +3554,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     %{account: account, user: user}
   end
 
-  defp subject_for(account, user), do: Emisar.Fixtures.subject_for(user, account, role: :owner)
+  defp subject_for(account, user), do: Fixtures.Subjects.subject_for(user, account, role: :owner)
 
   # Drive the real OAuth flow (PKCE register → issue code → exchange), returning
   # `{emo_access_token, backing_key}`. issue_code mints its OWN backing api key,

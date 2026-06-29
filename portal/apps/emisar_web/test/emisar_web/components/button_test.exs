@@ -7,10 +7,8 @@ defmodule EmisarWeb.Components.ButtonTest do
   and class hooks are the public contract.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_button(attrs) do

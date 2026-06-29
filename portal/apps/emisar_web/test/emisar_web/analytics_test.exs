@@ -93,7 +93,7 @@ defmodule EmisarWeb.AnalyticsTest do
           full_name: "Jane Op"
         })
 
-      {:ok, user: Emisar.Fixtures.confirm_user(user)}
+      {:ok, user: Fixtures.Users.confirm_user(user)}
     end
 
     test "a magic-link sign-in sets the profile and fires signed_in with the user id", %{

@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.InputTest do
   arg rows) across the text/select/textarea branches.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_input(attrs) do

@@ -8,7 +8,6 @@ defmodule EmisarWeb.MCP.InstructionsTest do
   wild; dropping any of it is a regression.
   """
   use ExUnit.Case, async: true
-
   alias EmisarWeb.MCP.Instructions
 
   @text Instructions.text()

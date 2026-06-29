@@ -5,9 +5,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
   the Basic-Auth shared secret.
   """
   use EmisarWeb.ConnCase, async: true
-
   import ExUnit.CaptureLog
-
   alias Emisar.Mail
   alias Emisar.Mail.Suppression
   alias Emisar.Repo

@@ -11,9 +11,7 @@ defmodule Emisar.RunsTelemetryTest do
   this handler only ever sees its own run's event.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
+  alias Emisar.Fixtures
   alias Emisar.Runs
 
   defp base_attrs(account_id, runner_id) do
@@ -29,11 +27,11 @@ defmodule Emisar.RunsTelemetryTest do
 
   describe "run outcome telemetry" do
     test "a terminal transition emits [:emisar, :run, :finished], tagged by status" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = policy_fixture(account_id: account.id)
-      subject = subject_for(user_fixture(), account, role: :owner)
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
       handler = make_ref()
       test_pid = self()

@@ -5,10 +5,8 @@ defmodule EmisarWeb.Components.NoticeTest do
   is escaped (IL-16: notices carry interpolated, attacker-influenceable text).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   describe "notice/1" do

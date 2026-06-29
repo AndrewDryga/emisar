@@ -5,7 +5,6 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
   flip it on locally — hence `async: false`.
   """
   use EmisarWeb.ConnCase, async: false
-
   alias EmisarWeb.Plugs.RateLimit
 
   defp unique_bucket, do: "test-bucket-#{System.unique_integer([:positive])}"

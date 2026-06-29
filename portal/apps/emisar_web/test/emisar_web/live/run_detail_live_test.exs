@@ -5,9 +5,6 @@ defmodule EmisarWeb.RunDetailLiveTest do
   reason — for every run, not just the ones waiting on approval.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
   alias Emisar.Runs.RunEvent
@@ -91,7 +88,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "names the API key that initiated an MCP run", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
     run = run_with(account, %{source: "mcp", api_key_id: key.id})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -104,7 +101,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "prefers the MCP client name + version over a generic key name", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = api_key_fixture(account_id: account.id, name: "prod-mcp")
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "prod-mcp")
 
     run =
       run_with(account, %{
@@ -122,7 +119,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "shows the MCP session id as a sub-line under Source, not its own cell", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
 
     run =
       run_with(account, %{
@@ -255,7 +252,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "a cross-account run reads as not-found", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    foreign_account = account_fixture()
+    foreign_account = Fixtures.Accounts.create_account()
     foreign_run = run_with(foreign_account, %{})
 
     dest = ~p"/app/#{account}/runs"
@@ -295,8 +292,14 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
-    viewer = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runs/#{run.id}")
@@ -445,7 +448,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an in-flight run on a connected runner shows no disconnect banner", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id, connected?: true)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
     run = run_with(account, %{status: "running", runner_id: runner.id})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")

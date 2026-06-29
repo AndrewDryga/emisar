@@ -14,16 +14,13 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * Unauthenticated → 401
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Audit
 
   setup do
-    {user, account, subject} = owner_subject_fixture()
+    {user, account, subject} = Fixtures.Subjects.owner_subject()
 
     {raw, _key} =
-      api_key_fixture(
+      Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         created_by_id: user.id,
         scopes: ["audit:read"]
@@ -74,7 +71,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       {:ok, _} = Emisar.Accounts.update_account(account, %{name: "ack"}, subject)
 
       {raw, _} =
-        api_key_fixture(
+        Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
           created_by_id: subject.actor.id,
           scopes: ["actions:read"]
@@ -87,7 +84,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     end
   end
 
-  # Setting up `owner_subject_fixture` + `api_key_fixture` audits
+  # Setting up `Fixtures.Subjects.owner_subject` + `Fixtures.ApiKeys.create_api_key` audits
   # `account.created`, `user.signed_up`, `api_key.created` — so every
   # test starts with 3 baseline events on the account. We filter the
   # SIEM export to event types under our control to keep assertions
@@ -306,7 +303,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     } do
       # Build a separate account with its own events. The bearer-auth'd
       # key here belongs to `own_account` and must NEVER see the other.
-      {other_user, other_account, _other_subject} = owner_subject_fixture()
+      {other_user, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
       _ = other_user
 
       insert_event(own_account, "user.signed_in")
@@ -334,7 +331,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       account: own_account,
       raw_key: raw
     } do
-      {_other_user, other_account, _} = owner_subject_fixture()
+      {_other_user, other_account, _} = Fixtures.Subjects.owner_subject()
 
       insert_event(own_account, "user.signed_in")
       insert_event(other_account, "user.signed_in")

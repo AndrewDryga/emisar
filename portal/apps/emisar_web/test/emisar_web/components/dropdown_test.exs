@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.DropdownTest do
   tones, the action attrs ride the global `:rest`, and labels are escaped.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_dropdown(attrs, trigger, inner) do

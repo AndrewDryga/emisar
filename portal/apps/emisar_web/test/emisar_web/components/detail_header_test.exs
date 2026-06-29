@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.DetailHeaderTest do
   heading text is escaped (IL-16: detail headings carry no `raw/1`).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   describe "detail_header/1" do

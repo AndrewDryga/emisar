@@ -1,6 +1,5 @@
 defmodule EmisarWeb.MCP.IdempotencyTest do
   use ExUnit.Case, async: true
-
   alias EmisarWeb.MCP.Idempotency
 
   defp conn_with_header(value) do

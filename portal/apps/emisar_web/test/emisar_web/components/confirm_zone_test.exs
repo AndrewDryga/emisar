@@ -8,10 +8,8 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
   twin (enable/restore) is the same structure with no confirm.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   test "danger tone (default) builds a danger button carrying the confirm guard and phx-click" do

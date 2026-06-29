@@ -1,6 +1,5 @@
 defmodule EmisarWeb.AcceptInvitationLiveTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Accounts
 
   # Mints a pending invitation and returns its token. The invitee is a
@@ -109,11 +108,14 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
   end
 
   describe "signed-in accept" do
-    test "the invitee accepts in place and lands in the app", %{conn: conn} do
-      {_owner_conn, owner, account} = register_and_log_in(conn)
+    setup %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      %{owner: owner, account: account}
+    end
 
+    test "the invitee accepts in place and lands in the app", %{owner: owner, account: account} do
       # The invitee is an already-registered user, signed in.
-      invitee = Emisar.Fixtures.user_fixture()
+      invitee = Fixtures.Users.create_user()
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(invitee.email, "viewer", owner_subject(owner, account))
@@ -131,12 +133,12 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     end
 
     test "a DIFFERENT signed-in user gets the wrong-account screen, not the accept", %{
-      conn: conn
+      owner: owner,
+      account: account
     } do
-      {_owner_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
-      bystander = Emisar.Fixtures.user_fixture()
+      bystander = Fixtures.Users.create_user()
 
       {:ok, _lv, html} =
         build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")

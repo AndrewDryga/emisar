@@ -13,13 +13,16 @@ defmodule EmisarWeb.BillingLiveTest do
 
   defp downgrade_to(user, role) when is_binary(role) do
     {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-    Emisar.Fixtures.force_membership_role(membership, role)
+    Fixtures.Memberships.force_role(membership, role)
   end
 
   describe "as an owner" do
-    test "renders the current plan and usage meters", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
 
+    test "renders the current plan and usage meters", %{conn: conn, account: account} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # Free plan strip + the two usage meters.
@@ -32,9 +35,9 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "from a paid plan a lower plan reads as a Downgrade, never 'Upgrade to Free'", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
-      {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "active")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -46,9 +49,10 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ ~s(phx-value-plan="free")
     end
 
-    test "the upgrade event starts checkout and redirects externally", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "the upgrade event starts checkout and redirects externally", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # The owner is offered the upgrade control (the strip CTA + the
@@ -72,9 +76,10 @@ defmodule EmisarWeb.BillingLiveTest do
       assert is_binary(url) and url != ""
     end
 
-    test "the enterprise card surfaces contact-sales, not checkout", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "the enterprise card surfaces contact-sales, not checkout", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       html =
@@ -94,7 +99,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # the rose `usage_class`. (count_billable_runners is presence-agnostic, so
       # unconnected fixtures still count toward the cap.)
       {conn, _user, account} = register_and_log_in(conn)
-      for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -114,7 +119,7 @@ defmodule EmisarWeb.BillingLiveTest do
       insert_subscription(account, "active")
 
       for _ <- 1..80,
-          do: Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+          do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -192,10 +197,17 @@ defmodule EmisarWeb.BillingLiveTest do
   end
 
   describe "manage subscription" do
-    test "an owner with a Paddle customer is redirected to the portal", %{conn: conn} do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "an owner with a Paddle customer is redirected to the portal", %{
+      conn: conn,
+      account: account
+    } do
       # With a customer attached and no Paddle key configured (test default),
       # open_billing_portal returns the stub portal URL and the LV redirects to it.
-      {conn, _user, account} = register_and_log_in(conn)
       account = attach_customer(account, "ctm_portal_01")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -210,14 +222,13 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a manage event on a no-customer account flashes :no_customer, no redirect", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
       # On an account with no paddle_customer_id, open_billing_portal short-circuits
       # to {:error, :no_customer} BEFORE any PaddleClient call, so the handler shows
       # the "upgrade first" flash and stays on the page (no redirect). The flash —
       # not a portal URL — is the proof the vendor was never reached.
-      {conn, _user, account} = register_and_log_in(conn)
-
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # No customer attached → no Manage control rendered; push the event directly.
@@ -227,13 +238,16 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "upgrade to a paid plan first"
     end
 
-    test "an admin pushing a crafted manage event is refused — flash, no redirect", %{conn: conn} do
+    test "an admin pushing a crafted manage event is refused — flash, no redirect", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # manage_billing is owner-only. An admin (who can VIEW billing) crafting the
       # manage_billing event is double-gated: Permissions.gated denies it in the LV
       # before the context is even called, so the result is a permission flash and
       # no portal redirect. (Customer attached, to prove the gate — not the
       # no-customer branch — is what refuses.)
-      {conn, user, account} = register_and_log_in(conn)
       downgrade_to(user, "admin")
       account = attach_customer(account, "ctm_admin_manage_01")
 
@@ -243,11 +257,14 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "have permission to do that."
     end
 
-    test "the Manage control is hidden for a viewer even with a customer attached", %{conn: conn} do
+    test "the Manage control is hidden for a viewer even with a customer attached", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # The Manage-subscription button is gated on subject_can_manage_billing? AND a
       # customer being present. A viewer has a customer but not the permission, so
       # the button is suppressed (the owner-only affordance never renders for them).
-      {conn, user, account} = register_and_log_in(conn)
       downgrade_to(user, "viewer")
       account = attach_customer(account, "ctm_viewer_manage_01")
 
@@ -260,8 +277,12 @@ defmodule EmisarWeb.BillingLiveTest do
   end
 
   describe "as a viewer" do
-    test "no upgrade controls render", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "no upgrade controls render", %{conn: conn, user: user, account: account} do
       downgrade_to(user, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -274,8 +295,11 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Owners only"
     end
 
-    test "a crafted upgrade event is refused — flash, no redirect", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a crafted upgrade event is refused — flash, no redirect", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       downgrade_to(user, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")

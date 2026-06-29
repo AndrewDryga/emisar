@@ -20,9 +20,6 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   is. The HMAC math itself lives in `PaddleClient.Live.verify_signature/3`.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Billing
   alias Emisar.Billing.Subscription
   alias Emisar.Repo
@@ -56,7 +53,7 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   # An account with a Paddle customer attached — the webhook resolves the
   # account by `data.customer_id`, so without this the event is a no-op.
   defp account_with_customer(customer_id) do
-    {_user, account, _subject} = owner_subject_fixture()
+    {_user, account, _subject} = Fixtures.Subjects.owner_subject()
 
     {:ok, account} =
       account

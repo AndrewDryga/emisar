@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.MarketingHeadingTest do
   `scale` controls only the visual size. The size ramp is the contract.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_heading(attrs) do

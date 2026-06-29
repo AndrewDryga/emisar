@@ -1,7 +1,6 @@
 defmodule Emisar.Analytics.EventsTest do
   # async: false — flips the global `:mixpanel_enabled` app env.
   use ExUnit.Case, async: false
-
   alias Emisar.Analytics.Events
   alias Emisar.Billing.Subscription
 

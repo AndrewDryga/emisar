@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserConfirmationControllerTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Auth, Repo, Users}
 
   describe "GET /confirm/:token" do

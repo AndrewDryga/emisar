@@ -47,13 +47,13 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "an enforcing runner shows a Signed-only chip on the index", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      Emisar.Fixtures.runner_fixture(
+      Fixtures.Runners.create_runner(
         account_id: account.id,
         name: "hardened",
         enforce_signatures: true
       )
 
-      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "plain")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "plain")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
@@ -66,8 +66,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "shows the fleet signed-only notice when every active runner enforces", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "a", enforce_signatures: true)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "b", enforce_signatures: true)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "a", enforce_signatures: true)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "b", enforce_signatures: true)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "Fleet is signed-only"
@@ -79,7 +79,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # An offline runner with connect history → the "last seen <time>" branch
       # (not "just connected", which needs live presence). Stamping the column
       # without tracking presence keeps it offline.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       runner
       |> Ecto.Changeset.change(last_connected_at: DateTime.utc_now())
@@ -104,10 +104,10 @@ defmodule EmisarWeb.RunnersLiveTest do
     # account_slug_authz_test; this asserts the in-account data scoping.)
     test "cross-account — A's operator sees only A's runners, never B's", %{conn: conn} do
       {conn, _user, account_a} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account_a.id, name: "alpha-runner")
+      Fixtures.Runners.create_runner(account_id: account_a.id, name: "alpha-runner")
 
-      account_b = Emisar.Fixtures.account_fixture()
-      Emisar.Fixtures.runner_fixture(account_id: account_b.id, name: "bravo-runner")
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Runners.create_runner(account_id: account_b.id, name: "bravo-runner")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}/runners")
 
@@ -120,12 +120,12 @@ defmodule EmisarWeb.RunnersLiveTest do
     # a plain link to the install wizard, present on the page header.
     test "a viewer can view the runners list; 'Add a runner' links to install", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "viewable-runner")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "viewable-runner")
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -149,7 +149,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     # load-error/empty state. With a runner present, the retry shows it.
     test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "still-listed")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "still-listed")
 
       {:ok, _lv, html} =
         live(conn, ~p"/app/#{account}/runners?page=garbage-cursor")
@@ -170,23 +170,23 @@ defmodule EmisarWeb.RunnersLiveTest do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
       in_scope =
-        Emisar.Fixtures.runner_fixture(
+        Fixtures.Runners.create_runner(
           account_id: account.id,
           name: "in-scope-runner",
           group: "shared-group"
         )
 
       _out_of_scope =
-        Emisar.Fixtures.runner_fixture(
+        Fixtures.Runners.create_runner(
           account_id: account.id,
           name: "out-of-scope-runner",
           group: "shared-group"
         )
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       membership =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -197,7 +197,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         Emisar.Runners.replace_runner_scopes(
           membership,
           [{"runner", in_scope.id}],
-          Emisar.Fixtures.subject_for(owner, account)
+          Fixtures.Subjects.subject_for(owner, account)
         )
 
       {:ok, _lv, html} =
@@ -215,8 +215,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
-      disabled = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      disabled = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, _} = Emisar.Runners.disable_runner(disabled, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
@@ -286,17 +286,22 @@ defmodule EmisarWeb.RunnersLiveTest do
   end
 
   describe "GET /app/runners/:id" do
-    test "404-redirects when the runner does not belong to the account", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
 
+    test "404-redirects when the runner does not belong to the account", %{
+      conn: conn,
+      account: account
+    } do
       dest = ~p"/app/#{account}/runners"
 
       assert {:error, {:live_redirect, %{to: ^dest}}} =
                live(conn, ~p"/app/#{account}/runners/#{Ecto.UUID.generate()}")
     end
 
-    test "renders the runner detail page", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "renders the runner detail page", %{conn: conn, user: user, account: account} do
       subject = owner_subject(user, account)
 
       {:ok, runner} =
@@ -315,11 +320,16 @@ defmodule EmisarWeb.RunnersLiveTest do
   end
 
   describe "fleet-offline nav alert (Option B)" do
-    test "shows the 'All runners offline' nav alert when the whole fleet is offline", %{
-      conn: conn
-    } do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      %{conn: conn, account: account}
+    end
+
+    test "shows the 'All runners offline' nav alert when the whole fleet is offline", %{
+      conn: conn,
+      account: account
+    } do
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
@@ -327,9 +337,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "All runners offline"
     end
 
-    test "no nav alert when at least one runner is online", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
+    test "no nav alert when at least one runner is online", %{conn: conn, account: account} do
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 

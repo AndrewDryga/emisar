@@ -6,19 +6,17 @@ defmodule Emisar.RunsCrossAccountTest do
   """
 
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
+  alias Emisar.Fixtures
   alias Emisar.Runs
   alias Emisar.Runs.ActionRun
 
   describe "dispatch_run/2 cross-account guard" do
     test "rejects a runner_id that belongs to a different account" do
-      account_a = account_fixture()
-      account_b = account_fixture()
-      runner_b = runner_fixture(account_id: account_b.id)
-      _ = policy_fixture(account_id: account_a.id)
-      user = user_fixture()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
+      _ = Fixtures.Policies.create_policy(account_id: account_a.id)
+      user = Fixtures.Users.create_user()
 
       attrs = %{
         runner_id: runner_b.id,
@@ -29,17 +27,18 @@ defmodule Emisar.RunsCrossAccountTest do
         requested_by_id: user.id
       }
 
-      subject = subject_for(user_fixture(), account_a, role: :owner)
+      subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
 
       assert {:error, :runner_not_found} =
                Runs.dispatch_run(attrs, subject)
     end
 
     test "rejects a missing runner_id" do
-      account = account_fixture()
-      _ = policy_fixture(account_id: account.id)
-      user = user_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
+      account = Fixtures.Accounts.create_account()
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
       assert {:error, :runner_required} =
                Runs.dispatch_run(
@@ -53,12 +52,19 @@ defmodule Emisar.RunsCrossAccountTest do
     end
 
     test "rejects a disabled runner (even within the same account)" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-      _ = policy_fixture(account_id: account.id)
-      user = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-      subject = subject_for(user, account, role: :owner)
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, _disabled} = Emisar.Runners.disable_runner(runner, subject)
 
@@ -77,9 +83,13 @@ defmodule Emisar.RunsCrossAccountTest do
   end
 
   describe "fetch_run_by_request_id_for_runner/2 — runner-scoped lookup" do
-    test "returns the run when the runner matches" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
+    setup do
+      account = Fixtures.Accounts.create_account()
+      %{account: account}
+    end
+
+    test "returns the run when the runner matches", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, %ActionRun{} = run} =
         Runs.create_run(%{
@@ -95,10 +105,9 @@ defmodule Emisar.RunsCrossAccountTest do
       assert id == run.id
     end
 
-    test "returns :not_found for a runner that didn't own the run" do
-      account = account_fixture()
-      runner_a = runner_fixture(account_id: account.id)
-      runner_b = runner_fixture(account_id: account.id)
+    test "returns :not_found for a runner that didn't own the run", %{account: account} do
+      runner_a = Fixtures.Runners.create_runner(account_id: account.id)
+      runner_b = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{

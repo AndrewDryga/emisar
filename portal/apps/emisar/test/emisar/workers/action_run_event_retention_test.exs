@@ -1,8 +1,6 @@
 defmodule Emisar.Workers.ActionRunEventRetentionTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
+  alias Emisar.Fixtures
   alias Emisar.Runs
   alias Emisar.Runs.RunEvent
   alias Emisar.Workers.ActionRunEventRetention
@@ -56,8 +54,8 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "prunes events of runs finished outside the retention window" do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
     old_run = finished_run(account, runner, @beyond_window_days)
     add_event(old_run, 1)
     add_event(old_run, 2)
@@ -68,8 +66,8 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "keeps events of recently-finished runs" do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
     recent_run = finished_run(account, runner, @within_window_days)
     kept = add_event(recent_run, 1)
 
@@ -79,8 +77,8 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "keeps events of runs that never finished, regardless of age" do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, unfinished} =
       Runs.create_run(%{
@@ -107,9 +105,9 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   # run-event prune (which keys on the SAME plan lookup as audit retention)
   # degrades gracefully on a legacy plan string.
   test "falls back to the free window when the plan is unresolvable" do
-    account = account_fixture()
-    subscription_fixture(account, "legacy-unlisted-plan")
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
     old_run = finished_run(account, runner, @beyond_window_days)
     add_event(old_run, 1)
 
@@ -124,8 +122,8 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   # still occupy space and age past the plan window all the same. A regression to
   # `not_deleted()` would leave a closed tenant's chunks growing forever.
   test "prunes a tombstoned account's events for runs finished past the window" do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
     old_run = finished_run(account, runner, @beyond_window_days)
     add_event(old_run, 1)
 
@@ -139,13 +137,13 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "does not prune another account's events" do
-    account_a = account_fixture()
-    runner_a = runner_fixture(account_id: account_a.id)
+    account_a = Fixtures.Accounts.create_account()
+    runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
     old_a = finished_run(account_a, runner_a, @beyond_window_days)
     add_event(old_a, 1)
 
-    account_b = account_fixture()
-    runner_b = runner_fixture(account_id: account_b.id)
+    account_b = Fixtures.Accounts.create_account()
+    runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
     old_b = finished_run(account_b, runner_b, @beyond_window_days)
     kept_b = add_event(old_b, 1)
 
@@ -164,10 +162,10 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "pages accounts via a continuation cursor and prunes them all" do
-    accounts = for _ <- 1..3, do: account_fixture()
+    accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
 
     for account <- accounts do
-      runner = runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       old_run = finished_run(account, runner, @beyond_window_days)
       add_event(old_run, 1)
     end
@@ -181,7 +179,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
   end
 
   test "a re-walk at the same cursor dedups the follow-up (no overlapping chains)" do
-    _accounts = for _ <- 1..2, do: account_fixture()
+    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
 
     Oban.Testing.with_testing_mode(:manual, fn ->
       # Two full-page walks from the same cursor produce the same last-account-id

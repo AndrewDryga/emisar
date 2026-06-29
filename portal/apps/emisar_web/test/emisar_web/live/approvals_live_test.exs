@@ -5,14 +5,11 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   the next call needs fresh human approval).
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Approvals
   alias Emisar.Runs
 
   defp pending_request!(account, requester_id, reason) do
-    runner = runner_fixture(account_id: account.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -32,8 +29,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   # Grants are per API key — they only mint for MCP-sourced runs, so the
   # grant tests need the MCP shape (api_key_id + args_sha256).
   defp pending_mcp_request!(account, user, reason) do
-    runner = runner_fixture(account_id: account.id)
-    {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -111,7 +108,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
   test "revoke_grant retires a standing grant", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     request = pending_mcp_request!(account, user, "grant me a day")
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
@@ -129,7 +126,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
-    subject = subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     request = pending_mcp_request!(account, user, "grant me a day")
     # A one-day grant has an expiry → the "expires <time>" branch; minting it
@@ -160,14 +157,20 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
   test "a viewer cannot revoke a grant", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    subject = subject_for(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner, account)
 
     request = pending_mcp_request!(account, owner, "standing grant")
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
     {:ok, [grant], _meta} = Approvals.list_grants_for_account(subject)
 
-    viewer = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/approvals")
 
@@ -184,7 +187,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # shown in Pending, so a decided request appears there while a pending one
     # shows only at the top, never duplicated below.
     {conn, user, account} = register_and_log_in(conn)
-    subject = subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     decided = pending_request!(account, user.id, "decided-and-denied")
     {:ok, _} = Approvals.deny_request(decided, subject, "not now")
@@ -205,15 +208,21 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # `manage_grants`, so `list_grants_for_account` errors → collapsed to [] → the
     # grants section shows its empty-state, never a grant row or a Revoke button.
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    subject = subject_for(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner, account)
 
     # A real standing grant exists in the account…
     request = pending_mcp_request!(account, owner, "owner-minted grant")
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
     _pending = pending_request!(account, owner.id, "viewer can see this")
 
-    viewer = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+    viewer = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
     {:ok, _lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/approvals")
 
@@ -229,13 +238,19 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # manage_grants. The list errors → [], so the section is empty regardless of
     # the predicate (the GOV-005 visibility/context split never collides).
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    subject = subject_for(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner, account)
 
     request = pending_mcp_request!(account, owner, "owner-minted grant")
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
 
-    operator = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+    operator = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, _lv, html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
@@ -251,7 +266,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
 
     {_b_conn, b_user, b_account} = register_and_log_in(build_conn())
-    b_subject = subject_for(b_user, b_account)
+    b_subject = Fixtures.Subjects.subject_for(b_user, b_account)
 
     # B has a pending request AND a standing grant.
     _b_pending = pending_request!(b_account, b_user.id, "account-B secret reboot")
@@ -339,14 +354,20 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # (approvals_live.ex:42) instead of flashing a denial. A crafted event must be
     # refused, not crash the view.
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    subject = subject_for(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner, account)
 
     request = pending_mcp_request!(account, owner, "standing grant")
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
     {:ok, [grant], _meta} = Approvals.list_grants_for_account(subject)
 
-    operator = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+    operator = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")

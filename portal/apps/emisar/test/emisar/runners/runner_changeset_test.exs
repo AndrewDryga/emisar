@@ -1,6 +1,5 @@
 defmodule Emisar.Runners.Runner.ChangesetTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Runners.Runner
 
   describe "apply_state/2 size caps" do

@@ -8,7 +8,6 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
     * a failed run must surface the error so the LLM sees the failure.
   """
   use ExUnit.Case, async: true
-
   alias EmisarWeb.MCP.ContentBlocks
 
   defp text(blocks), do: Enum.map_join(blocks, "\n", & &1.text)

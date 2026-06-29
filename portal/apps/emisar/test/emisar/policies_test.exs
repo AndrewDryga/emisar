@@ -1,18 +1,629 @@
 defmodule Emisar.PoliciesTest do
-  use ExUnit.Case, async: true
-
+  use Emisar.DataCase, async: true
+  alias Emisar.Auth.Subject
+  alias Emisar.Fixtures
   alias Emisar.Policies
   alias Emisar.Policies.Policy
 
+  describe "default_rules/0" do
+    test "reproduce single-approver, self-approval-allowed behavior" do
+      assert Policies.min_approvals_for(Policies.default_rules()) == 1
+      assert Policies.self_approval_allowed?(Policies.default_rules())
+    end
+
+    test "carry a valid default decision for every risk tier" do
+      defaults = Policies.default_rules()["defaults"]
+
+      for tier <- Policies.risk_tiers() do
+        assert defaults[tier] in Policies.decisions()
+      end
+
+      assert defaults["critical"] == "deny"
+    end
+  end
+
+  describe "risk_tiers/0" do
+    test "list the four tiers low→critical, the order the editor renders" do
+      assert Policies.risk_tiers() == ~w(low medium high critical)
+    end
+  end
+
+  describe "decisions/0" do
+    test "list the three decisions in escalating order, matching decision_rank/1" do
+      assert Policies.decisions() == ~w(allow require_approval deny)
+      assert Enum.map(Policies.decisions(), &Policies.decision_rank/1) == [0, 1, 2]
+    end
+  end
+
+  describe "min_approvals_for/1" do
+    test "reads the section, floors at 1, tolerates a missing section" do
+      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 3}}) == 3
+      # Back-compat: rules stored before the section existed read as 1.
+      assert Policies.min_approvals_for(%{"defaults" => %{}}) == 1
+      assert Policies.min_approvals_for(%{}) == 1
+      assert Policies.min_approvals_for(nil) == 1
+      # Never below 1, even from a corrupt stored value.
+      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 0}}) == 1
+    end
+  end
+
+  describe "self_approval_allowed?/1" do
+    test "defaults true, only an explicit boolean false forbids" do
+      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => false}}) ==
+               false
+
+      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => true}})
+      assert Policies.self_approval_allowed?(%{"defaults" => %{}})
+      assert Policies.self_approval_allowed?(%{})
+      assert Policies.self_approval_allowed?(nil)
+    end
+
+    test "fails CLOSED on a present non-boolean value" do
+      # A corrupt / manually-written value must not silently widen the gate —
+      # only a MISSING key keeps the legacy allow-default.
+      for bad <- ["yes", "false", 0, 1, nil, %{}] do
+        refute Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => bad}}),
+               "expected #{inspect(bad)} to forbid self-approval"
+      end
+
+      # A non-map approval section doesn't raise and keeps the legacy default.
+      assert Policies.self_approval_allowed?(%{"approval" => "garbage"})
+    end
+  end
+
+  describe "decision_rank/1" do
+    test "orders allow < require_approval < deny" do
+      assert Policies.decision_rank("allow") == 0
+      assert Policies.decision_rank("require_approval") == 1
+      assert Policies.decision_rank("deny") == 2
+
+      assert Policies.decision_rank("allow") < Policies.decision_rank("require_approval")
+      assert Policies.decision_rank("require_approval") < Policies.decision_rank("deny")
+    end
+
+    test "an unknown decision ranks most-restrictive (fails closed)" do
+      # Reachable only through malformed stored rules; a corrupt tier must read
+      # as deny, never allow.
+      assert Policies.decision_rank("maybe") == 2
+      assert Policies.decision_rank(nil) == 2
+    end
+  end
+
+  describe "shadowed_overrides/1" do
+    test "a later deny shadowed by an earlier broader allow is dead" do
+      rules = %{
+        "overrides" => [
+          %{"name" => "allow-nginx", "action" => "nginx_*", "decision" => "allow"},
+          %{"name" => "block-reload", "action" => "nginx_reload", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
+    end
+
+    test "the reverse order is fine — the specific deny matches first" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_reload", "decision" => "deny"},
+          %{"action" => "nginx_*", "decision" => "allow"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "an identical-pattern duplicate is shadowed by the first" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_*", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
+    end
+
+    test "disjoint globs never shadow each other" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_*", "decision" => "allow"},
+          %{"action" => "apache_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "reports the FIRST subsumer when several earlier rows cover a row" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "*", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "require_approval"},
+          %{"action" => "nginx_reload", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [
+               %{index: 1, shadowed_by: 0},
+               %{index: 2, shadowed_by: 0}
+             ]
+    end
+
+    test "blank-action rows can't subsume or be subsumed — they're skipped" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "empty / missing overrides → []" do
+      assert Policies.shadowed_overrides(%{"overrides" => []}) == []
+      assert Policies.shadowed_overrides(%{}) == []
+      assert Policies.shadowed_overrides(nil) == []
+    end
+  end
+
+  describe "change_policy/0" do
+    test "with no argument builds a form changeset off the default rules" do
+      changeset = Policies.change_policy()
+      assert %Ecto.Changeset{} = changeset
+      assert changeset.valid?
+    end
+
+    test "validates a supplied rules map so the editor can render the error inline" do
+      # A bogus top-level section makes the form changeset invalid with the
+      # rules-level error the LiveView surfaces.
+      changeset = Policies.change_policy(%{"schema_version" => 2, "bogus_section" => %{}})
+      refute changeset.valid?
+      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
+    end
+  end
+
+  # change_policy/0 builds the form changeset; these guard the rules-level
+  # validation it (and the persisted save) rely on — monotonic tiers and the
+  # editor's shape guardrails.
+  describe "change_policy/0 — tier-monotonicity validation" do
+    alias Emisar.Policies.Policy.Changeset, as: PolicyChangeset
+
+    test "monotonic defaults pass validation" do
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "require_approval",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+
+      changeset =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      assert changeset.valid?
+    end
+
+    test "rejects a higher tier that's more permissive than a lower tier" do
+      rules = %{
+        "schema_version" => 2,
+        # medium=require_approval but high=allow → high is more
+        # permissive than medium. Should be rejected.
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "require_approval",
+          "high" => "allow"
+        },
+        "overrides" => []
+      }
+
+      changeset =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      refute changeset.valid?
+
+      assert {"higher-risk tiers must be at least as restrictive" <> _, []} =
+               changeset.errors[:rules]
+    end
+
+    test "rejects critical=require_approval when high=deny" do
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "deny",
+          "critical" => "require_approval"
+        },
+        "overrides" => []
+      }
+
+      changeset =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      refute changeset.valid?
+    end
+  end
+
+  describe "change_policy/0 — rules-shape validation (the policy-editor guardrails)" do
+    defp rules_changeset(rules) do
+      Policy.Changeset.create(%{account_id: Ecto.UUID.generate(), rules: rules})
+    end
+
+    test "rejects an unknown top-level rule section" do
+      changeset = rules_changeset(%{"schema_version" => 2, "bogus_section" => %{}})
+      refute changeset.valid?
+      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown risk tier in defaults" do
+      changeset = rules_changeset(%{"defaults" => %{"extreme" => "deny"}})
+      refute changeset.valid?
+      assert {"unknown risk tiers:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown decision value in defaults" do
+      changeset = rules_changeset(%{"defaults" => %{"low" => "maybe"}})
+      refute changeset.valid?
+      assert {"unknown decisions:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects defaults that isn't a JSON object" do
+      changeset = rules_changeset(%{"defaults" => "allow-everything"})
+      refute changeset.valid?
+      assert {"defaults must be a JSON object", _} = changeset.errors[:rules]
+    end
+
+    test "rejects an override that isn't a JSON object" do
+      changeset = rules_changeset(%{"overrides" => ["not-a-map"]})
+      refute changeset.valid?
+      assert {"each override must be a JSON object", _} = changeset.errors[:rules]
+    end
+
+    test "rejects overrides that isn't a list" do
+      changeset = rules_changeset(%{"overrides" => %{"not" => "a list"}})
+      refute changeset.valid?
+      assert {"overrides must be a list", _} = changeset.errors[:rules]
+    end
+
+    test "a minimal policy with neither defaults nor overrides is valid" do
+      assert rules_changeset(%{"schema_version" => 2}).valid?
+    end
+
+    test "rejects min_approvals: 0 in the approval section" do
+      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 0}})
+      refute changeset.valid?
+      assert {"min_approvals must be an integer >= 1", _} = changeset.errors[:rules]
+    end
+
+    test "rejects a non-boolean allow_self_approval" do
+      changeset = rules_changeset(%{"approval" => %{"allow_self_approval" => "yes"}})
+      refute changeset.valid?
+      assert {"allow_self_approval must be a boolean", _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown key inside the approval section" do
+      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 1, "bogus" => true}})
+      refute changeset.valid?
+      assert {"unknown approval keys:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "accepts a valid approval section" do
+      changeset =
+        rules_changeset(%{"approval" => %{"min_approvals" => 2, "allow_self_approval" => false}})
+
+      assert changeset.valid?
+    end
+
+    test "a missing approval section is valid (back-compat with rules stored before the gate)" do
+      assert rules_changeset(%{"schema_version" => 2, "defaults" => %{"low" => "allow"}}).valid?
+    end
+
+    test "updating with no rules change doesn't bump the version" do
+      rules = %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
+      policy = %Policy{vsn: 1, rules: rules}
+
+      changeset = Policy.Changeset.update(policy, %{updated_by_id: Ecto.UUID.generate()})
+      assert Ecto.Changeset.get_change(changeset, :vsn) == nil
+    end
+  end
+
+  describe "fetch_policy/1" do
+    test "returns the account's default policy for a member subject" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %Policy{} = policy} = Policies.fetch_policy(subject)
+      assert policy.account_id == account.id
+      assert policy.scope_type == :account
+    end
+
+    test "an operator (view_policies) can read it; an api_client cannot" do
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+
+      operator =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+
+      assert {:ok, %Policy{}} = Policies.fetch_policy(operator)
+
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      api_subject = Subject.for_api_key(api_key, account)
+
+      assert {:error, :unauthorized} = Policies.fetch_policy(api_subject)
+    end
+
+    test "cross-account: a subject only ever reads its OWN account's policy" do
+      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      {:ok, policy_a} = Policies.fetch_policy(subject_a)
+      {:ok, policy_b} = Policies.fetch_policy(subject_b)
+
+      assert policy_a.account_id == account_a.id
+      assert policy_b.account_id == account_b.id
+      refute policy_a.id == policy_b.id
+    end
+  end
+
+  describe "list_scoped_policies/1" do
+    test "lists the account's scoped overrides, excluding the account default" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", subject)
+
+      assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
+      assert listed.id == scoped.id
+      # The account default isn't a scoped override, so it never lists here.
+      refute listed.scope_type == :account
+    end
+
+    test "an operator (view_policies) can list; an api_client cannot" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", owner)
+
+      operator =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+
+      assert {:ok, [_]} = Policies.list_scoped_policies(operator)
+
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      api_subject = Subject.for_api_key(api_key, account)
+      assert {:error, :unauthorized} = Policies.list_scoped_policies(api_subject)
+    end
+
+    test "cross-account: never lists another account's overrides" do
+      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", subject_a)
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
+    end
+  end
+
+  describe "fetch_scoped_policy/3" do
+    test "fetches a runner/group override by its scope; :not_found when absent" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject)
+
+      assert {:ok, fetched} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
+      assert fetched.id == policy.id
+
+      # No override for this scope yet → the editor starts from the account default.
+      assert {:error, :not_found} = Policies.fetch_scoped_policy(:group, "db", subject)
+    end
+
+    test "a viewer (view_policies) can fetch; an api_client cannot" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      {:ok, _} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", owner)
+
+      viewer =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", viewer)
+
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      api_subject = Subject.for_api_key(api_key, account)
+
+      assert {:error, :unauthorized} =
+               Policies.fetch_scoped_policy(:runner, "runner-1", api_subject)
+    end
+
+    test "cross-account: B can't fetch A's same-named override" do
+      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {:ok, _} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject_a)
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "runner-1", subject_b)
+    end
+  end
+
+  describe "delete_scoped_policy/2" do
+    test "soft-deletes an override so its scope falls back to the next-broader scope" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject)
+
+      assert {:ok, deleted} = Policies.delete_scoped_policy(policy, subject)
+      assert deleted.id == policy.id
+      refute is_nil(deleted.deleted_at)
+
+      # Gone from the editor's list; the scope now resolves to the broader default.
+      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, "runner-1", subject)
+      assert {:ok, []} = Policies.list_scoped_policies(subject)
+    end
+
+    test "a viewer can't delete an override (no manage_policies)" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", owner)
+
+      viewer =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert {:error, :unauthorized} = Policies.delete_scoped_policy(policy, viewer)
+      # The row is untouched — still live.
+      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", owner)
+    end
+
+    test "cross-account: B can't delete A's override (:not_found, row untouched)" do
+      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+
+      {:ok, policy_a} =
+        Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject_a)
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      # delete_scoped_policy guards with Subject.ensure_in_account (default
+      # :not_found), so B is refused without A's override being touched.
+      assert {:error, :not_found} = Policies.delete_scoped_policy(policy_a, subject_b)
+      assert {:ok, _} = Policies.fetch_scoped_policy(:runner, "runner-1", subject_a)
+    end
+  end
+
+  describe "save_scoped_rules/4" do
+    test "creates a runner override, then upserts the same row in place" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, created} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject)
+      assert created.account_id == account.id
+      assert created.scope_type == :runner
+      assert created.scope_value == "r1"
+      assert created.rules["defaults"]["low"] == "deny"
+
+      # A second save of the same scope is an upsert: same row, bumped vsn.
+      assert {:ok, updated} =
+               Policies.save_scoped_rules(allow_all_rules(), :runner, "r1", subject)
+
+      assert updated.id == created.id
+      assert updated.vsn == created.vsn + 1
+      assert updated.rules["defaults"]["low"] == "allow"
+    end
+
+    test "rejects an empty scope_value for a runner/group scope" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, "", subject)
+
+      assert %{scope_value: [_ | _]} = errors_on(changeset)
+    end
+
+    test "a viewer can't save a scoped override (no manage_policies)" do
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+
+      viewer =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", viewer)
+    end
+
+    test "cross-account: B's save never mutates A's same-named override" do
+      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {:ok, runner_a} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject_a)
+
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {:ok, runner_b} = Policies.save_scoped_rules(allow_all_rules(), :runner, "r1", subject_b)
+
+      # B's write is a distinct row in B's account; A's deny override is intact.
+      assert runner_b.account_id == account_b.id
+      refute runner_b.id == runner_a.id
+
+      assert {:ok, fetched_a} = Policies.fetch_scoped_policy(:runner, "r1", subject_a)
+      assert fetched_a.id == runner_a.id
+      assert fetched_a.rules["defaults"]["low"] == "deny"
+    end
+  end
+
+  describe "subject_can_manage_policies?/1" do
+    test "is true for owner + admin (they hold manage_policies)" do
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      assert Policies.subject_can_manage_policies?(owner_subject)
+
+      admin = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :admin)
+      assert Policies.subject_can_manage_policies?(admin)
+    end
+
+    test "is false for operator, viewer, and an api_client" do
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+
+      operator =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+
+      viewer =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      refute Policies.subject_can_manage_policies?(operator)
+      refute Policies.subject_can_manage_policies?(viewer)
+
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      refute Policies.subject_can_manage_policies?(Subject.for_api_key(api_key, account))
+    end
+  end
+
+  describe "seed_policy/3" do
+    test "inserts the account's default policy and is idempotent (on_conflict: nothing)" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, %Policy{} = seeded} = Policies.seed_policy(account.id, user.id)
+      assert seeded.account_id == account.id
+      assert seeded.scope_type == :account
+      # Seeds the conservative stock defaults.
+      assert seeded.rules["defaults"]["high"] == "require_approval"
+      assert seeded.rules["defaults"]["critical"] == "deny"
+
+      # A second seed for the same account is a no-op — still one live policy.
+      assert {:ok, _} = Policies.seed_policy(account.id, user.id)
+      assert Policies.peek_policy_for_account(account.id).id == seeded.id
+    end
+
+    test "accepts an explicit rules map for the bootstrap" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, seeded} = Policies.seed_policy(account.id, user.id, allow_all_rules())
+      assert seeded.rules["defaults"]["critical"] == "allow"
+    end
+  end
+
+  describe "peek_policy_for_account/1" do
+    test "returns the account's default policy struct, never a scoped override" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject)
+
+      assert %Policy{scope_type: :account, account_id: account_id} =
+               Policies.peek_policy_for_account(account.id)
+
+      assert account_id == account.id
+    end
+
+    test "returns nil when the account has no policy (the default-deny signal)" do
+      account = Fixtures.Accounts.create_account()
+      assert is_nil(Policies.peek_policy_for_account(account.id))
+    end
+  end
+
   describe "evaluate/3 — risk-tier defaults" do
+    setup do
+      %{policy: %Policy{rules: Policies.default_rules()}}
+    end
+
     test "no policy means deny everything" do
       assert {:deny, [], reason} = Policies.evaluate(nil, %{"action_id" => "x.y"}, %{})
       assert reason =~ "no policy"
     end
 
-    test "low/medium tier defaults to allow with stock defaults" do
-      policy = %Policy{rules: Policies.default_rules()}
-
+    test "low/medium tier defaults to allow with stock defaults", %{policy: policy} do
       assert {:allow, [], _} =
                Policies.evaluate(policy, %{"action_id" => "x", "risk" => "low"}, %{})
 
@@ -20,16 +631,12 @@ defmodule Emisar.PoliciesTest do
                Policies.evaluate(policy, %{"action_id" => "x", "risk" => "medium"}, %{})
     end
 
-    test "high tier defaults to require_approval" do
-      policy = %Policy{rules: Policies.default_rules()}
-
+    test "high tier defaults to require_approval", %{policy: policy} do
       assert {:require_approval, [], _} =
                Policies.evaluate(policy, %{"action_id" => "x", "risk" => "high"}, %{})
     end
 
-    test "critical tier defaults to deny" do
-      policy = %Policy{rules: Policies.default_rules()}
-
+    test "critical tier defaults to deny", %{policy: policy} do
       assert {:deny, [], _} =
                Policies.evaluate(policy, %{"action_id" => "x", "risk" => "critical"}, %{})
     end
@@ -166,212 +773,6 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "tier-monotonicity validation" do
-    alias Emisar.Policies.Policy.Changeset, as: PolicyChangeset
-
-    test "monotonic defaults pass validation" do
-      rules = %{
-        "schema_version" => 2,
-        "defaults" => %{
-          "low" => "allow",
-          "medium" => "require_approval",
-          "high" => "require_approval",
-          "critical" => "deny"
-        },
-        "overrides" => []
-      }
-
-      changeset =
-        PolicyChangeset.create(%{
-          account_id: Ecto.UUID.generate(),
-          rules: rules
-        })
-
-      assert changeset.valid?
-    end
-
-    test "rejects a higher tier that's more permissive than a lower tier" do
-      rules = %{
-        "schema_version" => 2,
-        # medium=require_approval but high=allow → high is more
-        # permissive than medium. Should be rejected.
-        "defaults" => %{
-          "low" => "allow",
-          "medium" => "require_approval",
-          "high" => "allow"
-        },
-        "overrides" => []
-      }
-
-      changeset =
-        PolicyChangeset.create(%{
-          account_id: Ecto.UUID.generate(),
-          rules: rules
-        })
-
-      refute changeset.valid?
-
-      assert {"higher-risk tiers must be at least as restrictive" <> _, []} =
-               changeset.errors[:rules]
-    end
-
-    test "rejects critical=require_approval when high=deny" do
-      rules = %{
-        "schema_version" => 2,
-        "defaults" => %{
-          "low" => "allow",
-          "medium" => "allow",
-          "high" => "deny",
-          "critical" => "require_approval"
-        },
-        "overrides" => []
-      }
-
-      changeset =
-        PolicyChangeset.create(%{
-          account_id: Ecto.UUID.generate(),
-          rules: rules
-        })
-
-      refute changeset.valid?
-    end
-
-    test "Policies.decision_rank/1 orders allow < require_approval < deny" do
-      assert Policies.decision_rank("allow") < Policies.decision_rank("require_approval")
-      assert Policies.decision_rank("require_approval") < Policies.decision_rank("deny")
-    end
-  end
-
-  describe "rules-shape validation (the policy-editor guardrails)" do
-    defp rules_changeset(rules) do
-      Policy.Changeset.create(%{account_id: Ecto.UUID.generate(), rules: rules})
-    end
-
-    test "rejects an unknown top-level rule section" do
-      changeset = rules_changeset(%{"schema_version" => 2, "bogus_section" => %{}})
-      refute changeset.valid?
-      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
-    end
-
-    test "rejects an unknown risk tier in defaults" do
-      changeset = rules_changeset(%{"defaults" => %{"extreme" => "deny"}})
-      refute changeset.valid?
-      assert {"unknown risk tiers:" <> _, _} = changeset.errors[:rules]
-    end
-
-    test "rejects an unknown decision value in defaults" do
-      changeset = rules_changeset(%{"defaults" => %{"low" => "maybe"}})
-      refute changeset.valid?
-      assert {"unknown decisions:" <> _, _} = changeset.errors[:rules]
-    end
-
-    test "rejects defaults that isn't a JSON object" do
-      changeset = rules_changeset(%{"defaults" => "allow-everything"})
-      refute changeset.valid?
-      assert {"defaults must be a JSON object", _} = changeset.errors[:rules]
-    end
-
-    test "rejects an override that isn't a JSON object" do
-      changeset = rules_changeset(%{"overrides" => ["not-a-map"]})
-      refute changeset.valid?
-      assert {"each override must be a JSON object", _} = changeset.errors[:rules]
-    end
-
-    test "rejects overrides that isn't a list" do
-      changeset = rules_changeset(%{"overrides" => %{"not" => "a list"}})
-      refute changeset.valid?
-      assert {"overrides must be a list", _} = changeset.errors[:rules]
-    end
-
-    test "a minimal policy with neither defaults nor overrides is valid" do
-      assert rules_changeset(%{"schema_version" => 2}).valid?
-    end
-
-    test "rejects min_approvals: 0 in the approval section" do
-      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 0}})
-      refute changeset.valid?
-      assert {"min_approvals must be an integer >= 1", _} = changeset.errors[:rules]
-    end
-
-    test "rejects a non-boolean allow_self_approval" do
-      changeset = rules_changeset(%{"approval" => %{"allow_self_approval" => "yes"}})
-      refute changeset.valid?
-      assert {"allow_self_approval must be a boolean", _} = changeset.errors[:rules]
-    end
-
-    test "rejects an unknown key inside the approval section" do
-      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 1, "bogus" => true}})
-      refute changeset.valid?
-      assert {"unknown approval keys:" <> _, _} = changeset.errors[:rules]
-    end
-
-    test "accepts a valid approval section" do
-      changeset =
-        rules_changeset(%{"approval" => %{"min_approvals" => 2, "allow_self_approval" => false}})
-
-      assert changeset.valid?
-    end
-
-    test "a missing approval section is valid (back-compat with rules stored before the gate)" do
-      assert rules_changeset(%{"schema_version" => 2, "defaults" => %{"low" => "allow"}}).valid?
-    end
-
-    test "updating with no rules change doesn't bump the version" do
-      rules = %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
-      policy = %Policy{vsn: 1, rules: rules}
-
-      changeset = Policy.Changeset.update(policy, %{updated_by_id: Ecto.UUID.generate()})
-      assert Ecto.Changeset.get_change(changeset, :vsn) == nil
-    end
-  end
-
-  describe "catalogue accessors" do
-    test "expose the tiers, decisions, and form changeset the editor renders" do
-      assert Policies.risk_tiers() == ~w(low medium high critical)
-      assert Policies.decisions() == ~w(allow require_approval deny)
-      assert %Ecto.Changeset{} = Policies.change_policy()
-    end
-  end
-
-  describe "approval-gate accessors" do
-    test "min_approvals_for reads the section, floors at 1, tolerates a missing section" do
-      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 3}}) == 3
-      # Back-compat: rules stored before the section existed read as 1.
-      assert Policies.min_approvals_for(%{"defaults" => %{}}) == 1
-      assert Policies.min_approvals_for(%{}) == 1
-      assert Policies.min_approvals_for(nil) == 1
-      # Never below 1, even from a corrupt stored value.
-      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 0}}) == 1
-    end
-
-    test "self_approval_allowed? defaults true, only an explicit false forbids" do
-      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => false}}) ==
-               false
-
-      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => true}})
-      assert Policies.self_approval_allowed?(%{"defaults" => %{}})
-      assert Policies.self_approval_allowed?(%{})
-      assert Policies.self_approval_allowed?(nil)
-    end
-
-    test "self_approval_allowed? fails CLOSED on a present non-boolean value" do
-      # A corrupt / manually-written value must not silently widen the gate —
-      # only a MISSING key keeps the legacy allow-default.
-      for bad <- ["yes", "false", 0, 1, nil, %{}] do
-        refute Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => bad}}),
-               "expected #{inspect(bad)} to forbid self-approval"
-      end
-
-      # A non-map approval section doesn't raise and keeps the legacy default.
-      assert Policies.self_approval_allowed?(%{"approval" => "garbage"})
-    end
-
-    test "the default rules reproduce single-approver, self-approval-allowed behavior" do
-      assert Policies.min_approvals_for(Policies.default_rules()) == 1
-      assert Policies.self_approval_allowed?(Policies.default_rules())
-    end
-  end
-
   describe "diff_rules/2" do
     test "reports only the tiers and overrides that actually moved" do
       before_rules = %{
@@ -403,81 +804,25 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "shadowed_overrides/1" do
-    test "a later deny shadowed by an earlier broader allow is dead" do
-      rules = %{
-        "overrides" => [
-          %{"name" => "allow-nginx", "action" => "nginx_*", "decision" => "allow"},
-          %{"name" => "block-reload", "action" => "nginx_reload", "decision" => "deny"}
-        ]
-      }
+  # Allow/deny-everything rule shapes for the scoped-CRUD describes above.
+  defp allow_all_rules do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{
+        "low" => "allow",
+        "medium" => "allow",
+        "high" => "allow",
+        "critical" => "allow"
+      },
+      "overrides" => []
+    }
+  end
 
-      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
-    end
-
-    test "the reverse order is fine — the specific deny matches first" do
-      rules = %{
-        "overrides" => [
-          %{"action" => "nginx_reload", "decision" => "deny"},
-          %{"action" => "nginx_*", "decision" => "allow"}
-        ]
-      }
-
-      assert Policies.shadowed_overrides(rules) == []
-    end
-
-    test "an identical-pattern duplicate is shadowed by the first" do
-      rules = %{
-        "overrides" => [
-          %{"action" => "nginx_*", "decision" => "allow"},
-          %{"action" => "nginx_*", "decision" => "deny"}
-        ]
-      }
-
-      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
-    end
-
-    test "disjoint globs never shadow each other" do
-      rules = %{
-        "overrides" => [
-          %{"action" => "nginx_*", "decision" => "allow"},
-          %{"action" => "apache_*", "decision" => "deny"}
-        ]
-      }
-
-      assert Policies.shadowed_overrides(rules) == []
-    end
-
-    test "reports the FIRST subsumer when several earlier rows cover a row" do
-      rules = %{
-        "overrides" => [
-          %{"action" => "*", "decision" => "allow"},
-          %{"action" => "nginx_*", "decision" => "require_approval"},
-          %{"action" => "nginx_reload", "decision" => "deny"}
-        ]
-      }
-
-      assert Policies.shadowed_overrides(rules) == [
-               %{index: 1, shadowed_by: 0},
-               %{index: 2, shadowed_by: 0}
-             ]
-    end
-
-    test "blank-action rows can't subsume or be subsumed — they're skipped" do
-      rules = %{
-        "overrides" => [
-          %{"action" => "", "decision" => "allow"},
-          %{"action" => "nginx_*", "decision" => "deny"}
-        ]
-      }
-
-      assert Policies.shadowed_overrides(rules) == []
-    end
-
-    test "empty / missing overrides → []" do
-      assert Policies.shadowed_overrides(%{"overrides" => []}) == []
-      assert Policies.shadowed_overrides(%{}) == []
-      assert Policies.shadowed_overrides(nil) == []
-    end
+  defp deny_all_rules do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
+      "overrides" => []
+    }
   end
 end

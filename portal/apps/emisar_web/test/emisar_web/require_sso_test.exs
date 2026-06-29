@@ -7,7 +7,6 @@ defmodule EmisarWeb.RequireSSOTest do
   SSO connection (no lock-out).
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Repo
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
@@ -28,7 +27,7 @@ defmodule EmisarWeb.RequireSSOTest do
   end
 
   defp require_sso!(account),
-    do: account |> Ecto.Changeset.change(require_sso: true) |> Repo.update!()
+    do: Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
   # A real signed-in session whose token records SSO provenance for `identity`.
   defp sso_session(user, identity) do
@@ -52,13 +51,22 @@ defmodule EmisarWeb.RequireSSOTest do
   end
 
   describe "enforcement" do
-    test "require_sso OFF — a magic-link session reaches the account", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "require_sso OFF — a magic-link session reaches the account", %{
+      conn: conn,
+      account: account
+    } do
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
     end
 
-    test "require_sso ON — a magic-link session is bounced to the SSO step-up", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "require_sso ON — a magic-link session is bounced to the SSO step-up", %{
+      conn: conn,
+      account: account
+    } do
       _ = enabled_provider(account)
       require_sso!(account)
 
@@ -66,8 +74,10 @@ defmodule EmisarWeb.RequireSSOTest do
       assert to == ~p"/app/#{account}/sso_required"
     end
 
-    test "require_sso ON — an SSO session FOR THIS ACCOUNT reaches it", %{conn: conn} do
-      {_conn, user, account} = register_and_log_in(conn)
+    test "require_sso ON — an SSO session FOR THIS ACCOUNT reaches it", %{
+      user: user,
+      account: account
+    } do
       provider = enabled_provider(account)
       require_sso!(account)
       identity = identity_for(account, provider, user)
@@ -75,8 +85,10 @@ defmodule EmisarWeb.RequireSSOTest do
       assert {:ok, _lv, _html} = live(sso_session(user, identity), ~p"/app/#{account}/runners")
     end
 
-    test "require_sso ON — an SSO session for a DIFFERENT account is still bounced", %{conn: conn} do
-      {_conn, user, account} = register_and_log_in(conn)
+    test "require_sso ON — an SSO session for a DIFFERENT account is still bounced", %{
+      user: user,
+      account: account
+    } do
       # This account HAS a usable connection (so the gate is live, not failing open)…
       _ = enabled_provider(account)
       require_sso!(account)
@@ -93,13 +105,13 @@ defmodule EmisarWeb.RequireSSOTest do
     end
 
     test "require_sso ON — a magic-link session is bounced (only :sso provenance passes)", %{
-      conn: conn
+      user: user,
+      account: account
     } do
       # `ensure_sso_compliant` admits ONLY an `:sso` session
       # for this account. A magic-link session (auth_method :magic_link) is not an
       # SSO one, so it's bounced to the step-up shim even though the operator
       # authenticated — the account demands the IdP specifically.
-      {_conn, user, account} = register_and_log_in(conn)
       _ = enabled_provider(account)
       require_sso!(account)
 
@@ -112,8 +124,10 @@ defmodule EmisarWeb.RequireSSOTest do
       assert to == ~p"/app/#{account}/sso_required"
     end
 
-    test "require_sso ON with NO enabled connection — fails OPEN, not a brick", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "require_sso ON with NO enabled connection — fails OPEN, not a brick", %{
+      conn: conn,
+      account: account
+    } do
       require_sso!(account)
 
       # No enabled provider exists, so the gate can't ever be satisfied — it fails
@@ -124,24 +138,27 @@ defmodule EmisarWeb.RequireSSOTest do
   end
 
   describe "the step-up shim (/sso_required)" do
-    test "logs the session out and lands on the account's branded sign-in", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       require_sso!(account)
+      %{conn: conn, account: account}
+    end
 
+    test "logs the session out and lands on the account's branded sign-in", %{
+      conn: conn,
+      account: account
+    } do
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
       refute get_session(conn, :user_token)
     end
 
-    test "the shim flashes the SSO-required explanation", %{conn: conn} do
+    test "the shim flashes the SSO-required explanation", %{conn: conn, account: account} do
       # the step-up shim doesn't bounce silently: it logs out
       # with a flash naming the cause, so the operator understands why they were
       # signed out and what to do (sign in with the IdP) rather than seeing a bare
       # sign-in page.
-      {conn, _user, account} = register_and_log_in(conn)
-      require_sso!(account)
-
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "requires single sign-on"
@@ -149,36 +166,38 @@ defmodule EmisarWeb.RequireSSOTest do
   end
 
   describe "the owner toggle" do
-    test "owner turns it on when an enabled SSO connection exists", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "owner turns it on when an enabled SSO connection exists", %{
+      conn: conn,
+      account: account
+    } do
       _ = enabled_provider(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       render_click(lv, "toggle_require_sso", %{})
 
-      assert Repo.reload!(account).require_sso
+      assert Repo.reload!(account).settings.require_sso
     end
 
     test "owner cannot turn it on with no connection — flashed, no change (handler guards too)",
-         %{
-           conn: conn
-         } do
-      {conn, _user, account} = register_and_log_in(conn)
-
+         %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "toggle_require_sso", %{})
 
       assert html =~ "Add an enabled SSO connection"
-      refute Repo.reload!(account).require_sso
+      refute Repo.reload!(account).settings.require_sso
     end
 
-    test "a viewer cannot toggle it", %{conn: conn} do
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
+    test "a viewer cannot toggle it", %{account: account} do
       _ = enabled_provider(account)
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -190,7 +209,7 @@ defmodule EmisarWeb.RequireSSOTest do
       html = render_click(lv, "toggle_require_sso", %{})
 
       assert html =~ "Only owners and admins"
-      refute Repo.reload!(account).require_sso
+      refute Repo.reload!(account).settings.require_sso
     end
   end
 end

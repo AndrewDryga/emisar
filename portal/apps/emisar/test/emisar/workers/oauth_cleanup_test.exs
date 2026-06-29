@@ -5,9 +5,7 @@ defmodule Emisar.Workers.OAuthCleanupTest do
   backdated code.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
+  alias Emisar.Fixtures
   alias Emisar.OAuth
   alias Emisar.OAuth.{AuthorizationCode, Client}
   alias Emisar.Workers.OAuthCleanup
@@ -36,7 +34,7 @@ defmodule Emisar.Workers.OAuthCleanupTest do
   end
 
   test "perform/1 prunes expired authorization codes and returns :ok" do
-    {_user, _account, subject} = owner_subject_fixture()
+    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
     issue_code!(subject)
 
     # A freshly-issued code (60s TTL) isn't expired — the sweep is a no-op.
@@ -74,10 +72,8 @@ defmodule Emisar.Workers.OAuthCleanupLogTest do
   level to `:info` (the test env defaults to `:warning`) to observe an info log.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
   import ExUnit.CaptureLog
-
+  alias Emisar.Fixtures
   alias Emisar.OAuth
   alias Emisar.OAuth.AuthorizationCode
   alias Emisar.Workers.OAuthCleanup
@@ -92,7 +88,7 @@ defmodule Emisar.Workers.OAuthCleanupLogTest do
   end
 
   defp issue_expired_code! do
-    {_user, _account, subject} = owner_subject_fixture()
+    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
     {:ok, client} =
       OAuth.register_client(%{"client_name" => "C", "redirect_uris" => [@redirect]})

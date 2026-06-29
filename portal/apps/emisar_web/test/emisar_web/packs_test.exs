@@ -1,6 +1,5 @@
 defmodule EmisarWeb.PacksTest do
   use EmisarWeb.ConnCase, async: true
-
   alias EmisarWeb.PacksRegistry
 
   describe "GET /packs" do

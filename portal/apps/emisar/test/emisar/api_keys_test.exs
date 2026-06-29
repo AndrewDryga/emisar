@@ -1,51 +1,67 @@
 defmodule Emisar.ApiKeysTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{ApiKeys, Audit, Repo}
   alias Emisar.ApiKeys.ApiKey
+  alias Emisar.Auth.Subject
+  alias Emisar.Fixtures
 
   defp owner_subject_pair do
-    user = user_fixture()
-    account = account_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-    {user, account, subject_for(user, account, role: :owner)}
+    user = Fixtures.Users.create_user()
+    account = Fixtures.Accounts.create_account()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+    {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
 
-  describe "list buckets" do
-    test "audit-export tokens land on the audit list, never the agents list" do
+  describe "list_api_keys_for_account/2" do
+    test "lists the account's :mcp keys, hiding audit-export tokens" do
       {_user, _account, subject} = owner_subject_pair()
 
       {:ok, _raw, agent_key} =
         ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
 
-      {:ok, _raw, export_key} =
+      {:ok, _raw, _export_key} =
         ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
 
-      # The split is the explicit `kind`, no longer inferred from scope.
-      assert agent_key.kind == :mcp
-      assert export_key.kind == :audit_export
+      assert {:ok, [visible], _} = ApiKeys.list_api_keys_for_account(subject)
+      assert visible.id == agent_key.id
+    end
 
-      assert {:ok, [agents_visible], _} = ApiKeys.list_api_keys_for_account(subject)
-      assert agents_visible.id == agent_key.id
+    test ":created_by is preloaded only when asked for via :preload" do
+      {user, _account, subject} = owner_subject_pair()
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
 
-      assert {:ok, [export_visible], _} = ApiKeys.list_audit_export_keys_for_account(subject)
-      assert export_visible.id == export_key.id
+      assert {:ok, [preloaded], _} =
+               ApiKeys.list_api_keys_for_account(subject, preload: [:created_by])
+
+      assert preloaded.created_by.id == user.id
+    end
+
+    test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
+      # Operators + viewers both hold view_api_keys, so the genuine
+      # no-permission caller is the runner (websocket) subject.
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = ApiKeys.list_api_keys_for_account(subject)
     end
 
     test "an owner of account B never sees account A's keys (cross-account isolation)" do
-      {_user_a, account_a, subject_a} = owner_subject_pair()
+      {_user_a, _account_a, subject_a} = owner_subject_pair()
 
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "a-key", scopes: ["actions:read"]}, subject_a)
 
-      _ = account_a
-
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(subject_b)
-      assert {:ok, [], _} = ApiKeys.list_audit_export_keys_for_account(subject_b)
     end
   end
 
@@ -83,18 +99,93 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "list_audit_export_keys_for_account/2" do
+    test "audit-export tokens land on the audit list, never the agents list" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, agent_key} =
+        ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, export_key} =
+        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+
+      # The split is the explicit `kind`, no longer inferred from scope.
+      assert agent_key.kind == :mcp
+      assert export_key.kind == :audit_export
+
+      assert {:ok, [agents_visible], _} = ApiKeys.list_api_keys_for_account(subject)
+      assert agents_visible.id == agent_key.id
+
+      assert {:ok, [export_visible], _} = ApiKeys.list_audit_export_keys_for_account(subject)
+      assert export_visible.id == export_key.id
+    end
+
+    test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = ApiKeys.list_audit_export_keys_for_account(subject)
+    end
+
+    test "an owner of account B never sees account A's export tokens (cross-account isolation)" do
+      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-siem", scopes: ["audit:read"]}, subject_a)
+
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert {:ok, [], _} = ApiKeys.list_audit_export_keys_for_account(subject_b)
+    end
+  end
+
+  describe "list filters" do
+    test "status filter separates live from revoked keys" do
+      {_u, _a, subject} = owner_subject_pair()
+
+      {:ok, _raw, _live} =
+        ApiKeys.create_key(%{name: "live-one", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, revoked} =
+        ApiKeys.create_key(%{name: "dead-one", scopes: ["actions:read"]}, subject)
+
+      {:ok, _} = ApiKeys.revoke_api_key(revoked, subject)
+
+      {:ok, live_only, _} =
+        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["live"]])
+
+      assert Enum.map(live_only, & &1.name) == ["live-one"]
+
+      {:ok, revoked_only, _} =
+        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["revoked"]])
+
+      assert Enum.map(revoked_only, & &1.name) == ["dead-one"]
+    end
+
+    test "name filter searches by case-insensitive substring" do
+      {_u, _a, subject} = owner_subject_pair()
+
+      {:ok, _raw, _} =
+        ApiKeys.create_key(%{name: "Claude Desktop", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, _} = ApiKeys.create_key(%{name: "Cursor", scopes: ["actions:read"]}, subject)
+
+      {:ok, matched, _} = ApiKeys.list_api_keys_for_account(subject, filter: [name: "claude"])
+      assert Enum.map(matched, & &1.name) == ["Claude Desktop"]
+    end
+  end
+
   describe "fetch_api_key_by_id/3" do
     test "returns the key inside the subject's account" do
       {_user, account, subject} = owner_subject_pair()
-      {_raw, key} = api_key_fixture(account_id: account.id)
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert {:ok, fetched} = ApiKeys.fetch_api_key_by_id(key.id, subject)
       assert fetched.id == key.id
     end
 
     test "an owner of account B cannot fetch account A's key (cross-account → :not_found)" do
-      account_a = account_fixture()
-      {_raw, key_a} = api_key_fixture(account_id: account_a.id)
+      account_a = Fixtures.Accounts.create_account()
+      {_raw, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
@@ -257,10 +348,17 @@ defmodule Emisar.ApiKeysTest do
       # A custom key mints an execute-capable MCP credential, so it gates
       # on `manage_api_keys` — which operators lack (they may only mint
       # the pre-scoped quick key via `mint_quick_key/1`).
-      account = account_fixture()
-      operator = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
-      subject = subject_for(operator, account, role: :operator)
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} =
                ApiKeys.create_key(%{name: "ci", scopes: ["actions:read"]}, subject)
@@ -325,9 +423,16 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, key} =
         ApiKeys.create_key(%{name: "k", scopes: ["actions:execute"]}, owner_subject)
 
-      operator = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
-      operator_subject = subject_for(operator, account, role: :operator)
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
     end
@@ -341,6 +446,33 @@ defmodule Emisar.ApiKeysTest do
       {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert {:error, :not_found} = ApiKeys.rotate_api_key(key_a, subject_b)
+    end
+  end
+
+  describe "subscribe_account_api_keys/1" do
+    test "the subscriber receives the account's api-key list broadcasts" do
+      {_user, account, subject} = owner_subject_pair()
+
+      assert :ok = ApiKeys.subscribe_account_api_keys(account.id)
+
+      # Minting a key publishes `api_key.created` on the topic just joined.
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+
+      assert_receive {:list_changed, :api_key, "api_key.created", key_id}
+      assert key_id == key.id
+    end
+
+    test "a subscriber to account A does not receive account B's broadcasts" do
+      {_user_a, account_a, _subject_a} = owner_subject_pair()
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert :ok = ApiKeys.subscribe_account_api_keys(account_a.id)
+
+      # The mint happens on B's topic — A's subscriber must hear nothing.
+      {:ok, _raw, _key} =
+        ApiKeys.create_key(%{name: "b-agent", scopes: ["actions:read"]}, subject_b)
+
+      refute_receive {:list_changed, :api_key, _event, _key_id}
     end
   end
 
@@ -381,18 +513,128 @@ defmodule Emisar.ApiKeysTest do
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
       # Operators CAN mint the quick key; only viewers are below the
       # `issue_quick` line, so the denial subject must be a viewer.
-      account = account_fixture()
-      viewer = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
-      subject = subject_for(viewer, account, role: :viewer)
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
       assert {:error, :unauthorized} = ApiKeys.mint_quick_key(subject)
     end
   end
 
+  describe "revoke_api_key/2" do
+    test "marks revoked_at" do
+      {user, account, subject} = owner_subject_pair()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: id}} =
+               ApiKeys.revoke_api_key(key, subject)
+
+      assert id == user.id
+      assert Repo.reload!(key).revoked_at
+    end
+
+    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject)
+      refute Repo.reload!(key).revoked_at
+    end
+
+    test "an owner of account B cannot revoke account A's key (cross-account → :not_found)" do
+      account_a = Fixtures.Accounts.create_account()
+      {_raw, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
+
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert {:error, :not_found} = ApiKeys.revoke_api_key(key_a, subject_b)
+      refute Repo.reload!(key_a).revoked_at
+    end
+
+    # (context half) — revoking an already-revoked key
+    # succeeds again rather than erroring: the fetch_and_update re-reads the
+    # (still not_deleted) row and re-stamps revoked_at. The affordance is gated
+    # in the UI (the Revoke button only renders for non-revoked keys), but a
+    # double-fire (race / stale page) is a safe idempotent no-op, never a crash.
+    test "revoking an already-revoked key is idempotent (re-revoke succeeds)" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      assert {:ok, %ApiKey{revoked_at: %DateTime{} = first}} =
+               ApiKeys.revoke_api_key(key, subject)
+
+      # Fire again on the now-revoked key — still {:ok, …}, still revoked.
+      assert {:ok, %ApiKey{revoked_at: %DateTime{} = second}} =
+               ApiKeys.revoke_api_key(Repo.reload!(key), subject)
+
+      assert DateTime.compare(second, first) in [:eq, :gt]
+      assert Repo.reload!(key).revoked_at
+    end
+  end
+
+  describe "revoke_keys_for_membership/1" do
+    test "revokes that membership's active keys only, idempotently" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      {_r1, key1} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {_r2, key2} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      # A key minted by a different member must be left alone.
+      other = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: other.id,
+          role: "owner"
+        )
+
+      {_r3, other_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: other.id)
+
+      assert {:ok, 2} = ApiKeys.revoke_keys_for_membership(membership.id)
+
+      refute is_nil(Repo.reload!(key1).revoked_at)
+      refute is_nil(Repo.reload!(key2).revoked_at)
+      assert is_nil(Repo.reload!(other_key).revoked_at)
+
+      # Already-revoked keys aren't re-counted.
+      assert {:ok, 0} = ApiKeys.revoke_keys_for_membership(membership.id)
+    end
+  end
+
   describe "peek_api_key_by_secret/1" do
     test "returns the key for a valid raw secret + bumps last_used_at" do
-      {raw, key} = api_key_fixture()
+      {raw, key} = Fixtures.ApiKeys.create_api_key()
       refute key.last_used_at
 
       assert %ApiKey{id: id, last_used_at: ts} = ApiKeys.peek_api_key_by_secret(raw)
@@ -407,7 +649,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "returns nil after the key is revoked" do
       {_user, account, subject} = owner_subject_pair()
-      {raw, key} = api_key_fixture(account_id: account.id)
+      {raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
       refute ApiKeys.peek_api_key_by_secret(raw)
@@ -415,7 +657,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "returns nil for an expired key" do
       yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
-      {raw, _key} = api_key_fixture(expires_at: yesterday)
+      {raw, _key} = Fixtures.ApiKeys.create_api_key(expires_at: yesterday)
 
       refute ApiKeys.peek_api_key_by_secret(raw)
     end
@@ -438,10 +680,44 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "create_backing_key/4" do
+    test "inserts a non-expiring MCP key scoped read+execute, owned by the membership" do
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert {:ok, %ApiKey{} = key} =
+               ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      assert key.account_id == account.id
+      assert key.created_by_id == user.id
+      assert key.created_by_membership_id == membership.id
+      assert key.name == "OAuth: Claude"
+      assert Enum.sort(key.scopes) == ["actions:execute", "actions:read"]
+      # OAuth governs the lifecycle, so the backing key opts out of the 30-day
+      # default expiry — it must not self-expire mid-refresh.
+      assert is_nil(key.expires_at)
+      assert ApiKey.usable?(key)
+    end
+
+    test "the backing key resolves via the bearer auth boundary" do
+      # create_backing_key DISCARDS the raw secret (the OAuth client never sees
+      # it), so the resolution path under test is peek_api_key_by_id — the same
+      # one the MCP auth plug uses for an OAuth access token.
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Cursor")
+
+      assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
+      assert id == key.id
+    end
+  end
+
   describe "peek_api_key_by_id/1" do
     test "returns a usable key, nil for revoked or unknown" do
       {_user, account, subject} = owner_subject_pair()
-      {_raw, key} = api_key_fixture(account_id: account.id)
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
       assert id == key.id
@@ -453,133 +729,123 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "record_client_info/2" do
-    test "persists the sanitized clientInfo map" do
-      {_raw, key} = api_key_fixture()
+    setup do
+      {_raw, key} = Fixtures.ApiKeys.create_api_key()
+      %{key: key}
+    end
 
+    test "persists the sanitized clientInfo map", %{key: key} do
       assert {:ok, updated} =
                ApiKeys.record_client_info(key, %{"name" => "Claude Code", "version" => "1.0"})
 
       assert updated.last_client_info == %{"name" => "Claude Code", "version" => "1.0"}
     end
 
-    test "rejects a non-map payload" do
-      {_raw, key} = api_key_fixture()
+    test "rejects a non-map payload", %{key: key} do
       assert {:error, :invalid} = ApiKeys.record_client_info(key, "junk")
     end
   end
 
-  describe "revoke_api_key/2" do
-    test "marks revoked_at" do
-      {user, account, subject} = owner_subject_pair()
-      {_raw, key} = api_key_fixture(account_id: account.id)
+  describe "fetch_owner_user_id/1" do
+    test "returns the user id that minted the key" do
+      {user, account, _subject} = owner_subject_pair()
 
-      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: id}} =
-               ApiKeys.revoke_api_key(key, subject)
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
-      assert id == user.id
-      assert Repo.reload!(key).revoked_at
+      assert ApiKeys.fetch_owner_user_id(key.id) == user.id
     end
 
-    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
-      account = account_fixture()
-      {_raw, key} = api_key_fixture(account_id: account.id)
-      operator = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
-      subject = subject_for(operator, account, role: :operator)
-
-      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject)
-      refute Repo.reload!(key).revoked_at
+    test "returns nil for an unknown id and for a non-binary arg" do
+      assert is_nil(ApiKeys.fetch_owner_user_id(Ecto.UUID.generate()))
+      assert is_nil(ApiKeys.fetch_owner_user_id(nil))
     end
+  end
 
-    test "an owner of account B cannot revoke account A's key (cross-account → :not_found)" do
-      account_a = account_fixture()
-      {_raw, key_a} = api_key_fixture(account_id: account_a.id)
-
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
-
-      assert {:error, :not_found} = ApiKeys.revoke_api_key(key_a, subject_b)
-      refute Repo.reload!(key_a).revoked_at
-    end
-
-    # (context half) — revoking an already-revoked key
-    # succeeds again rather than erroring: the fetch_and_update re-reads the
-    # (still not_deleted) row and re-stamps revoked_at. The affordance is gated
-    # in the UI (the Revoke button only renders for non-revoked keys), but a
-    # double-fire (race / stale page) is a safe idempotent no-op, never a crash.
-    test "revoking an already-revoked key is idempotent (re-revoke succeeds)" do
+  describe "no_agents?/1" do
+    test "is true when the account has no non-revoked key, false once one exists" do
       {_user, account, subject} = owner_subject_pair()
-      {_raw, key} = api_key_fixture(account_id: account.id)
 
-      assert {:ok, %ApiKey{revoked_at: %DateTime{} = first}} =
-               ApiKeys.revoke_api_key(key, subject)
+      # No keys yet → nudge the operator to connect an agent.
+      assert ApiKeys.no_agents?(subject)
 
-      # Fire again on the now-revoked key — still {:ok, …}, still revoked.
-      assert {:ok, %ApiKey{revoked_at: %DateTime{} = second}} =
-               ApiKeys.revoke_api_key(Repo.reload!(key), subject)
+      {_raw, _key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      refute ApiKeys.no_agents?(subject)
+    end
 
-      assert DateTime.compare(second, first) in [:eq, :gt]
-      assert Repo.reload!(key).revoked_at
+    test "a fully-revoked account reads as no agents again (the nudge returns)" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      refute ApiKeys.no_agents?(subject)
+
+      {:ok, _} = ApiKeys.revoke_api_key(key, subject)
+      assert ApiKeys.no_agents?(subject)
+    end
+
+    test "is account-scoped — another account's key doesn't clear this account's nudge" do
+      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      account_b = Fixtures.Accounts.create_account()
+      {_raw, _key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
+
+      # B has a key, but A still has none → A's nudge stays on.
+      assert ApiKeys.no_agents?(subject_a)
+    end
+
+    test "returns false (no nudge) for a subject that can't view keys" do
+      # The runner (websocket) subject holds no view_api_keys permission, so the
+      # nudge is suppressed (false) rather than leaking an existence signal —
+      # even though this account genuinely has no agents.
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      refute ApiKeys.no_agents?(subject)
     end
   end
 
-  describe "revoke_keys_for_membership/1" do
-    test "revokes that membership's active keys only, idempotently" do
-      account = account_fixture()
-      user = user_fixture()
-      membership = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+  describe "subject_can_manage_api_keys?/1" do
+    test "is true for an owner and an admin (they hold manage_api_keys)" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      admin = Fixtures.Users.create_user()
 
-      {_r1, key1} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      {_r2, key2} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
 
-      # A key minted by a different member must be left alone.
-      other = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: other.id, role: "owner")
-      {_r3, other_key} = api_key_fixture(account_id: account.id, created_by_id: other.id)
+      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:ok, 2} = ApiKeys.revoke_keys_for_membership(membership.id)
-
-      refute is_nil(Repo.reload!(key1).revoked_at)
-      refute is_nil(Repo.reload!(key2).revoked_at)
-      assert is_nil(Repo.reload!(other_key).revoked_at)
-
-      # Already-revoked keys aren't re-counted.
-      assert {:ok, 0} = ApiKeys.revoke_keys_for_membership(membership.id)
-    end
-  end
-
-  describe "list filters" do
-    test "status filter separates live from revoked keys" do
-      {_u, _a, subject} = owner_subject_pair()
-
-      {:ok, _raw, _live} =
-        ApiKeys.create_key(%{name: "live-one", scopes: ["actions:read"]}, subject)
-
-      {:ok, _raw, revoked} =
-        ApiKeys.create_key(%{name: "dead-one", scopes: ["actions:read"]}, subject)
-
-      {:ok, _} = ApiKeys.revoke_api_key(revoked, subject)
-
-      {:ok, live_only, _} =
-        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["live"]])
-
-      assert Enum.map(live_only, & &1.name) == ["live-one"]
-
-      {:ok, revoked_only, _} =
-        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["revoked"]])
-
-      assert Enum.map(revoked_only, & &1.name) == ["dead-one"]
+      assert ApiKeys.subject_can_manage_api_keys?(owner_subject)
+      assert ApiKeys.subject_can_manage_api_keys?(admin_subject)
     end
 
-    test "name filter searches by case-insensitive substring" do
-      {_u, _a, subject} = owner_subject_pair()
+    test "is false for an operator and a viewer" do
+      {_owner, account, _owner_subject} = owner_subject_pair()
+      operator = Fixtures.Users.create_user()
+      viewer = Fixtures.Users.create_user()
 
-      {:ok, _raw, _} =
-        ApiKeys.create_key(%{name: "Claude Desktop", scopes: ["actions:read"]}, subject)
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
 
-      {:ok, _raw, _} = ApiKeys.create_key(%{name: "Cursor", scopes: ["actions:read"]}, subject)
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
 
-      {:ok, matched, _} = ApiKeys.list_api_keys_for_account(subject, filter: [name: "claude"])
-      assert Enum.map(matched, & &1.name) == ["Claude Desktop"]
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      refute ApiKeys.subject_can_manage_api_keys?(operator_subject)
+      refute ApiKeys.subject_can_manage_api_keys?(viewer_subject)
     end
   end
 

@@ -7,7 +7,6 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   slug is an indistinguishable 404 — a signed-out prober learns nothing.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Repo
   alias Emisar.SSO.IdentityProvider
 
@@ -32,7 +31,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     # (begin is a controller bounce to the IdP, not live nav), and below them the
     # email form posts to the shared magic-link start with a hidden return_to
     # pinning this team.
-    account = Emisar.Fixtures.account_fixture(%{name: "Branded Co"})
+    account = Fixtures.Accounts.create_account(%{name: "Branded Co"})
     okta = enabled_provider(account, "Acme Okta")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
@@ -51,7 +50,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   test "the 'different team' link drops to the generic SSO picker", %{conn: conn} do
     # The branded page's only secondary route is "different team", which goes to
     # the generic SSO picker; there's no password/reset link anymore.
-    account = Emisar.Fixtures.account_fixture(%{name: "Threaded Co"})
+    account = Fixtures.Accounts.create_account(%{name: "Threaded Co"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
@@ -66,7 +65,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     # with no enabled providers the `:if={@providers != []}`
     # SSO section and its separator are absent; the email form is the only
     # offered path.
-    account = Emisar.Fixtures.account_fixture(%{name: "Email Only Co"})
+    account = Fixtures.Accounts.create_account(%{name: "Email Only Co"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
@@ -84,7 +83,7 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     # indistinguishable 404 either way and can't confirm a tenant exists.
     assert_error_sent 404, fn -> get(conn, ~p"/app/does-not-exist/sign_in") end
 
-    account = Emisar.Fixtures.account_fixture(%{name: "Soon Gone Co"})
+    account = Fixtures.Accounts.create_account(%{name: "Soon Gone Co"})
 
     {:ok, _} =
       account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()

@@ -10,7 +10,6 @@ defmodule EmisarWeb.AuditSummaryTest do
   fixtures that build events without round-tripping through the DB.
   """
   use ExUnit.Case, async: true
-
   alias EmisarWeb.AuditSummary
 
   defp ev(type, payload), do: %{event_type: type, payload: payload}

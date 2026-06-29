@@ -8,9 +8,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
   machinery they touch in-app.
   """
   use EmisarWeb.ConnCase, async: true
-
   import Swoosh.TestAssertions
-
   alias Emisar.{Accounts, Users}
 
   # A signed-in user who has a workspace but has NOT confirmed their email,

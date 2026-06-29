@@ -11,10 +11,8 @@ defmodule EmisarWeb.LiveTableTest do
   but with several stylistic layers on top).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias Emisar.Repo.Filter
   alias Emisar.Repo.Paginator.Metadata
   alias EmisarWeb.LiveTable

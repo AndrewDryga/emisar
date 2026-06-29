@@ -10,9 +10,6 @@ defmodule EmisarWeb.SCIMControllerTest do
   per-provider bearer via `SSO.enable_scim/2` and drive everything over HTTP.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Accounts, ApiKeys, Repo, SSO, Users}
   alias Emisar.SSO.IdentityProvider
   alias EmisarWeb.SCIM.Resource
@@ -22,7 +19,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   # Enterprise account + a provider with directory sync enabled. Returns the
   # provider, its raw bearer (shown once), the owner subject, and the account.
   defp scim_provider(provider_attrs \\ %{}) do
-    {_user, account, subject} = owner_subject_fixture(%{plan: "enterprise"})
+    {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = provider_fixture(account, provider_attrs)
     {:ok, provider, raw_token} = SSO.enable_scim(provider, subject)
     %{provider: provider, token: raw_token, subject: subject, account: account}
@@ -120,6 +117,10 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Auth gate -------------------------------------------------------
 
   describe "bearer auth" do
+    setup do
+      scim_provider()
+    end
+
     test "a missing bearer → 401 SCIM error", %{conn: conn} do
       body = conn |> get(~p"/scim/v2/Users/anything") |> json_response(401)
 
@@ -143,9 +144,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a lowercase `bearer` scheme is accepted (RFC 7235 — the scheme is case-insensitive)",
-         %{conn: conn} do
-      %{token: token} = scim_provider()
-
+         %{conn: conn, token: token} do
       conn =
         conn |> put_req_header("authorization", "bearer " <> token) |> get(~p"/scim/v2/Users")
 
@@ -153,9 +152,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "surrounding + collapsed whitespace on the bearer is tolerated (paste artifacts)",
-         %{conn: conn} do
-      %{token: token} = scim_provider()
-
+         %{conn: conn, token: token} do
       conn =
         conn
         |> put_req_header("authorization", "  Bearer   " <> token <> "  ")
@@ -165,9 +162,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a bare `ems-` token with no scheme is accepted (Okta Header Auth sends it raw)",
-         %{conn: conn} do
-      %{token: token} = scim_provider()
-
+         %{conn: conn, token: token} do
       conn = conn |> put_req_header("authorization", token) |> get(~p"/scim/v2/Users")
       assert json_response(conn, 200)
     end
@@ -189,8 +184,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert json_response(conn, 401)
     end
 
-    test "a disabled-SCIM provider's old bearer → 401", %{conn: conn} do
-      %{provider: provider, token: token, subject: subject} = scim_provider()
+    test "a disabled-SCIM provider's old bearer → 401", %{
+      conn: conn,
+      provider: provider,
+      token: token,
+      subject: subject
+    } do
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
       assert conn |> auth(token) |> get(~p"/scim/v2/Users/x") |> json_response(401)
@@ -224,9 +223,15 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- POST /Users -----------------------------------------------------
 
   describe "POST /Users" do
-    test "provisions a user (201) with the SCIM User resource", %{conn: conn} do
-      %{token: token, account: account} = scim_provider()
+    setup do
+      scim_provider()
+    end
 
+    test "provisions a user (201) with the SCIM User resource", %{
+      conn: conn,
+      token: token,
+      account: account
+    } do
       body =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", user_payload("okta|new", email: "new@acme.test"))
@@ -244,9 +249,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id)
     end
 
-    test "a repeated POST for the same externalId reconciles — no duplicate", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "a repeated POST for the same externalId reconciles — no duplicate", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       first =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", user_payload("okta|dup", email: "dup@acme.test"))
@@ -263,9 +270,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Enum.count(identities, &(&1.scim_external_id == "okta|dup")) == 1
     end
 
-    test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn, token: token} do
       body =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", %{"active" => true})
@@ -275,9 +280,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "400"
     end
 
-    test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
       # externalId is present (passes the blank gate), but the email carries a
       # space — the provision changeset's email validate_format rejects it. A
       # NON-unique changeset error flows back to render_error(%Changeset{}) →
@@ -298,10 +301,16 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Deprovision -----------------------------------------------------
 
   describe "PATCH active:false / DELETE deprovision" do
-    test "PATCH active:false suspends the membership (not delete)", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
+    setup do
+      scim_provider(%{default_role: :admin})
+    end
 
+    test "PATCH active:false suspends the membership (not delete)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|patch",
@@ -329,10 +338,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
     end
 
-    test "PATCH active:false with a pathless value map (Entra shape) works", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "PATCH active:false with a pathless value map (Entra shape) works", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|entra", email: "e@acme.test"})
 
@@ -347,9 +358,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "an unsupported PATCH op → SCIM error, not a silent no-op", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "an unsupported PATCH op → SCIM error, not a silent no-op", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|np", email: "np@acme.test"})
 
@@ -367,10 +380,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
     end
 
-    test "a case-insensitive op keyword (`Replace`) still flips active", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "a case-insensitive op keyword (`Replace`) still flips active", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|ci", email: "ci@acme.test"})
 
@@ -387,9 +402,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "a PATCH whose ops never touch `active` → 400 invalidPath", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "a PATCH whose ops never touch `active` → 400 invalidPath", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|noact", email: "noact@acme.test"})
 
@@ -407,9 +424,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["scimType"] == "invalidPath"
     end
 
-    test "a non-list `Operations` → 400 invalidValue", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "a non-list `Operations` → 400 invalidValue", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|nl", email: "nl@acme.test"})
 
@@ -422,9 +441,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
-    test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "a PATCH with no `Operations` key → 400 invalidSyntax", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|ns", email: "ns@acme.test"})
 
@@ -436,9 +457,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["scimType"] == "invalidSyntax"
     end
 
-    test "a PATCH active:false on an unknown externalId → 404", %{conn: conn} do
-      %{token: token} = scim_provider(%{default_role: :admin})
-
+    test "a PATCH active:false on an unknown externalId → 404", %{conn: conn, token: token} do
       body =
         conn
         |> scim_patch(token, ~p"/scim/v2/Users/okta|nobody", active_patch(false))
@@ -448,10 +467,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "404"
     end
 
-    test "PATCH active:true reinstates a suspended membership", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "PATCH active:true reinstates a suspended membership", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|re", email: "re@acme.test"})
 
@@ -471,10 +492,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "DELETE deprovisions the same way (204, soft suspend)", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "DELETE deprovisions the same way (204, soft suspend)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|del", email: "del@acme.test"})
 
@@ -493,8 +516,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         SSO.scim_provision_user(provider, %{external_id: "okta|owner", email: "o@acme.test"})
 
       # Make the provisioned user the account's single active owner.
-      membership = fetch_membership(account.id, user.id)
-      force_membership_role(membership, "owner")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_role(membership, "owner")
       demote_other_owners(account.id, except: user.id)
 
       body =
@@ -506,7 +529,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["status"] == "409"
       # Still active — the lockout guard held.
-      refute fetch_membership(account.id, user.id).disabled_at
+      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
 
     test "DELETE of an unknown externalId → 404 SCIM error", %{conn: conn} do
@@ -521,10 +544,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "404"
     end
 
-    test "a re-DELETE of an already-suspended user is idempotent (204 again)", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "a re-DELETE of an already-suspended user is idempotent (204 again)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|redel", email: "redel@acme.test"})
 
@@ -537,9 +562,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "a PATCH active op whose value can't be parsed → 400 invalidValue", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "a PATCH active op whose value can't be parsed → 400 invalidValue", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|bad", email: "bad@acme.test"})
 
@@ -558,10 +585,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "a PATCH active:true on an already-active member is idempotent (200, still active)",
-         %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+         %{conn: conn, token: token, provider: provider, account: account} do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|aa", email: "aa@acme.test"})
 
@@ -577,9 +601,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "a PATCH active:true on an unknown externalId → 404", %{conn: conn} do
-      %{token: token} = scim_provider(%{default_role: :admin})
-
+    test "a PATCH active:true on an unknown externalId → 404", %{conn: conn, token: token} do
       body =
         conn
         |> scim_patch(token, ~p"/scim/v2/Users/okta|nobody-react", active_patch(true))
@@ -588,9 +610,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "404"
     end
 
-    test "a soft-deleted identity is excluded — GET/PATCH/DELETE → 404", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "a soft-deleted identity is excluded — GET/PATCH/DELETE → 404", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|gone", email: "gone@acme.test"})
 
@@ -616,10 +640,16 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- PUT /Users (full replace, active flip) --------------------------
 
   describe "PUT /Users/:id" do
-    test "PUT active:false suspends the membership", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
+    setup do
+      scim_provider(%{default_role: :admin})
+    end
 
+    test "PUT active:false suspends the membership", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-off-bool",
@@ -643,10 +673,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
     end
 
-    test "PUT active:true reactivates a suspended membership", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "PUT active:true reactivates a suspended membership", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-on", email: "puton@acme.test"})
 
@@ -663,10 +695,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "PUT with the Entra string `\"False\"` suspends the membership", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "PUT with the Entra string `\"False\"` suspends the membership", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-off",
@@ -684,10 +718,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
     end
 
-    test "PUT acts on `active` only — other body attributes are ignored", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "PUT acts on `active` only — other body attributes are ignored", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-ignore",
@@ -715,9 +751,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert reloaded.email == "ignore@acme.test"
     end
 
-    test "PUT with no `active` → 400 invalidValue", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "PUT with no `active` → 400 invalidValue", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-na", email: "na@acme.test"})
 
@@ -731,9 +769,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
-    test "PUT with an unparseable `active` → 400 invalidValue", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider(%{default_role: :admin})
-
+    test "PUT with an unparseable `active` → 400 invalidValue", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-bad", email: "bad@acme.test"})
 
@@ -765,8 +805,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         SSO.scim_provision_user(provider, %{external_id: "okta|put-owner", email: "po@acme.test"})
 
       # Make the provisioned user the account's single active owner.
-      membership = fetch_membership(account.id, user.id)
-      force_membership_role(membership, "owner")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_role(membership, "owner")
       demote_other_owners(account.id, except: user.id)
 
       body =
@@ -778,17 +818,25 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "409"
       assert body["scimType"] == "mutability"
       # Still active — the last-owner guard held; scim_active untouched.
-      refute fetch_membership(account.id, user.id).disabled_at
+      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
   end
 
   # -- Cross-provider no-leak isolation --------------------------------
 
   describe "cross-provider isolation (a foreign externalId is 404, never a leak)" do
-    test "DELETE of an account-B externalId → 404; B untouched", %{conn: conn} do
+    setup do
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
+      %{token_a: token_a, provider_b: provider_b, account_b: account_b}
+    end
 
+    test "DELETE of an account-B externalId → 404; B untouched", %{
+      conn: conn,
+      token_a: token_a,
+      provider_b: provider_b,
+      account_b: account_b
+    } do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|in-b", email: "inb@acme.test"})
 
@@ -803,10 +851,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
     end
 
-    test "PUT active:true on an account-B externalId → 404; B's suspension stands", %{conn: conn} do
-      %{token: token_a} = scim_provider()
-      %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
-
+    test "PUT active:true on an account-B externalId → 404; B's suspension stands", %{
+      conn: conn,
+      token_a: token_a,
+      provider_b: provider_b,
+      account_b: account_b
+    } do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|susp-b", email: "sb@acme.test"})
 
@@ -821,11 +871,11 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PATCH active:true on an account-B externalId → 404; B's suspension stands", %{
-      conn: conn
+      conn: conn,
+      token_a: token_a,
+      provider_b: provider_b,
+      account_b: account_b
     } do
-      %{token: token_a} = scim_provider()
-      %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
-
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|patch-b", email: "pb@acme.test"})
 
@@ -839,10 +889,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "PATCH active:false on an account-B externalId → 404; B's member stays active",
-         %{conn: conn} do
-      %{token: token_a} = scim_provider()
-      %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
-
+         %{conn: conn, token_a: token_a, provider_b: provider_b, account_b: account_b} do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|live-b", email: "lb@acme.test"})
 
@@ -858,11 +905,12 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Full lifecycle round-trip ---------------------------------------
 
   describe "provisioning lifecycle" do
-    test "POST → PATCH active:false → PATCH active:true → DELETE, asserting state at each step",
-         %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
+    setup do
+      scim_provider(%{default_role: :admin})
+    end
 
+    test "POST → PATCH active:false → PATCH active:true → DELETE, asserting state at each step",
+         %{conn: conn, token: token, provider: provider, account: account} do
       ext = "okta|lifecycle"
 
       # 1. Provision → active member, user + identity created.
@@ -906,10 +954,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _identity} = SSO.scim_fetch_user(provider, ext)
     end
 
-    test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{conn: conn} do
-      %{token: token, provider: provider, account: account} =
-        scim_provider(%{default_role: :admin})
-
+    test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       {:ok, %{user: user, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|drift", email: "drift@acme.test"})
 
@@ -940,9 +990,15 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Read + list -----------------------------------------------------
 
   describe "GET /Users" do
-    test "GET /Users/:id returns the resource; unknown id → 404", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
+    setup do
+      scim_provider()
+    end
 
+    test "GET /Users/:id returns the resource; unknown id → 404", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} =
         SSO.scim_provision_user(provider, %{external_id: "okta|read", email: "read@acme.test"})
 
@@ -957,7 +1013,9 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "GET /Users/:id matches scim_external_id only — not the provider_identifier fallback", %{
-      conn: conn
+      conn: conn,
+      token: token,
+      provider: provider
     } do
       # (asserts the REAL behavior, which differs from the
       # test-plan's optimistic claim). The list filter `externalId eq` coalesces
@@ -968,8 +1026,6 @@ defmodule EmisarWeb.SCIMControllerTest do
       # not reachable in practice — but it documents that the fetch path does NOT
       # fall back to provider_identifier. No product bug: SCIM only ever fetches
       # identities it provisioned, which always carry scim_external_id.
-      %{token: token, provider: provider} = scim_provider()
-
       {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|coalesce", email: "c@acme.test"})
 
@@ -990,9 +1046,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["totalResults"] == 1
     end
 
-    test "GET /Users with a userName filter returns just the match", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "GET /Users with a userName filter returns just the match", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       # IdPs commonly set userName = the email and use it as the externalId
       # too; the filter matches the identity's stable handle.
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "a@acme.test"})
@@ -1009,9 +1067,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"externalId" => "a@acme.test"}] = body["Resources"]
     end
 
-    test "GET /Users with an externalId filter returns just the match", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "GET /Users with an externalId filter returns just the match", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|x", email: "x@acme.test"})
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|y", email: "y@acme.test"})
 
@@ -1026,8 +1086,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "GET /Users with an unsupported filter is declined with 400 invalidFilter",
-         %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
+         %{conn: conn, token: token, provider: provider} do
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|1", email: "1@acme.test"})
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|2", email: "2@acme.test"})
 
@@ -1045,9 +1104,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "GET /Users filter finds a user beyond the first page (the match runs in the query)",
-         %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+         %{conn: conn, token: token, provider: provider} do
       # Provision the target first (so it's the oldest identity), then push it
       # past the page limit with 100 newer ones. A page-then-filter-in-memory
       # implementation would miss it; the query-level filter finds it wherever
@@ -1088,9 +1145,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute "okta|in-b" in external_ids
     end
 
-    test "an UNQUOTED filter value is accepted (regex allows quoted or unquoted)", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "an UNQUOTED filter value is accepted (regex allows quoted or unquoted)", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "a@acme.test"})
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "b@acme.test"})
 
@@ -1106,9 +1165,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"externalId" => "a@acme.test"}] = body["Resources"]
     end
 
-    test "an UNFILTERED list past the page cap returns a partial (≤100) list", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "an UNFILTERED list past the page cap returns a partial (≤100) list", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       # One real provisioned identity, then push the directory well past the 100
       # page cap. An unfiltered list is capped at the page limit (push IdPs
       # filter, they don't enumerate), so the response is a partial list — never
@@ -1129,9 +1190,14 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Discovery -------------------------------------------------------
 
   describe "discovery" do
-    test "GET /ServiceProviderConfig is 200 behind auth and declares our support", %{conn: conn} do
-      %{token: token} = scim_provider()
+    setup do
+      scim_provider()
+    end
 
+    test "GET /ServiceProviderConfig is 200 behind auth and declares our support", %{
+      conn: conn,
+      token: token
+    } do
       body = conn |> auth(token) |> get(~p"/scim/v2/ServiceProviderConfig") |> json_response(200)
 
       assert body["patch"]["supported"] == true
@@ -1165,10 +1231,9 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "GET /ResourceTypes lists exactly the User descriptor (Group is push-only)", %{
-      conn: conn
+      conn: conn,
+      token: token
     } do
-      %{token: token} = scim_provider()
-
       body = conn |> auth(token) |> get(~p"/scim/v2/ResourceTypes") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
@@ -1186,9 +1251,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["itemsPerPage"] == 1
     end
 
-    test "GET /Schemas declares the User schema's three attributes", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "GET /Schemas declares the User schema's three attributes", %{conn: conn, token: token} do
       body = conn |> auth(token) |> get(~p"/scim/v2/Schemas") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
@@ -1359,7 +1422,7 @@ defmodule EmisarWeb.SCIMControllerTest do
     |> Accounts.Membership.Query.by_role(:owner)
     |> Repo.all()
     |> Enum.reject(&(&1.user_id == keep_user_id))
-    |> Enum.each(&force_membership_role(&1, "admin"))
+    |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 
   # Suppress unused-alias warnings — referenced via `~p` / fixtures.

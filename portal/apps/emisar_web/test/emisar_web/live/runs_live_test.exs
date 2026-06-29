@@ -4,15 +4,12 @@ defmodule EmisarWeb.RunsLiveTest do
   the API key's name (e.g. "Claude Code"), not the bare source.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
 
   test "shows the API key name in the source column", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
 
     {:ok, runner} =
       Runner.Changeset.register(%{
@@ -49,8 +46,10 @@ defmodule EmisarWeb.RunsLiveTest do
   test "the agent 'View activity' pivot (api_key_id) scopes runs to that key + shows a clearable chip",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
-    {_raw2, other_key} = api_key_fixture(account_id: account.id, name: "Other Agent")
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
+
+    {_raw2, other_key} =
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Other Agent")
 
     {:ok, runner} =
       Runner.Changeset.register(%{
@@ -121,7 +120,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "an account-runs broadcast reloads the current page", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id, connected?: false)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs")
     refute html =~ "linux.late_run"
@@ -158,7 +157,7 @@ defmodule EmisarWeb.RunsLiveTest do
   # params, with no denial flash.
   test "the filter event reshapes the URL with no authz (no mutation)", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    runner = runner_fixture(account_id: account.id, connected?: false)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, _run} =
       Runs.create_run(%{
@@ -189,7 +188,7 @@ defmodule EmisarWeb.RunsLiveTest do
   # account_slug_authz_test; this is the in-account data scoping.)
   test "cross-account — A's operator sees only A's runs, never B's", %{conn: conn} do
     {conn, _user, account_a} = register_and_log_in(conn)
-    runner_a = runner_fixture(account_id: account_a.id, connected?: false)
+    runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
     {:ok, _} =
       Runs.create_run(%{
@@ -200,8 +199,8 @@ defmodule EmisarWeb.RunsLiveTest do
         args: %{}
       })
 
-    account_b = account_fixture()
-    runner_b = runner_fixture(account_id: account_b.id, connected?: false)
+    account_b = Fixtures.Accounts.create_account()
+    runner_b = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
 
     {:ok, _} =
       Runs.create_run(%{

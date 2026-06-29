@@ -12,7 +12,6 @@ defmodule EmisarWeb.MarketingLinkingTest do
   which let a real orphan ship green.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias EmisarWeb.{PacksRegistry, SitemapController}
 
   # The pages we crawl for outbound links — the static hubs (nav, footer, the

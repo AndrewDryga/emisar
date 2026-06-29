@@ -6,7 +6,6 @@ defmodule EmisarWeb.GrantsLiveTest do
   so operators see pending + grants + decisions in one place.)
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Repo, Runners}
   alias Emisar.Approvals.Grant
   alias Emisar.Runners.Runner

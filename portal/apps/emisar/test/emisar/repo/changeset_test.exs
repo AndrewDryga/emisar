@@ -6,9 +6,7 @@ defmodule Emisar.Repo.ChangesetTest do
   field forms together) and `validate_json_size/3` (cap a serialized field size).
   """
   use ExUnit.Case, async: true
-
   import Ecto.Changeset
-
   alias Emisar.Repo.Changeset, as: RepoChangeset
 
   @types %{name: :string, slug: :string, legal_name: :string}

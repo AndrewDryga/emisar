@@ -5,7 +5,6 @@ defmodule EmisarWeb.RunbooksLiveTest do
   and live-refreshes on the account's runbook feed.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Runbooks
 
   defp create_runbook!(user, account, title, opts \\ []) do
@@ -79,10 +78,10 @@ defmodule EmisarWeb.RunbooksLiveTest do
     {_owner_conn, user, account} = register_and_log_in(conn)
     _ = create_runbook!(user, account, "Visible to all")
 
-    viewer = Emisar.Fixtures.user_fixture()
+    viewer = Fixtures.Users.create_user()
 
     _ =
-      Emisar.Fixtures.membership_fixture(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: viewer.id,
         role: "viewer"
@@ -104,8 +103,8 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     # The runbook's lone step is linux.uptime — advertise it as high-risk so its
     # list row carries a high (rose) risk pill, the headline cue before opening.
-    runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-    Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
     _ = create_runbook!(user, account, "Risky deploy", published?: true)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
@@ -118,7 +117,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
   test "a runbook whose action isn't in the catalog shows no risk pill", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    # No action_fixture for linux.uptime — the catalog hasn't observed it, so the
+    # No Fixtures.Catalog.create_action for linux.uptime — the catalog hasn't observed it, so the
     # row renders without a risk pill (never a false-low) rather than guessing.
     # A draft (not published) so the emerald "published" status badge — which
     # shares the low-risk pill's ring color — can't be mistaken for a pill.

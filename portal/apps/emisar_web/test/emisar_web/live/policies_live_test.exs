@@ -7,7 +7,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
   expected v2 JSON shape `Emisar.Policies.evaluate/3` consumes.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Policies
 
   describe "GET /app/policies" do
@@ -175,7 +174,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # `changes.overrides.removed` (the LV mutation reaches the same context write
       # + diff the API does).
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       # Seed a saved default carrying one override (the "before" the diff compares).
       {:ok, _} =
@@ -286,7 +285,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "loading an existing policy reflects its defaults + overrides in the form", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, _} =
         Policies.save_rules(
@@ -342,7 +341,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "an existing min_approvals reflects in the editor's number input", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, _} =
         Policies.save_rules(
@@ -376,10 +375,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # and is denied.
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -405,7 +404,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # min_approvals number + self-approval checkbox are `disabled`. The Save gate
       # is defense-in-depth on top; the card simply offers nothing to submit.
       {_owner_conn, owner, account} = register_and_log_in(conn)
-      owner_subject = Emisar.Fixtures.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
       # Seed a saved default carrying one override so the trash button has a row
       # to (not) render on.
@@ -427,10 +426,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
           owner_subject
         )
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -465,10 +464,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
 
       {_b_conn, b_user, b_account} = register_and_log_in(build_conn())
-      b_subject = Emisar.Fixtures.subject_for(b_user, b_account)
+      b_subject = Fixtures.Subjects.subject_for(b_user, b_account)
 
       b_runner =
-        Emisar.Fixtures.runner_fixture(
+        Fixtures.Runners.create_runner(
           account_id: b_account.id,
           name: "account-b-only-runner",
           group: "b-secret-group"
@@ -625,7 +624,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
   describe "targeted rulesets" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, account: account, subject: Emisar.Fixtures.subject_for(user, account)}
+      %{conn: conn, account: account, subject: Fixtures.Subjects.subject_for(user, account)}
     end
 
     test "an existing runner ruleset renders as a card labelled with the runner name", %{
@@ -634,7 +633,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       subject: subject
     } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
@@ -658,7 +657,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # it, so the card falls back to the raw id rather than crashing — the ruleset
       # stays identifiable so an operator can remove the now-dangling override.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "ghost-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "ghost-1", group: "web")
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
@@ -707,7 +706,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       # deny_all/0 carries no approval section → the scoped gate reads as the lax
       # default (1 approver, self-approval allowed), i.e. weaker than the default.
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
@@ -724,7 +723,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account,
       subject: subject
     } do
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       # The account default is the lax baseline (1 approver, self-approval on), so
       # a deny_all ruleset matches it — nothing weaker to warn about.
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
@@ -740,7 +739,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       subject: subject
     } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
@@ -795,7 +794,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       subject: subject
     } do
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "n1", group: "prod")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "n1", group: "prod")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
@@ -817,7 +816,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       account: account
     } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
@@ -841,7 +840,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # re-targeted. This per-option `disabled` is exactly why the picker uses
       # the shared <.select> rather than <.input type="select">.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
@@ -860,7 +859,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       subject: subject
     } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
@@ -873,12 +872,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "a viewer sees the policy read-only and a forged save is denied", %{account: account} do
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -903,14 +902,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # handler runs `Permissions.gated` on `subject_can_manage_policies?`. An
       # operator (view-only) is refused with a flash; the ruleset is not deleted.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -932,14 +931,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       # (viewer half) — same gate, the laxest role.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-2", group: "db")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "db-2", group: "db")
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -962,12 +961,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # only appends an in-memory card, so there's nothing to flash). No "Save
       # ruleset" card appears.
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -989,7 +988,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # card's `new-…` uid for the persisted policy id, so the second save's
       # editor resolves to the existing scope and upserts it. Exactly one
       # runner-scoped policy remains.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       lv |> render_click("add_ruleset", %{})
@@ -1021,8 +1020,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # each add stamps a fresh `new-<unique_integer>` uid,
       # so the editor-discriminated forms don't collide. Two adds → two distinct
       # `policy-form-new-…` ids (after each picks a target to reveal its form).
-      _r1 = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
-      _r2 = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
+      _r1 = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+      _r2 = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
@@ -1044,7 +1043,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # runner target AND one group target, so saving a ruleset for both leaves
       # nothing free. The button renders disabled-but-visible.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "only-1", group: "only")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "only-1", group: "only")
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :group, "only", subject)
@@ -1075,7 +1074,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         )
 
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       lv |> render_click("add_ruleset", %{})
@@ -1097,7 +1096,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the picker form stays on an unsaved card, so picking
       # a second target rewrites scope_type/scope_value to the latest choice.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "prod")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "prod")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       lv |> render_click("add_ruleset", %{})
@@ -1124,7 +1123,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # a target string without a `runner:`/`group:` prefix
       # → `parse_target/1` returns `{nil, ""}`, so the card reverts to its
       # "Pick a runner or group above" prompt and hides the rules editor.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
@@ -1154,7 +1153,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the `set_target/2` catch-all clause handles an event
       # missing `uid`/`target`: the socket is returned unchanged, no crash.
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       lv |> render_click("add_ruleset", %{})
@@ -1173,7 +1172,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the `editor` discriminator routes the
       # append to the saved ruleset's card; the new row carries the empty-override
       # shape (decision "allow") and is scoped to that card, not the account one.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -1201,7 +1200,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       # removing an override on a saved ruleset card targets
       # that editor via the `editor` discriminator; the row is gone from its form.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
 
       {:ok, saved} =
         Policies.save_scoped_rules(

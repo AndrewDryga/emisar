@@ -7,10 +7,8 @@ defmodule EmisarWeb.Components.SelectTest do
   text carries account data — IL-16).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_select(attrs) do

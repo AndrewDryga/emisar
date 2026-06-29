@@ -22,7 +22,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       {conn, _user, _account} = register_and_log_in(conn)
 
       # A real, populated account the logged-in user has no membership in.
-      other = Emisar.Fixtures.account_fixture()
+      other = Fixtures.Accounts.create_account()
 
       assert_error_sent 404, fn -> get(conn, ~p"/app/#{other}/runners") end
       assert_error_sent 404, fn -> get(conn, ~p"/app/no-such-team/runners") end
@@ -38,7 +38,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       # a return_to) before the slug is ever resolved. The result is a sign-in
       # redirect, NOT the 404 a signed-in non-member would get — the gate order
       # means an anonymous user never reaches the tenant-existence check.
-      account = Emisar.Fixtures.account_fixture()
+      account = Fixtures.Accounts.create_account()
 
       assert {:error, {:redirect, %{to: "/sign_in"}}} =
                live(conn, ~p"/app/#{account}/runners")
@@ -99,8 +99,8 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       # the session pin is never trusted as authorization.
       {conn, user, account_a} = register_and_log_in(conn)
 
-      account_b = Emisar.Fixtures.account_fixture(%{name: "Bravo Distinct Team"})
-      _ = Emisar.Fixtures.membership_fixture(account_id: account_b.id, user_id: user.id)
+      account_b = Fixtures.Accounts.create_account(%{name: "Bravo Distinct Team"})
+      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
 
       # Pin the session to A, then request B's slugged page.
       conn = put_session(conn, :current_account_id, account_a.id)
@@ -157,7 +157,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       # the ref is nil: a user with no membership at all isn't a 404 and isn't
       # logged out — they're steered to /onboarding to create their first
       # workspace. (The on_mount counterpart is covered in dashboard_live_test.)
-      conn = log_in_user(conn, Emisar.Fixtures.user_fixture())
+      conn = log_in_user(conn, Fixtures.Users.create_user())
 
       conn = get(conn, ~p"/app")
 
@@ -195,8 +195,8 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       {conn, user, suspended_account} = register_and_log_in(conn)
 
       # A second, later-joined account that stays live — the fallback target.
-      live_account = Emisar.Fixtures.account_fixture(%{name: "Live Fallback Team"})
-      _ = Emisar.Fixtures.membership_fixture(account_id: live_account.id, user_id: user.id)
+      live_account = Fixtures.Accounts.create_account(%{name: "Live Fallback Team"})
+      _ = Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
 
       # Pin the session to the first account, then suspend that membership.
       conn = put_session(conn, :current_account_id, suspended_account.id)

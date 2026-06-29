@@ -5,21 +5,23 @@ defmodule Emisar.Auth.SubjectTest do
   bootstrap-time edge cases (system subject, missing account).
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Accounts.Account
   alias Emisar.Accounts.Membership
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Auth.Subject
+  alias Emisar.Fixtures
   alias Emisar.RequestContext
   alias Emisar.Runners.Runner
   alias Emisar.Users.User
 
   describe "for_user/4" do
-    test "owner gets the full owner-role permission set" do
-      user = user_fixture()
-      account = account_fixture()
+    setup do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      %{user: user, account: account}
+    end
+
+    test "owner gets the full owner-role permission set", %{user: user, account: account} do
       membership = %Membership{role: "owner", user_id: user.id, account_id: account.id}
 
       subject = Subject.for_user(user, account, membership)
@@ -35,10 +37,7 @@ defmodule Emisar.Auth.SubjectTest do
              )
     end
 
-    test "viewer holds strictly fewer permissions than admin" do
-      user = user_fixture()
-      account = account_fixture()
-
+    test "viewer holds strictly fewer permissions than admin", %{user: user, account: account} do
       viewer_subj =
         Subject.for_user(user, account, %Membership{
           role: "viewer",
@@ -58,10 +57,10 @@ defmodule Emisar.Auth.SubjectTest do
       assert MapSet.size(viewer_subj.permissions) < MapSet.size(admin_subj.permissions)
     end
 
-    test "unknown role string falls back to viewer (default-deny posture)" do
-      user = user_fixture()
-      account = account_fixture()
-
+    test "unknown role string falls back to viewer (default-deny posture)", %{
+      user: user,
+      account: account
+    } do
       subject =
         Subject.for_user(user, account, %Membership{
           role: "no-such-role",
@@ -89,10 +88,13 @@ defmodule Emisar.Auth.SubjectTest do
   end
 
   describe "Authorizer.ensure_has_permissions/2" do
-    test ":ok when the subject holds the permission" do
-      account = account_fixture()
-      user = user_fixture()
+    setup do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      %{account: account, user: user}
+    end
 
+    test ":ok when the subject holds the permission", %{account: account, user: user} do
       subject =
         Subject.for_user(user, account, %Membership{
           role: "owner",
@@ -107,10 +109,7 @@ defmodule Emisar.Auth.SubjectTest do
                )
     end
 
-    test "{:error, :unauthorized} when the subject lacks it" do
-      account = account_fixture()
-      user = user_fixture()
-
+    test "{:error, :unauthorized} when the subject lacks it", %{account: account, user: user} do
       subject =
         Subject.for_user(user, account, %Membership{
           role: "viewer",
@@ -125,10 +124,10 @@ defmodule Emisar.Auth.SubjectTest do
                )
     end
 
-    test "{:one_of, [...]} succeeds if any one permission is held" do
-      account = account_fixture()
-      user = user_fixture()
-
+    test "{:one_of, [...]} succeeds if any one permission is held", %{
+      account: account,
+      user: user
+    } do
       operator =
         Subject.for_user(user, account, %Membership{
           role: "operator",
@@ -145,10 +144,7 @@ defmodule Emisar.Auth.SubjectTest do
       assert :ok = Emisar.Auth.Authorizer.ensure_has_permissions(operator, {:one_of, perms})
     end
 
-    test "rejects {:one_of, [...]} if the subject holds none" do
-      account = account_fixture()
-      user = user_fixture()
-
+    test "rejects {:one_of, [...]} if the subject holds none", %{account: account, user: user} do
       viewer =
         Subject.for_user(user, account, %Membership{
           role: "viewer",
@@ -165,10 +161,10 @@ defmodule Emisar.Auth.SubjectTest do
                Emisar.Auth.Authorizer.ensure_has_permissions(viewer, {:one_of, perms})
     end
 
-    test "a plain list requires ALL permissions — holding every one passes" do
-      account = account_fixture()
-      user = user_fixture()
-
+    test "a plain list requires ALL permissions — holding every one passes", %{
+      account: account,
+      user: user
+    } do
       owner =
         Subject.for_user(user, account, %Membership{
           role: "owner",
@@ -185,10 +181,10 @@ defmodule Emisar.Auth.SubjectTest do
       assert :ok = Emisar.Auth.Authorizer.ensure_has_permissions(owner, perms)
     end
 
-    test "a plain list is rejected when the subject lacks any one of them" do
-      account = account_fixture()
-      user = user_fixture()
-
+    test "a plain list is rejected when the subject lacks any one of them", %{
+      account: account,
+      user: user
+    } do
       admin =
         Subject.for_user(user, account, %Membership{
           role: "admin",

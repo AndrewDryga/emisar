@@ -10,7 +10,6 @@ defmodule Emisar.RepoTest do
   side effect to the outer commit instead.
   """
   use Emisar.DataCase, async: true
-
   alias Ecto.Multi
   alias Emisar.Repo
 

@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserAgentTest do
   use ExUnit.Case, async: true
-
   alias EmisarWeb.UserAgent
 
   test "desktop Chrome on Windows" do

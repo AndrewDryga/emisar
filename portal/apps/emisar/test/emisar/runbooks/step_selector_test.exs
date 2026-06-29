@@ -1,6 +1,5 @@
 defmodule Emisar.Runbooks.StepSelectorTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Runbooks.StepSelector
 
   describe "parse/1" do

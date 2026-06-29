@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Fixtures, Repo, Runners, Runs}
   alias Emisar.Runners.Presence
   alias Emisar.Runs.ActionRun
@@ -21,9 +20,9 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # Team plan (via a subscription) so the registration tests below aren't
       # capped at free's 3-runner limit; plan lives on the subscription now.
-      Emisar.Fixtures.subscription_fixture(account, "team")
+      Fixtures.Accounts.create_subscription(account, "team")
 
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, raw_key, _key} = Runners.create_auth_key(%{description: "test"}, subject)
       %{account: account, user: user, raw_key: raw_key}
     end
@@ -72,9 +71,9 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # Team plan (via a subscription) so the registration tests below aren't
       # capped at free's 3-runner limit; plan lives on the subscription now.
-      Emisar.Fixtures.subscription_fixture(account, "team")
+      Fixtures.Accounts.create_subscription(account, "team")
 
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # Reusable: these tests register several runners off one bootstrap key.
       {:ok, raw_key, _key} =
@@ -101,7 +100,7 @@ defmodule EmisarWeb.RunnerSocketTest do
           user
         )
 
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw_key, _key} =
         Runners.create_auth_key(%{description: "test", reusable: true}, subject)
@@ -190,13 +189,13 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # Team plan (via a subscription) so the registration tests below aren't
       # capped at free's 3-runner limit; plan lives on the subscription now.
-      Emisar.Fixtures.subscription_fixture(account, "team")
+      Fixtures.Accounts.create_subscription(account, "team")
 
-      runner = Fixtures.runner_fixture(account_id: account.id, connected?: false)
-      _ = Fixtures.action_fixture(runner: runner)
-      _ = Fixtures.policy_fixture(account_id: account.id, created_by_id: user.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      _ = Fixtures.Catalog.create_action(runner: runner)
+      _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
       {_raw, token} = Runners.mint_runner_token(runner)
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       %{account: account, runner: runner, token: token, subject: subject}
     end
@@ -613,7 +612,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       state: state,
       run: run
     } do
-      runner_b = Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       state_b = %{state | runner_id: runner_b.id}
 
       raw =
@@ -645,7 +644,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       state: state,
       run: run
     } do
-      runner_b = Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      runner_b = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       state_b = %{state | runner_id: runner_b.id}
 
       frame_in = result_frame(run.request_id, "success", exit_code: 0)
@@ -785,7 +784,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       state: state,
       runner: runner
     } do
-      peer = Fixtures.runner_fixture(account_id: account.id, connected?: true)
+      peer = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       raw = Jason.encode!(%{"type" => "heartbeat", "action_load" => 11})
       assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
@@ -831,7 +830,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
-      subject = Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
 
       row = Enum.find(events, &(&1.event_type == "runner.error"))
@@ -856,7 +855,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       raw = Jason.encode!(%{"type" => "error", "request_id" => "req_err_2"})
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
-      subject = Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
 
       row =
@@ -950,15 +949,15 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     # Team plan (via a subscription) so registration isn't capped at free's
     # 3-runner limit; plan lives on the subscription now.
-    Emisar.Fixtures.subscription_fixture(account, "team")
+    Fixtures.Accounts.create_subscription(account, "team")
 
-    runner = Fixtures.runner_fixture(account_id: account.id, connected?: false)
-    _ = Fixtures.action_fixture(runner: runner)
-    _ = Fixtures.policy_fixture(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    _ = Fixtures.Catalog.create_action(runner: runner)
+    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {_raw, token} = Runners.mint_runner_token(runner)
 
     {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
-    subject = Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
     %{account: account, user: user, runner: runner, state: state, subject: subject}
   end

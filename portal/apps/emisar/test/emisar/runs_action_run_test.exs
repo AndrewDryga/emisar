@@ -1,6 +1,5 @@
 defmodule Emisar.Runs.ActionRunTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Runs.ActionRun
 
   describe "terminal?/1 (status transition matrix)" do

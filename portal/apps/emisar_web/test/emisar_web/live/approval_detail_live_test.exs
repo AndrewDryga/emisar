@@ -7,7 +7,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   handler head required `%{"reason" => reason}`.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Approvals, Repo, Runs}
   alias Emisar.Runners.Runner
 
@@ -38,8 +37,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "a high-risk action shows its risk pill so the approver sees the stakes", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-    Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "high")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "high")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -86,7 +85,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "the duration menu hides options above the account's grant-lifetime cap", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     # Cap standing grants at 1 day — the 30/90-day windows must not be offered.
-    Ecto.Changeset.change(account, max_grant_lifetime_seconds: 86_400) |> Emisar.Repo.update!()
+    Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
 
     request = pending_request(account, user)
 
@@ -255,7 +254,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       })
 
     # A different requester so this is a real (non-self) approval.
-    requester = Emisar.Fixtures.user_fixture()
+    requester = Fixtures.Users.create_user()
     {:ok, request} = Approvals.create_request(run, requester.id, "please")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
@@ -334,17 +333,21 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # A different operator records the first (of two) approvals — stays pending.
     # A distinct full_name so the Decisions card's decider label is unambiguous
     # (every fixture user is otherwise "Test User").
-    approver = Emisar.Fixtures.user_fixture(full_name: "Casey Approver")
+    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
 
     _ =
-      Emisar.Fixtures.membership_fixture(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: approver.id,
         role: "operator"
       )
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
-      Approvals.approve_request(request, Emisar.Fixtures.subject_for(approver, account), "first")
+      Approvals.approve_request(
+        request,
+        Fixtures.Subjects.subject_for(approver, account),
+        "first"
+      )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -375,17 +378,21 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "0 of 2"
     refute html =~ "Casey Approver"
 
-    approver = Emisar.Fixtures.user_fixture(full_name: "Casey Approver")
+    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
 
     _ =
-      Emisar.Fixtures.membership_fixture(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: approver.id,
         role: "operator"
       )
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
-      Approvals.approve_request(request, Emisar.Fixtures.subject_for(approver, account), "first")
+      Approvals.approve_request(
+        request,
+        Fixtures.Subjects.subject_for(approver, account),
+        "first"
+      )
 
     # The broadcast reaches the still-open page; it re-assigns request + decisions.
     rendered = render(lv)
@@ -447,12 +454,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, _owner, account} = register_and_log_in(conn)
 
     # A separate requester we then soft-delete (keeping the request's requested_by_id).
-    requester = Emisar.Fixtures.user_fixture()
+    requester = Fixtures.Users.create_user()
 
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        runner_id: Emisar.Fixtures.runner_fixture(account_id: account.id).id,
+        runner_id: Fixtures.Runners.create_runner(account_id: account.id).id,
         action_id: "linux.uptime",
         source: "operator",
         args: %{},

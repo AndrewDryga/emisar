@@ -6,14 +6,17 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   sees the recovery codes once, and continues to the dashboard.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Accounts, Auth}
 
   setup %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
     {:ok, account} =
-      Accounts.update_account(account, %{require_mfa: true}, owner_subject(user, account))
+      Accounts.update_account(
+        account,
+        %{settings: %{require_mfa: true}},
+        owner_subject(user, account)
+      )
 
     %{conn: conn, user: user, account: account}
   end
@@ -151,7 +154,11 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # remount must NOT strand them in enrollment: the mount's first cond branch
     # (`not account.require_mfa`) sends them straight to /app.
     {:ok, _account} =
-      Accounts.update_account(account, %{require_mfa: false}, owner_subject(user, account))
+      Accounts.update_account(
+        account,
+        %{settings: %{require_mfa: false}},
+        owner_subject(user, account)
+      )
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
@@ -164,10 +171,14 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       # the gate only funnels when the account enforces MFA.
       # A member who hasn't enrolled, mounting a NON-enforcing account's page, takes
       # the `not account.require_mfa` cond branch and continues — no detour to setup.
-      no_mfa = Emisar.Fixtures.account_fixture(%{name: "Open Team"})
+      no_mfa = Fixtures.Accounts.create_account(%{name: "Open Team"})
 
       _ =
-        Emisar.Fixtures.membership_fixture(account_id: no_mfa.id, user_id: user.id, role: "owner")
+        Fixtures.Memberships.create_membership(
+          account_id: no_mfa.id,
+          user_id: user.id,
+          role: "owner"
+        )
 
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{no_mfa}/runners")
     end

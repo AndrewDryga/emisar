@@ -1,21 +1,29 @@
 defmodule Emisar.InvitationTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Accounts
+  alias Emisar.Fixtures
 
   defp inviter_subject(account) do
-    inviter = user_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: inviter.id, role: "owner")
-    {inviter, subject_for(inviter, account, role: :owner)}
+    inviter = Fixtures.Users.create_user()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
+
+    {inviter, Fixtures.Subjects.subject_for(inviter, account, role: :owner)}
   end
 
   describe "invite_user_to_account/3" do
-    test "creates a placeholder user for a brand-new email" do
-      account = account_fixture()
+    setup do
+      account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
+      %{account: account, subject: subject}
+    end
 
+    test "creates a placeholder user for a brand-new email", %{subject: subject} do
       assert {:ok,
               %{
                 membership: membership,
@@ -33,10 +41,8 @@ defmodule Emisar.InvitationTest do
       assert is_nil(membership.invitation_accepted_at)
     end
 
-    test "reuses an existing user when the email already exists" do
-      account = account_fixture()
-      {_inviter, subject} = inviter_subject(account)
-      existing = user_fixture(email: "alice@example.test")
+    test "reuses an existing user when the email already exists", %{subject: subject} do
+      existing = Fixtures.Users.create_user(email: "alice@example.test")
 
       assert {:ok, %{user: invitee}} =
                Accounts.invite_user_to_account("alice@example.test", "operator", subject)
@@ -44,10 +50,7 @@ defmodule Emisar.InvitationTest do
       assert invitee.id == existing.id
     end
 
-    test "trims the email; the citext column owns case-insensitive identity" do
-      account = account_fixture()
-      {_inviter, subject} = inviter_subject(account)
-
+    test "trims the email; the citext column owns case-insensitive identity", %{subject: subject} do
       assert {:ok, %{user: invitee}} =
                Accounts.invite_user_to_account(
                  "  HELLO@Example.Test  ",
@@ -60,7 +63,7 @@ defmodule Emisar.InvitationTest do
 
       # A differently-cased invite resolves to the SAME user row: the
       # unique citext index is the guarantee, not normalization.
-      other_account = account_fixture()
+      other_account = Fixtures.Accounts.create_account()
       {_inviter, other_subject} = inviter_subject(other_account)
 
       assert {:ok, %{user: same_user}} =
@@ -69,11 +72,14 @@ defmodule Emisar.InvitationTest do
       assert same_user.id == invitee.id
     end
 
-    test "rolls back when the user already belongs to the account" do
-      account = account_fixture()
-      {_inviter, subject} = inviter_subject(account)
-      existing = user_fixture()
-      _existing_membership = membership_fixture(account_id: account.id, user_id: existing.id)
+    test "rolls back when the user already belongs to the account", %{
+      account: account,
+      subject: subject
+    } do
+      existing = Fixtures.Users.create_user()
+
+      _existing_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
 
       assert {:error, :already_member} =
                Accounts.invite_user_to_account(existing.email, "admin", subject)
@@ -82,7 +88,7 @@ defmodule Emisar.InvitationTest do
 
   describe "fetch_invitation_by_token/1" do
     setup do
-      account = account_fixture()
+      account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
 
       {:ok, %{membership: membership, invitation_token: token, user: invitee}} =
@@ -150,9 +156,40 @@ defmodule Emisar.InvitationTest do
     end
   end
 
+  describe "mark_invitation_accepted/2" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      {_inviter, subject} = inviter_subject(account)
+      invitee = Fixtures.Users.create_user()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
+
+      %{membership: membership, invitee: invitee}
+    end
+
+    test "in-place accept burns the token; a replay is :not_found", %{
+      membership: membership,
+      invitee: invitee
+    } do
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, invitee)
+      assert accepted.invitation_accepted_at
+      assert is_nil(accepted.invitation_token_digest)
+
+      # The stale struct replayed: the fresh row is no longer pending.
+      assert {:error, :not_found} = Accounts.mark_invitation_accepted(membership, invitee)
+    end
+
+    test "a different signed-in user cannot burn the invitation", %{membership: membership} do
+      bystander = Fixtures.Users.create_user()
+
+      assert {:error, :unauthorized} = Accounts.mark_invitation_accepted(membership, bystander)
+    end
+  end
+
   describe "accept_invitation/2" do
     setup do
-      account = account_fixture()
+      account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
 
       {:ok, %{membership: membership}} =
@@ -190,36 +227,6 @@ defmodule Emisar.InvitationTest do
                Accounts.accept_invitation(membership, %{"full_name" => "Mallory"})
 
       assert {:ok, %{full_name: "Carol"}} = Emisar.Users.fetch_user_by_id(user.id)
-    end
-  end
-
-  describe "mark_invitation_accepted/2" do
-    test "in-place accept burns the token; a replay is :not_found" do
-      account = account_fixture()
-      {_inviter, subject} = inviter_subject(account)
-      invitee = user_fixture()
-
-      {:ok, %{membership: membership}} =
-        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
-
-      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, invitee)
-      assert accepted.invitation_accepted_at
-      assert is_nil(accepted.invitation_token_digest)
-
-      # The stale struct replayed: the fresh row is no longer pending.
-      assert {:error, :not_found} = Accounts.mark_invitation_accepted(membership, invitee)
-    end
-
-    test "a different signed-in user cannot burn the invitation" do
-      account = account_fixture()
-      {_inviter, subject} = inviter_subject(account)
-      invitee = user_fixture()
-      bystander = user_fixture()
-
-      {:ok, %{membership: membership}} =
-        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
-
-      assert {:error, :unauthorized} = Accounts.mark_invitation_accepted(membership, bystander)
     end
   end
 end

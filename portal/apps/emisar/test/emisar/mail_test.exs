@@ -5,43 +5,35 @@ defmodule Emisar.MailTest do
   skips them on its next send.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
   import Swoosh.TestAssertions
-
+  alias Emisar.Fixtures
   alias Emisar.Mail
   alias Emisar.Mailers.UserNotifier
 
-  describe "suppress/3 + suppressed?/1" do
-    test "records a suppression and reports it case-insensitively" do
-      assert {:ok, suppression} = Mail.suppress("Bounced@Example.com", :hard_bounce, "HardBounce")
-      assert suppression.reason == :hard_bounce
+  describe "suppressed?/1" do
+    test "reports a suppressed address case-insensitively (citext key)" do
+      {:ok, _} = Mail.suppress("Bounced@Example.com", :hard_bounce, "HardBounce")
 
-      # citext key → case-insensitive match.
+      # citext key → the stored casing doesn't matter on lookup.
       assert Mail.suppressed?("bounced@example.com")
       assert Mail.suppressed?("BOUNCED@EXAMPLE.COM")
       refute Mail.suppressed?("someone-else@example.com")
     end
 
-    test "upserts by email — a later event refreshes the reason, never duplicates" do
-      {:ok, _} = Mail.suppress("dupe@example.com", :hard_bounce, "bounce")
-      {:ok, updated} = Mail.suppress("dupe@example.com", :spam_complaint, "complaint")
+    test "trims the input before the lookup" do
+      {:ok, _} = Mail.suppress("trim@example.com", :hard_bounce, "bounce")
 
-      assert updated.reason == :spam_complaint
-      assert updated.detail == "complaint"
-      assert Repo.aggregate(Mail.Suppression.Query.all(), :count) == 1
+      # The mailer may hand a padded address; suppressed? String.trims it first.
+      assert Mail.suppressed?("  trim@example.com  ")
     end
 
-    test "a blank email is rejected" do
-      assert {:error, changeset} = Mail.suppress("   ", :hard_bounce, nil)
-      assert %{email: _} = errors_on(changeset)
-    end
-
-    test "suppressed?/1 is false for a non-binary" do
+    test "is false for a non-binary (the guard's fallback clause)" do
       refute Mail.suppressed?(nil)
     end
+  end
 
-    test "suppressed_emails/1 returns the suppressed subset, keyed to the caller's strings" do
+  describe "suppressed_emails/1" do
+    test "returns the suppressed subset, keyed to the caller's strings" do
       {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
       {:ok, _} = Mail.suppress("complained@example.com", :spam_complaint, "complaint")
 
@@ -58,11 +50,11 @@ defmodule Emisar.MailTest do
       assert result == MapSet.new(["Bounced@Example.com", "complained@example.com"])
     end
 
-    test "suppressed_emails/1 is empty for an empty list" do
+    test "is empty for an empty list" do
       assert Mail.suppressed_emails([]) == MapSet.new()
     end
 
-    test "suppressed_emails/1 drops nil/blank entries (SSO members have no email)" do
+    test "drops nil/blank entries (SSO members have no email)" do
       {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
 
       # A list with only nils (e.g. an all-SSO team) must not reach the query.
@@ -74,9 +66,40 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "suppress/3" do
+    test "records a suppression and returns it" do
+      assert {:ok, suppression} = Mail.suppress("new@example.com", :hard_bounce, "HardBounce")
+      assert suppression.reason == :hard_bounce
+      assert suppression.detail == "HardBounce"
+      assert Mail.suppressed?("new@example.com")
+    end
+
+    test "upserts by email — a later event refreshes the reason, never duplicates" do
+      {:ok, _} = Mail.suppress("dupe@example.com", :hard_bounce, "bounce")
+      {:ok, updated} = Mail.suppress("dupe@example.com", :spam_complaint, "complaint")
+
+      assert updated.reason == :spam_complaint
+      assert updated.detail == "complaint"
+      assert Repo.aggregate(Mail.Suppression.Query.all(), :count) == 1
+    end
+
+    test "defaults the detail to nil when omitted" do
+      assert {:ok, suppression} = Mail.suppress("nodetail@example.com", :spam_complaint)
+      assert is_nil(suppression.detail)
+    end
+
+    test "a blank email is rejected" do
+      assert {:error, changeset} = Mail.suppress("   ", :hard_bounce, nil)
+      assert %{email: _} = errors_on(changeset)
+    end
+  end
+
   describe "the mailer skips suppressed recipients" do
-    test "a suppressed address is not sent to" do
-      user = user_fixture()
+    setup do
+      %{user: Fixtures.Users.create_user()}
+    end
+
+    test "a suppressed address is not sent to", %{user: user} do
       {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
       # The skip path returns {:ok, %{suppressed: true}} without building an
@@ -84,22 +107,23 @@ defmodule Emisar.MailTest do
       assert {:ok, %{suppressed: true}} = UserNotifier.deliver_magic_link(user, "tok", "123456")
     end
 
-    test "a normal address is delivered, not suppressed" do
-      user = user_fixture()
+    test "a normal address is delivered, not suppressed", %{user: user} do
       assert {:ok, sent} = UserNotifier.deliver_magic_link(user, "tok", "123456")
       refute match?(%{suppressed: true}, sent)
     end
   end
 
   describe "branded return_to threading" do
-    test "deliver_magic_link appends an encoded return_to when given one" do
-      user = user_fixture()
+    setup do
+      %{user: Fixtures.Users.create_user()}
+    end
+
+    test "deliver_magic_link appends an encoded return_to when given one", %{user: user} do
       UserNotifier.deliver_magic_link(user, "tok", "123456", "/app/acme")
       assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok/123456?return_to=%2Fapp%2Facme"))
     end
 
-    test "deliver_magic_link without a return_to is unchanged" do
-      user = user_fixture()
+    test "deliver_magic_link without a return_to is unchanged", %{user: user} do
       UserNotifier.deliver_magic_link(user, "tok", "123456")
 
       assert_email_sent(
@@ -110,7 +134,7 @@ defmodule Emisar.MailTest do
 
   describe "welcome email" do
     test "carries the team name + branded sign-in link" do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(%{name: "Acme Co", slug: "acme-co"}, user)
@@ -128,7 +152,7 @@ defmodule Emisar.MailTest do
     # an owner who signed up without a name is greeted
     # by email rather than rendering a blank salutation.
     test "falls back to the email when the owner has no full name" do
-      user = user_fixture(full_name: nil)
+      user = Fixtures.Users.create_user(full_name: nil)
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(%{name: "Nameless", slug: "nameless"}, user)
@@ -140,11 +164,14 @@ defmodule Emisar.MailTest do
   end
 
   describe "confirmation email" do
+    setup do
+      %{user: Fixtures.Users.create_user()}
+    end
+
     # the sign-up confirmation carries its subject, the
     # absolute /confirm/<token> link, a universal sign-in link (so the recipient
     # is never stranded), and the "ignore if you didn't sign up" line.
-    test "carries the subject, confirm link, sign-in link, and reassurance line" do
-      user = user_fixture()
+    test "carries the subject, confirm link, sign-in link, and reassurance line", %{user: user} do
       UserNotifier.deliver_confirmation_instructions(user, "tok-confirm")
 
       assert_email_sent(fn email ->
@@ -158,8 +185,7 @@ defmodule Emisar.MailTest do
 
     # a suppressed address is skipped with the shared
     # {:ok, %{suppressed: true}} contract; no email is built.
-    test "skips a suppressed recipient" do
-      user = user_fixture()
+    test "skips a suppressed recipient", %{user: user} do
       {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
       assert {:ok, %{suppressed: true}} =
@@ -172,7 +198,7 @@ defmodule Emisar.MailTest do
     # body copy "15 minutes" which AGREES with the enforced
     # @magic_link_validity_in_minutes.
     test "carries the subject, link, the 6-digit code, and a 15-minute expiry" do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
       UserNotifier.deliver_magic_link(user, "tok-magic", "123456")
 
       assert_email_sent(fn email ->
@@ -187,14 +213,19 @@ defmodule Emisar.MailTest do
   end
 
   describe "invitation email" do
+    setup do
+      %{invitee: Fixtures.Users.create_user()}
+    end
+
     # the invite subject names the workspace, the body
     # names the inviter + workspace, carries the /accept_invitation/<token>
     # link, the team's branded sign-in link (where they sign in after accepting),
     # and the "what is emisar?" pitch.
-    test "names the inviter and workspace and carries the accept + sign-in links" do
-      inviter = user_fixture(full_name: "Dana Inviter")
-      invitee = user_fixture()
-      account = account_fixture(name: "Globex")
+    test "names the inviter and workspace and carries the accept + sign-in links", %{
+      invitee: invitee
+    } do
+      inviter = Fixtures.Users.create_user(full_name: "Dana Inviter")
+      account = Fixtures.Accounts.create_account(name: "Globex")
 
       UserNotifier.deliver_account_invitation(invitee, inviter, account, "tok-invite")
 
@@ -210,10 +241,9 @@ defmodule Emisar.MailTest do
     end
 
     # an inviter with no full_name is shown by email.
-    test "falls back to the inviter's email when they have no full name" do
-      inviter = user_fixture(full_name: nil)
-      invitee = user_fixture()
-      account = account_fixture(name: "Globex")
+    test "falls back to the inviter's email when they have no full name", %{invitee: invitee} do
+      inviter = Fixtures.Users.create_user(full_name: nil)
+      account = Fixtures.Accounts.create_account(name: "Globex")
 
       UserNotifier.deliver_account_invitation(invitee, inviter, account, "tok")
 
@@ -222,10 +252,9 @@ defmodule Emisar.MailTest do
 
     # a suppressed invitee is skipped (the membership row
     # is created elsewhere; here only the send is suppressed).
-    test "skips a suppressed invitee" do
-      inviter = user_fixture()
-      invitee = user_fixture()
-      account = account_fixture()
+    test "skips a suppressed invitee", %{invitee: invitee} do
+      inviter = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
       {:ok, _} = Mail.suppress(invitee.email, :spam_complaint, "complaint")
 
       assert {:ok, %{suppressed: true}} =
@@ -234,12 +263,17 @@ defmodule Emisar.MailTest do
   end
 
   describe "approval-needed email content" do
+    setup do
+      %{approver: Fixtures.Users.create_user()}
+    end
+
     # (body content) — the approval email surfaces enough
     # to decide from the inbox: subject with the action_id, the runner NAME
     # (not the opaque id), the operator's reason, an args preview, and the
     # /app/approvals/<id> link. (Recipient targeting is covered in approvals_test.)
-    test "surfaces action, runner name, reason, args, and the approval link" do
-      approver = user_fixture()
+    test "surfaces action, runner name, reason, args, and the approval link", %{
+      approver: approver
+    } do
       request = %{id: "req-id-123", reason: "rotate the cert", matched_rules: ["high → approve"]}
 
       run = %{
@@ -266,8 +300,7 @@ defmodule Emisar.MailTest do
 
     # a run on a runner with no name falls back to a
     # truncated-id label, never a blank or the raw full id.
-    test "labels an unnamed runner by a truncated id" do
-      approver = user_fixture()
+    test "labels an unnamed runner by a truncated id", %{approver: approver} do
       request = %{id: "req-id-9", reason: "x", matched_rules: []}
 
       run = %{
@@ -290,8 +323,7 @@ defmodule Emisar.MailTest do
 
     # a suppressed decider is skipped via the same
     # shared deliver/3; other recipients are unaffected (covered elsewhere).
-    test "skips a suppressed decider" do
-      approver = user_fixture()
+    test "skips a suppressed decider", %{approver: approver} do
       {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
       request = %{id: "r", reason: "x", matched_rules: []}
       run = %{action_id: "a", runner: %{name: "n"}, runner_id: "i", policy_reason: nil, args: %{}}

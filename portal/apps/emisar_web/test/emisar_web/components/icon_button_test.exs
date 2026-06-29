@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.IconButtonTest do
   bindings + `disabled` pass through the global `:rest`.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_icon_button(attrs) do

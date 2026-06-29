@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Audit.Event
   alias Emisar.{Auth, Repo, Users}
 
@@ -15,8 +14,14 @@ defmodule EmisarWeb.UserSessionControllerTest do
       {recycle(conn), token_id, secret}
     end
 
-    test "POST /start sets the nonce cookie and lands on the check-email page", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    setup do
+      %{user: Fixtures.Users.create_user()}
+    end
+
+    test "POST /start sets the nonce cookie and lands on the check-email page", %{
+      conn: conn,
+      user: user
+    } do
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
@@ -27,9 +32,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     # cookie through the round-trip so the FIRST sign-in fires sign_up_completed.
     # The welcome flash is the observable proxy (same `registered?` signal drives
     # both it and the analytics event), since the analytics seam is off in test.
-    test "a registration round-trip welcomes the new operator", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
-
+    test "a registration round-trip welcomes the new operator", %{conn: conn, user: user} do
       conn =
         post(conn, ~p"/sign_in/magic/start", %{
           "user" => %{"email" => user.email},
@@ -45,8 +48,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
     end
 
-    test "a normal sign-in (no registration) shows no welcome", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    test "a normal sign-in (no registration) shows no welcome", %{conn: conn, user: user} do
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
 
       assert_received {:email, sent}
@@ -58,8 +60,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
     end
 
-    test "the email link signs in from the originating browser", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    test "the email link signs in from the originating browser", %{conn: conn, user: user} do
       {conn, token_id, secret} = request_magic_link(conn, user.email)
 
       conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
@@ -69,8 +70,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
     end
 
-    test "the typed 6-digit code signs in from the browser holding the nonce", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    test "the typed 6-digit code signs in from the browser holding the nonce", %{
+      conn: conn,
+      user: user
+    } do
       {conn, _token_id, secret} = request_magic_link(conn, user.email)
 
       conn = post(conn, ~p"/sign_in/magic/code", %{"code" => secret})
@@ -81,8 +84,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "the link WITHOUT the requesting browser's cookie can't sign in (anti-hijack)",
-         %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+         %{conn: conn, user: user} do
       {_conn, token_id, secret} = request_magic_link(conn, user.email)
 
       # A DIFFERENT browser (fresh conn, no nonce cookie) clicking the intercepted
@@ -93,8 +95,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute get_session(conn, :user_token)
     end
 
-    test "a wrong secret is uniformly invalid (no oracle)", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    test "a wrong secret is uniformly invalid (no oracle)", %{conn: conn, user: user} do
       {conn, token_id, _secret} = request_magic_link(conn, user.email)
 
       # `tamper` isn't 6 digits, so it can never hash-match the real secret.
@@ -104,8 +105,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute get_session(conn, :user_token)
     end
 
-    test "a soft-deleted user cannot sign in via the link", %{conn: conn} do
-      user = Emisar.Fixtures.user_fixture()
+    test "a soft-deleted user cannot sign in via the link", %{conn: conn, user: user} do
       {conn, token_id, secret} = request_magic_link(conn, user.email)
       {:ok, _} = user |> Users.User.Changeset.delete() |> Repo.update()
 

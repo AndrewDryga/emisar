@@ -16,7 +16,6 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       the request pending.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Approvals, Repo, Runs}
   alias Emisar.Approvals.Request
   alias Emisar.Runners.Runner
@@ -65,14 +64,21 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   # uses). `register_and_log_in` always creates an owner.
   defp downgrade_to_viewer(user) do
     {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-    Emisar.Fixtures.force_membership_role(m, "viewer")
+    Fixtures.Memberships.force_role(m, "viewer")
   end
 
   describe "owner decisions transition state" do
-    test "approving a pending request flips it to approved", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       request = pending_request(account, user)
+      %{conn: conn, account: account, request: request}
+    end
 
+    test "approving a pending request flips it to approved", %{
+      conn: conn,
+      account: account,
+      request: request
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       # Duration defaults to "once" (the form's first option) → no grant,
@@ -86,10 +92,11 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       assert reload_status(request.id) == :approved
     end
 
-    test "denying a pending request flips it to denied", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      request = pending_request(account, user)
-
+    test "denying a pending request flips it to denied", %{
+      conn: conn,
+      account: account,
+      request: request
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       html =
@@ -103,11 +110,18 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   end
 
   describe "viewer is gated" do
-    test "no approve/deny controls render for a viewer", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       request = pending_request(account, user)
       downgrade_to_viewer(user)
+      %{conn: conn, account: account, request: request}
+    end
 
+    test "no approve/deny controls render for a viewer", %{
+      conn: conn,
+      account: account,
+      request: request
+    } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       assert html =~ "Viewers can&#39;t decide approvals." or
@@ -117,11 +131,11 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       refute html =~ "phx-submit=\"deny\""
     end
 
-    test "a crafted approve event is refused — flash, request stays pending", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      request = pending_request(account, user)
-      downgrade_to_viewer(user)
-
+    test "a crafted approve event is refused — flash, request stays pending", %{
+      conn: conn,
+      account: account,
+      request: request
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       # Push the event directly, as a hand-rolled client would — the
@@ -133,11 +147,11 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       assert reload_status(request.id) == :pending
     end
 
-    test "a crafted deny event is refused — request stays pending", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      request = pending_request(account, user)
-      downgrade_to_viewer(user)
-
+    test "a crafted deny event is refused — request stays pending", %{
+      conn: conn,
+      account: account,
+      request: request
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       html = render_hook(lv, "deny", %{"reason" => "nope"})
@@ -148,13 +162,16 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   end
 
   describe "self-approval is gated server-side (IL-15)" do
-    test "the requester sees no Approve button and a crafted approve is refused — stays pending",
-         %{conn: conn} do
-      # The logged-in owner IS the requester; the policy snapshot forbids
-      # self-approval. The Approve form is hidden in the UI…
+    setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       request = pending_request(account, owner, allow_self_approval: false)
+      %{conn: conn, account: account, request: request}
+    end
 
+    test "the requester sees no Approve button and a crafted approve is refused — stays pending",
+         %{conn: conn, account: account, request: request} do
+      # The logged-in owner IS the requester; the policy snapshot forbids
+      # self-approval. The Approve form is hidden in the UI…
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       refute html =~ "Approve and send"
@@ -167,15 +184,15 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       assert reload_status(request.id) == :pending
     end
 
-    test "a different operator can approve the same request", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      request = pending_request(account, owner, allow_self_approval: false)
-
+    test "a different operator can approve the same request", %{
+      account: account,
+      request: request
+    } do
       # A second owner (not the requester) opens the page — they CAN approve.
-      other = Emisar.Fixtures.user_fixture()
+      other = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: other.id,
           role: "owner"

@@ -1,6 +1,5 @@
 defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Catalog.RunnerAction
 
   defp base_attrs(extra) do

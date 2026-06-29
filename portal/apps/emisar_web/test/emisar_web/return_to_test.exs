@@ -5,7 +5,6 @@ defmodule EmisarWeb.ReturnToTest do
   attacker-influenceable input through here.
   """
   use ExUnit.Case, async: true
-
   alias EmisarWeb.ReturnTo
 
   test "accepts a bare local /app/<ref> target (slug or id)" do

@@ -1,15 +1,18 @@
 defmodule EmisarWeb.RunnerInstallLiveTest do
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Repo
   alias Emisar.Runners.AuthKey
 
   describe "GET /app/runners/install" do
-    test "renders the install one-liner and copies it with its leading space", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
 
+    test "renders the install one-liner and copies it with its leading space", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
       assert html =~ "curl -sSL"
@@ -24,11 +27,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     # an operator (not just an admin) can open the wizard
     # and gets a live install command: `issue_install_key` is owner/admin/operator,
     # so `mint_install_key` succeeds and the one-liner renders with a real key.
-    test "an operator can mint the install key and gets a live command", %{conn: conn} do
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
+    test "an operator can mint the install key and gets a live command", %{account: account} do
+      operator = Fixtures.Users.create_user()
 
-      operator = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
 
       {:ok, _lv, html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/install")
@@ -42,11 +49,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     # `mint_install_key` returns {:error, :unauthorized} and the LV renders the
     # `:mint_failed` failure path (pointing at the auth-keys page) instead of a
     # command. The page is reachable (it has no view gate) — the mint is the gate.
-    test "a viewer gets the :mint_failed failure path, not a command", %{conn: conn} do
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
+    test "a viewer gets the :mint_failed failure path, not a command", %{account: account} do
+      viewer = Fixtures.Users.create_user()
 
-      viewer = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
 
       {:ok, _lv, html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/install")
@@ -61,9 +72,10 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
     # the connected mount mints exactly one
     # bootstrap key, and it belongs to the current account (no cross-account id).
-    test "the minted install key belongs to the current account only", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "the minted install key belongs to the current account only", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
 
       assert [%AuthKey{} = key] = Repo.all(AuthKey)
@@ -75,9 +87,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     # the dead/pre-connect (static) render
     # mints no key and shows no command: minting is deferred to the connected
     # mount, so a bare GET can't burn an enrollment secret.
-    test "the dead render mints nothing and shows no command", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "the dead render mints nothing and shows no command", %{conn: conn, account: account} do
       html = conn |> get(~p"/app/#{account}/runners/install") |> html_response(200)
 
       # Static render falls through to the "generating…" placeholder, not a

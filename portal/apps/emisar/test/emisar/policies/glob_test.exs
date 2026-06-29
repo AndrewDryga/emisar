@@ -1,6 +1,5 @@
 defmodule Emisar.Policies.GlobTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Policies.Glob
 
   describe "match?/2" do

@@ -5,10 +5,8 @@ defmodule EmisarWeb.Components.EmptyStateTest do
   error, not a calm empty queue. `variant` controls size/chrome, not colour.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_empty_state(attrs) do

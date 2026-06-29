@@ -1,15 +1,16 @@
 defmodule Emisar.AuditTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Approvals, Audit, RequestContext, Runbooks, Runs, SSO}
   alias Emisar.Auth.Subject
+  alias Emisar.Fixtures
 
   describe "log/3 with a %RequestContext{}" do
-    test "stamps IP/UA/request_id/mcp_session from the :context struct" do
-      account = account_fixture()
+    setup do
+      account = Fixtures.Accounts.create_account()
+      %{account: account}
+    end
 
+    test "stamps IP/UA/request_id/mcp_session from the :context struct", %{account: account} do
       context = %RequestContext{
         ip_address: "10.0.0.42",
         user_agent: "curl/8.5.0",
@@ -25,8 +26,7 @@ defmodule Emisar.AuditTest do
       assert event.mcp_session_id == "sess_xyz"
     end
 
-    test "explicit attrs win over the context struct" do
-      account = account_fixture()
+    test "explicit attrs win over the context struct", %{account: account} do
       context = %RequestContext{ip_address: "10.0.0.42", user_agent: "curl"}
 
       {:ok, event} =
@@ -41,9 +41,7 @@ defmodule Emisar.AuditTest do
       assert event.user_agent == "curl"
     end
 
-    test "with no :context, request metadata is nil (system / engine origin)" do
-      account = account_fixture()
-
+    test "with no :context, request metadata is nil (system / engine origin)", %{account: account} do
       {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system")
 
       assert event.ip_address == nil
@@ -52,9 +50,9 @@ defmodule Emisar.AuditTest do
       assert event.mcp_session_id == nil
     end
 
-    test "over-long request metadata is truncated, not rejected (audit can't be evaded)" do
-      account = account_fixture()
-
+    test "over-long request metadata is truncated, not rejected (audit can't be evaded)", %{
+      account: account
+    } do
       {:ok, event} =
         Audit.log(account.id, "audit.test",
           actor_kind: "system",
@@ -70,13 +68,94 @@ defmodule Emisar.AuditTest do
     # normalize/1 uses String.to_existing_atom (IL-14): an
     # invented field name blows up LOUDLY rather than minting an atom from input
     # (the atom table never GCs; an attacker-influenced key set would be a DoS).
-    test "an invented string field key raises rather than minting an atom (IL-14)" do
-      account = account_fixture()
-
+    test "an invented string field key raises rather than minting an atom (IL-14)", %{
+      account: account
+    } do
       assert_raise ArgumentError, fn ->
         Audit.log(account.id, "audit.test", %{
           "actor_kind" => "system",
           "this_audit_field_was_never_declared_zqx" => "x"
+        })
+      end
+    end
+  end
+
+  describe "record/1" do
+    test "inserts a prebuilt Audit.Events changeset and returns {:ok, %Event{}}" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      assert {:ok, %Audit.Event{} = event} =
+               Audit.record(Audit.Events.account_updated(subject, account))
+
+      assert event.event_type == "account.updated"
+      assert event.account_id == account.id
+      # The row is persisted, not just built.
+      assert Repo.reload!(event).id == event.id
+    end
+
+    test "an invalid changeset surfaces {:error, %Ecto.Changeset{}} (no insert)" do
+      account = Fixtures.Accounts.create_account()
+      before = Repo.aggregate(Audit.Event, :count, :id)
+
+      # event_type is required; an empty one fails the changeset rather than writing.
+      assert {:error, %Ecto.Changeset{}} = Audit.record(Audit.changeset(account.id, ""))
+      assert Repo.aggregate(Audit.Event, :count, :id) == before
+    end
+  end
+
+  describe "changeset/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      %{account: account}
+    end
+
+    test "builds a valid, un-inserted changeset stamping account/type/occurred_at", %{
+      account: account
+    } do
+      before = Repo.aggregate(Audit.Event, :count, :id)
+
+      changeset = Audit.changeset(account.id, "audit.test", actor_kind: "system")
+
+      assert %Ecto.Changeset{valid?: true} = changeset
+      assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
+      assert Ecto.Changeset.get_field(changeset, :event_type) == "audit.test"
+      assert %DateTime{} = Ecto.Changeset.get_field(changeset, :occurred_at)
+      # Build-only — nothing is written until record/log inserts it.
+      assert Repo.aggregate(Audit.Event, :count, :id) == before
+    end
+
+    test "merge order is base < request context < explicit attrs", %{account: account} do
+      context = %RequestContext{ip_address: "10.0.0.9", user_agent: "ctx-ua"}
+
+      changeset =
+        Audit.changeset(account.id, "audit.test",
+          actor_kind: "system",
+          context: context,
+          ip_address: "8.8.8.8"
+        )
+
+      # Explicit ip wins over the context; un-overridden ua falls through from it.
+      assert Ecto.Changeset.get_field(changeset, :ip_address) == "8.8.8.8"
+      assert Ecto.Changeset.get_field(changeset, :user_agent) == "ctx-ua"
+    end
+
+    test "an invented string field key raises rather than minting an atom (IL-14)", %{
+      account: account
+    } do
+      assert_raise ArgumentError, fn ->
+        Audit.changeset(account.id, "audit.test", %{
+          "actor_kind" => "system",
+          "never_declared_audit_field_qzx" => "x"
         })
       end
     end
@@ -87,11 +166,53 @@ defmodule Emisar.AuditTest do
     # account_id, so the event is silently skipped (returns :ok, writes nothing)
     # rather than raising or writing an account-less row.
     test "no-ops (returns :ok) and writes no row when the user has no membership" do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
       before = Repo.aggregate(Audit.Event, :count, :id)
 
       assert :ok = Audit.log_for_user(user, "user.signed_in", actor_kind: "user")
       assert Repo.aggregate(Audit.Event, :count, :id) == before
+    end
+  end
+
+  describe "user_changeset/3" do
+    test "stamps the user's primary-membership account + the user defaults" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      changeset = Audit.user_changeset(user, "user.signed_in")
+
+      assert %Ecto.Changeset{valid?: true} = changeset
+      # Scoped onto the user's primary membership account…
+      assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
+      # …with the user-scoped defaults derived from the user row.
+      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "user"
+      assert Ecto.Changeset.get_field(changeset, :actor_id) == user.id
+      assert Ecto.Changeset.get_field(changeset, :subject_kind) == "user"
+      assert Ecto.Changeset.get_field(changeset, :subject_id) == user.id
+      assert Ecto.Changeset.get_field(changeset, :subject_label) == user.email
+    end
+
+    test "attrs override the defaults" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      changeset = Audit.user_changeset(user, "user.signed_in", actor_kind: "system")
+
+      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "system"
+    end
+
+    test "returns nil (skip) when the user has no active membership" do
+      user = Fixtures.Users.create_user()
+
+      assert is_nil(Audit.user_changeset(user, "user.signed_in"))
     end
   end
 
@@ -100,8 +221,8 @@ defmodule Emisar.AuditTest do
     # fields (not buried in payload), and nil payload keys are compacted so a
     # freshly-created run's row doesn't bloat with still-empty fields.
     test "promotes request_id + mcp_session_id and drops nil payload keys" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -133,8 +254,8 @@ defmodule Emisar.AuditTest do
     # NO caller ip/ua/mcp_session — the runner-UA-bleed class of bug. It DOES carry
     # the run's OWN request_id (the intended audit↔run link, not a context bleed).
     test "a system-origin run event carries no caller ip/ua/mcp_session" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -159,9 +280,16 @@ defmodule Emisar.AuditTest do
 
   describe "Audit.Events builders inherit the subject's request context" do
     setup do
-      account = account_fixture()
-      user = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
       %{account: account, user: user}
     end
 
@@ -176,7 +304,7 @@ defmodule Emisar.AuditTest do
         mcp_session_id: "sess_evt"
       }
 
-      subject = subject_for(user, account, role: :owner, context: context)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
@@ -195,7 +323,7 @@ defmodule Emisar.AuditTest do
       user: user,
       account: account
     } do
-      subject = subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
@@ -213,7 +341,7 @@ defmodule Emisar.AuditTest do
       identity_id = Repo.generate_id()
 
       subject =
-        subject_for(user, account,
+        Fixtures.Subjects.subject_for(user, account,
           role: :owner,
           auth_method: :sso,
           mfa: true,
@@ -234,7 +362,7 @@ defmodule Emisar.AuditTest do
       user: user,
       account: account
     } do
-      subject = subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
@@ -243,16 +371,794 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "subscribe_account_audit/1" do
+    test "the subscriber receives the account's audit fan-out, not another account's" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+
+      {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
+      {:ok, event_b} = Audit.log(account_b.id, "user.signed_in", actor_kind: "user")
+
+      assert :ok = Audit.subscribe_account_audit(account_a.id)
+
+      # A's event fans onto A's topic — the subscriber gets it…
+      Audit.broadcast_event(event_a)
+      assert_receive {:audit_event, %Audit.Event{} = received}
+      assert received.id == event_a.id
+
+      # …but B's event publishes on B's topic, which A never joined, so A's
+      # mailbox stays empty (A's own event was already consumed above).
+      Audit.broadcast_event(event_b)
+      refute_receive {:audit_event, _event}
+    end
+  end
+
+  describe "broadcast_event/1" do
+    test "publishes {:audit_event, event} on the event's own account topic" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      :ok = Audit.subscribe_account_audit(account.id)
+
+      assert :ok = Audit.broadcast_event(event)
+      assert_receive {:audit_event, %Audit.Event{} = received}
+      assert received.id == event.id
+      assert received.account_id == account.id
+    end
+
+    test "a subscriber to another account does not receive it (topic is account-scoped)" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      {:ok, event_b} = Audit.log(account_b.id, "user.signed_in", actor_kind: "user")
+
+      # Subscribe to A, broadcast B's event — A's subscriber must hear nothing.
+      :ok = Audit.subscribe_account_audit(account_a.id)
+
+      assert :ok = Audit.broadcast_event(event_b)
+      refute_receive {:audit_event, _event}
+    end
+  end
+
+  describe "list_events/2 (paginated + filterable)" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
+
+    test "page size + Next cursor walk through every row in order", %{
+      account: account,
+      subject: subject
+    } do
+      for i <- 1..7 do
+        {:ok, _} =
+          Audit.log(account.id, "iter.event",
+            actor_kind: "system",
+            payload: %{"i" => i}
+          )
+      end
+
+      # First page of 3 — Next cursor points to the rest.
+      assert {:ok, page1, %{next_page_cursor: cursor, count: 7}} =
+               Audit.list_events(subject, page: [limit: 3])
+
+      assert length(page1) == 3
+      assert is_binary(cursor)
+
+      {:ok, page2, %{next_page_cursor: cursor2}} =
+        Audit.list_events(subject, page: [cursor: cursor, limit: 3])
+
+      assert length(page2) == 3
+
+      {:ok, page3, %{next_page_cursor: nil}} =
+        Audit.list_events(subject, page: [cursor: cursor2, limit: 3])
+
+      # Last page tail — 7 - 3 - 3 = 1 row.
+      assert length(page3) == 1
+
+      # No row repeated across pages — keyset pagination invariant.
+      ids = Enum.map(page1 ++ page2 ++ page3, & &1.id)
+      assert ids == Enum.uniq(ids)
+    end
+
+    test "filter list narrows to matching event_types only", %{
+      account: account,
+      subject: subject
+    } do
+      # Use real known event_type values — the filter now validates
+      # against `Event.Query.known_event_type_values/0` so the UI
+      # dropdown shows curated options instead of free-text.
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "policy.updated", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      {:ok, rows, %{count: 2}} =
+        Audit.list_events(subject, filter: [event_type: ["user.invited"]])
+
+      assert length(rows) == 2
+      assert Enum.all?(rows, &(&1.event_type == "user.invited"))
+    end
+
+    test "the SSO / Directory event types are selectable in both filter lists" do
+      flat =
+        Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0)) |> MapSet.new()
+
+      grouped =
+        Audit.Event.Query.grouped_event_type_values()
+        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
+        |> MapSet.new()
+
+      sso = ~w[
+        user.provisioned_via_sso user.provisioned_via_scim
+        membership.deprovisioned_via_scim membership.reprovisioned_via_scim
+        membership.role_synced_via_scim
+        sso.group_mapping_created sso.group_mapping_updated sso.group_mapping_deleted
+        sso.link_request_approved sso.link_request_dismissed
+      ]
+
+      for type <- sso do
+        assert type in flat, "#{type} missing from known_event_type_values/0"
+        assert type in grouped, "#{type} missing from grouped_event_type_values/0"
+      end
+    end
+
+    test "the request_id filter matches an anchored prefix, with wildcards escaped", %{
+      account: account,
+      subject: subject
+    } do
+      log = fn type, req_id ->
+        {:ok, _} =
+          Audit.log(account.id, type,
+            actor_kind: "system",
+            context: %RequestContext{request_id: req_id}
+          )
+      end
+
+      log.("policy.updated", "req_trace")
+      # A would-be wildcard collision: if `_` weren't escaped, searching
+      # "req_tr" would also match this.
+      log.("user.invited", "reqZtrace")
+      # A would-be infix collision: the filter stays prefix-anchored so the
+      # request_id index can serve it.
+      log.("user.signed_in", "xreq_trace")
+
+      # Paste the leading fragment: only its event; the `_` is matched literally.
+      assert {:ok, [hit], %{count: 1}} =
+               Audit.list_events(subject, filter: [request_id: "req_tr"])
+
+      assert hit.request_id == "req_trace"
+    end
+
+    test "actor_kind list filter accepts a list of kinds", %{account: account, subject: subject} do
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "api_key")
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
+
+      {:ok, rows, _} =
+        Audit.list_events(subject, filter: [actor_kind: ["user", "api_key"]])
+
+      assert length(rows) == 2
+      assert Enum.all?(rows, &(&1.actor_kind in ["user", "api_key"]))
+    end
+
+    test "invalid cursor surfaces an error rather than returning random rows", %{subject: subject} do
+      assert {:error, :invalid_cursor} =
+               Audit.list_events(subject, page: [cursor: "garbage"])
+    end
+
+    test "a well-formed but type-mismatched cursor is :invalid_cursor, not a 500", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      # Event's keyset is [{:events, :desc, :occurred_at}, {:events, :asc, :id}].
+      # Forge a cursor that decodes cleanly (a real DateTime + a string) but
+      # carries a string where the UUID `id` column is expected — it survives
+      # the :safe decode + nil-check and only fails when the keyset WHERE is
+      # bound. Previously that raised a self-inflicted 500.
+      now_ns = DateTime.to_unix(DateTime.utc_now(), :nanosecond)
+
+      cursor =
+        {:after, [{DateTime, now_ns}, {:t, "not-a-uuid"}]}
+        |> :erlang.term_to_binary()
+        |> Base.url_encode64(padding: false)
+
+      assert {:error, :invalid_cursor} =
+               Audit.list_events(subject, page: [cursor: cursor])
+    end
+
+    # The "Hide noisy events" toggle is retired (audit-logging diet): once
+    # policy.evaluated stopped emitting there was no noise class left to hide.
+    # The filter is gone from the bar, so a stale ?hide_noise=true URL param is
+    # simply dropped at the web boundary (params_to_opts keeps only declared
+    # filters) — no crash, nothing hidden.
+    test "the hide_noise filter is retired" do
+      refute Enum.any?(Audit.Event.Query.filters(), &(&1.name == :hide_noise))
+    end
+
+    test "outcome filter narrows to failures (danger) and denials (warn) by suffix", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
+      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+
+      # "danger" keeps only the failure; routine (approved) is excluded.
+      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
+      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
+
+      # Both outcomes keep the failure + the denial, still dropping the routine.
+      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
+      kept = Enum.map(both, & &1.event_type) |> Enum.sort()
+      assert kept == ["action_run.failed", "approval.denied"]
+    end
+
+    test "the Type filter scopes to a whole group via the 'All <group>' option", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
+      {:ok, _} = Audit.log(account.id, "runner.disabled", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+
+      # "All Runner events" (the group:Runner sentinel) expands to every type in the
+      # Runner group — both runner rows, not the approval one.
+      {:ok, rows, _} = Audit.list_events(subject, filter: [event_type: ["group:Runner"]])
+
+      assert Enum.map(rows, & &1.event_type) |> Enum.sort() == [
+               "runner.connected",
+               "runner.disabled"
+             ]
+
+      # A plain type still works (and can mix with a group sentinel).
+      {:ok, one, _} = Audit.list_events(subject, filter: [event_type: ["approval.approved"]])
+      assert Enum.map(one, & &1.event_type) == ["approval.approved"]
+    end
+
+    test "each event-type group exposes a selectable 'All <group> events' option" do
+      options = Audit.Event.Query.event_type_filter_options()
+
+      assert {"Runner", [{"group:Runner", "All Runner events"} | _]} =
+               Enum.find(options, fn {label, _} -> label == "Runner" end)
+    end
+
+    test "actor_id narrows the list to one identity", %{account: account, subject: subject} do
+      actor_a = Ecto.UUID.generate()
+      actor_b = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_a)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_b)
+
+      {:ok, events, _} = Audit.list_events(subject, actor_id: actor_a)
+      assert Enum.map(events, & &1.actor_id) == [actor_a]
+    end
+
+    test "subject_id narrows the list to one subject", %{account: account, subject: subject} do
+      subj_a = Ecto.UUID.generate()
+      subj_b = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_a)
+      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_b)
+
+      {:ok, events, _} = Audit.list_events(subject, subject_id: subj_a)
+      assert Enum.map(events, & &1.subject_id) == [subj_a]
+    end
+
+    test "the from / to date-range filters bound the window", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
+
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+      past = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      # from/to are LiveTable %Filter{} datetime filters now — applied via :filter.
+      assert {:ok, [], _} = Audit.list_events(subject, filter: [from: future])
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [to: future])
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [from: past])
+    end
+
+    test "actor_id can't surface another account's events" do
+      account_a = Fixtures.Accounts.create_account()
+
+      subject_a =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
+
+      account_b = Fixtures.Accounts.create_account()
+      actor = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account_b.id, "x", actor_kind: "user", actor_id: actor)
+
+      assert {:ok, [], _} = Audit.list_events(subject_a, actor_id: actor)
+    end
+
+    test "a runner subject (no view_audit) is denied" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_events(subject)
+    end
+  end
+
+  describe "the From/To window is inclusive on both bounds" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
+
+    # From == an event's exact occurred_at INCLUDES it
+    # (`occurred_at >= ts`), and To == an event's exact occurred_at INCLUDES it
+    # (`occurred_at <= ts`); the boundary row is never silently dropped.
+    test "an event at the exact From bound and at the exact To bound are both kept", %{
+      account: account,
+      subject: subject
+    } do
+      early = DateTime.add(DateTime.utc_now(), -7200, :second)
+      late = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      {:ok, e_early} =
+        Audit.log(account.id, "user.invited", actor_kind: "user", occurred_at: early)
+
+      {:ok, e_late} =
+        Audit.log(account.id, "policy.updated", actor_kind: "user", occurred_at: late)
+
+      # From == early's timestamp keeps both (early is on the inclusive bound).
+      {:ok, from_rows, _} = Audit.list_events(subject, filter: [from: early])
+      assert Enum.sort(Enum.map(from_rows, & &1.id)) == Enum.sort([e_early.id, e_late.id])
+
+      # To == early's timestamp keeps ONLY early (late is past the upper bound),
+      # and early is included because the upper bound is inclusive too.
+      {:ok, to_rows, _} = Audit.list_events(subject, filter: [to: early])
+      assert Enum.map(to_rows, & &1.id) == [e_early.id]
+    end
+  end
+
+  describe "keyset pagination: empty / last page yields no further cursor" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
+
+    # an empty account returns a nil next cursor, and the
+    # final page of a multi-page walk also returns nil (nothing further to fetch),
+    # which is what pairs with the empty-state copy in the LV.
+    test "an empty log returns no next-page cursor", %{subject: subject} do
+      assert {:ok, [], %{next_page_cursor: nil}} = Audit.list_events(subject, page: [limit: 5])
+    end
+
+    test "the last page of a walk has a nil next cursor", %{account: account, subject: subject} do
+      for _ <- 1..4, do: {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      # 4 rows, page size 3 → page 1 has a cursor, page 2 (the last) does not.
+      {:ok, _page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
+      assert is_binary(cursor)
+
+      assert {:ok, [_], %{next_page_cursor: nil}} =
+               Audit.list_events(subject, page: [cursor: cursor, limit: 3])
+    end
+
+    # a row committed mid-walk must not shift a page
+    # boundary into a skip or a duplicate. The feed is keyset (cursor on
+    # `(occurred_at desc, id asc)`), not offset: the cursor anchors on page 1's
+    # last row, so resuming continues strictly past it regardless of inserts.
+    # A fresh row sorts at the FRONT (newest `occurred_at`), ahead of page 1, so
+    # it is never paged into the resumed walk, and every original row is still
+    # seen exactly once across the two pages.
+    test "a row inserted between page loads doesn't skip or duplicate the walk", %{
+      account: account,
+      subject: subject
+    } do
+      # Six rows, each strictly older than "now" and strictly ordered among
+      # themselves (descending occurred_at == older `i` last), so the walk order
+      # is deterministic and the mid-walk insert lands ahead of all of them.
+      base = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      seeded =
+        for i <- 1..6 do
+          {:ok, event} =
+            Audit.log(account.id, "iter.event",
+              actor_kind: "system",
+              payload: %{"i" => i},
+              occurred_at: DateTime.add(base, i, :second)
+            )
+
+          event.id
+        end
+
+      {:ok, page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
+      assert length(page1) == 3
+      assert is_binary(cursor)
+
+      # Commit a brand-new event AFTER page 1 was read but BEFORE page 2 — it
+      # gets `occurred_at = now`, so it sorts newest (at the front).
+      {:ok, fresh} = Audit.log(account.id, "iter.event", actor_kind: "system")
+
+      {:ok, page2, _meta} = Audit.list_events(subject, page: [cursor: cursor, limit: 3])
+
+      walked = Enum.map(page1 ++ page2, & &1.id)
+
+      # No row appears twice across the two pages (no duplicate at the boundary).
+      assert walked == Enum.uniq(walked)
+      # The fresh front row is never paged into the resumed walk — the cursor
+      # anchored past page 1's last row, so the walk only moves toward older rows.
+      refute fresh.id in walked
+      # Every originally-seeded row is seen exactly once — none skipped.
+      assert MapSet.new(walked) == MapSet.new(seeded)
+    end
+  end
+
+  describe "list_actor_options/2 (the dynamic actor picker)" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      %{account: account, owner: owner, subject: subject}
+    end
+
+    test "returns distinct actors of the kind with resolved labels, sorted", %{
+      account: account,
+      subject: subject
+    } do
+      alice = Fixtures.Users.create_user(email: "alice@example.com")
+      bob = Fixtures.Users.create_user(email: "bob@example.com")
+      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: alice.id)
+      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: bob.id)
+
+      # Two events for bob, one for alice — the picker dedupes to one option per
+      # actor, sorted by label (alice precedes bob regardless of event order).
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
+
+      assert {:ok, [{alice_id, "alice@example.com"}, {bob_id, "bob@example.com"}]} =
+               Audit.list_actor_options("user", subject)
+
+      assert alice_id == alice.id
+      assert bob_id == bob.id
+    end
+
+    test "scopes to the requested kind only", %{
+      account: account,
+      owner: owner,
+      subject: subject
+    } do
+      member = Fixtures.Users.create_user()
+      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+
+      {:ok, _} = Audit.log(account.id, "u", actor_kind: "user", actor_id: member.id)
+      {:ok, _} = Audit.log(account.id, "k", actor_kind: "api_key", actor_id: key.id)
+
+      assert {:ok, [{id, _label}]} = Audit.list_actor_options("api_key", subject)
+      assert id == key.id
+    end
+
+    test "drops an actor only resolvable in another account (no cross-tenant leak)" do
+      account_a = Fixtures.Accounts.create_account()
+
+      subject_a =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
+
+      user_b = Fixtures.Users.create_user()
+      account_b = Fixtures.Accounts.create_account()
+      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user_b.id)
+
+      # A's log references B's user (a mis-stamped id): it lives in A's events
+      # but is only resolvable in B, so it must not surface in A's picker.
+      {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
+
+      assert {:ok, []} = Audit.list_actor_options("user", subject_a)
+    end
+
+    test "a kind with no resolvable actors yields no options" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
+
+      assert {:ok, []} = Audit.list_actor_options("system", subject)
+    end
+
+    # the actor picker enforces view_audit before any DB
+    # touch; a runner (websocket) subject — no view_audit — is denied.
+    test "a runner subject is denied" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_actor_options("user", subject)
+    end
+  end
+
+  describe "list_subject_options/2 (the dynamic subject picker)" do
+    # the picker read enforces view_audit BEFORE any DB
+    # touch; a runner subject (the websocket caller — no view_audit) is denied,
+    # never handed options. A real `Subject.for_runner` carries the runner role's
+    # empty audit permission (a user `:runner` string would degrade to :viewer,
+    # which CAN view — so the websocket subject is the genuine no-permission one).
+    test "a runner subject (no view_audit) is denied (no DB touch)" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_subject_options("user", subject)
+    end
+
+    # a subject id that only resolves in account A never
+    # surfaces in account B's picker: the distinct-id query is for_subject-scoped
+    # to B, so A's row isn't even a candidate.
+    test "a subject only resolvable in another account yields no options (cross-account)" do
+      account_a = Fixtures.Accounts.create_account()
+
+      subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Users.create_user(),
+          Fixtures.Accounts.create_account(),
+          role: :owner
+        )
+
+      user_a = Fixtures.Users.create_user()
+      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user_a.id)
+
+      {:ok, _} =
+        Audit.log(account_a.id, "user.invited", subject_kind: "user", subject_id: user_a.id)
+
+      assert {:ok, []} = Audit.list_subject_options("user", subject_b)
+    end
+
+    # (context half) — `policy` and `approval_grant` have no
+    # label resolver in resolve_labels/2, so every distinct id resolves to a nil
+    # label and is dropped → the picker has zero options (intentional).
+    test "a resolver-less subject kind yields no options" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          subject_kind: "policy",
+          subject_id: Ecto.UUID.generate()
+        )
+
+      assert {:ok, []} = Audit.list_subject_options("policy", subject)
+      assert {:ok, []} = Audit.list_subject_options("approval_grant", subject)
+    end
+
+    # a subject id that WAS resolvable when the event was
+    # written but whose row has since gone unresolvable resolves to a nil label
+    # and is rejected, so the picker doesn't offer a dead option. Here the user's
+    # membership is removed after the event, so the user-label resolver (scoped
+    # through `members_of_account`) no longer finds them in the account.
+    test "a subject whose label can no longer resolve is dropped from the options" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      member = Fixtures.Users.create_user(email: "departing@example.com")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: member.id)
+
+      # While the member is in the account, the picker offers them.
+      assert {:ok, [{id, "departing@example.com"}]} =
+               Audit.list_subject_options("user", subject)
+
+      assert id == member.id
+
+      # Remove the membership — the audit row still references the user id, but
+      # the label resolver (members_of_account) can no longer resolve it, so the
+      # option is dropped rather than rendered with a nil/blank label.
+      membership
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert {:ok, []} = Audit.list_subject_options("user", subject)
+    end
+  end
+
+  describe "list_for_export/2 (SIEM forward sweep)" do
+    defp seed_export_events(account, count) do
+      base = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      for offset <- 1..count do
+        {:ok, event} =
+          Audit.log(account.id, "user.signed_in",
+            actor_kind: "user",
+            occurred_at: DateTime.add(base, offset, :second)
+          )
+
+        event
+      end
+    end
+
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
+
+    test "returns ascending (occurred_at, id) so SIEMs can checkpoint", %{
+      account: account,
+      subject: subject
+    } do
+      [first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, events} = Audit.list_for_export(subject)
+      assert Enum.map(events, & &1.id) == [first.id, second.id, third.id]
+    end
+
+    test ":after cursor is strict — resuming never re-ingests the checkpoint row", %{
+      account: account,
+      subject: subject
+    } do
+      [first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, [event_a, event_b]} =
+               Audit.list_for_export(subject, after: {first.occurred_at, first.id})
+
+      assert event_a.id == second.id
+      assert event_b.id == third.id
+    end
+
+    test ":since is an inclusive lower bound and :limit caps the page", %{
+      account: account,
+      subject: subject
+    } do
+      [_first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, [only]} =
+               Audit.list_for_export(subject, since: second.occurred_at, limit: 1)
+
+      assert only.id == second.id
+      _ = third
+    end
+
+    test ":event_types narrows the sweep", %{account: account, subject: subject} do
+      _ = seed_export_events(account, 2)
+      {:ok, denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+
+      assert {:ok, [only]} = Audit.list_for_export(subject, event_types: ["approval.denied"])
+      assert only.id == denied.id
+    end
+
+    test "a junk :limit falls back to the default; the cap is exposed for the controller", %{
+      account: account,
+      subject: subject
+    } do
+      _ = seed_export_events(account, 2)
+
+      assert {:ok, [_, _]} = Audit.list_for_export(subject, limit: "junk")
+      assert Audit.max_export_limit() == 1_000
+      assert Audit.default_export_limit() == 100
+    end
+
+    test "an owner of account B never exports account A's events (cross-account)" do
+      account_a = Fixtures.Accounts.create_account()
+      _ = seed_export_events(account_a, 2)
+
+      subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Users.create_user(),
+          Fixtures.Accounts.create_account(),
+          role: :owner
+        )
+
+      assert {:ok, []} = Audit.list_for_export(subject_b)
+    end
+
+    # a subject whose role carries no `view_audit` is
+    # rejected from INSIDE list_for_export with {:error, :unauthorized} (the
+    # controller turns that into a 403), never a 500 or a leaked export. The
+    # runner (websocket) role is the no-`view_audit` role; an API-key role DOES
+    # carry it and is gated by per-key scope at the controller instead.
+    test "a no-view_audit role is denied, not a 500" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = seed_export_events(account, 2)
+
+      runner_subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_for_export(runner_subject)
+    end
+  end
+
+  describe "max_export_limit/0" do
+    test "is a positive row ceiling the export sweep clamps an oversized limit to" do
+      assert is_integer(Audit.max_export_limit())
+      assert Audit.max_export_limit() == 1_000
+    end
+  end
+
+  describe "default_export_limit/0" do
+    test "is the fallback page size, and never exceeds the hard ceiling" do
+      assert Audit.default_export_limit() == 100
+      assert Audit.default_export_limit() <= Audit.max_export_limit()
+    end
+  end
+
+  describe "fetch_event_by_id/2" do
+    test "returns the event inside the subject's account" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      assert {:ok, fetched} = Audit.fetch_event_by_id(event.id, subject)
+      assert fetched.id == event.id
+    end
+
+    test "an owner of account B cannot fetch account A's event (cross-account → :not_found)" do
+      account_a = Fixtures.Accounts.create_account()
+      {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
+
+      subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Users.create_user(),
+          Fixtures.Accounts.create_account(),
+          role: :owner
+        )
+
+      assert {:error, :not_found} = Audit.fetch_event_by_id(event_a.id, subject_b)
+    end
+
+    test "a malformed id is a clean :not_found" do
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Users.create_user(),
+          Fixtures.Accounts.create_account(),
+          role: :owner
+        )
+
+      assert {:error, :not_found} = Audit.fetch_event_by_id("not-a-uuid", subject)
+    end
+  end
+
   describe "resolve_references/1" do
-    test "returns live labels for users, runners, and api keys", %{} do
-      account = account_fixture()
-      user = user_fixture()
-      # User labels scope through membership — stamp the membership the real
-      # write path would have created. Owner role so api_key_fixture's
-      # owner-subject can mint (subject_for reads the persisted membership role).
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-      runner = runner_fixture(account_id: account.id, name: "db-prod-01")
-      {_raw, api_key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+    setup do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      %{account: account, user: user}
+    end
+
+    test "returns live labels for users, runners, and api keys", %{account: account, user: user} do
+      # User labels scope through membership — the setup stamped the owner
+      # membership the real write path would have created. Owner role so
+      # Fixtures.ApiKeys.create_api_key's owner-subject can mint
+      # (Fixtures.Subjects.subject_for reads the persisted membership role).
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-prod-01")
+
+      {_raw, api_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
       {:ok, e_user} =
         Audit.log(account.id, "user.touched",
@@ -282,7 +1188,7 @@ defmodule Emisar.AuditTest do
     end
 
     test "missing records (deleted since the event) are simply absent" do
-      account = account_fixture()
+      account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()
 
       {:ok, event} =
@@ -297,13 +1203,13 @@ defmodule Emisar.AuditTest do
     end
 
     test "an id stamped from another account does not resolve (account-scoped)" do
-      account_a = account_fixture()
-      account_b = account_fixture()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
 
       # A runner + user that genuinely live in account B.
-      runner_b = runner_fixture(account_id: account_b.id, name: "b-runner")
-      user_b = user_fixture()
-      _ = membership_fixture(account_id: account_b.id, user_id: user_b.id)
+      runner_b = Fixtures.Runners.create_runner(account_id: account_b.id, name: "b-runner")
+      user_b = Fixtures.Users.create_user()
+      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user_b.id)
 
       # A mis-stamped audit row in account A pointing at B's ids.
       {:ok, event} =
@@ -320,15 +1226,15 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(refs["runner"], runner_b.id)
     end
 
-    test "resolves auth_key, action_run, approval_request, and runbook labels" do
-      account = account_fixture()
-      user = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
-      subject = subject_for(user, account, role: :owner)
-      runner = runner_fixture(account_id: account.id)
+    test "resolves auth_key, action_run, approval_request, and runbook labels", %{
+      account: account,
+      user: user
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {_raw, auth_key} =
-        auth_key_fixture(
+        Fixtures.Runners.create_auth_key(
           account_id: account.id,
           created_by_id: user.id,
           description: "enroll-prod"
@@ -420,8 +1326,8 @@ defmodule Emisar.AuditTest do
     # assert the filter keeps exactly the rows outcome/1 calls danger/warn — i.e.
     # the filter genuinely resolves through outcome/1, not a parallel copy.
     test "the Outcome filter narrows to exactly the rows outcome/1 classifies" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
       # Real known types, one per tone (outcome/1: danger / warn / neutral).
       {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
@@ -481,459 +1387,6 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_events/2 (paginated + filterable)" do
-    test "page size + Next cursor walk through every row in order" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      for i <- 1..7 do
-        {:ok, _} =
-          Audit.log(account.id, "iter.event",
-            actor_kind: "system",
-            payload: %{"i" => i}
-          )
-      end
-
-      # First page of 3 — Next cursor points to the rest.
-      assert {:ok, page1, %{next_page_cursor: cursor, count: 7}} =
-               Audit.list_events(subject, page: [limit: 3])
-
-      assert length(page1) == 3
-      assert is_binary(cursor)
-
-      {:ok, page2, %{next_page_cursor: cursor2}} =
-        Audit.list_events(subject, page: [cursor: cursor, limit: 3])
-
-      assert length(page2) == 3
-
-      {:ok, page3, %{next_page_cursor: nil}} =
-        Audit.list_events(subject, page: [cursor: cursor2, limit: 3])
-
-      # Last page tail — 7 - 3 - 3 = 1 row.
-      assert length(page3) == 1
-
-      # No row repeated across pages — keyset pagination invariant.
-      ids = Enum.map(page1 ++ page2 ++ page3, & &1.id)
-      assert ids == Enum.uniq(ids)
-    end
-
-    test "filter list narrows to matching event_types only" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      # Use real known event_type values — the filter now validates
-      # against `Event.Query.known_event_type_values/0` so the UI
-      # dropdown shows curated options instead of free-text.
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "policy.updated", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
-
-      {:ok, rows, %{count: 2}} =
-        Audit.list_events(subject, filter: [event_type: ["user.invited"]])
-
-      assert length(rows) == 2
-      assert Enum.all?(rows, &(&1.event_type == "user.invited"))
-    end
-
-    test "the SSO / Directory event types are selectable in both filter lists" do
-      flat =
-        Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0)) |> MapSet.new()
-
-      grouped =
-        Audit.Event.Query.grouped_event_type_values()
-        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
-        |> MapSet.new()
-
-      sso = ~w[
-        user.provisioned_via_sso user.provisioned_via_scim
-        membership.deprovisioned_via_scim membership.reprovisioned_via_scim
-        membership.role_synced_via_scim
-        sso.group_mapping_created sso.group_mapping_updated sso.group_mapping_deleted
-        sso.link_request_approved sso.link_request_dismissed
-      ]
-
-      for type <- sso do
-        assert type in flat, "#{type} missing from known_event_type_values/0"
-        assert type in grouped, "#{type} missing from grouped_event_type_values/0"
-      end
-    end
-
-    test "the request_id filter matches an anchored prefix, with wildcards escaped" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      log = fn type, req_id ->
-        {:ok, _} =
-          Audit.log(account.id, type,
-            actor_kind: "system",
-            context: %RequestContext{request_id: req_id}
-          )
-      end
-
-      log.("policy.updated", "req_trace")
-      # A would-be wildcard collision: if `_` weren't escaped, searching
-      # "req_tr" would also match this.
-      log.("user.invited", "reqZtrace")
-      # A would-be infix collision: the filter stays prefix-anchored so the
-      # request_id index can serve it.
-      log.("user.signed_in", "xreq_trace")
-
-      # Paste the leading fragment: only its event; the `_` is matched literally.
-      assert {:ok, [hit], %{count: 1}} =
-               Audit.list_events(subject, filter: [request_id: "req_tr"])
-
-      assert hit.request_id == "req_trace"
-    end
-
-    test "actor_kind list filter accepts a list of kinds" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "api_key")
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
-
-      {:ok, rows, _} =
-        Audit.list_events(subject, filter: [actor_kind: ["user", "api_key"]])
-
-      assert length(rows) == 2
-      assert Enum.all?(rows, &(&1.actor_kind in ["user", "api_key"]))
-    end
-
-    test "invalid cursor surfaces an error rather than returning random rows" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      assert {:error, :invalid_cursor} =
-               Audit.list_events(subject, page: [cursor: "garbage"])
-    end
-
-    test "a well-formed but type-mismatched cursor is :invalid_cursor, not a 500" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
-
-      # Event's keyset is [{:events, :desc, :occurred_at}, {:events, :asc, :id}].
-      # Forge a cursor that decodes cleanly (a real DateTime + a string) but
-      # carries a string where the UUID `id` column is expected — it survives
-      # the :safe decode + nil-check and only fails when the keyset WHERE is
-      # bound. Previously that raised a self-inflicted 500.
-      now_ns = DateTime.to_unix(DateTime.utc_now(), :nanosecond)
-
-      cursor =
-        {:after, [{DateTime, now_ns}, {:t, "not-a-uuid"}]}
-        |> :erlang.term_to_binary()
-        |> Base.url_encode64(padding: false)
-
-      assert {:error, :invalid_cursor} =
-               Audit.list_events(subject, page: [cursor: cursor])
-    end
-
-    # The "Hide noisy events" toggle is retired (audit-logging diet): once
-    # policy.evaluated stopped emitting there was no noise class left to hide.
-    # The filter is gone from the bar, so a stale ?hide_noise=true URL param is
-    # simply dropped at the web boundary (params_to_opts keeps only declared
-    # filters) — no crash, nothing hidden.
-    test "the hide_noise filter is retired" do
-      refute Enum.any?(Audit.Event.Query.filters(), &(&1.name == :hide_noise))
-    end
-
-    test "outcome filter narrows to failures (danger) and denials (warn) by suffix" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-
-      # "danger" keeps only the failure; routine (approved) is excluded.
-      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
-      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
-
-      # Both outcomes keep the failure + the denial, still dropping the routine.
-      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
-      kept = Enum.map(both, & &1.event_type) |> Enum.sort()
-      assert kept == ["action_run.failed", "approval.denied"]
-    end
-
-    test "the Type filter scopes to a whole group via the 'All <group>' option" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
-      {:ok, _} = Audit.log(account.id, "runner.disabled", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-
-      # "All Runner events" (the group:Runner sentinel) expands to every type in the
-      # Runner group — both runner rows, not the approval one.
-      {:ok, rows, _} = Audit.list_events(subject, filter: [event_type: ["group:Runner"]])
-
-      assert Enum.map(rows, & &1.event_type) |> Enum.sort() == [
-               "runner.connected",
-               "runner.disabled"
-             ]
-
-      # A plain type still works (and can mix with a group sentinel).
-      {:ok, one, _} = Audit.list_events(subject, filter: [event_type: ["approval.approved"]])
-      assert Enum.map(one, & &1.event_type) == ["approval.approved"]
-    end
-
-    test "each event-type group exposes a selectable 'All <group> events' option" do
-      options = Audit.Event.Query.event_type_filter_options()
-
-      assert {"Runner", [{"group:Runner", "All Runner events"} | _]} =
-               Enum.find(options, fn {label, _} -> label == "Runner" end)
-    end
-
-    test "actor_id narrows the list to one identity" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      actor_a = Ecto.UUID.generate()
-      actor_b = Ecto.UUID.generate()
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_a)
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_b)
-
-      {:ok, events, _} = Audit.list_events(subject, actor_id: actor_a)
-      assert Enum.map(events, & &1.actor_id) == [actor_a]
-    end
-
-    test "subject_id narrows the list to one subject" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      subj_a = Ecto.UUID.generate()
-      subj_b = Ecto.UUID.generate()
-      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_a)
-      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_b)
-
-      {:ok, events, _} = Audit.list_events(subject, subject_id: subj_a)
-      assert Enum.map(events, & &1.subject_id) == [subj_a]
-    end
-
-    test "the from / to date-range filters bound the window" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
-
-      future = DateTime.add(DateTime.utc_now(), 3600, :second)
-      past = DateTime.add(DateTime.utc_now(), -3600, :second)
-
-      # from/to are LiveTable %Filter{} datetime filters now — applied via :filter.
-      assert {:ok, [], _} = Audit.list_events(subject, filter: [from: future])
-      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [to: future])
-      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [from: past])
-    end
-
-    test "actor_id can't surface another account's events" do
-      account_a = account_fixture()
-      subject_a = subject_for(user_fixture(), account_a, role: :owner)
-      account_b = account_fixture()
-      actor = Ecto.UUID.generate()
-      {:ok, _} = Audit.log(account_b.id, "x", actor_kind: "user", actor_id: actor)
-
-      assert {:ok, [], _} = Audit.list_events(subject_a, actor_id: actor)
-    end
-  end
-
-  describe "list_actor_options/2 (the dynamic actor picker)" do
-    test "returns distinct actors of the kind with resolved labels, sorted" do
-      account = account_fixture()
-      owner = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
-      subject = subject_for(owner, account, role: :owner)
-
-      alice = user_fixture(email: "alice@example.com")
-      bob = user_fixture(email: "bob@example.com")
-      _ = membership_fixture(account_id: account.id, user_id: alice.id)
-      _ = membership_fixture(account_id: account.id, user_id: bob.id)
-
-      # Two events for bob, one for alice — the picker dedupes to one option per
-      # actor, sorted by label (alice precedes bob regardless of event order).
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: bob.id)
-      {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
-      {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
-
-      assert {:ok, [{alice_id, "alice@example.com"}, {bob_id, "bob@example.com"}]} =
-               Audit.list_actor_options("user", subject)
-
-      assert alice_id == alice.id
-      assert bob_id == bob.id
-    end
-
-    test "scopes to the requested kind only" do
-      account = account_fixture()
-      owner = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
-      subject = subject_for(owner, account, role: :owner)
-
-      member = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: member.id)
-      {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: owner.id)
-
-      {:ok, _} = Audit.log(account.id, "u", actor_kind: "user", actor_id: member.id)
-      {:ok, _} = Audit.log(account.id, "k", actor_kind: "api_key", actor_id: key.id)
-
-      assert {:ok, [{id, _label}]} = Audit.list_actor_options("api_key", subject)
-      assert id == key.id
-    end
-
-    test "drops an actor only resolvable in another account (no cross-tenant leak)" do
-      account_a = account_fixture()
-      subject_a = subject_for(user_fixture(), account_a, role: :owner)
-
-      user_b = user_fixture()
-      account_b = account_fixture()
-      _ = membership_fixture(account_id: account_b.id, user_id: user_b.id)
-
-      # A's log references B's user (a mis-stamped id): it lives in A's events
-      # but is only resolvable in B, so it must not surface in A's picker.
-      {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
-
-      assert {:ok, []} = Audit.list_actor_options("user", subject_a)
-    end
-
-    test "a kind with no resolvable actors yields no options" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
-
-      assert {:ok, []} = Audit.list_actor_options("system", subject)
-    end
-  end
-
-  describe "list_for_export/2 (SIEM forward sweep)" do
-    defp seed_export_events(account, count) do
-      base = DateTime.add(DateTime.utc_now(), -3600, :second)
-
-      for offset <- 1..count do
-        {:ok, event} =
-          Audit.log(account.id, "user.signed_in",
-            actor_kind: "user",
-            occurred_at: DateTime.add(base, offset, :second)
-          )
-
-        event
-      end
-    end
-
-    test "returns ascending (occurred_at, id) so SIEMs can checkpoint" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      [first, second, third] = seed_export_events(account, 3)
-
-      assert {:ok, events} = Audit.list_for_export(subject)
-      assert Enum.map(events, & &1.id) == [first.id, second.id, third.id]
-    end
-
-    test ":after cursor is strict — resuming never re-ingests the checkpoint row" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      [first, second, third] = seed_export_events(account, 3)
-
-      assert {:ok, [event_a, event_b]} =
-               Audit.list_for_export(subject, after: {first.occurred_at, first.id})
-
-      assert event_a.id == second.id
-      assert event_b.id == third.id
-    end
-
-    test ":since is an inclusive lower bound and :limit caps the page" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      [_first, second, third] = seed_export_events(account, 3)
-
-      assert {:ok, [only]} =
-               Audit.list_for_export(subject, since: second.occurred_at, limit: 1)
-
-      assert only.id == second.id
-      _ = third
-    end
-
-    test ":event_types narrows the sweep" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      _ = seed_export_events(account, 2)
-      {:ok, denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
-
-      assert {:ok, [only]} = Audit.list_for_export(subject, event_types: ["approval.denied"])
-      assert only.id == denied.id
-    end
-
-    test "a junk :limit falls back to the default; the cap is exposed for the controller" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      _ = seed_export_events(account, 2)
-
-      assert {:ok, [_, _]} = Audit.list_for_export(subject, limit: "junk")
-      assert Audit.max_export_limit() == 1_000
-      assert Audit.default_export_limit() == 100
-    end
-
-    test "an owner of account B never exports account A's events (cross-account)" do
-      account_a = account_fixture()
-      _ = seed_export_events(account_a, 2)
-
-      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
-
-      assert {:ok, []} = Audit.list_for_export(subject_b)
-    end
-  end
-
-  describe "fetch_event_by_id/2" do
-    test "returns the event inside the subject's account" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
-
-      assert {:ok, fetched} = Audit.fetch_event_by_id(event.id, subject)
-      assert fetched.id == event.id
-    end
-
-    test "an owner of account B cannot fetch account A's event (cross-account → :not_found)" do
-      account_a = account_fixture()
-      {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
-
-      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
-
-      assert {:error, :not_found} = Audit.fetch_event_by_id(event_a.id, subject_b)
-    end
-
-    test "a malformed id is a clean :not_found" do
-      subject = subject_for(user_fixture(), account_fixture(), role: :owner)
-      assert {:error, :not_found} = Audit.fetch_event_by_id("not-a-uuid", subject)
-    end
-  end
-
-  describe "non-terminal run states are not audited" do
-    # driving a run through its NON-terminal lifecycle
-    # (pending → sent → running) writes ZERO audit rows: only terminal outcomes
-    # + policy denials leave a row (`Runs.@audited_run_statuses`). The
-    # pending/sent/running labels exist in the known list for the Type dropdown
-    # only — they match no real audit row.
-    test "pending → sent → running produces no audit_event rows" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-
-      before = Repo.aggregate(Audit.Event, :count, :id)
-
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "operator",
-          args: %{}
-        })
-
-      assert run.status == :pending
-      {:ok, sent} = Runs.mark_sent(run)
-      assert sent.status == :sent
-      {:ok, running} = Runs.mark_running(sent)
-      assert running.status == :running
-
-      assert Repo.aggregate(Audit.Event, :count, :id) == before
-    end
-  end
-
   describe "builder-vs-known event-type drift" do
     # several types are EMITTED by a builder but are NOT in
     # `known_event_type_values/0` / `grouped_event_type_values/0`, so they render
@@ -985,8 +1438,8 @@ defmodule Emisar.AuditTest do
     # acted), not a generic `system`. Build a struct-literal provider scoped to a
     # real account and run it through the real builder → changeset → insert.
     test "a SCIM-provisioned user event carries directory_sync + the provider id" do
-      account = account_fixture()
-      user = user_fixture()
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
 
       provider = %SSO.IdentityProvider{
         id: Repo.generate_id(),
@@ -1020,218 +1473,34 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "the From/To window is inclusive on both bounds" do
-    # From == an event's exact occurred_at INCLUDES it
-    # (`occurred_at >= ts`), and To == an event's exact occurred_at INCLUDES it
-    # (`occurred_at <= ts`); the boundary row is never silently dropped.
-    test "an event at the exact From bound and at the exact To bound are both kept" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
+  describe "non-terminal run states are not audited" do
+    # driving a run through its NON-terminal lifecycle
+    # (pending → sent → running) writes ZERO audit rows: only terminal outcomes
+    # + policy denials leave a row (`Runs.@audited_run_statuses`). The
+    # pending/sent/running labels exist in the known list for the Type dropdown
+    # only — they match no real audit row.
+    test "pending → sent → running produces no audit_event rows" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      early = DateTime.add(DateTime.utc_now(), -7200, :second)
-      late = DateTime.add(DateTime.utc_now(), -3600, :second)
+      before = Repo.aggregate(Audit.Event, :count, :id)
 
-      {:ok, e_early} =
-        Audit.log(account.id, "user.invited", actor_kind: "user", occurred_at: early)
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
 
-      {:ok, e_late} =
-        Audit.log(account.id, "policy.updated", actor_kind: "user", occurred_at: late)
+      assert run.status == :pending
+      {:ok, sent} = Runs.mark_sent(run)
+      assert sent.status == :sent
+      {:ok, running} = Runs.mark_running(sent)
+      assert running.status == :running
 
-      # From == early's timestamp keeps both (early is on the inclusive bound).
-      {:ok, from_rows, _} = Audit.list_events(subject, filter: [from: early])
-      assert Enum.sort(Enum.map(from_rows, & &1.id)) == Enum.sort([e_early.id, e_late.id])
-
-      # To == early's timestamp keeps ONLY early (late is past the upper bound),
-      # and early is included because the upper bound is inclusive too.
-      {:ok, to_rows, _} = Audit.list_events(subject, filter: [to: early])
-      assert Enum.map(to_rows, & &1.id) == [e_early.id]
-    end
-  end
-
-  describe "keyset pagination: empty / last page yields no further cursor" do
-    # an empty account returns a nil next cursor, and the
-    # final page of a multi-page walk also returns nil (nothing further to fetch),
-    # which is what pairs with the empty-state copy in the LV.
-    test "an empty log returns no next-page cursor" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      assert {:ok, [], %{next_page_cursor: nil}} = Audit.list_events(subject, page: [limit: 5])
-    end
-
-    test "the last page of a walk has a nil next cursor" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      for _ <- 1..4, do: {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
-
-      # 4 rows, page size 3 → page 1 has a cursor, page 2 (the last) does not.
-      {:ok, _page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
-      assert is_binary(cursor)
-
-      assert {:ok, [_], %{next_page_cursor: nil}} =
-               Audit.list_events(subject, page: [cursor: cursor, limit: 3])
-    end
-
-    # a row committed mid-walk must not shift a page
-    # boundary into a skip or a duplicate. The feed is keyset (cursor on
-    # `(occurred_at desc, id asc)`), not offset: the cursor anchors on page 1's
-    # last row, so resuming continues strictly past it regardless of inserts.
-    # A fresh row sorts at the FRONT (newest `occurred_at`), ahead of page 1, so
-    # it is never paged into the resumed walk, and every original row is still
-    # seen exactly once across the two pages.
-    test "a row inserted between page loads doesn't skip or duplicate the walk" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      # Six rows, each strictly older than "now" and strictly ordered among
-      # themselves (descending occurred_at == older `i` last), so the walk order
-      # is deterministic and the mid-walk insert lands ahead of all of them.
-      base = DateTime.add(DateTime.utc_now(), -3600, :second)
-
-      seeded =
-        for i <- 1..6 do
-          {:ok, event} =
-            Audit.log(account.id, "iter.event",
-              actor_kind: "system",
-              payload: %{"i" => i},
-              occurred_at: DateTime.add(base, i, :second)
-            )
-
-          event.id
-        end
-
-      {:ok, page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
-      assert length(page1) == 3
-      assert is_binary(cursor)
-
-      # Commit a brand-new event AFTER page 1 was read but BEFORE page 2 — it
-      # gets `occurred_at = now`, so it sorts newest (at the front).
-      {:ok, fresh} = Audit.log(account.id, "iter.event", actor_kind: "system")
-
-      {:ok, page2, _meta} = Audit.list_events(subject, page: [cursor: cursor, limit: 3])
-
-      walked = Enum.map(page1 ++ page2, & &1.id)
-
-      # No row appears twice across the two pages (no duplicate at the boundary).
-      assert walked == Enum.uniq(walked)
-      # The fresh front row is never paged into the resumed walk — the cursor
-      # anchored past page 1's last row, so the walk only moves toward older rows.
-      refute fresh.id in walked
-      # Every originally-seeded row is seen exactly once — none skipped.
-      assert MapSet.new(walked) == MapSet.new(seeded)
-    end
-  end
-
-  describe "list_subject_options/2 (the dynamic subject picker)" do
-    # the picker read enforces view_audit BEFORE any DB
-    # touch; a runner subject (the websocket caller — no view_audit) is denied,
-    # never handed options. A real `Subject.for_runner` carries the runner role's
-    # empty audit permission (a user `:runner` string would degrade to :viewer,
-    # which CAN view — so the websocket subject is the genuine no-permission one).
-    test "a runner subject (no view_audit) is denied (no DB touch)" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
-
-      assert {:error, :unauthorized} = Audit.list_subject_options("user", subject)
-    end
-
-    # a subject id that only resolves in account A never
-    # surfaces in account B's picker: the distinct-id query is for_subject-scoped
-    # to B, so A's row isn't even a candidate.
-    test "a subject only resolvable in another account yields no options (cross-account)" do
-      account_a = account_fixture()
-      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
-
-      user_a = user_fixture()
-      _ = membership_fixture(account_id: account_a.id, user_id: user_a.id)
-
-      {:ok, _} =
-        Audit.log(account_a.id, "user.invited", subject_kind: "user", subject_id: user_a.id)
-
-      assert {:ok, []} = Audit.list_subject_options("user", subject_b)
-    end
-
-    # (context half) — `policy` and `approval_grant` have no
-    # label resolver in resolve_labels/2, so every distinct id resolves to a nil
-    # label and is dropped → the picker has zero options (intentional).
-    test "a resolver-less subject kind yields no options" do
-      account = account_fixture()
-      subject = subject_for(user_fixture(), account, role: :owner)
-
-      {:ok, _} =
-        Audit.log(account.id, "policy.updated",
-          subject_kind: "policy",
-          subject_id: Ecto.UUID.generate()
-        )
-
-      assert {:ok, []} = Audit.list_subject_options("policy", subject)
-      assert {:ok, []} = Audit.list_subject_options("approval_grant", subject)
-    end
-  end
-
-  describe "list_actor_options/2 authorization" do
-    # the actor picker enforces view_audit before any DB
-    # touch; a runner (websocket) subject — no view_audit — is denied.
-    test "a runner subject is denied" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
-
-      assert {:error, :unauthorized} = Audit.list_actor_options("user", subject)
-    end
-  end
-
-  describe "list_for_export/2 role gate" do
-    # a subject whose role carries no `view_audit` is
-    # rejected from INSIDE list_for_export with {:error, :unauthorized} (the
-    # controller turns that into a 403), never a 500 or a leaked export. The
-    # runner (websocket) role is the no-`view_audit` role; an API-key role DOES
-    # carry it and is gated by per-key scope at the controller instead.
-    test "a no-view_audit role is denied, not a 500" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
-      _ = seed_export_events(account, 2)
-
-      runner_subject = Subject.for_runner(runner, account)
-
-      assert {:error, :unauthorized} = Audit.list_for_export(runner_subject)
-    end
-  end
-
-  describe "list_subject_options/2 drops an option whose row is gone" do
-    # a subject id that WAS resolvable when the event was
-    # written but whose row has since gone unresolvable resolves to a nil label
-    # and is rejected, so the picker doesn't offer a dead option. Here the user's
-    # membership is removed after the event, so the user-label resolver (scoped
-    # through `members_of_account`) no longer finds them in the account.
-    test "a subject whose label can no longer resolve is dropped from the options" do
-      account = account_fixture()
-      owner = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
-      subject = subject_for(owner, account, role: :owner)
-
-      member = user_fixture(email: "departing@example.com")
-      membership = membership_fixture(account_id: account.id, user_id: member.id)
-
-      {:ok, _} =
-        Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: member.id)
-
-      # While the member is in the account, the picker offers them.
-      assert {:ok, [{id, "departing@example.com"}]} =
-               Audit.list_subject_options("user", subject)
-
-      assert id == member.id
-
-      # Remove the membership — the audit row still references the user id, but
-      # the label resolver (members_of_account) can no longer resolve it, so the
-      # option is dropped rather than rendered with a nil/blank label.
-      membership
-      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-      |> Repo.update!()
-
-      assert {:ok, []} = Audit.list_subject_options("user", subject)
+      assert Repo.aggregate(Audit.Event, :count, :id) == before
     end
   end
 

@@ -1,6 +1,5 @@
 defmodule Emisar.MarketingTest do
   use Emisar.DataCase, async: true
-
   alias Emisar.Marketing
   alias Emisar.Marketing.Signup
 

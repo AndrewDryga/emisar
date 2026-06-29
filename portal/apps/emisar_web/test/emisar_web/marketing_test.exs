@@ -596,6 +596,17 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "See all releases on GitHub"
     end
 
+    test "the marketing footer shows the app version and the co:op attribution",
+         %{conn: conn} do
+      html = conn |> get(~p"/") |> html_response(200)
+
+      # The footer reads the running app's version (single source: portal/VERSION,
+      # bumped by /release), so assert the shape, not a pinned number.
+      assert html =~ ~r/v\d+\.\d+\.\d+\s+—\s+built with/u
+      assert html =~ ~s(href="https://coop.dryga.com/")
+      assert html =~ "co:op"
+    end
+
     test "the about page renders its values, founder note, and CTAs", %{conn: conn} do
       html = conn |> get(~p"/about") |> html_response(200)
 

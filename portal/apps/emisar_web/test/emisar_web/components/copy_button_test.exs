@@ -10,7 +10,6 @@ defmodule EmisarWeb.CopyButtonTest do
   caught instead of waiting for a user to report "Copy doesn't work."
   """
   use ExUnit.Case, async: true
-
   import Phoenix.LiveViewTest, only: [rendered_to_string: 1]
   import Phoenix.Component, only: [sigil_H: 2]
 

@@ -2,7 +2,6 @@ defmodule Emisar.PublicUrlTest do
   # async: false — these tests mutate the shared :emisar_web endpoint
   # config to assert how the base URL is derived across environments.
   use ExUnit.Case, async: false
-
   alias Emisar.PublicUrl
 
   setup do

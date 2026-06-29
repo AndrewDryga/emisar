@@ -8,10 +8,8 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
   class string; the rendered tag + class hooks are the public contract.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_button(attrs) do

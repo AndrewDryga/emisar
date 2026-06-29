@@ -1,16 +1,14 @@
 defmodule Emisar.PubSubTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Audit
+  alias Emisar.Fixtures
 
   # Topic names are private to the owning contexts now — the account
   # scoping guarantee is asserted through the public subscribe/broadcast
   # surface instead of string-shape checks.
   test "context topics are account-scoped: another account's broadcast never arrives" do
-    account_a = account_fixture()
-    account_b = account_fixture()
+    account_a = Fixtures.Accounts.create_account()
+    account_b = Fixtures.Accounts.create_account()
 
     :ok = Audit.subscribe_account_audit(account_a.id)
 

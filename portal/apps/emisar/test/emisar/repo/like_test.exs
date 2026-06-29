@@ -1,6 +1,5 @@
 defmodule Emisar.Repo.LikeTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Repo.Like
 
   describe "escape/1" do

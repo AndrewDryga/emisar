@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserAuthTest do
   use EmisarWeb.ConnCase, async: true
-
   alias EmisarWeb.UserAuth
 
   @remember_me_cookie "_emisar_user_remember_me"
@@ -97,16 +96,20 @@ defmodule EmisarWeb.UserAuthTest do
   end
 
   describe "redirect_if_user_is_authenticated guards the whole signed-out auth surface" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
     test "an already-signed-in visitor is bounced off EVERY guarded auth page to /app", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
       # the gate guards the full signed-out
       # auth surface, not just /sign_in: sign_up, the magic-link step, and the
       # branded per-account page all live under :redirect_if_user_is_authenticated,
       # so a signed-in user GETting any of them is redirected to the app before the
       # LiveView mounts.
-      {conn, _user, account} = register_and_log_in(conn)
-
       for path <- [
             ~p"/sign_up",
             ~p"/sign_in",
@@ -117,12 +120,10 @@ defmodule EmisarWeb.UserAuthTest do
       end
     end
 
-    test "the auth POST endpoints bounce a signed-in visitor too", %{conn: conn} do
+    test "the auth POST endpoints bounce a signed-in visitor too", %{conn: conn, user: user} do
       # (POST half) — the magic-link start POST is in the same
       # guarded scope, so a signed-in user can't re-drive a sign-in request; the
       # gate halts before the controller runs.
-      {conn, user, _account} = register_and_log_in(conn)
-
       conn = post(conn, ~p"/sign_in/magic/start", user: %{"email" => user.email})
 
       assert redirected_to(conn) == ~p"/app"
@@ -174,7 +175,7 @@ defmodule EmisarWeb.UserAuthTest do
       conn =
         UserAuth.log_in_user(
           conn,
-          Emisar.Fixtures.user_fixture(),
+          Fixtures.Users.create_user(),
           :magic_link,
           false,
           %{"remember_me" => "true"}
@@ -190,7 +191,7 @@ defmodule EmisarWeb.UserAuthTest do
     test "without remember_me, only the session token is set — no persistent cookie", %{
       conn: conn
     } do
-      conn = UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture(), :magic_link, false)
+      conn = UserAuth.log_in_user(conn, Fixtures.Users.create_user(), :magic_link, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
       refute conn.resp_cookies[@remember_me_cookie]

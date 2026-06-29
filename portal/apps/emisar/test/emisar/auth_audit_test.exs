@@ -9,13 +9,11 @@ defmodule Emisar.AuthAuditTest do
   in `Audit.list_events/1` scoped to that account.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Accounts, Audit, Auth, Runners, Users}
+  alias Emisar.Fixtures
 
   defp events_of(account, event_type) do
-    subject = subject_for(user_fixture(), account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
     {:ok, events, _} =
       Audit.list_events(subject, filter: [event_type: [event_type]])
@@ -25,7 +23,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "sign-in / sign-out / failed sign-in" do
     setup do
-      {user, account, _subject} = owner_subject_fixture()
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
       %{user: user, account: account}
     end
 
@@ -55,7 +53,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "MFA lifecycle" do
     setup do
-      {user, account, subject} = owner_subject_fixture()
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
       secret = Auth.generate_mfa_secret()
       %{user: user, account: account, secret: secret, subject: subject}
     end
@@ -132,7 +130,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "magic link + confirmation" do
     setup do
-      {user, account, _} = owner_subject_fixture()
+      {user, account, _} = Fixtures.Subjects.owner_subject()
       %{user: user, account: account}
     end
 
@@ -154,10 +152,15 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "confirm_user_by_token audits user.email_confirmed", %{account: account} do
-      # Unconfirmed user — bypass owner_subject_fixture which auto-confirms.
-      unconfirmed = user_fixture(confirmed?: false)
+      # Unconfirmed user — bypass Fixtures.Subjects.owner_subject which auto-confirms.
+      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
-      _ = membership_fixture(account_id: account.id, user_id: unconfirmed.id, role: "operator")
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: unconfirmed.id,
+          role: "operator"
+        )
 
       raw = Auth.issue_confirmation_token!(unconfirmed)
       assert {:ok, _} = Auth.confirm_user_by_token(raw)
@@ -169,7 +172,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "session self-revocation" do
     setup do
-      {user, account, subject} = owner_subject_fixture()
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
       # Mint two sessions for the user.
       _ = Auth.create_session_token!(user, :magic_link, false)
       keep = Auth.create_session_token!(user, :magic_link, false)
@@ -203,7 +206,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "Accounts profile / email" do
     setup do
-      {user, account, subject} = owner_subject_fixture()
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
       %{user: user, account: account, subject: subject}
     end
 
@@ -234,11 +237,15 @@ defmodule Emisar.AuthAuditTest do
 
   describe "Accounts membership lifecycle" do
     setup do
-      {owner, account, owner_subject} = owner_subject_fixture()
-      member = user_fixture()
+      {owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      member = Fixtures.Users.create_user()
 
       membership =
-        membership_fixture(account_id: account.id, user_id: member.id, role: "operator")
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
 
       %{
         owner: owner,
@@ -313,9 +320,15 @@ defmodule Emisar.AuthAuditTest do
   end
 
   describe "Runbook lifecycle" do
-    test "create_runbook audits runbook.created with name + version" do
-      {_user, account, subject} = owner_subject_fixture()
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
 
+    test "create_runbook audits runbook.created with name + version", %{
+      account: account,
+      subject: subject
+    } do
       attrs = %{
         name: "ops-#{System.unique_integer()}",
         slug: "ops-#{System.unique_integer()}",
@@ -332,9 +345,10 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["version"] == 1
     end
 
-    test "save_new_version audits runbook.updated with version bump" do
-      {_user, account, subject} = owner_subject_fixture()
-
+    test "save_new_version audits runbook.updated with version bump", %{
+      account: account,
+      subject: subject
+    } do
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
@@ -356,9 +370,7 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["to_version"] == 2
     end
 
-    test "save_new_version accepts string-keyed form params" do
-      {_user, _account, subject} = owner_subject_fixture()
-
+    test "save_new_version accepts string-keyed form params", %{subject: subject} do
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
@@ -382,9 +394,7 @@ defmodule Emisar.AuthAuditTest do
       assert v2.version == 2
     end
 
-    test "publish audits runbook.published" do
-      {_user, account, subject} = owner_subject_fixture()
-
+    test "publish audits runbook.published", %{account: account, subject: subject} do
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
@@ -416,7 +426,7 @@ defmodule Emisar.AuthAuditTest do
 
   describe "Accounts account lifecycle" do
     test "create_account_with_owner audits account.created and user.signed_up" do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
       slug = "tenant-#{System.unique_integer()}"
 
       {:ok, account} =
@@ -434,7 +444,7 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "update_account audits account.updated with snapshot" do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, updated} = Accounts.update_account(account, %{name: "Renamed"}, subject)
 
@@ -448,9 +458,15 @@ defmodule Emisar.AuthAuditTest do
   # audit row is left behind (and conversely, neither rolls back without
   # the other).
   describe "transactional rollback semantics" do
-    test "a failing changeset in update_account rolls back the audit row too" do
-      {_user, account, subject} = owner_subject_fixture()
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
 
+    test "a failing changeset in update_account rolls back the audit row too", %{
+      account: account,
+      subject: subject
+    } do
       # Try to rename to a slug that's too long — Account.Changeset.update
       # rejects this, so the whole multi rolls back. The contract: the
       # account row is unchanged AND no audit row exists.
@@ -467,9 +483,10 @@ defmodule Emisar.AuthAuditTest do
       assert reloaded.slug == account.slug
     end
 
-    test "a failed Multi step rolls back both the row update and the audit" do
-      {_user, account, subject} = owner_subject_fixture()
-
+    test "a failed Multi step rolls back both the row update and the audit", %{
+      account: account,
+      subject: subject
+    } do
       # Wedge a `Multi.run` that always fails after the policy update +
       # audit. Both should roll back together.
       {:ok, policy} = Emisar.Policies.fetch_policy(subject)
@@ -521,9 +538,15 @@ defmodule Emisar.AuthAuditTest do
   # account-wide `:audit` topic so AuditLive (and any other subscriber)
   # can refresh without each context having to remember to broadcast.
   describe "audit fan-out broadcast" do
-    test "every audited mutation reaches subscribers of the account audit topic" do
-      {_user, account, subject} = owner_subject_fixture()
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
 
+    test "every audited mutation reaches subscribers of the account audit topic", %{
+      account: account,
+      subject: subject
+    } do
       :ok = Emisar.Audit.subscribe_account_audit(account.id)
 
       {:ok, _} = Emisar.Accounts.update_account(account, %{name: "Reloaded"}, subject)
@@ -533,9 +556,10 @@ defmodule Emisar.AuthAuditTest do
       assert_receive {:audit_event, %Emisar.Audit.Event{event_type: "account.updated"}}, 1_000
     end
 
-    test "broadcast does NOT fire when the transaction rolls back" do
-      {_user, account, subject} = owner_subject_fixture()
-
+    test "broadcast does NOT fire when the transaction rolls back", %{
+      account: account,
+      subject: subject
+    } do
       :ok = Emisar.Audit.subscribe_account_audit(account.id)
 
       # A too-long slug rolls the whole multi back — no audit row commits,

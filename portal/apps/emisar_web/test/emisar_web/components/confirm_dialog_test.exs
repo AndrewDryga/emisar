@@ -7,10 +7,8 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
   gates UI dispatch — server authz is verified in the per-page LiveView tests.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   test "renders title, body, and the type-to-confirm prompt for the token" do

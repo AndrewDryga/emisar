@@ -1,6 +1,5 @@
 defmodule Emisar.MapsTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Maps
 
   describe "put_present/4" do

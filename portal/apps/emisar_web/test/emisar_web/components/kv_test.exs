@@ -7,10 +7,8 @@ defmodule EmisarWeb.Components.KvTest do
   (IL-16): both surfaces ingest hash/text that is ultimately runner-influenced.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_kv(attrs, body) do

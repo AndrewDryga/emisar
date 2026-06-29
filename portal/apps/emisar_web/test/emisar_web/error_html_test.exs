@@ -1,6 +1,5 @@
 defmodule EmisarWeb.ErrorHTMLTest do
   use EmisarWeb.ConnCase, async: true
-
   import Phoenix.Template, only: [render_to_string: 4]
 
   describe "404" do

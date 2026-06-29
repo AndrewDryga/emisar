@@ -4,14 +4,12 @@ defmodule Emisar.Workers.AuditRetentionTest do
   retention window (free = 7 days).
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Audit, Repo}
+  alias Emisar.Fixtures
   alias Emisar.Workers.AuditRetention
 
   test "perform/1 prunes events past the plan window and keeps fresh ones" do
-    account = account_fixture()
+    account = Fixtures.Accounts.create_account()
 
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
 
@@ -31,7 +29,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
   # retention), whereas the free-plan test above prunes the same-age row. Proves
   # the window is plan-derived (audit_retention_days), not hard-coded.
   test "keeps events within a paid plan's wider retention window" do
-    account = account_fixture(plan: "team")
+    account = Fixtures.Accounts.create_account(plan: "team")
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
 
     {:ok, within_team_window} =
@@ -47,10 +45,10 @@ defmodule Emisar.Workers.AuditRetentionTest do
   # renamed plan name resolves to the "free" window rather than crashing, so a
   # legacy plan string can't wedge the nightly prune.
   test "falls back to the free window when the plan is unresolvable" do
-    account = account_fixture()
+    account = Fixtures.Accounts.create_account()
     # A subscription with a plan name no @plans entry matches; Billing.plan/1
     # returns nil for it and the worker falls back to the free (7-day) window.
-    subscription_fixture(account, "legacy-unlisted-plan")
+    Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
 
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
 
@@ -68,7 +66,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
   # still occupy space and must age out of its plan window all the same. A
   # regression to `not_deleted()` would strand them forever.
   test "prunes a tombstoned account's events past the window" do
-    account = account_fixture()
+    account = Fixtures.Accounts.create_account()
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
 
     {:ok, stale} =
@@ -85,7 +83,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
 
   test "pages accounts via a continuation cursor and prunes them all" do
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
-    accounts = for _ <- 1..3, do: account_fixture()
+    accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
 
     stale =
       for account <- accounts do
@@ -110,7 +108,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
   # is persisted and observable via `all_enqueued`, rather than executed inline.
   test "a short page enqueues no follow-up cursor job; a full page does" do
     # Two accounts in the DB.
-    _accounts = for _ <- 1..2, do: account_fixture()
+    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
 
     Oban.Testing.with_testing_mode(:manual, fn ->
       # limit: 5 > 2 accounts → short page → drained → no continuation.
@@ -126,7 +124,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
   end
 
   test "a re-walk at the same cursor dedups the follow-up (no overlapping chains)" do
-    _accounts = for _ <- 1..2, do: account_fixture()
+    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
 
     Oban.Testing.with_testing_mode(:manual, fn ->
       # Two full-page walks from the same cursor produce the same last-account-id

@@ -6,14 +6,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   both see the Enterprise upsell instead of a crash.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Repo
   alias Emisar.SSO
   alias Emisar.SSO.{IdentityProvider, LinkRequest, UserIdentity}
 
   defp make_viewer(user) do
     {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-    Emisar.Fixtures.force_membership_role(membership, "viewer")
+    Fixtures.Memberships.force_role(membership, "viewer")
   end
 
   defp insert_link_request(provider, attrs) do
@@ -532,7 +531,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # SCIM is enabled by an admin first, then the role is dropped to viewer —
       # the rotate/disable handlers are Permissions.gated AND the context re-checks
       # `manage_sso` + Enterprise, so a forged event leaves the token untouched.
-      owner = Emisar.Fixtures.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user, account)
       {:ok, enabled, _raw} = SSO.enable_scim(provider, owner)
       prefix = enabled.scim_token_prefix
 
@@ -552,7 +551,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   describe "group → role mapping" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      owner = Emisar.Fixtures.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user, account)
       provider = insert_provider(account, %{name: "Acme Okta"})
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
       %{conn: conn, user: user, account: account, provider: provider, owner: owner}
@@ -721,7 +720,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   describe "manual link requests" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      owner = Emisar.Fixtures.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user, account)
 
       provider =
         insert_provider(account, %{
@@ -767,10 +766,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      member = Emisar.Fixtures.user_fixture(%{email: "member@acme.test"})
+      member = Fixtures.Users.create_user(%{email: "member@acme.test"})
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: member.id,
           role: :admin

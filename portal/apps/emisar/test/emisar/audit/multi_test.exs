@@ -7,16 +7,21 @@ defmodule Emisar.Audit.MultiTest do
   directly rather than only through the Auth flows that lean on it.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Ecto.Multi
   alias Emisar.Audit
+  alias Emisar.Fixtures
 
   defp user_with_membership do
-    user = user_fixture()
-    account = account_fixture()
-    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    user = Fixtures.Users.create_user()
+    account = Fixtures.Accounts.create_account()
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
     {user, account}
   end
 
@@ -35,7 +40,7 @@ defmodule Emisar.Audit.MultiTest do
     end
 
     test "no-ops (no row) when the user has no active membership" do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
 
       assert {:ok, %{audit: nil}} =
                Multi.new()

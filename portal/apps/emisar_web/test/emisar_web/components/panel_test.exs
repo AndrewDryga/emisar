@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.PanelTest do
   no header chrome when none are given. The class hooks are the public contract.
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_card(attrs) do

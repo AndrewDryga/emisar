@@ -1,15 +1,13 @@
 defmodule EmisarWeb.AuditDetailLiveTest do
   use EmisarWeb.ConnCase, async: true
-
   import Phoenix.LiveViewTest
-
   alias Emisar.{Audit, RequestContext, Runs}
 
   test "an action_run event shows the runner under the subject, not as a device", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     runner =
-      Emisar.Fixtures.runner_fixture(%{
+      Fixtures.Runners.create_runner(%{
         account_id: account.id,
         name: "web-01",
         group: "frontend",
@@ -61,7 +59,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
 
     subject =
-      Emisar.Fixtures.subject_for(user, account, role: :owner, auth_method: :sso, mfa: true)
+      Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :sso, mfa: true)
 
     {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
@@ -77,7 +75,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
 
     runner =
-      Emisar.Fixtures.runner_fixture(%{
+      Fixtures.Runners.create_runner(%{
         account_id: account.id,
         name: "ci-bot-runner",
         group: "ci",
@@ -118,10 +116,10 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     # A separate tenant with its own runner + run. The viewer has no
     # membership there.
-    other = Emisar.Fixtures.account_fixture()
+    other = Fixtures.Accounts.create_account()
 
     other_runner =
-      Emisar.Fixtures.runner_fixture(%{
+      Fixtures.Runners.create_runner(%{
         account_id: other.id,
         name: "foreign-secret-runner",
         group: "prod",
@@ -165,7 +163,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
 
     runner =
-      Emisar.Fixtures.runner_fixture(%{
+      Fixtures.Runners.create_runner(%{
         account_id: account.id,
         name: "soon-gone-runner",
         group: "prod",

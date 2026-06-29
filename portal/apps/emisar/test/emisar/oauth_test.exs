@@ -5,9 +5,7 @@ defmodule Emisar.OAuthTest do
   API key. These are the paths the Claude.ai / ChatGPT connectors drive.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
+  alias Emisar.Fixtures
   alias Emisar.OAuth
   alias Emisar.OAuth.{Client, Token}
 
@@ -84,14 +82,37 @@ defmodule Emisar.OAuthTest do
     end
   end
 
+  describe "fetch_client/1" do
+    test "loads a registered client by its client_id" do
+      client = register!("Resolvable")
+
+      assert {:ok, %Client{id: id, client_name: "Resolvable"}} = OAuth.fetch_client(client.id)
+      assert id == client.id
+    end
+
+    test "an unknown but well-formed uuid is :not_found" do
+      assert {:error, :not_found} = OAuth.fetch_client(Ecto.UUID.generate())
+    end
+
+    test "a malformed (non-uuid) client_id is a clean :not_found, never a 500" do
+      # A connector can send any string as client_id; the binary_id cast is
+      # guarded so a non-uuid is :not_found, not a cast crash.
+      assert {:error, :not_found} = OAuth.fetch_client("not-a-uuid")
+    end
+
+    test "a non-binary client_id is a clean :not_found (the guard's fallback clause)" do
+      assert {:error, :not_found} = OAuth.fetch_client(nil)
+    end
+  end
+
   describe "issue_code/3 authorization gate" do
     test "a read-only viewer cannot consent — the OAuth flow can't mint an execute token they couldn't issue manually" do
-      {_owner, account, _subject} = owner_subject_fixture()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       # A viewer has view_api_keys but not issue_quick_key, so they can't mint
       # an API key in-product — and must not be able to via consent either.
-      viewer = subject_for(user_fixture(), account, role: :viewer)
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
       assert {:error, :unauthorized} =
                OAuth.issue_code(
@@ -108,9 +129,9 @@ defmodule Emisar.OAuthTest do
     end
   end
 
-  describe "authorization-code flow" do
+  describe "exchange_code/1" do
     setup do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject, client: register!()}
     end
 
@@ -302,11 +323,17 @@ defmodule Emisar.OAuthTest do
       # supported scopes persist on the grant.
       assert tokens.scope == "mcp offline_access"
     end
+
+    test "a request missing the required params is :invalid_request, not a crash" do
+      # The arity-1 fallback clause catches any param map lacking
+      # code/client_id/redirect_uri/code_verifier — a malformed token POST.
+      assert {:error, :invalid_request} = OAuth.exchange_code(%{})
+    end
   end
 
   describe "refresh/1" do
     setup do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -373,6 +400,12 @@ defmodule Emisar.OAuthTest do
                  "client_id" => other.id
                })
     end
+
+    test "a request missing the required params is :invalid_request, not a crash" do
+      # The arity-1 fallback clause catches a param map lacking
+      # refresh_token/client_id — a malformed token POST.
+      assert {:error, :invalid_request} = OAuth.refresh(%{})
+    end
   end
 
   describe "resolve_access_token/1" do
@@ -385,7 +418,7 @@ defmodule Emisar.OAuthTest do
 
   describe "resolve_access_token/1 invalidation paths" do
     setup do
-      {_user, account, subject} = owner_subject_fixture()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -465,7 +498,7 @@ defmodule Emisar.OAuthTest do
       # account_id + api_key_id are fixed at mint, so resolving account A's
       # token yields account A (never B), and vice versa — the backing-key
       # binding is the isolation boundary, not anything in the presented bearer.
-      {_user_b, account_b, subject_b} = owner_subject_fixture()
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
       client_b = register!("Other Tenant")
       {verifier_b, challenge_b} = pkce()
       code_b = issue!(subject_b, client_b, challenge_b)
@@ -504,7 +537,7 @@ defmodule Emisar.OAuthTest do
 
   describe "delete_expired_authorization_codes/1" do
     test "prunes codes past their expiry, keeps live ones" do
-      {_user, _account, subject} = owner_subject_fixture()
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       _code = issue!(subject, client, challenge)
@@ -522,8 +555,13 @@ defmodule Emisar.OAuthTest do
   end
 
   describe "delete_unused_clients/1" do
-    test "issue_code stamps last_authorized_at so a consented client is never swept" do
-      {_user, _account, subject} = owner_subject_fixture()
+    setup do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{subject: subject}
+    end
+
+    test "issue_code stamps last_authorized_at so a consented client is never swept",
+         %{subject: subject} do
       client = register!()
       assert client.last_authorized_at == nil
 
@@ -533,9 +571,7 @@ defmodule Emisar.OAuthTest do
       assert %Client{last_authorized_at: %DateTime{}} = Repo.reload(client)
     end
 
-    test "prunes only old never-authorized registrations" do
-      {_user, _account, subject} = owner_subject_fixture()
-
+    test "prunes only old never-authorized registrations", %{subject: subject} do
       # Never authorized + registered 40 days ago → pruned.
       stale = register!("Stale")
       backdate_registration(stale, -40)
@@ -557,20 +593,8 @@ defmodule Emisar.OAuthTest do
     end
   end
 
-  describe "malformed token-endpoint requests are rejected cleanly" do
-    test "exchange_code with missing params is :invalid_request, not a crash" do
-      assert {:error, :invalid_request} = OAuth.exchange_code(%{})
-    end
-
-    test "refresh with missing params is :invalid_request, not a crash" do
-      assert {:error, :invalid_request} = OAuth.refresh(%{})
-    end
-
-    test "fetch_client with a non-binary id is a clean :not_found" do
-      assert {:error, :not_found} = OAuth.fetch_client(nil)
-    end
-
-    test "supported_scopes advertises the scopes the server will grant" do
+  describe "supported_scopes/0" do
+    test "advertises the scopes the server will grant" do
       scopes = OAuth.supported_scopes()
       assert is_list(scopes)
       assert "mcp" in scopes

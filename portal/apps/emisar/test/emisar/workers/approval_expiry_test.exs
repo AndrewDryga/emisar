@@ -5,16 +5,14 @@ defmodule Emisar.Workers.ApprovalExpiryTest do
   high-risk action open waiting for an operator who never decides.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Approvals, Repo, Runs}
   alias Emisar.Approvals.Request
+  alias Emisar.Fixtures
   alias Emisar.Workers.ApprovalExpiry
 
   defp overdue_request do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -26,7 +24,7 @@ defmodule Emisar.Workers.ApprovalExpiryTest do
         reason: "expiry sweep test"
       })
 
-    {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
 
     yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
     {:ok, request} = request |> Ecto.Changeset.change(expires_at: yesterday) |> Repo.update()
@@ -43,8 +41,8 @@ defmodule Emisar.Workers.ApprovalExpiryTest do
   end
 
   test "perform/1 leaves a still-fresh pending request alone" do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -56,7 +54,7 @@ defmodule Emisar.Workers.ApprovalExpiryTest do
         reason: "still fresh"
       })
 
-    {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
 
     assert :ok = ApprovalExpiry.perform(%Oban.Job{args: %{}})
 
@@ -70,11 +68,9 @@ defmodule Emisar.Workers.ApprovalExpiryLogTest do
   level to `:info` (the test env defaults to `:warning`) to observe an info log.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
   import ExUnit.CaptureLog
-
   alias Emisar.{Approvals, Repo, Runs}
+  alias Emisar.Fixtures
   alias Emisar.Workers.ApprovalExpiry
 
   setup do
@@ -85,8 +81,8 @@ defmodule Emisar.Workers.ApprovalExpiryLogTest do
   end
 
   defp overdue_request do
-    account = account_fixture()
-    runner = runner_fixture(account_id: account.id)
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -98,7 +94,7 @@ defmodule Emisar.Workers.ApprovalExpiryLogTest do
         reason: "expiry sweep test"
       })
 
-    {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
     yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
     {:ok, _} = request |> Ecto.Changeset.change(expires_at: yesterday) |> Repo.update()
     :ok

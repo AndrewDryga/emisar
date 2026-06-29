@@ -6,13 +6,16 @@ defmodule Emisar.AuthSessionsTest do
   Profile page calls.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
   alias Emisar.Auth
+  alias Emisar.Fixtures
 
   describe "list_sessions_for_user/2" do
-    test "returns the caller's rows newest-first" do
-      {user, _account, subject} = owner_subject_fixture()
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject}
+    end
+
+    test "returns the caller's rows newest-first", %{user: user, subject: subject} do
       _ = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.create_session_token!(user, :magic_link, false)
@@ -22,17 +25,18 @@ defmodule Emisar.AuthSessionsTest do
       assert Enum.sort_by(sessions, & &1.inserted_at, {:desc, DateTime}) == sessions
     end
 
-    test "only returns the subject's own tokens" do
-      {mine, _account, my_subject} = owner_subject_fixture()
-      theirs = user_fixture()
+    test "only returns the subject's own tokens", %{user: mine, subject: my_subject} do
+      theirs = Fixtures.Users.create_user()
       _ = Auth.create_session_token!(mine, :magic_link, false)
       _ = Auth.create_session_token!(theirs, :magic_link, false)
 
       assert {:ok, [_], _meta} = Auth.list_sessions_for_user(my_subject)
     end
 
-    test "only includes session-context tokens (not the pending magic-link)" do
-      {user, _account, subject} = owner_subject_fixture()
+    test "only includes session-context tokens (not the pending magic-link)", %{
+      user: user,
+      subject: subject
+    } do
       _ = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.issue_magic_link(user)
 
@@ -43,7 +47,7 @@ defmodule Emisar.AuthSessionsTest do
 
   describe "revoke_session/2" do
     test ":ok and the row goes away" do
-      {user, _account, subject} = owner_subject_fixture()
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
       _ = Auth.create_session_token!(user, :magic_link, false)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(subject)
 
@@ -52,8 +56,8 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "refuses to revoke another user's session via id" do
-      {_mine, _account_a, my_subject} = owner_subject_fixture()
-      {theirs, _account_b, their_subject} = owner_subject_fixture()
+      {_mine, _account_a, my_subject} = Fixtures.Subjects.owner_subject()
+      {theirs, _account_b, their_subject} = Fixtures.Subjects.owner_subject()
       _ = Auth.create_session_token!(theirs, :magic_link, false)
       assert {:ok, [their_session], _} = Auth.list_sessions_for_user(their_subject)
 
@@ -62,14 +66,18 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "rejects a malformed id without hitting the DB" do
-      {_user, _account, subject} = owner_subject_fixture()
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       assert {:error, :not_found} = Auth.revoke_session("not-a-uuid", subject)
     end
   end
 
   describe "revoke_other_sessions!/2" do
-    test "keeps the caller's current session" do
-      {user, _account, subject} = owner_subject_fixture()
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject}
+    end
+
+    test "keeps the caller's current session", %{user: user, subject: subject} do
       keep = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.create_session_token!(user, :magic_link, false)
@@ -79,8 +87,7 @@ defmodule Emisar.AuthSessionsTest do
       assert survivor.token == :crypto.hash(:sha256, keep)
     end
 
-    test "with nil, kills every session including the caller's" do
-      {user, _account, subject} = owner_subject_fixture()
+    test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
       _ = Auth.create_session_token!(user, :magic_link, false)
       _ = Auth.create_session_token!(user, :magic_link, false)
 

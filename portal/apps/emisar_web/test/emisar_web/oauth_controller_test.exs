@@ -6,14 +6,13 @@ defmodule EmisarWeb.OAuthControllerTest do
   MCP JSON-RPC endpoint (with RFC 9728 `WWW-Authenticate` on 401).
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Crypto, Fixtures, OAuth, Repo}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
   @resource "https://emisar.dev/api/mcp/rpc"
 
   setup do
-    {user, account, _subject} = Fixtures.owner_subject_fixture()
+    {user, account, _subject} = Fixtures.Subjects.owner_subject()
     %{user: user, account: account}
   end
 
@@ -33,7 +32,7 @@ defmodule EmisarWeb.OAuthControllerTest do
   # Mint a live access token end-to-end through the context (the browser
   # consent step is covered separately).
   defp mint_access_token(user, account) do
-    subject = Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     client = register_client!()
     {verifier, challenge} = pkce()
 
@@ -65,7 +64,7 @@ defmodule EmisarWeb.OAuthControllerTest do
   # non-S256 method, or a verifier==challenge "plain" pairing the HTTP token
   # path must still refuse).
   defp issue_code!(user, account, params) do
-    subject = Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     client = register_client!()
 
     {:ok, code} =
@@ -375,6 +374,12 @@ defmodule EmisarWeb.OAuthControllerTest do
   end
 
   describe "GET /oauth/authorize (consent)" do
+    setup do
+      client = register_client!()
+      {_verifier, challenge} = pkce()
+      {:ok, client: client, challenge: challenge}
+    end
+
     test "renders the consent screen for a logged-in operator", %{conn: conn, user: user} do
       client = register_client!("Claude Web")
       {_verifier, challenge} = pkce()
@@ -414,10 +419,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # every authorize param the POST needs is echoed back as
     # a hidden field, so the form carries the same PKCE challenge/method/state/
     # resource the GET validated.
-    test "all authorize params are echoed as hidden fields", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "all authorize params are echoed as hidden fields", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -456,10 +463,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # "mcp" capability), so the consent page still shows a concrete grant rather
     # than blank. (An *absent* scope is the nil clause, which keeps both defaults
     # — that's the main render test's path.)
-    test "an empty scope string narrows the shown grant to mcp", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "an empty scope string narrows the shown grant to mcp", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -483,10 +492,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the consent screen carries a noindex assign (the
     # controller's put_noindex + the :noindex pipeline), keeping the auth surface
     # out of search-engine indexes.
-    test "the consent screen is noindex", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the consent screen is noindex", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -507,10 +518,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the consent screen renders the three trust
     # assurances, so the operator sees the guardrails (policy-permitted only,
     # attributed + recorded, approval still waits) before granting.
-    test "the consent screen renders the trust assurances", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the consent screen renders the trust assurances", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -535,11 +548,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # than redirecting back with invalid_request.
     test "an absent code_challenge_method defaults to S256 and renders consent", %{
       conn: conn,
-      user: user
+      user: user,
+      client: client,
+      challenge: challenge
     } do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -564,10 +576,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the consent GET is render-only: it mints no
     # authorization code, no token, and writes no audit event (nothing happens
     # until the operator POSTs a decision).
-    test "the consent GET mints nothing and writes no audit", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the consent GET mints nothing and writes no audit", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -609,9 +623,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ "Authorization error"
     end
 
-    test "redirects unauthenticated operators to sign in", %{conn: conn} do
-      client = register_client!()
-
+    test "redirects unauthenticated operators to sign in", %{conn: conn, client: client} do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -629,11 +641,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # back with error=unsupported_response_type rather than showing an error page.
     test "bad response_type redirects back with unsupported_response_type", %{
       conn: conn,
-      user: user
+      user: user,
+      client: client,
+      challenge: challenge
     } do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -658,10 +669,9 @@ defmodule EmisarWeb.OAuthControllerTest do
     # is invalid_request, redirected back to the (validated) client.
     test "missing or empty code_challenge redirects back with invalid_request", %{
       conn: conn,
-      user: user
+      user: user,
+      client: client
     } do
-      client = register_client!()
-
       missing = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -689,10 +699,12 @@ defmodule EmisarWeb.OAuthControllerTest do
 
     # MCP mandates S256; code_challenge_method=plain is
     # rejected at the consent GET (redirected back as invalid_request).
-    test "code_challenge_method=plain is rejected (S256 only)", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "code_challenge_method=plain is rejected (S256 only)", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         redirect_uri: @redirect,
@@ -741,11 +753,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # bounce to that unvetted origin; error page instead.
     test "an unregistered redirect_uri shows an error page, not a redirect", %{
       conn: conn,
-      user: user
+      user: user,
+      client: client,
+      challenge: challenge
     } do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
       params = %{
         client_id: client.id,
         redirect_uri: "https://attacker.example/cb",
@@ -766,10 +777,12 @@ defmodule EmisarWeb.OAuthControllerTest do
 
     # an absent redirect_uri hits check_redirect's
     # non-binary clause → :error → error page (never a redirect to nowhere).
-    test "a missing redirect_uri shows an error page", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "a missing redirect_uri shows an error page", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       params = %{
         client_id: client.id,
         response_type: "code",
@@ -789,15 +802,23 @@ defmodule EmisarWeb.OAuthControllerTest do
   end
 
   describe "POST /oauth/authorize (decision)" do
+    setup do
+      client = register_client!()
+      {_verifier, challenge} = pkce()
+      {:ok, client: client, challenge: challenge}
+    end
+
     # `state` is echoed on the approve redirect-back (the
     # deny case asserts the same below).
     # the consenting operator is an OWNER (has key-issue)
     # approving for their OWN membership; self-approval is permitted (consistent
     # with the product's self-approval stance) and the code is issued.
-    test "approve redirects back to the client with a code", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "approve redirects back to the client with a code", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       conn =
         conn
         |> log_in_user(user)
@@ -818,9 +839,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "state=xyz"
     end
 
-    test "deny redirects back with access_denied", %{conn: conn, user: user} do
-      client = register_client!()
-
+    test "deny redirects back with access_denied", %{conn: conn, user: user, client: client} do
       conn =
         conn
         |> log_in_user(user)
@@ -839,9 +858,11 @@ defmodule EmisarWeb.OAuthControllerTest do
     # anything that isn't exactly "approve" is treated as a
     # denial: an unexpected decision=maybe redirects back with access_denied (and
     # the state is preserved), mints nothing.
-    test "a non-approve decision is treated as access_denied", %{conn: conn, user: user} do
-      client = register_client!()
-
+    test "a non-approve decision is treated as access_denied", %{
+      conn: conn,
+      user: user,
+      client: client
+    } do
       conn =
         conn
         |> log_in_user(user)
@@ -861,10 +882,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # an empty scope on approve is narrowed server-side to
     # the default "mcp offline_access" (narrow_scope/1), so the persisted code's
     # scope is the default, never blank.
-    test "approve with an empty scope narrows to the default", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "approve with an empty scope narrows to the default", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       conn =
         conn
         |> log_in_user(user)
@@ -890,9 +913,11 @@ defmodule EmisarWeb.OAuthControllerTest do
 
     # the POST re-runs the same client/redirect gate as
     # the GET: an unknown client_id is an error page, never a redirect.
-    test "an unknown client at POST shows an error page", %{conn: conn, user: user} do
-      {_verifier, challenge} = pkce()
-
+    test "an unknown client at POST shows an error page", %{
+      conn: conn,
+      user: user,
+      challenge: challenge
+    } do
       conn =
         conn
         |> log_in_user(user)
@@ -916,10 +941,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # Phoenix.ConnTest skips CSRF by default (`plug_skip_csrf_protection`), so we
     # clear that flag to exercise the real pipeline: with no `_csrf_token` the
     # plug raises InvalidCSRFTokenError (plug_status 403).
-    test "the consent POST is CSRF-protected", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the consent POST is CSRF-protected", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       assert_error_sent(403, fn ->
         conn
         |> log_in_user(user)
@@ -940,10 +967,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the raw emoc- code is delivered ONLY via the
     # redirect; the oauth_authz_codes row stores the sha256 code_hash, never
     # the clear code.
-    test "the code is delivered via redirect and stored hashed at rest", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the code is delivered via redirect and stored hashed at rest", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       conn =
         conn
         |> log_in_user(user)
@@ -975,10 +1004,12 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the minted authorization code is short-lived: its
     # stored expires_at is ~60s out (@code_ttl_s), so a leaked code is only
     # briefly exchangeable.
-    test "the approved code carries a 60s TTL", %{conn: conn, user: user} do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
+    test "the approved code carries a 60s TTL", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
       before = DateTime.utc_now()
 
       conn =
@@ -1012,11 +1043,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # origin (even on approve).
     test "an unregistered redirect_uri at POST shows an error page, not a redirect", %{
       conn: conn,
-      user: user
+      user: user,
+      client: client,
+      challenge: challenge
     } do
-      client = register_client!()
-      {_verifier, challenge} = pkce()
-
       conn =
         conn
         |> log_in_user(user)
@@ -1037,8 +1067,20 @@ defmodule EmisarWeb.OAuthControllerTest do
   end
 
   describe "POST /oauth/token" do
+    setup %{user: user, account: account} do
+      {verifier, challenge} = pkce()
+
+      {client, code} =
+        issue_code!(user, account, %{
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256"
+        })
+
+      {:ok, verifier: verifier, challenge: challenge, client: client, code: code}
+    end
+
     test "exchanges an authorization code for tokens", %{conn: conn, user: user, account: account} do
-      subject = Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       client = register_client!()
       {verifier, challenge} = pkce()
 
@@ -1135,17 +1177,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # (check_code_live → live?/1 false). Backdate expires_at instead of sleeping.
     test "an expired code is rejected with invalid_grant", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       past = DateTime.add(DateTime.utc_now(), -120, :second)
 
       {1, _} =
@@ -1172,17 +1207,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # row, not just the response's expires_in).
     test "the issued token row carries the 1h access + 30d refresh TTLs", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       before = DateTime.utc_now()
 
       body =
@@ -1229,17 +1257,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # rather than waiting 30 days.
     test "an expired refresh token is rejected with invalid_grant", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       issued =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1274,17 +1295,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # a fresh emo-/emor- both differ from the old, and the old refresh dies.
     test "refresh_token grant rotates the pair over HTTP", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       first =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1365,17 +1379,11 @@ defmodule EmisarWeb.OAuthControllerTest do
     # (single protected resource today). Asserts the current behavior end-to-end.
     test "the resource is carried onto the token row but not enforced", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-      # issue_code! sets "resource" => @resource on the code.
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
+      # issue_code! (in setup) sets "resource" => @resource on the code.
       body =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1396,17 +1404,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # code + verifier only. The exchange still succeeds.
     test "a client_secret on the exchange is ignored (public client)", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       body =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1427,17 +1428,11 @@ defmodule EmisarWeb.OAuthControllerTest do
     # yields the original account + the backing key's scopes.
     test "the refreshed pair carries forward the backing key + scope (HTTP)", %{
       conn: conn,
-      user: user,
-      account: account
+      account: account,
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       first =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1473,17 +1468,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # access window + a fresh 30d refresh window (asserted on the stored row).
     test "the rotated token row resets its 1h access + 30d refresh TTLs", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       first =
         conn
         |> post_json(~p"/oauth/token", %{
@@ -1521,17 +1509,10 @@ defmodule EmisarWeb.OAuthControllerTest do
     # machine API). We clear `plug_skip_csrf_protection` to run the real pipeline.
     test "the token endpoint accepts a tokenless POST for both grants (CSRF-free :api)", %{
       conn: conn,
-      user: user,
-      account: account
+      verifier: verifier,
+      client: client,
+      code: code
     } do
-      {verifier, challenge} = pkce()
-
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256"
-        })
-
       issued =
         conn
         |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)

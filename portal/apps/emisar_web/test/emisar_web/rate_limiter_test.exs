@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RateLimiterTest do
   use ExUnit.Case, async: true
-
   alias EmisarWeb.RateLimiter
 
   # Unique keys per test so the shared ETS table doesn't couple async tests.

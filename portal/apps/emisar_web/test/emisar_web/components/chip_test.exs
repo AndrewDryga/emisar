@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.ChipTest do
   escaping (IL-16: chips carry attacker-influenced labels like group names).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   describe "chip/1" do

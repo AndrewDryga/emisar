@@ -6,9 +6,7 @@ defmodule Emisar.Repo.FilterTest do
   slip in. `merge_dynamic/2` combines the per-filter conditions. Both pure.
   """
   use ExUnit.Case, async: true
-
   import Ecto.Query, only: [dynamic: 1, dynamic: 2]
-
   alias Emisar.Repo.Filter
   alias Emisar.Repo.Filter.Range
 

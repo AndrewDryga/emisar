@@ -1,6 +1,5 @@
 defmodule EmisarWeb.AgentsLiveTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.ApiKeys
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Repo
@@ -150,8 +149,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
 
       # A real fleet to bound — the default scope reaches all of it.
-      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
-      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
@@ -514,7 +513,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # select_client), so the next mint carries it.
     test "scope selection persists across client-tab switches", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -541,8 +540,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "a foreign runner id in the scope post is dropped", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      {_user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
-      foreign = Emisar.Fixtures.runner_fixture(account_id: account_b.id, connected?: false)
+      {_user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+      foreign = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -602,7 +601,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           owner_subject(user, account_a)
         )
 
-      {_user_b, account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, _raw, _key_b} =
         ApiKeys.create_key(
@@ -630,10 +629,10 @@ defmodule EmisarWeb.AgentsLiveTest do
           owner_subject(owner, account)
         )
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -689,10 +688,10 @@ defmodule EmisarWeb.AgentsLiveTest do
           owner_subject(owner, account)
         )
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -728,8 +727,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "a foreign runner id in a custom create is dropped before the key is made", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      {_user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
-      foreign = Emisar.Fixtures.runner_fixture(account_id: account_b.id, connected?: false)
+      {_user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+      foreign = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -773,7 +772,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "a forged/foreign key id revoke is a quiet no-op", %{conn: conn} do
       {conn, _user, account_a} = register_and_log_in(conn)
 
-      {_user_b, _account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, _raw, foreign_key} =
         ApiKeys.create_key(

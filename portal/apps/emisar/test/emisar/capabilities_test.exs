@@ -7,10 +7,8 @@ defmodule Emisar.CapabilitiesTest do
   live.
   """
   use ExUnit.Case, async: true
-
-  alias Emisar.Auth.Subject
-
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog}
+  alias Emisar.Auth.Subject
   alias Emisar.{Policies, Runbooks, Runners, Runs}
 
   @roles [:owner, :admin, :operator, :viewer]

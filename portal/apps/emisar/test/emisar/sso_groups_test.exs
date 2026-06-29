@@ -8,14 +8,12 @@ defmodule Emisar.SSOGroupsTest do
   provider explicitly and carry no `%Subject{}`.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Accounts, Repo, SSO}
+  alias Emisar.Fixtures
   alias Emisar.SSO.IdentityProvider
 
   defp enterprise_owner do
-    owner_subject_fixture(%{plan: "enterprise"})
+    Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
   end
 
   defp provider_fixture(account, attrs) do
@@ -63,216 +61,21 @@ defmodule Emisar.SSOGroupsTest do
     %{identity: identity, membership: membership}
   end
 
-  defp role_of(account_id, user_id), do: fetch_membership(account_id, user_id).role
-
-  # -- Config: the :owner guard ----------------------------------------
-
-  describe "group→role mapping config — :owner is never assignable" do
-    test "a group→role mapping to :owner is rejected at config time" do
-      %{provider: provider, subject: subject} = scim_provider()
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-owner", role: :owner},
-                 subject
-               )
-
-      assert "directory sync cannot grant owner" in errors_on(changeset).role
-
-      # And an existing non-owner mapping can't be edited up to :owner either.
-      {:ok, mapping} =
-        SSO.create_group_mapping(
-          provider,
-          %{external_group_id: "grp-admins", role: :admin},
-          subject
-        )
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               SSO.update_group_mapping(mapping, %{role: :owner}, subject)
-
-      assert "directory sync cannot grant owner" in errors_on(changeset).role
-    end
-  end
-
-  # -- Config: required + uniqueness -----------------------------------
-
-  describe "group→role mapping config — required fields + uniqueness" do
-    test "a create missing external_group_id or role is rejected" do
-      %{provider: provider, subject: subject} = scim_provider()
-
-      assert {:error, changeset} =
-               SSO.create_group_mapping(provider, %{role: :admin}, subject)
-
-      assert "can't be blank" in errors_on(changeset).external_group_id
-
-      assert {:error, changeset} =
-               SSO.create_group_mapping(provider, %{external_group_id: "grp-x"}, subject)
-
-      assert "can't be blank" in errors_on(changeset).role
-    end
-
-    test "a duplicate (provider, external_group_id) hits the unique index" do
-      %{provider: provider, subject: subject} = scim_provider()
-
-      assert {:ok, _} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "00g-dupe", role: :admin},
-                 subject
-               )
-
-      assert {:error, changeset} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "00g-dupe", role: :operator},
-                 subject
-               )
-
-      # The unique index on (provider_id, external_group_id) maps the violation
-      # onto the first constraint field, :provider_id.
-      assert "has already been taken" in errors_on(changeset).provider_id
-    end
-  end
-
-  # -- Config: gating + cross-account ----------------------------------
-
-  describe "group→role mapping config — enterprise + manage_sso gated" do
-    test "create/list/update/delete group mappings is enterprise+manage_sso gated (denial + cross-account)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
-
-      # Happy path: an enterprise owner can CRUD the mappings.
-      assert {:ok, mapping} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-1", external_group_display: "Admins", role: :admin},
-                 subject
-               )
-
-      assert {:ok, [listed], _meta} = SSO.list_group_mappings(provider, subject)
-      assert listed.id == mapping.id
-
-      assert {:ok, updated} = SSO.update_group_mapping(mapping, %{role: :operator}, subject)
-      assert updated.role == :operator
-
-      assert {:ok, deleted} = SSO.delete_group_mapping(mapping, subject)
-      assert deleted.deleted_at
-
-      # Denial: a viewer (no manage_sso) on the same enterprise account.
-      viewer = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: :viewer)
-      viewer_subject = subject_for(viewer, account, role: :viewer)
-
-      assert {:error, :unauthorized} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-2", role: :admin},
-                 viewer_subject
-               )
-
-      assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_subject)
-
-      # Denial: a Team plan can configure OIDC but not SCIM group mappings.
-      {_u, _team_account, team_subject} = owner_subject_fixture(%{plan: "team"})
-
-      assert {:error, :directory_sync_not_available} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-3", role: :admin},
-                 team_subject
-               )
-
-      # Cross-account: account B's enterprise owner cannot touch account A's
-      # provider's mappings (create can't find the provider; list scopes empty).
-      {_ub, _account_b, subject_b} = enterprise_owner()
-
-      assert {:error, :not_found} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-4", role: :admin},
-                 subject_b
-               )
-
-      {:ok, mapping_a} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
-
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject_b)
-      # And B can't update/delete A's mapping (row-scoped to B's account).
-      assert {:error, :not_found} =
-               SSO.update_group_mapping(mapping_a, %{role: :viewer}, subject_b)
-
-      assert {:error, :not_found} = SSO.delete_group_mapping(mapping_a, subject_b)
-    end
-  end
-
-  describe "list_group_mappings/3 keyset pagination" do
-    test "a multi-page walk returns every mapping once, ordered by external_group_id" do
-      %{provider: provider, subject: subject} = scim_provider()
-
-      for n <- 1..6 do
-        {:ok, _} =
-          SSO.create_group_mapping(
-            provider,
-            %{external_group_id: "grp-#{n}", role: :admin},
-            subject
-          )
-      end
-
-      {:ok, all, _} = SSO.list_group_mappings(provider, subject)
-      assert Enum.map(all, & &1.external_group_id) == ~w[grp-1 grp-2 grp-3 grp-4 grp-5 grp-6]
-      reference_order = Enum.map(all, & &1.id)
-
-      # A cursor that disagreed with the ORDER BY (display vs external_group_id)
-      # would skip or duplicate rows across pages.
-      walked = walk_pages(&SSO.list_group_mappings(provider, subject, &1), 2)
-      assert Enum.map(walked, & &1.id) == reference_order
-    end
-  end
+  defp role_of(account_id, user_id),
+    do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
 
   # -- Sync: role from groups ------------------------------------------
 
-  describe "list_synced_groups/2 — the map-after-first-sync picker source" do
-    test "returns the distinct external group ids seen via SCIM" do
-      %{provider: provider, subject: subject} = scim_provider()
-      %{identity: _} = provision(provider, "okta|u1")
-      %{identity: _} = provision(provider, "okta|u2")
-
-      {:ok, _} =
-        SSO.scim_upsert_group(provider, %{
-          external_id: "grp-ops",
-          display: "Ops",
-          member_external_ids: ["okta|u1"]
-        })
-
-      {:ok, _} =
-        SSO.scim_upsert_group(provider, %{
-          external_id: "grp-adm",
-          display: "Admins",
-          member_external_ids: ["okta|u2"]
-        })
-
-      assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
-      assert Enum.sort(groups) == ["grp-adm", "grp-ops"]
-    end
-
-    test "denies a non-Enterprise plan (:directory_sync_not_available)" do
-      {_u, account, subject} = owner_subject_fixture(%{plan: "team"})
-      provider = provider_fixture(account, %{})
-
-      assert {:error, :directory_sync_not_available} = SSO.list_synced_groups(provider, subject)
-    end
-
-    test "is account-scoped — another account's enterprise owner can't read it" do
-      %{provider: provider} = scim_provider()
-      {_u, _account_b, subject_b} = enterprise_owner()
-
-      assert {:error, :not_found} = SSO.list_synced_groups(provider, subject_b)
-    end
-  end
-
   describe "scim_upsert_group / role recompute" do
-    test "scim_upsert_group sets a member's role to the mapped role" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    setup do
+      scim_provider()
+    end
+
+    test "scim_upsert_group sets a member's role to the mapped role", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       %{identity: identity} = provision(provider, "okta|u1")
       assert role_of(account.id, identity.user_id) == :viewer
 
@@ -293,8 +96,11 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "a group push recomputes the role for ALL its members (batched bulk path)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "a group push recomputes the role for ALL its members (batched bulk path)", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       %{identity: id1} = provision(provider, "okta|u1")
       %{identity: id2} = provision(provider, "okta|u2")
       assert role_of(account.id, id1.user_id) == :viewer
@@ -319,8 +125,11 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, id2.user_id) == :operator
     end
 
-    test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       %{identity: identity} = provision(provider, "okta|multi")
 
       {:ok, _} =
@@ -368,8 +177,8 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "removing a member from their only mapped group resets them to the provider default_role (#3)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "removing a member from their only mapped group resets them to the provider default_role (#3)",
+         %{provider: provider, subject: subject, account: account} do
       %{identity: identity} = provision(provider, "okta|patch")
 
       {:ok, _} =
@@ -392,8 +201,11 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "an unknown member external_id in a group is ignored (not yet provisioned)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "an unknown member external_id in a group is ignored (not yet provisioned)", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       %{identity: identity} = provision(provider, "okta|known")
 
       {:ok, _} =
@@ -411,8 +223,8 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     @tag capture_log: true
-    test "a refused/failed per-member recompute is logged, not fatal — the push still succeeds" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "a refused/failed per-member recompute is logged, not fatal — the push still succeeds",
+         %{provider: provider, subject: subject, account: account} do
       %{identity: kept_identity} = provision(provider, "okta|kept")
       %{identity: gone_identity, membership: gone_membership} = provision(provider, "okta|gone")
 
@@ -445,8 +257,11 @@ defmodule Emisar.SSOGroupsTest do
   # -- Sync: the escalation + lockout guards ---------------------------
 
   describe "sync_set_membership_role guards" do
-    test "sync_set_membership_role refuses :owner" do
-      %{provider: provider, account: account} = scim_provider()
+    setup do
+      scim_provider()
+    end
+
+    test "sync_set_membership_role refuses :owner", %{provider: provider, account: account} do
       %{membership: membership} = provision(provider, "okta|noowner")
 
       assert {:error, :owner_not_assignable} =
@@ -456,12 +271,15 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, membership.user_id) == :viewer
     end
 
-    test "group recompute never re-roles a human owner (#3 — owners out of sync scope)" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "group recompute never re-roles a human owner (#3 — owners out of sync scope)", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       %{identity: identity, membership: membership} = provision(provider, "okta|ownerskip")
 
       # Make the provisioned member an account owner (a deliberate human grant).
-      force_membership_role(membership, "owner")
+      Fixtures.Memberships.force_role(membership, "owner")
 
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
@@ -480,8 +298,8 @@ defmodule Emisar.SSOGroupsTest do
                SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
     end
 
-    test "recompute_role_for_identity resets an elevated member in no mapped group to default_role" do
-      %{provider: provider, subject: subject, account: account} = scim_provider()
+    test "recompute_role_for_identity resets an elevated member in no mapped group to default_role",
+         %{provider: provider, subject: subject, account: account} do
       %{identity: identity} = provision(provider, "okta|demote")
 
       {:ok, _} =
@@ -508,11 +326,13 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "sync_set_membership_role won't demote the last active owner (defense in depth)" do
-      %{provider: provider, account: account} = scim_provider()
+    test "sync_set_membership_role won't demote the last active owner (defense in depth)", %{
+      provider: provider,
+      account: account
+    } do
       %{membership: membership} = provision(provider, "okta|lastowner")
 
-      force_membership_role(membership, "owner")
+      Fixtures.Memberships.force_role(membership, "owner")
       demote_other_owners(account.id, except: membership.user_id)
 
       # The direct sync path still guards the last owner (§9 N5).
@@ -524,31 +344,265 @@ defmodule Emisar.SSOGroupsTest do
   end
 
   describe "directory-sync writes are scoped to the provider's account" do
+    setup do
+      scim_provider()
+    end
+
     # A provider's account IS the authorization on the no-Subject sync path, so a
     # membership in another account must never be writable through it — even if a
     # caller resolved it some other way. Today's callers always pass
     # provider-scoped memberships; this pins the write-path backstop.
-    test "sync_suspend_membership rejects a membership outside the provider's account" do
-      %{provider: provider} = scim_provider()
-      other = membership_fixture()
+    test "sync_suspend_membership rejects a membership outside the provider's account", %{
+      provider: provider
+    } do
+      other = Fixtures.Memberships.create_membership()
 
       assert {:error, :not_found} = Accounts.sync_suspend_membership(other, provider)
       assert is_nil(Repo.reload!(other).disabled_at)
     end
 
-    test "sync_reinstate_membership rejects a membership outside the provider's account" do
-      %{provider: provider} = scim_provider()
-      other = membership_fixture()
+    test "sync_reinstate_membership rejects a membership outside the provider's account", %{
+      provider: provider
+    } do
+      other = Fixtures.Memberships.create_membership()
 
       assert {:error, :not_found} = Accounts.sync_reinstate_membership(other, provider)
     end
 
-    test "sync_set_membership_role rejects a membership outside the provider's account" do
-      %{provider: provider} = scim_provider()
-      other = membership_fixture(role: "operator")
+    test "sync_set_membership_role rejects a membership outside the provider's account", %{
+      provider: provider
+    } do
+      other = Fixtures.Memberships.create_membership(role: "operator")
 
       assert {:error, :not_found} = Accounts.sync_set_membership_role(other, :admin, provider)
       assert Repo.reload!(other).role == :operator
+    end
+  end
+
+  # -- Sync: the map-after-first-sync picker source --------------------
+
+  describe "list_synced_groups/2 — the map-after-first-sync picker source" do
+    setup do
+      scim_provider()
+    end
+
+    test "returns the distinct external group ids seen via SCIM", %{
+      provider: provider,
+      subject: subject
+    } do
+      %{identity: _} = provision(provider, "okta|u1")
+      %{identity: _} = provision(provider, "okta|u2")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Ops",
+          member_external_ids: ["okta|u1"]
+        })
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          display: "Admins",
+          member_external_ids: ["okta|u2"]
+        })
+
+      assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
+      assert Enum.sort(groups) == ["grp-adm", "grp-ops"]
+    end
+
+    test "denies a non-Enterprise plan (:directory_sync_not_available)" do
+      {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = provider_fixture(account, %{})
+
+      assert {:error, :directory_sync_not_available} = SSO.list_synced_groups(provider, subject)
+    end
+
+    test "is account-scoped — another account's enterprise owner can't read it", %{
+      provider: provider
+    } do
+      {_u, _account_b, subject_b} = enterprise_owner()
+
+      assert {:error, :not_found} = SSO.list_synced_groups(provider, subject_b)
+    end
+  end
+
+  # -- Config: list + pagination ---------------------------------------
+
+  describe "list_group_mappings/3 keyset pagination" do
+    test "a multi-page walk returns every mapping once, ordered by external_group_id" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      for n <- 1..6 do
+        {:ok, _} =
+          SSO.create_group_mapping(
+            provider,
+            %{external_group_id: "grp-#{n}", role: :admin},
+            subject
+          )
+      end
+
+      {:ok, all, _} = SSO.list_group_mappings(provider, subject)
+      assert Enum.map(all, & &1.external_group_id) == ~w[grp-1 grp-2 grp-3 grp-4 grp-5 grp-6]
+      reference_order = Enum.map(all, & &1.id)
+
+      # A cursor that disagreed with the ORDER BY (display vs external_group_id)
+      # would skip or duplicate rows across pages.
+      walked = walk_pages(&SSO.list_group_mappings(provider, subject, &1), 2)
+      assert Enum.map(walked, & &1.id) == reference_order
+    end
+  end
+
+  # -- Config: the :owner guard ----------------------------------------
+
+  describe "group→role mapping config — :owner is never assignable" do
+    test "a group→role mapping to :owner is rejected at config time" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-owner", role: :owner},
+                 subject
+               )
+
+      assert "directory sync cannot grant owner" in errors_on(changeset).role
+
+      # And an existing non-owner mapping can't be edited up to :owner either.
+      {:ok, mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-admins", role: :admin},
+          subject
+        )
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               SSO.update_group_mapping(mapping, %{role: :owner}, subject)
+
+      assert "directory sync cannot grant owner" in errors_on(changeset).role
+    end
+  end
+
+  # -- Config: required + uniqueness -----------------------------------
+
+  describe "group→role mapping config — required fields + uniqueness" do
+    setup do
+      scim_provider()
+    end
+
+    test "a create missing external_group_id or role is rejected", %{
+      provider: provider,
+      subject: subject
+    } do
+      assert {:error, changeset} =
+               SSO.create_group_mapping(provider, %{role: :admin}, subject)
+
+      assert "can't be blank" in errors_on(changeset).external_group_id
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(provider, %{external_group_id: "grp-x"}, subject)
+
+      assert "can't be blank" in errors_on(changeset).role
+    end
+
+    test "a duplicate (provider, external_group_id) hits the unique index", %{
+      provider: provider,
+      subject: subject
+    } do
+      assert {:ok, _} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "00g-dupe", role: :admin},
+                 subject
+               )
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "00g-dupe", role: :operator},
+                 subject
+               )
+
+      # The unique index on (provider_id, external_group_id) maps the violation
+      # onto the first constraint field, :provider_id.
+      assert "has already been taken" in errors_on(changeset).provider_id
+    end
+  end
+
+  # -- Config: gating + cross-account ----------------------------------
+
+  describe "group→role mapping config — enterprise + manage_sso gated" do
+    test "create/list/update/delete group mappings is enterprise+manage_sso gated (denial + cross-account)" do
+      %{provider: provider, subject: subject, account: account} = scim_provider()
+
+      # Happy path: an enterprise owner can CRUD the mappings.
+      assert {:ok, mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-1", external_group_display: "Admins", role: :admin},
+                 subject
+               )
+
+      assert {:ok, [listed], _meta} = SSO.list_group_mappings(provider, subject)
+      assert listed.id == mapping.id
+
+      assert {:ok, updated} = SSO.update_group_mapping(mapping, %{role: :operator}, subject)
+      assert updated.role == :operator
+
+      assert {:ok, deleted} = SSO.delete_group_mapping(mapping, subject)
+      assert deleted.deleted_at
+
+      # Denial: a viewer (no manage_sso) on the same enterprise account.
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: :viewer
+        )
+
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-2", role: :admin},
+                 viewer_subject
+               )
+
+      assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_subject)
+
+      # Denial: a Team plan can configure OIDC but not SCIM group mappings.
+      {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+
+      assert {:error, :directory_sync_not_available} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-3", role: :admin},
+                 team_subject
+               )
+
+      # Cross-account: account B's enterprise owner cannot touch account A's
+      # provider's mappings (create can't find the provider; list scopes empty).
+      {_ub, _account_b, subject_b} = enterprise_owner()
+
+      assert {:error, :not_found} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-4", role: :admin},
+                 subject_b
+               )
+
+      {:ok, mapping_a} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
+
+      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject_b)
+      # And B can't update/delete A's mapping (row-scoped to B's account).
+      assert {:error, :not_found} =
+               SSO.update_group_mapping(mapping_a, %{role: :viewer}, subject_b)
+
+      assert {:error, :not_found} = SSO.delete_group_mapping(mapping_a, subject_b)
     end
   end
 
@@ -560,6 +614,6 @@ defmodule Emisar.SSOGroupsTest do
     |> Accounts.Membership.Query.by_role(:owner)
     |> Repo.all()
     |> Enum.reject(&(&1.user_id == keep_user_id))
-    |> Enum.each(&force_membership_role(&1, "admin"))
+    |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 end

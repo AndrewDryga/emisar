@@ -8,10 +8,8 @@ defmodule EmisarWeb.Components.MultiSelectTest do
   it), and labels are HTML-escaped (they carry account data — IL-16).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   defp render_multi_select(attrs) do

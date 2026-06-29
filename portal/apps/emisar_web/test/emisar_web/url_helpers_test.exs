@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UrlHelpersTest do
   use ExUnit.Case, async: true
-
   alias EmisarWeb.UrlHelpers
 
   describe "derive_base_url/1" do

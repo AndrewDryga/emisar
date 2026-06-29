@@ -11,7 +11,6 @@ defmodule EmisarWeb.AdminGateTest do
   unless `:dev_routes` is set (dev only), so in test they must 404.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Repo
 
   # Read the compile-time flag in the module body (the macro can't run

@@ -6,14 +6,12 @@ defmodule Emisar.AuthorizationTest do
   to "permissionless = full access" wouldn't show up in feature tests.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.Accounts.Membership
   alias Emisar.Auth.Subject
+  alias Emisar.Fixtures
 
   defp subject_with_role(account, role) do
-    user = user_fixture()
+    user = Fixtures.Users.create_user()
 
     Subject.for_user(
       user,
@@ -24,7 +22,7 @@ defmodule Emisar.AuthorizationTest do
 
   describe "Audit reads" do
     test "viewer can list events" do
-      account = account_fixture()
+      account = Fixtures.Accounts.create_account()
       subject = subject_with_role(account, :viewer)
       assert {:ok, _events, _meta} = Emisar.Audit.list_events(subject)
     end
@@ -38,8 +36,8 @@ defmodule Emisar.AuthorizationTest do
     end
 
     test "list_events scopes to the subject's account (cross-account isolation)" do
-      account_a = account_fixture()
-      account_b = account_fixture()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
 
       {:ok, _} = Emisar.Audit.log(account_a.id, "in.a", actor_kind: "system")
       {:ok, _} = Emisar.Audit.log(account_b.id, "in.b", actor_kind: "system")
@@ -52,8 +50,8 @@ defmodule Emisar.AuthorizationTest do
     end
 
     test "fetch_event_by_id refuses an event from another account" do
-      account_a = account_fixture()
-      account_b = account_fixture()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
 
       {:ok, event_in_b} = Emisar.Audit.log(account_b.id, "secret.in.b", actor_kind: "system")
 
@@ -63,16 +61,18 @@ defmodule Emisar.AuthorizationTest do
   end
 
   describe "Policies" do
-    test "viewer can fetch the policy" do
-      account = account_fixture()
+    setup do
+      account = Fixtures.Accounts.create_account()
       seed_policy_for(account)
+      %{account: account}
+    end
+
+    test "viewer can fetch the policy", %{account: account} do
       subject = subject_with_role(account, :viewer)
       assert {:ok, _policy} = Emisar.Policies.fetch_policy(subject)
     end
 
-    test "viewer is rejected from save_rules" do
-      account = account_fixture()
-      _policy = seed_policy_for(account)
+    test "viewer is rejected from save_rules", %{account: account} do
       subject = subject_with_role(account, :viewer)
 
       assert {:error, :unauthorized} =
@@ -82,9 +82,7 @@ defmodule Emisar.AuthorizationTest do
                )
     end
 
-    test "admin can save_rules" do
-      account = account_fixture()
-      _policy = seed_policy_for(account)
+    test "admin can save_rules", %{account: account} do
       subject = subject_with_role(account, :admin)
 
       new_rules = %{
@@ -107,8 +105,8 @@ defmodule Emisar.AuthorizationTest do
       # The Authorizer's `for_subject` scopes by account, so a foreign
       # policy is simply invisible — :not_found is the right shape
       # (mirrors what an opaque-id-based attacker would see).
-      account_a = account_fixture()
-      account_b = account_fixture()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
       _ = seed_policy_for(account_b)
 
       subject = subject_with_role(account_a, :owner)
@@ -118,14 +116,16 @@ defmodule Emisar.AuthorizationTest do
   end
 
   describe "Runbooks" do
-    test "viewer can list runbooks" do
-      account = account_fixture()
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "viewer can list runbooks", %{account: account} do
       subject = subject_with_role(account, :viewer)
       assert {:ok, _list, _meta} = Emisar.Runbooks.list_runbooks(subject)
     end
 
-    test "viewer is rejected from create_runbook" do
-      account = account_fixture()
+    test "viewer is rejected from create_runbook", %{account: account} do
       subject = subject_with_role(account, :viewer)
 
       assert {:error, :unauthorized} =
@@ -140,8 +140,7 @@ defmodule Emisar.AuthorizationTest do
                )
     end
 
-    test "admin can create_runbook" do
-      account = account_fixture()
+    test "admin can create_runbook", %{account: account} do
       subject = subject_with_role(account, :admin)
 
       assert {:ok, _rb} =
@@ -156,8 +155,7 @@ defmodule Emisar.AuthorizationTest do
                )
     end
 
-    test "admin can create_runbook from string-keyed form params" do
-      account = account_fixture()
+    test "admin can create_runbook from string-keyed form params", %{account: account} do
       subject = subject_with_role(account, :admin)
 
       # The LiveView form submits string keys; the context must not merge an
@@ -190,7 +188,7 @@ defmodule Emisar.AuthorizationTest do
 
   describe "Runbooks cross-account isolation (two-gates)" do
     setup do
-      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, runbook_b} =
         Emisar.Runbooks.create_runbook(
@@ -204,7 +202,7 @@ defmodule Emisar.AuthorizationTest do
           subject_b
         )
 
-      account_a = account_fixture()
+      account_a = Fixtures.Accounts.create_account()
       %{runbook_b: runbook_b, subject_a: subject_with_role(account_a, :owner)}
     end
 
@@ -226,7 +224,7 @@ defmodule Emisar.AuthorizationTest do
   # -- helpers --------------------------------------------------------
 
   defp seed_policy_for(account) do
-    user = user_fixture()
+    user = Fixtures.Users.create_user()
 
     {:ok, _} =
       Emisar.Policies.seed_policy(account.id, user.id, %{

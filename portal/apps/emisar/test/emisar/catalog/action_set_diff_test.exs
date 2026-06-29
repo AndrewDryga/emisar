@@ -1,6 +1,5 @@
 defmodule Emisar.Catalog.ActionSetDiffTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Catalog.ActionSetDiff
   alias Emisar.Catalog.RunnerAction
 

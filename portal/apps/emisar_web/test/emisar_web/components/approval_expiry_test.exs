@@ -8,10 +8,8 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
   trim. This test proves the space survives (not "expires<time").
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   test "renders the expiry through <.local_time>, with a space after 'expires'" do

@@ -5,7 +5,6 @@ defmodule EmisarWeb.ThrottleTest do
   that exercise the live path flip it on locally — hence `async: false`.
   """
   use ExUnit.Case, async: false
-
   alias EmisarWeb.Throttle
 
   # Unique bucket per test so the shared ETS table doesn't couple tests.

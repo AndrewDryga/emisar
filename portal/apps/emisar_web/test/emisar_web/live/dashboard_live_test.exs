@@ -26,7 +26,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "redirects a logged-in user with no account to onboarding", %{conn: conn} do
       # A bare user (no membership at all) isn't locked out — they're sent to
       # onboarding to create their first account.
-      conn = log_in_user(conn, Emisar.Fixtures.user_fixture())
+      conn = log_in_user(conn, Fixtures.Users.create_user())
 
       assert {:error, {:redirect, %{to: "/onboarding"}}} = live(conn, ~p"/app")
     end
@@ -97,7 +97,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "the dispatch nudge appears with a runner-but-no-runs and clears after the first run",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Dispatch your first action"
@@ -125,7 +125,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     # in-account data scoping of the dashboard's own reads.)
     test "cross-account — the dashboard shows only this account's data", %{conn: conn} do
       {conn, user_a, account_a} = register_and_log_in(conn)
-      runner_a = Emisar.Fixtures.runner_fixture(account_id: account_a.id)
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
 
       {:ok, run_a} =
         Emisar.Runs.create_run(%{
@@ -140,8 +140,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _request_a} = Emisar.Approvals.create_request(run_a, user_a.id, "needs sign-off")
 
       # Account B (a different owner) has its own runner, run, and approval.
-      {user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
-      runner_b = Emisar.Fixtures.runner_fixture(account_id: account_b.id)
+      {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+      runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
 
       {:ok, run_b} =
         Emisar.Runs.create_run(%{
@@ -205,7 +205,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
       # rather than re-querying per message. The reload fires on the
       # :reload_dashboard timer — inject it directly to stand in for the timer.
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
       send(lv.pid, {:runner_updated, runner})
       send(lv.pid, :reload_dashboard)
       refute render(lv) =~ "Connect a runner"
@@ -221,10 +221,14 @@ defmodule EmisarWeb.DashboardLiveTest do
   end
 
   describe "billing-status banner" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
     test "a past_due subscription surfaces the alert + a manage-billing link for an owner",
-         %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.subscription_fixture(account, "team", status: "past_due")
+         %{conn: conn, account: account} do
+      Fixtures.Accounts.create_subscription(account, "team", status: "past_due")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -237,20 +241,21 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
-    test "a healthy account shows no billing banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "a healthy account shows no billing banner", %{conn: conn, account: account} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       refute html =~ "Payment past due"
       refute html =~ "Subscription canceled"
     end
 
-    test "a viewer sees the alert but not the manage action (it's owner-gated)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Emisar.Fixtures.subscription_fixture(account, "team", status: "past_due")
+    test "a viewer sees the alert but not the manage action (it's owner-gated)", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Accounts.create_subscription(account, "team", status: "past_due")
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      Emisar.Fixtures.force_membership_role(membership, "viewer")
+      Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -262,12 +267,16 @@ defmodule EmisarWeb.DashboardLiveTest do
   end
 
   describe "plan / packs headroom banners" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
     # at the plan's runner cap the dashboard renders the
     # rose at-limit banner (the next register would 402). The free plan caps at
     # 3 runners; fill all three.
-    test "at the runner limit, the at-limit banner renders", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "at the runner limit, the at-limit banner renders", %{conn: conn, account: account} do
+      for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -276,9 +285,11 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     # (the near-limit half) — one slot short of the cap shows
     # the softer amber "one slot left" variant, not the at-limit rose one.
-    test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      for _ <- 1..2, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "near the runner limit, the amber 'one slot left' banner renders", %{
+      conn: conn,
+      account: account
+    } do
+      for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -290,9 +301,11 @@ defmodule EmisarWeb.DashboardLiveTest do
     # has trusted yet (`count_pending_pack_versions > 0`), the dashboard surfaces
     # the amber packs-pending-trust banner linking to the Packs page (dispatch is
     # blocked against those packs until an admin trusts the new hash).
-    test "a pending pack version surfaces the packs-pending-trust banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "a pending pack version surfaces the packs-pending-trust banner", %{
+      conn: conn,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # A custom (no-baseline) pack advertises an action and lands :pending — the
       # runner reports a hash no operator has trusted.

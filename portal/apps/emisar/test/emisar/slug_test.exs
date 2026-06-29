@@ -1,6 +1,5 @@
 defmodule Emisar.SlugTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Slug
 
   describe "slugify/2" do

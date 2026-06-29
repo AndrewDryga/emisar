@@ -16,8 +16,13 @@ defmodule EmisarWeb.PacksLiveTest do
   end
 
   describe "trust decisions" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
     defp observe_pending_pack!(account) do
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _runner} =
         Emisar.Catalog.observe_state(runner, %{
@@ -32,14 +37,13 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, [pack_version], _meta} =
         Emisar.Catalog.list_pack_versions(
-          Emisar.Fixtures.subject_for(Emisar.Fixtures.user_fixture(), account)
+          Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
         )
 
       pack_version
     end
 
-    test "lists the pending pack with Trust/Reject for an owner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "lists the pending pack with Trust/Reject for an owner", %{conn: conn, account: account} do
       _ = observe_pending_pack!(account)
 
       {:ok, lv, _dead_html} = live(conn, ~p"/app/#{account}/packs")
@@ -53,11 +57,12 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#reject-pack")
     end
 
-    test "the pending card names the runners advertising the pack (blast radius)", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "the pending card names the runners advertising the pack (blast radius)", %{
+      conn: conn,
+      account: account
+    } do
       runner =
-        Emisar.Fixtures.runner_fixture(
+        Fixtures.Runners.create_runner(
           account_id: account.id,
           name: "canary-01",
           group: "staging"
@@ -97,9 +102,11 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "abc123"
     end
 
-    test "the pending card lists the pack's actions + risk so trust isn't blind", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "the pending card lists the pack's actions + risk so trust isn't blind", %{
+      conn: conn,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -130,10 +137,9 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a trusted version exposes a View contents disclosure that lazily lists its actions",
-         %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      subject = Emisar.Fixtures.subject_for(user, account)
+         %{conn: conn, user: user, account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -175,13 +181,15 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "medium"
     end
 
-    test "a no-baseline (TOFU) pending pack shows the 'no baseline' block copy", %{conn: conn} do
+    test "a no-baseline (TOFU) pending pack shows the 'no baseline' block copy", %{
+      conn: conn,
+      account: account
+    } do
       # a custom pack we ship no baseline for pins pending with
       # a NIL trusted hash (`hash == nil`), so the banner reads the TOFU copy ("a
       # pack we don't ship a baseline for. Dispatch is blocked until you approve its
       # contents.") rather than the hash-drift copy. `observe_pending_pack!` lands
       # exactly that state.
-      {conn, _user, account} = register_and_log_in(conn)
       _ = observe_pending_pack!(account)
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -194,14 +202,15 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a trusted version advertising no actions shows the empty View-contents copy", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
       # opening the disclosure for a trusted version that
       # advertises zero actions caches `[]` and renders the empty-set copy ("No
       # actions advertised for this version right now."), not a blank panel or a
       # crash. The runner pinned the pack with an empty actions list, then trust it.
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       pack_version = observe_pending_pack!(account)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
@@ -218,8 +227,10 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "No actions advertised for this version right now."
     end
 
-    test "Trust adopts the pending hash and clears the pending badge", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "Trust adopts the pending hash and clears the pending badge", %{
+      conn: conn,
+      account: account
+    } do
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -231,9 +242,9 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "Reject through the typed-confirm dialog hides a never-trusted custom pack from the list",
          %{
-           conn: conn
+           conn: conn,
+           account: account
          } do
-      {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -254,8 +265,10 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 
-    test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{
+      conn: conn,
+      account: account
+    } do
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -282,10 +295,9 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "the reject handler still works (and stays gated) when its event is dispatched directly",
-         %{conn: conn} do
+         %{conn: conn, account: account} do
       # The dialog is UX friction, not the gate: a crafted `reject` that bypasses
       # the modal is still served by the unchanged, server-authz-gated handler.
-      {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -296,10 +308,9 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
-         %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      subject = Emisar.Fixtures.subject_for(user, account)
+         %{conn: conn, user: user, account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
 
       # Trust v1 (one low action) — snapshots the manifest.
       {:ok, _} =
@@ -348,14 +359,13 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "critical"
     end
 
-    test "a viewer sees the pack but no Trust/Reject controls", %{conn: conn} do
-      {_owner_conn, _user, account} = register_and_log_in(conn)
+    test "a viewer sees the pack but no Trust/Reject controls", %{account: account} do
       _ = observe_pending_pack!(account)
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -368,8 +378,10 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "phx-click=\"trust\""
     end
 
-    test "the trust-review banner is singular for one pending version", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "the trust-review banner is singular for one pending version", %{
+      conn: conn,
+      account: account
+    } do
       _ = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
@@ -377,9 +389,11 @@ defmodule EmisarWeb.PacksLiveTest do
       assert render(lv) =~ "1 pack version needs trust review."
     end
 
-    test "the trust-review banner pluralizes for several pending versions", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    test "the trust-review banner pluralizes for several pending versions", %{
+      conn: conn,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _runner} =
         Emisar.Catalog.observe_state(runner, %{
@@ -399,17 +413,16 @@ defmodule EmisarWeb.PacksLiveTest do
       assert render(lv) =~ "2 pack versions need trust review."
     end
 
-    test "an operator sees the pending banner but no Trust/Reject controls", %{conn: conn} do
+    test "an operator sees the pending banner but no Trust/Reject controls", %{account: account} do
       # operator holds `view_catalog` (the pending banner that
       # explains WHY dispatch is blocked renders) but not `manage_catalog`, so the
       # Trust / Reject buttons are hidden (`subject_can_manage_packs?`).
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
       _ = observe_pending_pack!(account)
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -428,13 +441,11 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "open_reject"
     end
 
-    test "another account's packs never appear on this page", %{conn: conn} do
+    test "another account's packs never appear on this page", %{conn: conn, account: account} do
       # `list_pack_versions` scopes to the subject's account
       # via `for_subject`, so a foreign account's pending pack is invisible here.
-      {conn, _user, account} = register_and_log_in(conn)
-
       {_b_conn, _b_user, b_account} = register_and_log_in(build_conn())
-      b_runner = Emisar.Fixtures.runner_fixture(account_id: b_account.id)
+      b_runner = Fixtures.Runners.create_runner(account_id: b_account.id)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(b_runner, %{
@@ -454,12 +465,11 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a runner-advertised action title containing HTML renders escaped, not as raw markup",
-         %{conn: conn} do
+         %{conn: conn, account: account} do
       # `action_id`/`title` are attacker-influenced (a runner
       # advertises them). The pending card renders them through escaped HEEx
       # (IL-16), so a <script> title shows up as literal text, never live markup.
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -488,18 +498,17 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "<script>alert"
     end
 
-    test "an operator's crafted trust event is denied — nothing trusted", %{conn: conn} do
+    test "an operator's crafted trust event is denied — nothing trusted", %{account: account} do
       # the Trust button is hidden for an operator, but a
       # crafted `trust` event still hits the handler. `trust_pack_version` requires
       # `manage_catalog` → {:error,:unauthorized} → "Admin required to trust packs."
       # The pending row is untouched.
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -515,15 +524,14 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
-    test "a viewer's crafted trust event is denied", %{conn: conn} do
+    test "a viewer's crafted trust event is denied", %{account: account} do
       # (crafted form) — same `manage_catalog` gate, laxest role.
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      viewer = Emisar.Fixtures.user_fixture()
+      viewer = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
@@ -539,13 +547,13 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a pending version offers no View-contents disclosure (only trusted rows do)", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
       # "View contents" is gated `:if={v.trust_state ==
       # :trusted}`. A pending version already renders its full advertised action
       # set inline, so the disclosure must NOT appear on it (it's the trusted
       # row's after-the-fact re-inspection affordance).
-      {conn, _user, account} = register_and_log_in(conn)
       _ = observe_pending_pack!(account)
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
@@ -559,12 +567,14 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "inspect_pack"
     end
 
-    test "reopening the reject dialog on a second version overwrites the target", %{conn: conn} do
+    test "reopening the reject dialog on a second version overwrites the target", %{
+      conn: conn,
+      account: account
+    } do
       # `open_reject` overwrites `@reject_target` and
       # `confirm_reset` clears the typed value, so opening v1, resetting, then
       # opening v2 leaves the dialog naming v2's token (not the stale v1).
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # Two custom packs with no baseline → both land pending.
       {:ok, _} =
@@ -579,7 +589,7 @@ defmodule EmisarWeb.PacksLiveTest do
           }
         })
 
-      subject = Emisar.Fixtures.subject_for(Emisar.Fixtures.user_fixture(), account)
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       {:ok, versions, _} = Emisar.Catalog.list_pack_versions(subject)
       tools = Enum.find(versions, &(&1.pack_id == "acme-tools"))
       extras = Enum.find(versions, &(&1.pack_id == "acme-extras"))
@@ -619,18 +629,17 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
-    test "an operator's crafted reject event is denied — nothing rejected", %{conn: conn} do
+    test "an operator's crafted reject event is denied — nothing rejected", %{account: account} do
       # closes GOV-011 denial — the Reject button is hidden for an operator, but a
       # crafted `reject` (bypassing the typed-confirm dialog) still hits the gated
       # handler. `reject_pack_version` requires `manage_catalog` →
       # "Admin required to reject packs." The pending row survives.
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      operator = Emisar.Fixtures.user_fixture()
+      operator = Fixtures.Users.create_user()
 
       _ =
-        Emisar.Fixtures.membership_fixture(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
@@ -645,13 +654,15 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
-    test "trust/reject of an already-resolved row flashes 'Nothing pending'", %{conn: conn} do
+    test "trust/reject of an already-resolved row flashes 'Nothing pending'", %{
+      conn: conn,
+      account: account
+    } do
       # once the row is trusted (no longer
       # pending), a crafted `trust`/`reject` event (e.g. a stale tab, or the loser
       # of a race the locked re-read already serialized) returns `:not_pending`.
       # The LV handlers map that to "Nothing pending on that pack." rather than
       # crashing or re-resolving.
-      {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")

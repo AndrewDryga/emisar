@@ -1,6 +1,5 @@
 defmodule EmisarWeb.ProfileLiveTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Auth
 
   describe "email form validation" do
@@ -38,10 +37,16 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "email form" do
-    test "a change needs a confirmation code (no MFA) — not applied until confirmed", %{
-      conn: conn
-    } do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "a change needs a confirmation code (no MFA) — not applied until confirmed", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # Submitting only STARTS the step-up — the email is not changed yet.
@@ -65,9 +70,10 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a confirm_email_change with no step-up in progress fails closed (no LiveView crash)", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # email_step is :idle (no save started) and the confirm form isn't even
@@ -79,10 +85,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == user.email
     end
 
-    test "an MFA-on user confirms with a TOTP code, then the email changes", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "an MFA-on user confirms with a TOTP code, then the email changes", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       secret = Auth.generate_mfa_secret()
-      {:ok, _user, _codes} = Emisar.Fixtures.enroll_mfa(secret, owner_subject(user, account))
+      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, owner_subject(user, account))
 
       # Clear the consumed-bucket marker so a fresh code this same 30s window
       # isn't read as a replay of the enrollment code.
@@ -110,8 +119,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == "mfa-fresh@example.com"
     end
 
-    test "a malformed email is refused with an inline changeset error", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a malformed email is refused with an inline changeset error", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       original_email = user.email
@@ -125,8 +137,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == original_email
     end
 
-    test "cancelling the step-up returns to the form, email unchanged", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "cancelling the step-up returns to the form, email unchanged", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
@@ -142,9 +157,16 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "sessions" do
-    test "lists sessions and revokes the selected one", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
 
+    test "lists sessions and revokes the selected one", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # A second session for the same user (another device).
       other_conn = build_conn() |> log_in_user(user)
       _ = other_conn
@@ -153,7 +175,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render(lv)
       assert html =~ "This device"
 
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       assert length(sessions) == 2
 
@@ -164,9 +186,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert length(sessions) == 1
     end
 
-    test "lists each session and marks the current device", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "lists each session and marks the current device", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # A second device with recognizable metadata so its row renders distinctly
       # from the current session.
       _other =
@@ -183,20 +207,22 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome on Linux"
 
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       assert length(sessions) == 2
     end
 
-    test "revoking one non-current session removes exactly that row", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "revoking one non-current session removes exactly that row", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # A second device — the row we'll revoke. Its session is found by being the
       # one whose token-digest is NOT the current device's.
       other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
       other_digest = Emisar.Crypto.hash(other_raw)
 
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       other = Enum.find(sessions, &(&1.token == other_digest))
 
@@ -210,16 +236,18 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute Enum.any?(remaining, &(&1.id == other.id))
     end
 
-    test "the current device row offers no Revoke control", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "the current device row offers no Revoke control", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # Two devices: one current, one other. The other carries a Revoke button;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
       other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
       other_digest = Emisar.Crypto.hash(other_raw)
 
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       other = Enum.find(sessions, &(&1.token == other_digest))
       current = Enum.find(sessions, &(&1.token != other_digest))
@@ -234,23 +262,25 @@ defmodule EmisarWeb.ProfileLiveTest do
              )
     end
 
-    test "revoke_other_sessions with nothing to revoke says so", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "revoke_other_sessions with nothing to revoke says so", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "revoke_other_sessions", %{}) =~ "No other sessions to revoke."
     end
 
-    test "the session list is capped at 100 — the bound the page passes", %{conn: conn} do
+    test "the session list is capped at 100 — the bound the page passes", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # The page reads sessions with `page: [limit: 100]`, so even a user with
       # more than 100 active sessions can never blow up the assigns/DOM. Prove
       # the cap with the SAME opts the LV uses (seeding 101 and reading back).
-      {conn, user, account} = register_and_log_in(conn)
 
       # 100 more sessions (register_and_log_in already created one) → 101 total.
       for _ <- 1..100, do: Emisar.Auth.create_session_token!(user, :magic_link, false)
 
-      subject = Emisar.Fixtures.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
       assert length(sessions) == 100
 
@@ -262,14 +292,14 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "the disconnected (dead) render reads no sessions and shows the empty state", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
       # IL-18: the session list is the only DB read on this page, gated behind
       # connected?/1 — so the dead render a plain GET produces must show "No
       # active sessions." with no rows, even though a real session exists. A
       # second device is seeded so "no rows on the dead render" is meaningful.
-      {conn, user, account} = register_and_log_in(conn)
-
       _other =
         Emisar.Auth.create_session_token!(user, :magic_link, false, %{
           "ip_address" => "203.0.113.9",
@@ -284,8 +314,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute dead =~ "This device"
     end
 
-    test "revoking a vanished session id flashes instead of crashing", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "revoking a vanished session id flashes instead of crashing", %{
+      conn: conn,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "revoke_session", %{"id" => Ecto.UUID.generate()}) =~
@@ -293,10 +325,10 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "the rendered session rows never surface the raw token (only id + metadata)", %{
-      conn: conn
+      conn: conn,
+      user: user,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-
       # A second session minted with a recognizable device (the metadata DOES
       # render) — and we keep the raw token it returns. The token is stored
       # hashed (UserToken.token holds the digest); neither the raw token nor its
@@ -326,10 +358,16 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "MFA lifecycle" do
-    test "start → confirm with a valid OTP enables MFA and shows recovery codes once", %{
-      conn: conn
-    } do
+    setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "start → confirm with a valid OTP enables MFA and shows recovery codes once", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "start_mfa", %{})
@@ -362,14 +400,14 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "the enrollment QR is a server-rendered inline SVG, not a third-party image", %{
-      conn: conn
+      conn: conn,
+      account: account
     } do
       # The otpauth URI carries the TOTP secret, so it must never be handed to an
       # external QR-image service. EmisarWeb.MfaQr renders the code as an inline
       # SVG server-side; `raw/1` on that markup is the documented IL-16 exception
       # (server-generated, not untrusted input). Assert the SVG is inlined and no
       # external image/script is the QR source.
-      {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "start_mfa", %{})
@@ -385,9 +423,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "api.qrserver.com"
     end
 
-    test "a low recovery-code count nudges to regenerate (amber)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "a low recovery-code count nudges to regenerate (amber)", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # MFA on with only 2 codes left (8 burned down on lost-device sign-ins) —
       # tracked all along but never shown until now.
       user
@@ -403,8 +443,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Regenerate for a fresh set"
     end
 
-    test "a wrong OTP leaves MFA off", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a wrong OTP leaves MFA off", %{conn: conn, user: user, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_mfa", %{})
@@ -418,8 +457,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
-    test "a non-numeric OTP is rejected and MFA stays off", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a non-numeric OTP is rejected and MFA stays off", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # Start the enable flow so a pending secret is stashed, then submit a
@@ -436,8 +478,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
-    test "a code from a prior 30s bucket is rejected (no leeway)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a code from a prior 30s bucket is rejected (no leeway)", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "start_mfa", %{})
@@ -458,13 +503,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
-    test "dismissing the recovery-codes reveal hides them and they're not re-shown", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "dismissing the recovery-codes reveal hides them and they're not re-shown", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       secret = Auth.generate_mfa_secret()
 
       {_user, _codes} =
-        Emisar.Fixtures.enable_mfa!(secret, Emisar.Fixtures.subject_for(user, account))
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -487,8 +534,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute remounted =~ a_code
     end
 
-    test "cancel_mfa drops the pending secret so confirm refuses", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "cancel_mfa drops the pending secret so confirm refuses", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_mfa", %{})
@@ -501,12 +547,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Start the enable flow first."
     end
 
-    test "disabling MFA when it's already off is a graceful no-op, not an error", %{conn: conn} do
+    test "disabling MFA when it's already off is a graceful no-op, not an error", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       # The disable control is only rendered with MFA on, but a stale client could
       # still push the event. Auth.disable_mfa writes nil/[] unconditionally on the
       # locked row, so a no-MFA user gets the success path (no crash, no error
       # flash) and stays cleanly disabled.
-      {conn, user, account} = register_and_log_in(conn)
       refute Emisar.Repo.reload!(user).mfa_enabled_at
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -521,13 +570,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert reloaded.mfa_recovery_codes == []
     end
 
-    test "regenerate + disable for an MFA-enabled user", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "regenerate + disable for an MFA-enabled user", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       secret = Auth.generate_mfa_secret()
 
       {_user, _codes} =
-        Emisar.Fixtures.enable_mfa!(secret, Emisar.Fixtures.subject_for(user, account))
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -547,7 +598,7 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   # Submits the enrollment form, retrying once across a 30s-window straddle (the
-  # code-gen/validate boundary) — the same flake Fixtures.enroll_mfa guards, but
+  # code-gen/validate boundary) — the same flake Fixtures.Users.enroll_mfa guards, but
   # through the LiveView form. A straddle re-renders the form without the success
   # flash, so a second submit with a fresh code lands in a stable window.
   defp submit_mfa_enrollment(lv, secret) do

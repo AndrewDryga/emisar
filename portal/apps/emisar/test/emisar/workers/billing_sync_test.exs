@@ -37,17 +37,17 @@ defmodule Emisar.Workers.BillingSyncTest do
   leave an account on stale entitlements.
   """
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Billing, Repo}
   alias Emisar.Billing.Subscription
+  alias Emisar.Fixtures
   alias Emisar.Workers.BillingSync
   alias Emisar.Workers.BillingSyncTest.PartialFailPaddleClient
 
-  test "perform/1 refreshes status + period end from the vendor" do
-    account = account_fixture()
+  setup do
+    %{account: Fixtures.Accounts.create_account()}
+  end
 
+  test "perform/1 refreshes status + period end from the vendor", %{account: account} do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_sync_1",
@@ -64,9 +64,7 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert %DateTime{} = synced.current_period_end
   end
 
-  test "perform/1 skips a mirror row with no vendor subscription id" do
-    account = account_fixture()
-
+  test "perform/1 skips a mirror row with no vendor subscription id", %{account: account} do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{plan: "free", status: "none"})
 
@@ -75,12 +73,10 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert %Subscription{status: "none"} = Repo.reload!(subscription)
   end
 
-  test "perform/1 reads string-key vendor payload (IL-13 round-trip safe)" do
+  test "perform/1 reads string-key vendor payload (IL-13 round-trip safe)", %{account: account} do
     # The stub returns a map with STRING keys ("status"/"next_billed_at"), as a
     # JSON-decoded Paddle payload would; the worker reads them by string key, so
     # there's no atom-key crash on the round-tripped vendor data.
-    account = account_fixture()
-
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_strkey_1",
@@ -96,13 +92,11 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert %DateTime{} = synced.current_period_end
   end
 
-  test "perform/1 accepts string-key Oban args without crashing (IL-13)" do
+  test "perform/1 accepts string-key Oban args without crashing (IL-13)", %{account: account} do
     # (the args half)
     # The scheduled job round-trips its args through the DB as string keys; the
     # worker ignores them but must not pattern-match atom keys. A bare %{} and a
     # string-keyed map both drive a clean sweep.
-    account = account_fixture()
-
     {:ok, _} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_strkey_args_1",
@@ -113,7 +107,8 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert :ok = BillingSync.perform(%Oban.Job{args: %{"scheduled" => true}})
   end
 
-  test "perform/1 runs Subject-less — it's a trusted server sweep, not a per-account read" do
+  test "perform/1 runs Subject-less — it's a trusted server sweep, not a per-account read",
+       %{account: account} do
     # The hourly reconciliation operates on already-trusted server context: it
     # reconciles every mirror row against the vendor with no per-account authz, so
     # its contract is the Oban arity-1 perform/1 — no %Subject{} anywhere on the
@@ -125,8 +120,6 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert Code.ensure_loaded?(BillingSync)
     assert function_exported?(BillingSync, :perform, 1)
     refute function_exported?(BillingSync, :perform, 2)
-
-    account = account_fixture()
 
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
@@ -148,11 +141,9 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
   calling the Paddle client must not observe the failing client mid-run.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
   alias Emisar.{Billing, Repo}
   alias Emisar.Billing.Subscription
+  alias Emisar.Fixtures
   alias Emisar.Workers.BillingSync
   alias Emisar.Workers.BillingSyncTest.PartialFailPaddleClient
 
@@ -179,7 +170,7 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
     # the vendor. perform/1 returns :ok regardless of the per-row failure.
     import ExUnit.CaptureLog
 
-    failing_account = account_fixture()
+    failing_account = Fixtures.Accounts.create_account()
 
     {:ok, failing} =
       Billing.upsert_subscription(failing_account.id, %{
@@ -191,7 +182,7 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
 
     Application.put_env(:emisar, :billing_sync_test_fail_id, "sub_fail_row")
 
-    ok_account = account_fixture()
+    ok_account = Fixtures.Accounts.create_account()
 
     {:ok, ok_row} =
       Billing.upsert_subscription(ok_account.id, %{
@@ -246,11 +237,9 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
   `:paddle_client`.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
   alias Emisar.{Billing, Repo}
   alias Emisar.Billing.Subscription
+  alias Emisar.Fixtures
   alias Emisar.Workers.BillingSync
   alias Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient
 
@@ -272,7 +261,7 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
   # than 500-ing the sweep (no inclusion list on the open `:string` column), so a
   # vendor that mints a new status can't wedge the hourly reconciliation.
   test "perform/1 persists an unrecognized vendor status without crashing" do
-    account = account_fixture()
+    account = Fixtures.Accounts.create_account()
 
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
@@ -313,10 +302,8 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest do
   process-global `:paddle_client`.
   """
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
   alias Emisar.{Billing, Repo}
+  alias Emisar.Fixtures
   alias Emisar.Workers.BillingSync
   alias Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient
 
@@ -335,7 +322,7 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest do
   end
 
   test "perform/1 preserves a stored current_period_end when Paddle reports no next-billed date" do
-    account = account_fixture()
+    account = Fixtures.Accounts.create_account()
     stored = ~U[2026-09-01 00:00:00.000000Z]
 
     {:ok, subscription} =

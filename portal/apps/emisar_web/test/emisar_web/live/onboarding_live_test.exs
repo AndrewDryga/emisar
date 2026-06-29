@@ -1,6 +1,5 @@
 defmodule EmisarWeb.OnboardingLiveTest do
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Accounts, Repo}
   alias Emisar.Accounts.Membership
 
@@ -94,7 +93,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
       # suspended) who hits the app isn't 404'd or logged out: `require_authenticated_user`
       # → `assign_current_account` (the nil-ref branch) steers them to /onboarding,
       # and the page renders the create-workspace form so they can self-serve.
-      conn = log_in_user(conn, Emisar.Fixtures.user_fixture())
+      conn = log_in_user(conn, Fixtures.Users.create_user())
 
       assert redirected_to(get(conn, ~p"/app")) == ~p"/onboarding"
 
@@ -142,8 +141,12 @@ defmodule EmisarWeb.OnboardingLiveTest do
   end
 
   describe "workspace-name form validation" do
-    test "a blank name renders inline on the field, not in a flash", %{conn: conn} do
+    setup %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
+      %{conn: conn}
+    end
+
+    test "a blank name renders inline on the field, not in a flash", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
 
       html =
@@ -158,7 +161,6 @@ defmodule EmisarWeb.OnboardingLiveTest do
     end
 
     test "phx-change surfaces a blank-name error inline without submitting", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
 
       html =
@@ -180,7 +182,6 @@ defmodule EmisarWeb.OnboardingLiveTest do
       # no phx-trigger-action). The user is stuck with no feedback. The CORRECT
       # behavior (asserted here, skipped until fixed) is to surface that slug-format
       # error on the name field the user actually controls.
-      {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
 
       html = lv |> form("#onboarding_form", %{"account" => %{"name" => "x"}}) |> render_submit()

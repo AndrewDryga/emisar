@@ -7,9 +7,7 @@ defmodule EmisarWeb.MCPControllerTest do
   """
 
   use EmisarWeb.ConnCase, async: true
-
   import Ecto.Query
-
   alias Emisar.{Accounts, ApiKeys, Catalog, Policies, Repo, Runners, Users}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
@@ -27,7 +25,7 @@ defmodule EmisarWeb.MCPControllerTest do
         full_name: "Test Owner"
       })
 
-    user = Emisar.Fixtures.confirm_user(user)
+    user = Fixtures.Users.confirm_user(user)
 
     {:ok, account} =
       Accounts.create_account_with_owner(
@@ -109,7 +107,7 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   defp make_api_key!(account, user, opts \\ []) do
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
     {:ok, raw, _key} =
       ApiKeys.create_key(
@@ -462,7 +460,7 @@ defmodule EmisarWeb.MCPControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run_entry["run_id"] || run_entry["id"],
-          Emisar.Fixtures.subject_for(user, account, role: :owner)
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
       assert run.runner_id == runner.id
@@ -520,7 +518,7 @@ defmodule EmisarWeb.MCPControllerTest do
           {:ok, r} =
             Emisar.Runs.fetch_run_by_id(
               entry["run_id"] || entry["id"],
-              Emisar.Fixtures.subject_for(user, account, role: :owner)
+              Fixtures.Subjects.subject_for(user, account, role: :owner)
             )
 
           r.runner_id
@@ -916,7 +914,7 @@ defmodule EmisarWeb.MCPControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run_id,
-          Emisar.Fixtures.subject_for(user, account, role: :owner)
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
       assert run.args == %{"path" => "/tmp/marker"}
@@ -1003,14 +1001,18 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "GET /api/mcp/runs/:id (wait_for_run polling)" do
+    setup %{account: account, user: user} do
+      runner = make_runner!(account, name: "runner-1")
+      raw = make_api_key!(account, user)
+      {:ok, runner: runner, raw: raw}
+    end
+
     test "returns the run state immediately when no wait param", %{
       conn: conn,
       account: account,
-      user: user
+      runner: runner,
+      raw: raw
     } do
-      runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
-
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
@@ -1035,11 +1037,9 @@ defmodule EmisarWeb.MCPControllerTest do
     test "long-poll returns when run reaches terminal state", %{
       conn: conn,
       account: account,
-      user: user
+      runner: runner,
+      raw: raw
     } do
-      runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
-
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
@@ -1087,15 +1087,14 @@ defmodule EmisarWeb.MCPControllerTest do
     test "failed run surfaces exit_code, stderr, and error_message for the bridge", %{
       conn: conn,
       account: account,
-      user: user
+      user: user,
+      runner: runner,
+      raw: raw
     } do
       # This is the contract the MCP bridge depends on to render
       # actionable failure output instead of "emisar status: error".
       # If any of these fields drop out of the response payload the
       # bridge's renderRunBlocks has nothing to show the LLM.
-      runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
-
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
@@ -1123,7 +1122,7 @@ defmodule EmisarWeb.MCPControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run.id,
-          Emisar.Fixtures.subject_for(user, account, role: :owner)
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
       {:ok, _} =
@@ -1151,11 +1150,9 @@ defmodule EmisarWeb.MCPControllerTest do
     test "long-poll returns 202 + waiting=timeout when deadline passes", %{
       conn: conn,
       account: account,
-      user: user
+      runner: runner,
+      raw: raw
     } do
-      runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
-
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
@@ -1178,10 +1175,12 @@ defmodule EmisarWeb.MCPControllerTest do
       assert is_binary(body["tip"])
     end
 
-    test "rejects an invalid wait param", %{conn: conn, account: account, user: user} do
-      runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
-
+    test "rejects an invalid wait param", %{
+      conn: conn,
+      account: account,
+      runner: runner,
+      raw: raw
+    } do
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
@@ -1205,9 +1204,9 @@ defmodule EmisarWeb.MCPControllerTest do
     test "403 when an execute-only key reads a run (needs actions:read)", %{
       conn: conn,
       account: account,
-      user: user
+      user: user,
+      runner: runner
     } do
-      runner = make_runner!(account, name: "runner-1")
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
 
       {:ok, run} =
@@ -1262,13 +1261,12 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "read-scope enforcement on the REST surface" do
-    test "GET /api/mcp/tools is denied without actions:read", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
+    setup %{account: account, user: user} do
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
+      {:ok, raw: raw}
+    end
 
+    test "GET /api/mcp/tools is denied without actions:read", %{conn: conn, raw: raw} do
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1278,13 +1276,7 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body == %{"error" => "missing_scope", "required" => "actions:read"}
     end
 
-    test "GET /api/mcp/runners is denied without actions:read", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
+    test "GET /api/mcp/runners is denied without actions:read", %{conn: conn, raw: raw} do
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1335,7 +1327,7 @@ defmodule EmisarWeb.MCPControllerTest do
       advertise_action!(active, action_id: "x")
       advertise_action!(disabled, action_id: "y")
 
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, _} = Runners.disable_runner(disabled, subject)
 
       raw = make_api_key!(account, user)
@@ -1486,7 +1478,7 @@ defmodule EmisarWeb.MCPControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run_id_of(entry),
-          Emisar.Fixtures.subject_for(user, account, role: :owner)
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
       # Only the genuine action arg survives — action_id/reason/runners/wait/
@@ -1535,7 +1527,7 @@ defmodule EmisarWeb.MCPControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run_id_of(entry),
-          Emisar.Fixtures.subject_for(user, account, role: :owner)
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
       # NOT extracted onto the run (the JSON-RPC-only control path) ...
@@ -1547,9 +1539,12 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "GET /api/mcp/runs/:id state edges" do
-    test "an unknown run id is a 404 not_found", %{conn: conn, account: account, user: user} do
+    setup %{account: account, user: user} do
       raw = make_api_key!(account, user)
+      {:ok, raw: raw}
+    end
 
+    test "an unknown run id is a 404 not_found", %{conn: conn, raw: raw} do
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -1562,10 +1557,9 @@ defmodule EmisarWeb.MCPControllerTest do
     test "a non-terminal run with no wait param returns 200 (not 202)", %{
       conn: conn,
       account: account,
-      user: user
+      raw: raw
     } do
       runner = make_runner!(account, name: "runner-1")
-      raw = make_api_key!(account, user)
 
       {:ok, run} =
         Emisar.Runs.create_run(%{
@@ -1706,7 +1700,7 @@ defmodule EmisarWeb.MCPControllerTest do
     } do
       runner = make_runner!(account, name: "approval-host")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # Flip the account policy so the dispatch parks for human approval.
       {:ok, _} =
@@ -2073,8 +2067,8 @@ defmodule EmisarWeb.MCPControllerTest do
   # Narrow the key-creator's membership to the given scopes (string tuples, e.g.
   # [{"group", "allowed"}]) so the per-user scope layer gates every key it minted.
   defp restrict_creator_scope!(account, user, scopes) do
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
-    membership = Emisar.Fixtures.fetch_membership(account.id, user.id)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     {:ok, :ok} = Runners.replace_runner_scopes(membership, scopes, subject)
     :ok
   end

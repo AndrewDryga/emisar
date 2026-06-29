@@ -1,13 +1,11 @@
 defmodule Emisar.PoliciesAuditTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Audit, Policies}
+  alias Emisar.Fixtures
 
   describe "policy.updated audit payload" do
     setup do
-      user = user_fixture()
+      user = Fixtures.Users.create_user()
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(
@@ -15,7 +13,7 @@ defmodule Emisar.PoliciesAuditTest do
           user
         )
 
-      subject = subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, policy} = Policies.fetch_policy(subject)
       %{user: user, account: account, subject: subject, policy: policy}
     end

@@ -10,9 +10,6 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   per-provider bearer via `SSO.enable_scim/2` and drive everything over HTTP.
   """
   use EmisarWeb.ConnCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Repo, SSO}
   alias Emisar.SSO.IdentityProvider
 
@@ -21,7 +18,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # Enterprise account + a SCIM-enabled provider. Returns the provider, its raw
   # bearer (shown once), the owner subject, and the account.
   defp scim_provider(provider_attrs \\ %{}) do
-    {_user, account, subject} = owner_subject_fixture(%{plan: "enterprise"})
+    {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = provider_fixture(account, provider_attrs)
     {:ok, provider, raw_token} = SSO.enable_scim(provider, subject)
     %{provider: provider, token: raw_token, subject: subject, account: account}
@@ -54,7 +51,8 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     identity
   end
 
-  defp role_of(account_id, user_id), do: fetch_membership(account_id, user_id).role
+  defp role_of(account_id, user_id),
+    do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
 
   # A SCIM Group payload as Okta/Entra send it.
   defp group_payload(external_id, member_external_ids, opts \\ []) do
@@ -100,9 +98,17 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # -- POST /Groups ----------------------------------------------------
 
   describe "POST /Groups" do
-    test "provisions a group and a mapped member's role becomes the mapped role", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+    setup do
+      scim_provider()
+    end
 
+    test "provisions a group and a mapped member's role becomes the mapped role", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       # A mapping (grp-ops → :operator) + a provisioned member at the default :viewer.
       {:ok, _mapping} =
         SSO.create_group_mapping(
@@ -135,8 +141,12 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "an unmapped member in the group is tracked but its role is unchanged", %{conn: conn} do
-      %{token: token, provider: provider, account: account} = scim_provider()
+    test "an unmapped member in the group is tracked but its role is unchanged", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
       identity = provision(provider, "okta|nomap")
 
       # No mapping for grp-x → the member stays at the default role.
@@ -149,9 +159,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "a payload with no externalId/displayName → 400 SCIM error", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "a payload with no externalId/displayName → 400 SCIM error", %{conn: conn, token: token} do
       body =
         conn
         |> scim_send(token, :post, ~p"/scim/v2/Groups", %{"members" => []})
@@ -161,9 +169,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["status"] == "400"
     end
 
-    test "an empty members set empties the group and renders members:[]", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "an empty members set empties the group and renders members:[]", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -229,11 +241,19 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # -- PATCH /Groups/:id -----------------------------------------------
 
   describe "PATCH /Groups/:id" do
+    setup do
+      scim_provider()
+    end
+
     # (add+remove delta) — the remove leg below uses the Okta
     # filtered-path `members[value eq "X"]` shape, so this also covers.
-    test "add then remove members recomputes the affected roles", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "add then remove members recomputes the affected roles", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -267,9 +287,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "an unsupported PATCH op → SCIM error, not a silent no-op", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "an unsupported PATCH op → SCIM error, not a silent no-op", %{conn: conn, token: token} do
       body =
         conn
         |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp", %{
@@ -281,9 +299,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidPath"
     end
 
-    test "a whole-set `replace` of members short-circuits to a full upsert", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "a whole-set `replace` of members short-circuits to a full upsert", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(
           provider,
@@ -320,9 +342,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, keep.user_id) == :viewer
     end
 
-    test "a pathless add op carries the member ids in `value`", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "a pathless add op carries the member ids in `value`", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -340,9 +366,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :admin
     end
 
-    test "the op keyword is matched case-insensitively (`Add`)", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "the op keyword is matched case-insensitively (`Add`)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -361,9 +391,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :admin
     end
 
-    test "ops that resolve to an empty net delta → 400 invalidPath", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "ops that resolve to an empty net delta → 400 invalidPath", %{conn: conn, token: token} do
       # An add op whose members array is empty resolves to {:delta, [], []} —
       # nothing to do, so an honest invalidPath, never a silent no-op.
       empty_body = %{"Operations" => [%{"op" => "add", "path" => "members", "value" => []}]}
@@ -376,9 +404,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidPath"
     end
 
-    test "a remove of a member not in the group is a no-op (200)", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "a remove of a member not in the group is a no-op (200)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -408,9 +440,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :admin
     end
 
-    test "a non-list `Operations` → 400 invalidValue", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "a non-list `Operations` → 400 invalidValue", %{conn: conn, token: token} do
       body =
         conn
         |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-x", %{"Operations" => "add members"})
@@ -420,9 +450,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
-    test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn, token: token} do
       body =
         conn
         |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-x", %{"displayName" => "Renamed"})
@@ -468,9 +496,17 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # -- DELETE / PUT / GET ----------------------------------------------
 
   describe "DELETE / PUT / GET" do
-    test "DELETE empties the group and recomputes (204)", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+    setup do
+      scim_provider()
+    end
 
+    test "DELETE empties the group and recomputes (204)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -492,9 +528,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "PUT replaces the group's membership (200)", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "PUT replaces the group's membership (200)", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(
           provider,
@@ -518,9 +558,13 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "PUT with no externalId in the body keys on the path :id", %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+    test "PUT with no externalId in the body keys on the path :id", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
       {:ok, _} =
         SSO.create_group_mapping(
           provider,
@@ -544,18 +588,14 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "DELETE of an unknown/never-pushed group → 204 no-op", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "DELETE of an unknown/never-pushed group → 204 no-op", %{conn: conn, token: token} do
       # Upsert-to-empty on a group that was never pushed is a harmless no-op; the
       # upsert always succeeds, so DELETE answers 204 (idempotent).
       assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-never") |> response(204)
     end
 
     test "DELETE; a member also in another mapped group recomputes to the remaining highest",
-         %{conn: conn} do
-      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
-
+         %{conn: conn, token: token, provider: provider, subject: subject, account: account} do
       {:ok, _} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
@@ -589,18 +629,21 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "GET /Groups returns an empty SCIM ListResponse (no group read)", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "GET /Groups returns an empty SCIM ListResponse (no group read)", %{
+      conn: conn,
+      token: token
+    } do
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
       assert body["totalResults"] == 0
     end
 
-    test "GET /Groups stays empty even after a group was pushed (no group read)", %{conn: conn} do
-      %{token: token, provider: provider} = scim_provider()
-
+    test "GET /Groups stays empty even after a group was pushed (no group read)", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
       provision(provider, "okta|x")
 
       {:ok, _} =
@@ -616,9 +659,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["Resources"] == []
     end
 
-    test "GET /Groups/:id → 404 SCIM error (no group read)", %{conn: conn} do
-      %{token: token} = scim_provider()
-
+    test "GET /Groups/:id → 404 SCIM error (no group read)", %{conn: conn, token: token} do
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-x") |> json_response(404)
       assert body["status"] == "404"
     end

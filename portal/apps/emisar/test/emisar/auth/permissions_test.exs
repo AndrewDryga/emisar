@@ -7,7 +7,6 @@ defmodule Emisar.Auth.PermissionsTest do
   `for_role/1`, so they can't drift from the role → permission model.
   """
   use ExUnit.Case, async: true
-
   alias Emisar.Accounts
   alias Emisar.Auth.Permissions
   alias Emisar.Auth.Subject

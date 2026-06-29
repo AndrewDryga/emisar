@@ -5,7 +5,6 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   link. Passwordless — no credential is set at registration.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Users
 
   defp sign_up_params(overrides \\ %{}) do
@@ -113,7 +112,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "a taken email renders the changeset error inline", %{conn: conn} do
-    existing = Emisar.Fixtures.user_fixture()
+    existing = Fixtures.Users.create_user()
 
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 

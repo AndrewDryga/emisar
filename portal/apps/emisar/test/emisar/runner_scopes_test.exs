@@ -1,23 +1,100 @@
 defmodule Emisar.RunnerScopesTest do
   use Emisar.DataCase, async: true
-
-  import Emisar.Fixtures
-
   alias Emisar.{Accounts, Runners, Runs}
+  alias Emisar.Fixtures
+
+  describe "Runners.list_runners_for_account/2 with :membership_id" do
+    setup do
+      {account, user, subject} = account_with_owner()
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
+      %{account: account, subject: subject, membership: membership}
+    end
+
+    test "no scopes = sees everything", %{
+      account: account,
+      subject: subject,
+      membership: membership
+    } do
+      a = Fixtures.Runners.create_runner(account_id: account.id, name: "a", group: "dba")
+      _b = Fixtures.Runners.create_runner(account_id: account.id, name: "b", group: "app")
+
+      {:ok, runners, _} =
+        Runners.list_runners_for_account(subject, membership_id: membership.id)
+
+      names = runners |> Enum.map(& &1.name) |> Enum.sort()
+
+      assert names == ["a", "b"]
+      _ = a
+    end
+
+    test "group scope restricts to only that group", %{
+      account: account,
+      subject: subject,
+      membership: membership
+    } do
+      _a = Fixtures.Runners.create_runner(account_id: account.id, name: "dba1", group: "dba")
+      _b = Fixtures.Runners.create_runner(account_id: account.id, name: "dba2", group: "dba")
+      _c = Fixtures.Runners.create_runner(account_id: account.id, name: "app1", group: "app")
+
+      {:ok, :ok} =
+        Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+
+      {:ok, runners, meta} =
+        Runners.list_runners_for_account(subject, membership_id: membership.id)
+
+      names = runners |> Enum.map(& &1.name) |> Enum.sort()
+
+      assert names == ["dba1", "dba2"]
+      # The scope filter runs in the query, before pagination — so the count
+      # reflects the scoped set (2), not all 3 runners (the old in-memory
+      # post-pagination filter left this metadata at 3).
+      assert meta.count == 2
+    end
+
+    test "runner-id scope additively unions with group scope", %{
+      account: account,
+      subject: subject,
+      membership: membership
+    } do
+      dba = Fixtures.Runners.create_runner(account_id: account.id, name: "dba1", group: "dba")
+      edge = Fixtures.Runners.create_runner(account_id: account.id, name: "edge1", group: "edge")
+
+      _other =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "other", group: "misc")
+
+      {:ok, :ok} =
+        Runners.replace_runner_scopes(
+          membership,
+          [
+            {"group", "dba"},
+            {"runner", edge.id}
+          ],
+          subject
+        )
+
+      {:ok, runners, _} =
+        Runners.list_runners_for_account(subject, membership_id: membership.id)
+
+      names = runners |> Enum.map(& &1.name) |> Enum.sort()
+
+      assert names == ["dba1", "edge1"]
+      _ = dba
+    end
+  end
 
   describe "Runners.replace_runner_scopes/2 + runner_scopes_for_membership/1" do
-    test "empty list = all-runners default" do
-      {_account, _user, subject} = account_with_owner()
+    setup do
+      {account, _user, subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
+      %{account: account, subject: subject, membership: membership}
+    end
 
+    test "empty list = all-runners default", %{subject: subject, membership: membership} do
       assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [], subject)
       assert Runners.runner_scopes_for_membership(membership.id) == []
     end
 
-    test "replaces the full set atomically" do
-      {_account, _user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
-
+    test "replaces the full set atomically", %{subject: subject, membership: membership} do
       assert {:ok, :ok} =
                Runners.replace_runner_scopes(
                  membership,
@@ -41,23 +118,30 @@ defmodule Emisar.RunnerScopesTest do
                Runners.runner_scopes_for_membership(membership.id)
     end
 
-    test "rejects invalid scope_type via the changeset" do
-      {_account, _user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
-
+    test "rejects invalid scope_type via the changeset", %{
+      subject: subject,
+      membership: membership
+    } do
       assert {:error, %Ecto.Changeset{}} =
                Runners.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
     end
 
-    test "an operator (no manage_team permission) cannot widen scope → :unauthorized" do
+    test "an operator (no manage_team permission) cannot widen scope → :unauthorized", %{
+      account: account,
+      membership: membership
+    } do
       # Runner ACLs are a team-management privilege: a non-admin must not
       # be able to broaden their own (or anyone's) scope.
-      {account, _user, owner_subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner_subject.actor, nil)
+      operator = Fixtures.Users.create_user()
 
-      operator = user_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
-      operator_subject = subject_for(operator, account, role: :operator)
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} =
                Runners.replace_runner_scopes(membership, [{"group", "dba"}], operator_subject)
@@ -72,77 +156,20 @@ defmodule Emisar.RunnerScopesTest do
     end
   end
 
-  describe "Runners.list_runners_for_account/2 with :membership_id" do
-    test "no scopes = sees everything" do
-      {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
-      a = runner_fixture(account_id: account.id, name: "a", group: "dba")
-      _b = runner_fixture(account_id: account.id, name: "b", group: "app")
-
-      {:ok, runners, _} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
-
-      names = runners |> Enum.map(& &1.name) |> Enum.sort()
-
-      assert names == ["a", "b"]
-      _ = a
-    end
-
-    test "group scope restricts to only that group" do
-      {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
-      _a = runner_fixture(account_id: account.id, name: "dba1", group: "dba")
-      _b = runner_fixture(account_id: account.id, name: "dba2", group: "dba")
-      _c = runner_fixture(account_id: account.id, name: "app1", group: "app")
-
-      {:ok, :ok} =
-        Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
-
-      {:ok, runners, meta} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
-
-      names = runners |> Enum.map(& &1.name) |> Enum.sort()
-
-      assert names == ["dba1", "dba2"]
-      # The scope filter runs in the query, before pagination — so the count
-      # reflects the scoped set (2), not all 3 runners (the old in-memory
-      # post-pagination filter left this metadata at 3).
-      assert meta.count == 2
-    end
-
-    test "runner-id scope additively unions with group scope" do
-      {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
-      dba = runner_fixture(account_id: account.id, name: "dba1", group: "dba")
-      edge = runner_fixture(account_id: account.id, name: "edge1", group: "edge")
-      _other = runner_fixture(account_id: account.id, name: "other", group: "misc")
-
-      {:ok, :ok} =
-        Runners.replace_runner_scopes(
-          membership,
-          [
-            {"group", "dba"},
-            {"runner", edge.id}
-          ],
-          subject
-        )
-
-      {:ok, runners, _} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
-
-      names = runners |> Enum.map(& &1.name) |> Enum.sort()
-
-      assert names == ["dba1", "edge1"]
-      _ = dba
-    end
-  end
-
   describe "Runs.dispatch_run/2 with :requested_by_membership_id" do
-    test "rejects out-of-scope runner" do
+    setup do
       {account, user, subject} = account_with_owner()
+      %{account: account, user: user, subject: subject}
+    end
+
+    test "rejects out-of-scope runner", %{account: account, user: user, subject: subject} do
       {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
-      _runner_in = runner_fixture(account_id: account.id, name: "in", group: "dba")
-      runner_out = runner_fixture(account_id: account.id, name: "out", group: "app")
+
+      _runner_in =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "in", group: "dba")
+
+      runner_out =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "out", group: "app")
 
       {:ok, :ok} =
         Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
@@ -160,9 +187,11 @@ defmodule Emisar.RunnerScopesTest do
                )
     end
 
-    test "no membership_id passed = bypasses the check (MCP/system path)" do
-      {account, _user, subject} = account_with_owner()
-      runner = runner_fixture(account_id: account.id, group: "dba")
+    test "no membership_id passed = bypasses the check (MCP/system path)", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "dba")
 
       # No `requested_by_membership_id` → skips scope check entirely.
       # Falls through to `:action_not_found` because we haven't seeded
@@ -230,8 +259,8 @@ defmodule Emisar.RunnerScopesTest do
     test "given a %Membership{}, it resolves that membership's scopes from the DB" do
       {account, user, subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
-      in_group = runner_fixture(account_id: account.id, group: "dba")
-      out_group = runner_fixture(account_id: account.id, group: "app")
+      in_group = Fixtures.Runners.create_runner(account_id: account.id, group: "dba")
+      out_group = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
       {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
@@ -241,7 +270,7 @@ defmodule Emisar.RunnerScopesTest do
   end
 
   defp account_with_owner do
-    user = user_fixture()
+    user = Fixtures.Users.create_user()
 
     {:ok, account} =
       Accounts.create_account_with_owner(
@@ -249,7 +278,7 @@ defmodule Emisar.RunnerScopesTest do
         user
       )
 
-    subject = subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     {account, user, subject}
   end
 end

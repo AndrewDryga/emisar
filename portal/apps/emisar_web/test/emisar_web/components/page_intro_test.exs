@@ -6,10 +6,8 @@ defmodule EmisarWeb.Components.PageIntroTest do
   (IL-16: index intros carry no `raw/1`).
   """
   use ExUnit.Case, async: true
-
   import Phoenix.Component
   import Phoenix.LiveViewTest
-
   alias EmisarWeb.CoreComponents
 
   describe "page_intro/1" do

@@ -19,7 +19,6 @@ defmodule Emisar.DataCase do
   using do
     quote do
       alias Emisar.Repo
-
       import Ecto
       import Ecto.Changeset
       import Ecto.Query

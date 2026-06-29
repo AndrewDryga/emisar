@@ -2,10 +2,8 @@ defmodule Emisar.TelemetryTest do
   # async: false — telemetry handlers are process-global, so attaching one and
   # asserting on the emit must not race a concurrent test's handler.
   use Emisar.DataCase, async: false
-
-  import Emisar.Fixtures
-
   alias Emisar.{Approvals, Repo, Runs}
+  alias Emisar.Fixtures
 
   # Attach a one-shot handler for `event`, run `fun`, return the captured
   # measurements. The metric definition in `EmisarWeb.Telemetry` keys off this
@@ -28,8 +26,8 @@ defmodule Emisar.TelemetryTest do
 
   describe "measure_approval_queue/0" do
     test "emits [:emisar, :approvals, :pending] with count + oldest_age_seconds" do
-      account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -41,7 +39,7 @@ defmodule Emisar.TelemetryTest do
           status: :pending_approval
         })
 
-      {:ok, _} = Approvals.create_request(run, user_fixture().id, "x")
+      {:ok, _} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
 
       measurements =
         capture([:emisar, :approvals, :pending], &Emisar.Telemetry.measure_approval_queue/0)
@@ -55,7 +53,7 @@ defmodule Emisar.TelemetryTest do
   describe "measure_runner_connections/0" do
     test "emits [:emisar, :runners, :connection] with the four-state tally" do
       # One never-connected runner so the tally is non-empty.
-      _ = runner_fixture(connected?: false)
+      _ = Fixtures.Runners.create_runner(connected?: false)
 
       measurements =
         capture(

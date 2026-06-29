@@ -6,7 +6,6 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
   """
 
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.{Accounts, Repo, Users}
   alias Emisar.Audit.Event
 
@@ -56,7 +55,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
           full_name: "Other"
         })
 
-      other_user = Emisar.Fixtures.confirm_user(other_user)
+      other_user = Fixtures.Users.confirm_user(other_user)
       foreign = second_account_for(other_user)
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: foreign.id)

@@ -1,6 +1,5 @@
 defmodule Emisar.CryptoTest do
   use ExUnit.Case, async: true
-
   alias Emisar.Crypto
 
   describe "random_secret/1" do
@@ -26,6 +25,24 @@ defmodule Emisar.CryptoTest do
     end
   end
 
+  describe "email_token/0 + email_token_digest/1" do
+    # the emailed (magic-link/reset/confirm) token
+    # round-trips: the url-safe-base64 string in the link re-derives the
+    # stored digest, and a mangled or forged link returns :error rather
+    # than crashing or silently matching.
+    test "the emitted token re-derives its stored digest" do
+      {encoded, digest} = Crypto.email_token()
+
+      assert {:ok, ^digest} = Crypto.email_token_digest(encoded)
+      # url-safe alphabet only — it rides in a URL.
+      assert encoded =~ ~r/\A[A-Za-z0-9_-]+\z/
+    end
+
+    test "a non-base64 presented token is :error, not a crash or false match" do
+      assert :error = Crypto.email_token_digest("not valid base64 !!!")
+    end
+  end
+
   describe "hash/1" do
     test "is a deterministic 32-byte sha256 that varies with input" do
       assert Crypto.hash("emk-abc") == Crypto.hash("emk-abc")
@@ -47,36 +64,22 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "email_token/0 + email_token_digest/1" do
-    # the emailed (magic-link/reset/confirm) token
-    # round-trips: the url-safe-base64 string in the link re-derives the
-    # stored digest, and a mangled or forged link returns :error rather
-    # than crashing or silently matching.
-    test "the emitted token re-derives its stored digest" do
-      {encoded, digest} = Crypto.email_token()
+  describe "anonymous_visitor_id/1" do
+    # Cookieless visitor id: a salted hash of (IP|User-Agent) that also folds in
+    # the UTC week-start, so it's stable within a week but rotates weekly
+    # (unlinkable across weeks). Determinism within the week is what makes a
+    # visitor countable and stitchable to their user on login — no client id.
+    test "is a stable 64-char hex id for the same fingerprint within a week" do
+      fingerprint = "203.0.113.7|Mozilla/5.0 Chrome/120"
+      id = Crypto.anonymous_visitor_id(fingerprint)
 
-      assert {:ok, ^digest} = Crypto.email_token_digest(encoded)
-      # url-safe alphabet only — it rides in a URL.
-      assert encoded =~ ~r/\A[A-Za-z0-9_-]+\z/
+      assert id == Crypto.anonymous_visitor_id(fingerprint)
+      assert id =~ ~r/^[a-f0-9]{64}$/
     end
 
-    test "a non-base64 presented token is :error, not a crash or false match" do
-      assert :error = Crypto.email_token_digest("not valid base64 !!!")
-    end
-  end
-
-  describe "mfa_recovery_code/0" do
-    # (recovery-code namespace) — codes are lowercased
-    # base32 (survive hand transcription), unique per call, and only the
-    # digest is the at-rest form.
-    test "is lowercased base32, unique, with a matching digest" do
-      {plain1, digest1} = Crypto.mfa_recovery_code()
-      {plain2, _digest2} = Crypto.mfa_recovery_code()
-
-      assert plain1 =~ ~r/\A[a-z2-7]+\z/
-      assert plain1 == String.downcase(plain1)
-      refute plain1 == plain2
-      assert digest1 == Crypto.hash(plain1)
+    test "differs for a different fingerprint (distinct visitors don't collide)" do
+      refute Crypto.anonymous_visitor_id("1.1.1.1|UA") ==
+               Crypto.anonymous_visitor_id("2.2.2.2|UA")
     end
   end
 
@@ -130,15 +133,18 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "secure_compare/2" do
-    test "true for equal binaries, false for different or mismatched sizes" do
-      h = Crypto.hash("secret")
-      assert Crypto.secure_compare(h, h)
-      assert Crypto.secure_compare(<<1, 2, 3>>, <<1, 2, 3>>)
-      refute Crypto.secure_compare(h, Crypto.hash("other"))
-      # length mismatch must be false, never raise
-      refute Crypto.secure_compare(<<1, 2, 3>>, <<1, 2>>)
-      refute Crypto.secure_compare("x", :not_a_binary)
+  describe "mfa_recovery_code/0" do
+    # (recovery-code namespace) — codes are lowercased
+    # base32 (survive hand transcription), unique per call, and only the
+    # digest is the at-rest form.
+    test "is lowercased base32, unique, with a matching digest" do
+      {plain1, digest1} = Crypto.mfa_recovery_code()
+      {plain2, _digest2} = Crypto.mfa_recovery_code()
+
+      assert plain1 =~ ~r/\A[a-z2-7]+\z/
+      assert plain1 == String.downcase(plain1)
+      refute plain1 == plain2
+      assert digest1 == Crypto.hash(plain1)
     end
   end
 
@@ -157,22 +163,15 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "anonymous_visitor_id/1" do
-    # Cookieless visitor id: a salted hash of (IP|User-Agent) that also folds in
-    # the UTC week-start, so it's stable within a week but rotates weekly
-    # (unlinkable across weeks). Determinism within the week is what makes a
-    # visitor countable and stitchable to their user on login — no client id.
-    test "is a stable 64-char hex id for the same fingerprint within a week" do
-      fingerprint = "203.0.113.7|Mozilla/5.0 Chrome/120"
-      id = Crypto.anonymous_visitor_id(fingerprint)
-
-      assert id == Crypto.anonymous_visitor_id(fingerprint)
-      assert id =~ ~r/^[a-f0-9]{64}$/
-    end
-
-    test "differs for a different fingerprint (distinct visitors don't collide)" do
-      refute Crypto.anonymous_visitor_id("1.1.1.1|UA") ==
-               Crypto.anonymous_visitor_id("2.2.2.2|UA")
+  describe "secure_compare/2" do
+    test "true for equal binaries, false for different or mismatched sizes" do
+      h = Crypto.hash("secret")
+      assert Crypto.secure_compare(h, h)
+      assert Crypto.secure_compare(<<1, 2, 3>>, <<1, 2, 3>>)
+      refute Crypto.secure_compare(h, Crypto.hash("other"))
+      # length mismatch must be false, never raise
+      refute Crypto.secure_compare(<<1, 2, 3>>, <<1, 2>>)
+      refute Crypto.secure_compare("x", :not_a_binary)
     end
   end
 end

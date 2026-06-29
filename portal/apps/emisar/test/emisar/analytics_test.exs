@@ -2,7 +2,6 @@ defmodule Emisar.AnalyticsTest do
   # async: false — flips the global `:mixpanel_enabled` app env, so it must
   # not run concurrently with other tests that touch analytics seams.
   use ExUnit.Case, async: false
-
   alias Emisar.Analytics
 
   setup do
