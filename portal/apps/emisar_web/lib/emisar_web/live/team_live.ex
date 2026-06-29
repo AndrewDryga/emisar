@@ -623,127 +623,126 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <div :if={not @loading?} class="space-y-6">
-        <%!-- Security settings — account-wide 2FA + SSO enforcement (owner-only),
-             collapsed by default so the page leads with the member list; each
-             one's enforcement state rides in its header and the open/closed
-             choice is remembered per browser. --%>
-        <.collapsible_section id="team-2fa" title="Two-factor authentication">
-          <:summary>
-            <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
-          </:summary>
-
-          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
+        <%!-- Security card — account-wide MFA toggle (owner-only) +
+             at-a-glance per-member MFA status. Lives at the top because
+             this is the highest-leverage account setting on the page;
+             everything below is per-member admin. --%>
+        <.panel title="Two-factor authentication">
+          <:subtitle>
             When enforced, members without 2FA are funneled to their profile to set it up
             before they can use the rest of the app. You can't enable this until you've
             enrolled yourself — prevents lock-outs.
-          </p>
+          </:subtitle>
+          <:actions>
+            <%= cond do %>
+              <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <button
+                  type="button"
+                  phx-click="toggle_require_mfa"
+                  role="switch"
+                  aria-checked={to_string(@current_account.settings.require_mfa)}
+                  aria-label="Enforce 2FA account-wide"
+                  data-confirm={
+                    if @current_account.settings.require_mfa,
+                      do: "Stop enforcing 2FA account-wide?",
+                      else:
+                        "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
+                  }
+                  class={[
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    if(@current_account.settings.require_mfa,
+                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
+                    )
+                  ]}
+                >
+                  {if @current_account.settings.require_mfa,
+                    do: "Stop enforcing 2FA",
+                    else: "Enforce 2FA"}
+                </button>
+              <% true -> %>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
+            <% end %>
+          </:actions>
 
-          <div class="flex flex-wrap items-center gap-3">
-            <%!-- Member status — who's enrolled / not. When require_mfa is on, the
-                 un-enrolled count goes amber so the owner sees follow-up at a glance. --%>
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-              <span class="text-zinc-400">
-                2FA enrolled: <strong class="text-zinc-100">{@mfa_stats.enrolled}</strong>
-                of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
-              </span>
-              <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
-                <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
-                  {n} without 2FA
-                </.chip>
-              <% else %>
-                <.chip tone={:brand}>All members enrolled</.chip>
-              <% end %>
-            </div>
-
-            <div class="ml-auto shrink-0">
-              <%= cond do %>
-                <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <button
-                    type="button"
-                    phx-click="toggle_require_mfa"
-                    role="switch"
-                    aria-checked={to_string(@current_account.settings.require_mfa)}
-                    aria-label="Enforce 2FA account-wide"
-                    data-confirm={
-                      if @current_account.settings.require_mfa,
-                        do: "Stop enforcing 2FA account-wide?",
-                        else:
-                          "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
-                    }
-                    class={[
-                      "rounded-lg px-3 py-1.5 text-xs font-semibold",
-                      if(@current_account.settings.require_mfa,
-                        do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                        else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
-                      )
-                    ]}
-                  >
-                    {if @current_account.settings.require_mfa,
-                      do: "Stop enforcing 2FA",
-                      else: "Enforce 2FA"}
-                  </button>
-                <% true -> %>
-                  <span class="text-[11px] text-zinc-600">Owner/admin only</span>
-              <% end %>
-            </div>
+          <%!-- Member status row — shows who's enrolled / not. When
+               require_mfa is on, the un-enrolled count gets a loud
+               amber chip so the owner sees follow-up at a glance. --%>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="text-zinc-400">
+              2FA enrolled: <strong class="text-zinc-100">{@mfa_stats.enrolled}</strong>
+              of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
+            </span>
+            <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
+              <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
+                {n} without 2FA
+              </.chip>
+            <% else %>
+              <.chip tone={:brand}>All members enrolled</.chip>
+            <% end %>
+            <%= if @current_account.settings.require_mfa do %>
+              <.chip tone={:brand}>Enforced</.chip>
+            <% end %>
           </div>
-        </.collapsible_section>
+        </.panel>
 
         <%!-- SSO-enforcement card — owner-only. Can't be turned on without an
              enabled SSO connection (that would lock everyone out), so it links
              to set one up first. --%>
-        <.collapsible_section id="team-sso" title="Single sign-on">
-          <:summary>
-            <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
-          </:summary>
-
-          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
+        <.panel title="Single sign-on">
+          <:subtitle>
             When required, members sign in through this account's identity provider —
             magic-link sign-ins are bounced to SSO. Needs an SSO connection.
-          </p>
+          </:subtitle>
+          <:actions>
+            <%= cond do %>
+              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
+              <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
+                <.link
+                  navigate={~p"/app/#{@current_account}/settings/sso"}
+                  class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Set up SSO first →
+                </.link>
+              <% true -> %>
+                <button
+                  type="button"
+                  phx-click="toggle_require_sso"
+                  role="switch"
+                  aria-checked={to_string(@current_account.settings.require_sso)}
+                  aria-label="Require single sign-on account-wide"
+                  data-confirm={
+                    if @current_account.settings.require_sso do
+                      "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
+                    else
+                      "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
+                    end
+                  }
+                  class={[
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    if(@current_account.settings.require_sso,
+                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
+                    )
+                  ]}
+                >
+                  {if @current_account.settings.require_sso,
+                    do: "Stop requiring SSO",
+                    else: "Require SSO"}
+                </button>
+            <% end %>
+          </:actions>
 
-          <div class="flex">
-            <div class="ml-auto shrink-0">
-              <%= cond do %>
-                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="text-[11px] text-zinc-600">Owner/admin only</span>
-                <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
-                  <.link
-                    navigate={~p"/app/#{@current_account}/settings/sso"}
-                    class="text-xs font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    Set up SSO first →
-                  </.link>
-                <% true -> %>
-                  <button
-                    type="button"
-                    phx-click="toggle_require_sso"
-                    role="switch"
-                    aria-checked={to_string(@current_account.settings.require_sso)}
-                    aria-label="Require single sign-on account-wide"
-                    data-confirm={
-                      if @current_account.settings.require_sso do
-                        "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
-                      else
-                        "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
-                      end
-                    }
-                    class={[
-                      "rounded-lg px-3 py-1.5 text-xs font-semibold",
-                      if(@current_account.settings.require_sso,
-                        do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                        else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
-                      )
-                    ]}
-                  >
-                    {if @current_account.settings.require_sso,
-                      do: "Stop requiring SSO",
-                      else: "Require SSO"}
-                  </button>
-              <% end %>
-            </div>
+          <%!-- Status chip — "Required" only when enforced; no "Optional" noise
+               when it's off (the "Require SSO" button already says that). --%>
+          <div
+            :if={@current_account.settings.require_sso}
+            class="flex flex-wrap items-center gap-2 text-xs"
+          >
+            <.chip tone={:brand}>Required</.chip>
           </div>
-        </.collapsible_section>
+        </.panel>
 
         <%!-- Invite panel — collapsed by default; revealed by header
              button. Avoids a permanent "fill out this form" sidebar
