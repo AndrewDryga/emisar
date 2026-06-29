@@ -21,7 +21,10 @@ defmodule Emisar.Accounts do
   # authenticated context should prefer `socket.assigns.current_account`
   # over re-fetching.
 
-  @doc "Internal — pre-auth account lookup for `UserAuth.assign_current_account`; no subject exists yet."
+  @doc """
+  Internal — pre-auth account lookup for `UserAuth.assign_current_account`;
+  no subject exists yet.
+  """
   def fetch_account_by_id(id) do
     if Repo.valid_uuid?(id) do
       Account.Query.not_deleted()
@@ -35,31 +38,39 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — lock the account row (`FOR NO KEY UPDATE`) inside the CALLER's
   transaction (pass the Multi's `repo`) so concurrent per-account work serializes
-  on it. Runners uses it as the first step of its registration / enable Multi:
+  on it.
+
+  Runners uses it as the first step of its registration / enable Multi:
   the plan-limit count is a TOCTOU otherwise (two callers both read `current <
-  limit` and both insert, exceeding the ceiling). Returns `{:ok, account}` or
-  `{:error, :not_found}`.
+  limit` and both insert, exceeding the ceiling).
   """
-  def lock_account(repo, account_id) when is_binary(account_id) do
-    loaded_account =
+  def fetch_and_lock_account(account_id, opts \\ []) do
+    if Repo.valid_uuid?(account_id) do
+      repo = Keyword.get(opts, :repo, Repo)
+
       Account.Query.not_deleted()
       |> Account.Query.by_id(account_id)
       |> Account.Query.lock_for_update()
-      |> repo.one()
-
-    if loaded_account, do: {:ok, loaded_account}, else: {:error, :not_found}
+      |> repo.fetch(Account.Query)
+    else
+      {:error, :not_found}
+    end
   end
 
-  @doc "Internal — Approvals reads an account's grant-lifetime cap to enforce it; nil = no cap. No subject; the approval flow already authorized the approver."
-  def fetch_account_max_grant_lifetime(account_id) do
-    Account.Query.not_deleted()
-    |> Account.Query.by_id(account_id)
-    |> Repo.peek()
-    |> grant_lifetime_cap()
+  @doc "Internal — Approvals reads an account's settings to enforce them (e.g. the grant-lifetime cap). No subject; the approval flow already authorized the approver."
+  def fetch_account_settings(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch(Account.Query)
+      |> case do
+        {:ok, %Account{settings: settings}} -> {:ok, settings}
+        {:error, :not_found} -> {:error, :not_found}
+      end
+    else
+      {:error, :not_found}
+    end
   end
-
-  defp grant_lifetime_cap(nil), do: nil
-  defp grant_lifetime_cap(%Account{max_grant_lifetime_seconds: cap}), do: cap
 
   @doc """
   Internal — pre-auth: the web session boundary (`UserAuth`) resolves an
@@ -191,33 +202,43 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # require_mfa, require_sso, and max_grant_lifetime_seconds are the security settings.
+  # All account settings (require_mfa, require_sso, max_grant_lifetime_seconds)
+  # live in the `settings` embed and all three are security settings, so any
+  # change to the embed is a security change.
   defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
-    do:
-      Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso) or
-        Map.has_key?(changes, :max_grant_lifetime_seconds)
+    do: Map.has_key?(changes, :settings)
 
-  # A require_mfa / require_sso change is a security event; everything else is a
-  # plain account.updated. The UI never changes more than one in a request.
+  # A settings change is a security event named for the specific toggle;
+  # everything else is a plain account.updated. The UI never changes more than
+  # one setting in a request.
   defp account_update_audit(
          %Account{} = account,
          %Ecto.Changeset{} = changeset,
          %Subject{} = subject
        ) do
+    settings_changes = settings_changes(changeset)
+
     cond do
-      Map.has_key?(changeset.changes, :require_mfa) ->
+      Map.has_key?(settings_changes, :require_mfa) ->
         Audit.Events.account_require_mfa_set(subject, account)
 
-      Map.has_key?(changeset.changes, :require_sso) ->
+      Map.has_key?(settings_changes, :require_sso) ->
         Audit.Events.account_require_sso_set(subject, account)
 
-      Map.has_key?(changeset.changes, :max_grant_lifetime_seconds) ->
+      Map.has_key?(settings_changes, :max_grant_lifetime_seconds) ->
         Audit.Events.account_max_grant_lifetime_set(subject, account)
 
       true ->
         Audit.Events.account_updated(subject, account)
     end
   end
+
+  # The settings embed's own changes (the nested cast_embed changeset), or %{}
+  # when only top-level account fields (name/slug) changed.
+  defp settings_changes(%Ecto.Changeset{changes: %{settings: %Ecto.Changeset{changes: changes}}}),
+    do: changes
+
+  defp settings_changes(%Ecto.Changeset{}), do: %{}
 
   @doc """
   Suggests a unique slug for `name`. If the slugified name is taken,
@@ -587,9 +608,9 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp reduced_permissions?(old_role, new_role),
-    do:
-      not MapSet.subset?(Auth.Permissions.for_role(old_role), Auth.Permissions.for_role(new_role))
+  defp reduced_permissions?(old_role, new_role) do
+    not MapSet.subset?(Auth.Permissions.for_role(old_role), Auth.Permissions.for_role(new_role))
+  end
 
   defp refresh_member_sessions(%Membership{} = membership) do
     case Users.fetch_user_by_id(membership.user_id) do

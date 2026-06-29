@@ -1,6 +1,5 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Accounts, Mailers, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
@@ -69,7 +68,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("toggle_require_mfa", _params, socket) do
-    value = not socket.assigns.current_account.require_mfa
+    value = not socket.assigns.current_account.settings.require_mfa
 
     cond do
       not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
@@ -89,7 +88,7 @@ defmodule EmisarWeb.TeamLive do
       true ->
         case Accounts.update_account(
                socket.assigns.current_account,
-               %{require_mfa: value},
+               %{settings: %{require_mfa: value}},
                socket.assigns.current_subject
              ) do
           {:ok, account} ->
@@ -98,11 +97,11 @@ defmodule EmisarWeb.TeamLive do
              |> assign(:current_account, account)
              |> put_flash(
                :info,
-               if(value,
-                 do:
-                   "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in.",
-                 else: "Account-wide MFA requirement turned off."
-               )
+               if value do
+                 "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in."
+               else
+                 "Account-wide MFA requirement turned off."
+               end
              )}
 
           {:error, :unauthorized} ->
@@ -117,7 +116,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("toggle_require_sso", _params, socket) do
     account = socket.assigns.current_account
-    value = not account.require_sso
+    value = not account.settings.require_sso
 
     cond do
       not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
@@ -136,7 +135,7 @@ defmodule EmisarWeb.TeamLive do
       true ->
         case Accounts.update_account(
                account,
-               %{require_sso: value},
+               %{settings: %{require_sso: value}},
                socket.assigns.current_subject
              ) do
           {:ok, account} ->
@@ -146,11 +145,11 @@ defmodule EmisarWeb.TeamLive do
              |> assign(:require_sso_available?, true)
              |> put_flash(
                :info,
-               if(value,
-                 do:
-                   "Single sign-on now required. Members sign in through your identity provider.",
-                 else: "Single sign-on requirement turned off."
-               )
+               if value do
+                 "Single sign-on now required. Members sign in through your identity provider."
+               else
+                 "Single sign-on requirement turned off."
+               end
              )}
 
           {:error, :unauthorized} ->
@@ -605,7 +604,7 @@ defmodule EmisarWeb.TeamLive do
   defp apply_grant_lifetime_cap(socket, {:ok, seconds}) do
     case Accounts.update_account(
            socket.assigns.current_account,
-           %{max_grant_lifetime_seconds: seconds},
+           %{settings: %{max_grant_lifetime_seconds: seconds}},
            socket.assigns.current_subject
          ) do
       {:ok, account} ->
@@ -692,23 +691,25 @@ defmodule EmisarWeb.TeamLive do
                   type="button"
                   phx-click="toggle_require_mfa"
                   role="switch"
-                  aria-checked={to_string(@current_account.require_mfa)}
+                  aria-checked={to_string(@current_account.settings.require_mfa)}
                   aria-label="Enforce 2FA account-wide"
                   data-confirm={
-                    if @current_account.require_mfa,
+                    if @current_account.settings.require_mfa,
                       do: "Stop enforcing 2FA account-wide?",
                       else:
                         "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
                   }
                   class={[
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
-                    if(@current_account.require_mfa,
+                    if(@current_account.settings.require_mfa,
                       do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
                       else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
                     )
                   ]}
                 >
-                  {if @current_account.require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
+                  {if @current_account.settings.require_mfa,
+                    do: "Stop enforcing 2FA",
+                    else: "Enforce 2FA"}
                 </button>
               <% true -> %>
                 <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
@@ -724,13 +725,13 @@ defmodule EmisarWeb.TeamLive do
               of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
             </span>
             <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
-              <.chip tone={if @current_account.require_mfa, do: :amber, else: :neutral}>
+              <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
                 {n} without 2FA
               </.chip>
             <% else %>
               <.chip tone={:brand}>All members enrolled</.chip>
             <% end %>
-            <%= if @current_account.require_mfa do %>
+            <%= if @current_account.settings.require_mfa do %>
               <.chip tone={:brand}>Enforced</.chip>
             <% end %>
           </div>
@@ -748,7 +749,7 @@ defmodule EmisarWeb.TeamLive do
             <%= cond do %>
               <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
                 <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
-              <% not @require_sso_available? and not @current_account.require_sso -> %>
+              <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso"}
                   class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
@@ -760,31 +761,33 @@ defmodule EmisarWeb.TeamLive do
                   type="button"
                   phx-click="toggle_require_sso"
                   role="switch"
-                  aria-checked={to_string(@current_account.require_sso)}
+                  aria-checked={to_string(@current_account.settings.require_sso)}
                   aria-label="Require single sign-on account-wide"
                   data-confirm={
-                    if @current_account.require_sso,
-                      do:
-                        "Stop requiring single sign-on? Members will be able to sign in with a magic link again.",
-                      else:
-                        "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
+                    if @current_account.settings.require_sso do
+                      "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
+                    else
+                      "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
+                    end
                   }
                   class={[
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
-                    if(@current_account.require_sso,
+                    if(@current_account.settings.require_sso,
                       do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
                       else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
                     )
                   ]}
                 >
-                  {if @current_account.require_sso, do: "Stop requiring SSO", else: "Require SSO"}
+                  {if @current_account.settings.require_sso,
+                    do: "Stop requiring SSO",
+                    else: "Require SSO"}
                 </button>
             <% end %>
           </:actions>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <.chip tone={if @current_account.require_sso, do: :brand, else: :neutral}>
-              {if @current_account.require_sso, do: "Required", else: "Optional"}
+            <.chip tone={if @current_account.settings.require_sso, do: :brand, else: :neutral}>
+              {if @current_account.settings.require_sso, do: "Required", else: "Optional"}
             </.chip>
           </div>
         </.panel>
@@ -808,30 +811,33 @@ defmodule EmisarWeb.TeamLive do
                     aria-label="Maximum grant lifetime"
                     class="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-100"
                   >
-                    <option value="" selected={is_nil(@current_account.max_grant_lifetime_seconds)}>
+                    <option
+                      value=""
+                      selected={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
+                    >
                       No cap
                     </option>
                     <option
                       value="3600"
-                      selected={@current_account.max_grant_lifetime_seconds == 3600}
+                      selected={@current_account.settings.max_grant_lifetime_seconds == 3600}
                     >
                       1 hour
                     </option>
                     <option
                       value="86400"
-                      selected={@current_account.max_grant_lifetime_seconds == 86_400}
+                      selected={@current_account.settings.max_grant_lifetime_seconds == 86_400}
                     >
                       1 day
                     </option>
                     <option
                       value="2592000"
-                      selected={@current_account.max_grant_lifetime_seconds == 2_592_000}
+                      selected={@current_account.settings.max_grant_lifetime_seconds == 2_592_000}
                     >
                       30 days
                     </option>
                     <option
                       value="7776000"
-                      selected={@current_account.max_grant_lifetime_seconds == 7_776_000}
+                      selected={@current_account.settings.max_grant_lifetime_seconds == 7_776_000}
                     >
                       90 days
                     </option>
@@ -841,8 +847,10 @@ defmodule EmisarWeb.TeamLive do
           </:actions>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <.chip tone={if @current_account.max_grant_lifetime_seconds, do: :brand, else: :neutral}>
-              {grant_lifetime_label(@current_account.max_grant_lifetime_seconds)}
+            <.chip tone={
+              if @current_account.settings.max_grant_lifetime_seconds, do: :brand, else: :neutral
+            }>
+              {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
             </.chip>
           </div>
         </.panel>
@@ -976,7 +984,10 @@ defmodule EmisarWeb.TeamLive do
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
-                      <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
+                      <.mfa_badge
+                        user={membership.user}
+                        require_mfa?={@current_account.settings.require_mfa}
+                      />
                       <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
                         You
                       </.chip>
@@ -1192,19 +1203,19 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp show_invite,
-    do:
-      JS.show(
-        to: "#invite-panel",
-        transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
-      )
+  defp show_invite do
+    JS.show(
+      to: "#invite-panel",
+      transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
+    )
+  end
 
-  defp hide_invite,
-    do:
-      JS.hide(
-        to: "#invite-panel",
-        transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
-      )
+  defp hide_invite do
+    JS.hide(
+      to: "#invite-panel",
+      transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
+    )
+  end
 
   # Inline action menu for a single member row. Hidden for the actor's
   attr :user, :map, default: nil
@@ -1396,17 +1407,17 @@ defmodule EmisarWeb.TeamLive do
   # Escalation/lock-out wording on a role change — promoting to a privileged role
   # grants real power (and a new owner can act against you), so the confirm spells
   # out the consequence; a lateral move or demotion keeps the plain prompt.
-  defp role_change_confirm(name, "owner"),
-    do:
-      "Make #{name} an owner? Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
+  defp role_change_confirm(name, "owner") do
+    "Make #{name} an owner? Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
+  end
 
-  defp role_change_confirm(name, "admin"),
-    do:
-      "Make #{name} an admin? Admins manage runners, policy, members, and approvals across the whole account."
+  defp role_change_confirm(name, "admin") do
+    "Make #{name} an admin? Admins manage runners, policy, members, and approvals across the whole account."
+  end
 
-  defp role_change_confirm(name, "operator"),
-    do:
-      "Make #{name} an operator? Operators can dispatch runs to your fleet and approve gated actions."
+  defp role_change_confirm(name, "operator") do
+    "Make #{name} an operator? Operators can dispatch runs to your fleet and approve gated actions."
+  end
 
   defp role_change_confirm(name, role),
     do: "Change #{name}'s role to #{String.capitalize(role)}?"

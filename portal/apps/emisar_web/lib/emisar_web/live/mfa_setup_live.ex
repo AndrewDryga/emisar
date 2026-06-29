@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MfaSetupLive do
   @moduledoc """
   Enforced-MFA enrollment interstitial. When an account requires 2FA
-  (`account.require_mfa`) and the signed-in member hasn't enrolled,
+  (`account.settings.require_mfa`) and the signed-in member hasn't enrolled,
   `UserAuth.on_mount(:ensure_mfa_compliant)` forwards every /app mount
   here — most importantly the invite-accept flow, so a fresh invitee
   enrolls as the natural second step before first seeing the dashboard.
@@ -12,7 +12,6 @@ defmodule EmisarWeb.MfaSetupLive do
   regenerate codes) stays on the profile page.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Auth, SSO}
   alias EmisarWeb.MfaQr
 
@@ -24,7 +23,7 @@ defmodule EmisarWeb.MfaSetupLive do
     cond do
       # Nothing to enroll — already compliant (or the account stopped
       # enforcing while this tab was open). Don't strand the user here.
-      user.mfa_enabled_at != nil or not account.require_mfa ->
+      user.mfa_enabled_at != nil or not account.settings.require_mfa ->
         {:ok, push_navigate(socket, to: ~p"/app")}
 
       # An SSO session whose provider satisfies MFA is exempt from the account's

@@ -1,6 +1,5 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
 
   @reload_debounce_ms 500
@@ -78,7 +77,7 @@ defmodule EmisarWeb.DashboardLive do
           total: total,
           enrolled: enrolled,
           missing: total - enrolled,
-          required?: account.require_mfa
+          required?: account.settings.require_mfa
         }
 
       _ ->
@@ -555,9 +554,9 @@ defmodule EmisarWeb.DashboardLive do
   defp stat_hint(:rose, m),
     do: "#{m.missing} can't sign in until enrolled →"
 
-  defp stat_hint(:amber, m),
-    do:
-      "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
+  defp stat_hint(:amber, m) do
+    "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
+  end
 
   defp stat_hint(:neutral, _),
     do: "No members yet."

@@ -16,10 +16,8 @@ defmodule Emisar.SSO do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
   alias Emisar.Auth.Subject
-
   alias Emisar.SSO.{Authorizer, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.{IdentityProvider, LinkRequest, OIDC, UserIdentity}
-
   require Logger
 
   # -- Config reads ----------------------------------------------------
@@ -119,10 +117,10 @@ defmodule Emisar.SSO do
   # under it (else everyone, owners included, is bricked). Judged inside the
   # provider's fetch_and_update :with (under the row lock); the reads join the same
   # transaction. Returning the atom (not a changeset) aborts as {:error, atom}.
-  defp disabling_last_required_provider?(provider, changeset),
-    do:
-      Ecto.Changeset.get_change(changeset, :enabled) == false and
-        last_required_provider?(provider)
+  defp disabling_last_required_provider?(provider, changeset) do
+    Ecto.Changeset.get_change(changeset, :enabled) == false and
+      last_required_provider?(provider)
+  end
 
   defp removing_last_required_provider?(provider),
     do: provider.enabled and last_required_provider?(provider)
@@ -130,8 +128,12 @@ defmodule Emisar.SSO do
   defp last_required_provider?(provider),
     do: account_requires_sso?(provider.account_id) and not another_enabled_provider?(provider)
 
-  defp account_requires_sso?(account_id),
-    do: match?({:ok, %{require_sso: true}}, Accounts.fetch_account_by_id(account_id))
+  defp account_requires_sso?(account_id) do
+    case Accounts.fetch_account_settings(account_id) do
+      {:ok, settings} -> settings.require_sso
+      {:error, :not_found} -> false
+    end
+  end
 
   defp another_enabled_provider?(provider) do
     IdentityProvider.Query.not_deleted()

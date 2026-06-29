@@ -566,13 +566,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp put_mappings(socket, provider_id, mappings),
-    do:
-      assign(
-        socket,
-        :group_mappings,
-        Map.put(socket.assigns.group_mappings, provider_id, mappings)
-      )
+  defp put_mappings(socket, provider_id, mappings) do
+    assign(
+      socket,
+      :group_mappings,
+      Map.put(socket.assigns.group_mappings, provider_id, mappings)
+    )
+  end
 
   defp put_mapping_form(socket, provider_id, form),
     do: assign(socket, :mapping_forms, Map.put(socket.assigns.mapping_forms, provider_id, form))
@@ -634,17 +634,17 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp error_message(:unauthorized), do: "You don't have permission to configure single sign-on."
   defp error_message(:not_found), do: "That no longer exists — it may have just been removed."
 
-  defp error_message(:require_sso_last_provider),
-    do:
-      "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
+  defp error_message(:require_sso_last_provider) do
+    "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
+  end
 
-  defp error_message(:email_taken),
-    do:
-      "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
+  defp error_message(:email_taken) do
+    "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
+  end
 
-  defp error_message(_),
-    do:
-      "That action didn't complete. Refresh to see the connection's current state, then try again."
+  defp error_message(_) do
+    "That action didn't complete. Refresh to see the connection's current state, then try again."
+  end
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
@@ -1098,21 +1098,21 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp setup_kind_label("keycloak"), do: "Keycloak"
   defp setup_kind_label(_), do: "a generic OIDC provider"
 
-  defp oidc_app_hint("google_workspace"),
-    do:
-      "in Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID (Web application)"
+  defp oidc_app_hint("google_workspace") do
+    "in Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID (Web application)"
+  end
 
-  defp oidc_app_hint("okta"),
-    do:
-      "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application"
+  defp oidc_app_hint("okta") do
+    "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application"
+  end
 
-  defp oidc_app_hint("jumpcloud"),
-    do:
-      "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled"
+  defp oidc_app_hint("jumpcloud") do
+    "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled"
+  end
 
-  defp oidc_app_hint("keycloak"),
-    do:
-      "in the Keycloak admin console → Clients → Create client → OpenID Connect (enable Client authentication)"
+  defp oidc_app_hint("keycloak") do
+    "in the Keycloak admin console → Clients → Create client → OpenID Connect (enable Client authentication)"
+  end
 
   defp oidc_app_hint(_), do: "with your provider — a confidential web client with a client secret"
 
@@ -1124,36 +1124,36 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Where to FIND the issuer — it's an org/realm-level value, not on the app
   # page, which is the usual point of confusion.
-  defp issuer_where_hint("okta"),
-    do:
-      "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Use the ORG authorization server (Security → API → Authorization Servers, the org row's Issuer URI), not a custom one: that keeps the OIDC `sub` equal to the Okta user id, which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity."
+  defp issuer_where_hint("okta") do
+    "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Use the ORG authorization server (Security → API → Authorization Servers, the org row's Issuer URI), not a custom one: that keeps the OIDC `sub` equal to the Okta user id, which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity."
+  end
 
-  defp issuer_where_hint("jumpcloud"),
-    do:
-      "Always this exact value for JumpCloud — including the trailing slash. JumpCloud echoes back the `externalId` SCIM sent, so the OIDC `sub` and the SCIM identity converge automatically; nothing to look up."
+  defp issuer_where_hint("jumpcloud") do
+    "Always this exact value for JumpCloud — including the trailing slash. JumpCloud echoes back the `externalId` SCIM sent, so the OIDC `sub` and the SCIM identity converge automatically; nothing to look up."
+  end
 
   defp issuer_where_hint("google_workspace"),
     do: "Always this exact value for Google — nothing to look up."
 
-  defp issuer_where_hint("keycloak"),
-    do:
-      "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
+  defp issuer_where_hint("keycloak") do
+    "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
+  end
 
-  defp issuer_where_hint(_),
-    do:
-      "Whatever URL serves its OIDC discovery document at /.well-known/openid-configuration — emisar fetches it from there."
+  defp issuer_where_hint(_) do
+    "Whatever URL serves its OIDC discovery document at /.well-known/openid-configuration — emisar fetches it from there."
+  end
 
-  defp scim_location_hint(:okta),
-    do:
-      "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, set the Base URL to the value above and paste the `ems-` token as the API token, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts"
+  defp scim_location_hint(:okta) do
+    "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, set the Base URL to the value above and paste the `ems-` token as the API token, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts"
+  end
 
-  defp scim_location_hint(:jumpcloud),
-    do:
-      "on the same JumpCloud app — add a \"Custom SCIM\" identity-management config, set the Base URL to the value above and paste the `ems-` token as the Token Key (Bearer)"
+  defp scim_location_hint(:jumpcloud) do
+    "on the same JumpCloud app — add a \"Custom SCIM\" identity-management config, set the Base URL to the value above and paste the `ems-` token as the Token Key (Bearer)"
+  end
 
-  defp scim_location_hint(:google_workspace),
-    do:
-      "through a SCIM connector — Google Workspace has no built-in SCIM server, so members are otherwise auto-provisioned on first sign-in"
+  defp scim_location_hint(:google_workspace) do
+    "through a SCIM connector — Google Workspace has no built-in SCIM server, so members are otherwise auto-provisioned on first sign-in"
+  end
 
   defp scim_location_hint(_), do: "in your provider's SCIM / user-provisioning settings"
 
@@ -1181,14 +1181,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   # ONCE on enable/rotate (write-only); after that only the base URL + the
   # enabled state render — the token is never read back from the provider.
   defp scim_panel(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :revealed_token,
-        if(match?(%{provider_id: id} when id == assigns.provider.id, assigns.scim_token),
-          do: assigns.scim_token.token
-        )
-      )
+    provider_id = assigns.provider.id
+
+    revealed_token =
+      case assigns.scim_token do
+        %{provider_id: ^provider_id, token: token} -> token
+        _ -> nil
+      end
+
+    assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
     <div class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
@@ -1601,13 +1602,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  defp approve_confirm(%{matched_user_id: nil}),
-    do:
-      "Approve access for this user? They'll be able to sign in at the connection's default role."
+  defp approve_confirm(%{matched_user_id: nil}) do
+    "Approve access for this user? They'll be able to sign in at the connection's default role."
+  end
 
-  defp approve_confirm(%{email: email}),
-    do:
-      "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
+  defp approve_confirm(%{email: email}) do
+    "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
+  end
 
   defp role_label(role), do: role |> Atom.to_string() |> String.capitalize()
 

@@ -603,7 +603,7 @@ defmodule Emisar.Approvals do
     # makes it non-dispatchable, so the approve must abort rather than resurrect
     # it. With the request + run both locked, the decision is atomic.
     with {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
-         {:ok, run} <- Runs.lock_pending_approval_run(repo, locked.run_id),
+         {:ok, run} <- Runs.fetch_and_lock_pending_approval_run(repo, locked.run_id),
          {:ok, grant} <- mint_grant(locked, run, by_user_id, attrs) do
       {:ok,
        %{
@@ -901,7 +901,7 @@ defmodule Emisar.Approvals do
   so the UI and the gate can't drift apart.
   """
   def allowed_grant_durations(account_id) when is_binary(account_id) do
-    cap = Accounts.fetch_account_max_grant_lifetime(account_id)
+    cap = account_grant_lifetime_cap(account_id)
     Enum.filter(@grant_durations, &grant_duration_within_cap?(&1, cap))
   end
 
@@ -910,7 +910,7 @@ defmodule Emisar.Approvals do
   # durations (`allowed_grant_durations/1`), but this is the IL-15 server
   # backstop that holds even if the UI is bypassed.
   defp check_grant_within_account_cap(account_id, duration) do
-    cap = Accounts.fetch_account_max_grant_lifetime(account_id)
+    cap = account_grant_lifetime_cap(account_id)
 
     if grant_duration_within_cap?(duration, cap) do
       :ok
@@ -924,6 +924,16 @@ defmodule Emisar.Approvals do
   defp grant_duration_within_cap?(:once, _cap), do: true
   defp grant_duration_within_cap?(_duration, nil), do: true
   defp grant_duration_within_cap?(duration, cap), do: duration_seconds_for(duration) <= cap
+
+  # The account's grant-lifetime cap (nil = no cap). Reads the one settings
+  # value Approvals enforces off `Accounts.fetch_account_settings/1`; a missing
+  # account means no cap to apply on this path.
+  defp account_grant_lifetime_cap(account_id) do
+    case Accounts.fetch_account_settings(account_id) do
+      {:ok, settings} -> settings.max_grant_lifetime_seconds
+      {:error, :not_found} -> nil
+    end
+  end
 
   defp duration_seconds_for(:one_hour), do: @one_hour_seconds
   defp duration_seconds_for(:one_day), do: @one_day_seconds

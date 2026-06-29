@@ -10,10 +10,12 @@ defmodule Emisar.Accounts.Account do
     field :name, :string
     field :slug, :string
     field :paddle_customer_id, :string
-    field :require_mfa, :boolean, default: false
-    field :require_sso, :boolean, default: false
-    field :max_grant_lifetime_seconds, :integer
     field :deleted_at, :utc_datetime_usec
+
+    # Operator settings live in one embedded jsonb value, not a column per
+    # toggle — see `Account.Settings`. `on_replace: :update` so a partial
+    # `%{settings: %{require_mfa: …}}` update keeps the other settings.
+    embeds_one :settings, Emisar.Accounts.Account.Settings, on_replace: :update
 
     # Soft-deletable associations skip tombstoned rows by default, so a
     # preload never surfaces a deleted membership/runner.

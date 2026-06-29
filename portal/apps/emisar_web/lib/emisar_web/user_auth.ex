@@ -6,10 +6,8 @@ defmodule EmisarWeb.UserAuth do
   """
 
   use EmisarWeb, :verified_routes
-
   import Plug.Conn
   import Phoenix.Controller
-
   alias Emisar.{Accounts, Auth, SSO}
   alias Emisar.Auth.Subject
   alias EmisarWeb.Analytics
@@ -398,7 +396,7 @@ defmodule EmisarWeb.UserAuth do
     auth = socket.assigns[:current_auth] || @no_auth
 
     cond do
-      is_nil(account) or not account.require_sso ->
+      is_nil(account) or not account.settings.require_sso ->
         {:cont, socket}
 
       auth.auth_method == :sso and
@@ -434,7 +432,7 @@ defmodule EmisarWeb.UserAuth do
       is_nil(user) or is_nil(account) ->
         {:cont, socket}
 
-      not account.require_mfa ->
+      not account.settings.require_mfa ->
         {:cont, socket}
 
       user.mfa_enabled_at != nil ->
