@@ -89,6 +89,19 @@ defmodule Emisar.AuthTest do
 
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
     end
+
+    test "a session holding a removed auth_method fails closed, never raising on load", %{
+      user: user
+    } do
+      token = Auth.create_session_token!(user, :magic_link, false)
+      # A legacy `password` session from before the passwordless rework dropped
+      # that enum value. Written at the DB layer to bypass the enum cast —
+      # exactly how it lands in a real DB after the enum narrows. Loading it
+      # must resolve to :not_found, not raise ArgumentError and 500 the request.
+      Ecto.Adapters.SQL.query!(Repo, "UPDATE user_tokens SET auth_method = 'password'", [])
+
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+    end
   end
 
   describe "delete_session_token/1" do

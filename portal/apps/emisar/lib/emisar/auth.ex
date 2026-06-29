@@ -46,6 +46,7 @@ defmodule Emisar.Auth do
     UserToken.Query.by_token_digest(Crypto.hash(token))
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
+    |> UserToken.Query.with_valid_auth_method()
     |> UserToken.Query.with_preloaded_user()
     |> Repo.one()
     |> case do
@@ -224,6 +225,7 @@ defmodule Emisar.Auth do
   def list_sessions_for_user(%Subject{actor: %Users.User{} = user}, opts \\ []) do
     UserToken.Query.by_user_id(user.id)
     |> UserToken.Query.by_context("session")
+    |> UserToken.Query.with_valid_auth_method()
     |> Repo.list(UserToken.Query, opts)
   end
 
