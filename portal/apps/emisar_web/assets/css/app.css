@@ -460,6 +460,19 @@
    separators draw in (below). The global reduced-motion block lands all at rest.
    --------------------------------------------------------------------------- */
 
+/* The checkered grid + emerald bloom fade in (below the bar) as the menu opens. */
+.mobile-nav-reveal {
+  animation: mobile-nav-reveal-in 0.6s ease-out both;
+}
+@keyframes mobile-nav-reveal-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* The green scan-line separators draw in from their centre as the menu opens. */
 .mobile-nav-scan {
   animation: mobile-nav-scan-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;

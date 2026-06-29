@@ -3374,10 +3374,14 @@ defmodule EmisarWeb.CoreComponents do
            reading as a brightness flicker. Content is a SEPARATE, un-animated layer
            over it, so the top bar / logo never moves or fades. --%>
       <div class="absolute inset-0 bg-zinc-950" aria-hidden="true">
-        <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div
+          class="contract-grid mobile-nav-reveal pointer-events-none absolute inset-0"
+          aria-hidden="true"
+        >
+        </div>
         <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div
-          class="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl"
+          class="mobile-nav-reveal pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl"
           aria-hidden="true"
         >
         </div>
@@ -3385,9 +3389,12 @@ defmodule EmisarWeb.CoreComponents do
 
       <div class="absolute inset-0 overflow-y-auto">
         <div class="relative flex min-h-full flex-col">
-          <%!-- Pinned top bar — the SAME px-6 py-5 + <.link><.brand size={:md}/>
-               as <header>, so the logo lands on the identical pixel. --%>
-          <div class="flex shrink-0 items-center justify-between px-6 py-5">
+          <%!-- Pinned top bar — matches <header> exactly: same px-6 py-5, same
+               bg-zinc-950/80 backdrop-blur + border-b, and the same
+               <.link><.brand size={:md}/>. So opening the menu doesn't change the
+               bar at all (it covers the grid behind it, just as the header covers
+               the page) — only the gate body below it reveals. --%>
+          <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
             <.link href={~p"/"}>
               <.brand size={:md} />
             </.link>
