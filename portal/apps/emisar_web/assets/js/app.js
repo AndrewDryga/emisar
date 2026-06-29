@@ -188,11 +188,36 @@ const ExpiryCountdown = {
   }
 }
 
+// Persisted collapse state for `<.collapsible_section>` — a `<details>` that
+// works on its own (native toggle, keyboard-accessible); this hook only adds
+// memory. Restores the per-section choice from localStorage on mount AND after
+// every LiveView patch (so a re-render of the body — e.g. a settings value
+// changing — can't snap an expanded section shut), and saves on toggle. Keyed
+// by `data-collapse-key`, so the choice sticks across navigations and reloads.
+const CollapsibleSection = {
+  mounted() {
+    this.restore()
+    this.el.addEventListener("toggle", () =>
+      localStorage.setItem(this.storageKey(), this.el.open ? "1" : "0")
+    )
+  },
+  updated() {
+    this.restore()
+  },
+  storageKey() {
+    return "collapse:" + (this.el.dataset.collapseKey || this.el.id)
+  },
+  restore() {
+    const stored = localStorage.getItem(this.storageKey())
+    if (stored !== null) this.el.open = stored === "1"
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection }
 })
 
 // Show progress bar on live navigation and form submits

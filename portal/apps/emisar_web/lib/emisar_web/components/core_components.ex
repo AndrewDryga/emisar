@@ -2070,6 +2070,57 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A card whose body collapses behind a clickable header. Built on `<details>`,
+  so it's keyboard-accessible and toggles with no JS; the `CollapsibleSection`
+  hook then persists the open/closed choice per `id` in `localStorage`, so it
+  sticks across navigations and reloads. Collapsed by default — pass
+  `open={true}` to default-expand. The `:summary` slot renders on the right of
+  the header and stays visible when collapsed — use it for an at-a-glance
+  current value (a `<.chip>`), so a collapsed section still tells you its state.
+
+      <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime">
+        <:summary><.chip>No cap</.chip></:summary>
+        … controls …
+      </.collapsible_section>
+  """
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :open, :boolean, default: false
+  attr :class, :string, default: nil
+  slot :summary
+  slot :inner_block, required: true
+
+  def collapsible_section(assigns) do
+    ~H"""
+    <.card padding="p-0" class={@class}>
+      <details
+        id={@id}
+        phx-hook="CollapsibleSection"
+        data-collapse-key={@id}
+        open={@open}
+        class="group"
+      >
+        <summary class="flex cursor-pointer list-none items-center gap-3 p-5 [&::-webkit-details-marker]:hidden">
+          <h2 class="flex-1 truncate font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+            {@title}
+          </h2>
+          <div :if={@summary != []} class="flex min-w-0 items-center gap-2">
+            {render_slot(@summary)}
+          </div>
+          <.icon
+            name="hero-chevron-down"
+            class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div class="border-t border-zinc-800/70 p-5 pt-4">
+          {render_slot(@inner_block)}
+        </div>
+      </details>
+    </.card>
+    """
+  end
+
+  @doc """
   The intro line that sits directly under an index page's title — one place so
   every list page opens the same way (a `<.dashboard_shell>` `:title` carries
   the page name; this carries the explanation under it). The default slot is the
