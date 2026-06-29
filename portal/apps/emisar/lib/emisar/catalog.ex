@@ -355,23 +355,6 @@ defmodule Emisar.Catalog do
     |> ActionSetDiff.manifest_from_actions()
   end
 
-  def fetch_pack_version_by_id(id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ),
-         true <- Repo.valid_uuid?(id) do
-      PackVersion.Query.all()
-      |> PackVersion.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(PackVersion.Query)
-    else
-      false -> {:error, :not_found}
-      other -> other
-    end
-  end
-
   # -- Dispatch gate ---------------------------------------------------
 
   @doc """
@@ -524,36 +507,14 @@ defmodule Emisar.Catalog do
     end
   end
 
-  def list_actions_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
-      {risk, opts} = Keyword.pop(opts, :risk)
-
-      # No pre-ordering: the query module's cursor (action_id, last_seen_at, id)
-      # drives the ORDER BY so it matches the keyset WHERE.
-      RunnerAction.Query.all()
-      |> apply_risk_filter(risk)
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(RunnerAction.Query, opts)
-    end
-  end
-
-  defp apply_risk_filter(query, nil), do: query
-  defp apply_risk_filter(query, risk), do: RunnerAction.Query.by_risk(query, risk)
-
   @doc """
   Every advertised catalog action for the subject's account — the
   COMPLETE set, deliberately un-paginated.
 
   This is the MCP path. `tools/list` and dispatch resolution must see
   the whole catalog, not a page: a single runner with a handful of
-  packs advertises hundreds of actions, so the paginated
-  `list_actions_for_account/2` (what the UI uses) would silently hide
-  everything past the first page. Same `view_catalog` gate + account
-  scoping; returns `{:ok, actions}` — there is no cursor.
+  packs advertises hundreds of actions. Same `view_catalog` gate +
+  account scoping; returns `{:ok, actions}` — there is no cursor.
   """
   def list_all_actions_for_account(%Subject{} = subject) do
     with :ok <-

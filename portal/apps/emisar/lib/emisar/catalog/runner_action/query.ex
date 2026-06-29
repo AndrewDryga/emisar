@@ -19,9 +19,6 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_action_ids(queryable, action_ids) when is_list(action_ids),
     do: where(queryable, [runner_actions: a], a.action_id in ^action_ids)
 
-  def by_risk(queryable, risk),
-    do: where(queryable, [runner_actions: a], a.risk == ^risk)
-
   def by_pack(queryable, pack_id, pack_version) do
     where(
       queryable,

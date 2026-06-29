@@ -659,58 +659,6 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "fetch_pack_version_by_id/2" do
-    setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      %{account: account, subject: subject, runner: runner}
-    end
-
-    test "resolves a pinned pack version scoped to the subject's account", %{
-      subject: subject,
-      runner: runner
-    } do
-      _ =
-        Catalog.observe_state(
-          runner,
-          state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:X"}})
-        )
-
-      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-
-      assert {:ok, %{id: id}} = Catalog.fetch_pack_version_by_id(pack_version.id, subject)
-      assert id == pack_version.id
-    end
-
-    test "a non-UUID id is :not_found, never a crash", %{subject: subject} do
-      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id("not-a-uuid", subject)
-    end
-
-    test "another account's pin is :not_found (cross-account)", %{
-      subject: subject,
-      runner: runner
-    } do
-      _ =
-        Catalog.observe_state(
-          runner,
-          state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:X"}})
-        )
-
-      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id(pack_version.id, subject_b)
-    end
-
-    test "a subject without view_catalog is denied" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
-
-      assert {:error, :unauthorized} =
-               Catalog.fetch_pack_version_by_id(Ecto.UUID.generate(), no_view)
-    end
-  end
-
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -854,27 +802,6 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "list_actions_for_account/2 keyset pagination" do
-    test "a multi-page walk returns every row once, in order, when action_id ties" do
-      {account, subject} = account_with_owner()
-
-      # 6 runners each advertise the SAME action_id → 6 rows tied on the primary
-      # sort key, so paging leans on the last_seen_at + id cursor tail. A cursor
-      # that disagreed with the ORDER BY would skip or duplicate tied rows.
-      for _ <- 1..6 do
-        runner = Fixtures.Runners.create_runner(account_id: account.id)
-        {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [action("shared.act")]))
-      end
-
-      {:ok, all, _} = Catalog.list_actions_for_account(subject)
-      assert length(all) == 6
-      reference_order = Enum.map(all, & &1.id)
-
-      walked = walk_pages(&Catalog.list_actions_for_account(subject, &1), 2)
-      assert Enum.map(walked, & &1.id) == reference_order
-    end
-  end
-
   describe "list_all_actions_for_account/1" do
     test "returns the COMPLETE catalog — no pagination cap — scoped to the account" do
       {account, subject} = account_with_owner()
@@ -886,10 +813,6 @@ defmodule Emisar.CatalogTest do
 
       {:ok, all} = Catalog.list_all_actions_for_account(subject)
       assert length(all) == 40
-
-      # The UI reader is deliberately left paginated.
-      {:ok, paged, _meta} = Catalog.list_actions_for_account(subject)
-      assert length(paged) == 35
 
       # Another account sees none of them.
       {_account, other_subject} = account_with_owner()
