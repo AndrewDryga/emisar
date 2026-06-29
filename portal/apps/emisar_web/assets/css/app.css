@@ -452,26 +452,14 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Marketing mobile-nav — the full-screen "gate" menu. The dark surface is opaque
-   from frame 0 (NO fade): a fading surface lets the page — and the header's own
-   logo directly behind the menu's pinned logo — show through and double-draw,
-   reading as a brightness flicker on the logo. The entrance lives on the CONTENT
-   instead — the routes and CTAs (`.rise-N`) rise in stagger and the scan-line
-   separators draw in (below). The global reduced-motion block lands all at rest.
+   Marketing mobile-nav — the full-screen "gate" menu. The dark surface stays opaque
+   from frame 0: a fading surface would let the page — and the header's own logo
+   directly behind the menu's logo — show through and double-draw, reading as a
+   brightness flicker. The checkered grid is shown at rest the instant it opens; over
+   it the gate lattice draws itself in on canvas (mobile_nav_lattice.js), the routes
+   and CTAs (`.rise-N`) rise in stagger, and the scan-line separators draw in. Reduced
+   motion lands all at rest.
    --------------------------------------------------------------------------- */
-
-/* The checkered grid + emerald bloom fade in (below the bar) as the menu opens. */
-.mobile-nav-reveal {
-  animation: mobile-nav-reveal-in 0.6s ease-out both;
-}
-@keyframes mobile-nav-reveal-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 /* The green scan-line separators draw in from their centre as the menu opens. */
 .mobile-nav-scan {

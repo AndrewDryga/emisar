@@ -3368,33 +3368,31 @@ defmodule EmisarWeb.CoreComponents do
       aria-modal="true"
       aria-label="Site menu"
     >
-      <%!-- Background — opaque from frame 0 (NO fade) so the page and the header's
-           own logo behind it are covered instantly; a fading surface lets the
-           header logo show through and double-draw under the pinned menu logo,
-           reading as a brightness flicker. Content is a SEPARATE, un-animated layer
-           over it, so the top bar / logo never moves or fades. --%>
+      <%!-- Background — the dark surface stays opaque from frame 0 (page + header logo
+           hidden instantly, so the menu's logo can't double-draw under it and flicker).
+           The checkered grid + grain + emerald bloom show at rest the instant the menu
+           opens; over them the gate lattice draws itself in on the canvas below
+           (mobile_nav_lattice.js) — diamond nodes lighting up and wiring together. --%>
       <div class="absolute inset-0 bg-zinc-950" aria-hidden="true">
-        <div
-          class="contract-grid mobile-nav-reveal pointer-events-none absolute inset-0"
+        <div class="contract-grid pointer-events-none absolute inset-0"></div>
+        <div class="grain pointer-events-none absolute inset-0"></div>
+        <div class="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl">
+        </div>
+        <canvas
+          id="mobile-nav-lattice"
+          class="pointer-events-none absolute inset-0 h-full w-full"
           aria-hidden="true"
         >
-        </div>
-        <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
-        <div
-          class="mobile-nav-reveal pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl"
-          aria-hidden="true"
-        >
-        </div>
+        </canvas>
       </div>
 
       <div class="absolute inset-0 overflow-y-auto">
         <div class="relative flex min-h-full flex-col">
-          <%!-- Pinned top bar — matches <header> exactly: same px-6 py-5, same
-               bg-zinc-950/80 backdrop-blur + border-b, and the same
-               <.link><.brand size={:md}/>. So opening the menu doesn't change the
-               bar at all (it covers the grid behind it, just as the header covers
-               the page) — only the gate body below it reveals. --%>
-          <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
+          <%!-- Top bar — transparent (no fill) so the gate texture wipes across it as
+               the menu opens, rather than staying a flat black bar. Same px-6 py-5 and
+               <.link><.brand size={:md}/> as <header> so the logo lands on the identical
+               y; the scan-line below is the only separator. --%>
+          <div class="flex shrink-0 items-center justify-between px-6 py-5">
             <.link href={~p"/"}>
               <.brand size={:md} />
             </.link>
