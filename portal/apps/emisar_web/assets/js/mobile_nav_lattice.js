@@ -1,12 +1,12 @@
 // Marketing mobile-nav lattice — a quiet "plotter" open animation.
 //
-// When the drawer opens, a few small heads walk ALONG the grid lines — node to node
-// down each edge — drawing the blueprint line they trace, like a plotter following the
-// grid. Each head prefers an undrawn neighbour; when it runs out, it routes (shortest
+// When the drawer opens, the blueprint grid draws itself in: a few unseen plotter heads
+// walk ALONG the grid lines — node to node down each edge — and each line grows behind
+// the head tracing it. When a head runs out of undrawn neighbours it routes (shortest
 // path along the grid) to the nearest line still missing and keeps going, so together
-// they draw the ENTIRE grid before stopping — nothing is faded in. Diamond nodes light
+// they trace the ENTIRE grid before stopping — nothing is faded in. Diamond nodes light
 // as a head passes a crossing. Settles into the same faint grid + nodes, in the hero's
-// restrained key — neat and subtle, no wild arcs.
+// restrained key — neat and subtle, only the lines moving.
 //
 // One <canvas>; the loop stops once every edge is drawn. Grid lines are phased off the
 // page nav's height so they match the hero's grid below the nav, and run full-bleed
@@ -154,7 +154,7 @@ export function initMobileNavLattice() {
     for (let i = 0; i < HEADS; i++) {
       const at = nodes[(Math.random() * nodes.length) | 0]
       at.litAt = 0
-      const head = {at, next: at, edge: null, t: 0, path: null, done: false, x: at.x, y: at.y}
+      const head = {at, next: at, edge: null, t: 0, path: null, done: false}
       nextEdge(head)
       heads.push(head)
     }
@@ -173,9 +173,6 @@ export function initMobileNavLattice() {
         if (head.at.litAt === null) head.at.litAt = now
         nextEdge(head)
       }
-      const tt = head.t < 1 ? head.t : 1
-      head.x = head.at.x + (head.next.x - head.at.x) * tt
-      head.y = head.at.y + (head.next.y - head.at.y) * tt
     }
   }
 
@@ -231,20 +228,7 @@ export function initMobileNavLattice() {
       ctx.fill()
     }
 
-    // Heads — a small dim emerald dot at each pen tip, while any line is still being drawn.
-    if (plotting) {
-      ctx.shadowColor = `rgba(${BRAND}, 0.5)`
-      ctx.shadowBlur = 4
-      ctx.fillStyle = `rgba(${BRAND}, 0.85)`
-      for (const head of heads) {
-        if (head.done) continue
-        ctx.beginPath()
-        ctx.arc(head.x, head.y, 1.6, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.shadowBlur = 0
-    }
-
+    // Heads are unseen — only the lines they trace move.
     return live
   }
 
