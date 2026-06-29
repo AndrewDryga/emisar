@@ -69,6 +69,40 @@
   background-color: rgb(54 230 165 / 0.3); /* brand-400 / 30% */
 }
 
+/* Subtle scrollbar for internal scroll regions (the sidebar nav, the
+   org-switcher menu, any tall in-app panel). The OS-default bar renders as a
+   bright seam against the dark zinc rail; this replaces it with a thin, inset,
+   pill thumb on a transparent track that is invisible at rest and only gains
+   contrast on hover — mirroring the macOS overlay scrollbar, so Windows/Linux
+   and "always-show scrollbars" stop showing a permanent light bar. Content
+   still scrolls normally; only the chrome changes. WebKit (Chrome/Safari/Edge)
+   uses the pseudo-elements; Firefox gets a thin faint thumb via the standard
+   properties (it can't hover-reveal per element). */
+.scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(63 63 70 / 0.5) transparent; /* Firefox: zinc-700/50 thumb, transparent track */
+}
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: transparent; /* invisible at rest */
+  border: 2px solid transparent; /* inset the thumb off both edges → a floating pill */
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+.scrollbar-subtle:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(63 63 70 / 0.7); /* zinc-700/70 on region hover */
+}
+.scrollbar-subtle::-webkit-scrollbar-thumb:hover,
+.scrollbar-subtle::-webkit-scrollbar-thumb:active {
+  background-color: rgb(82 82 91 / 0.95); /* zinc-600 while grabbing */
+}
+
 /* Inline code in marketing prose. A monospace face reads optically larger than
    the body sans, so step it down to match — the size should read the same, not
    bigger — then tint it the brand mint and wrap it in a hairline chip so a token
@@ -452,26 +486,21 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Marketing mobile-nav — the full-screen "gate" menu. The dark surface stays opaque
-   from frame 0: a fading surface would let the page — and the header's own logo
-   directly behind the menu's logo — show through and double-draw, reading as a
-   brightness flicker. The checkered grid is shown at rest the instant it opens; over
-   it the gate lattice draws itself in on canvas (mobile_nav_lattice.js), the routes
-   and CTAs (`.rise-N`) rise in stagger, and the scan-line separators draw in. Reduced
-   motion lands all at rest.
+   Marketing mobile-nav — the full-screen "gate" menu. The drawer's #07080a fill covers
+   the page (and the header's own logo behind it) from frame 0, so the menu's logo can't
+   double-draw and flicker. The checkered grid below the bar fades in with the routes +
+   CTAs (`.rise-N`) as the menu opens; reduced motion lands all at rest.
    --------------------------------------------------------------------------- */
 
-/* The green scan-line separators draw in from their centre as the menu opens. */
-.mobile-nav-scan {
-  animation: mobile-nav-scan-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+/* The checkered grid fades in with the rising links when the drawer opens. */
+.mobile-nav-grid {
+  animation: mobile-nav-grid-in 0.7s ease both;
 }
-@keyframes mobile-nav-scan-in {
+@keyframes mobile-nav-grid-in {
   from {
-    transform: scaleX(0);
     opacity: 0;
   }
   to {
-    transform: scaleX(1);
     opacity: 1;
   }
 }

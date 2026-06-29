@@ -1449,7 +1449,7 @@ defmodule EmisarWeb.CoreComponents do
         </p>
       </div>
 
-      <ul class="max-h-[60vh] overflow-y-auto py-1">
+      <ul class="scrollbar-subtle max-h-[60vh] overflow-y-auto py-1">
         <li>
           <div class="flex items-center gap-2 px-3 py-2 text-sm">
             <.icon name="hero-check" class="h-4 w-4 shrink-0 text-brand-400" />
@@ -1498,7 +1498,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_nav(assigns) do
     ~H"""
-    <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
+    <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
       <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
         Dashboard
       </.nav_link>
@@ -3363,30 +3363,17 @@ defmodule EmisarWeb.CoreComponents do
          node — and reveal in stagger. Toggled by mobile_nav.js (focus-trapped). --%>
     <div
       id="marketing-mobile-nav"
-      class="fixed inset-0 z-50 hidden md:hidden"
+      class="fixed inset-0 z-50 hidden bg-[#07080a] md:hidden"
       role="dialog"
       aria-modal="true"
       aria-label="Site menu"
     >
-      <%!-- Opaque base — #07080a like the hero, covering the page and the header's own
-           logo from frame 0 so the menu's logo can't double-draw under it and flicker. --%>
-      <div class="absolute inset-0 bg-[#07080a]" aria-hidden="true"></div>
-
-      <%!-- Gate texture, full-bleed under the bar — the canvas draws BOTH the blueprint
-           grid and the diamond nodes at its crossings, fading them in together in a radial
-           cascade from the gate mark (mobile_nav_lattice.js). It phases off the page nav's
-           height so the grid lines match the hero's (which sits below an equal-height nav),
-           and runs seamlessly up under the transparent bar. .grain stays as static noise. --%>
-      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div class="grain absolute inset-0"></div>
-        <canvas id="mobile-nav-lattice" class="absolute inset-0 h-full w-full"></canvas>
-      </div>
-
-      <div class="relative flex h-full flex-col">
-        <%!-- Top bar — transparent and borderless so the gate texture runs seamlessly under
-             it, with no seam where it meets the body. Same px-6 py-5 + <.brand size={:md}/>
-             as the nav, so the logo lands on the identical y. --%>
-        <div class="flex shrink-0 items-center justify-between px-6 py-5">
+      <div class="flex h-full flex-col">
+        <%!-- Top bar — mirrors the page nav (same border-b + bg-zinc-950/80 backdrop-blur,
+             same px-6 py-5 + <.brand size={:md}/>), so the menu reads as the same chrome and
+             the checkered body below it lines up with the hero's grid (both sit below an
+             equal-height nav). --%>
+        <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
           <.link href={~p"/"}>
             <.brand size={:md} />
           </.link>
@@ -3400,7 +3387,15 @@ defmodule EmisarWeb.CoreComponents do
           </button>
         </div>
 
+        <%!-- Body — the hero surface below the bar: the SAME .contract-grid + .grain, which
+             fade in with the routes + CTAs as the menu opens. --%>
         <div class="relative flex-1">
+          <div
+            class="contract-grid mobile-nav-grid pointer-events-none absolute inset-0"
+            aria-hidden="true"
+          >
+          </div>
+          <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
           <div class="absolute inset-0 overflow-y-auto">
             <div class="flex min-h-full flex-col">
               <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
@@ -3444,7 +3439,7 @@ defmodule EmisarWeb.CoreComponents do
               </nav>
 
               <div class="rise-5 relative px-6 pb-9">
-                <.scan_line class="mobile-nav-scan mb-7 opacity-50" />
+                <.scan_line class="mb-7 opacity-50" />
                 <div class="space-y-3">
                   <%= if @current_user do %>
                     <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
