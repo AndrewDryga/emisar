@@ -26,7 +26,7 @@ Resolve `$1` into a concrete diff + file list, then read it yourself first. Inpu
 
 **Mind a shared working tree.** With a concurrent agent (Codex) editing, "local changes" can include work that isn't yours — `git diff HEAD` shows everyone's. Narrow with a pathspec, or review a specific commit/range/PR instead, when you want only your slice.
 
-For **intent** on a non-PR scope, read the commit message(s) in range, or — for uncommitted work — the `.agent/TASKS.md` / `LOG.md` context; if what the change is *for* is unclear, say so (a reviewer who doesn't know the goal judges the wrong things).
+For **intent** on a non-PR scope, read the commit message(s) in range, or — for uncommitted work — the `.agent/tasks/` / `LOG.md` context; if what the change is *for* is unclear, say so (a reviewer who doesn't know the goal judges the wrong things).
 
 **Announce the resolved scope before convening the board** — the input mode + the exact file list. Note which areas it touches — portal/ (Elixir), runner/ or mcp/ (Go), packs/ (YAML), marketing, billing/pricing, docs — which drives the hats.
 
@@ -85,7 +85,7 @@ staff: … · domain: … · security: … · ux: … · pm: … · sales: …
 
 Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the few suggestions worth the reader's time. Never manufacture findings to look thorough, never bury a real blocker in nits.
 
-**Then offer to queue it:** the BLOCKER/MAJOR items become `- [ ]` tasks in the touched project's `.agent/TASKS.md`, so `/sweep` can drain the fixes to a ship-ready bar. Append on the user's go — never silently.
+**Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `/sweep` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
 
 ## Relationship to the focused reviews
 `/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/iron-review` (laws), `/code-review` (bugs), `/security-engineer`, `/ux-designer`, etc. `/ship-review` is the lighter, proportional *in-loop* self-review `/sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.
