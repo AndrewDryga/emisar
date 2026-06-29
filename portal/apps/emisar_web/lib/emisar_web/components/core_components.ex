@@ -3368,7 +3368,10 @@ defmodule EmisarWeb.CoreComponents do
       aria-modal="true"
       aria-label="Site menu"
     >
-      <div class="mobile-nav-surface absolute inset-0 overflow-y-auto bg-zinc-950">
+      <%!-- Background only — fades in. The content is a SEPARATE layer over it,
+           so the top bar never participates in the entrance and the logo stays
+           pinned exactly where the header's logo is: zero jitter on open. --%>
+      <div class="mobile-nav-surface absolute inset-0 bg-zinc-950" aria-hidden="true">
         <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div
@@ -3376,21 +3379,29 @@ defmodule EmisarWeb.CoreComponents do
           aria-hidden="true"
         >
         </div>
+      </div>
 
+      <div class="absolute inset-0 overflow-y-auto">
         <div class="relative flex min-h-full flex-col">
-          <div class="flex items-center justify-between px-6 py-5">
-            <.brand size={:md} />
+          <%!-- Pinned top bar — the SAME px-6 py-5 + <.link><.brand size={:md}/>
+               as <header>, so the logo lands on the identical pixel. --%>
+          <div class="flex shrink-0 items-center justify-between px-6 py-5">
+            <.link href={~p"/"}>
+              <.brand size={:md} />
+            </.link>
             <button
               type="button"
               aria-label="Close menu"
               data-mobile-nav-close
               class="-mr-1.5 rounded-md p-2.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
             >
-              <.icon name="hero-x-mark" class="h-6 w-6" />
+              <%!-- h-5 to match the header's hamburger exactly, so the row is the
+                   same height and the pinned logo lands on the identical y. --%>
+              <.icon name="hero-x-mark" class="h-5 w-5" />
             </button>
           </div>
 
-          <.scan_line class="opacity-80" />
+          <.scan_line class="mobile-nav-scan opacity-80" />
 
           <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
             <%!-- the gate track the route-nodes sit on --%>
@@ -3429,7 +3440,7 @@ defmodule EmisarWeb.CoreComponents do
           </nav>
 
           <div class="rise-5 relative px-6 pb-9">
-            <.scan_line class="mb-7 opacity-50" />
+            <.scan_line class="mobile-nav-scan mb-7 opacity-50" />
             <div class="space-y-3">
               <%= if @current_user do %>
                 <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
