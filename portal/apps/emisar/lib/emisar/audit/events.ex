@@ -12,11 +12,10 @@ defmodule Emisar.Audit.Events do
   actor/subject shape falls back to raw `Audit.log/3`.
   """
   alias Emisar.{Accounts, ApiKeys, Approvals, Catalog, OAuth, Policies}
-  alias Emisar.{Runbooks, Runners, Runs, SSO, Users}
-
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
+  alias Emisar.{Runbooks, Runners, Runs, SSO, Users}
 
   # -- Account ---------------------------------------------------------
 
@@ -66,7 +65,7 @@ defmodule Emisar.Audit.Events do
         [
           subject_kind: "account",
           subject_id: account.id,
-          payload: %{require_mfa: account.require_mfa}
+          payload: %{require_mfa: account.settings.require_mfa}
         ]
     )
   end
@@ -79,7 +78,7 @@ defmodule Emisar.Audit.Events do
         [
           subject_kind: "account",
           subject_id: account.id,
-          payload: %{require_sso: account.require_sso}
+          payload: %{require_sso: account.settings.require_sso}
         ]
     )
   end
@@ -92,7 +91,7 @@ defmodule Emisar.Audit.Events do
         [
           subject_kind: "account",
           subject_id: account.id,
-          payload: %{max_grant_lifetime_seconds: account.max_grant_lifetime_seconds}
+          payload: %{max_grant_lifetime_seconds: account.settings.max_grant_lifetime_seconds}
         ]
     )
   end
@@ -316,7 +315,7 @@ defmodule Emisar.Audit.Events do
         [
           subject_kind: "auth_key",
           subject_id: key.id,
-          payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
+          payload: %{prefix: key.key_prefix, reusable: key.reusable}
         ]
     )
   end
@@ -834,17 +833,17 @@ defmodule Emisar.Audit.Events do
   def membership_deprovisioned_via_scim(
         %Accounts.Membership{} = membership,
         %SSO.IdentityProvider{} = provider
-      ),
-      do:
-        directory_sync_membership_event(membership, provider, "membership.deprovisioned_via_scim")
+      ) do
+    directory_sync_membership_event(membership, provider, "membership.deprovisioned_via_scim")
+  end
 
   @doc "A suspended membership reinstated by an inbound SCIM `active:true`."
   def membership_reprovisioned_via_scim(
         %Accounts.Membership{} = membership,
         %SSO.IdentityProvider{} = provider
-      ),
-      do:
-        directory_sync_membership_event(membership, provider, "membership.reprovisioned_via_scim")
+      ) do
+    directory_sync_membership_event(membership, provider, "membership.reprovisioned_via_scim")
+  end
 
   @doc "A membership role recomputed from the member's mapped IdP groups (Slice 2b). `membership` is the pre-update row, for the from→to payload."
   def membership_role_synced_via_scim(

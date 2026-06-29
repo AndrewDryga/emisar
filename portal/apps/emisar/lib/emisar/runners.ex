@@ -1194,7 +1194,7 @@ defmodule Emisar.Runners do
           account_id: key.account_id,
           name: name,
           external_id: external_id,
-          group: attrs[:group] || key.group || "default",
+          group: attrs[:group] || "default",
           hostname: attrs[:hostname],
           labels: attrs[:labels] || %{},
           runner_version: attrs[:version] || attrs[:runner_version],

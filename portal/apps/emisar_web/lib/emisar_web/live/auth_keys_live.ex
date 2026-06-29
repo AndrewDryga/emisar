@@ -1,6 +1,5 @@
 defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
-
   alias Emisar.Runners
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
@@ -25,7 +24,7 @@ defmodule EmisarWeb.AuthKeysLive do
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))
        |> ConfirmDialog.init()
-       |> assign_form(Runners.change_auth_key(%{"group" => "default"}))}
+       |> assign_form(Runners.change_auth_key())}
     else
       {:ok,
        socket
@@ -105,7 +104,6 @@ defmodule EmisarWeb.AuthKeysLive do
       attrs =
         %{}
         |> put_if_present(:description, params["description"])
-        |> put_if_present(:group, params["group"])
         |> Map.put(:reusable, truthy?(params["reusable"]))
         |> put_expires(params["expires_at"])
         |> put_max_uses(params["max_uses"])
@@ -117,7 +115,7 @@ defmodule EmisarWeb.AuthKeysLive do
            |> put_flash(:info, "Runner key created. Copy it now — you won't see it again.")
            |> assign(:new_secret, raw)
            |> assign(:new_key, key)
-           |> assign_form(Runners.change_auth_key(%{"group" => "default"}))
+           |> assign_form(Runners.change_auth_key())
            |> reload()}
 
         # Field errors (e.g. a DB constraint) render inline on the form.
@@ -328,18 +326,6 @@ defmodule EmisarWeb.AuthKeysLive do
               label="Description"
               placeholder="prod web tier"
             />
-            <div>
-              <.input
-                field={@form[:group]}
-                type="text"
-                label="Group"
-                placeholder="default"
-              />
-              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                Inherited as each registering runner's default group.
-                Policies + API keys can target the group instead of one runner.
-              </p>
-            </div>
             <.input
               field={@form[:expires_at]}
               type="datetime-local"
@@ -401,7 +387,6 @@ defmodule EmisarWeb.AuthKeysLive do
                 </span>
               </:title>
               <:chips>
-                <.chip>group: {key.group || "default"}</.chip>
                 <.chip :if={key.reusable}>Reusable</.chip>
                 <%!-- A reusable key with no expiry is a standing fleet-enrollment secret —
                      flag it amber so a long-lived multi-host credential isn't read as routine. --%>
@@ -483,17 +468,17 @@ defmodule EmisarWeb.AuthKeysLive do
     """
   end
 
-  defp show_create,
-    do:
-      JS.show(
-        to: "#create-panel",
-        transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
-      )
+  defp show_create do
+    JS.show(
+      to: "#create-panel",
+      transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
+    )
+  end
 
-  defp hide_create,
-    do:
-      JS.hide(
-        to: "#create-panel",
-        transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
-      )
+  defp hide_create do
+    JS.hide(
+      to: "#create-panel",
+      transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
+    )
+  end
 end

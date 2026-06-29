@@ -13,7 +13,6 @@ defmodule Emisar.Runners.AuthKey do
     field :key_prefix, :string
     field :key_hash, :binary, redact: true
     field :description, :string
-    field :group, :string
     field :reusable, :boolean, default: false
     field :max_uses, :integer
     field :uses_count, :integer, default: 0

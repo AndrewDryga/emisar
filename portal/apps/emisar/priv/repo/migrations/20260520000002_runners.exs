@@ -69,7 +69,6 @@ defmodule Emisar.Repo.Migrations.Runners do
       add :key_hash, :binary, null: false
 
       add :description, :string
-      add :group, :string
       add :reusable, :boolean, null: false, default: false
       add :max_uses, :integer
       add :uses_count, :integer, null: false, default: 0

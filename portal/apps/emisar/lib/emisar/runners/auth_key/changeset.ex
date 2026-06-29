@@ -20,13 +20,13 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   """
   def form(attrs \\ %{}) do
     %AuthKey{}
-    |> cast(attrs, [:description, :group, :reusable, :max_uses])
+    |> cast(attrs, [:description, :reusable, :max_uses])
     |> validate_fields()
   end
 
   def create(account_id, user_id, prefix, hash, attrs) do
     %AuthKey{}
-    |> cast(attrs, [:description, :group, :reusable, :max_uses, :expires_at])
+    |> cast(attrs, [:description, :reusable, :max_uses, :expires_at])
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:key_prefix, prefix)
@@ -63,7 +63,7 @@ defmodule Emisar.Runners.AuthKey.Changeset do
 
   def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
     %AuthKey{}
-    |> cast(attrs, [:description, :group])
+    |> cast(attrs, [:description])
     |> put_default_value(:description, "Dashboard install command")
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)

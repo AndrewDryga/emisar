@@ -4,12 +4,11 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   filter defaults to "active"); the operator widens it via the dropdown.
   """
   use EmisarWeb.ConnCase, async: true
-
   alias Emisar.Runners
 
   test "hides revoked keys by default; the All option shows them", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
     {:ok, _, _live} =
       Runners.create_auth_key(%{reusable: true, description: "live-key-aaa"}, subject)
@@ -54,7 +53,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # recursing forever or raising. The page renders.
   test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
     {:ok, _raw, _key} = Runners.create_auth_key(%{description: "still-here"}, subject)
 
     {:ok, _lv, html} =
@@ -68,7 +67,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # single-use key self-caps at 1 via the schema's not-reusable rule).
   test "max_uses is kept for a reusable+positive key, dropped otherwise", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
@@ -126,7 +125,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     html =
       lv
       |> form("#auth_key_form", %{
-        "auth_key" => %{"description" => "bootstrap for prod image", "group" => "prod"}
+        "auth_key" => %{"description" => "bootstrap for prod image"}
       })
       |> render_submit()
 
@@ -184,7 +183,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   test "revoke's typed-confirm: Confirm stays disabled (and won't fire) until the prefix matches",
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "guarded-key"}, subject)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
@@ -204,10 +203,10 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   test "a viewer cannot mint an auth key", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-    viewer = Emisar.Fixtures.user_fixture()
+    viewer = Fixtures.Users.create_user()
 
     _ =
-      Emisar.Fixtures.membership_fixture(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: viewer.id,
         role: "viewer"
@@ -227,7 +226,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   test "a list_changed broadcast refreshes the key list", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     refute html =~ "minted-elsewhere"
@@ -240,7 +239,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   test "last-used renders through <.local_time> — 'never' until used, then a time", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     # A fresh key has never been used → <.local_time> renders its "never"
     # placeholder as a <span> (so "last used" is followed by the placeholder
@@ -264,7 +263,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # 402. The free plan caps at 3 runners; fill all three.
   test "at the runner limit, the cap-warning banner renders", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+    for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
@@ -276,7 +275,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # the softer amber "one slot left" variant, not the at-limit rose one.
   test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    for _ <- 1..2, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+    for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
@@ -289,7 +288,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # at 10:30" persists as 10:30:00 UTC.
   test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
@@ -312,7 +311,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # value appears (the persisted row stores only the hash + prefix).
   test "a created key is bound to the current account", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
@@ -338,10 +337,10 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   test "an operator is redirected at mount — the page is manage-only", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-    operator = Emisar.Fixtures.user_fixture()
+    operator = Fixtures.Users.create_user()
 
     _ =
-      Emisar.Fixtures.membership_fixture(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: operator.id,
         role: "operator"
@@ -363,12 +362,12 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # `socket.assigns.auth_keys`), so only account-A keys are revocable.
   test "cross-account — only A's keys are listed and revocable", %{conn: conn} do
     {conn, user_a, account_a} = register_and_log_in(conn)
-    subject_a = Emisar.Fixtures.subject_for(user_a, account_a)
+    subject_a = Fixtures.Subjects.subject_for(user_a, account_a)
 
     {:ok, _raw, _key_a} =
       Runners.create_auth_key(%{description: "alpha-key"}, subject_a)
 
-    {_user_b, account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+    {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
     refute account_b.id == account_a.id
 
     {:ok, _raw, key_b} =
@@ -395,7 +394,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # absent-id case below (the genuine `do_revoke` guard).
   test "a revoked key shows the Revoked chip and no Revoke control", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "spent-key"}, subject)
     {:ok, _} = Runners.revoke_auth_key(key, subject)
@@ -437,7 +436,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # `is_nil(key.revoked_at)` (skip when already revoked).
   test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    subject = Emisar.Fixtures.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "spent-key"}, subject)
     {:ok, _} = Runners.revoke_auth_key(key, subject)
