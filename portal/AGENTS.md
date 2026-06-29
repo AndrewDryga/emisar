@@ -103,9 +103,9 @@ Numbered so Credo, `/iron-review`, and code review can cite them. **Architecture
 | **IL-8** | **Changeset modules are pure** — `use Emisar, :changeset`, no `Repo.*`, one function per state transition (`create`, `update`, `delete`, `publish`…). | Pure changesets are unit-testable and composable into `Multi`. One overloaded `changeset/2` hides transitions. | `Repo.` in a `*/changeset.ex`; a single `changeset/2` doing everything. → [§4](#4-changeset-modules) |
 | **IL-9** | **Authorizers define permissions via `build(Schema, :verb)` exposed through accessor fns.** | One union of these role lists builds every `%Subject{}.permissions`. Reaching past the accessor desyncs them. | Raw permission tuples at call sites. → [§5](#5-authorizer-modules) |
 | **IL-10** | **`:preload` routes through the Query module's `preloads/0`; never `Repo.preload/2` in a context's Subject-gated reads.** | Keeps preload shapes defined in one place per query. (Exception: an *internal* — no-Subject, already-authorized — path that holds a struct and needs its parent assoc uses `Repo.preload(struct, :assoc)` rather than a cross-context `fetch_*_by_id!`: post-commit email helpers, the runner-register billing check.) | `Repo.preload(` inside a Subject-gated read in `lib/emisar/<context>.ex`. → [§1.4](#14-internal-sweepers--worker-only-helpers) |
-| **IL-11** | **Greenfield. No legacy.** Edit the original migration; delete deprecated code and update callers in the same change; no shims/flags/"this is the new version" comments. | Pre-release MVP. Every compatibility layer is permanent debt for behavior nobody depends on yet. | A corrective migration patching a same-tree migration; a `_v2`/`_old`; a flag with one value. → [§8](#8-greenfield-no-legacy) |
+| **IL-11** | **Greenfield. No legacy — for CODE.** Delete deprecated code and update every caller in the same change; no shims/flags/"this is the new version" comments. **Migrations are the exception: a committed migration is FROZEN — never edit or delete it, add a NEW migration.** | For code, every compatibility layer is debt for behavior nobody depends on yet. But prod runs each migration exactly once, so editing a committed one never re-applies — prod's schema silently drifts from the code and we take prod down. | A `_v2`/`_old` or a one-value flag in code; **a staged change that modifies/deletes a migration already in git** (add a new one — the commit-gate blocks this). → [§8](#8-greenfield-no-legacy) |
 
-> **IL-11 caveat (from the user's memory):** a *standalone corrective migration* is correct — not a violation — when production has already run the original migration, or when the column was added by a later migration. Edit-the-original applies only while the migration hasn't shipped.
+> **The frozen-migration line — "committed = frozen", and you don't have to guess whether prod ran it.** A migration file you created *in the current uncommitted change* you may edit freely; the moment it lands in any commit, only a **new** migration may change that schema. The commit-gate hook (`.claude/hooks/commit-gate.sh`) refuses a commit that modifies or deletes a migration already in git. How to write the corrective migration — `alter table`, stable index names, `conflict_target` predicates, enum-value/`NOT NULL` data migrations, the dev-DB rollback gotcha — is in `.agent/rules/migrations-frozen.md`.
 
 ### Phoenix-safety laws
 
@@ -403,13 +403,21 @@ end
 
 ### 8. Greenfield, no legacy (IL-11)
 
-This codebase is MVP, pre-release. **There is no legacy to preserve.** Do not:
-- Layer migrations on top of bad earlier ones — edit the original migration. *(Exception: a standalone corrective migration when prod already ran the original, or the column came from a later migration.)*
+This codebase is MVP, pre-release — for **code** there is no legacy to preserve. Do not:
 - Keep deprecated functions "for compatibility" — delete them and update the callers.
 - Add feature flags / shims for behavior nobody depends on yet.
 - Write doc comments explaining "this is the new version" — just write the new version.
 
-When refactoring: rip out the old shape, update every caller in the same change, run tests. No partial migrations.
+When refactoring: rip out the old shape, update every caller in the same change, run tests.
+
+**Migrations are NOT greenfield — they are append-only history.** The codebase is deployed (Fly app `emisar`, `release_command = "/app/bin/migrate"` runs each migration **exactly once**). A migration that has run is permanent: editing the file never re-applies, so prod's schema silently diverges from what the code expects. That divergence is how we have taken prod down — an `undefined_column` 500 on a read path, and an `Ecto.Enum` load crash from a value removed without migrating its rows (see the memory: enum-value removal, Fly release-command recovery).
+
+The rule needs no judgment call about whether prod ran it:
+- **A migration is FROZEN the moment it is committed.** Edit a migration file freely *only while it is new and uncommitted in the change you're making now*. Once it is in any commit, treat it as shipped — **never edit or delete it; write a NEW migration** that moves the schema forward. The commit-gate hook (`.claude/hooks/commit-gate.sh`) refuses a commit that modifies or deletes an already-committed migration; if it fires, `git checkout -- <file>` to restore the original and add a new migration.
+- To change a committed schema, add a forward migration: `alter table` to add/drop a column, or `drop_if_exists index(...)` + `create unique_index(..., where: ...)` to swap an index in place (the column-derived default index name is stable, so changeset `unique_constraint/3` calls keep matching). For an upsert against a partial index, `conflict_target` must carry the predicate via `{:unsafe_fragment, "(cols) WHERE deleted_at IS NULL"}`.
+- Removing/renaming an `Ecto.Enum` value, or making a column `NOT NULL`, needs a **data migration in the SAME change** — backfill or clean the existing rows first, or one orphaned row crashes the read path on load.
+
+Worked example + the dev-DB rollback gotcha: `.agent/rules/migrations-frozen.md`.
 
 ---
 

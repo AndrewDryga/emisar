@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) commit gate — refuse to commit unformatted Go.
+# PreToolUse(Bash) commit gate. Fires only on `git commit`; inspects the STAGED
+# tree; blocks (exit 2, reason on stderr) on a violation. Fails OPEN on any infra
+# problem so it can never wedge commits. Two scoped, fast checks:
 #
-# Fires only on `git commit`. Runs `gofmt -l -s` on the STAGED .go files (scoped,
-# so an unrelated unformatted file elsewhere in the tree never blocks your commit).
-# Block = exit 2 with the offending files on stderr.
+#   1. Frozen migrations — refuse a commit that MODIFIES or DELETES a migration
+#      already in git. The control plane is deployed (Fly `release_command` runs
+#      each migration exactly once); a committed migration is permanent history,
+#      so editing the file never re-applies and prod's schema silently drifts from
+#      the code → outages. Add a NEW forward migration instead. (IL-11 / portal
+#      AGENTS.md §8 / .agent/rules/migrations-frozen.md.)
+#   2. Go format — refuse to commit gofmt-dirty staged .go files.
 #
-# Go only, format only — on purpose. gofmt is fast and part of the toolchain.
-# Portal Elixir format/compile/credo/test is the agent's per-task gate (the
-# Definition of Done) plus CI; it is deliberately NOT re-run here — a whole-project
-# Elixir check on every commit is slow and would false-block a commit on unrelated
-# in-flight breakage. Fails OPEN on any infra problem so it can never wedge commits.
+# Portal Elixir format/compile/credo/test is the agent's per-task gate (Definition
+# of Done) plus CI; a whole-project Elixir check on every commit is slow and would
+# false-block a commit on unrelated in-flight breakage, so it is deliberately NOT
+# re-run here. These two checks are git/gofmt only — fast and scoped to staged files.
 
 command -v jq >/dev/null 2>&1 || exit 0
-command -v gofmt >/dev/null 2>&1 || exit 0
 
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
@@ -21,6 +25,26 @@ printf '%s' "$cmd" | grep -qE '\bgit\b.+\bcommit\b' || exit 0
 root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [[ -z "$root" ]] && exit 0
 cd "$root" || exit 0
+
+# 1. Frozen migrations — a committed migration must never be edited or deleted.
+#    M=modified, D=deleted, R=renamed against HEAD; a brand-new migration is A and
+#    passes. Pathspec wildcards match any app's migrations dir.
+frozen=$(git diff --cached --name-status --diff-filter=MDR -- '*priv/repo/migrations/*.exs' 2>/dev/null | cut -f2-)
+if [[ -n "$frozen" ]]; then
+  {
+    echo "commit blocked — editing/deleting a migration that is already committed:"
+    printf '%s\n' "$frozen" | sed 's/^/  /'
+    echo
+    echo "A committed migration has run in prod and never re-applies, so editing it"
+    echo "diverges prod's schema from the code and takes prod down. Restore it"
+    echo "(git checkout -- <file>) and add a NEW forward migration instead."
+    echo "See portal AGENTS.md §8 + .agent/rules/migrations-frozen.md."
+  } >&2
+  exit 2
+fi
+
+# 2. Go format — staged .go files must be gofmt-clean.
+command -v gofmt >/dev/null 2>&1 || exit 0
 
 go_files=()
 while IFS= read -r f; do
