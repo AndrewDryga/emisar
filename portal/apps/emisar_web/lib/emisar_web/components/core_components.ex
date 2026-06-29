@@ -3348,65 +3348,68 @@ defmodule EmisarWeb.CoreComponents do
           aria-controls="marketing-mobile-nav"
           aria-expanded="false"
           data-mobile-nav-open
-          class="-mr-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
+          class="-mr-1.5 rounded-md p-2.5 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
         >
           <.icon name="hero-bars-3" class="h-5 w-5" />
         </button>
       </div>
-
-      <%!-- Mobile drawer — full screen overlay with primary nav
-           + auth CTAs. Closes on link tap or Escape. --%>
-      <div
-        id="marketing-mobile-nav"
-        class="fixed inset-0 z-50 hidden md:hidden"
-        role="dialog"
-        aria-modal="true"
-      >
-        <div class="absolute inset-0 bg-black/60" data-mobile-nav-close></div>
-        <aside class="relative ml-auto flex h-full w-80 max-w-[85vw] flex-col bg-zinc-950 shadow-2xl">
-          <div class="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
-            <.brand size={:sm} />
-            <button
-              type="button"
-              aria-label="Close menu"
-              data-mobile-nav-close
-              class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-            >
-              <.icon name="hero-x-mark" class="h-5 w-5" />
-            </button>
-          </div>
-
-          <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
-            <.marketing_mobile_link href={~p"/use-cases"} active={@current == :use_cases}>
-              Use cases
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/security"} active={@current == :security}>
-              Security
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
-              Pricing
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
-              Packs
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
-              Docs
-            </.marketing_mobile_link>
-          </nav>
-
-          <div class="space-y-3 border-t border-zinc-900 p-5">
-            <%= if @current_user do %>
-              <.marketing_button block href={~p"/app"}>Dashboard</.marketing_button>
-            <% else %>
-              <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
-              <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
-                Sign in
-              </.marketing_button>
-            <% end %>
-          </div>
-        </aside>
-      </div>
     </header>
+
+    <%!-- Mobile drawer — a SIBLING of <header>, never a child: the header's
+         `backdrop-blur` makes it the containing block for `position: fixed`
+         descendants, which would trap this full-screen overlay inside the
+         ~64px nav bar (transparent backdrop, a second logo, clipped items).
+         Out here `fixed inset-0` resolves against the viewport. --%>
+    <div
+      id="marketing-mobile-nav"
+      class="fixed inset-0 z-50 hidden md:hidden"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="mobile-nav-backdrop absolute inset-0 bg-black/60" data-mobile-nav-close></div>
+      <aside class="mobile-nav-drawer relative ml-auto flex h-full w-80 max-w-[85vw] flex-col border-l border-white/10 bg-zinc-950 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
+          <.brand size={:sm} />
+          <button
+            type="button"
+            aria-label="Close menu"
+            data-mobile-nav-close
+            class="-mr-1 rounded-md p-2.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+          >
+            <.icon name="hero-x-mark" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
+          <.marketing_mobile_link href={~p"/use-cases"} active={@current == :use_cases}>
+            Use cases
+          </.marketing_mobile_link>
+          <.marketing_mobile_link href={~p"/security"} active={@current == :security}>
+            Security
+          </.marketing_mobile_link>
+          <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
+            Pricing
+          </.marketing_mobile_link>
+          <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
+            Packs
+          </.marketing_mobile_link>
+          <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
+            Docs
+          </.marketing_mobile_link>
+        </nav>
+
+        <div class="space-y-3 border-t border-zinc-900 p-5">
+          <%= if @current_user do %>
+            <.marketing_button block href={~p"/app"}>Dashboard</.marketing_button>
+          <% else %>
+            <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
+            <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
+              Sign in
+            </.marketing_button>
+          <% end %>
+        </div>
+      </aside>
+    </div>
     """
   end
 
