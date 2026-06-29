@@ -1366,6 +1366,31 @@ defmodule EmisarWeb.CoreComponents do
           </button>
         </div>
 
+        <%!-- Onboarding nudge: an operator whose account has no MCP key yet —
+             emisar does nothing until an LLM is connected. Brand-toned (an
+             invitation, not the amber warning above), and self-resolves once the
+             first key exists (`@no_agents?` flips false). Gated on `view_api_keys`
+             upstream, so only operators who can act see it. Suppressed on the
+             agents page (where they'd act) and the dashboard (whose onboarding
+             checklist already carries the same nudge) to avoid double-nudging. --%>
+        <div
+          :if={@no_agents? && @section not in [:agents, :dashboard]}
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-500/30 bg-brand-500/10 px-4 py-2.5 sm:px-6"
+        >
+          <p class="flex items-center gap-2 text-sm text-brand-200">
+            <.icon name="hero-cpu-chip" class="h-4 w-4 shrink-0" />
+            <span>
+              No LLM connected yet — give an MCP client like Claude or Cursor a scoped key to start dispatching actions.
+            </span>
+          </p>
+          <.link
+            navigate={~p"/app/#{@current_account}/settings/agents"}
+            class="shrink-0 rounded-md bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500/40 hover:bg-brand-500/30"
+          >
+            Connect an LLM
+          </.link>
+        </div>
+
         <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 backdrop-blur sm:px-6">
           <%!-- Mobile hamburger (hidden on lg) --%>
           <button

@@ -216,4 +216,33 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "linux.alpha_run"
     refute html =~ "linux.bravo_run"
   end
+
+  describe "no-LLM onboarding banner" do
+    test "shows on a content page when the account has no agent key", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+      assert html =~ "No LLM connected yet"
+      assert html =~ "Connect an LLM"
+      assert html =~ ~p"/app/#{account}/settings/agents"
+    end
+
+    test "disappears once an MCP key exists", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+      refute html =~ "No LLM connected yet"
+    end
+
+    test "is suppressed on the agents page itself (where the operator would act)", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      refute html =~ "No LLM connected yet"
+    end
+  end
 end
