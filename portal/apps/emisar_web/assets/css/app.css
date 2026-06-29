@@ -452,32 +452,23 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Marketing mobile-nav drawer — enter motion. Tapping the hamburger un-hides
-   the panel (display none → block), which plays these once: the backdrop fades
-   up and the drawer slides in from the right. The exit is instant on purpose —
-   a drawer that animates OUT while you're trying to leave reads as sluggish.
-   The global reduced-motion block above neutralizes both to their end state.
+   Marketing mobile-nav — the full-screen "gate" menu. Un-hiding the panel plays
+   a quick fade + scale-settle on the surface; the routes and CTAs (`.rise-N`)
+   then rise in stagger over the hero's contract-grid texture. Exit is instant
+   (animating OUT while you're trying to leave reads as sluggish). The global
+   reduced-motion block above lands everything at its end state.
    --------------------------------------------------------------------------- */
-.mobile-nav-backdrop {
-  animation: mobile-nav-backdrop-in 0.2s ease-out both;
+.mobile-nav-surface {
+  animation: mobile-nav-surface-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-@keyframes mobile-nav-backdrop-in {
+@keyframes mobile-nav-surface-in {
   from {
     opacity: 0;
+    transform: scale(0.985);
   }
   to {
     opacity: 1;
-  }
-}
-.mobile-nav-drawer {
-  animation: mobile-nav-drawer-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes mobile-nav-drawer-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
+    transform: none;
   }
 }
 

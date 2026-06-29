@@ -3355,60 +3355,96 @@ defmodule EmisarWeb.CoreComponents do
       </div>
     </header>
 
-    <%!-- Mobile drawer — a SIBLING of <header>, never a child: the header's
-         `backdrop-blur` makes it the containing block for `position: fixed`
-         descendants, which would trap this full-screen overlay inside the
-         ~64px nav bar (transparent backdrop, a second logo, clipped items).
-         Out here `fixed inset-0` resolves against the viewport. --%>
+    <%!-- Mobile menu — the "gate". A full-screen takeover (a SIBLING of
+         <header>, so the header's `backdrop-blur` doesn't trap this fixed
+         overlay in the nav bar) over the SAME contract-grid + grain as the hero,
+         so it reads as the site folding open. The routes are nodes on the gate's
+         vertical track — the current page lit emerald, like the logo's middle
+         node — and reveal in stagger. Toggled by mobile_nav.js (focus-trapped). --%>
     <div
       id="marketing-mobile-nav"
       class="fixed inset-0 z-50 hidden md:hidden"
       role="dialog"
       aria-modal="true"
+      aria-label="Site menu"
     >
-      <div class="mobile-nav-backdrop absolute inset-0 bg-black/60" data-mobile-nav-close></div>
-      <aside class="mobile-nav-drawer relative ml-auto flex h-full w-80 max-w-[85vw] flex-col border-l border-white/10 bg-zinc-950 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
-          <.brand size={:sm} />
-          <button
-            type="button"
-            aria-label="Close menu"
-            data-mobile-nav-close
-            class="-mr-1 rounded-md p-2.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-          >
-            <.icon name="hero-x-mark" class="h-5 w-5" />
-          </button>
+      <div class="mobile-nav-surface absolute inset-0 overflow-y-auto bg-zinc-950">
+        <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div
+          class="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl"
+          aria-hidden="true"
+        >
         </div>
 
-        <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
-          <.marketing_mobile_link href={~p"/use-cases"} active={@current == :use_cases}>
-            Use cases
-          </.marketing_mobile_link>
-          <.marketing_mobile_link href={~p"/security"} active={@current == :security}>
-            Security
-          </.marketing_mobile_link>
-          <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
-            Pricing
-          </.marketing_mobile_link>
-          <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
-            Packs
-          </.marketing_mobile_link>
-          <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
-            Docs
-          </.marketing_mobile_link>
-        </nav>
+        <div class="relative flex min-h-full flex-col">
+          <div class="flex items-center justify-between px-6 py-5">
+            <.brand size={:md} />
+            <button
+              type="button"
+              aria-label="Close menu"
+              data-mobile-nav-close
+              class="-mr-1.5 rounded-md p-2.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              <.icon name="hero-x-mark" class="h-6 w-6" />
+            </button>
+          </div>
 
-        <div class="space-y-3 border-t border-zinc-900 p-5">
-          <%= if @current_user do %>
-            <.marketing_button block href={~p"/app"}>Dashboard</.marketing_button>
-          <% else %>
-            <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
-            <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
-              Sign in
-            </.marketing_button>
-          <% end %>
+          <.scan_line class="opacity-80" />
+
+          <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
+            <%!-- the gate track the route-nodes sit on --%>
+            <span
+              class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-zinc-700/60 to-transparent"
+              aria-hidden="true"
+            >
+            </span>
+            <ul class="flex flex-1 flex-col justify-around">
+              <li>
+                <.marketing_gate_link href={~p"/use-cases"} active={@current == :use_cases} idx={1}>
+                  Use cases
+                </.marketing_gate_link>
+              </li>
+              <li>
+                <.marketing_gate_link href={~p"/security"} active={@current == :security} idx={2}>
+                  Security
+                </.marketing_gate_link>
+              </li>
+              <li>
+                <.marketing_gate_link href={~p"/pricing"} active={@current == :pricing} idx={3}>
+                  Pricing
+                </.marketing_gate_link>
+              </li>
+              <li>
+                <.marketing_gate_link href={~p"/packs"} active={@current == :packs} idx={4}>
+                  Packs
+                </.marketing_gate_link>
+              </li>
+              <li>
+                <.marketing_gate_link href={~p"/docs"} active={@current == :docs} idx={5}>
+                  Docs
+                </.marketing_gate_link>
+              </li>
+            </ul>
+          </nav>
+
+          <div class="rise-5 relative px-6 pb-9">
+            <.scan_line class="mb-7 opacity-50" />
+            <div class="space-y-3">
+              <%= if @current_user do %>
+                <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
+                  Dashboard
+                </.marketing_button>
+              <% else %>
+                <.marketing_button block href={~p"/sign_up"}>Start free</.marketing_button>
+                <.marketing_button variant={:secondary} block href={~p"/sign_in"}>
+                  Sign in
+                </.marketing_button>
+              <% end %>
+            </div>
+          </div>
         </div>
-      </aside>
+      </div>
     </div>
     """
   end
@@ -3447,19 +3483,29 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :href, :string, required: true
   attr :active, :boolean, default: false
+  attr :idx, :integer, default: 1, doc: "1-based position, for the staggered rise on open"
   slot :inner_block, required: true
 
-  defp marketing_mobile_link(assigns) do
+  defp marketing_gate_link(assigns) do
     ~H"""
-    <.link
-      href={@href}
-      class={[
-        "block rounded-lg px-3 py-2.5 transition",
-        @active && "bg-brand-500/10 text-brand-200",
-        !@active && "text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
-      ]}
-    >
-      {render_slot(@inner_block)}
+    <.link href={@href} class={["group flex items-center gap-4 py-4", "rise-#{@idx}"]}>
+      <%!-- the route's node on the gate track; lit emerald when it's the
+           current page, like the logo's middle node (a request passing). --%>
+      <span class="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+        <span class={[
+          "rounded-full ring-[5px] ring-zinc-950 transition",
+          @active && "h-2.5 w-2.5 bg-brand-400 shadow-[0_0_16px_3px] shadow-brand-400/40",
+          !@active && "h-2 w-2 bg-zinc-700 group-hover:bg-brand-400/70"
+        ]}>
+        </span>
+      </span>
+      <span class={[
+        "text-2xl font-semibold tracking-tight transition",
+        @active && "text-white",
+        !@active && "text-zinc-400 group-hover:text-white"
+      ]}>
+        {render_slot(@inner_block)}
+      </span>
     </.link>
     """
   end
