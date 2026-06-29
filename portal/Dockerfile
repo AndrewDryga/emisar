@@ -57,6 +57,9 @@ COPY install-mcp.sh /install-mcp.sh
 COPY packs /packs
 
 # Install deps first so docker layer-caches them.
+# VERSION is the product-version single source read by every mix.exs, so it must
+# be present before `mix deps.get` evaluates the project files.
+COPY portal/VERSION ./
 COPY portal/mix.exs portal/mix.lock ./
 COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs
 COPY portal/apps/emisar_web/mix.exs apps/emisar_web/mix.exs

@@ -1,10 +1,15 @@
 defmodule Emisar.Umbrella.MixProject do
   use Mix.Project
 
+  # Single source of the product version: portal/VERSION. The /release skill
+  # bumps that one file; the umbrella, both apps, the OTP release, and the
+  # marketing footer (Application.spec(:emisar_web, :vsn)) all read it.
+  @version "VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+
   def project do
     [
       apps_path: "apps",
-      version: "0.1.0",
+      version: @version,
       start_permanent: Mix.env() == :prod,
       # Phoenix 1.8 code reloader coordinates recompiles through a Mix
       # compilation listener. `mix phx.server` runs from the umbrella
@@ -14,7 +19,7 @@ defmodule Emisar.Umbrella.MixProject do
       aliases: aliases(),
       releases: [
         emisar: [
-          version: "0.1.0",
+          version: @version,
           applications: [
             emisar: :permanent,
             emisar_web: :permanent
