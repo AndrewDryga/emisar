@@ -160,7 +160,6 @@ defmodule Emisar.Catalog do
         hash: trusted_hash,
         pending_hash: pending_hash,
         trust_state: trust_state,
-        pinned_at: now,
         first_seen_at: now,
         last_seen_at: now
       })
@@ -239,7 +238,7 @@ defmodule Emisar.Catalog do
         {:ok, snapshot_action_set(repo, pending)}
       end)
       |> Multi.run(:pack_version, fn repo, %{before: pending, manifest: manifest} ->
-        repo.update(PackVersion.Changeset.trust(pending, manifest, subject))
+        repo.update(PackVersion.Changeset.trust(pending, manifest))
       end)
       |> Multi.insert(:audit, fn %{before: pending} ->
         Audit.Events.pack_trust_adopted(subject, pending)
@@ -287,7 +286,7 @@ defmodule Emisar.Catalog do
         lock_pending_pack_version(repo, pack_version_id, subject)
       end)
       |> Multi.run(:pack_version, fn repo, %{before: pending} ->
-        repo.update(reject_changeset(pending, subject))
+        repo.update(reject_changeset(pending))
       end)
       |> Multi.insert(:audit, fn %{before: pending} ->
         Audit.Events.pack_trust_rejected(subject, pending)
@@ -307,11 +306,11 @@ defmodule Emisar.Catalog do
 
   # Reject reverts to a previously-trusted hash when one exists, else marks
   # the never-trusted row `:rejected` (kept, not deleted — see the docstring).
-  defp reject_changeset(%PackVersion{hash: nil} = pack_version, subject),
-    do: PackVersion.Changeset.reject_untrusted(pack_version, subject)
+  defp reject_changeset(%PackVersion{hash: nil} = pack_version),
+    do: PackVersion.Changeset.reject_untrusted(pack_version)
 
-  defp reject_changeset(%PackVersion{} = pack_version, subject),
-    do: PackVersion.Changeset.reject(pack_version, subject)
+  defp reject_changeset(%PackVersion{} = pack_version),
+    do: PackVersion.Changeset.reject(pack_version)
 
   # Locked re-read for the Trust/Reject decision: the row is fetched
   # FOR NO KEY UPDATE inside the transaction (account-scoped via

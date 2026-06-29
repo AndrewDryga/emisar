@@ -11,7 +11,6 @@ defmodule Emisar.Repo.Migrations.PackVersionTrust do
     * `pending_hash` — a different hash a runner reported later;
       surfaced in the UI for Trust/Reject
     * `trust_state` — `"trusted"` (default), `"pending"`, or `"rejected"`
-    * `pinned_at` / `pinned_by_id` — audit trail for who pinned
 
   Also adds `pack_version` to `runner_actions` so dispatch can look
   up the trust state of the exact version the runner has loaded.
@@ -23,8 +22,6 @@ defmodule Emisar.Repo.Migrations.PackVersionTrust do
     alter table(:pack_versions) do
       add :trust_state, :string, null: false, default: "trusted"
       add :pending_hash, :string
-      add :pinned_at, :utc_datetime_usec
-      add :pinned_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)
     end
 
     # 2. Drop old unique index (account, pack_id, version, hash).
@@ -47,16 +44,10 @@ defmodule Emisar.Repo.Migrations.PackVersionTrust do
       "SELECT 1"
     )
 
-    # 4. Backfill pinned_at.
-    execute(
-      "UPDATE pack_versions SET pinned_at = inserted_at WHERE pinned_at IS NULL",
-      "SELECT 1"
-    )
-
-    # 5. New unique constraint per (account, pack_id, version).
+    # 4. New unique constraint per (account, pack_id, version).
     create unique_index(:pack_versions, [:account_id, :pack_id, :version])
 
-    # 6. Per-runner pack version so the dispatch gate can look up
+    # 5. Per-runner pack version so the dispatch gate can look up
     #    the trust state of the exact version this runner advertises.
     alter table(:runner_actions) do
       add :pack_version, :string

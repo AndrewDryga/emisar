@@ -20,10 +20,6 @@ defmodule Emisar.Catalog.PackVersion do
       dispatch fails CLOSED. A later runner advertisement of a fresh hash
       flips it back to `:pending` for another review.
 
-  `pinned_at` / `pinned_by_id` record the most recent trust decision.
-  System pins (auto-trust on library match, TOFU on unknown pack) leave
-  `pinned_by_id` null.
-
   `trusted_manifest` snapshots the action set (`action_id => {risk, kind}`)
   as it was when this hash was trusted, so a re-advertised hash that flips
   the row back to `:pending` can be DIFFED against it — surfacing an added
@@ -39,12 +35,10 @@ defmodule Emisar.Catalog.PackVersion do
     field :pending_hash, :string
     field :trust_state, Ecto.Enum, values: [:trusted, :pending, :rejected], default: :trusted
     field :trusted_manifest, :map
-    field :pinned_at, :utc_datetime_usec
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :pinned_by, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps()
   end

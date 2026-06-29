@@ -3,7 +3,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   alias Emisar.Catalog.PackVersion
 
   @insert_fields ~w(account_id pack_id version hash pending_hash trust_state
-                    pinned_at pinned_by_id first_seen_at last_seen_at)a
+                    first_seen_at last_seen_at)a
 
   @doc "Insert with explicit trust state (e.g. auto-pin on first sight)."
   def insert(attrs) do
@@ -32,27 +32,23 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   (`action_id => {risk, kind}`) trusted alongside it, so a later
   re-advertised hash can be diffed against it. Audited via Audit.log.
   """
-  def trust(%PackVersion{} = pack_version, %{} = trusted_manifest, %{} = subject) do
+  def trust(%PackVersion{} = pack_version, %{} = trusted_manifest) do
     pack_version
     |> change(%{
       hash: pack_version.pending_hash,
       pending_hash: nil,
       trust_state: :trusted,
-      trusted_manifest: trusted_manifest,
-      pinned_at: DateTime.utc_now(),
-      pinned_by_id: subject_user_id(subject)
+      trusted_manifest: trusted_manifest
     })
     |> validate_required([:hash])
   end
 
   @doc "Discard pending_hash; revert to the previously-trusted hash."
-  def reject(%PackVersion{} = pack_version, %{} = subject) do
+  def reject(%PackVersion{} = pack_version) do
     pack_version
     |> change(%{
       pending_hash: nil,
-      trust_state: :trusted,
-      pinned_at: DateTime.utc_now(),
-      pinned_by_id: subject_user_id(subject)
+      trust_state: :trusted
     })
   end
 
@@ -63,16 +59,11 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   decision and dispatch fails closed (it is NOT deleted, which would leave a
   missing row the gate read as trusted).
   """
-  def reject_untrusted(%PackVersion{} = pack_version, %{} = subject) do
+  def reject_untrusted(%PackVersion{} = pack_version) do
     pack_version
     |> change(%{
       pending_hash: nil,
-      trust_state: :rejected,
-      pinned_at: DateTime.utc_now(),
-      pinned_by_id: subject_user_id(subject)
+      trust_state: :rejected
     })
   end
-
-  defp subject_user_id(%Emisar.Auth.Subject{actor: %{id: user_id, type: :user}}), do: user_id
-  defp subject_user_id(_), do: nil
 end
