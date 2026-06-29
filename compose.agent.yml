@@ -14,14 +14,6 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
-  redis:
-    image: redis:8
-    volumes: ["redisdata:/data"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 2s
-      timeout: 3s
-      retries: 15
 volumes:
   pgdata:
   redisdata:
