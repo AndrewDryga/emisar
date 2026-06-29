@@ -142,7 +142,7 @@ defmodule EmisarWeb.TeamLive do
             {:noreply,
              socket
              |> assign(:current_account, account)
-             |> assign(:require_sso_available?, true)
+             |> assign_sso_state()
              |> put_flash(
                :info,
                if value do
@@ -476,10 +476,7 @@ defmodule EmisarWeb.TeamLive do
           :suppressed_emails,
           suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
         )
-        |> assign(
-          :require_sso_available?,
-          SSO.list_enabled_providers_for_account(socket.assigns.current_account.id) != []
-        )
+        |> assign_sso_state()
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -497,6 +494,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:require_sso_available?, false)
+        |> assign(:enabled_sso_provider_count, 0)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -513,6 +511,20 @@ defmodule EmisarWeb.TeamLive do
       {:error, _} -> %{total: 0, enrolled: 0}
     end
   end
+
+  # SSO enforcement state for the Single sign-on panel: the number of enabled
+  # identity providers (drives the count / "Not configured" status), and whether
+  # requiring SSO is even possible (≥1 enabled provider — guards the lockout).
+  defp assign_sso_state(socket) do
+    count = length(SSO.list_enabled_providers_for_account(socket.assigns.current_account.id))
+
+    socket
+    |> assign(:enabled_sso_provider_count, count)
+    |> assign(:require_sso_available?, count > 0)
+  end
+
+  defp sso_provider_label(1), do: "1 provider"
+  defp sso_provider_label(count), do: "#{count} providers"
 
   # The set of member emails on the deliverability suppression list — drives
   # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
@@ -735,14 +747,17 @@ defmodule EmisarWeb.TeamLive do
           </:actions>
 
           <%!-- Current state — always shown so the card is never a header over
-               empty space (the 2FA panel always has its enrollment row). The
-               brand "Required" chip only when enforced; otherwise a quiet note,
-               not an "Optional" label. --%>
+               empty space (the 2FA panel always has its enrollment row). Brand
+               "Required" when enforced; otherwise the enabled-provider count, or
+               "Not configured" when there are none. --%>
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <%= if @current_account.settings.require_sso do %>
-              <.chip tone={:brand}>Required</.chip>
-            <% else %>
-              <span class="text-zinc-500">Members can sign in with a magic link.</span>
+            <%= cond do %>
+              <% @current_account.settings.require_sso -> %>
+                <.chip tone={:brand}>Required</.chip>
+              <% @enabled_sso_provider_count > 0 -> %>
+                <.chip>{sso_provider_label(@enabled_sso_provider_count)}</.chip>
+              <% true -> %>
+                <.chip>Not configured</.chip>
             <% end %>
           </div>
         </.panel>
