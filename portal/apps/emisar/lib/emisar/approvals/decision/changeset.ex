@@ -2,7 +2,7 @@ defmodule Emisar.Approvals.Decision.Changeset do
   use Emisar, :changeset
   alias Emisar.Approvals.Decision
 
-  @fields ~w[decision reason decided_at]a
+  @fields ~w[decision decided_at]a
 
   def create(account_id, request_id, decider_id, attrs) do
     %Decision{}

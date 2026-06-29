@@ -445,7 +445,7 @@ defmodule Emisar.Approvals do
       result =
         Multi.new()
         |> Multi.run(:decision, fn _repo, _changes ->
-          insert_decision(request, by_user_id, decision, reason)
+          insert_decision(request, by_user_id, decision)
         end)
         |> Multi.run(:locked, fn repo, _changes ->
           locked =
@@ -524,10 +524,9 @@ defmodule Emisar.Approvals do
 
   # Insert this decider's vote; a second vote by the same operator hits the
   # (request_id, decider_id) unique index → :already_decided.
-  defp insert_decision(%Request{} = request, by_user_id, decision, reason) do
+  defp insert_decision(%Request{} = request, by_user_id, decision) do
     Decision.Changeset.create(request.account_id, request.id, by_user_id, %{
       decision: decision,
-      reason: reason,
       decided_at: DateTime.utc_now()
     })
     |> Repo.insert()

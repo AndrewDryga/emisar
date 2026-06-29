@@ -9,7 +9,6 @@ defmodule Emisar.Approvals.Decision do
 
   schema "approval_decisions" do
     field :decision, Ecto.Enum, values: [:approve, :deny]
-    field :reason, :string
     field :decided_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]

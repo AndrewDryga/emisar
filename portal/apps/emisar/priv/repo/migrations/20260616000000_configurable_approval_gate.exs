@@ -16,7 +16,6 @@ defmodule Emisar.Repo.Migrations.ConfigurableApprovalGate do
 
       add :decider_id, references(:users, type: :binary_id, on_delete: :nilify_all)
       add :decision, :string, null: false
-      add :reason, :string
       add :decided_at, :utc_datetime_usec, null: false
       timestamps(type: :utc_datetime_usec)
     end
