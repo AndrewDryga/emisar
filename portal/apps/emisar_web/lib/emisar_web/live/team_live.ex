@@ -632,7 +632,7 @@ defmodule EmisarWeb.TeamLive do
             <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
           </:summary>
 
-          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-500">
+          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
             When enforced, members without 2FA are funneled to their profile to set it up
             before they can use the rest of the app. You can't enable this until you've
             enrolled yourself — prevents lock-outs.
@@ -697,7 +697,7 @@ defmodule EmisarWeb.TeamLive do
             <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
           </:summary>
 
-          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-500">
+          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
             When required, members sign in through this account's identity provider —
             magic-link sign-ins are bounced to SSO. Needs an SSO connection.
           </p>

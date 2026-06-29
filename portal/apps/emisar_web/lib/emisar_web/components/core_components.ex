@@ -2098,21 +2098,25 @@ defmodule EmisarWeb.CoreComponents do
         phx-hook="CollapsibleSection"
         data-collapse-key={@id}
         open={@open}
-        class="group"
+        class="group/sect"
       >
-        <summary class="flex cursor-pointer list-none items-center gap-3 p-5 [&::-webkit-details-marker]:hidden">
-          <h2 class="flex-1 truncate font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+        <%!-- The whole header is the toggle: a calm hover tint signals it's
+             clickable, the radius stays concentric with the card (square bottom
+             once open so it meets the body cleanly), and the chevron brightens +
+             flips for state. The summary slot rides just left of the chevron. --%>
+        <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-5 py-4 transition-colors hover:bg-zinc-800/40 group-open/sect:rounded-b-none [&::-webkit-details-marker]:hidden">
+          <h2 class="min-w-0 flex-1 truncate font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
             {@title}
           </h2>
-          <div :if={@summary != []} class="flex min-w-0 items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2.5">
             {render_slot(@summary)}
+            <.icon
+              name="hero-chevron-down"
+              class="h-4 w-4 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-180"
+            />
           </div>
-          <.icon
-            name="hero-chevron-down"
-            class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180"
-          />
         </summary>
-        <div class="border-t border-zinc-800/70 p-5 pt-4">
+        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
           {render_slot(@inner_block)}
         </div>
       </details>

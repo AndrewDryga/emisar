@@ -434,7 +434,7 @@ defmodule EmisarWeb.ApprovalsLive do
               </.chip>
             </:summary>
 
-            <p class="mb-3 max-w-prose text-xs leading-relaxed text-zinc-500">
+            <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
               Cap how long an approved grant can keep skipping the prompt. Single-use
               ("once") approvals are always allowed; the limit is enforced server-side.
             </p>
