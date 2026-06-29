@@ -3368,10 +3368,12 @@ defmodule EmisarWeb.CoreComponents do
       aria-modal="true"
       aria-label="Site menu"
     >
-      <%!-- Background only — fades in. The content is a SEPARATE layer over it,
-           so the top bar never participates in the entrance and the logo stays
-           pinned exactly where the header's logo is: zero jitter on open. --%>
-      <div class="mobile-nav-surface absolute inset-0 bg-zinc-950" aria-hidden="true">
+      <%!-- Background — opaque from frame 0 (NO fade) so the page and the header's
+           own logo behind it are covered instantly; a fading surface lets the
+           header logo show through and double-draw under the pinned menu logo,
+           reading as a brightness flicker. Content is a SEPARATE, un-animated layer
+           over it, so the top bar / logo never moves or fades. --%>
+      <div class="absolute inset-0 bg-zinc-950" aria-hidden="true">
         <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
         <div

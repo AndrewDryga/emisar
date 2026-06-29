@@ -452,23 +452,13 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Marketing mobile-nav — the full-screen "gate" menu. Un-hiding the panel plays
-   a quick fade + scale-settle on the surface; the routes and CTAs (`.rise-N`)
-   then rise in stagger over the hero's contract-grid texture. Exit is instant
-   (animating OUT while you're trying to leave reads as sluggish). The global
-   reduced-motion block above lands everything at its end state.
+   Marketing mobile-nav — the full-screen "gate" menu. The dark surface is opaque
+   from frame 0 (NO fade): a fading surface lets the page — and the header's own
+   logo directly behind the menu's pinned logo — show through and double-draw,
+   reading as a brightness flicker on the logo. The entrance lives on the CONTENT
+   instead — the routes and CTAs (`.rise-N`) rise in stagger and the scan-line
+   separators draw in (below). The global reduced-motion block lands all at rest.
    --------------------------------------------------------------------------- */
-.mobile-nav-surface {
-  animation: mobile-nav-surface-in 0.3s ease-out both;
-}
-@keyframes mobile-nav-surface-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 /* The green scan-line separators draw in from their centre as the menu opens. */
 .mobile-nav-scan {
