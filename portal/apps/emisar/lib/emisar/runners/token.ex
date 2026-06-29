@@ -12,14 +12,10 @@ defmodule Emisar.Runners.Token do
     field :token_hash, :binary, redact: true
     field :issued_at, :utc_datetime_usec
     field :last_used_at, :utc_datetime_usec
-    field :revoked_at, :utc_datetime_usec
 
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :issued_via_key, Emisar.Runners.AuthKey, where: [deleted_at: nil]
 
     timestamps()
   end
-
-  def usable?(%__MODULE__{revoked_at: nil}), do: true
-  def usable?(_), do: false
 end

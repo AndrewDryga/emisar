@@ -22,6 +22,4 @@ defmodule Emisar.Runners.Token.Changeset do
   end
 
   def usage(%Token{} = token), do: change(token, last_used_at: DateTime.utc_now())
-
-  def revoke(%Token{} = token), do: change(token, revoked_at: DateTime.utc_now())
 end

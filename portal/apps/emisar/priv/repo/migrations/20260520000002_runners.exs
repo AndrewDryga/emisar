@@ -98,7 +98,6 @@ defmodule Emisar.Repo.Migrations.Runners do
 
       add :issued_at, :utc_datetime_usec, null: false
       add :last_used_at, :utc_datetime_usec
-      add :revoked_at, :utc_datetime_usec
       timestamps(type: :utc_datetime_usec)
     end
 

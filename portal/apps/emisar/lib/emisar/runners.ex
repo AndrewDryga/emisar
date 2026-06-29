@@ -367,7 +367,9 @@ defmodule Emisar.Runners do
       Multi.new()
       # Lock the account so a concurrent enable/register can't both pass the
       # plan-limit count and claim the last slot (TOCTOU).
-      |> Multi.run(:lock_account, fn repo, _ -> Accounts.lock_account(repo, runner.account_id) end)
+      |> Multi.run(:lock_account, fn repo, _ ->
+        Accounts.fetch_and_lock_account(runner.account_id, repo: repo)
+      end)
       # ensure_in_account proved runner.account_id == subject.account.id, so the
       # subject's own account feeds the count — no preload.
       |> Multi.run(:limit, fn _repo, _ ->
@@ -1036,7 +1038,6 @@ defmodule Emisar.Runners do
 
       with %Token{} = token <- Repo.peek(token_queryable),
            true <- Crypto.secure_compare(token.token_hash, hash),
-           true <- Token.usable?(token),
            runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
            %Runner{disabled_at: nil} = runner <- Repo.peek(runner_queryable) do
         {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
@@ -1088,7 +1089,7 @@ defmodule Emisar.Runners do
     # serialize: the plan-limit count + insert below is a TOCTOU otherwise (two
     # runners both read `current < limit` and both insert, exceeding the ceiling).
     |> Multi.run(:lock_account, fn repo, _changes ->
-      Accounts.lock_account(repo, key.account_id)
+      Accounts.fetch_and_lock_account(key.account_id, repo: repo)
     end)
     # Atomically claim a use of this auth key. The conditional UPDATE only
     # succeeds if the key is still usable AT the moment of the update —
