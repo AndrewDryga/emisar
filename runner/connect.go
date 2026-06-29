@@ -16,6 +16,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
@@ -232,7 +233,7 @@ func resolveExternalID(configuredID, dataDir string) (string, error) {
 		return "", err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := fsutil.SecureMkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return "", err
 	}
 	// Write atomically so a crash mid-write can't leave a corrupt id.

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
 
 // Cursor is a sidecar file that records which JSONL event IDs have been
@@ -127,7 +129,7 @@ func (c *Cursor) persist(state CursorState) error {
 		return nil
 	}
 	if dir := filepath.Dir(c.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("cursor: mkdir %s: %w", dir, err)
 		}
 	}

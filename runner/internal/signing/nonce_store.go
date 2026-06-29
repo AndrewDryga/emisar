@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
 
 // The replay cache lives in memory, but an empty cache after a restart or SIGHUP
@@ -62,7 +64,7 @@ func saveNonces(path string, seen map[string]time.Time) error {
 	}
 
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("signing: create nonce-cache dir: %w", err)
 		}
 	}

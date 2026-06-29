@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/coder/websocket"
 )
 
@@ -232,7 +233,7 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(d.TokenPath), 0o750); err != nil {
+	if err := fsutil.SecureMkdirAll(filepath.Dir(d.TokenPath), 0o750); err != nil {
 		return err
 	}
 

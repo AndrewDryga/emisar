@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
 
 // JSONLSink writes one JSON-encoded event per line. It supports size-
@@ -49,7 +51,7 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 	// (action ids the model called, arg hashes, exit codes). Lock the
 	// directory + file down so other users on the host can't read it.
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("audit: create dir: %w", err)
 		}
 	}
