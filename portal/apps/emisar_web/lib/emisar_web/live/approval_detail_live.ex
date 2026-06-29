@@ -1,6 +1,5 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
   alias EmisarWeb.Permissions
 
@@ -317,16 +316,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
     do: "The run was cancelled before approval, so there's nothing left to approve."
 
-  defp decision_error_message(:attestation_stale),
-    do:
-      "This signed request expired before approval — its signature is now outside the runner's " <>
-        "freshness window, so the runner would refuse it. Re-issue it from your MCP client and " <>
-        "approve the fresh one."
+  defp decision_error_message(:attestation_stale) do
+    "This signed request expired before approval — its signature is now outside the runner's " <>
+      "freshness window, so the runner would refuse it. Re-issue it from your MCP client and " <>
+      "approve the fresh one."
+  end
 
-  defp decision_error_message(:grant_exceeds_account_max_lifetime),
-    do:
-      "This grant's duration exceeds your account's maximum grant-lifetime cap. " <>
-        "Pick a shorter window."
+  defp decision_error_message(:grant_exceeds_account_max_lifetime) do
+    "This grant's duration exceeds your account's maximum grant-lifetime cap. " <>
+      "Pick a shorter window."
+  end
 
   defp decision_error_message(_),
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
@@ -366,9 +365,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp grant_flash(window, scope, max_uses),
-    do:
-      "Approved. Standing grant active for #{window} (#{scope_label(scope)}#{uses_suffix(max_uses)})."
+  defp grant_flash(window, scope, max_uses) do
+    "Approved. Standing grant active for #{window} (#{scope_label(scope)}#{uses_suffix(max_uses)})."
+  end
 
   defp revoke_hint, do: " Revoke from the Approvals page."
 

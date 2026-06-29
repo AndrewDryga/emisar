@@ -8,7 +8,6 @@ defmodule EmisarWeb.RunbookEditorLive do
   understands: `%{"steps" => [...]}`.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Catalog, Runbooks, Runners}
   alias EmisarWeb.Permissions
 

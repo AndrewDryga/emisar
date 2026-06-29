@@ -12,7 +12,6 @@ defmodule EmisarWeb.PackRegistryController do
   `EmisarWeb.PacksRegistry`.
   """
   use EmisarWeb, :controller
-
   alias EmisarWeb.PacksRegistry
 
   @doc "JSON index of the full catalog — drives discovery + OS matching."

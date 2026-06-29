@@ -12,7 +12,6 @@ defmodule EmisarWeb.Plugs.Analytics do
   @behaviour Plug
 
   import Plug.Conn
-
   alias EmisarWeb.Analytics
 
   @impl true

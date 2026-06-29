@@ -28,7 +28,6 @@ defmodule EmisarWeb.MCPRpcController do
   """
 
   use EmisarWeb, :controller
-
   alias Emisar.ApiKeys
   alias EmisarWeb.MCP.{Auth, ContentBlocks, Idempotency, Instructions, Service}
 

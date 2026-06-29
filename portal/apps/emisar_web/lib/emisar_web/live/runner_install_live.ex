@@ -18,7 +18,6 @@ defmodule EmisarWeb.RunnerInstallLive do
     dashboard, kept in sync via shared helpers.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.Runners
   alias EmisarWeb.UrlHelpers
 

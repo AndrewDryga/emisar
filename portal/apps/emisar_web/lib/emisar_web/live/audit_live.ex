@@ -7,7 +7,6 @@ defmodule EmisarWeb.AuditLive do
   request id) at `/app/audit/:id`.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{ApiKeys, Audit}
   alias EmisarWeb.{AuditSummary, LiveTable, Permissions, UrlHelpers}
 

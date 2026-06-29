@@ -5,7 +5,6 @@ defmodule EmisarWeb.RunbooksLive do
   button that opens the parameterized dispatch form.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Catalog, Runbooks}
   alias EmisarWeb.LiveTable
 

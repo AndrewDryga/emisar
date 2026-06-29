@@ -8,7 +8,6 @@ defmodule EmisarWeb.AccountSwitchController do
   the new tenant.
   """
   use EmisarWeb, :controller
-
   alias Emisar.Accounts
   alias EmisarWeb.UserAuth
 

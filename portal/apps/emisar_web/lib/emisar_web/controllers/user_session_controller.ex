@@ -7,7 +7,6 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-
   alias Emisar.{Accounts, Auth, Mailers, Users}
   alias EmisarWeb.{RecentAccounts, RequestContext, ReturnTo, Throttle, UserAuth}
 

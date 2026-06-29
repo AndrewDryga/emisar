@@ -21,9 +21,9 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())
   def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
 
-  def accept_invitation(%Membership{} = membership),
-    do:
-      change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())
+  def accept_invitation(%Membership{} = membership) do
+    change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())
+  end
 
   def resend_invitation(%Membership{} = membership, token_digest) when is_binary(token_digest) do
     change(membership,

@@ -122,12 +122,12 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("runner.disconnected", p),
     do: pairs(reason: get(p, :reason))
 
-  defp summarize("auth_key.created", p),
-    do:
-      pairs(
-        group: get(p, :group),
-        reusable: format_bool(get(p, :reusable))
-      )
+  defp summarize("auth_key.created", p) do
+    pairs(
+      group: get(p, :group),
+      reusable: format_bool(get(p, :reusable))
+    )
+  end
 
   defp summarize("auth_key.revoked", p),
     do: pairs(prefix: get(p, :prefix))
@@ -173,12 +173,12 @@ defmodule EmisarWeb.AuditSummary do
 
   # -- Approvals / runs ------------------------------------------------
 
-  defp summarize("approval.approved", p),
-    do:
-      pairs(
-        duration: get(p, :grant_duration),
-        scope: get(p, :grant_scope)
-      )
+  defp summarize("approval.approved", p) do
+    pairs(
+      duration: get(p, :grant_duration),
+      scope: get(p, :grant_scope)
+    )
+  end
 
   defp summarize("approval.denied", p),
     do: pairs(reason: get(p, :reason))

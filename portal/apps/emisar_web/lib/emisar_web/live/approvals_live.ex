@@ -14,7 +14,6 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Approvals, Catalog, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
 

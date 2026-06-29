@@ -1,6 +1,5 @@
 defmodule Emisar.ApiKeys.ApiKey.Query do
   use Emisar, :query
-
   alias Emisar.Repo.{Filter, Like}
 
   def all,

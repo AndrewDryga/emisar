@@ -40,7 +40,6 @@ defmodule EmisarWeb.AuditExportController do
   """
 
   use EmisarWeb, :controller
-
   alias Emisar.{Accounts, ApiKeys, Audit}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext

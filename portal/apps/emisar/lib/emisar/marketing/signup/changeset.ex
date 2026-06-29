@@ -1,6 +1,5 @@
 defmodule Emisar.Marketing.Signup.Changeset do
   use Emisar, :changeset
-
   alias Emisar.Marketing.Signup
 
   @fields ~w[email source]a

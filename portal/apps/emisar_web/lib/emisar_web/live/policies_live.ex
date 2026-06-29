@@ -17,7 +17,6 @@ defmodule EmisarWeb.PoliciesLive do
   drives every card.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.Policies
   alias Emisar.Runners
   alias EmisarWeb.Permissions
@@ -226,11 +225,11 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  defp save_editor(socket, %{scope_type: :group, scope_value: value} = editor),
-    do:
-      persist(socket, editor, fn rules, subject ->
-        Policies.save_scoped_rules(rules, :group, value, subject)
-      end)
+  defp save_editor(socket, %{scope_type: :group, scope_value: value} = editor) do
+    persist(socket, editor, fn rules, subject ->
+      Policies.save_scoped_rules(rules, :group, value, subject)
+    end)
+  end
 
   defp save_editor(socket, _editor),
     do: {:noreply, put_flash(socket, :error, "Choose a runner or group for this ruleset first.")}

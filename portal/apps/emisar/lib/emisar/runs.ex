@@ -1364,7 +1364,7 @@ defmodule Emisar.Runs do
   awaiting approval; `{:error, :run_not_pending_approval | :not_found}` else.
   Takes the transaction `repo` so the lock joins the caller's transaction.
   """
-  def lock_pending_approval_run(repo, run_id) when is_binary(run_id) do
+  def fetch_and_lock_pending_approval_run(repo, run_id) when is_binary(run_id) do
     loaded_run =
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(run_id)

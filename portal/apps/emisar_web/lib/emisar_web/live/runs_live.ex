@@ -7,7 +7,6 @@ defmodule EmisarWeb.RunsLive do
   status changes flow in without a full reload.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{ApiKeys, Runs}
   alias EmisarWeb.LiveTable
 

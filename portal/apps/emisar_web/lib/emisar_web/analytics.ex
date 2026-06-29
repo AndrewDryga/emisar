@@ -18,7 +18,6 @@ defmodule EmisarWeb.Analytics do
   """
 
   import Plug.Conn
-
   alias Emisar.Analytics
   alias Emisar.Crypto
 

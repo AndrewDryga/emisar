@@ -9,7 +9,6 @@ defmodule EmisarWeb.OnboardingLive do
   workspace after the redirect.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.Accounts
 
   def mount(_params, _session, socket) do

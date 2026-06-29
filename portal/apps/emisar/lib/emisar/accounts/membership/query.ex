@@ -37,13 +37,13 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_invitation_token_digest(queryable, digest),
     do: where(queryable, [memberships: m], m.invitation_token_digest == ^digest)
 
-  def pending_invitation(queryable),
-    do:
-      where(
-        queryable,
-        [memberships: m],
-        is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)
-      )
+  def pending_invitation(queryable) do
+    where(
+      queryable,
+      [memberships: m],
+      is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)
+    )
+  end
 
   # Invitation links lapse after a week — long enough for a weekend
   # inbox, short enough that a leaked link isn't a standing seat. The
@@ -52,13 +52,13 @@ defmodule Emisar.Accounts.Membership.Query do
   @invitation_validity_in_days 7
 
   @doc "Pending invitations still inside their validity window."
-  def invitation_not_expired(queryable),
-    do:
-      where(
-        queryable,
-        [memberships: m],
-        m.inserted_at > ago(@invitation_validity_in_days, "day")
-      )
+  def invitation_not_expired(queryable) do
+    where(
+      queryable,
+      [memberships: m],
+      m.inserted_at > ago(@invitation_validity_in_days, "day")
+    )
+  end
 
   @doc "Most-recently-joined membership only — orders and limits in one step."
   def latest(queryable),

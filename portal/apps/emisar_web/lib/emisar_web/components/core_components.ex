@@ -223,27 +223,27 @@ defmodule EmisarWeb.CoreComponents do
       "disabled:opacity-50 disabled:cursor-not-allowed"
   end
 
-  defp button_variant("primary", _tone),
-    do:
-      "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+  defp button_variant("primary", _tone) do
+    "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+  end
 
-  defp button_variant("success", _tone),
-    do:
-      "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+  defp button_variant("success", _tone) do
+    "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+  end
 
   # Caution: filled amber for attention-worthy actions where success-green
   # would wrongly read as "safe" — e.g. trusting a pack's new contents.
-  defp button_variant("caution", _tone),
-    do:
-      "bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
+  defp button_variant("caution", _tone) do
+    "bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
+  end
 
-  defp button_variant("danger", _tone),
-    do:
-      "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+  defp button_variant("danger", _tone) do
+    "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+  end
 
-  defp button_variant("secondary", _tone),
-    do:
-      "border border-zinc-800 font-medium text-zinc-200 hover:bg-zinc-900 focus-visible:outline-zinc-600"
+  defp button_variant("secondary", _tone) do
+    "border border-zinc-800 font-medium text-zinc-200 hover:bg-zinc-900 focus-visible:outline-zinc-600"
+  end
 
   # Ghost is the only tone-aware variant: a text-only button tinted by `tone`,
   # for low-prominence inline actions (remove, revoke, suspend, restore).
@@ -3001,13 +3001,13 @@ defmodule EmisarWeb.CoreComponents do
   defp empty_state_body(:boxed), do: "mt-2 text-sm text-zinc-500"
   defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"
 
-  defp empty_state_cta(:boxed),
-    do:
-      "mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
+  defp empty_state_cta(:boxed) do
+    "mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
+  end
 
-  defp empty_state_cta(:bare),
-    do:
-      "mt-4 inline-flex items-center gap-2 text-sm font-medium text-brand-400 hover:text-brand-300"
+  defp empty_state_cta(:bare) do
+    "mt-4 inline-flex items-center gap-2 text-sm font-medium text-brand-400 hover:text-brand-300"
+  end
 
   @doc """
   "A runner is offline" notice — a `hero-signal-slash` block whose colour
@@ -3829,16 +3829,17 @@ defmodule EmisarWeb.CoreComponents do
   defp state_label(:pending), do: "Approval"
   defp state_label(:deny), do: "Denied"
 
-  # Version of the emisar_web app, read at compile time from mix.exs so
-  # the footer never drifts from the actual release. `vsn` comes back as
-  # a charlist; convert once at compile time.
-  @app_version Application.spec(:emisar_web, :vsn) |> to_string()
+  # The emisar_web app version, read at runtime from the loaded app spec (whose
+  # vsn comes from portal/VERSION via mix.exs), so the footer always reflects the
+  # running release — a compile-time bake goes stale until something recompiles
+  # this module. `vsn` comes back as a charlist; convert to a string.
+  defp app_version, do: Application.spec(:emisar_web, :vsn) |> to_string()
 
   @doc """
   Footer for marketing pages. Same on every page.
   """
   def marketing_footer(assigns) do
-    assigns = assign(assigns, :app_version, @app_version)
+    assigns = assign(assigns, :app_version, app_version())
 
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">

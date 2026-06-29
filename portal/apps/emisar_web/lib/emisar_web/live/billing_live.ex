@@ -1,6 +1,5 @@
 defmodule EmisarWeb.BillingLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Accounts, Billing}
   alias EmisarWeb.Permissions
 

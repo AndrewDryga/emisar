@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Approvals, Runners, Runs}
   alias EmisarWeb.Permissions
 

@@ -36,7 +36,6 @@ defmodule EmisarWeb.LiveTable do
   """
   use Phoenix.Component
   use EmisarWeb, :verified_routes
-
   alias Emisar.Repo.Filter
 
   attr :id, :string, required: true
@@ -283,9 +282,9 @@ defmodule EmisarWeb.LiveTable do
   defp default_cards_wrapper_class(:visible),
     do: "divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/30"
 
-  defp default_cards_wrapper_class(_),
-    do:
-      "divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
+  defp default_cards_wrapper_class(_) do
+    "divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
+  end
 
   # When `:group_by` is set, walk the rows preserving order and bucket
   # them by label — returns `[{label, [row, …]}, …]`. Without group_by

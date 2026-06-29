@@ -8,7 +8,6 @@ defmodule EmisarWeb.AccountSignInLive do
   member, guest, or contractor signs in the same way as anyone else.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Accounts, SSO}
 
   def mount(%{"account_id_or_slug" => ref}, _session, socket) do

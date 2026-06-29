@@ -1,6 +1,5 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Auth, Users}
 
   def mount(_params, session, socket) do

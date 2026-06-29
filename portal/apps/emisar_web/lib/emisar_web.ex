@@ -45,7 +45,6 @@ defmodule EmisarWeb do
         layouts: [html: EmisarWeb.Layouts]
 
       use Gettext, backend: EmisarWeb.Gettext
-
       import Plug.Conn
 
       unquote(verified_routes())

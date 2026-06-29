@@ -8,7 +8,6 @@ defmodule EmisarWeb.SSORequiredController do
   re-trigger the gate — no redirect loop.
   """
   use EmisarWeb, :controller
-
   alias EmisarWeb.UserAuth
 
   def show(conn, _params) do

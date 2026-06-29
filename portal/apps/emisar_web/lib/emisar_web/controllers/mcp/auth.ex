@@ -9,7 +9,6 @@ defmodule EmisarWeb.MCP.Auth do
   authorization server and start the OAuth flow.
   """
   import Plug.Conn
-
   alias Emisar.{Accounts, ApiKeys, OAuth, PublicUrl}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext

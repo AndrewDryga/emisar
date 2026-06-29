@@ -69,17 +69,17 @@ defmodule EmisarWeb.SSOController do
     end
   end
 
-  defp callback_error_message(:email_taken),
-    do:
-      "An account already exists for this email. Ask an admin to link your single sign-on identity."
+  defp callback_error_message(:email_taken) do
+    "An account already exists for this email. Ask an admin to link your single sign-on identity."
+  end
 
-  defp callback_error_message(:identity_pending_approval),
-    do:
-      "Your access request was sent to your team admin. You'll be able to sign in once it's approved."
+  defp callback_error_message(:identity_pending_approval) do
+    "Your access request was sent to your team admin. You'll be able to sign in once it's approved."
+  end
 
-  defp callback_error_message(:email_domain_not_allowed),
-    do:
-      "Your email domain isn't permitted for this single sign-on connection. Contact your team admin."
+  defp callback_error_message(:email_domain_not_allowed) do
+    "Your email domain isn't permitted for this single sign-on connection. Contact your team admin."
+  end
 
   defp callback_error_message(_other),
     do: "Single sign-on failed. Try again, or contact your team admin."

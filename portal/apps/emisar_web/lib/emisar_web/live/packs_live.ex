@@ -21,7 +21,6 @@ defmodule EmisarWeb.PacksLive do
     * Hash later changes → pending.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Catalog, Runners}
   alias EmisarWeb.ConfirmDialog
 

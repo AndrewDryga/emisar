@@ -15,7 +15,6 @@ defmodule EmisarWeb.RequestContext do
   are advisory, not an access-control input.)
   """
   import Plug.Conn, only: [get_req_header: 2, get_resp_header: 2]
-
   alias Emisar.RequestContext
 
   @doc "Request context for an HTTP request (`%Plug.Conn{}`)."

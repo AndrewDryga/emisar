@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Accounts, Auth, Mailers, Users}
 
   def mount(_params, _session, socket) do

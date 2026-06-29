@@ -21,13 +21,13 @@ defmodule Emisar.Policies.Policy.Query do
   def scoped_overrides(queryable),
     do: where(queryable, [policies: p], p.scope_type != :account)
 
-  def by_scope(queryable, scope_type, scope_value),
-    do:
-      where(
-        queryable,
-        [policies: p],
-        p.scope_type == ^scope_type and p.scope_value == ^scope_value
-      )
+  def by_scope(queryable, scope_type, scope_value) do
+    where(
+      queryable,
+      [policies: p],
+      p.scope_type == ^scope_type and p.scope_value == ^scope_value
+    )
+  end
 
   # The candidate set for a dispatch to `runner_id` (in `group`): the account
   # default plus any policy scoped to that exact runner or group. The context

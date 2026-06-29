@@ -4,7 +4,6 @@ defmodule EmisarWeb.UserConfirmationController do
   `users.confirmed_at`.
   """
   use EmisarWeb, :controller
-
   alias Emisar.Auth
   alias EmisarWeb.RequestContext
 

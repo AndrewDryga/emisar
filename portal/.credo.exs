@@ -91,6 +91,8 @@
           {Emisar.Checks.EnumOverValidateInclusion, []},
           {Emisar.Checks.InlineBroadcast, []},
           {Emisar.Checks.MultilineAliasGroup, []},
+          {Emisar.Checks.MultilineDoColon, []},
+          {Emisar.Checks.NoBlankBetweenDirectives, []},
           {Emisar.Checks.NoDateTimeTruncate, []},
           {Emisar.Checks.NoIfOnArgField, []},
           {Emisar.Checks.NoPipeInBranchHead, []},

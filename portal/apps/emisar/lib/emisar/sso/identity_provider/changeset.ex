@@ -44,13 +44,13 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   end
 
   @doc "Disable directory sync: clear the bearer so a stale token can't authenticate, and drop the prefix's unique slot."
-  def disable_scim(%IdentityProvider{} = provider),
-    do:
-      change(provider,
-        scim_enabled: false,
-        scim_token_prefix: nil,
-        scim_token_hash: nil
-      )
+  def disable_scim(%IdentityProvider{} = provider) do
+    change(provider,
+      scim_enabled: false,
+      scim_token_prefix: nil,
+      scim_token_hash: nil
+    )
+  end
 
   defp validate_fields(changeset) do
     changeset

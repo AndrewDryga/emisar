@@ -11,7 +11,6 @@ defmodule EmisarWeb.RunnerConnectController do
   """
 
   use EmisarWeb, :controller
-
   alias Emisar.Runners
   alias EmisarWeb.{RequestContext, RunnerSocket}
 

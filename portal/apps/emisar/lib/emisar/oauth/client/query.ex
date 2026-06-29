@@ -10,11 +10,11 @@ defmodule Emisar.OAuth.Client.Query do
   # before `cutoff` — the daily sweep's prune set. A once-authorized client is
   # never matched here (its `last_authorized_at` is set), so a live connection
   # is never pruned regardless of age.
-  def never_authorized_before(queryable \\ all(), %DateTime{} = cutoff),
-    do:
-      where(
-        queryable,
-        [clients: c],
-        is_nil(c.last_authorized_at) and c.inserted_at < ^cutoff
-      )
+  def never_authorized_before(queryable \\ all(), %DateTime{} = cutoff) do
+    where(
+      queryable,
+      [clients: c],
+      is_nil(c.last_authorized_at) and c.inserted_at < ^cutoff
+    )
+  end
 end

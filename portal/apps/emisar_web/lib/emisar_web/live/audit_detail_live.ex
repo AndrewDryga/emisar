@@ -8,7 +8,6 @@ defmodule EmisarWeb.AuditDetailLive do
   request id, and the full payload as pretty JSON.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{Audit, Runners, Runs}
   alias EmisarWeb.AuditSummary
 

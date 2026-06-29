@@ -13,7 +13,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
       silently bounced to /app and never saw the invite.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.Accounts
   alias Emisar.Users
 

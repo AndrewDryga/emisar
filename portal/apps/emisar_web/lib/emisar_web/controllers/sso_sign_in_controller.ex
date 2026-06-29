@@ -8,7 +8,6 @@ defmodule EmisarWeb.SSOSignInController do
   cookie off the conn.
   """
   use EmisarWeb, :controller
-
   alias Emisar.Accounts
   alias EmisarWeb.RecentAccounts
 

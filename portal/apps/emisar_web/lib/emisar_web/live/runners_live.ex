@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
-
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
 

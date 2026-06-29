@@ -1,7 +1,6 @@
 defmodule EmisarWeb.Router do
   use EmisarWeb, :router
   import Phoenix.LiveDashboard.Router
-
   import EmisarWeb.UserAuth
 
   pipeline :browser do

@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunbookRunLive do
   use EmisarWeb, :live_view
-
   alias Emisar.{Catalog, Policies, Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
 
@@ -290,9 +289,9 @@ defmodule EmisarWeb.RunbookRunLive do
   # Operator-reachable atoms get a real sentence in the operator's vocabulary —
   # the generic underscore-replace below would leak schema jargon ("runner
   # requires attestation").
-  defp format_reason(:runner_requires_attestation),
-    do:
-      "a target runner only accepts signed runs from an MCP client — the portal can't dispatch to it"
+  defp format_reason(:runner_requires_attestation) do
+    "a target runner only accepts signed runs from an MCP client — the portal can't dispatch to it"
+  end
 
   defp format_reason(:pack_untrusted),
     do: "a target runner is advertising an untrusted version of the action's pack"
@@ -300,10 +299,10 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(:duplicate_step_ids),
     do: "two steps share the same ID — give each step a unique ID in the editor before running"
 
-  defp format_reason({:fan_out_too_large, max}),
-    do:
-      "this runbook would fan out to more than #{max} runs — narrow the steps' targets " <>
-        "or split it across several runbooks"
+  defp format_reason({:fan_out_too_large, max}) do
+    "this runbook would fan out to more than #{max} runs — narrow the steps' targets " <>
+      "or split it across several runbooks"
+  end
 
   defp format_reason(reason) when is_atom(reason),
     do: reason |> Atom.to_string() |> String.replace("_", " ")
@@ -515,9 +514,12 @@ defmodule EmisarWeb.RunbookRunLive do
   defp offline_preflight_message([name]),
     do: "Target runner #{name} is offline — its steps will queue until it reconnects."
 
-  defp offline_preflight_message(names),
-    do:
-      "#{length(names)} target runners are offline (#{Enum.join(names, ", ")}) — those steps will queue until they reconnect."
+  defp offline_preflight_message(names) do
+    "#{length(names)} target runners are offline (#{Enum.join(names, ", ")}) — those steps will queue until they reconnect."
+  end
+
+  defp pluralize(1, word), do: word
+  defp pluralize(_, word), do: word <> "s"
 
   # The execution table streams unified row structs (not raw runs): a
   # `:planned` placeholder per planned (step, runner), each flipped to its
@@ -662,12 +664,10 @@ defmodule EmisarWeb.RunbookRunLive do
             <span class="text-xs text-zinc-500">
               {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
               <span :if={!@execution && @blast_radius.total} class="text-brand-300/70">
-                → {@blast_radius.total} {if @blast_radius.total == 1, do: "run", else: "runs"} in {@blast_radius.waves} {if @blast_radius.waves ==
-                                                                                                                              1,
-                                                                                                                            do:
-                                                                                                                              "wave",
-                                                                                                                            else:
-                                                                                                                              "waves"}
+                → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
+                  @blast_radius.waves,
+                  "wave"
+                )}
               </span>
               <span :if={@execution}>
                 · {finished_count(@run_statuses)}/{@execution.total} finished

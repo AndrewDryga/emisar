@@ -8,13 +8,13 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def not_deleted(queryable \\ all()),
     do: where(queryable, [group_members: g], is_nil(g.deleted_at))
 
-  def by_provider_and_group(queryable, provider_id, external_group_id),
-    do:
-      where(
-        queryable,
-        [group_members: g],
-        g.provider_id == ^provider_id and g.external_group_id == ^external_group_id
-      )
+  def by_provider_and_group(queryable, provider_id, external_group_id) do
+    where(
+      queryable,
+      [group_members: g],
+      g.provider_id == ^provider_id and g.external_group_id == ^external_group_id
+    )
+  end
 
   def by_user_identity_id(queryable, user_identity_id),
     do: where(queryable, [group_members: g], g.user_identity_id == ^user_identity_id)

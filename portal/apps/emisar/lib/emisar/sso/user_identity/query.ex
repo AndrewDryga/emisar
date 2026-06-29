@@ -16,13 +16,13 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   # The (provider, sub) binding lookup — the only way an OIDC login resolves
   # to an identity. Never matched by email.
-  def by_provider_and_identifier(queryable, provider_id, identifier),
-    do:
-      where(
-        queryable,
-        [identities: i],
-        i.provider_id == ^provider_id and i.provider_identifier == ^identifier
-      )
+  def by_provider_and_identifier(queryable, provider_id, identifier) do
+    where(
+      queryable,
+      [identities: i],
+      i.provider_id == ^provider_id and i.provider_identifier == ^identifier
+    )
+  end
 
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
@@ -37,55 +37,55 @@ defmodule Emisar.SSO.UserIdentity.Query do
   # `by_provider_and_identifier/3` so a deactivate/fetch by the IdP's
   # externalId stays explicit, even though the two ids coincide today
   # (decision 4).
-  def by_provider_and_scim_external_id(queryable, provider_id, scim_external_id),
-    do:
-      where(
-        queryable,
-        [identities: i],
-        i.provider_id == ^provider_id and i.scim_external_id == ^scim_external_id
-      )
+  def by_provider_and_scim_external_id(queryable, provider_id, scim_external_id) do
+    where(
+      queryable,
+      [identities: i],
+      i.provider_id == ^provider_id and i.scim_external_id == ^scim_external_id
+    )
+  end
 
   # Resolve a group's SCIM member ids (decision 4: an externalId may arrive as
   # either side of the binding) to this provider's identities — the union of a
   # `scim_external_id` or a `provider_identifier` match. Unknown ids match
   # nothing (the member may not be provisioned yet).
-  def by_provider_and_external_ids(queryable, provider_id, external_ids),
-    do:
-      where(
-        queryable,
-        [identities: i],
-        i.provider_id == ^provider_id and
-          (i.scim_external_id in ^external_ids or i.provider_identifier in ^external_ids)
-      )
+  def by_provider_and_external_ids(queryable, provider_id, external_ids) do
+    where(
+      queryable,
+      [identities: i],
+      i.provider_id == ^provider_id and
+        (i.scim_external_id in ^external_ids or i.provider_identifier in ^external_ids)
+    )
+  end
 
   # The SCIM `GET /Users?filter=userName eq "x"` existence probe, matched in
   # the QUERY so it finds a user anywhere in the directory — not just the page
   # the IdP happened to fetch. `userName` is the rendered handle
   # (`claims.email` → `scim_external_id` → `provider_identifier`, per
   # `SCIM.Resource`), compared case-insensitively.
-  def by_user_name(queryable, user_name),
-    do:
-      where(
-        queryable,
-        [identities: i],
-        fragment(
-          "lower(coalesce(?->>'email', ?, ?)) = lower(?)",
-          i.claims,
-          i.scim_external_id,
-          i.provider_identifier,
-          ^user_name
-        )
+  def by_user_name(queryable, user_name) do
+    where(
+      queryable,
+      [identities: i],
+      fragment(
+        "lower(coalesce(?->>'email', ?, ?)) = lower(?)",
+        i.claims,
+        i.scim_external_id,
+        i.provider_identifier,
+        ^user_name
       )
+    )
+  end
 
   # The SCIM `filter=externalId eq "x"` probe — the rendered externalId is
   # `scim_external_id` falling back to `provider_identifier` (decision 4).
-  def by_external_id(queryable, external_id),
-    do:
-      where(
-        queryable,
-        [identities: i],
-        coalesce(i.scim_external_id, i.provider_identifier) == ^external_id
-      )
+  def by_external_id(queryable, external_id) do
+    where(
+      queryable,
+      [identities: i],
+      coalesce(i.scim_external_id, i.provider_identifier) == ^external_id
+    )
+  end
 
   def ordered_by_recent(queryable),
     do: order_by(queryable, [identities: i], desc: i.inserted_at, desc: i.id)

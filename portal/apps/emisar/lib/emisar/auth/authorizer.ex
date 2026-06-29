@@ -26,7 +26,6 @@ defmodule Emisar.Auth.Authorizer do
     quote do
       @behaviour Emisar.Auth.Authorizer
       alias Emisar.Auth.Subject
-
       import Emisar.Auth.Authorizer, only: [build: 2, has_permission?: 2, query_source: 1]
     end
   end

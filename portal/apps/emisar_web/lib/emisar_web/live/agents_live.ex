@@ -21,7 +21,6 @@ defmodule EmisarWeb.AgentsLive do
   every MCP request.
   """
   use EmisarWeb, :live_view
-
   alias Emisar.{ApiKeys, Runners}
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
 

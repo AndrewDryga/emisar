@@ -12,7 +12,6 @@ defmodule EmisarWeb.OAuthMetadataController do
   (emisar.dev / emisar.dev / localhost).
   """
   use EmisarWeb, :controller
-
   alias Emisar.OAuth
 
   # RFC 9728 — protected resource metadata. `resource` is the canonical

@@ -19,7 +19,6 @@ defmodule EmisarWeb.OAuthController do
   errors).
   """
   use EmisarWeb, :controller
-
   alias Emisar.OAuth
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}

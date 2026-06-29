@@ -1,6 +1,5 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
-
   alias EmisarWeb.ReturnTo
 
   # Render-only: the email form POSTs to `UserSessionController.magic_link_start`

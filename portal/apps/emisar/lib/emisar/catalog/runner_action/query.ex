@@ -22,13 +22,13 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_risk(queryable, risk),
     do: where(queryable, [runner_actions: a], a.risk == ^risk)
 
-  def by_pack(queryable, pack_id, pack_version),
-    do:
-      where(
-        queryable,
-        [runner_actions: a],
-        a.pack_id == ^pack_id and a.pack_version == ^pack_version
-      )
+  def by_pack(queryable, pack_id, pack_version) do
+    where(
+      queryable,
+      [runner_actions: a],
+      a.pack_id == ^pack_id and a.pack_version == ^pack_version
+    )
+  end
 
   # Distinct runner ids advertising the filtered actions — the blast radius
   # of trusting a pack (which hosts will run it).
