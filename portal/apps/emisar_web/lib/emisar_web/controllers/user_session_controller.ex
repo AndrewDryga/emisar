@@ -40,9 +40,9 @@ defmodule EmisarWeb.UserSessionController do
     registered? = params["registration"] == "1"
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
-    # doesn't apply. No `else`: throttled OR unknown both fall through to the
-    # same "sent" page, leaking neither account existence nor the throttle.
-    key = email |> to_string() |> String.trim() |> String.downcase()
+    # doesn't apply.
+    trimmed = email |> to_string() |> String.trim()
+    key = String.downcase(trimmed)
 
     conn =
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
@@ -51,10 +51,27 @@ defmodule EmisarWeb.UserSessionController do
         Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, return_to)
         put_magic_cookie(conn, token_id, nonce, registered?)
       else
-        _ -> conn
+        # Surfacing the throttle is safe: it's checked BEFORE the user lookup and
+        # fires identically for real and unknown addresses, so it can't leak
+        # account existence — only that this address has asked too often.
+        {:error, :rate_limited} ->
+          put_flash(
+            conn,
+            :error,
+            "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
+          )
+
+        # An unknown email stays silent — same "sent" page either way, so the
+        # response never reveals whether the address is an account.
+        _ ->
+          conn
       end
 
     conn
+    # Stash the typed address so the "sent" page can offer Resend without making
+    # the operator retype it — their own input echoed back, not an
+    # account-existence signal.
+    |> put_session(:magic_link_email, trimmed)
     |> put_magic_return_to(return_to)
     |> redirect(to: ~p"/sign_in/magic?sent=1")
   end

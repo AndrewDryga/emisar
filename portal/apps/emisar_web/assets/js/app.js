@@ -213,11 +213,38 @@ const CollapsibleSection = {
   }
 }
 
+// Resend cooldown for the magic-link "?sent=1" page — disables the resend button
+// for data-seconds, ticking "Resend in M:SS", then re-enables it with data-label.
+// The button ships ENABLED from the server so it still works without JS (the
+// server throttle is the real limit); this hook only adds the soft client cooldown.
+const ResendCooldown = {
+  mounted() {
+    this.label = this.el.dataset.label || "Resend code"
+    this.until = Date.now() + (parseInt(this.el.dataset.seconds, 10) || 30) * 1000
+    this.tick()
+    this.timer = setInterval(() => this.tick(), 250)
+  },
+  destroyed() { clearInterval(this.timer) },
+  tick() {
+    const ms = this.until - Date.now()
+    if (ms <= 0) {
+      this.el.disabled = false
+      this.el.textContent = this.label
+      clearInterval(this.timer)
+      return
+    }
+    const total = Math.ceil(ms / 1000)
+    const m = Math.floor(total / 60), s = total % 60
+    this.el.disabled = true
+    this.el.textContent = `Resend in ${m}:${String(s).padStart(2, "0")}`
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown }
 })
 
 // Show progress bar on live navigation and form submits

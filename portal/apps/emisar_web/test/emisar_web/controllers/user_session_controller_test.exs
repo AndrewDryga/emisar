@@ -125,6 +125,38 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute_received {:email, _}
       refute conn.resp_cookies["emisar_magic"]
     end
+
+    test "the typed address is stashed in the session so the sent page can offer Resend", %{
+      conn: conn,
+      user: user
+    } do
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      assert get_session(conn, :magic_link_email) == user.email
+    end
+
+    test "a send under the throttle shows no error flash", %{conn: conn, user: user} do
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
+      assert (Phoenix.Flash.get(conn.assigns.flash, :error) || "") == ""
+    end
+
+    test "a rate-limited send surfaces the same throttle error for an UNKNOWN address (no account leak)",
+         %{conn: conn} do
+      previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
+      Application.put_env(:emisar_web, :rate_limit_enabled, true)
+      on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+
+      # The throttle is checked BEFORE the user lookup, so the 6th request for an
+      # address that ISN'T an account is throttled and surfaces the SAME message a
+      # real account would — the error can never reveal whether the address exists.
+      params = %{"user" => %{"email" => "ghost@example.test"}}
+      for _ <- 1..5, do: post(conn, ~p"/sign_in/magic/start", params)
+      conn = post(conn, ~p"/sign_in/magic/start", params)
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Wait a few minutes"
+    end
   end
 
   describe "DELETE /sign_out" do
