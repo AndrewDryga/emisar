@@ -30,7 +30,10 @@
 #               ADOPT their pre-seeded rows by external_id — so they come up
 #               online carrying the seeded run history, approvals, and grants
 #
-# Sign in to http://localhost:4010 as demo@emisar.dev / Sleep-tight-1234.
+# Sign in at http://localhost:4010 as demo@emisar.dev — sign-in is passwordless,
+# so the magic-link email lands in the dev mailbox at
+# http://localhost:4010/dev/mailbox (enabled by EMISAR_DEV_ROUTES on portal);
+# open it and click the newest email's link to finish.
 # (Host port 4010 → container 4000, so the stack doesn't collide with a local
 # `mix phx.server` on 4000.)
 #
@@ -132,6 +135,10 @@ services:
         # `portal` service) through prod.exs force_ssl. A real Fly build never
         # sets this, so prod enforces HTTPS for every request host.
         EMISAR_DEV_HOST_EXCLUDES: "1"
+        # DEV-ONLY: compile in the /dev routes so the passwordless magic-link
+        # sign-in email is viewable at /dev/mailbox (paired with the matching
+        # EMISAR_DEV_ROUTES env below, which switches the mailer to in-memory).
+        EMISAR_DEV_ROUTES: "1"
     image: emisar/portal:dev
     depends_on:
       db:
@@ -153,6 +160,10 @@ services:
       # Use the Paddle stub client locally — prod runtime.exs refuses to
       # boot without PADDLE_API_KEY unless this is set.
       EMISAR_DISABLE_BILLING: "1"
+      # DEV-ONLY: deliver mail into the in-memory mailbox served at /dev/mailbox
+      # (the /dev routes are compiled in via the build arg above). Lets you
+      # complete the passwordless magic-link sign-in with no mail provider.
+      EMISAR_DEV_ROUTES: "1"
     # Host port 4010 → container 4000 (keeps `portal:4000`, the healthcheck, and
     # PORT unchanged for the in-network runners/mcp while freeing host :4000 for
     # a local `mix phx.server`; URL_PORT=4010 makes generated URLs advertise the

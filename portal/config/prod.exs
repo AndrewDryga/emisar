@@ -45,6 +45,13 @@ config :emisar_web, EmisarWeb.Endpoint,
     subdomains: true
   ]
 
+# Dev-only routes (/dev/mailbox magic-link preview + /dev/dashboard) — compiled
+# in ONLY when the docker-compose dev stack's build passes EMISAR_DEV_ROUTES=1.
+# dev_routes is read via Application.compile_env in the router, so this is a
+# BUILD-time decision; a real Fly build never sets it, so prod never mounts
+# /dev/*. The matching in-memory mailer is switched on at runtime (runtime.exs).
+config :emisar_web, dev_routes: System.get_env("EMISAR_DEV_ROUTES") == "1"
+
 # Configures Swoosh API Client
 config :swoosh, :api_client, Emisar.Finch
 

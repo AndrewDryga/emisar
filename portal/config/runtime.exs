@@ -128,6 +128,14 @@ if config_env() == :prod do
   # -- Mailer (Postmark by default; Mailgun and SMTP available as
   # fallbacks if you swap providers later) --------------------------
   cond do
+    System.get_env("EMISAR_DEV_ROUTES") == "1" ->
+      # Dev stack (EMISAR_DEV_ROUTES=1): deliver into the in-memory mailbox the
+      # /dev/mailbox preview reads, so passwordless magic-link sign-in works
+      # locally with no mail provider. Re-enables the Swoosh memory storage that
+      # prod.exs turns off. Never set on a real deploy.
+      config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
+      config :swoosh, local: true
+
     System.get_env("POSTMARK_API_TOKEN") ->
       config :emisar, Emisar.Mailer,
         adapter: Swoosh.Adapters.Postmark,

@@ -43,6 +43,15 @@ ENV MIX_ENV="prod"
 ARG EMISAR_DEV_HOST_EXCLUDES=""
 ENV EMISAR_DEV_HOST_EXCLUDES=${EMISAR_DEV_HOST_EXCLUDES}
 
+# Optional dev-only build flag: the docker-compose dev stack passes
+# EMISAR_DEV_ROUTES=1 so config/prod.exs compiles in the /dev routes — the
+# /dev/mailbox magic-link preview (passwordless sign-in needs it locally) and
+# /dev/dashboard. dev_routes is a compile_env read by the router, so it must be
+# set before `mix compile`. A real Fly build leaves it empty, so prod never
+# mounts /dev/*. The matching in-memory mailer is switched on at runtime.
+ARG EMISAR_DEV_ROUTES=""
+ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
+
 # Place install.sh / install-mcp.sh where InstallController +
 # InstallMcpController's compile-time `Path.expand` resolves to (six
 # levels up from each controller's source dir => container root).
