@@ -30,4 +30,23 @@ defmodule EmisarWeb.MagicLinkLiveTest do
 
     assert html =~ "Use a different email"
   end
+
+  test "?sent=1 inlines the stashed address and offers Resend", %{conn: conn} do
+    conn = Plug.Test.init_test_session(conn, %{"magic_link_email" => "operator@example.test"})
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    # The address is inlined into the sentence as <code>, with the space before
+    # it and NO stray space before the period (the HEEx-whitespace gotcha).
+    assert html =~ ~r{6-digit code to <code[^>]*>operator@example\.test</code>\. Enter}
+    # ...and the cooldown-gated resend button is present.
+    assert html =~ ~s(id="resend-code")
+    assert html =~ ~s(phx-hook="ResendCooldown")
+  end
+
+  test "?sent=1 with no stashed address shows neither the address nor Resend", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    assert html =~ "6-digit code. Enter"
+    refute html =~ ~s(id="resend-code")
+  end
 end

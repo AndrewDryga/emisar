@@ -33,11 +33,15 @@ defmodule EmisarWeb.MagicLinkLive do
       <%= if @sent? do %>
         <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-5 text-brand-200">
           <h3 class="font-semibold">Check your inbox.</h3>
-          <p class="mt-2 text-sm">
+          <p :if={@email} class="mt-2 text-sm">
+            We emailed a sign-in link and a 6-digit code to <code class="font-mono text-brand-100">{@email}</code>. Enter
+            the code here, or open the link from <em>this same browser</em>. Both expire in
+            15 minutes.
+          </p>
+          <p :if={!@email} class="mt-2 text-sm">
             We emailed a sign-in link and a 6-digit code. Enter the code here, or open the
             link from <em>this same browser</em>. Both expire in 15 minutes.
           </p>
-          <p :if={@email} class="mt-2 text-xs text-brand-300/80">Sent to {@email}.</p>
         </div>
 
         <.simple_form for={@code_form} action={~p"/sign_in/magic/code"} method="post" class="mt-5">
