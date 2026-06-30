@@ -16,6 +16,9 @@ defmodule EmisarWeb.MagicLinkLive do
      # The address magic_link_start stashed in the session, so the "sent" page can
      # offer Resend without a retype. nil when the page is opened directly.
      |> assign(:email, sent_to(session))
+     # The code's expiry (ISO8601) magic_link_start stashed — the sent page counts
+     # it down and disables the code form when it lapses. nil on direct nav.
+     |> assign(:expires_at, session["magic_link_expires_at"])
      |> assign(:email_form, to_form(%{"email" => ""}, as: "user"))
      |> assign(:code_form, to_form(%{"code" => ""}))}
   end
@@ -42,6 +45,18 @@ defmodule EmisarWeb.MagicLinkLive do
             We emailed a sign-in link and a 6-digit code. Enter the code here, or open the
             link from <em>this same browser</em>. Both expire in 15 minutes.
           </p>
+          <%!-- MagicCodeExpiry fills this with a live "Code expires in M:SS"; on lapse it
+                swaps to an "expired — resend" note and disables #code-submit, so a dead
+                code can't be sent and the resend button below is the obvious next step. --%>
+          <p
+            :if={@expires_at}
+            id="code-expiry"
+            phx-hook="MagicCodeExpiry"
+            data-expires-at={@expires_at}
+            data-disable="code-submit"
+            class="mt-3 text-xs font-medium text-brand-300/80"
+          >
+          </p>
         </div>
 
         <.simple_form for={@code_form} action={~p"/sign_in/magic/code"} method="post" class="mt-5">
@@ -56,7 +71,9 @@ defmodule EmisarWeb.MagicLinkLive do
             required
           />
           <:actions>
-            <.button class="w-full">Sign in <span aria-hidden="true">→</span></.button>
+            <.button id="code-submit" class="w-full">
+              Sign in <span aria-hidden="true">→</span>
+            </.button>
           </:actions>
         </.simple_form>
 

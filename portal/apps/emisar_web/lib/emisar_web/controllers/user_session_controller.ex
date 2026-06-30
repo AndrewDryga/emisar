@@ -68,12 +68,20 @@ defmodule EmisarWeb.UserSessionController do
       end
 
     conn
-    # Stash the typed address so the "sent" page can offer Resend without making
-    # the operator retype it — their own input echoed back, not an
-    # account-existence signal.
+    # Stash the typed address + the code's expiry so the "sent" page can offer
+    # Resend without a retype and count the code down to expiry. Both are uniform
+    # for any address (their own input + a fixed window), so neither leaks whether
+    # the address is an account.
     |> put_session(:magic_link_email, trimmed)
+    |> put_session(:magic_link_expires_at, magic_link_expiry())
     |> put_magic_return_to(return_to)
     |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  defp magic_link_expiry do
+    DateTime.utc_now()
+    |> DateTime.add(Auth.magic_link_validity_in_minutes() * 60, :second)
+    |> DateTime.to_iso8601()
   end
 
   @doc "Code path — the operator types the 6-digit code into the browser holding the nonce."
@@ -117,9 +125,9 @@ defmodule EmisarWeb.UserSessionController do
         |> delete_resp_cookie(@magic_cookie)
         |> put_flash(
           :error,
-          "That sign-in code expired or didn't match this browser. Send a fresh one."
+          "That sign-in code expired or didn't match this browser. Resend a fresh one below."
         )
-        |> redirect(to: ~p"/sign_in/magic")
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
     end
   end
 

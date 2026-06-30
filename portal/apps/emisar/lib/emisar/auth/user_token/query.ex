@@ -43,6 +43,9 @@ defmodule Emisar.Auth.UserToken.Query do
     where(queryable, [tokens: t], t.auth_method in ^valid)
   end
 
+  @doc "Validity window of a split-code magic-link code, in minutes — for the sent-page countdown."
+  def magic_link_validity_in_minutes, do: @magic_link_validity_in_minutes
+
   defp validity_in_days("session"), do: @session_validity_in_days
   defp validity_in_days("confirm"), do: @confirm_validity_in_days
   defp validity_in_days("magic_link"), do: @magic_link_validity_in_minutes / (24 * 60)

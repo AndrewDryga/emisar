@@ -240,11 +240,38 @@ const ResendCooldown = {
   }
 }
 
+// Magic-link code expiry on the "?sent=1" page — counts the emailed code down to
+// data-expires-at ("Code expires in M:SS"). On lapse it disables the code submit
+// (the element id in data-disable) and swaps to an "expired, resend" note, so a
+// dead code can't be submitted and the resend button below is the next step.
+const MagicCodeExpiry = {
+  mounted() {
+    this.expiresAt = new Date(this.el.dataset.expiresAt)
+    this.tick()
+    this.timer = setInterval(() => this.tick(), 1000)
+  },
+  destroyed() { clearInterval(this.timer) },
+  tick() {
+    const ms = this.expiresAt - new Date()
+    if (ms <= 0) {
+      this.el.textContent = "This code has expired — resend a fresh one below."
+      this.el.classList.remove("text-brand-300/80")
+      this.el.classList.add("text-amber-400")
+      const target = this.el.dataset.disable && document.getElementById(this.el.dataset.disable)
+      if (target) target.disabled = true
+      clearInterval(this.timer)
+      return
+    }
+    const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), s = t % 60
+    this.el.textContent = `Code expires in ${m}:${String(s).padStart(2, "0")}.`
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry }
 })
 
 // Show progress bar on live navigation and form submits

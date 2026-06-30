@@ -49,4 +49,19 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     assert html =~ "6-digit code. Enter"
     refute html =~ ~s(id="resend-code")
   end
+
+  test "?sent=1 with a stashed expiry renders the code countdown wired to the submit", %{
+    conn: conn
+  } do
+    expires = DateTime.utc_now() |> DateTime.add(900, :second) |> DateTime.to_iso8601()
+    conn = Plug.Test.init_test_session(conn, %{"magic_link_expires_at" => expires})
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    # The countdown element carries the hook + the expiry, and targets the code
+    # submit it disables on lapse.
+    assert html =~ ~s(id="code-expiry")
+    assert html =~ ~s(phx-hook="MagicCodeExpiry")
+    assert html =~ ~s(data-disable="code-submit")
+    assert html =~ ~s(id="code-submit")
+  end
 end

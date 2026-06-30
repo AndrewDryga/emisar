@@ -344,6 +344,9 @@ defmodule Emisar.Auth do
     {token.id, nonce, secret}
   end
 
+  @doc "Validity window of a magic-link code, in minutes — for the sent-page countdown."
+  def magic_link_validity_in_minutes, do: UserToken.Query.magic_link_validity_in_minutes()
+
   @doc """
   Verifies a split-code magic link by reconstructing `hash(nonce <> secret)` and
   matching it against the locked token row. BOTH halves are required, so an

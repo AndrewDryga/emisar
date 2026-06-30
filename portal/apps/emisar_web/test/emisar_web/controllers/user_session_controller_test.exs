@@ -91,7 +91,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       # link → no sign-in. The core web-level hijack guarantee.
       conn = get(build_conn(), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
-      assert redirected_to(conn) == ~p"/sign_in/magic"
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       refute get_session(conn, :user_token)
     end
 
@@ -101,7 +101,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       # `tamper` isn't 6 digits, so it can never hash-match the real secret.
       conn = get(conn, ~p"/sign_in/magic/#{token_id}/tamper")
 
-      assert redirected_to(conn) == ~p"/sign_in/magic"
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       refute get_session(conn, :user_token)
     end
 
@@ -111,7 +111,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
 
-      assert redirected_to(conn) == ~p"/sign_in/magic"
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       refute get_session(conn, :user_token)
     end
 
@@ -126,12 +126,15 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute conn.resp_cookies["emisar_magic"]
     end
 
-    test "the typed address is stashed in the session so the sent page can offer Resend", %{
+    test "the typed address + the code's expiry are stashed for the sent page", %{
       conn: conn,
       user: user
     } do
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
       assert get_session(conn, :magic_link_email) == user.email
+
+      assert {:ok, %DateTime{}, _} =
+               DateTime.from_iso8601(get_session(conn, :magic_link_expires_at))
     end
 
     test "a send under the throttle shows no error flash", %{conn: conn, user: user} do
