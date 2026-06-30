@@ -355,6 +355,12 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "magic_link_validity_in_minutes/0" do
+    test "is the magic-link code's validity window in minutes" do
+      assert Auth.magic_link_validity_in_minutes() == 15
+    end
+  end
+
   describe "verify_magic_link/4" do
     setup do
       %{user: Fixtures.Users.create_user()}
