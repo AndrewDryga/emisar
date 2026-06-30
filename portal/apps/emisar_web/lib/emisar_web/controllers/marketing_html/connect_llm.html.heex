@@ -392,6 +392,23 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-..." &#125
             </div>
           </section>
         </div>
+
+        <p class="mt-6 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+          <strong class="text-zinc-400">Targeting a signed-dispatch runner?</strong>
+          If a runner enforces <.link
+            navigate={~p"/docs/signed-dispatch"}
+            class="text-brand-400 hover:text-brand-300"
+          >
+            signed dispatch
+          </.link>, add
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+          and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+          (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
+          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
+          block — the bridge signs every call so an enforcing runner will run it. Keep both secret,
+          never on the portal. The cloud connectors in step&nbsp;1 sign nothing, so they can't reach an
+          enforcing runner.
+        </p>
       </section>
 
       <%!-- ============================================================ --%>
