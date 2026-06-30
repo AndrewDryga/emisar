@@ -1,0 +1,64 @@
+schema_version: 1
+
+# Enforcing-runner config for the signed-dispatch e2e. This is NOT a normal demo
+# runner: it REFUSES the control plane's authority. It runs a dispatch only if it
+# carries a valid Ed25519 attestation vouched for by a certificate from the
+# trusted CA below — so the portal Run button, runbooks, and API keys can't reach
+# it, only a signed MCP call. DEV ONLY.
+#
+# This file is a TEMPLATE. The `signing-init` service mints a FRESH CA at stack-up
+# (generate-at-startup — no key material is ever committed) and substitutes its
+# public key for __CA_PUBLIC_KEY__, writing the result to the shared volume as
+# /signing/config.yaml; runner-signed points `--config` at that. The cert
+# signing-init mints is scoped `group=signed-iad`, which is why this runner's
+# group MUST stay signed-iad — the runner matches a cert's scope against its own
+# local group/labels.
+runner:
+  id: "signed-iad-01"
+  group: "signed-iad"
+  labels:
+    env: prod
+    region: us-east
+    role: signed
+
+cloud:
+  url: "http://portal:4000"
+  allow_insecure: true
+  auth_key_env: "EMISAR_AUTH_KEY"
+  token_path: "/var/lib/emisar/token.json"
+  heartbeat_every: "30s"
+  reconnect_min: "1s"
+  reconnect_max: "30s"
+
+paths:
+  data_dir: "/var/lib/emisar"
+  work_dir: "/tmp/emisar"
+  # linux-core ships in the library, so the cloud auto-trusts it on connect.
+  # linux.uptime (a read-only action) is what the e2e dispatches.
+  packs:
+    - "/opt/emisar/packs/linux-core"
+
+execution:
+  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
+  cancel_grace: "30s"
+
+# The whole point of this runner: only signed dispatch runs. trusted_cas carries
+# the CA `signing-init` minted; enforce_signatures makes the runner refuse any
+# dispatch without a valid, in-scope, CA-vouched attestation. The runner also
+# advertises enforcement to the cloud, which then disables its own
+# operator/runbook dispatch to this host. max_attestation_age caps replay
+# exposure (and is independent of the cert's own validity window).
+signing:
+  enforce_signatures: true
+  max_attestation_age: "24h"
+  trusted_cas:
+    - ca_id: "e2e-ca"
+      public_key: "__CA_PUBLIC_KEY__"
+
+events:
+  jsonl_path: "/var/log/emisar/events.jsonl"
+  max_size_bytes: 104857600
+  max_backups: 5
+
+redaction:
+  rules: []

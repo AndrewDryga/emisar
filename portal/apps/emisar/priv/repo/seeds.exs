@@ -683,7 +683,10 @@ agent_key_attrs = %{
     "MCP bridge used by the on-call engineer for read-only triage and " <>
       "approval-gated remediation.",
   scopes: ["actions:read", "actions:execute"],
-  runner_group_filter: ["edge-web", "app-api", "data-postgres"]
+  # "signed-iad" is the enforcing runner the signed-dispatch e2e brings up
+  # (dev/signing/e2e/) — keep it in the on-call key's visible groups so the e2e
+  # can dispatch to it. The other groups mirror the seeded demo runners.
+  runner_group_filter: ["edge-web", "app-api", "data-postgres", "signed-iad"]
 }
 
 agent_key =

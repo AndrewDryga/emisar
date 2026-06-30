@@ -312,6 +312,53 @@ services:
       EMISAR_ALLOW_INSECURE: "1"
 
   # ----------------------------------------------------------------
+  # signing-init — mints the signed-dispatch e2e material at stack-up
+  # (GENERATE-AT-STARTUP: no CA or leaf private key is committed). One-shot,
+  # idempotent; writes to the shared `signing_material` volume:
+  #   /signing/config.yaml   runner-signed's config (template + the fresh CA key)
+  #   /signing/leaf_key       EMISAR_SIGNING_KEY for the bridge
+  #   /signing/cert.json      EMISAR_SIGNING_CERT for the bridge
+  # `docker compose down -v` rotates the keys. Reuses the runner image (emisar
+  # binary + a shell); runs as root to write the fresh named volume. Profile-gated
+  # so the default `docker compose up` is unchanged. See dev/signing/e2e/.
+  # ----------------------------------------------------------------
+  signing-init:
+    image: emisar/runner:dev
+    profiles: ["test"]
+    user: "root"
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+    volumes:
+      - signing_material:/signing
+      - ./dev/runners/signed-iad.yaml:/templates/signed-iad.yaml:ro
+      - ./dev/signing/init.sh:/usr/local/bin/signing-init.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/signing-init.sh"]
+    restart: "no"
+
+  # ----------------------------------------------------------------
+  # runner-signed — a 4th runner that ENFORCES signed dispatch. It points
+  # --config at the config signing-init wrote (with the freshly-minted CA's
+  # public key), so it runs a dispatch ONLY if it carries a valid, in-scope,
+  # CA-vouched Ed25519 attestation — the portal Run button / runbooks can't
+  # reach it, only a signed MCP call. Profile-gated so the default stack is
+  # unchanged; brought up by dev/signing/e2e/run.sh.
+  # ----------------------------------------------------------------
+  runner-signed:
+    <<: *runner
+    hostname: signed-iad-01.northstar.example
+    profiles: ["test"]
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+      signing-init:
+        condition: service_completed_successfully
+    command: ["/usr/local/bin/emisar", "connect", "--config", "/signing/config.yaml"]
+    volumes:
+      - runner_signed_data:/var/lib/emisar
+      - signing_material:/signing:ro
+
+  # ----------------------------------------------------------------
   # SSO e2e runs from the HOST, not as a compose service. The flow uses plain
   # localhost (issuer localhost:8443, redirect localhost:4010 → the published
   # ports), which a container CAN'T follow — inside a container `localhost` is
@@ -329,3 +376,7 @@ volumes:
   runner_1_data:
   runner_2_data:
   runner_3_data:
+  # runner-signed's data dir + the generated signed-dispatch material (both
+  # cleared by `docker compose down -v`, which rotates the e2e keys).
+  runner_signed_data:
+  signing_material:

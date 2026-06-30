@@ -71,3 +71,31 @@ docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
 The pack catalog (`packs/`) is mounted read-only at `/packs`; the test cases
 live with each pack at `packs/<pack>/test/cases.yaml`. See
 `test-packs/README.md` for the full schema and skip rationale.
+
+## `signing/`
+
+End-to-end coverage for **signed dispatch** (the CA-issued-certificate feature)
+against the root demo stack. Two profile-gated `test` services in
+`docker-compose.yml` plus a host driver:
+
+- **`signing-init`** mints a CA + leaf key + certificate at stack-up via
+  `emisar signing init` (run `init.sh`), into the shared `signing_material`
+  volume. **Generate-at-startup** — no CA or leaf private key is committed;
+  `docker compose down -v` rotates them.
+- **`runner-signed`** is a 4th runner that **enforces** signing: it points
+  `--config` at the config `signing-init` wrote (with the freshly-minted CA's
+  public key) and runs a dispatch only if it carries a valid, in-scope,
+  CA-vouched attestation. Group `signed-iad`, matching the cert's scope.
+- **`e2e/`** drives the real MCP bridge to prove the property end to end — a
+  **signed** dispatch runs, the **same** dispatch **unsigned** is refused with
+  `runner_requires_attestation` (the portal won't relay an unsigned call to an
+  enforcing runner):
+
+```sh
+docker compose up -d         # the base stack
+./dev/signing/e2e/run.sh     # builds current runner/mcp images, then asserts
+```
+
+`run.sh` is host-side (stdlib Python 3, like the SSO e2e) — it reaches the
+portal over the published `localhost:4010` and the bridge over the in-network
+`portal:4000`, so signing happens in the bridge exactly as on a real client.
