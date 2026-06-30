@@ -30,15 +30,31 @@ defmodule Emisar.SSO.OIDC do
   @typedoc "The validated outcome: the stable identifier (the `identifier_claim`) + the claims."
   @type verified :: %{identifier: String.t(), claims: map()}
 
+  @typedoc "A discovery probe's result — the endpoints the IdP advertises (nil if absent)."
+  @type discovery :: %{
+          authorization_endpoint: String.t() | nil,
+          token_endpoint: String.t() | nil,
+          userinfo_endpoint: String.t() | nil,
+          jwks_uri: String.t() | nil
+        }
+
   @callback begin_authorization(provider :: struct(), opts :: keyword()) ::
               {:ok, begin()} | {:error, term()}
   @callback verify_callback(provider :: struct(), params :: map(), stashed :: map()) ::
               {:ok, verified()} | {:error, term()}
+  @callback discover(provider :: struct()) :: {:ok, discovery()} | {:error, term()}
+
+  # Only the "Test connection" capstone calls discover/1; the real impl + that
+  # one test stub implement it, so the other (login-flow) test stubs needn't.
+  @optional_callbacks discover: 1
 
   def begin_authorization(provider, opts), do: impl().begin_authorization(provider, opts)
 
   def verify_callback(provider, params, stashed),
     do: impl().verify_callback(provider, params, stashed)
+
+  @doc "Probe an issuer's OIDC discovery document — used by `SSO.test_provider/2`, no row written."
+  def discover(provider), do: impl().discover(provider)
 
   defp impl, do: Application.get_env(:emisar, :sso_oidc_impl, Emisar.SSO.OIDC.Oidcc)
 end

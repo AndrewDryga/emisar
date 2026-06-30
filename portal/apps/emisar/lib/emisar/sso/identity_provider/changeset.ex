@@ -59,7 +59,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     # would let a `manage_sso` admin self-provision account owners — never
     # allowed via sync (owner is a deliberate human grant needing manage_owners).
     |> validate_exclusion(:default_role, [:owner], message: "can't be owner")
-    |> validate_issuer_https()
+    |> validate_issuer()
     |> normalize_allowed_email_domain()
     |> unique_constraint([:account_id, :kind],
       name: :identity_providers_account_kind_enabled_index
@@ -70,12 +70,15 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   end
 
   # The issuer is the discovery base + the iss we exact-match the ID token
-  # against — it must be an https URL with a host (R2/H3, no plaintext OIDC).
-  defp validate_issuer_https(changeset) do
+  # against — it must be an https URL with a host (R2/H3, no plaintext OIDC), and
+  # not a private/loopback/metadata target (the login fetch is an SSRF surface;
+  # `IssuerUrl` is the same guard the "Test connection" capstone runs).
+  defp validate_issuer(changeset) do
     validate_change(changeset, :issuer, fn :issuer, issuer ->
-      case URI.parse(issuer) do
-        %URI{scheme: "https", host: host} when is_binary(host) and host != "" -> []
-        _ -> [issuer: "must be an https URL"]
+      case Emisar.SSO.IssuerUrl.validate(issuer) do
+        {:ok, _issuer} -> []
+        {:error, :invalid_issuer} -> [issuer: "must be an https URL"]
+        {:error, :blocked_issuer} -> [issuer: "can't be a private or loopback address"]
       end
     end)
   end

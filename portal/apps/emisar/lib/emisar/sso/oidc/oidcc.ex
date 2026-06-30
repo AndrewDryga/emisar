@@ -99,6 +99,32 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     end
   end
 
+  @impl Emisar.SSO.OIDC
+  def discover(%IdentityProvider{issuer: issuer}) do
+    # One-shot discovery (no worker lifecycle) over the SAME TLS verification as
+    # the login flow, so a passing test truly predicts a reachable IdP. Fetches
+    # `<issuer>/.well-known/openid-configuration`; the issuer is SSRF-validated
+    # upstream in the context.
+    case Oidcc.ProviderConfiguration.load_configuration(issuer, %{request_opts: request_opts()}) do
+      {:ok, {config, _expiry}} ->
+        {:ok,
+         %{
+           authorization_endpoint: present(config.authorization_endpoint),
+           token_endpoint: present(config.token_endpoint),
+           userinfo_endpoint: present(config.userinfo_endpoint),
+           jwks_uri: present(config.jwks_uri)
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # oidcc renders an absent optional endpoint as :undefined and present ones as
+  # uri_string iodata — normalize to a binary or nil for the UI.
+  defp present(:undefined), do: nil
+  defp present(value), do: IO.iodata_to_binary(value)
+
   # State (CSRF) must match the stashed value, constant-time.
   defp ensure_state_matches(%{"state" => state}, %{state: expected})
        when is_binary(state) and is_binary(expected) do

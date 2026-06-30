@@ -82,6 +82,9 @@ defmodule EmisarWeb.SSOSettingsLive do
       # nil. Never re-rendered from a stored value — write-only, like every
       # emisar secret.
       |> assign(:scim_token, nil)
+      # The "Test connection" capstone's last result on /new: nil, {:ok, summary},
+      # or {:error, reason}. Cleared whenever the form changes so it never lies.
+      |> assign(:test_result, nil)
       # False until the connected mount pass runs the list read — so the
       # "No connections yet" empty state never flashes for a team that *has*
       # connections (the first, unconnected pass renders chrome only).
@@ -105,7 +108,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       case socket.assigns.live_action do
         :index -> load_index(socket)
         :show -> load_show(socket, params["id"])
-        :new -> assign_form(socket, SSO.change_provider())
+        :new -> socket |> assign_form(SSO.change_provider()) |> assign(:test_result, nil)
       end
     else
       # A synchronous changeset (no DB read) so /new renders on the dead pass.
@@ -197,11 +200,18 @@ defmodule EmisarWeb.SSOSettingsLive do
     changeset =
       SSO.change_provider(%SSO.IdentityProvider{}, params) |> Map.put(:action, :validate)
 
-    {:noreply, assign_form(socket, changeset)}
+    {:noreply, socket |> assign_form(changeset) |> assign(:test_result, nil)}
   end
 
   def handle_event("create", %{"provider" => params}, socket) do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_create(&1, params))
+  end
+
+  # The setup capstone: run a real OIDC discovery against the issuer the operator
+  # has typed (read from the live form), so a working connection is proven before
+  # it's saved. The context SSRF-validates the issuer and writes no row.
+  def handle_event("test_connection", _params, socket) do
+    Permissions.gated(socket, socket.assigns.can_configure?, &do_test_connection/1)
   end
 
   def handle_event("start_edit", %{"id" => id}, socket) do
@@ -371,6 +381,16 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, error_message(reason))}
     end
+  end
+
+  # Read the issuer the operator has typed (the form is kept current by validate)
+  # and probe its OIDC discovery. The whole {:ok, …}/{:error, …} result is stashed
+  # for the inline banner — no flash (the result is the point of the surface).
+  defp do_test_connection(socket) do
+    issuer = Ecto.Changeset.get_field(socket.assigns.form.source, :issuer)
+
+    {:noreply,
+     assign(socket, :test_result, SSO.test_provider(issuer, socket.assigns.current_subject))}
   end
 
   defp do_update(socket, id, params) do
@@ -778,8 +798,19 @@ defmodule EmisarWeb.SSOSettingsLive do
               guide_id="new"
               callback_url={@callback_url}
             />
+            <.test_result :if={@test_result} result={@test_result} />
             <:actions>
               <.button phx-disable-with="Saving...">Add connection</.button>
+              <%!-- The capstone: prove the issuer is reachable before saving.
+                   type="button" so it probes (phx-click) instead of submitting. --%>
+              <.button
+                type="button"
+                variant="secondary"
+                phx-click="test_connection"
+                phx-disable-with="Testing…"
+              >
+                Test connection
+              </.button>
             </:actions>
           </.simple_form>
         </.panel>
@@ -1026,6 +1057,57 @@ defmodule EmisarWeb.SSOSettingsLive do
       <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
     </.empty_state>
     """
+  end
+
+  # The "Test connection" capstone's outcome. Dispatch on the result shape:
+  # discovery succeeded (the endpoints prove a real OIDC IdP) vs. a reason.
+  attr :result, :any, required: true
+
+  defp test_result(%{result: {:ok, summary}} = assigns) do
+    assigns = assign(assigns, :summary, summary)
+
+    ~H"""
+    <div class="rounded-lg border border-brand-500/30 bg-brand-500/10 p-3.5 text-sm text-brand-100">
+      <div class="flex items-center gap-2 font-medium">
+        <.icon name="hero-check-circle" class="h-4 w-4 text-brand-400" />
+        Discovery succeeded — this issuer serves a valid OIDC configuration.
+      </div>
+      <dl class="mt-2 space-y-1 text-xs text-brand-200/80">
+        <div :if={@summary.authorization_endpoint} class="flex gap-2">
+          <dt class="w-32 shrink-0 text-brand-200/60">Authorization</dt>
+          <dd class="truncate font-mono">{@summary.authorization_endpoint}</dd>
+        </div>
+        <div :if={@summary.token_endpoint} class="flex gap-2">
+          <dt class="w-32 shrink-0 text-brand-200/60">Token</dt>
+          <dd class="truncate font-mono">{@summary.token_endpoint}</dd>
+        </div>
+        <div :if={@summary.jwks_uri} class="flex gap-2">
+          <dt class="w-32 shrink-0 text-brand-200/60">JWKS</dt>
+          <dd class="truncate font-mono">{@summary.jwks_uri}</dd>
+        </div>
+      </dl>
+    </div>
+    """
+  end
+
+  defp test_result(%{result: {:error, reason}} = assigns) do
+    assigns = assign(assigns, :message, test_error_message(reason))
+
+    ~H"""
+    <div class="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3.5 text-sm text-rose-200">
+      <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+      <span>{@message}</span>
+    </div>
+    """
+  end
+
+  defp test_error_message(:invalid_issuer), do: "Enter the issuer's https URL first, then test."
+
+  defp test_error_message(:blocked_issuer),
+    do: "The issuer can't be a private, loopback, or metadata address."
+
+  defp test_error_message(_reason) do
+    "Couldn't load the issuer's OIDC discovery document. Check the issuer URL and that the IdP is reachable from the internet."
   end
 
   attr :form, Phoenix.HTML.Form, required: true

@@ -468,6 +468,61 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
+  describe "the setup test-connection capstone" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "an SSRF issuer is blocked through the UI, before any discovery", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # Type a loopback/private issuer, then run the capstone — the context's SSRF
+      # guard short-circuits before a fetch and the result banner says why.
+      lv
+      |> form("#provider_form", %{"provider" => %{"kind" => "okta", "issuer" => "https://10.0.0.5"}})
+      |> render_change()
+
+      html = render_click(lv, "test_connection", %{})
+
+      assert html =~ "private, loopback, or metadata"
+    end
+
+    test "a non-https issuer prompts for a valid URL instead of fetching", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      lv
+      |> form("#provider_form", %{"provider" => %{"kind" => "okta", "issuer" => "http://idp.test"}})
+      |> render_change()
+
+      html = render_click(lv, "test_connection", %{})
+
+      assert html =~ "https URL first"
+    end
+
+    test "a non-admin viewer's forged test event is a gated no-op", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # The viewer never sees the form; a pushed test event is gated server-side —
+      # no discovery, no result banner, no crash.
+      html = render_click(lv, "test_connection", %{})
+
+      refute html =~ "Discovery succeeded"
+      refute html =~ "private, loopback, or metadata"
+    end
+  end
+
   describe "group → role mapping forms gating" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})

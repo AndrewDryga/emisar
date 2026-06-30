@@ -17,7 +17,7 @@ defmodule Emisar.SSO do
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
   alias Emisar.Auth.Subject
   alias Emisar.SSO.{Authorizer, DirectoryGroupMember, GroupRoleMapping}
-  alias Emisar.SSO.{IdentityProvider, LinkRequest, OIDC, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, UserIdentity}
   require Logger
 
   # -- Config reads ----------------------------------------------------
@@ -109,6 +109,23 @@ defmodule Emisar.SSO do
         end,
         audit: &Audit.Events.identity_provider_deleted(subject, &1)
       )
+    end
+  end
+
+  @doc """
+  Probe an operator-supplied issuer's OIDC discovery document — the "Test
+  connection" capstone, proving the issuer is reachable and serves a valid
+  discovery doc *before* a connection is saved. `manage_sso` + Team or Enterprise;
+  writes no row. The issuer is attacker-influenceable, so it's SSRF-validated
+  (https + not a private/loopback/metadata host) before the fetch. Returns
+  `{:ok, %{authorization_endpoint, token_endpoint, userinfo_endpoint, jwks_uri}}`
+  or `{:error, :unauthorized | :sso_not_available | :invalid_issuer |
+  :blocked_issuer | term()}` (a discovery failure carries oidcc's reason).
+  """
+  def test_provider(issuer, %Subject{} = subject) do
+    with :ok <- ensure_can_configure_sso(subject),
+         {:ok, issuer} <- IssuerUrl.validate(issuer) do
+      OIDC.discover(%IdentityProvider{issuer: issuer})
     end
   end
 

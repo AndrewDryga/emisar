@@ -31,6 +31,21 @@ defmodule Emisar.SSOTest do
       claims = params["_claims"] || %{}
       {:ok, %{identifier: claims["sub"], claims: claims}}
     end
+
+    # Discovery for test_provider/2: a sentinel issuer simulates an unreachable
+    # IdP; every other (already SSRF-validated) issuer "discovers" cleanly.
+    @impl Emisar.SSO.OIDC
+    def discover(%{issuer: "https://unreachable.test"}), do: {:error, :discovery_failed}
+
+    def discover(%{issuer: issuer}) do
+      {:ok,
+       %{
+         authorization_endpoint: issuer <> "/authorize",
+         token_endpoint: issuer <> "/token",
+         userinfo_endpoint: nil,
+         jwks_uri: issuer <> "/jwks"
+       }}
+    end
   end
 
   setup do
@@ -699,6 +714,52 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
 
       assert {:ok, _} = SSO.delete_provider(provider, subject)
+    end
+  end
+
+  describe "test_provider/2" do
+    test "an enterprise admin gets the discovered endpoints for a reachable issuer" do
+      {_owner, _account, subject} = enterprise_owner()
+
+      assert {:ok, summary} = SSO.test_provider("https://idp.test", subject)
+      assert summary.authorization_endpoint == "https://idp.test/authorize"
+      assert summary.jwks_uri == "https://idp.test/jwks"
+    end
+
+    test "a discovery failure surfaces the reason and writes no row" do
+      {_owner, _account, subject} = enterprise_owner()
+
+      assert {:error, :discovery_failed} = SSO.test_provider("https://unreachable.test", subject)
+      refute Repo.one(IdentityProvider)
+    end
+
+    test "a non-https or malformed issuer is rejected before any fetch" do
+      {_owner, _account, subject} = enterprise_owner()
+
+      assert {:error, :invalid_issuer} = SSO.test_provider("http://idp.test", subject)
+      assert {:error, :invalid_issuer} = SSO.test_provider("not a url", subject)
+    end
+
+    test "an SSRF issuer (private/loopback/metadata) is blocked before any fetch" do
+      {_owner, _account, subject} = enterprise_owner()
+
+      # Each is blocked even though the stub would happily "discover" it — proving
+      # the SSRF guard runs ahead of the fetch, not after.
+      assert {:error, :blocked_issuer} = SSO.test_provider("https://169.254.169.254", subject)
+      assert {:error, :blocked_issuer} = SSO.test_provider("https://10.0.0.5", subject)
+      assert {:error, :blocked_issuer} = SSO.test_provider("https://localhost:8443", subject)
+    end
+
+    test "a non-admin (no manage_sso) cannot test a connection" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+
+      assert {:error, :unauthorized} = SSO.test_provider("https://idp.test", viewer_in(account))
+    end
+
+    test "a free account cannot test a connection (Team-and-up gate)" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{})
+
+      assert {:error, :sso_not_available} = SSO.test_provider("https://idp.test", subject)
     end
   end
 
