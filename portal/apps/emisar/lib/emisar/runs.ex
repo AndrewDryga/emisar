@@ -6,7 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -316,9 +316,24 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.dispatch_run_permission()
            ) do
-      dispatch_run_for_account(attrs, account_id)
+      attrs
+      |> put_dispatcher_context(subject)
+      |> dispatch_run_for_account(account_id)
     end
   end
+
+  # Snapshot the dispatcher's source ip/ua from the request context onto the run
+  # attrs, so every run-lifecycle audit event — including the terminal one logged
+  # from the runner socket — attributes the action to where it came from. The
+  # subject-less dispatch_run_for_account path (the runbook continuation) carries
+  # none, which is correct: no request, no dispatcher.
+  defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context}) do
+    attrs
+    |> Map.put(:ip_address, context.ip_address)
+    |> Map.put(:user_agent, context.user_agent)
+  end
+
+  defp put_dispatcher_context(attrs, _subject), do: attrs
 
   @doc """
   Internal: dispatch a run for an explicit account with no `%Subject{}`.

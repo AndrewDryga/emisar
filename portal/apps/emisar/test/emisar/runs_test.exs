@@ -1,6 +1,6 @@
 defmodule Emisar.RunsTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Approvals, Repo, Runs}
+  alias Emisar.{Approvals, Repo, RequestContext, Runs}
   alias Emisar.Fixtures
   alias Emisar.Runs.{ActionRun, RunEvent}
 
@@ -498,6 +498,37 @@ defmodule Emisar.RunsTest do
 
       # The allow decision survives on the run row (where the diet relies on it).
       assert run.policy_decision == "allow"
+    end
+
+    test "stamps the dispatcher's ip/ua on the run and its terminal audit event (no runner bleed)" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      user = Fixtures.Users.create_user()
+
+      # An api_key/LLM dispatch from a host: the dispatcher's request context.
+      context = %RequestContext{ip_address: "203.0.113.7", user_agent: "Codex-CLI/1.0"}
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
+
+      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      # Snapshotted on the run at create time.
+      assert run.ip_address == "203.0.113.7"
+      assert run.user_agent == "Codex-CLI/1.0"
+
+      # The terminal transition is written from the runner-socket path (no inbound
+      # request there) — it must still attribute the DISPATCHER's ip, never the
+      # runner's connection (the regression guard for the old process-dict bleed).
+      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+
+      success =
+        Enum.find(events, &(&1.subject_id == run.id and &1.event_type == "action_run.success"))
+
+      assert success.ip_address == "203.0.113.7"
+      assert success.user_agent == "Codex-CLI/1.0"
     end
 
     test "wire envelope carries trusted pack hash when one is on file" do

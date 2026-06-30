@@ -49,6 +49,12 @@ defmodule Emisar.Runs.ActionRun do
     # MCP Streamable-HTTP session id (Mcp-Session-Id), for correlating the
     # runs from one session; nil for non-MCP runs.
     field :mcp_session_id, :string
+    # The dispatcher's source ip + user agent, snapshotted from the dispatch
+    # request at create time so every run-lifecycle audit event can attribute the
+    # action — even the terminal one logged from the runner socket, where there is
+    # no inbound request. Nil for a system/engine-originated dispatch (no request).
+    field :ip_address, :string
+    field :user_agent, :string
 
     field :policy_decision, :string
     field :policy_reason, :string

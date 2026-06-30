@@ -173,6 +173,11 @@ defmodule Emisar.Audit do
       # being buried in (and duplicated by) the payload.
       request_id: run.request_id,
       mcp_session_id: run.mcp_session_id,
+      # The dispatcher's ip/ua, snapshotted on the run at create time — so even
+      # the terminal event written from the runner-socket process (no inbound
+      # request) attributes the action to its source, never the runner's socket.
+      ip_address: run.ip_address,
+      user_agent: run.user_agent,
       payload:
         compact(%{
           runner_id: run.runner_id,
