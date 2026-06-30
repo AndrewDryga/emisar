@@ -125,20 +125,22 @@
           With <code>signing.enforce_signatures</code>
           on, the runner runs a
           dispatch only if it carries a valid Ed25519 signature over the action,
-          args, nonce, and timestamp — from a key the host trusts, inside a
-          freshness window, with a nonce it hasn't seen. The private key lives
-          only in the operator's local MCP client; the control plane holds no
-          key, so it can relay a user-signed action but never originate, forge,
-          or replay one. The runner advertises enforcement, and the cloud then
-          disables its own operator/runbook dispatch to that host. Stated
+          args, nonce, and timestamp — from a leaf key vouched for by a
+          certificate the host's trusted certificate authority signed, inside the
+          cert's validity window and a freshness window, with a nonce it hasn't
+          seen. The leaf private key lives only in the operator's local MCP
+          client and the CA private key stays offline; the control plane holds
+          neither, so it can relay a user-signed action but never originate,
+          forge, or replay one. The runner advertises enforcement, and the cloud
+          then disables its own operator/runbook dispatch to that host. Stated
           plainly: a compromised cloud can still <em>withhold</em>
           a signed
           dispatch (this guarantees integrity, not availability); the
-          replay-nonce cache is in-memory, so a restart could let one in-window
-          replay through; and a request queued longer than <code>max_attestation_age</code>
-          is refused as stale. Use a distinct key per runner or environment — a
-          fleet-wide shared key lets a dispatch signed for one host be
-          redirected to another. See
+          replay-nonce cache is persisted to disk, so it survives a restart; and
+          a request queued past <code>max_attestation_age</code>
+          or the cert's window is refused as stale. The runner-target binding is
+          the cert's scope, asserted by the offline CA — so a scoped cert can't
+          be redirected to a host it wasn't issued for. See
           <.link
             navigate={~p"/docs/signed-dispatch"}
             class="text-brand-400 hover:text-brand-300"
