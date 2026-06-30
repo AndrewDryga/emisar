@@ -54,9 +54,12 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:provisioner_options, @provisioner_options)
       |> assign(:editing_id, nil)
       |> assign(:edit_form, nil)
-      # Pending manual-link requests per `:manual` provider, keyed by provider id
-      # (mirrors :group_mappings) — loaded on the connected pass.
-      |> assign(:link_requests, %{})
+      # Pending manual-link requests across the account — loaded on :index, where
+      # the overview triages them (the detail page is config-only).
+      |> assign(:pending_requests, [])
+      # Connection(s) in scope: ALL on :index (a list), the one on :show (detail).
+      # Set per-action in handle_params.
+      |> assign(:providers, [])
       # Group→role mapping state: the per-provider lists + create forms, and the
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
@@ -85,31 +88,64 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:loaded?, false)
       |> ConfirmDialog.init()
 
-    {:ok, load(socket)}
+    {:ok, socket}
   end
 
-  # IL-18: the list read runs only once the socket is connected (mount runs
-  # twice); the locked/unconnected pass just renders the chrome.
-  defp load(%{assigns: %{can_configure?: true}} = socket) do
-    if connected?(socket) do
-      providers = list_providers(socket)
+  # Action-dependent data loads. mount runs before the action is settled for live
+  # nav, and handle_params re-fires on navigation, so the per-action read lives
+  # here. IL-18: the DB reads run only once connected; the dead pass renders chrome.
+  def handle_params(params, _uri, socket) do
+    {:noreply, load_for_action(socket, params)}
+  end
 
-      socket
-      |> assign(:loaded?, true)
-      |> assign(:providers, providers)
-      |> assign_form(SSO.change_provider())
-      |> load_group_mappings(providers)
-      |> load_link_requests(providers)
+  defp load_for_action(%{assigns: %{can_configure?: false}} = socket, _params), do: socket
+
+  defp load_for_action(socket, params) do
+    if connected?(socket) do
+      case socket.assigns.live_action do
+        :index -> load_index(socket)
+        :show -> load_show(socket, params["id"])
+        :new -> assign_form(socket, SSO.change_provider())
+      end
     else
-      # A synchronous changeset (no DB read) so the /new add-connection form
-      # renders on the dead/pre-connect pass instead of an empty panel.
-      socket
-      |> assign(:providers, [])
-      |> assign_form(SSO.change_provider())
+      # A synchronous changeset (no DB read) so /new renders on the dead pass.
+      assign_form(socket, SSO.change_provider())
     end
   end
 
-  defp load(socket), do: assign(socket, :providers, [])
+  # Overview: ALL connections + the account-wide pending requests (the
+  # needs-attention block). No per-connection scim/mapping load — that's :show.
+  defp load_index(socket) do
+    socket
+    |> assign(:loaded?, true)
+    |> assign(:providers, list_providers(socket))
+    |> assign(:pending_requests, list_pending_requests(socket))
+  end
+
+  # Detail: ONE connection (account-scoped — a cross-account or unknown id is
+  # not_found → back to the overview) + its group→role mappings / synced groups.
+  defp load_show(socket, id) do
+    case SSO.fetch_provider_by_id(id, socket.assigns.current_subject) do
+      {:ok, provider} ->
+        socket
+        |> assign(:loaded?, true)
+        |> assign(:providers, [provider])
+        |> load_group_mappings([provider])
+        |> assign_form(SSO.change_provider())
+
+      {:error, :not_found} ->
+        socket
+        |> put_flash(:error, "Connection not found.")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")
+    end
+  end
+
+  defp list_pending_requests(socket) do
+    case SSO.list_pending_link_requests_for_account(socket.assigns.current_subject) do
+      {:ok, requests, _meta} -> requests
+      {:error, _} -> []
+    end
+  end
 
   defp list_providers(socket) do
     case SSO.list_providers_for_account(socket.assigns.current_subject) do
@@ -153,21 +189,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp list_mappings(socket, provider) do
     case SSO.list_group_mappings(provider, socket.assigns.current_subject) do
       {:ok, mappings, _meta} -> mappings
-      {:error, _} -> []
-    end
-  end
-
-  # Pending link requests can arise on ANY provider now — `:manual` parks every
-  # first sign-in, and `:jit`/SCIM park an email that collides with an existing
-  # user for admin approval — so load them for every provider, keyed by id.
-  defp load_link_requests(socket, providers) do
-    requests = Map.new(providers, &{&1.id, list_requests(socket, &1)})
-    assign(socket, :link_requests, requests)
-  end
-
-  defp list_requests(socket, provider) do
-    case SSO.list_link_requests(provider, socket.assigns.current_subject) do
-      {:ok, requests, _meta} -> requests
       {:error, _} -> []
     end
   end
@@ -387,8 +408,14 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       provider ->
         case SSO.delete_provider(provider, socket.assigns.current_subject) do
-          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Connection deleted.") |> reload()}
-          {:error, reason} -> {:noreply, put_flash(socket, :error, error_message(reason))}
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Connection deleted.")
+             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, error_message(reason))}
         end
     end
   end
@@ -546,12 +573,19 @@ defmodule EmisarWeb.SSOSettingsLive do
   # directory sync (re)seeds a provider's panels, and approving/dismissing a
   # request drops it from the list.
   defp reload(socket) do
-    providers = list_providers(socket)
+    case socket.assigns.live_action do
+      :index -> load_index(socket)
+      :show -> reload_show(socket)
+    end
+  end
 
-    socket
-    |> assign(:providers, providers)
-    |> load_group_mappings(providers)
-    |> load_link_requests(providers)
+  # Re-fetch the one connection :show is on (its row may have changed — SCIM
+  # toggled, edited). If it vanished (deleted), load_show falls back to the overview.
+  defp reload_show(socket) do
+    case socket.assigns.providers do
+      [provider | _] -> load_show(socket, provider.id)
+      _ -> socket
+    end
   end
 
   # Refresh just one provider's mapping list (after a mapping CRUD), leaving the
@@ -586,12 +620,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     |> Enum.find(&(&1.id == id))
   end
 
-  defp find_request(socket, id) do
-    socket.assigns.link_requests
-    |> Map.values()
-    |> List.flatten()
-    |> Enum.find(&(&1.id == id))
-  end
+  defp find_request(socket, id), do: Enum.find(socket.assigns.pending_requests, &(&1.id == id))
 
   # The create-form changeset for a provider's mapping. Built over
   # The context's form builder — phx-change validation (required fields + the
@@ -687,7 +716,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       width={:settings}
     >
       <:title>Single sign-on</:title>
-      <:actions :if={@can_configure? and @live_action != :new}>
+      <:actions :if={@can_configure? and @live_action == :index}>
         <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size="md" icon="hero-plus">
           Add connection
         </.button>
@@ -698,15 +727,15 @@ defmodule EmisarWeb.SSOSettingsLive do
       </div>
 
       <div :if={@can_configure?} class="space-y-6">
-        <.page_intro :if={@live_action != :new}>
+        <.page_intro :if={@live_action == :index}>
           Connect your organization's identity provider so members sign in through it. New
-          users are provisioned on first sign-in, and you choose the role they land with.
+          users are provisioned on first sign-in; you choose the role they land with.
           <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
         </.page_intro>
 
         <%!-- The branded sign-in link to hand to the team. Always useful (the page
              offers email sign-in even with no SSO), so it's not gated on providers. --%>
-        <.card :if={@live_action != :new} padding="p-5">
+        <.card :if={@live_action == :index} padding="p-5">
           <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
           <p class="mt-1 text-xs leading-relaxed text-zinc-500">
             Share this with your members — it opens this team's sign-in page with your SSO
@@ -755,164 +784,229 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.simple_form>
         </.panel>
 
-        <%!-- Connection list. A bounded set (a handful per account at most), so
-             a plain bordered card list — not a stream — is correct here. --%>
-        <section :if={@live_action != :new}>
+        <%!-- ── Pending access requests (needs attention) ──────────────────
+             People blocked waiting for an admin, across ALL connections. The
+             time-sensitive job, so it leads the overview. --%>
+        <section :if={@live_action == :index and @pending_requests != []}>
+          <.section_header
+            title="Pending access requests"
+            count={length(@pending_requests)}
+            count_tone={:amber}
+          />
+          <.card padding="p-0">
+            <ul class="divide-y divide-zinc-900">
+              <li
+                :for={request <- @pending_requests}
+                class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
+              >
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate text-sm text-zinc-200">
+                      {request.full_name || request.email || "Unknown user"}
+                    </span>
+                    <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-zinc-500">
+                    <span :if={request.email}>{request.email}</span>
+                    <span :if={request.email} class="text-zinc-600">·</span>
+                    <span class="font-mono">{request.provider_identifier}</span>
+                  </div>
+                  <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
+                    Approving lets this connection sign in as the existing {request.email} account.
+                  </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <.button
+                    variant="secondary"
+                    size="sm"
+                    phx-click="approve_request"
+                    phx-value-id={request.id}
+                    data-confirm={approve_confirm(request)}
+                  >
+                    Approve
+                  </.button>
+                  <.button
+                    variant="ghost"
+                    tone="danger"
+                    size="sm"
+                    phx-click="dismiss_request"
+                    phx-value-id={request.id}
+                    data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
+                  >
+                    Dismiss
+                  </.button>
+                </div>
+              </li>
+            </ul>
+          </.card>
+        </section>
+
+        <%!-- ── Connections (overview) ──────────────────────────────────────
+             A bounded set; each row is a SUMMARY that opens its own detail page.
+             Config (edit, SCIM, group→role) lives on the detail, not here. --%>
+        <section :if={@live_action == :index}>
           <.section_header title="Connections" count={length(@providers)} count_tone={:neutral} />
 
           <.card :if={@providers != []} padding="p-0">
             <ul class="divide-y divide-zinc-900">
-              <li :for={provider <- @providers} class="px-5 py-4">
-                <div class="flex items-start gap-4">
+              <li :for={provider <- @providers}>
+                <.link
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                  class="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-zinc-900/40"
+                >
                   <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
                     <.icon name="hero-key" class="h-4 w-4" />
                   </span>
-
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">{provider.name}</span>
                       <.chip>{kind_label(provider.kind)}</.chip>
                       <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
                       <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
+                      <.chip :if={provider.scim_enabled}>Directory sync</.chip>
                     </div>
                     <div class="mt-1 truncate text-xs text-zinc-500">
-                      {provider.issuer}
-                      <span :if={provider.allowed_email_domain}>
-                        · @{provider.allowed_email_domain}
-                      </span>
-                      · {provisioner_label(provider.provisioner)}
+                      {provider.issuer} · {provisioner_label(provider.provisioner)}
                     </div>
                   </div>
-
-                  <div class="flex shrink-0 items-center gap-2">
-                    <.button
-                      :if={@editing_id != provider.id}
-                      variant="secondary"
-                      size="sm"
-                      phx-click="start_edit"
-                      phx-value-id={provider.id}
-                    >
-                      Edit
-                    </.button>
-                    <.button
-                      variant="ghost"
-                      tone="danger"
-                      size="sm"
-                      type="button"
-                      phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
-                    >
-                      Delete
-                    </.button>
-                  </div>
-                </div>
-
-                <%!-- Inline edit form, opened under the row — same shape as the
-                     team page's inline edit. client_secret is left blank
-                     (write-only); typing a new one rotates it. --%>
-                <div
-                  :if={@editing_id == provider.id and @edit_form}
-                  class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
-                >
-                  <.simple_form
-                    for={@edit_form}
-                    id={"edit-provider-#{provider.id}"}
-                    phx-change="validate_edit"
-                    phx-submit="update"
-                  >
-                    <input type="hidden" name="provider_id" value={provider.id} />
-                    <.provider_fields
-                      form={@edit_form}
-                      kind_options={@kind_options}
-                      role_options={@role_options}
-                      provisioner_options={@provisioner_options}
-                      guide_id={provider.id}
-                      callback_url={@callback_url}
-                      editing?
-                    />
-                    <:actions>
-                      <.button phx-disable-with="Saving...">Save changes</.button>
-                      <.button variant="ghost" type="button" phx-click="cancel_edit">
-                        Cancel
-                      </.button>
-                    </:actions>
-                  </.simple_form>
-                </div>
-
-                <%!-- Pending access requests: `:manual` parks every first
-                     sign-in; `:jit`/SCIM park an email that collides with an
-                     existing member. Admins approve (binds the captured id, or
-                     links the existing user) or dismiss. --%>
-                <.link_requests_panel
-                  provisioner={provider.provisioner}
-                  requests={Map.get(@link_requests, provider.id, [])}
-                />
-
-                <%!-- Directory sync (SCIM) per connection — enable to mint a
-                     bearer (shown once), rotate, or disable. Authz is re-checked
-                     server-side in every handler. --%>
-                <.scim_panel
-                  :if={@can_configure_directory_sync?}
-                  provider={provider}
-                  scim_base_url={@scim_base_url}
-                  scim_token={@scim_token}
-                  mappings={Map.get(@group_mappings, provider.id, [])}
-                  synced_groups={Map.get(@synced_groups, provider.id, [])}
-                  mapping_form={Map.get(@mapping_forms, provider.id)}
-                  mapping_role_options={@mapping_role_options}
-                  editing_mapping_id={@editing_mapping_id}
-                  mapping_edit_form={@mapping_edit_form}
-                  typed={@typed}
-                />
-                <div
-                  :if={!@can_configure_directory_sync?}
-                  class="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm leading-relaxed text-zinc-400"
-                >
-                  <span class="font-medium text-zinc-200">SCIM directory sync</span>
-                  — automatic provisioning and offboarding from your IdP, plus group→role
-                  mapping — is available on the Enterprise plan.
-                  <.link
-                    navigate={~p"/pricing"}
-                    class="font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    See plans
-                  </.link>
-                  or <a
-                    href="mailto:sales@emisar.dev"
-                    class="font-medium text-brand-400 hover:text-brand-300"
-                  >talk to us</a>.
-                </div>
-
-                <%!-- IRREVERSIBLE — typed-confirm modal. The button only OPENS
-                     the dialog; `delete` still fires from Confirm and stays
-                     server-authz-gated (subject_can_configure_sso?). --%>
-                <.confirm_dialog
-                  id={"delete-provider-#{provider.id}"}
-                  title="Delete connection"
-                  confirm_label="Delete connection"
-                  confirm_token={provider.name}
-                  typed={@typed}
-                  on_confirm={
-                    JS.push("delete", value: %{id: provider.id})
-                    |> hide_confirm_dialog("delete-provider-#{provider.id}")
-                  }
-                >
-                  <:body>
-                    Permanently removes the
-                    <span class="font-medium text-rose-100">{provider.name}</span>
-                    connection. Members who sign in only through it will lose access until it's
-                    re-added. Existing sessions aren't ended. This can't be undone.
-                  </:body>
-                </.confirm_dialog>
+                  <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-600" />
+                </.link>
               </li>
             </ul>
           </.card>
 
           <.empty_state :if={@loaded? and @providers == []} icon="hero-key" title="No connections yet">
-            Add your identity provider to let your team sign in through it. You'll need an
+            Connect your identity provider to let your team sign in through it. You'll need an
             OAuth/OIDC app at your provider with its client ID and secret.
             <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>
           </.empty_state>
         </section>
+
+        <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
+             One connection: identity + status + config (edit, directory sync,
+             group→role). @providers holds exactly the one handle_params loaded. --%>
+        <div :if={@live_action == :show} class="space-y-6">
+          <.link
+            navigate={~p"/app/#{@current_account}/settings/sso"}
+            class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
+          >
+            <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
+          </.link>
+
+          <div :for={provider <- @providers} class="space-y-6">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 class="truncate text-lg font-semibold text-zinc-100">{provider.name}</h2>
+                  <.chip>{kind_label(provider.kind)}</.chip>
+                  <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
+                  <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
+                </div>
+                <p class="mt-1 truncate text-xs text-zinc-500">
+                  {provider.issuer}
+                  <span :if={provider.allowed_email_domain}>· @{provider.allowed_email_domain}</span>
+                  · {provisioner_label(provider.provisioner)}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <.button
+                  :if={@editing_id != provider.id}
+                  variant="secondary"
+                  size="sm"
+                  phx-click="start_edit"
+                  phx-value-id={provider.id}
+                >
+                  Edit
+                </.button>
+                <.button
+                  variant="ghost"
+                  tone="danger"
+                  size="sm"
+                  type="button"
+                  phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
+                >
+                  Delete
+                </.button>
+              </div>
+            </div>
+
+            <div
+              :if={@editing_id == provider.id and @edit_form}
+              class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+            >
+              <.simple_form
+                for={@edit_form}
+                id={"edit-provider-#{provider.id}"}
+                phx-change="validate_edit"
+                phx-submit="update"
+              >
+                <input type="hidden" name="provider_id" value={provider.id} />
+                <.provider_fields
+                  form={@edit_form}
+                  kind_options={@kind_options}
+                  role_options={@role_options}
+                  provisioner_options={@provisioner_options}
+                  guide_id={provider.id}
+                  callback_url={@callback_url}
+                  editing?
+                />
+                <:actions>
+                  <.button phx-disable-with="Saving...">Save changes</.button>
+                  <.button variant="ghost" type="button" phx-click="cancel_edit">Cancel</.button>
+                </:actions>
+              </.simple_form>
+            </div>
+
+            <.scim_panel
+              :if={@can_configure_directory_sync?}
+              provider={provider}
+              scim_base_url={@scim_base_url}
+              scim_token={@scim_token}
+              mappings={Map.get(@group_mappings, provider.id, [])}
+              synced_groups={Map.get(@synced_groups, provider.id, [])}
+              mapping_form={Map.get(@mapping_forms, provider.id)}
+              mapping_role_options={@mapping_role_options}
+              editing_mapping_id={@editing_mapping_id}
+              mapping_edit_form={@mapping_edit_form}
+              typed={@typed}
+            />
+            <div
+              :if={!@can_configure_directory_sync?}
+              class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm leading-relaxed text-zinc-400"
+            >
+              <span class="font-medium text-zinc-200">SCIM directory sync</span>
+              — automatic provisioning and offboarding from your IdP, plus group→role mapping —
+              is available on the Enterprise plan.
+              <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
+                See plans
+              </.link>
+              or <a
+                href="mailto:sales@emisar.dev"
+                class="font-medium text-brand-400 hover:text-brand-300"
+              >talk to us</a>.
+            </div>
+
+            <.confirm_dialog
+              id={"delete-provider-#{provider.id}"}
+              title="Delete connection"
+              confirm_label="Delete connection"
+              confirm_token={provider.name}
+              typed={@typed}
+              on_confirm={
+                JS.push("delete", value: %{id: provider.id})
+                |> hide_confirm_dialog("delete-provider-#{provider.id}")
+              }
+            >
+              <:body>
+                Permanently removes the <span class="font-medium text-rose-100">{provider.name}</span>
+                connection. Members who sign in only through it lose access until it's re-added.
+                Existing sessions aren't ended. This can't be undone.
+              </:body>
+            </.confirm_dialog>
+          </div>
+
+          <div :if={not @loaded?} class="text-sm text-zinc-500">Loading…</div>
+        </div>
       </div>
     </.dashboard_shell>
     """
@@ -1201,9 +1295,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
           </div>
           <p class="mt-1 max-w-prose text-xs text-zinc-500">
-            Let your IdP push joins and (critically) offboards — a member removed in
+            Let your IdP push joins and — critically — offboards: a member removed from
             your directory is suspended here automatically. Point your provider's SCIM
-            connector at the base URL below and authenticate with the bearer token.
+            connector at the base URL below and authenticate with the bearer token — until
+            that's wired up, nothing syncs.
           </p>
         </div>
 
@@ -1519,85 +1614,6 @@ defmodule EmisarWeb.SSOSettingsLive do
           </:actions>
         </.simple_form>
       </div>
-    </div>
-    """
-  end
-
-  # Pending access requests for one connection. `:manual` parks every first
-  # sign-in; `:jit`/SCIM park an email that collides with an existing member (so
-  # an admin can LINK the IdP identity to that account — never an auto-merge).
-  # Approve provisions a new user, or links the existing one when `matched_user_id`
-  # is set; Dismiss drops it. Both handlers re-check authz server-side.
-  attr :provisioner, :atom, required: true
-  attr :requests, :list, required: true
-
-  defp link_requests_panel(assigns) do
-    ~H"""
-    <div
-      :if={@provisioner == :manual or @requests != []}
-      class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
-    >
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-zinc-200">Pending access requests</span>
-        <.chip>{length(@requests)}</.chip>
-      </div>
-      <p class="mt-1 max-w-prose text-xs text-zinc-500">
-        People waiting for an admin to approve their access — manual first-time sign-ins, and
-        anyone whose IdP email matches an existing member (approve to link, never an auto-merge).
-      </p>
-
-      <p :if={@requests == []} class="mt-3 text-xs text-zinc-600">
-        No one is waiting for access.
-      </p>
-
-      <ul :if={@requests != []} class="mt-3 space-y-2">
-        <li
-          :for={request <- @requests}
-          class="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5"
-        >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-sm text-zinc-200">
-                  {request.full_name || request.email || "Unknown user"}
-                </span>
-                <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
-              </div>
-              <div class="truncate text-xs text-zinc-500">
-                <span class="font-mono">{request.provider_identifier}</span>
-                <span :if={request.email}>· {request.email}</span>
-              </div>
-              <p
-                :if={request.matched_user_id}
-                class="mt-1 max-w-prose text-xs text-amber-300/80"
-              >
-                Approving lets this connection sign in as the existing {request.email} account.
-              </p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <.button
-                variant="secondary"
-                size="sm"
-                phx-click="approve_request"
-                phx-value-id={request.id}
-                data-confirm={approve_confirm(request)}
-              >
-                Approve
-              </.button>
-              <.button
-                variant="ghost"
-                tone="danger"
-                size="sm"
-                phx-click="dismiss_request"
-                phx-value-id={request.id}
-                data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
-              >
-                Dismiss
-              </.button>
-            </div>
-          </div>
-        </li>
-      </ul>
     </div>
     """
   end

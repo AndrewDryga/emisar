@@ -1878,6 +1878,42 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "list_pending_link_requests_for_account/1" do
+    setup do
+      {_owner, account, subject} = enterprise_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "returns pending requests across ALL the account's connections", %{
+      account: account,
+      subject: subject
+    } do
+      okta = provider_fixture(account, kind: :okta, name: "Okta", provisioner: :manual)
+
+      keycloak =
+        provider_fixture(account, kind: :keycloak, name: "Keycloak", provisioner: :manual)
+
+      _ = capture_request(okta, %{"sub" => "okta|a", "email" => "a@acme.test"})
+      _ = capture_request(keycloak, %{"sub" => "kc|b", "email" => "b@acme.test"})
+
+      assert {:ok, requests, _meta} = SSO.list_pending_link_requests_for_account(subject)
+      assert MapSet.new(requests, & &1.provider_identifier) == MapSet.new(["okta|a", "kc|b"])
+    end
+
+    test "denies a viewer (no manage_sso)", %{account: account} do
+      assert {:error, :unauthorized} =
+               SSO.list_pending_link_requests_for_account(viewer_in(account))
+    end
+
+    test "is account-scoped — B never sees A's pending", %{account: account} do
+      provider = provider_fixture(account, provisioner: :manual)
+      _ = capture_request(provider, %{"sub" => "okta|a", "email" => "a@acme.test"})
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert {:ok, [], _meta} = SSO.list_pending_link_requests_for_account(sb)
+    end
+  end
+
   # -- approve_link_request/2 ------------------------------------------
 
   describe "approve_link_request/2" do

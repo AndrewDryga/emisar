@@ -1,9 +1,11 @@
 defmodule EmisarWeb.SSOSettingsLiveTest do
   @moduledoc """
-  The enterprise SSO settings page. Access is plan-gated (Enterprise) AND
-  permission-gated (`manage_sso`, owners/admins): an enterprise admin sees the
-  config + can add a connection; a non-enterprise account and a non-admin member
-  both see the Enterprise upsell instead of a crash.
+  The SSO settings pages — an overview (`/settings/sso`: pending access requests +
+  the connections list + the team sign-in link) and a per-connection detail
+  (`/settings/sso/:id`: status, edit, directory sync, group→role mapping). Access
+  is plan-gated (Team for OIDC, Enterprise for SCIM) AND permission-gated
+  (`manage_sso`, owners/admins): a non-admin member or a free account sees the
+  upsell instead of a crash, and a cross-account connection id reads as not found.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Repo
@@ -136,11 +138,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{client_secret: "super-secret-value-xyz"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      # The create form and this edit form coexist in the DOM; opening the
-      # edit form must not collide their input IDs (a duplicate-id crash) and
-      # must never render the stored, write-only client_secret back.
+      # Opening the edit form on the detail page must never render the stored,
+      # write-only client_secret back — the field is blank ("leave to keep").
       html = render_hook(lv, "start_edit", %{"id" => provider.id})
 
       assert html =~ "edit-provider-#{provider.id}"
@@ -153,7 +154,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{name: "Old Name"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       _ = render_hook(lv, "start_edit", %{"id" => provider.id})
 
       html =
@@ -194,7 +195,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{client_secret: "stored-secret-value"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       _ = render_hook(lv, "start_edit", %{"id" => provider.id})
 
       # Submit the inline edit with a BLANK client_secret (the field is never
@@ -365,7 +366,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # server-gated `delete`. A blank or wrong name keeps Confirm disabled, so
       # the `delete` event is never dispatched and the provider survives.
       provider = insert_provider(account, %{name: "Acme Okta"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       dialog = "delete-provider-#{provider.id}"
 
@@ -407,6 +408,66 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
+  describe "the connection detail page" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "renders just the one connection, with its config controls", %{
+      conn: conn,
+      account: account
+    } do
+      shown = insert_provider(account, %{name: "Acme Okta"})
+      _other = insert_provider(account, %{name: "Globex Google", kind: :google_workspace})
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{shown.id}")
+
+      assert html =~ "Acme Okta"
+      # The per-connection delete dialog is detail-only (never on the overview list).
+      assert has_element?(lv, "#delete-provider-#{shown.id}")
+      # A single-connection view — the other connection isn't on this page.
+      refute html =~ "Globex Google"
+    end
+
+    test "a connection from another account reads as not found — back to the overview", %{
+      conn: conn,
+      account: account
+    } do
+      other_account = Fixtures.Accounts.create_account(%{plan: "enterprise"})
+      foreign = insert_provider(other_account, %{name: "Other Co Okta"})
+
+      dest = ~p"/app/#{account}/settings/sso"
+
+      assert {:error, {:live_redirect, %{to: ^dest}}} =
+               live(conn, ~p"/app/#{account}/settings/sso/#{foreign.id}")
+    end
+
+    test "an unknown connection id reads as not found — back to the overview", %{
+      conn: conn,
+      account: account
+    } do
+      dest = ~p"/app/#{account}/settings/sso"
+
+      assert {:error, {:live_redirect, %{to: ^dest}}} =
+               live(conn, ~p"/app/#{account}/settings/sso/#{Ecto.UUID.generate()}")
+    end
+
+    test "a non-admin viewer is denied the detail page and sees the upsell", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      provider = insert_provider(account, %{name: "Acme Okta"})
+      _ = make_viewer(user)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "Single sign-on is a paid feature"
+      refute html =~ "Acme Okta"
+    end
+  end
+
   describe "group → role mapping forms gating" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
@@ -423,7 +484,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # surface them.
       provider = insert_provider(account, %{name: "No SCIM Okta"})
       refute Repo.reload!(provider).scim_enabled
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The connection itself renders…
       assert html =~ "No SCIM Okta"
@@ -446,7 +507,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       html = render_click(lv, "enable_scim", %{"id" => provider.id})
 
@@ -469,7 +530,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       shown = render_click(lv, "enable_scim", %{"id" => provider.id})
       [_, token | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, shown) || [nil, nil]
@@ -480,7 +541,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute dismissed =~ token
 
       # And a fresh mount never re-renders it (write-only, like client_secret).
-      {:ok, _lv2, remounted} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, _lv2, remounted} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       refute remounted =~ token
       # Directory sync still shows as on, just without the secret.
       assert remounted =~ "Directory sync (SCIM)"
@@ -491,7 +552,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       first = render_click(lv, "enable_scim", %{"id" => provider.id})
       [_, token1 | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, first)
@@ -563,7 +624,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       html =
         lv
@@ -608,7 +669,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # Open the inline editor for this mapping (the externalId is the immutable
       # key; only display + role are editable).
@@ -638,7 +699,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The mapping role <select> has Admin/Operator/Viewer but no Owner — scope
       # to the mapping create form so the provider form's own Owner option (its

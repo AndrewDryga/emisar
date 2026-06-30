@@ -1081,6 +1081,16 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc "List pending manual-link requests across ALL the account's connections — for the SSO overview's needs-attention block. `manage_sso` + Team or Enterprise; account-scoped."
+  def list_pending_link_requests_for_account(%Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_configure_sso(subject) do
+      LinkRequest.Query.all()
+      |> LinkRequest.Query.ordered_by_recent()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(LinkRequest.Query, opts)
+    end
+  end
+
   @doc """
   Approve a pending manual-link request: provision the captured identity at the
   provider's `default_role` and delete the request, atomically. `manage_sso` +
