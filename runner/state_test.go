@@ -124,7 +124,7 @@ func TestStateCmd_DivergesConfigOnlyIDNoVerifier(t *testing.T) {
 	if _, present := st["enforce_signatures"]; present {
 		t.Fatalf("state must not advertise enforce_signatures (no verifier wired):\n%s", out)
 	}
-	if _, present := st["signing_key_ids"]; present {
-		t.Fatalf("state must not advertise signing_key_ids (no verifier wired):\n%s", out)
+	if _, present := st["signing_ca_ids"]; present {
+		t.Fatalf("state must not advertise signing_ca_ids (no verifier wired):\n%s", out)
 	}
 }

@@ -90,7 +90,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     assert html =~ "Signed dispatch only"
     # Points operators at the concrete provisioning tool.
-    assert html =~ "emisar keygen"
+    assert html =~ "emisar signing init"
     # The Run affordance is the disabled lock variant (not color alone), and is
     # NOT a dispatch link — the portal can't run on this host.
     assert html =~ "hero-lock-closed"
