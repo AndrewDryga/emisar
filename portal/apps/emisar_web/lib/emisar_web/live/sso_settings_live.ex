@@ -753,22 +753,6 @@ defmodule EmisarWeb.SSOSettingsLive do
           <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
         </.page_intro>
 
-        <%!-- The branded sign-in link to hand to the team. Always useful (the page
-             offers email sign-in even with no SSO), so it's not gated on providers. --%>
-        <.card :if={@live_action == :index} padding="p-5">
-          <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-            Share this with your members — it opens this team's sign-in page with your SSO
-            connections (and email sign-in as a fallback).
-          </p>
-          <div class="mt-3 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
-            <code id="sso-sign-in-link" class="flex-1 break-all font-mono text-xs text-zinc-300">
-              {@sign_in_url}
-            </code>
-            <.copy_button target="#sso-sign-in-link">Copy</.copy_button>
-          </div>
-        </.card>
-
         <%!-- Adding a connection is its own view (/settings/sso/new) so the form
              + per-provider setup guide get the full width and don't compete with
              the connection list. --%>
@@ -912,6 +896,23 @@ defmodule EmisarWeb.SSOSettingsLive do
             <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>
           </.empty_state>
         </section>
+
+        <%!-- The branded sign-in link to hand to the team — a quiet utility, so it
+             sits at the bottom and lets the needs-attention block lead. Always
+             useful (email sign-in works without SSO), so it's not gated on providers. --%>
+        <.card :if={@live_action == :index} padding="p-5">
+          <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
+          <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+            Share this with your members — it opens this team's sign-in page with your SSO
+            connections (and email sign-in as a fallback).
+          </p>
+          <div class="mt-3 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
+            <code id="sso-sign-in-link" class="flex-1 break-all font-mono text-xs text-zinc-300">
+              {@sign_in_url}
+            </code>
+            <.copy_button target="#sso-sign-in-link">Copy</.copy_button>
+          </div>
+        </.card>
 
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
