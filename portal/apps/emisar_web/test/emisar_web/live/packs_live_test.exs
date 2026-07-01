@@ -196,6 +196,60 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, "details[open]")
     end
 
+    test "a trusted PUBLISHED version links to its registry page; a custom one doesn't", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      caddy = EmisarWeb.PacksRegistry.get("caddy")
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "caddy.version",
+              "pack_id" => "caddy",
+              "title" => "Version",
+              "kind" => "exec",
+              "risk" => "low",
+              "description" => "d",
+              "args" => []
+            },
+            %{
+              "id" => "acme.audit",
+              "pack_id" => "acme-tools",
+              "title" => "Audit",
+              "kind" => "exec",
+              "risk" => "low",
+              "description" => "d",
+              "args" => []
+            }
+          ],
+          "packs" => %{
+            # caddy advertised with its PUBLISHED hash → auto-trusts (matches baseline).
+            "caddy" => %{"version" => caddy.version, "hash" => caddy.content_hash},
+            "acme-tools" => %{"version" => "9.9", "hash" => "abc123"}
+          }
+        })
+
+      # Trust the custom pack too, so both rows are trusted — only the published one links.
+      {:ok, versions, _} = Emisar.Catalog.list_pack_versions(subject)
+      acme = Enum.find(versions, &(&1.pack_id == "acme-tools"))
+      {:ok, _} = Emisar.Catalog.trust_pack_version(acme.id, subject)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      # The published version links out to its public registry page, in a new tab.
+      assert has_element?(lv, ~s(a[href="/packs/caddy"][target="_blank"]), "Registry")
+      # The custom pack has no public registry page → no link.
+      refute has_element?(lv, ~s(a[href="/packs/acme-tools"]))
+    end
+
     test "a no-baseline (TOFU) pending pack shows the 'no baseline' block copy", %{
       conn: conn,
       account: account
