@@ -61,5 +61,13 @@ defmodule EmisarWeb.Components.CodeInputTest do
 
       assert count(html, ~r/autocomplete="one-time-code"/) == 1
     end
+
+    test "an error renders inline; absent by default" do
+      with_error =
+        render_code_input(%{id: "c", name: "code", label: "Code", error: "Bad code, try again."})
+
+      assert with_error =~ "Bad code, try again."
+      refute render_code_input(%{id: "c", name: "code", label: "Code"}) =~ "Bad code, try again."
+    end
   end
 end

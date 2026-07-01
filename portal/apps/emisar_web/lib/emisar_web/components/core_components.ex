@@ -629,39 +629,44 @@ defmodule EmisarWeb.CoreComponents do
   form submits, so the group carries `phx-update="ignore"` — a LiveView
   re-render (a flash, an expiry countdown) can't wipe what was typed. `numeric`
   switches the filter + `inputmode` to digits-only (TOTP, email step-up); the
-  default is the alphanumeric sign-in-code alphabet. Errors surface as a flash,
-  not inline (the field itself is client-owned).
+  default is the alphanumeric sign-in-code alphabet. An `error` renders inline
+  below the boxes (outside the ignored group, so it updates) — a rejected code
+  is shown right at the input, never as a far-off flash.
   """
   attr :id, :string, required: true
   attr :name, :string, required: true, doc: "the hidden field the aggregate posts as"
   attr :label, :string, required: true
   attr :length, :integer, default: 6
   attr :numeric, :boolean, default: false
+  attr :error, :string, default: nil, doc: "a validation error, rendered inline below the boxes"
 
   def code_input(assigns) do
     ~H"""
-    <div id={@id} phx-hook="CodeInput" phx-update="ignore" data-numeric={to_string(@numeric)}>
-      <.label for={"#{@id}-1"}>{@label}</.label>
-      <div class="mt-2 flex justify-between gap-2 sm:gap-2.5">
-        <input
-          :for={i <- 1..@length}
-          id={"#{@id}-#{i}"}
-          data-box
-          type="text"
-          inputmode={if @numeric, do: "numeric", else: "text"}
-          autocapitalize={if @numeric, do: "off", else: "characters"}
-          autocomplete={i == 1 && "one-time-code"}
-          maxlength="1"
-          aria-label={"Character #{i} of #{@length}"}
-          class={[
-            "h-14 w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
-            "text-xl font-semibold tracking-widest text-zinc-100 shadow-sm outline-none transition",
-            "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30",
-            not @numeric && "uppercase"
-          ]}
-        />
+    <div>
+      <div id={@id} phx-hook="CodeInput" phx-update="ignore" data-numeric={to_string(@numeric)}>
+        <.label for={"#{@id}-1"}>{@label}</.label>
+        <div class="mt-2 flex justify-between gap-2 sm:gap-2.5">
+          <input
+            :for={i <- 1..@length}
+            id={"#{@id}-#{i}"}
+            data-box
+            type="text"
+            inputmode={if @numeric, do: "numeric", else: "text"}
+            autocapitalize={if @numeric, do: "off", else: "characters"}
+            autocomplete={i == 1 && "one-time-code"}
+            maxlength="1"
+            aria-label={"Character #{i} of #{@length}"}
+            class={[
+              "h-14 w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
+              "text-xl font-semibold tracking-widest text-zinc-100 shadow-sm outline-none transition",
+              "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30",
+              not @numeric && "uppercase"
+            ]}
+          />
+        </div>
+        <input type="hidden" name={@name} data-code />
       </div>
-      <input type="hidden" name={@name} data-code />
+      <.error :if={@error}>{@error}</.error>
     </div>
     """
   end

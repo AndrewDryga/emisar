@@ -1,14 +1,15 @@
 defmodule EmisarWeb.UserSessionController do
   @moduledoc """
   Session controller for the passwordless sign-in flows: the split-code
-  magic-link request (`magic_link_start`), its link + 6-character-code verifiers,
-  and sign-out. The sign-in LiveViews render the email form and POST it here;
-  MFA is enforced post-login by `UserAuth`'s `:ensure_mfa_compliant` gate.
+  magic-link request (`magic_link_start`), the email-link verifier
+  (`magic_link_confirm`), the typed-code sign-in completion (`magic_link_complete`
+  — the code itself is verified in `MagicLinkLive`), and sign-out. MFA is enforced
+  post-login by `UserAuth`'s `:ensure_mfa_compliant` gate.
   """
 
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Mailers, Users}
-  alias EmisarWeb.{RecentAccounts, RequestContext, ReturnTo, Throttle, UserAuth}
+  alias EmisarWeb.{MagicLinkHandoff, RecentAccounts, RequestContext, ReturnTo, Throttle, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
@@ -24,7 +25,7 @@ defmodule EmisarWeb.UserSessionController do
   # generous enough for a NAT'd team behind one egress IP.
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "sign_in", limit: 30, window_ms: 60_000]
-       when action in [:magic_link_start, :magic_link_verify_code, :magic_link_confirm]
+       when action in [:magic_link_start, :magic_link_complete, :magic_link_confirm]
 
   @doc """
   Magic-link request (POST from the email form). Issues a split-code token,
@@ -49,7 +50,15 @@ defmodule EmisarWeb.UserSessionController do
            {:ok, user} <- Users.fetch_user_by_email(email) do
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
         Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to)
-        put_magic_cookie(conn, token_id, nonce, registered?)
+
+        conn
+        |> put_magic_cookie(token_id, nonce, registered?)
+        # The LiveView verifies the typed code (the nonce isn't readable from JS),
+        # so it reads token_id + nonce from the encrypted session; the cookie stays
+        # for the email-link path and the sign-in-completion browser binding.
+        |> put_session(:magic_link_token_id, token_id)
+        |> put_session(:magic_link_nonce, nonce)
+        |> put_session(:magic_link_registered, registered?)
       else
         # Surfacing the throttle is safe: it's checked BEFORE the user lookup and
         # fires identically for real and unknown addresses, so it can't leak
@@ -84,11 +93,38 @@ defmodule EmisarWeb.UserSessionController do
     |> DateTime.to_iso8601()
   end
 
-  @doc "Code path — the operator types the 6-character code into the browser holding the nonce."
-  def magic_link_verify_code(conn, %{"code" => code}) when is_binary(code),
-    do: finish_magic_link(conn, code, & &1)
+  @doc """
+  Code path — completes sign-in after `MagicLinkLive` verified the typed code.
+  The LiveView redirects here with a short-lived signed `handoff` carrying the
+  user; it is bound to the still-present magic cookie (same browser), so a leaked
+  handoff URL is useless elsewhere and a replay fails once the cookie is cleared.
+  """
+  def magic_link_complete(conn, %{"handoff" => handoff}) do
+    with {:ok, {user_id, registered?, token_id}} <- MagicLinkHandoff.verify(handoff),
+         {:ok, cookie_token_id, _nonce, _flag} <- read_magic_cookie(conn),
+         true <- cookie_token_id == token_id,
+         {:ok, user} <- Users.fetch_user_by_id(user_id) do
+      Users.record_sign_in(user, "magic_link", RequestContext.from_conn(conn))
 
-  def magic_link_verify_code(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
+      conn
+      |> delete_resp_cookie(@magic_cookie)
+      |> complete_branded_sign_in(
+        user,
+        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
+      )
+    else
+      _ ->
+        conn
+        |> delete_resp_cookie(@magic_cookie)
+        |> put_flash(
+          :error,
+          "That sign-in couldn't be completed. Enter the code again or resend."
+        )
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
+    end
+  end
+
+  def magic_link_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
 
   @doc "Link path — the email link carries `token_id` + the secret; the nonce is the cookie's."
   def magic_link_confirm(conn, %{"token_id" => token_id, "secret" => secret} = params),
@@ -100,20 +136,20 @@ defmodule EmisarWeb.UserSessionController do
     |> UserAuth.log_out_user()
   end
 
-  # Shared finish: read the cookie nonce, verify BOTH halves, sign in. `token_id`
-  # comes from the link URL (link path) or the cookie (code path); `prep` threads
-  # the link path's URL return_to before logging in (the code path's was stashed
-  # in the session at `magic_link_start`).
-  defp finish_magic_link(conn, secret, prep, link_token_id \\ nil) do
+  # The email-link path: read the cookie's nonce + registered flag, verify BOTH
+  # halves (the URL's secret + the cookie's nonce) against the URL's token, sign
+  # in. `prep` threads the link's `?return_to` into the session before login. (The
+  # typed-code path verifies in `MagicLinkLive` and completes via
+  # `magic_link_complete` — it never reaches here.)
+  defp finish_magic_link(conn, secret, prep, link_token_id) do
     context = RequestContext.from_conn(conn)
-    # The typed code is case-insensitive and whitespace-tolerant; the emailed
-    # link already carries the canonical uppercase secret, so upcasing it is a
-    # no-op. The code alphabet is uppercase letters + digits (Emisar.Crypto).
+    # The emailed link already carries the canonical uppercase secret, so upcasing
+    # is a no-op; trim guards a stray copy-paste space. The code alphabet is
+    # uppercase letters + digits (Emisar.Crypto).
     secret = secret |> to_string() |> String.trim() |> String.upcase()
 
-    with {:ok, cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
-         token_id = link_token_id || cookie_token_id,
-         {:ok, user} <- Auth.verify_magic_link(token_id, secret, nonce, context) do
+    with {:ok, _cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
+         {:ok, user} <- Auth.verify_magic_link(link_token_id, secret, nonce, context) do
       Users.record_sign_in(user, "magic_link", context)
 
       conn

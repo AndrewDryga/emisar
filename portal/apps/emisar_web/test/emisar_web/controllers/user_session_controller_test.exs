@@ -2,6 +2,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Audit.Event
   alias Emisar.{Auth, Repo, Users}
+  alias EmisarWeb.MagicLinkHandoff
 
   describe "split-code magic link" do
     # Drive the real request, then pull token_id + the 6-char secret out of the
@@ -70,17 +71,58 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
     end
 
-    test "the typed code signs in from the browser holding the nonce", %{
+    # The typed code is verified in MagicLinkLive (tested there); it then redirects
+    # here with a handoff to establish the session. These cover the completion +
+    # its browser-binding — the handoff alone is never enough.
+    test "a valid handoff from the requesting browser completes sign-in", %{
       conn: conn,
       user: user
     } do
-      {conn, _token_id, secret} = request_magic_link(conn, user.email)
+      {conn, token_id, _secret} = request_magic_link(conn, user.email)
+      handoff = MagicLinkHandoff.sign(user.id, false, token_id)
 
-      conn = post(conn, ~p"/sign_in/magic/code", %{"code" => secret})
+      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
 
       assert token = get_session(conn, :user_token)
       assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
       assert signed_in.id == user.id
+    end
+
+    test "a handoff WITHOUT the requesting browser's cookie can't sign in (anti-hijack)", %{
+      conn: conn,
+      user: user
+    } do
+      {_conn, token_id, _secret} = request_magic_link(conn, user.email)
+      handoff = MagicLinkHandoff.sign(user.id, false, token_id)
+
+      # A leaked handoff URL opened in a DIFFERENT browser (fresh conn, no magic
+      # cookie) → no sign-in. The binding that makes the URL credential safe.
+      conn = get(build_conn(), ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      refute get_session(conn, :user_token)
+    end
+
+    test "a handoff bound to a different token than the cookie's flow is refused", %{
+      conn: conn,
+      user: user
+    } do
+      {conn, _token_id, _secret} = request_magic_link(conn, user.email)
+      handoff = MagicLinkHandoff.sign(user.id, false, "not-the-cookie-token-id")
+
+      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      refute get_session(conn, :user_token)
+    end
+
+    test "a forged/garbage handoff is refused", %{conn: conn, user: user} do
+      {conn, _token_id, _secret} = request_magic_link(conn, user.email)
+
+      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: "not-a-real-token"]}")
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      refute get_session(conn, :user_token)
     end
 
     test "the link WITHOUT the requesting browser's cookie can't sign in (anti-hijack)",

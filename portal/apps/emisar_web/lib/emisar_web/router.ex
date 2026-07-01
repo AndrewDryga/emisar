@@ -138,9 +138,12 @@ defmodule EmisarWeb.Router do
 
     # Split-code magic link: the LV form POSTs the email to :magic_link_start
     # (issues + sets the nonce cookie + mails the link/code); the email link
-    # carries token_id + secret, the typed code POSTs to :magic_link_verify_code.
+    # carries token_id + secret. The typed code is verified IN the LiveView (so a
+    # wrong code shows inline, no reload) — on success the LV redirects to
+    # :magic_link_complete with a short-lived, cookie-bound handoff that sets the
+    # session (a LiveView can't set the auth cookie itself).
     post "/sign_in/magic/start", UserSessionController, :magic_link_start
-    post "/sign_in/magic/code", UserSessionController, :magic_link_verify_code
+    get "/sign_in/magic/complete", UserSessionController, :magic_link_complete
     get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
 
     # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.

@@ -1,11 +1,14 @@
 defmodule EmisarWeb.MagicLinkLiveTest do
   @moduledoc """
-  Passwordless sign-in request page — now render-only. The split-code FLOW
-  (issue the token, set the nonce cookie, verify both halves) lives in
-  `UserSessionController` and is tested there; this LV just renders the email
-  form (POSTs to `:magic_link_start`) and, on `?sent=1`, the 6-character code form.
+  Passwordless sign-in request page. The email form POSTs to `:magic_link_start`
+  (a controller — it sets the nonce cookie a LiveView can't). On `?sent=1` this LV
+  renders the 6-character code form AND verifies the typed code itself
+  (`verify_code`): a wrong code shows inline with no reload; a match redirects to
+  `:magic_link_complete` with a handoff. Token issuance + the email-link + handoff
+  completion live in `UserSessionController` and are tested there.
   """
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.Auth
 
   test "renders the email form that POSTs to the start action", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
@@ -21,8 +24,10 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Check your inbox."
-    assert html =~ ~s(action="/sign_in/magic/code")
-    # The per-character boxes (CodeInput hook) submit through one hidden field.
+    # The code is verified in this LiveView (no controller POST) — so a wrong code
+    # can be shown inline; the per-character boxes (CodeInput hook) aggregate into
+    # one hidden field the phx-submit reads.
+    assert html =~ ~s(phx-submit="verify_code")
     assert html =~ ~s(phx-hook="CodeInput")
     assert html =~ ~r/<input[^>]*type="hidden"[^>]*name="code"/
   end
@@ -65,5 +70,52 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     assert html =~ ~s(phx-hook="MagicCodeExpiry")
     assert html =~ ~s(data-disable="code-submit")
     assert html =~ ~s(id="code-submit")
+  end
+
+  describe "verifying the typed code (verify_code)" do
+    setup %{conn: conn} do
+      user = Fixtures.Users.create_user()
+      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+
+      conn =
+        Plug.Test.init_test_session(conn, %{
+          "magic_link_token_id" => token_id,
+          "magic_link_nonce" => nonce,
+          "magic_link_email" => user.email
+        })
+
+      %{conn: conn, user: user, secret: secret}
+    end
+
+    test "a wrong code shows an inline error and stays on the page (no redirect)", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+      html = render_hook(lv, "verify_code", %{"code" => "000000"})
+
+      assert html =~ "match or has expired"
+    end
+
+    test "the correct code redirects to the cookie-bound sign-in completion", %{
+      conn: conn,
+      secret: secret
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+      assert {:error, {:redirect, %{to: to}}} =
+               render_hook(lv, "verify_code", %{"code" => secret})
+
+      assert to =~ "/sign_in/magic/complete?handoff="
+    end
+
+    test "a code with no token in the session (direct nav / unknown email) is refused inline", %{
+      conn: conn
+    } do
+      conn = Plug.Test.init_test_session(conn, %{"magic_link_email" => "someone@example.test"})
+      {:ok, lv, _html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+      html = render_hook(lv, "verify_code", %{"code" => "ABC123"})
+
+      assert html =~ "match or has expired"
+    end
   end
 end

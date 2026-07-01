@@ -1,10 +1,13 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
-  alias EmisarWeb.ReturnTo
+  alias Emisar.Auth
+  alias EmisarWeb.{MagicLinkHandoff, RequestContext, ReturnTo}
 
-  # Render-only: the email form POSTs to `UserSessionController.magic_link_start`
-  # (a controller, because issuing the split token sets a signed nonce COOKIE a
-  # LiveView can't), and the "?sent=1" code form POSTs to `:magic_link_verify_code`.
+  # The email form POSTs to `UserSessionController.magic_link_start` (a controller,
+  # because issuing the split token sets a signed nonce cookie a LiveView can't).
+  # The typed code is verified HERE (handle_event/3) so a wrong code shows inline
+  # with no reload; on a match we redirect to `:magic_link_complete` with a
+  # short-lived, cookie-bound handoff that establishes the session.
   def mount(params, session, socket) do
     {:ok,
      socket
@@ -19,8 +22,40 @@ defmodule EmisarWeb.MagicLinkLive do
      # The code's expiry (ISO8601) magic_link_start stashed — the sent page counts
      # it down and disables the code form when it lapses. nil on direct nav.
      |> assign(:expires_at, session["magic_link_expires_at"])
+     # The browser's nonce half + the token id magic_link_start stashed, so this
+     # LiveView can verify the typed code (the nonce isn't JS-readable). nil on
+     # direct nav / unknown email — which reads as the same inline error (no leak).
+     |> assign(:token_id, session["magic_link_token_id"])
+     |> assign(:nonce, session["magic_link_nonce"])
+     |> assign(:registered?, session["magic_link_registered"] == true)
+     |> assign(:request_context, RequestContext.from_socket(socket))
+     |> assign(:code_error, nil)
      |> assign(:email_form, to_form(%{"email" => ""}, as: "user"))
      |> assign(:code_form, to_form(%{"code" => ""}))}
+  end
+
+  # The typed code, aggregated by the CodeInput hook into the hidden `code` field.
+  # A wrong/expired code stays on the page with an inline error at the boxes —
+  # never a redirect to a far-off flash. A verified code hands off to the
+  # controller to set the session cookie (a LiveView can't set it). A nil
+  # token_id/nonce (direct nav / unknown email) reads as the same inline error.
+  def handle_event("verify_code", %{"code" => code}, socket) do
+    %{token_id: token_id, nonce: nonce, request_context: context} = socket.assigns
+    code = code |> to_string() |> String.trim() |> String.upcase()
+
+    with true <- is_binary(token_id) and is_binary(nonce),
+         {:ok, user} <- Auth.verify_magic_link(token_id, code, nonce, context) do
+      handoff = MagicLinkHandoff.sign(user.id, socket.assigns.registered?, token_id)
+      {:noreply, redirect(socket, to: ~p"/sign_in/magic/complete?#{[handoff: handoff]}")}
+    else
+      _ ->
+        {:noreply,
+         assign(
+           socket,
+           :code_error,
+           "That code didn't match or has expired. Check it and try again, or resend below."
+         )}
+    end
   end
 
   defp sent_to(session) do
@@ -59,8 +94,8 @@ defmodule EmisarWeb.MagicLinkLive do
           </p>
         </div>
 
-        <.simple_form for={@code_form} action={~p"/sign_in/magic/code"} method="post" class="mt-5">
-          <.code_input id="magic-code" name="code" label="Sign-in code" />
+        <.simple_form for={@code_form} phx-submit="verify_code" class="mt-5">
+          <.code_input id="magic-code" name="code" label="Sign-in code" error={@code_error} />
           <:actions>
             <.button id="code-submit" class="w-full">
               Sign in <span aria-hidden="true">→</span>
