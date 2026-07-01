@@ -231,6 +231,7 @@ defmodule EmisarWeb.Router do
         live "/settings/runners/auth-keys", AuthKeysLive, :index
         live "/settings/agents", AgentsLive, :index
         live "/settings/team", TeamLive, :index
+        live "/settings/team/invite", TeamLive, :new
         live "/settings/sso", SSOSettingsLive, :index
         live "/settings/sso/new", SSOSettingsLive, :new
         live "/settings/sso/:id", SSOSettingsLive, :show

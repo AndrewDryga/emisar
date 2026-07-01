@@ -24,12 +24,20 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_params(params, _uri, socket) do
-    # Gate load/2's reads behind connected? — they run once on the live mount,
-    # not also on the dead render (IL-18). The dead render shows <.loading_state>.
-    if connected?(socket) do
-      {:noreply, socket |> assign(:loading?, false) |> load(params)}
-    else
-      {:noreply, assign(socket, :loading?, true)}
+    case socket.assigns.live_action do
+      # The invite page needs no member load — it renders from the subject alone,
+      # so it skips the connected?/loading dance and shows the form immediately.
+      :new ->
+        {:noreply, reset_invite_form(socket)}
+
+      # Gate load/2's reads behind connected? — they run once on the live mount,
+      # not also on the dead render (IL-18). The dead render shows <.loading_state>.
+      :index ->
+        if connected?(socket) do
+          {:noreply, socket |> assign(:loading?, false) |> load(params)}
+        else
+          {:noreply, assign(socket, :loading?, true)}
+        end
     end
   end
 
@@ -209,6 +217,9 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event("invite_another", _params, socket),
+    do: {:noreply, reset_invite_form(socket)}
+
   def handle_event("resend_invitation", %{"membership_id" => id}, socket) do
     case find_membership(socket, id) do
       nil -> {:noreply, socket}
@@ -360,19 +371,23 @@ defmodule EmisarWeb.TeamLive do
   defp error_message(_),
     do: "That change didn't apply. Refresh to see the member's current state, then try again."
 
-  # One-line capability summary per role for the invite form. Kept in sync with
-  # the authorizers: owner manages billing + adds owners; admin manages members/
-  # runners/policies and approves runs but only *views* billing; operator
+  # One-line capability summary per role for the invite picker. Each says what the
+  # role CAN do and where it stops, so the grant is a deliberate choice. Kept in
+  # sync with the authorizers: owner manages billing + adds owners; admin manages
+  # members/runners/policies and approves runs but only *views* billing; operator
   # dispatches + approves but manages nothing; viewer is read-only.
-  defp role_description("owner"), do: "Full control, including billing and adding owners."
+  defp role_description("owner"),
+    do: "Full control of the workspace, including billing and adding or removing other owners."
 
   defp role_description("admin"),
-    do: "Manage members, runners, and policies; approve runs; view-only billing."
+    do: "Manages members, runners, and policies, and approves runs. Billing is view-only."
 
   defp role_description("operator"),
-    do: "Dispatch runs and approve actions — no team or billing management."
+    do: "Dispatches runs and approves actions. No team, policy, or billing management."
 
-  defp role_description("viewer"), do: "Read-only access to runs, runners, approvals, and audit."
+  defp role_description("viewer") do
+    "Read-only across runs, runners, approvals, and audit — can't dispatch or change anything."
+  end
 
   defp role_description(_), do: nil
 
@@ -384,11 +399,13 @@ defmodule EmisarWeb.TeamLive do
       {:ok, %{user: user, invitation_token: token}} ->
         delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
 
+        # Success is a page STATE, not a flash-and-reload: the invite view swaps
+        # to a confirmation with "Invite another" / "Back to members", so the
+        # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
-         |> flash_invite_outcome(email, delivery)
-         |> assign_form(invite_changeset())
-         |> reload()}
+         |> assign(:invited_email, email)
+         |> assign(:invite_suppressed?, suppressed_delivery?(delivery))}
 
       {:error, :already_member} ->
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
@@ -417,21 +434,12 @@ defmodule EmisarWeb.TeamLive do
   end
 
   # The invitation row + token are created regardless of email delivery; the
-  # flash reflects whether we could actually reach the address. A suppressed
-  # recipient (hard-bounced or spam-flagged, recorded from the Postmark
-  # webhook) silently skips the send — tell the inviter so they relay the link
-  # another way instead of leaving the new member stuck "unconfirmed, never
-  # signed in" with no hint why.
-  defp flash_invite_outcome(socket, email, {:ok, %{suppressed: true}}) do
-    put_flash(
-      socket,
-      :error,
-      "Invited #{email}, but we can't email that address (it bounced or was marked spam) — send them the join link another way."
-    )
-  end
-
-  defp flash_invite_outcome(socket, email, _delivery),
-    do: put_flash(socket, :info, "Invited #{email}.")
+  # success panel flags when we could NOT reach the address (a hard-bounced or
+  # spam-flagged recipient, recorded from the Postmark webhook) so the inviter
+  # relays the join link another way instead of leaving the new member stuck
+  # "unconfirmed, never signed in" with no hint why.
+  defp suppressed_delivery?({:ok, %{suppressed: true}}), do: true
+  defp suppressed_delivery?(_), do: false
 
   defp flash_resend_invitation_outcome(socket, email, {:ok, %{suppressed: true}}) do
     put_flash(
@@ -626,6 +634,15 @@ defmodule EmisarWeb.TeamLive do
     assign(socket, :form, to_form(changeset, as: "invite"))
   end
 
+  # Fresh invite page: a clean form, back on the "compose" step (no success panel).
+  defp reset_invite_form(socket) do
+    socket
+    |> assign(:loading?, false)
+    |> assign(:invited_email, nil)
+    |> assign(:invite_suppressed?, false)
+    |> assign_form(invite_changeset())
+  end
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -642,24 +659,147 @@ defmodule EmisarWeb.TeamLive do
       width={:settings}
     >
       <:title>Team</:title>
-      <:actions :if={not @loading? and can_manage?(assigns)}>
-        <.button phx-click={show_invite()} size="md">
+      <:actions :if={@live_action == :index and not @loading? and can_manage?(assigns)}>
+        <.button
+          navigate={~p"/app/#{@current_account}/settings/team/invite"}
+          size="md"
+          icon="hero-plus"
+        >
           Invite member
         </.button>
       </:actions>
 
-      <.page_intro>
+      <%!-- ========= Invite a member — its own focused page (:new) =========
+           Pulled off the roster so the role choice gets room to breathe: a
+           readable radio-card per role (name + what it can do), and a real
+           success step (Invite another / Back to members) instead of a flash. --%>
+      <div :if={@live_action == :new} class="mx-auto max-w-2xl space-y-5">
+        <.link
+          navigate={~p"/app/#{@current_account}/settings/team"}
+          class="inline-flex items-center gap-1.5 text-sm text-zinc-400 transition hover:text-zinc-200"
+        >
+          <.icon name="hero-arrow-left" class="h-4 w-4" /> Members
+        </.link>
+
+        <.empty_state
+          :if={not can_manage?(assigns)}
+          variant={:bare}
+          tone={:danger}
+          icon="hero-lock-closed"
+          title="You can't invite members"
+        >
+          Only owners and admins can invite members. Ask an owner or admin to add someone.
+        </.empty_state>
+
+        <%!-- Sent: confirm it, then the two next moves — no vanishing flash. --%>
+        <.panel :if={can_manage?(assigns) and @invited_email}>
+          <div class="flex flex-col items-center py-6 text-center">
+            <span class="grid h-12 w-12 place-items-center rounded-full bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/30">
+              <.icon name="hero-paper-airplane" class="h-6 w-6" />
+            </span>
+            <h2 class="mt-4 font-display text-lg font-semibold tracking-[-0.01em] text-zinc-100">
+              Invitation sent
+            </h2>
+            <p class="mt-1.5 max-w-sm text-pretty text-sm leading-relaxed text-zinc-400">
+              We emailed a join link to <span class="font-medium text-zinc-200">{@invited_email}</span>. They'll show in the
+              roster as pending until they accept.
+            </p>
+
+            <p
+              :if={@invite_suppressed?}
+              class="mt-4 max-w-sm rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200"
+            >
+              We couldn't email {@invited_email} — it bounced or was marked spam. Send them the
+              join link another way, or invite a different address.
+            </p>
+
+            <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
+              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant="secondary">
+                Back to members
+              </.button>
+            </div>
+          </div>
+        </.panel>
+
+        <.panel :if={can_manage?(assigns) and is_nil(@invited_email)} title="Invite a member">
+          <:subtitle>
+            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They sign in
+            with a magic link (or SSO) — no password to set — and land straight in this workspace.
+          </:subtitle>
+
+          <.simple_form
+            for={@form}
+            id="invite_form"
+            phx-change="validate"
+            phx-submit="invite"
+            class="space-y-5"
+          >
+            <.input
+              field={@form[:email]}
+              type="email"
+              label="Email address"
+              placeholder="name@company.com"
+              autocomplete="off"
+              required
+            />
+
+            <fieldset>
+              <legend class="text-sm font-medium text-zinc-300">Role</legend>
+              <p class="mt-0.5 text-xs text-zinc-500">
+                What this person can do once they join — you can change it later.
+              </p>
+              <div class="mt-2.5 space-y-2">
+                <label
+                  :for={role <- @roles}
+                  :if={role_description(role)}
+                  class={[
+                    "block cursor-pointer rounded-lg border bg-black/30 p-4 transition",
+                    if(to_string(@form[:role].value) == role,
+                      do: "border-brand-500/50 ring-1 ring-brand-500/20",
+                      else: "border-zinc-800 hover:border-zinc-700"
+                    )
+                  ]}
+                >
+                  <span class="flex items-center gap-2.5">
+                    <input
+                      type="radio"
+                      name="invite[role]"
+                      value={role}
+                      checked={to_string(@form[:role].value) == role}
+                      class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0"
+                    />
+                    <span class="text-sm font-semibold text-zinc-100">{String.capitalize(role)}</span>
+                  </span>
+                  <p class="mt-1.5 pl-[26px] text-sm leading-relaxed text-zinc-400">
+                    {role_description(role)}
+                  </p>
+                </label>
+              </div>
+            </fieldset>
+
+            <:actions>
+              <.button phx-disable-with="Sending…">Send invite</.button>
+              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant="ghost">
+                Cancel
+              </.button>
+            </:actions>
+          </.simple_form>
+        </.panel>
+      </div>
+
+      <.page_intro :if={@live_action == :index}>
         Members, roles, and invitations for this workspace — who can dispatch, approve,
         and configure. <.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
       </.page_intro>
 
-      <.loading_state :if={@loading?} />
+      <.loading_state :if={@live_action == :index and @loading?} />
 
       <%!-- Single-column list. Each row is a member: avatar, name +
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
-      <div :if={not @loading?} class="space-y-6">
+      <div :if={@live_action == :index and not @loading?} class="space-y-6">
         <%!-- Security card — account-wide MFA toggle (owner-only) +
              at-a-glance per-member MFA status. Lives at the top because
              this is the highest-leverage account setting on the page;
@@ -785,58 +925,6 @@ defmodule EmisarWeb.TeamLive do
                 <.chip>Not configured</.chip>
             <% end %>
           </div>
-        </.panel>
-
-        <%!-- Invite panel — collapsed by default; revealed by header
-             button. Avoids a permanent "fill out this form" sidebar
-             dominating the page when no invite is in flight. --%>
-        <.panel
-          :if={can_manage?(assigns)}
-          id="invite-panel"
-          class="hidden"
-          padding="p-6"
-          title="Invite a member"
-        >
-          <:subtitle>
-            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
-          </:subtitle>
-          <:actions>
-            <.icon_button icon="hero-x-mark" label="Close invite panel" phx-click={hide_invite()} />
-          </:actions>
-
-          <.simple_form
-            for={@form}
-            id="invite_form"
-            phx-change="validate"
-            phx-submit="invite"
-            class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
-          >
-            <.input
-              field={@form[:email]}
-              type="email"
-              label="Email"
-              placeholder="name@company.com"
-              required
-            />
-            <.input
-              field={@form[:role]}
-              type="select"
-              label="Role"
-              options={Enum.map(@roles, &{String.capitalize(&1), &1})}
-            />
-            <:actions>
-              <.button phx-disable-with="Sending...">Send invite</.button>
-            </:actions>
-          </.simple_form>
-
-          <%!-- Assigning a role is a privilege grant — spell out what each of
-               the assignable roles can do instead of a bare name. --%>
-          <dl class="mt-4 space-y-1 border-t border-zinc-900 pt-3 text-xs text-zinc-500">
-            <div :for={role <- @roles} :if={role_description(role)} class="flex gap-2">
-              <dt class="w-16 flex-none font-medium text-zinc-400">{String.capitalize(role)}</dt>
-              <dd>{role_description(role)}</dd>
-            </div>
-          </dl>
         </.panel>
 
         <%!-- Member list — uses LiveTable :cards with overflow={:visible}
@@ -1143,9 +1231,13 @@ defmodule EmisarWeb.TeamLive do
               icon="hero-users"
               title="No team members yet."
             >
-              Use the
-              <.chip>Invite</.chip>
-              form above to send a magic-link to a new member.
+              Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
+              <:cta
+                :if={can_manage?(assigns)}
+                navigate={~p"/app/#{@current_account}/settings/team/invite"}
+              >
+                Invite member
+              </:cta>
             </.empty_state>
           </:empty>
         </LiveTable.live_table>
@@ -1156,20 +1248,6 @@ defmodule EmisarWeb.TeamLive do
       </div>
     </.dashboard_shell>
     """
-  end
-
-  defp show_invite do
-    JS.show(
-      to: "#invite-panel",
-      transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
-    )
-  end
-
-  defp hide_invite do
-    JS.hide(
-      to: "#invite-panel",
-      transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
-    )
   end
 
   # Inline action menu for a single member row. Hidden for the actor's

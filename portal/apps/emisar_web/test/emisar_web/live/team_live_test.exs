@@ -10,24 +10,32 @@ defmodule EmisarWeb.TeamLiveTest do
   import Swoosh.TestAssertions
 
   describe "GET /app/settings/team as an owner" do
-    test "renders the invite form (not the read-only banner)", %{conn: conn} do
+    test "the roster offers an Invite member action, not the read-only banner", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Invite a member"
-      assert html =~ "Send invite"
+      assert html =~ "Invite member"
+      # The invite form itself lives on its own page now, not inline on the roster.
+      refute html =~ "Send invite"
       refute html =~ "Only owners and admins can invite"
-      # Each assignable role is explained, not just named — assigning one is a
-      # privilege grant.
-      assert html =~ "Read-only access to runs"
-      assert html =~ "Dispatch runs and approve actions"
     end
   end
 
-  describe "invite form validation" do
+  describe "GET /app/settings/team/invite" do
+    test "renders the invite form with each role explained", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      assert html =~ "Send invite"
+      # Each assignable role is explained, not just named — assigning one is a
+      # privilege grant, so the picker itself carries the description.
+      assert html =~ "Read-only across runs"
+      assert html =~ "Dispatches runs and approves actions"
+    end
+
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       html =
         lv
@@ -38,7 +46,46 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "must have the @ sign and no spaces"
       # …and no flash banner — the bad address never reaches the mailer.
       refute html =~ "Could not send invitation"
-      refute html =~ "Invited not-an-email"
+      refute html =~ "Invitation sent"
+    end
+
+    test "a successful invite lands on the success step with next actions", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      html =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{"email" => "newbie@example.com", "role" => "operator"}
+        })
+        |> render_submit()
+
+      assert html =~ "Invitation sent"
+      assert html =~ "newbie@example.com"
+      assert html =~ "Invite another"
+      assert html =~ "Back to members"
+
+      assert_email_sent(fn sent ->
+        sent.to == [{"", "newbie@example.com"}] and sent.text_body =~ "/accept_invitation/"
+      end)
+
+      # "Invite another" resets to a clean form on the same page.
+      reset = render_click(lv, "invite_another", %{})
+      assert reset =~ "Send invite"
+      refute reset =~ "Invitation sent"
+    end
+
+    test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
+      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      _ = Fixtures.Memberships.force_role(m, "viewer")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      # The route is reachable, but the domain-gated view refuses to compose an
+      # invite for a viewer (no form) and explains who can.
+      assert html =~ "Ask an owner or admin to add someone"
+      refute html =~ "Send invite"
     end
   end
 
@@ -76,7 +123,7 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "GET /app/settings/team as a viewer" do
-    test "renders the read-only banner instead of the form", %{conn: conn} do
+    test "shows the read-only banner and no invite action", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
       {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
@@ -85,7 +132,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "Only owners and admins can invite"
-      refute html =~ "Send invite"
+      refute html =~ "Invite member"
     end
   end
 
@@ -367,18 +414,6 @@ defmodule EmisarWeb.TeamLiveTest do
       %{owner: owner, account: account, member: member, membership: membership, lv: lv}
     end
 
-    test "invite happy path reports and lists the invitee", %{lv: lv} do
-      email = "newbie-#{System.unique_integer([:positive])}@example.com"
-
-      html =
-        lv
-        |> form("#invite_form", %{"invite" => %{"email" => email, "role" => "operator"}})
-        |> render_submit()
-
-      assert html =~ "Invited #{email}."
-      assert html =~ email
-    end
-
     test "a pending invitation row can resend the invite", %{owner: owner, account: account} do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
       email = "resend-web-#{System.unique_integer([:positive])}@example.com"
@@ -416,21 +451,27 @@ defmodule EmisarWeb.TeamLiveTest do
              )
     end
 
-    test "inviting a suppressed address warns the inviter instead of a silent success", %{lv: lv} do
-      # The address hard-bounced / was spam-flagged earlier, so the mailer
-      # skips the send. The invite still exists, but the inviter must know the
-      # email won't arrive — otherwise the member sits "unconfirmed" forever.
+    test "inviting a suppressed address warns on the success step, not a silent success", %{
+      owner: owner,
+      account: account
+    } do
+      # The address hard-bounced / was spam-flagged earlier, so the mailer skips
+      # the send. The invite still exists, but the success step must say the email
+      # won't arrive — otherwise the member sits "unconfirmed" forever.
       email = "bounced-#{System.unique_integer([:positive])}@example.com"
       {:ok, _} = Emisar.Mail.suppress(email, :hard_bounce)
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team/invite")
 
       html =
         lv
         |> form("#invite_form", %{"invite" => %{"email" => email, "role" => "operator"}})
         |> render_submit()
 
-      assert html =~ "email that address"
-      assert html =~ "send them the join link another way"
-      refute html =~ "Invited #{email}."
+      assert html =~ "Invitation sent"
+      assert html =~ "bounced or was marked spam"
+      assert html =~ "another way"
     end
 
     test "change_role promotes the member", %{lv: lv, membership: membership} do
@@ -650,7 +691,7 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "invite form live validation (phx-change)" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
       %{conn: conn, account: account, lv: lv}
     end
 
@@ -678,14 +719,14 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a role outside the allowed set is rejected with no membership created", %{lv: lv} do
       email = "rolecheck-#{System.unique_integer([:positive])}@example.com"
 
-      # The role <select> only offers valid roles, so push the event directly to
+      # The role radios only offer valid roles, so push the event directly to
       # forge an out-of-set role. validate_inclusion fails, the invite never
-      # reaches the context, and the form re-renders with the error instead.
+      # reaches the context, and the form re-renders instead of the success step.
       html =
         render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "superadmin"}})
 
-      assert html =~ "is invalid"
-      refute html =~ "Invited #{email}."
+      assert html =~ "Send invite"
+      refute html =~ "Invitation sent"
       assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
     end
   end
@@ -934,7 +975,7 @@ defmodule EmisarWeb.TeamLiveTest do
       send(lv.pid, {:some_unrelated_event, :payload})
 
       # The process survived and still renders — render/1 raises if the socket died.
-      assert render(lv) =~ "Invite a member"
+      assert render(lv) =~ "Two-factor authentication"
     end
 
     test "the disconnected (dead) render shows the loading state, never the roster", %{conn: conn} do
