@@ -187,16 +187,23 @@ defmodule EmisarWeb.RunDetailLive do
             session {String.slice(@run.mcp_session_id, 0, 8)}
           </span>
         </.meta_field>
+        <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
+             (text-zinc-500) — never the value span's brighter/monospace styling,
+             or the two "no value" cells look mismatched. --%>
         <.meta_field label="Duration">
-          <span class="text-zinc-200">{format_duration(@run.duration_ms)}</span>
+          <span :if={@run.duration_ms} class="text-zinc-200">
+            {format_duration(@run.duration_ms)}
+          </span>
+          <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
         </.meta_field>
         <.meta_field label="Exit code">
-          <span class={[
-            "font-mono",
-            exit_code_class(@run.exit_code)
-          ]}>
-            {@run.exit_code || "—"}
+          <span
+            :if={is_integer(@run.exit_code)}
+            class={["font-mono", exit_code_class(@run.exit_code)]}
+          >
+            {@run.exit_code}
           </span>
+          <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
         </.meta_field>
         <.meta_field label="Started">
           <.local_time value={@run.inserted_at} class="text-zinc-200" />
@@ -403,9 +410,9 @@ defmodule EmisarWeb.RunDetailLive do
     """
   end
 
+  # Only ever called with an integer exit code — the nil case renders `<.blank>`.
   defp exit_code_class(0), do: "text-brand-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
-  defp exit_code_class(_), do: "text-zinc-500"
 
   defp policy_label("allow"), do: "Allowed"
   defp policy_label("require_approval"), do: "Requires approval"
