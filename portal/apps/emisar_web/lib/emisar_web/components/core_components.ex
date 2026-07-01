@@ -2212,6 +2212,53 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Upsell marker for a plan-gated feature in the docs: names the plan(s) that
+  include it and links to pricing, so a reader on a lower plan sees at a glance
+  that the feature isn't on theirs (and where to get it). `tier: :team` →
+  available on Team and Enterprise; `tier: :enterprise` → Enterprise only.
+
+  Pass `link={false}` for the non-linking `<span>` variant when the badge sits
+  INSIDE another anchor (a docs index card), since anchors can't nest.
+
+      <h2>Directory sync <.plan_badge tier={:enterprise} /></h2>
+  """
+  attr :tier, :atom, required: true, values: [:team, :enterprise]
+  attr :link, :boolean, default: true
+  attr :class, :string, default: nil
+
+  def plan_badge(%{link: false} = assigns) do
+    ~H"""
+    <span title={plan_badge_title(@tier)} class={[plan_badge_class(), @class]}>
+      {plan_badge_label(@tier)}
+    </span>
+    """
+  end
+
+  def plan_badge(assigns) do
+    ~H"""
+    <.link
+      href={~p"/pricing"}
+      title={plan_badge_title(@tier)}
+      class={[plan_badge_class(), "hover:bg-amber-500/20 hover:text-amber-200", @class]}
+    >
+      {plan_badge_label(@tier)}
+    </.link>
+    """
+  end
+
+  defp plan_badge_class do
+    "inline-flex items-center whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-0.5 " <>
+      "align-middle text-[11px] font-semibold uppercase tracking-wide text-amber-300 " <>
+      "ring-1 ring-amber-500/25 transition-colors"
+  end
+
+  defp plan_badge_label(:team), do: "Team & Enterprise"
+  defp plan_badge_label(:enterprise), do: "Enterprise"
+
+  defp plan_badge_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
+  defp plan_badge_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
+
+  @doc """
   A "pinned to X" filter chip for a row-click / "View activity" pivot — shows what
   the list is scoped to and clears in one click. Shared by the audit actor/subject
   pivots and the runs agent pivot. `clear_to` is a same-LV patch path.

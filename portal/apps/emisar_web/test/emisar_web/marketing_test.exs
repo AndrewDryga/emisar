@@ -824,6 +824,37 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  describe "plan badges on plan-gated docs (the upsell markers)" do
+    test "docs/sso marks SSO login as Team+ and SCIM as Enterprise, linking to pricing", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+      # The two plan-gated features carry their tier badge…
+      assert html =~ "Team &amp; Enterprise"
+      assert html =~ "Available on the Team and Enterprise plans"
+      assert html =~ "Available on the Enterprise plan"
+      # …and every badge is the upsell — it links to pricing.
+      assert html =~ ~s(href="/pricing")
+    end
+
+    test "docs/teams-and-access marks inviting teammates as Team+ (Free is one user)", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/docs/teams-and-access") |> html_response(200)
+
+      assert html =~ "Team &amp; Enterprise"
+      assert html =~ "Available on the Team and Enterprise plans"
+      assert html =~ ~s(href="/pricing")
+    end
+
+    test "the docs index flags the plan-gated SSO card before the click", %{conn: conn} do
+      html = conn |> get(~p"/docs") |> html_response(200)
+
+      assert html =~ "Team &amp; Enterprise"
+    end
+  end
+
   describe "cross-links resolve to real routes" do
     # Each page's internal cross-links must point at real, 200-resolving
     # routes — a broken nav link is a dead end for the reader and a crawl

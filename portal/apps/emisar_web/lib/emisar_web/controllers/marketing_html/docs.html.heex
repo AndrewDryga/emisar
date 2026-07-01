@@ -24,6 +24,10 @@
   <%!-- Cards, grouped by what the reader is trying to do --%>
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <%!-- Docs whose feature isn't on every plan get a plan badge on their card,
+           so the paywall is visible before the click. Keyed by href; only the
+           plan-gated topics appear. --%>
+      <% plan_tiers = %{"/docs/sso" => :team} %>
       <%= for {section, cards} <- [
         {"Get started",
          [
@@ -79,9 +83,12 @@
                 <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
                   <.icon name={icon} class="h-6 w-6" />
                 </div>
-                <h3 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
-                  {title}
-                </h3>
+                <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
+                    {title}
+                  </h3>
+                  <.plan_badge :if={plan_tiers[href]} tier={plan_tiers[href]} link={false} />
+                </div>
                 <p class="mt-2 text-sm text-zinc-400">{desc}</p>
                 <p class="mt-4 text-sm font-semibold text-brand-300">
                   Read it
