@@ -73,9 +73,10 @@ defmodule Emisar.SSO do
 
   @doc """
   Per-connection sync tallies for the overview — `%{provider_id => %{users: n,
-  groups: n}}` (provisioned identities + group→role mappings) — so the connection
-  list shows each one's scale and health at a glance (paired with the provider's
-  `scim_last_seen_at`). One grouped query per table. Requires `manage_sso`;
+  groups: n}}` (provisioned identities + distinct groups the directory has actually
+  pushed via SCIM, NOT the group→role mappings the admin configured) — so the
+  connection list shows each one's scale and health at a glance (paired with the
+  provider's `scim_last_seen_at`). One grouped query per table. Requires `manage_sso`;
   account-scoped. Returns `{:ok, stats}`.
   """
   def provider_sync_stats(%Subject{} = subject) do
@@ -88,8 +89,8 @@ defmodule Emisar.SSO do
         |> Map.new()
 
       groups =
-        GroupRoleMapping.Query.not_deleted()
-        |> GroupRoleMapping.Query.count_by_provider()
+        DirectoryGroupMember.Query.not_deleted()
+        |> DirectoryGroupMember.Query.count_distinct_groups_by_provider()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> Map.new()

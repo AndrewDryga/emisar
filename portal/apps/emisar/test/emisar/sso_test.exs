@@ -226,11 +226,23 @@ defmodule Emisar.SSOTest do
   # -- provider_sync_stats/1 ------------------------------------------
 
   describe "provider_sync_stats/1" do
-    test "counts synced users and group mappings per provider" do
+    test "counts synced users and distinct synced groups (NOT group→role mappings)" do
       %{provider: provider, subject: subject} = scim_provider()
       provision(provider, "okta|a")
       provision(provider, "okta|b")
 
+      # The directory pushes TWO groups over SCIM...
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{external_id: "grp-ops", member_external_ids: ["okta|a"]})
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-eng",
+          member_external_ids: ["okta|a", "okta|b"]
+        })
+
+      # ...and the admin maps only ONE of them. The tally counts the 2 groups the
+      # directory synced, not the 1 group→role mapping configured.
       {:ok, _} =
         SSO.create_group_mapping(
           provider,
@@ -239,7 +251,7 @@ defmodule Emisar.SSOTest do
         )
 
       assert {:ok, stats} = SSO.provider_sync_stats(subject)
-      assert stats[provider.id] == %{users: 2, groups: 1}
+      assert stats[provider.id] == %{users: 2, groups: 2}
     end
 
     test "a viewer (no manage_sso) is denied" do
@@ -251,6 +263,11 @@ defmodule Emisar.SSOTest do
     test "is account-scoped — B's stats never include A's connection" do
       %{provider: provider} = scim_provider()
       provision(provider, "okta|a")
+      # A synced group for A too — the group tally is account-scoped via the
+      # DirectoryGroupMember for_subject clause, so B never sees A's group counts.
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{external_id: "grp-a", member_external_ids: ["okta|a"]})
+
       {_ub, _account_b, sb} = enterprise_owner()
 
       assert {:ok, stats} = SSO.provider_sync_stats(sb)

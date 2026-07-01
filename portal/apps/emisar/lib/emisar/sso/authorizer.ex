@@ -1,6 +1,7 @@
 defmodule Emisar.SSO.Authorizer do
   @moduledoc "Authorization for SSO identity-provider configuration + identity bindings."
   use Emisar.Auth.Authorizer
+  alias Emisar.SSO.DirectoryGroupMember
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.LinkRequest
@@ -25,6 +26,9 @@ defmodule Emisar.SSO.Authorizer do
 
       :directory_group_role_mappings ->
         GroupRoleMapping.Query.by_account_id(queryable, account_id)
+
+      :directory_group_members ->
+        DirectoryGroupMember.Query.by_account_id(queryable, account_id)
 
       :sso_link_requests ->
         LinkRequest.Query.by_account_id(queryable, account_id)

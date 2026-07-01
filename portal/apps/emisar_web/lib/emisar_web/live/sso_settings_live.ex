@@ -2184,9 +2184,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :provider, :map, required: true
   attr :stats, :map, required: true
 
-  # The overview health line for one connection: how many users + group mappings
-  # came through it, and — for a SCIM connection — how fresh the last sync is
-  # (green when it's synced, amber "never synced" while it's waiting on the IdP).
+  # The overview health line for one connection: how many users + distinct groups
+  # the directory has actually synced through it, and — for a SCIM connection — how
+  # fresh the last sync is (green when synced, amber "never synced" while it waits
+  # on the IdP).
   defp sync_meta(assigns) do
     ~H"""
     <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-500">

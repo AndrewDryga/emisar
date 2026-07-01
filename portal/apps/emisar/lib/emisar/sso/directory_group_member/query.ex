@@ -25,6 +25,19 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_ids(queryable, ids),
     do: where(queryable, [group_members: g], g.id in ^ids)
 
+  def by_account_id(queryable \\ all(), account_id),
+    do: where(queryable, [group_members: g], g.account_id == ^account_id)
+
+  # Distinct external groups a directory has actually pushed via SCIM, tallied per
+  # provider — the overview health line's "N groups synced". Counts what SYNCED (a
+  # directory can push more groups than the admin has mapped), not the group→role
+  # mappings; `{provider_id, count}` tuples, so a caller `Map.new`s them.
+  def count_distinct_groups_by_provider(queryable \\ all()) do
+    queryable
+    |> group_by([group_members: g], g.provider_id)
+    |> select([group_members: g], {g.provider_id, count(g.external_group_id, :distinct)})
+  end
+
   # Each external group a provider has synced via SCIM with its distinct member
   # count — powers the synced-groups readout, and (projected to ids) the
   # map-after-first-sync picker, so an admin keys a role mapping on a group the
