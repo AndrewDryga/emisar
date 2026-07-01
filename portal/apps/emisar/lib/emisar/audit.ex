@@ -27,7 +27,7 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   alias Emisar.Audit.{Authorizer, Event, Events}
-  alias Emisar.{Auth, Repo, RequestContext, Runs}
+  alias Emisar.{Auth, Billing, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
 
   # -- Recording (internal helper called by sibling contexts) ----------
@@ -97,8 +97,23 @@ defmodule Emisar.Audit do
       |> Map.merge(Map.from_struct(context))
       |> Map.merge(attrs)
 
+    # Stamp the retention horizon from the FINAL occurred_at (attrs may backdate
+    # it); an explicit `retain_until` in attrs wins.
+    merged = Map.put_new(merged, :retain_until, retain_until(account_id, merged[:occurred_at]))
+
     Event.Changeset.create(merged)
   end
+
+  # The row's delete horizon: occurred_at + the account's CURRENT plan retention
+  # window, fixed at write time so a later plan downgrade can't retroactively prune
+  # it (only future rows shrink). One plan lookup per audit write — cheap at this
+  # system's action/auth-paced audit volume. A nil account_id / occurred_at can't
+  # stamp (the changeset's required-field validation rejects the row anyway).
+  defp retain_until(account_id, %DateTime{} = occurred_at) when is_binary(account_id) do
+    DateTime.add(occurred_at, Billing.account_audit_retention_days(account_id) * 86_400, :second)
+  end
+
+  defp retain_until(_account_id, _occurred_at), do: nil
 
   @doc """
   Internal — sibling contexts (mostly Auth's pre-Subject flows) call this from

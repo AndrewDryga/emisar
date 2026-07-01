@@ -73,6 +73,22 @@ defmodule Emisar.Billing do
   defp plan_from_subscription(%Subscription{plan: plan}) when is_binary(plan), do: plan
   defp plan_from_subscription(_), do: "free"
 
+  @doc """
+  Internal — Audit's per-row retention stamp: the account's plan audit-retention
+  window, in days. Resolves `account_id` → subscription → plan; free floor (7d)
+  for no or an unknown/renamed plan (same read-tolerant degradation as `plan/1`).
+  """
+  def account_audit_retention_days(account_id) when is_binary(account_id) do
+    account_id
+    |> peek_subscription_for_account()
+    |> plan_from_subscription()
+    |> plan()
+    |> case do
+      %{audit_retention_days: days} -> days
+      nil -> plan("free").audit_retention_days
+    end
+  end
+
   @doc "True when the account's plan includes OIDC single sign-on (Team and Enterprise)."
   def sso_available?(%Accounts.Account{} = account),
     do: account_plan(account) in ["team", "enterprise"]

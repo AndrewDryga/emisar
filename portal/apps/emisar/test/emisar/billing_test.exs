@@ -114,6 +114,25 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "account_audit_retention_days/1" do
+    test "returns the account plan's audit-retention window" do
+      free = Fixtures.Accounts.create_account()
+      team = Fixtures.Accounts.create_account(plan: "team")
+      enterprise = Fixtures.Accounts.create_account(plan: "enterprise")
+
+      assert Billing.account_audit_retention_days(free.id) == 7
+      assert Billing.account_audit_retention_days(team.id) == 90
+      assert Billing.account_audit_retention_days(enterprise.id) == 365
+    end
+
+    test "falls back to the free window for an unknown/renamed plan" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
+
+      assert Billing.account_audit_retention_days(account.id) == 7
+    end
+  end
+
   describe "sso_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}

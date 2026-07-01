@@ -359,17 +359,26 @@ defmodule Emisar.Audit.Event.Query do
     }
   end
 
-  # Retention sweep cutoff (delete events strictly older than `ts`). The audit
-  # page's From/To window goes through the inclusive `:from`/`:to` filters above.
+  # The audit page's From/To window goes through the inclusive `:from`/`:to`
+  # filters above.
   def occurred_before(queryable, ts),
     do: where(queryable, [events: e], e.occurred_at < ^ts)
 
+  # Retention: a row is prunable once its stamped `retain_until` has passed. (A
+  # null `retain_until` — only pre-migration edge rows — never matches, so it's
+  # never pruned; safe.)
+  def retention_expired(queryable, %DateTime{} = now),
+    do: where(queryable, [events: e], e.retain_until < ^now)
+
   # The retention sweep deletes by id in bounded batches (not one long-locking
-  # DELETE): grab ≤ `limit` prunable ids, then delete that set.
-  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+  # DELETE): grab ≤ `limit` prunable ids, then delete that set. The `cutoff` the
+  # shared worker derives from the CURRENT plan is IGNORED here — per-row
+  # `retain_until` (stamped at write time) is the horizon, so a later downgrade
+  # can't retroactively wipe rows written under a larger window.
+  def prunable_ids(account_id, %DateTime{} = _cutoff, limit) when is_integer(limit) do
     all()
     |> by_account_id(account_id)
-    |> occurred_before(cutoff)
+    |> retention_expired(DateTime.utc_now())
     |> limit(^limit)
     |> select([events: e], e.id)
   end

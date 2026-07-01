@@ -41,6 +41,39 @@ defmodule Emisar.Workers.AuditRetentionTest do
     assert Repo.reload(within_team_window)
   end
 
+  # The whole point of per-row `retain_until`: a plan DOWNGRADE must not
+  # retroactively wipe history written under the wider window. The sweep prunes by
+  # each row's stamped horizon, not by recomputing the cutoff from the (now smaller)
+  # current window — so a downgrade only shrinks FUTURE rows.
+  test "a downgrade does not retroactively prune rows stamped under a wider window" do
+    account = Fixtures.Accounts.create_account()
+    ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
+
+    # A 10-day-old row whose horizon is still in the future (as if written under a
+    # 90-day window, then the account downgraded to Free's 7 days).
+    {:ok, wide} =
+      Audit.log(account.id, "user.signed_in",
+        actor_kind: "user",
+        occurred_at: ten_days_ago,
+        retain_until: DateTime.add(DateTime.utc_now(), 80 * 86_400, :second)
+      )
+
+    # A same-age row whose stamped horizon has already passed prunes as normal.
+    {:ok, expired} =
+      Audit.log(account.id, "user.signed_in",
+        actor_kind: "user",
+        occurred_at: ten_days_ago,
+        retain_until: DateTime.add(DateTime.utc_now(), -86_400, :second)
+      )
+
+    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+
+    # The wide-window row survives the Free-plan sweep (the OLD cutoff-from-current-
+    # plan behaviour would have deleted it); the expired one is gone.
+    assert Repo.reload(wide)
+    refute Repo.reload(expired)
+  end
+
   # an account whose subscription carries an unknown /
   # renamed plan name resolves to the "free" window rather than crashing, so a
   # legacy plan string can't wedge the nightly prune.

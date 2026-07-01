@@ -8,6 +8,10 @@ defmodule Emisar.Audit.Event do
 
   schema "audit_events" do
     field :occurred_at, :utc_datetime_usec
+    # The row's delete horizon, stamped at write time = occurred_at + the account's
+    # then-current plan retention window. The retention sweep prunes rows past it, so
+    # a later plan downgrade can't retroactively wipe history (only future rows shrink).
+    field :retain_until, :utc_datetime_usec
     field :event_type, :string
 
     field :actor_kind, :string

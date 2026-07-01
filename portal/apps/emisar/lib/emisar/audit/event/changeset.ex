@@ -15,6 +15,7 @@ defmodule Emisar.Audit.Event.Changeset do
     |> cast(attrs, [
       :account_id,
       :occurred_at,
+      :retain_until,
       :event_type,
       :actor_kind,
       :actor_id,
