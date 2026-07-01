@@ -371,6 +371,49 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "four-eyes"
     end
 
+    test "self-approval + a single approval folds the warning into the in-effect line", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      # The in-effect line states the effect AND folds in the guidance in one place
+      # (no separate warning banner).
+      assert html =~ "the requester may approve their own request"
+      assert html =~ "Require a different operator or raise the count"
+      refute html =~ "Self-approval is allowed and only one approval is required"
+    end
+
+    test "a config with independent review shows no single-reviewer guidance", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 2, "allow_self_approval" => true}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "the requester may be one of them"
+      refute html =~ "Require a different operator or raise the count"
+    end
+
     test "the live summary names four-eyes only at one approval from a different operator", %{
       conn: conn
     } do

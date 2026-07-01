@@ -842,6 +842,10 @@ defmodule EmisarWeb.PoliciesLive do
   attr :save_label, :string, required: true
 
   defp policy_fields(assigns) do
+    # Self-approval + a single approval adds no SECOND party — the in-effect line
+    # renders amber and folds in the guidance rather than a separate warning banner.
+    assigns = assign(assigns, :single_reviewer?, single_reviewer_gate?(assigns.approval))
+
     ~H"""
     <form
       id={"policy-form-" <> @editor_id}
@@ -930,104 +934,108 @@ defmodule EmisarWeb.PoliciesLive do
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
-        <%!-- Two ORTHOGONAL knobs, named for what each controls: WHO may approve
-             (allow_self_approval) and HOW MANY (min_approvals). "Four-eyes" is a
-             specific combination (one approval, a different approver), not a mode —
-             so we don't label the toggle that; the live summary below names it only
-             where it's true. Both radios post `allow_self_approval` (true/false), so
-             merge_approval is unchanged — a radio group posts the selected value. --%>
-        <div class="mt-3">
-          <.label variant={:eyebrow}>Who can approve</.label>
-        </div>
-        <div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label class={[
-            "block rounded-lg border bg-black/30 p-3 transition",
-            @can_manage && "cursor-pointer",
-            if(@approval["allow_self_approval"],
-              do: "border-zinc-800 hover:border-zinc-700",
-              else: "border-brand-500/50 ring-1 ring-brand-500/20"
-            )
-          ]}>
-            <span class="flex items-center gap-2">
-              <input
-                type="radio"
-                name="policy[approval][allow_self_approval]"
-                value="false"
-                checked={!@approval["allow_self_approval"]}
-                disabled={!@can_manage}
-                class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
-              />
-              <span class="text-sm font-medium text-zinc-100">A different operator</span>
-            </span>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-              Only an operator <em>other than</em>
-              the requester can approve — no signing off on your own request.
+        <%!-- Two ORTHOGONAL knobs side by side: WHO may approve
+             (allow_self_approval) and HOW MANY (min_approvals). Both radios post
+             `allow_self_approval` (true/false), so merge_approval is unchanged. The
+             live status line below resolves the pair into one sentence (naming
+             four-eyes only where it's literally true), so the per-control copy stays
+             one short line each. --%>
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_12rem]">
+          <div>
+            <.label variant={:eyebrow}>Who can approve</.label>
+            <div class="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label class={[
+                "block rounded-lg border bg-black/30 p-2.5 transition",
+                @can_manage && "cursor-pointer",
+                if(@approval["allow_self_approval"],
+                  do: "border-zinc-800 hover:border-zinc-700",
+                  else: "border-brand-500/50 ring-1 ring-brand-500/20"
+                )
+              ]}>
+                <span class="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="policy[approval][allow_self_approval]"
+                    value="false"
+                    checked={!@approval["allow_self_approval"]}
+                    disabled={!@can_manage}
+                    class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
+                  />
+                  <span class="text-sm font-medium text-zinc-100">A different operator</span>
+                </span>
+                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                  No signing off on your own request.
+                </p>
+              </label>
+              <label class={[
+                "block rounded-lg border bg-black/30 p-2.5 transition",
+                @can_manage && "cursor-pointer",
+                if(@approval["allow_self_approval"],
+                  do: "border-brand-500/50 ring-1 ring-brand-500/20",
+                  else: "border-zinc-800 hover:border-zinc-700"
+                )
+              ]}>
+                <span class="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="policy[approval][allow_self_approval]"
+                    value="true"
+                    checked={@approval["allow_self_approval"]}
+                    disabled={!@can_manage}
+                    class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
+                  />
+                  <span class="text-sm font-medium text-zinc-100">Anyone, incl. requester</span>
+                </span>
+                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                  The requester's own approval can count.
+                </p>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <.input
+              type="number"
+              name="policy[approval][min_approvals]"
+              value={@approval["min_approvals"]}
+              label="Required approvals"
+              label_variant={:eyebrow}
+              min="1"
+              step="1"
+              disabled={!@can_manage}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              Distinct operators.
             </p>
-          </label>
-          <label class={[
-            "block rounded-lg border bg-black/30 p-3 transition",
-            @can_manage && "cursor-pointer",
-            if(@approval["allow_self_approval"],
-              do: "border-brand-500/50 ring-1 ring-brand-500/20",
-              else: "border-zinc-800 hover:border-zinc-700"
-            )
-          ]}>
-            <span class="flex items-center gap-2">
-              <input
-                type="radio"
-                name="policy[approval][allow_self_approval]"
-                value="true"
-                checked={@approval["allow_self_approval"]}
-                disabled={!@can_manage}
-                class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
-              />
-              <span class="text-sm font-medium text-zinc-100">Anyone, incl. the requester</span>
-            </span>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-              The requester's own approval can count. Fine for a solo account, but it adds no
-              independent reviewer.
-            </p>
-          </label>
+          </div>
         </div>
 
-        <div class="mt-3 max-w-[14rem]">
-          <.input
-            type="number"
-            name="policy[approval][min_approvals]"
-            value={@approval["min_approvals"]}
-            label="Required approvals"
-            label_variant={:eyebrow}
-            min="1"
-            step="1"
-            disabled={!@can_manage}
+        <%!-- One live status line resolving both knobs into a sentence. It turns
+             amber in-place when the config adds no SECOND party (self-approval + a
+             single approval) — same warning as a separate banner, folded in, so the
+             effect and the caveat read as one thing instead of two stacked blocks. --%>
+        <div class={[
+          "mt-4 flex items-start gap-2 rounded-lg p-3 text-xs leading-relaxed ring-1",
+          if(@single_reviewer?,
+            do: "bg-amber-500/10 text-amber-100 ring-amber-500/25",
+            else: "bg-zinc-900/50 text-zinc-300 ring-white/5"
+          )
+        ]}>
+          <.icon
+            name={if @single_reviewer?, do: "hero-exclamation-triangle", else: "hero-check-badge"}
+            class={
+              "mt-0.5 h-4 w-4 shrink-0 " <>
+                if(@single_reviewer?, do: "text-amber-400", else: "text-brand-400")
+            }
           />
-          <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            How many <em>distinct</em>
-            operators must approve before the action runs — the requester counts only if
-            self-approval is allowed above.
-          </p>
-        </div>
-
-        <%!-- The two knobs are independent, so resolve them into one plain sentence
-             (and name four-eyes only when it actually is one). This is what makes the
-             "different operator + 3 approvals" kind of combination unambiguous. --%>
-        <div class="mt-4 flex items-start gap-2 rounded-lg bg-zinc-900/50 p-3 text-xs leading-relaxed text-zinc-300 ring-1 ring-white/5">
-          <.icon name="hero-check-badge" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
           <p>
             <span class="font-medium text-zinc-100">In effect:</span>
             {approval_summary(@approval)}
+            <span :if={@single_reviewer?}>
+              Require a different operator or raise the count to add independent review.
+            </span>
           </p>
         </div>
-
-        <%!-- Self-approval + a single required approval adds no SECOND party: the
-             requester may supply the one approval. A deliberate choice for solo
-             accounts, but flag it so "require approval" isn't mistaken for real
-             separation of duties. --%>
-        <.notice :if={single_reviewer_gate?(@approval)} variant={:warning} class="mt-3">
-          Self-approval is allowed and only one approval is required, so the requester can approve
-          their own gated action — no independent review. Require a different operator, or raise the
-          required approvals, to add a second party.
-        </.notice>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval
