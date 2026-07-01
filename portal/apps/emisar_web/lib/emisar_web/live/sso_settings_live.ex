@@ -1233,7 +1233,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # one value they register on the IdP side (we never accept it from them — H2).
   defp provider_setup_guide(assigns) do
     ~H"""
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+    <div class="rounded-lg bg-zinc-900/50 p-4 ring-1 ring-white/5">
       <p class="text-sm font-medium text-zinc-200">Setting up {setup_kind_label(@kind)}</p>
       <ol class="mt-3 space-y-3 text-xs leading-relaxed text-zinc-400">
         <li>
