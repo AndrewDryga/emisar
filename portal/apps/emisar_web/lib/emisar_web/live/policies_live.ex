@@ -940,7 +940,7 @@ defmodule EmisarWeb.PoliciesLive do
              live status line below resolves the pair into one sentence (naming
              four-eyes only where it's literally true), so the per-control copy stays
              one short line each. --%>
-        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_12rem]">
+        <div class="mt-3 space-y-4">
           <div>
             <.label variant={:eyebrow}>Who can approve</.label>
             <div class="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -993,20 +993,25 @@ defmodule EmisarWeb.PoliciesLive do
             </div>
           </div>
 
+          <%!-- A compact inline row (a small number + hint on one line), not an
+               isolated narrow column. The "In effect" line below carries the
+               requester-counts nuance. --%>
           <div>
-            <.input
-              type="number"
-              name="policy[approval][min_approvals]"
-              value={@approval["min_approvals"]}
-              label="Required approvals"
-              label_variant={:eyebrow}
-              min="1"
-              step="1"
-              disabled={!@can_manage}
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              Distinct operators.
-            </p>
+            <.label variant={:eyebrow}>Required approvals</.label>
+            <div class="mt-1.5 flex items-center gap-3">
+              <input
+                type="number"
+                name="policy[approval][min_approvals]"
+                value={@approval["min_approvals"]}
+                min="1"
+                step="1"
+                disabled={!@can_manage}
+                class="w-16 rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
+              />
+              <span class="text-xs leading-relaxed text-zinc-500">
+                distinct operators must approve before the action runs.
+              </span>
+            </div>
           </div>
         </div>
 
