@@ -225,6 +225,7 @@ defmodule EmisarWeb.Router do
         live "/settings/sso", SSOSettingsLive, :index
         live "/settings/sso/new", SSOSettingsLive, :new
         live "/settings/sso/:id", SSOSettingsLive, :show
+        live "/settings/sso/:id/edit", SSOSettingsLive, :edit
         live "/settings/billing", BillingLive, :index
         live "/settings/profile", ProfileLive, :index
       end

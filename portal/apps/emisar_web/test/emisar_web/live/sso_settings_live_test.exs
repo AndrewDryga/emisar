@@ -133,46 +133,43 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Work Okta"
     end
 
-    test "opens the inline edit form without leaking the stored secret", %{
+    test "the edit page renders the form without leaking the stored secret", %{
       conn: conn,
       account: account
     } do
       provider = insert_provider(account, %{client_secret: "super-secret-value-xyz"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      # Opening the edit form on the detail page must never render the stored,
-      # write-only client_secret back — the field is blank ("leave to keep").
-      html = render_hook(lv, "start_edit", %{"id" => provider.id})
+      # The dedicated edit page must never render the stored, write-only
+      # client_secret back — the field is blank ("leave to keep").
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
       assert html =~ "edit-provider-#{provider.id}"
       assert html =~ "Leave blank to keep current"
       refute html =~ "super-secret-value-xyz"
     end
 
-    test "edits a connection's display name through the inline form", %{
+    test "edits a connection's display name from the edit page", %{
       conn: conn,
       account: account
     } do
       provider = insert_provider(account, %{name: "Old Name"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
-      _ = render_hook(lv, "start_edit", %{"id" => provider.id})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
-      html =
-        lv
-        |> form("#edit-provider-#{provider.id}", %{
-          "provider_id" => provider.id,
-          "provider" => %{
-            "kind" => "okta",
-            "name" => "New Name",
-            "issuer" => "https://idp.test",
-            "client_id" => "cid"
-          }
-        })
-        |> render_submit()
+      lv
+      |> form("#edit-provider-#{provider.id}", %{
+        "provider_id" => provider.id,
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "New Name",
+          "issuer" => "https://idp.test",
+          "client_id" => "cid"
+        }
+      })
+      |> render_submit()
 
-      assert html =~ "New Name"
-      assert html =~ "Connection updated."
-      refute html =~ "Old Name"
+      # Saving returns to the connection's detail page; the row is updated.
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      assert Repo.reload!(provider).name == "New Name"
     end
 
     test "the setup guide shows a FIXED callback URI, never an operator input", %{
@@ -195,10 +192,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{client_secret: "stored-secret-value"})
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
-      _ = render_hook(lv, "start_edit", %{"id" => provider.id})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
-      # Submit the inline edit with a BLANK client_secret (the field is never
+      # Submit the edit with a BLANK client_secret (the field is never
       # pre-filled). strip_blank_secret drops it, so the stored value is kept.
       lv
       |> form("#edit-provider-#{provider.id}", %{
@@ -483,7 +479,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # Type a loopback/private issuer, then run the capstone — the context's SSRF
       # guard short-circuits before a fetch and the result banner says why.
       lv
-      |> form("#provider_form", %{"provider" => %{"kind" => "okta", "issuer" => "https://10.0.0.5"}})
+      |> form("#provider_form", %{
+        "provider" => %{"kind" => "okta", "issuer" => "https://10.0.0.5"}
+      })
       |> render_change()
 
       html = render_click(lv, "test_connection", %{})
@@ -498,7 +496,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       lv
-      |> form("#provider_form", %{"provider" => %{"kind" => "okta", "issuer" => "http://idp.test"}})
+      |> form("#provider_form", %{
+        "provider" => %{"kind" => "okta", "issuer" => "http://idp.test"}
+      })
       |> render_change()
 
       html = render_click(lv, "test_connection", %{})

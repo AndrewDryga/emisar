@@ -52,7 +52,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:role_options, @role_options)
       |> assign(:mapping_role_options, @mapping_role_options)
       |> assign(:provisioner_options, @provisioner_options)
-      |> assign(:editing_id, nil)
       |> assign(:edit_form, nil)
       # Pending manual-link requests across the account — loaded on :index, where
       # the overview triages them (the detail page is config-only).
@@ -108,6 +107,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       case socket.assigns.live_action do
         :index -> load_index(socket)
         :show -> load_show(socket, params["id"])
+        :edit -> load_edit(socket, params["id"])
         :new -> socket |> assign_form(SSO.change_provider()) |> assign(:test_result, nil)
       end
     else
@@ -135,6 +135,24 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:providers, [provider])
         |> load_group_mappings([provider])
         |> assign_form(SSO.change_provider())
+
+      {:error, :not_found} ->
+        socket
+        |> put_flash(:error, "Connection not found.")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")
+    end
+  end
+
+  # Edit: its own page (like /new) so the form gets the full width — one
+  # connection, pre-filled. A cross-account or unknown id falls back to the
+  # overview, same as :show.
+  defp load_edit(socket, id) do
+    case SSO.fetch_provider_by_id(id, socket.assigns.current_subject) do
+      {:ok, provider} ->
+        socket
+        |> assign(:loaded?, true)
+        |> assign(:providers, [provider])
+        |> assign(:edit_form, edit_form(provider))
 
       {:error, :not_found} ->
         socket
@@ -212,23 +230,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   # it's saved. The context SSRF-validates the issuer and writes no row.
   def handle_event("test_connection", _params, socket) do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_test_connection/1)
-  end
-
-  def handle_event("start_edit", %{"id" => id}, socket) do
-    case find_provider(socket, id) do
-      nil ->
-        {:noreply, socket}
-
-      provider ->
-        {:noreply,
-         socket
-         |> assign(:editing_id, id)
-         |> assign(:edit_form, edit_form(provider))}
-    end
-  end
-
-  def handle_event("cancel_edit", _params, socket) do
-    {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
   end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params}, socket) do
@@ -408,9 +409,9 @@ defmodule EmisarWeb.SSOSettingsLive do
             {:noreply,
              socket
              |> put_flash(:info, "Connection updated.")
-             |> assign(:editing_id, nil)
-             |> assign(:edit_form, nil)
-             |> reload()}
+             |> push_navigate(
+               to: ~p"/app/#{socket.assigns.current_account}/settings/sso/#{provider.id}"
+             )}
 
           {:error, %Ecto.Changeset{}} ->
             {:noreply, assign(socket, :edit_form, edit_form(provider, params, :insert))}
@@ -799,6 +800,59 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.simple_form>
         </.panel>
 
+        <%!-- Editing is its own view (/settings/sso/:id/edit), like /new — the
+             form + setup guide get the full width instead of an inline collapsed
+             block wedged into the connection's other sections. --%>
+        <div :if={@live_action == :edit} class="space-y-5">
+          <div :for={provider <- @providers}>
+            <.panel padding="p-6" title={"Edit #{provider.name}"}>
+              <:subtitle>
+                Update this connection's OIDC settings. Leave the client secret blank to keep the
+                stored one.
+              </:subtitle>
+              <:actions>
+                <.button
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                  variant="ghost"
+                  size="sm"
+                >
+                  Back to connection
+                </.button>
+              </:actions>
+
+              <.simple_form
+                :if={@edit_form}
+                for={@edit_form}
+                id={"edit-provider-#{provider.id}"}
+                phx-change="validate_edit"
+                phx-submit="update"
+              >
+                <input type="hidden" name="provider_id" value={provider.id} />
+                <.provider_fields
+                  form={@edit_form}
+                  kind_options={@kind_options}
+                  role_options={@role_options}
+                  provisioner_options={@provisioner_options}
+                  guide_id={provider.id}
+                  callback_url={@callback_url}
+                  editing?
+                />
+                <:actions>
+                  <.button phx-disable-with="Saving...">Save changes</.button>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                    variant="ghost"
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+            </.panel>
+          </div>
+
+          <div :if={not @loaded?} class="text-sm text-zinc-500">Loading…</div>
+        </div>
+
         <%!-- ── Pending access requests (needs attention) ──────────────────
              People blocked waiting for an admin, across ALL connections. The
              time-sensitive job, so it leads the overview. --%>
@@ -925,69 +979,63 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
           </.link>
 
-          <div :for={provider <- @providers} class="space-y-8">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
+          <div :for={provider <- @providers} class="space-y-5">
+            <%!-- Connection island — identity + the config readout. Editing is
+                 its own page (/edit), so this card is a clean read view. --%>
+            <.card padding="p-5">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <h2 class="truncate text-lg font-semibold text-zinc-100">{provider.name}</h2>
                   <.chip>{kind_label(provider.kind)}</.chip>
                   <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
                   <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                 </div>
-                <p class="mt-1 truncate text-xs text-zinc-500">
-                  {provider.issuer}
-                  <span :if={provider.allowed_email_domain}>· @{provider.allowed_email_domain}</span>
-                  · {provisioner_label(provider.provisioner)}
-                </p>
+                <div class="flex shrink-0 items-center gap-2">
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Edit
+                  </.button>
+                  <.button
+                    variant="ghost"
+                    tone="danger"
+                    size="sm"
+                    type="button"
+                    phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
+                  >
+                    Delete
+                  </.button>
+                </div>
               </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <.button
-                  :if={@editing_id != provider.id}
-                  variant="secondary"
-                  size="sm"
-                  phx-click="start_edit"
-                  phx-value-id={provider.id}
-                >
-                  Edit
-                </.button>
-                <.button
-                  variant="ghost"
-                  tone="danger"
-                  size="sm"
-                  type="button"
-                  phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
-                >
-                  Delete
-                </.button>
-              </div>
-            </div>
 
-            <div
-              :if={@editing_id == provider.id and @edit_form}
-              class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
-            >
-              <.simple_form
-                for={@edit_form}
-                id={"edit-provider-#{provider.id}"}
-                phx-change="validate_edit"
-                phx-submit="update"
-              >
-                <input type="hidden" name="provider_id" value={provider.id} />
-                <.provider_fields
-                  form={@edit_form}
-                  kind_options={@kind_options}
-                  role_options={@role_options}
-                  provisioner_options={@provisioner_options}
-                  guide_id={provider.id}
-                  callback_url={@callback_url}
-                  editing?
-                />
-                <:actions>
-                  <.button phx-disable-with="Saving...">Save changes</.button>
-                  <.button variant="ghost" type="button" phx-click="cancel_edit">Cancel</.button>
-                </:actions>
-              </.simple_form>
-            </div>
+              <div class="mt-5 space-y-4 border-t border-zinc-800/70 pt-4">
+                <.meta_field label="Issuer" wrap>
+                  <span class="font-mono text-zinc-300">{provider.issuer}</span>
+                </.meta_field>
+                <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                  <.meta_field label="New users">
+                    <span class="text-zinc-300">{provisioner_label(provider.provisioner)}</span>
+                  </.meta_field>
+                  <.meta_field label="Default role">
+                    <span class="text-zinc-300">{role_label(provider.default_role)}</span>
+                  </.meta_field>
+                  <.meta_field label="Identifier claim">
+                    <span class="font-mono text-zinc-300">{provider.identifier_claim}</span>
+                  </.meta_field>
+                  <.meta_field :if={provider.allowed_email_domain} label="Email domain">
+                    <span class="text-zinc-300">@{provider.allowed_email_domain}</span>
+                  </.meta_field>
+                  <.meta_field label="2FA requirement">
+                    <span :if={provider.satisfies_mfa} class="text-zinc-300">
+                      Satisfied by this provider
+                    </span>
+                    <span :if={not provider.satisfies_mfa} class="text-zinc-500">Not satisfied</span>
+                  </.meta_field>
+                </div>
+              </div>
+            </.card>
 
             <.scim_panel
               :if={@can_configure_directory_sync?}
@@ -1006,21 +1054,21 @@ defmodule EmisarWeb.SSOSettingsLive do
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
             />
-            <div
-              :if={!@can_configure_directory_sync?}
-              class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm leading-relaxed text-zinc-400"
-            >
-              <span class="font-medium text-zinc-200">SCIM directory sync</span>
-              — automatic provisioning and offboarding from your IdP, plus group→role mapping —
-              is available on the Enterprise plan.
-              <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
-                See plans
-              </.link>
-              or <a
-                href="mailto:sales@emisar.dev"
-                class="font-medium text-brand-400 hover:text-brand-300"
-              >talk to us</a>.
-            </div>
+
+            <.card :if={!@can_configure_directory_sync?} padding="p-5">
+              <p class="text-sm leading-relaxed text-zinc-400">
+                <span class="font-medium text-zinc-200">SCIM directory sync</span>
+                — automatic provisioning and offboarding from your IdP, plus group→role mapping —
+                is available on the Enterprise plan.
+                <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
+                  See plans
+                </.link>
+                or <a
+                  href="mailto:sales@emisar.dev"
+                  class="font-medium text-brand-400 hover:text-brand-300"
+                >talk to us</a>.
+              </p>
+            </.card>
 
             <.confirm_dialog
               id={"delete-provider-#{provider.id}"}
@@ -1351,10 +1399,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :scim_base_url, :string, required: true
   attr :scim_token, :map, default: nil
 
-  # Directory sync (SCIM) — a flat section on the connection detail (NOT a card):
-  # header + one-line intent + the base URL, the once-shown bearer, and the IdP
-  # setup steps. The bearer is write-only (shown once on enable/rotate). Group→role
-  # is a sibling section, not nested here.
+  # Directory sync (SCIM) — a sibling island on the connection detail: header +
+  # intent, the live sync-status signal, the base URL, the once-shown bearer, and
+  # the IdP setup steps. The bearer is write-only (shown once on enable/rotate).
+  # Group→role is its own island card, not nested here.
   defp scim_panel(assigns) do
     provider_id = assigns.provider.id
 
@@ -1367,7 +1415,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
-    <section>
+    <.card padding="p-5">
       <.section_header title="Directory sync (SCIM)">
         <:actions>
           <.chip :if={@provider.scim_enabled} tone={:brand}>Enabled</.chip>
@@ -1414,6 +1462,24 @@ defmodule EmisarWeb.SSOSettingsLive do
       </p>
 
       <div :if={@provider.scim_enabled} class="mt-4 space-y-4">
+        <%!-- Health signal — has the IdP's connector actually reached us? "No
+             syncs yet" right after enabling is expected (the IdP hasn't
+             connected). Green once we've seen a sync, amber while we're waiting. --%>
+        <div class="flex items-center gap-2.5 rounded-lg bg-zinc-950/50 px-3 py-2.5 ring-1 ring-white/5">
+          <span class={[
+            "h-2 w-2 shrink-0 rounded-full",
+            if(@provider.scim_last_seen_at, do: "bg-brand-400", else: "bg-amber-400")
+          ]} />
+          <p class="text-sm text-zinc-300">
+            <span :if={@provider.scim_last_seen_at}>
+              Last sync <.local_time value={@provider.scim_last_seen_at} mode={:relative} />
+            </span>
+            <span :if={is_nil(@provider.scim_last_seen_at)} class="text-zinc-400">
+              No syncs yet — waiting for your IdP to connect.
+            </span>
+          </p>
+        </div>
+
         <div>
           <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             SCIM base URL
@@ -1508,7 +1574,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </p>
         </details>
       </div>
-    </section>
+    </.card>
     """
   end
 
@@ -1520,114 +1586,122 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
   attr :synced_groups, :list, default: []
 
-  # The group→role mapping list + create form for one SCIM-enabled connection.
-  # Each row maps a directory group (externalId + display) to an emisar role,
-  # with an inline edit and a confirm-to-delete. role_label renders the data
-  # role value (rendering a label is fine; never branch authz on it).
+  # The group→role mapping island for one SCIM-enabled connection: intent line,
+  # the current mappings (each a directory group → role, with inline edit and a
+  # confirm-to-delete), an empty hint when there are none, then the add form.
+  # role_label renders the data role value (rendering a label is fine; never
+  # branch authz on it).
   defp group_mapping_section(assigns) do
     ~H"""
-    <section>
-      <.section_header
-        title="Group → role mapping"
-        count={length(@mappings)}
-        count_tone={:neutral}
-      />
+    <.card padding="p-5">
+      <.section_header title="Group → role mapping" count={length(@mappings)} count_tone={:neutral} />
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         Map an IdP group to the role its members land at — a member in several mapped groups
         gets the highest. Owner is never assignable through sync.
         <.doc_link href="/docs/teams-and-access">Roles docs</.doc_link>
       </p>
 
-      <.card :if={@mappings != []} padding="p-0" class="mt-4">
-        <ul class="divide-y divide-zinc-900">
-          <li :for={mapping <- @mappings} class="px-4 py-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
+      <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
+        <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <.icon name="hero-user-group" class="h-4 w-4 shrink-0 text-zinc-500" />
               <div class="min-w-0">
-                <span class="truncate font-mono text-xs text-zinc-300">
+                <p class="truncate text-sm text-zinc-200">
                   {mapping.external_group_display || mapping.external_group_id}
-                </span>
-                <span :if={mapping.external_group_display} class="ml-1 text-[11px] text-zinc-600">
-                  {mapping.external_group_id}
-                </span>
-              </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <.chip>{role_label(mapping.role)}</.chip>
-                <.button
-                  :if={@editing_mapping_id != mapping.id}
-                  variant="ghost"
-                  size="sm"
-                  phx-click="start_edit_mapping"
-                  phx-value-id={mapping.id}
+                </p>
+                <p
+                  :if={mapping.external_group_display}
+                  class="truncate font-mono text-[11px] text-zinc-500"
                 >
-                  Edit
-                </.button>
-                <%!-- Reversible config (re-addable; members keep their role until
+                  {mapping.external_group_id}
+                </p>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <.chip tone={:brand}>{role_label(mapping.role)}</.chip>
+              <.button
+                :if={@editing_mapping_id != mapping.id}
+                variant="ghost"
+                size="sm"
+                phx-click="start_edit_mapping"
+                phx-value-id={mapping.id}
+              >
+                Edit
+              </.button>
+              <%!-- Reversible config (re-addable; members keep their role until
                    the next sync) — a native confirm fits the tier, not a
                    typed-confirm. `delete_mapping` stays server-authz-gated. --%>
-                <.button
-                  variant="ghost"
-                  tone="danger"
-                  size="sm"
-                  type="button"
-                  phx-click="delete_mapping"
-                  phx-value-id={mapping.id}
-                  data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
-                >
-                  Delete
-                </.button>
-              </div>
+              <.button
+                variant="ghost"
+                tone="danger"
+                size="sm"
+                type="button"
+                phx-click="delete_mapping"
+                phx-value-id={mapping.id}
+                data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
+              >
+                Delete
+              </.button>
             </div>
+          </div>
 
-            <%!-- Inline edit — display + role (the group's externalId is the
+          <%!-- Inline edit — display + role (the group's externalId is the
                immutable key). Reuses the page's mapping changeset; the owner
                error surfaces inline here too. --%>
-            <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-3">
-              <.simple_form
-                for={@mapping_edit_form}
-                id={"edit-mapping-#{mapping.id}"}
-                phx-change="validate_edit_mapping"
-                phx-submit="update_mapping"
-              >
-                <input type="hidden" name="mapping_id" value={mapping.id} />
-                <.input
-                  field={@mapping_edit_form[:external_group_display]}
-                  type="text"
-                  label="Display name"
-                  placeholder="Admins"
-                />
-                <.input
-                  field={@mapping_edit_form[:role]}
-                  type="select"
-                  label="Role"
-                  options={@mapping_role_options}
-                />
-                <:actions>
-                  <.button phx-disable-with="Saving...">Save</.button>
-                  <.button variant="ghost" type="button" phx-click="cancel_edit_mapping">
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-            </div>
-          </li>
-        </ul>
-      </.card>
+          <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-3">
+            <.simple_form
+              for={@mapping_edit_form}
+              id={"edit-mapping-#{mapping.id}"}
+              phx-change="validate_edit_mapping"
+              phx-submit="update_mapping"
+            >
+              <input type="hidden" name="mapping_id" value={mapping.id} />
+              <.input
+                field={@mapping_edit_form[:external_group_display]}
+                type="text"
+                label="Display name"
+                placeholder="Admins"
+              />
+              <.input
+                field={@mapping_edit_form[:role]}
+                type="select"
+                label="Role"
+                options={@mapping_role_options}
+              />
+              <:actions>
+                <.button phx-disable-with="Saving...">Save</.button>
+                <.button variant="ghost" type="button" phx-click="cancel_edit_mapping">
+                  Cancel
+                </.button>
+              </:actions>
+            </.simple_form>
+          </div>
+        </li>
+      </ul>
 
-      <%!-- Add a mapping — inline, no framed box; account_id/provider_id are
-           server-side. Pick from synced groups once they exist; free-text before. --%>
-      <div :if={@mapping_form} class="mt-5">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Add a mapping</p>
+      <p
+        :if={@mappings == []}
+        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
+      >
+        No group mappings yet. New members land at the connection's default role until you map a
+        directory group to a higher one.
+      </p>
+
+      <%!-- Add a mapping — a divided region within the card (not a nested box);
+           account_id/provider_id are server-side. Pick from synced groups once
+           they exist; free-text before the first sync. --%>
+      <div :if={@mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
+        <p class="text-sm font-medium text-zinc-300">Add a mapping</p>
         <.simple_form
           for={@mapping_form}
           id={"create-mapping-#{@provider.id}"}
           phx-change="validate_mapping"
           phx-submit="create_mapping"
-          class="mt-2"
+          class="mt-3"
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <%!-- Map-after-first-sync: pick from the groups the IdP has actually
-                 synced; fall back to a free-text id only before the first sync. --%>
             <.input
               :if={@synced_groups != []}
               field={@mapping_form[:external_group_id]}
@@ -1663,7 +1737,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </:actions>
         </.simple_form>
       </div>
-    </section>
+    </.card>
     """
   end
 
