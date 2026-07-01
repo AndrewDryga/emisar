@@ -1085,6 +1085,31 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "record_export/3" do
+    test "count > 0 records one audit.exported attributed to the exporter, with the count" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, event} = Audit.record_export(subject, [limit: 100, event_types: []], 7)
+      assert event.event_type == "audit.exported"
+      assert event.account_id == account.id
+      assert event.actor_id == subject.actor.id
+
+      # Re-read: JSONB round-trips the payload's keys to strings.
+      {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
+      assert [marker] = Enum.filter(events, &(&1.event_type == "audit.exported"))
+      assert marker.payload["count"] == 7
+    end
+
+    test "count == 0 records nothing — a caught-up poll leaves no marker" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, :not_recorded} = Audit.record_export(subject, [limit: 100], 0)
+
+      {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
+      refute Enum.any?(events, &(&1.event_type == "audit.exported"))
+    end
+  end
+
   describe "max_export_limit/0" do
     test "is a positive row ceiling the export sweep clamps an oversized limit to" do
       assert is_integer(Audit.max_export_limit())

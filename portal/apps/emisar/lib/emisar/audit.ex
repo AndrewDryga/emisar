@@ -26,7 +26,7 @@ defmodule Emisar.Audit do
   explicitly on the pre-auth path. An event with no `:context` (system /
   engine origin) carries no request metadata, by construction.
   """
-  alias Emisar.Audit.{Authorizer, Event}
+  alias Emisar.Audit.{Authorizer, Event, Events}
   alias Emisar.{Auth, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
 
@@ -370,6 +370,22 @@ defmodule Emisar.Audit do
 
       {:ok, events}
     end
+  end
+
+  @doc """
+  Internal — the export controller calls this after a successful page to
+  self-log the export ("watch the watchers"). Emits `audit.exported` ONLY when
+  the page returned rows (`count > 0`): a caught-up forward-cursor poll (0 rows)
+  writes nothing, so a SIEM polling every ~30s doesn't spam the log with its own
+  most-frequent event. Account-scoped + attributed via the subject (the api_key
+  for a SIEM export). Called post-authorization (`list_for_export` already gated).
+  """
+  def record_export(%Subject{} = subject, opts, count) when is_integer(count) and count > 0 do
+    record(Events.audit_exported(subject, opts, count))
+  end
+
+  def record_export(%Subject{} = _subject, _opts, count) when is_integer(count) do
+    {:ok, :not_recorded}
   end
 
   @doc "Public — the controller uses this to ack-clamp a user-supplied `limit` param."

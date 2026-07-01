@@ -52,6 +52,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
     |> Enum.map(&Jason.decode!/1)
   end
 
+  defp export_markers(subject) do
+    {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
+    Enum.filter(events, &(&1.event_type == "audit.exported"))
+  end
+
   describe "auth" do
     test "401 when no Authorization header", %{conn: conn} do
       conn = get(conn, ~p"/api/audit")
@@ -405,6 +410,64 @@ defmodule EmisarWeb.AuditExportControllerTest do
 
       runners = build_conn() |> bearer(raw) |> get(~p"/api/mcp/runners")
       assert json_response(runners, 403)["error"] == "missing_scope"
+    end
+  end
+
+  describe "self-logs exports (watch the watchers)" do
+    test "a non-empty page writes one audit.exported row attributed to the api_key", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      {raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: subject.actor.id,
+          scopes: ["audit:read"]
+        )
+
+      _ = insert_event(account, "user.signed_in")
+      _ = insert_event(account, "user.signed_in")
+
+      # Filter to just those two so the marker's count is deterministic no matter
+      # what rows the account fixtures wrote.
+      conn = conn |> bearer(raw) |> get(~p"/api/audit?event_type=user.signed_in")
+      assert length(parse_ndjson(ndjson(conn))) == 2
+
+      assert [marker] = export_markers(subject)
+      assert marker.actor_kind == "api_key"
+      assert marker.actor_id == key.id
+      assert marker.payload["count"] == 2
+    end
+
+    test "a caught-up poll (0 rows) writes nothing — no self-spam", %{
+      conn: conn,
+      subject: subject,
+      raw_key: raw
+    } do
+      # A future `since` guarantees an empty page regardless of pre-existing rows,
+      # so a forward-cursor poll that's caught up writes no marker.
+      conn = conn |> bearer(raw) |> get("/api/audit?since=2999-01-01T00:00:00Z")
+      assert response(conn, 200) == ""
+
+      assert export_markers(subject) == []
+    end
+
+    test "the export marker is account-scoped — another account never sees it", %{
+      conn: conn,
+      account: account,
+      subject: subject,
+      raw_key: raw
+    } do
+      _ = insert_event(account, "user.signed_in")
+      _ = conn |> bearer(raw) |> get(~p"/api/audit?event_type=user.signed_in")
+
+      # This account logged exactly one export marker…
+      assert [_] = export_markers(subject)
+
+      # …and a different account's owner sees none of it.
+      {_ub, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert export_markers(subject_b) == []
     end
   end
 end

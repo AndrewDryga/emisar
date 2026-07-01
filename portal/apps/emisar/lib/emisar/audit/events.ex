@@ -1009,7 +1009,44 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # -- Audit -----------------------------------------------------------
+
+  @doc "Internal — `Audit.record_export/3` logs a non-empty audit-log export (the exfil signal)."
+  def audit_exported(%Subject{account: %{id: account_id}} = subject, opts, count)
+      when is_integer(count) do
+    Audit.changeset(
+      account_id,
+      "audit.exported",
+      actor(subject) ++
+        [
+          subject_kind: "audit_log",
+          subject_label: "Audit log",
+          payload: export_payload(opts, count)
+        ]
+    )
+  end
+
   # -- Internals -------------------------------------------------------
+
+  # The exported page's scope, for the audit reader: how many rows, the page cap,
+  # any event-type filter, and the lower-bound position (a resumed cursor, a
+  # `since` timestamp, or the beginning for a first full pull).
+  defp export_payload(opts, count) do
+    %{
+      count: count,
+      limit: Keyword.get(opts, :limit),
+      event_types: Keyword.get(opts, :event_types, []),
+      from: export_position(opts)
+    }
+  end
+
+  defp export_position(opts) do
+    case {Keyword.get(opts, :after), Keyword.get(opts, :since)} do
+      {{%DateTime{} = ts, _id}, _} -> DateTime.to_iso8601(ts)
+      {_, %DateTime{} = since} -> DateTime.to_iso8601(since)
+      _ -> "beginning"
+    end
+  end
 
   defp runner_event(%Subject{} = subject, %Runners.Runner{} = runner, event_type) do
     Audit.changeset(

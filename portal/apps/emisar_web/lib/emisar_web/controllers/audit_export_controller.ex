@@ -51,6 +51,10 @@ defmodule EmisarWeb.AuditExportController do
   def index(conn, params) do
     with {:ok, opts} <- parse_params(params),
          {:ok, events} <- Audit.list_for_export(conn.assigns.current_subject, opts) do
+      # Self-log the export ("watch the watchers"); the domain no-ops on an empty
+      # (caught-up) page so a polling SIEM doesn't spam the log with its own event.
+      Audit.record_export(conn.assigns.current_subject, opts, length(events))
+
       body = Enum.map_join(events, "\n", &serialize/1)
 
       conn

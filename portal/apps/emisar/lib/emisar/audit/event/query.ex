@@ -98,7 +98,8 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.group_mapping_updated", "SSO group mapping updated"},
     {"sso.group_mapping_deleted", "SSO group mapping deleted"},
     {"sso.link_request_approved", "SSO link request approved"},
-    {"sso.link_request_dismissed", "SSO link request dismissed"}
+    {"sso.link_request_dismissed", "SSO link request dismissed"},
+    {"audit.exported", "Audit log exported"}
   ]
 
   def known_event_type_values, do: @known_event_types
@@ -246,6 +247,10 @@ defmodule Emisar.Audit.Event.Query do
        {"sso.group_mapping_deleted", "Group mapping deleted"},
        {"sso.link_request_approved", "Link request approved"},
        {"sso.link_request_dismissed", "Link request dismissed"}
+     ]},
+    {"Audit",
+     [
+       {"audit.exported", "Exported"}
      ]}
   ]
 
