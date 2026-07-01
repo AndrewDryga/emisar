@@ -267,20 +267,23 @@ const MagicCodeExpiry = {
   }
 }
 
-// iPhone-style one-box-per-char sign-in code. The boxes are client-owned — the
-// form submits the hidden [data-code] aggregate — so the container carries
-// phx-update="ignore" and a LiveView re-render (flash, the expiry countdown)
-// can't wipe what you typed. Handles: uppercase + filter to the code alphabet,
-// auto-advance, backspace-to-previous, arrow nav, paste/autofill spread across
-// boxes, and auto-submit once all boxes are full. No-JS falls back to the email
-// link (which needs no code entry).
-const MagicCodeInput = {
+// iPhone-style one-box-per-char code entry — sign-in codes, TOTP, email step-up.
+// The boxes are client-owned — the form submits the hidden [data-code] aggregate —
+// so the container carries phx-update="ignore" and a LiveView re-render (flash, an
+// expiry countdown) can't wipe what you typed. Handles: filter to the code alphabet
+// (alphanumeric, or digits-only via data-numeric), auto-advance, backspace-to-
+// previous, arrow nav, paste/autofill spread across boxes, and auto-submit once all
+// boxes are full. No-JS falls back to the email link (sign-in) or a plain submit.
+const CodeInput = {
   mounted() {
     this.boxes = Array.from(this.el.querySelectorAll("[data-box]"))
     this.hidden = this.el.querySelector("[data-code]")
     if (!this.boxes.length || !this.hidden) return
 
-    const clean = (s) => s.toUpperCase().replace(/[^0-9A-Z]/g, "")
+    const numeric = this.el.dataset.numeric === "true"
+    const clean = numeric
+      ? (s) => s.replace(/[^0-9]/g, "")
+      : (s) => s.toUpperCase().replace(/[^0-9A-Z]/g, "")
     const sync = () => { this.hidden.value = this.boxes.map(b => b.value).join("") }
     const focusBox = (i) => { const b = this.boxes[i]; if (b) { b.focus(); b.select() } }
 
@@ -392,7 +395,7 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, MagicCodeInput, FlashAutoClose }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
 })
 
 // Show progress bar on live navigation and form submits

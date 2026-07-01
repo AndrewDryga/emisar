@@ -22,8 +22,8 @@ defmodule EmisarWeb.MagicLinkLiveTest do
 
     assert html =~ "Check your inbox."
     assert html =~ ~s(action="/sign_in/magic/code")
-    # The per-character boxes (MagicCodeInput hook) submit through one hidden field.
-    assert html =~ ~s(phx-hook="MagicCodeInput")
+    # The per-character boxes (CodeInput hook) submit through one hidden field.
+    assert html =~ ~s(phx-hook="CodeInput")
     assert html =~ ~r/<input[^>]*type="hidden"[^>]*name="code"/
   end
 

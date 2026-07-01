@@ -59,11 +59,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Confirm change"
       assert Emisar.Repo.reload!(user).email == user.email
 
-      # A wrong code is refused and the email stays put.
-      html =
-        lv
-        |> form("#email_step_form", %{"email_step" => %{"code" => "000000"}})
-        |> render_submit()
+      # A wrong code is refused and the email stays put. The code boxes are
+      # client-owned (CodeInput hook fills the hidden aggregate), so drive the
+      # submit event directly rather than through the un-settable hidden field.
+      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
 
       assert html =~ "wrong or expired"
       assert Emisar.Repo.reload!(user).email == user.email
@@ -109,11 +108,9 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == user.email
 
       html =
-        lv
-        |> form("#email_step_form", %{
+        render_hook(lv, "confirm_email_change", %{
           "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
         })
-        |> render_submit()
 
       assert html =~ "Email updated."
       assert Emisar.Repo.reload!(user).email == "mfa-fresh@example.com"
@@ -448,10 +445,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       render_click(lv, "start_mfa", %{})
 
-      html =
-        lv
-        |> form("#mfa_form", %{"mfa" => %{"otp" => "000000"}})
-        |> render_submit()
+      html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
       assert html =~ "Invalid code"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
@@ -469,10 +463,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # secret-derived digits and it can't match, so enrollment is refused.
       render_click(lv, "start_mfa", %{})
 
-      html =
-        lv
-        |> form("#mfa_form", %{"mfa" => %{"otp" => "abc123"}})
-        |> render_submit()
+      html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "abc123"}})
 
       assert html =~ "Invalid code"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
@@ -494,10 +485,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       stale_otp =
         NimbleTOTP.verification_code(secret, time: System.os_time(:second) - 90)
 
-      html =
-        lv
-        |> form("#mfa_form", %{"mfa" => %{"otp" => stale_otp}})
-        |> render_submit()
+      html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => stale_otp}})
 
       assert html =~ "Invalid code"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
@@ -603,16 +591,12 @@ defmodule EmisarWeb.ProfileLiveTest do
   # flash, so a second submit with a fresh code lands in a stable window.
   defp submit_mfa_enrollment(lv, secret) do
     html =
-      lv
-      |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
-      |> render_submit()
+      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
 
     if html =~ "2FA enabled." do
       html
     else
-      lv
-      |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
-      |> render_submit()
+      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
     end
   end
 end

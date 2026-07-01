@@ -481,12 +481,11 @@ defmodule EmisarWeb.ProfileLive do
                 <p :if={step == :totp} class="text-xs text-amber-200/70">
                   Enter the code from your authenticator app — your second factor confirms the change.
                 </p>
-                <.input
-                  field={@email_step_form[:code]}
-                  type="text"
+                <.code_input
+                  id="email-step-code"
+                  name="email_step[code]"
+                  numeric
                   label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
-                  autocomplete="one-time-code"
-                  required
                 />
                 <:actions>
                   <.button phx-disable-with="Confirming...">Confirm change</.button>
@@ -666,15 +665,7 @@ defmodule EmisarWeb.ProfileLive do
                     </div>
                   </details>
                   <.simple_form for={@mfa_form} id="mfa_form" phx-submit="confirm_mfa">
-                    <.input
-                      field={@mfa_form[:otp]}
-                      type="text"
-                      label="6-digit code"
-                      placeholder="123 456"
-                      autocomplete="one-time-code"
-                      inputmode="numeric"
-                      required
-                    />
+                    <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" />
                     <:actions>
                       <.button phx-disable-with="Verifying...">Confirm and enable</.button>
                       <.button variant="ghost" type="button" phx-click="cancel_mfa">

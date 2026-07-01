@@ -60,30 +60,7 @@ defmodule EmisarWeb.MagicLinkLive do
         </div>
 
         <.simple_form for={@code_form} action={~p"/sign_in/magic/code"} method="post" class="mt-5">
-          <%!-- One box per character (MagicCodeInput hook): the boxes are client-
-                owned and aggregate into the hidden `code` field the form posts, so
-                the whole group is phx-update="ignore" — a LiveView re-render (flash,
-                the expiry countdown) must not wipe what you typed. --%>
-          <div id="magic-code" phx-hook="MagicCodeInput" phx-update="ignore">
-            <label for="magic-code-1" class="block text-sm font-medium leading-6 text-zinc-300">
-              Sign-in code
-            </label>
-            <div class="mt-2 flex justify-between gap-2 sm:gap-2.5">
-              <input
-                :for={i <- 1..6}
-                id={"magic-code-#{i}"}
-                data-box
-                type="text"
-                inputmode="text"
-                autocapitalize="characters"
-                autocomplete={i == 1 && "one-time-code"}
-                maxlength="1"
-                aria-label={"Character #{i} of 6"}
-                class="h-14 w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center text-xl font-semibold uppercase tracking-widest text-zinc-100 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
-              />
-            </div>
-            <input type="hidden" name="code" data-code />
-          </div>
+          <.code_input id="magic-code" name="code" label="Sign-in code" />
           <:actions>
             <.button id="code-submit" class="w-full">
               Sign in <span aria-hidden="true">→</span>
