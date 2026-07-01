@@ -381,12 +381,12 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: the map-after-first-sync picker source --------------------
 
-  describe "list_synced_groups/2 — the map-after-first-sync picker source" do
+  describe "list_synced_groups/2 — synced groups with member counts" do
     setup do
       scim_provider()
     end
 
-    test "returns the distinct external group ids seen via SCIM", %{
+    test "returns each distinct external group seen via SCIM with its member count", %{
       provider: provider,
       subject: subject
     } do
@@ -397,7 +397,7 @@ defmodule Emisar.SSOGroupsTest do
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-ops",
           display: "Ops",
-          member_external_ids: ["okta|u1"]
+          member_external_ids: ["okta|u1", "okta|u2"]
         })
 
       {:ok, _} =
@@ -407,8 +407,13 @@ defmodule Emisar.SSOGroupsTest do
           member_external_ids: ["okta|u2"]
         })
 
+      # Ordered by external group id; the count is distinct members per group.
       assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
-      assert Enum.sort(groups) == ["grp-adm", "grp-ops"]
+
+      assert groups == [
+               %{external_group_id: "grp-adm", member_count: 1},
+               %{external_group_id: "grp-ops", member_count: 2}
+             ]
     end
 
     test "denies a non-Enterprise plan (:directory_sync_not_available)" do

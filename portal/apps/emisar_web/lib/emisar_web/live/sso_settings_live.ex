@@ -245,11 +245,13 @@ defmodule EmisarWeb.SSOSettingsLive do
         {provider.id, list_mappings(socket, provider)}
       end)
 
-    # The external group ids the IdP has actually synced — the map-after-first-
-    # sync picker, so an admin keys a mapping on a real group, not a guessed id.
+    # The groups the IdP has actually synced (id + member count), each annotated
+    # with its role mapping — powers the "Synced groups" readout, and (projected
+    # to ids) the map-after-first-sync picker.
     synced =
       Map.new(scim_providers, fn provider ->
-        {provider.id, list_synced_groups(socket, provider)}
+        {provider.id,
+         annotate_synced_groups(list_synced_groups(socket, provider), mappings[provider.id])}
       end)
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
@@ -265,6 +267,13 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:ok, groups} -> groups
       {:error, _} -> []
     end
+  end
+
+  # Attach each synced group's role mapping (nil when unmapped) so the readout
+  # shows the role its members resolve to next to the member count.
+  defp annotate_synced_groups(groups, mappings) do
+    by_group = Map.new(mappings, &{&1.external_group_id, &1})
+    Enum.map(groups, &Map.put(&1, :mapping, Map.get(by_group, &1.external_group_id)))
   end
 
   defp list_mappings(socket, provider) do
@@ -1203,6 +1212,11 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_edit_form={@mapping_edit_form}
             />
 
+            <.synced_groups_card
+              :if={@can_configure_directory_sync? and provider.scim_enabled}
+              synced_groups={Map.get(@synced_groups, provider.id, [])}
+            />
+
             <.synced_users_card
               members={@synced_members}
               member_role_options={@member_role_options}
@@ -1917,7 +1931,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               field={@mapping_form[:external_group_id]}
               type="select"
               label="IdP group"
-              options={@synced_groups}
+              options={Enum.map(@synced_groups, & &1.external_group_id)}
               prompt="Pick a synced group"
             />
             <.input
@@ -1950,6 +1964,65 @@ defmodule EmisarWeb.SSOSettingsLive do
     </.card>
     """
   end
+
+  attr :synced_groups, :list, required: true
+
+  # The groups the IdP actually pushes over SCIM (id + distinct member count),
+  # each annotated with its role mapping — the directory-state companion to the
+  # group→role mapping config above. It surfaces groups that sync but aren't
+  # mapped (their members stay at the connection's default role), which the
+  # mapping list can't show.
+  defp synced_groups_card(assigns) do
+    ~H"""
+    <.card padding="p-5">
+      <.section_header title="Synced groups" count={length(@synced_groups)} count_tone={:neutral} />
+      <p class="max-w-prose text-sm leading-6 text-zinc-400">
+        The groups your IdP pushes over SCIM, with how many synced users are in each. A group with
+        no role mapping leaves its members at the connection's default role.
+      </p>
+
+      <ul :if={@synced_groups != []} class="mt-4 divide-y divide-zinc-800/70">
+        <li
+          :for={group <- @synced_groups}
+          class="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
+        >
+          <div class="flex min-w-0 items-center gap-2.5">
+            <.icon name="hero-user-group" class="h-4 w-4 shrink-0 text-zinc-500" />
+            <div class="min-w-0">
+              <p class="truncate text-sm text-zinc-200">
+                {(group.mapping && group.mapping.external_group_display) || group.external_group_id}
+              </p>
+              <p
+                :if={group.mapping && group.mapping.external_group_display}
+                class="truncate font-mono text-[11px] text-zinc-500"
+              >
+                {group.external_group_id}
+              </p>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-3">
+            <span class="text-xs tabular-nums text-zinc-400">
+              {members_label(group.member_count)}
+            </span>
+            <.chip :if={group.mapping} tone={:brand}>{role_label(group.mapping.role)}</.chip>
+            <span :if={!group.mapping} class="text-xs text-zinc-500">No role mapping</span>
+          </div>
+        </li>
+      </ul>
+
+      <p
+        :if={@synced_groups == []}
+        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
+      >
+        No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
+        with their member counts.
+      </p>
+    </.card>
+    """
+  end
+
+  defp members_label(1), do: "1 member"
+  defp members_label(count), do: "#{count} members"
 
   attr :members, :list, required: true
   attr :member_role_options, :list, required: true

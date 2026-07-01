@@ -25,14 +25,18 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_ids(queryable, ids),
     do: where(queryable, [group_members: g], g.id in ^ids)
 
-  # The distinct external group ids a provider has seen via SCIM — the source
-  # for the mapping picker (map-after-first-sync), so an admin keys a role
-  # mapping on a group the IdP has actually synced rather than a guessed id.
-  def distinct_group_ids_for_provider(queryable \\ all(), provider_id) do
+  # Each external group a provider has synced via SCIM with its distinct member
+  # count — powers the synced-groups readout, and (projected to ids) the
+  # map-after-first-sync picker, so an admin keys a role mapping on a group the
+  # IdP has actually synced rather than a guessed id.
+  def group_counts_for_provider(queryable \\ all(), provider_id) do
     queryable
     |> where([group_members: g], g.provider_id == ^provider_id)
-    |> distinct([group_members: g], g.external_group_id)
+    |> group_by([group_members: g], g.external_group_id)
     |> order_by([group_members: g], asc: g.external_group_id)
-    |> select([group_members: g], g.external_group_id)
+    |> select([group_members: g], %{
+      external_group_id: g.external_group_id,
+      member_count: count(g.user_identity_id, :distinct)
+    })
   end
 end

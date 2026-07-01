@@ -1786,7 +1786,7 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "returns the distinct external group ids seen via SCIM", %{
+    test "returns each distinct external group seen via SCIM with its member count", %{
       provider: provider,
       subject: subject
     } do
@@ -1808,7 +1808,11 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
-      assert Enum.sort(groups) == ["grp-adm", "grp-ops"]
+
+      assert groups == [
+               %{external_group_id: "grp-adm", member_count: 1},
+               %{external_group_id: "grp-ops", member_count: 1}
+             ]
     end
 
     test "denies a non-Enterprise plan (:directory_sync_not_available)" do

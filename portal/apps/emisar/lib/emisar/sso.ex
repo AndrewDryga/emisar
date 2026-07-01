@@ -1097,20 +1097,22 @@ defmodule Emisar.SSO do
   # -- Directory sync (SCIM) — group→role mapping config (Subject-gated) --
 
   @doc """
-  List the distinct external group ids a provider has seen via SCIM — the
-  picker source for map-after-first-sync, so an admin keys a role mapping on a
-  real synced group. `manage_sso` + Enterprise; account-scoped.
-  `{:ok, [external_group_id]}`.
+  List each external group a provider has synced via SCIM with its distinct
+  member count — the synced-groups readout, and (projected to ids) the picker
+  source for map-after-first-sync so an admin keys a role mapping on a real
+  synced group. `manage_sso` + Enterprise; account-scoped.
+  `{:ok, [%{external_group_id: String.t(), member_count: non_neg_integer()}]}`,
+  ordered by external group id.
   """
   def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
-      ids =
+      groups =
         DirectoryGroupMember.Query.not_deleted()
-        |> DirectoryGroupMember.Query.distinct_group_ids_for_provider(provider.id)
+        |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
         |> Repo.all()
 
-      {:ok, ids}
+      {:ok, groups}
     end
   end
 

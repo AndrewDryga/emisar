@@ -1384,6 +1384,82 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
   end
 end
 
+# -- SCIM directory groups + memberships (docker-compose e2e SSO) -----
+# Seed a slice of directory state on the Keycloak provider so the SSO connection
+# page demonstrates group sync end to end: provisioned identities, the IdP groups
+# they belong to (with real member counts), and role mappings for two of the
+# three groups (one left unmapped, to show that state in the "Synced groups"
+# readout). Uses the real SCIM + mapping entry points, so it exercises the same
+# path an IdP + admin would, and is idempotent — re-provisioning/re-upserting
+# reconciles, a duplicate mapping is ignored. Gated on the same fixed-dev SCIM
+# token as the enablement above, so it runs on any dev/e2e seed (fresh or repeat)
+# and never in a prod-style one.
+if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
+  scim_provider =
+    case Emisar.SSO.list_providers_for_account(owner_subject) do
+      {:ok, providers, _meta} -> Enum.find(providers, & &1.scim_enabled)
+      _ -> nil
+    end
+
+  if scim_provider do
+    scim_people = [
+      {"kc|nadia", "nadia@northstar.example", "Nadia Okafor"},
+      {"kc|ravi", "ravi@northstar.example", "Ravi Menon"},
+      {"kc|lena", "lena@northstar.example", "Lena Fischer"},
+      {"kc|theo", "theo@northstar.example", "Theo Alvarez"}
+    ]
+
+    for {ext, email, name} <- scim_people do
+      {:ok, _} =
+        Emisar.SSO.scim_provision_user(scim_provider, %{
+          external_id: ext,
+          email: email,
+          full_name: name
+        })
+    end
+
+    # {external group id, display, member externalIds, mapped role | nil}
+    scim_groups = [
+      {"kc-grp-platform", "Platform Engineers", ~w(kc|nadia kc|ravi kc|lena), :admin},
+      {"kc-grp-sre", "SRE On-call", ~w(kc|ravi kc|theo), :operator},
+      {"kc-grp-security", "Security Review", ~w(kc|nadia), nil}
+    ]
+
+    # Map the two mapped groups BEFORE syncing members, so each group sync
+    # recomputes its members' roles against the mapping (leave "Security Review"
+    # unmapped). A duplicate mapping on a repeat seed is expected — ignore it.
+    for {ext, display, _members, role} <- scim_groups, not is_nil(role) do
+      case Emisar.SSO.create_group_mapping(
+             scim_provider,
+             %{
+               "external_group_id" => ext,
+               "external_group_display" => display,
+               "role" => to_string(role)
+             },
+             owner_subject
+           ) do
+        {:ok, _} -> :ok
+        {:error, _already_mapped} -> :ok
+      end
+    end
+
+    for {ext, display, members, _role} <- scim_groups do
+      {:ok, _} =
+        Emisar.SSO.scim_upsert_group(scim_provider, %{
+          external_id: ext,
+          display: display,
+          member_external_ids: members
+        })
+    end
+
+    IO.puts(
+      IO.ANSI.green() <>
+        "✓ Seeded SCIM directory: #{length(scim_people)} identities, #{length(scim_groups)} groups" <>
+        IO.ANSI.reset()
+    )
+  end
+end
+
 # -- Extra accounts: the plan tiers + an empty one, so the billing / upsell /
 #    runner-limit states AND the SSO-is-Enterprise gate are all visible by
 #    switching accounts in one seeded dev DB. (The main "demo" account is
