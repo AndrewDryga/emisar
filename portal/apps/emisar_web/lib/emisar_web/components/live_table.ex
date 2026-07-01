@@ -318,7 +318,7 @@ defmodule EmisarWeb.LiveTable do
       <.filter_input
         :for={filter <- @filters}
         filter={filter}
-        value={Map.get(@params, to_string(filter.name))}
+        value={filter_value(@params, to_string(filter.name), filter)}
         disabled={@disabled}
       />
       <.link
@@ -456,8 +456,26 @@ defmodule EmisarWeb.LiveTable do
   # A filter is "active" when its value differs from the default (blank / "All"
   # / unchecked). Drives the brand highlight below so an operator sees at a
   # glance which filters are narrowing the list.
-  defp filter_active?(%Filter{type: :boolean}, value), do: value == "true"
-  defp filter_active?(_filter, value), do: value not in [nil, "", []]
+  # A filter reads as "active" only when the operator moved it AWAY from its
+  # default — a value that equals the filter's `default` (e.g. status="live" on
+  # the agents list) is the baseline view, not an applied filter, so it stays
+  # un-highlighted and doesn't raise the "clear filters" ×.
+  defp filter_active?(%Filter{type: :boolean, default: default}, value),
+    do: value == "true" and value != default
+
+  defp filter_active?(%Filter{default: default}, value),
+    do: value not in [nil, "", []] and value != default
+
+  # The value a filter is operating at: its URL param when present (even a blank
+  # "All"), otherwise the filter's configured `default`. Absent → default; an
+  # explicit blank overrides the default. `default` is nil for most filters, so
+  # this is just `Map.get` for them.
+  defp filter_value(params, key, %Filter{default: default}) do
+    case Map.fetch(params, key) do
+      {:ok, value} -> value
+      :error -> default
+    end
+  end
 
   # An active filter's label and control switch from muted zinc to the brand
   # accent (a tinted border + faint ring) so enabled filters stand out.
@@ -476,8 +494,8 @@ defmodule EmisarWeb.LiveTable do
   def has_active_filters?(params, filters) do
     filters
     |> Enum.any?(fn f ->
-      v = Map.get(params, to_string(f.name))
-      v not in [nil, ""]
+      v = filter_value(params, to_string(f.name), f)
+      v not in [nil, ""] and v != f.default
     end)
   end
 
@@ -576,7 +594,7 @@ defmodule EmisarWeb.LiveTable do
 
     filter_kv =
       for f <- filters,
-          v = Map.get(params, "#{prefix}#{f.name}"),
+          v = filter_value(params, "#{prefix}#{f.name}", f),
           v not in [nil, ""] do
         {f.name, cast_filter_value(f, v)}
       end

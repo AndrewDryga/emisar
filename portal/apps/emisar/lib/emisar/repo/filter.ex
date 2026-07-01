@@ -8,6 +8,13 @@ defmodule Emisar.Repo.Filter do
   Filters also describe themselves to the UI: `name` + `type` + `values`
   is enough for `EmisarWeb.LiveTable` to render an input automatically.
   The `fun` callback carries the SQL.
+
+  `default` is the value the filter takes when its URL param is ABSENT (e.g. the
+  agents list defaults `status` to `"live"`). An absent param takes the default;
+  an explicit blank (the operator picking "All") overrides it. Because it's the
+  default, `LiveTable` renders it un-highlighted and it doesn't count toward the
+  "clear filters" affordance — only a value the operator changed away from the
+  default reads as an active filter. `nil` (the common case) means "no default".
   """
   import Ecto.Query
   alias Emisar.Repo.Filter.Range
@@ -41,10 +48,11 @@ defmodule Emisar.Repo.Filter do
           title: String.t() | nil,
           type: type(),
           values: values() | Range.t() | nil,
-          fun: fun()
+          fun: fun(),
+          default: term() | nil
         }
 
-  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil
+  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil, default: nil
 
   @doc """
   Apply the supplied filter list to the queryable. Returns

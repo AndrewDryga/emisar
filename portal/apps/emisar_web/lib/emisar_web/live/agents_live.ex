@@ -281,10 +281,9 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp load(socket, params) do
-    # Default to live keys only — a connected-agents view shouldn't be cluttered
-    # with dead credentials; the operator opts into revoked via the Status filter.
-    params = Map.put_new(params, "status", "live")
-
+    # The status filter defaults to "live" (declared on the filter itself, so
+    # LiveTable applies it AND renders it un-highlighted) — no need to inject it
+    # into the params here.
     filters = with_owner_options(socket.assigns.current_subject)
     opts = LiveTable.params_to_opts(params, filters)
 

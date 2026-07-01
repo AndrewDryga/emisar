@@ -56,6 +56,20 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert custom =~ "read and execute every action"
     end
 
+    test "the default status filter is the baseline — no clear-× until moved off it",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # Default view (status=live) is the baseline, not an operator-applied filter,
+      # so it doesn't raise the clear-filters ×.
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/agents")
+      refute has_element?(lv, "[aria-label='Clear filters']")
+
+      # Moving Status off its default (or picking "All") surfaces the × to clear back.
+      {:ok, filtered, _html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
+      assert has_element?(filtered, "[aria-label='Clear filters']")
+    end
+
     test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

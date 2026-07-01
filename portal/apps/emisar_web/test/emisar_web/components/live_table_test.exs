@@ -147,6 +147,55 @@ defmodule EmisarWeb.LiveTableTest do
       assert Keyword.get(grants, :filter) == [status: "b"]
       assert Keyword.get(grants, :page) == []
     end
+
+    test "an absent param takes the filter's default" do
+      filters = [%{list_filter(:status) | default: "live"}]
+
+      assert [filter: [status: ["live"]], page: []] =
+               LiveTable.params_to_opts(%{}, filters)
+    end
+
+    test "an explicit non-default value wins over the default" do
+      filters = [%{list_filter(:status) | default: "live"}]
+
+      assert [filter: [status: ["revoked"]], page: []] =
+               LiveTable.params_to_opts(%{"status" => "revoked"}, filters)
+    end
+
+    test "an explicit blank overrides the default (operator picked \"All\")" do
+      filters = [%{list_filter(:status) | default: "live"}]
+
+      assert [filter: [], page: []] =
+               LiveTable.params_to_opts(%{"status" => ""}, filters)
+    end
+  end
+
+  describe "has_active_filters?/2 — a default is the baseline, not an applied filter" do
+    test "a filter sitting at its default (absent param) is NOT active" do
+      filters = [%{list_filter(:status) | default: "live"}]
+      refute LiveTable.has_active_filters?(%{}, filters)
+    end
+
+    test "an explicit value equal to the default is NOT active" do
+      filters = [%{list_filter(:status) | default: "live"}]
+      refute LiveTable.has_active_filters?(%{"status" => "live"}, filters)
+    end
+
+    test "a value moved away from the default IS active" do
+      filters = [%{list_filter(:status) | default: "live"}]
+      assert LiveTable.has_active_filters?(%{"status" => "revoked"}, filters)
+    end
+
+    test "picking \"All\" (blank) over a default is NOT active" do
+      filters = [%{list_filter(:status) | default: "live"}]
+      refute LiveTable.has_active_filters?(%{"status" => ""}, filters)
+    end
+
+    test "a plain (default-less) filter is active only with a value" do
+      filters = [string_filter(:name)]
+      assert LiveTable.has_active_filters?(%{"name" => "x"}, filters)
+      refute LiveTable.has_active_filters?(%{}, filters)
+    end
   end
 
   describe "live_table :cards render" do
