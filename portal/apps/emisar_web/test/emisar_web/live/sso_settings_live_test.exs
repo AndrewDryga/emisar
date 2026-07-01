@@ -1041,4 +1041,36 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert Repo.reload!(membership).role == membership.role
     end
   end
+
+  describe "the 'point your IdP at this connection' setup steps hide once synced" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      provider = insert_provider(account, %{})
+      {:ok, provider} = provider |> Ecto.Changeset.change(scim_enabled: true) |> Repo.update()
+      %{conn: conn, account: account, provider: provider}
+    end
+
+    test "shown while the directory hasn't synced yet", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "Point your IdP at this connection"
+    end
+
+    test "hidden once the directory synced within the last day", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, provider} =
+        provider |> Ecto.Changeset.change(scim_last_seen_at: DateTime.utc_now()) |> Repo.update()
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      refute html =~ "Point your IdP at this connection"
+    end
+  end
 end

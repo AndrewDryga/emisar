@@ -1634,6 +1634,13 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp scim_location_hint(_), do: "in your provider's SCIM / user-provisioning settings"
 
+  # The directory synced within the last day — setup is done, so the "point your IdP
+  # at this connection" instructions are hidden until sync goes stale again.
+  defp recently_synced?(%{scim_last_seen_at: %DateTime{} = at}),
+    do: DateTime.diff(DateTime.utc_now(), at) < 24 * 60 * 60
+
+  defp recently_synced?(_), do: false
+
   # The kind currently selected in the form (string), for the live setup guide;
   # defaults to the first option — what the select shows before any change.
   defp form_kind(form, kind_options) do
@@ -1789,8 +1796,14 @@ defmodule EmisarWeb.SSOSettingsLive do
         </div>
 
         <%!-- IdP-side SCIM setup — a light disclosure (no heavy box); auto-opens
-             right after the token's minted (you're mid-setup then). --%>
-        <details class="group" {if(@revealed_token, do: %{open: ""}, else: %{})}>
+             right after the token's minted (mid-setup). Hidden once the directory has
+             synced within the last day (setup's done) — unless a token was just revealed,
+             since you need these steps to re-point the IdP at the new bearer. --%>
+        <details
+          :if={@revealed_token || not recently_synced?(@provider)}
+          class="group"
+          {if(@revealed_token, do: %{open: ""}, else: %{})}
+        >
           <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100">
             <.icon
               name="hero-chevron-right"
