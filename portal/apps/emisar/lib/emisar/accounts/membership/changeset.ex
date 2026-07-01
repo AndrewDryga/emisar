@@ -12,6 +12,12 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> unique_constraint([:account_id, :user_id])
   end
 
+  # Born suspended: SSO provisions a user the IdP created as deactivated
+  # (`active: false`) already `disabled_at`, so they never hold access.
+  def create_suspended(attrs) do
+    attrs |> create() |> put_change(:disabled_at, DateTime.utc_now())
+  end
+
   def update(%Membership{} = membership, attrs) do
     cast(membership, attrs, @update_fields)
   end

@@ -638,7 +638,12 @@ defmodule Emisar.SSO do
       create_scim_identity(provider, user, external_id, attrs)
     end)
     |> Multi.run(:membership, fn _repo, %{user: user} ->
-      Accounts.provision_sso_membership(provider.account_id, user.id, provider.default_role)
+      Accounts.provision_sso_membership(
+        provider.account_id,
+        user.id,
+        provider.default_role,
+        scim_active_from(attrs)
+      )
     end)
     |> Multi.insert(:audit, fn %{user: user} ->
       Audit.Events.user_provisioned_via_scim(user, provider)
@@ -654,13 +659,17 @@ defmodule Emisar.SSO do
       scim_external_id: external_id,
       created_by: :provider,
       provisioned_via: :scim,
-      scim_active: Map.get(attrs, :active, Map.get(attrs, "active", true))
+      scim_active: scim_active_from(attrs)
     }
 
     provider.account_id
     |> UserIdentity.Changeset.create(provider.id, user.id, identity_attrs)
     |> Repo.insert()
   end
+
+  # The SCIM `active` flag (default true), accepting atom- or string-keyed attrs
+  # — the SCIM controller decodes JSON to string keys; internal callers use atoms.
+  defp scim_active_from(attrs), do: Map.get(attrs, :active, Map.get(attrs, "active", true))
 
   @doc """
   Internal — SCIM deprovision (`active:false` / DELETE): suspend the member's

@@ -419,17 +419,28 @@ defmodule Emisar.Accounts do
   callback, scoped to the provider's account; composed into the SSO JIT
   `Multi` via `Multi.run`. The JIT user is always brand-new, so the
   `(account, user)` unique can't fire here.
+
+  `active?` mirrors the SCIM `active` flag: a directory that provisions a user
+  it created deactivated (`active: false`) gets a membership born suspended, so
+  a "deactivated in IdP" identity never silently holds access.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
   # grant needing `manage_owners`.
-  def provision_sso_membership(_account_id, _user_id, :owner), do: {:error, :owner_not_assignable}
+  def provision_sso_membership(account_id, user_id, role, active? \\ true)
 
-  def provision_sso_membership(account_id, user_id, role) do
+  def provision_sso_membership(_account_id, _user_id, :owner, _active?) do
+    {:error, :owner_not_assignable}
+  end
+
+  def provision_sso_membership(account_id, user_id, role, active?) do
     %{account_id: account_id, user_id: user_id, role: role}
-    |> Membership.Changeset.create()
+    |> sso_membership_changeset(active?)
     |> Repo.insert()
   end
+
+  defp sso_membership_changeset(attrs, true), do: Membership.Changeset.create(attrs)
+  defp sso_membership_changeset(attrs, false), do: Membership.Changeset.create_suspended(attrs)
 
   @doc """
   Internal — the runbook engine's per-wave authorization re-check: the

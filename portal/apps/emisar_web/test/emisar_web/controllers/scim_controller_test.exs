@@ -249,6 +249,27 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id)
     end
 
+    test "a POST with active:false provisions the user already suspended (deactivated in the IdP)",
+         %{
+           conn: conn,
+           token: token,
+           account: account
+         } do
+      body =
+        conn
+        |> scim_post(
+          token,
+          ~p"/scim/v2/Users",
+          user_payload("okta|disabled", email: "disabled@acme.test", active: false)
+        )
+        |> json_response(201)
+
+      assert body["active"] == false
+
+      {:ok, user} = Users.fetch_user_by_email("disabled@acme.test")
+      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+    end
+
     test "a repeated POST for the same externalId reconciles — no duplicate", %{
       conn: conn,
       token: token,

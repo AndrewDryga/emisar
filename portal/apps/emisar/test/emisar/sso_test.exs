@@ -1249,6 +1249,18 @@ defmodule Emisar.SSOTest do
       refute membership.disabled_at
     end
 
+    test "a provision with active:false is born suspended — a user deactivated in the IdP never holds access",
+         %{provider: provider} do
+      attrs =
+        scim_attrs(%{external_id: "okta|disabled", email: "disabled@acme.test", active: false})
+
+      assert {:ok, %{identity: identity, membership: membership}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      refute identity.scim_active
+      assert membership.disabled_at
+    end
+
     test "a repeated provision for the same externalId reconciles — no duplicate", %{
       provider: provider
     } do
