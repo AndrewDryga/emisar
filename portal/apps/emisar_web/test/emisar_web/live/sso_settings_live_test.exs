@@ -692,6 +692,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
+      # The add form is behind the "Add mapping" button — hidden until clicked.
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+      render_click(lv, "add_mapping_form", %{})
+      assert has_element?(lv, "#create-mapping-#{provider.id}")
+
       html =
         lv
         |> form("#create-mapping-#{provider.id}", %{
@@ -766,6 +771,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner: owner
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      # Reveal the add form (behind the "Add mapping" button), then read its role select.
+      render_click(lv, "add_mapping_form", %{})
 
       # The mapping role <select> has Admin/Operator/Viewer but no Owner — scope
       # to the mapping create form so the provider form's own Owner option (its

@@ -86,6 +86,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:mapping_forms, %{})
       |> assign(:editing_mapping_id, nil)
       |> assign(:mapping_edit_form, nil)
+      # The add-mapping form is behind an "Add mapping" button, not always open.
+      |> assign(:adding_mapping, false)
       |> assign(:scim_base_url, "#{Emisar.PublicUrl.base()}/scim/v2")
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
@@ -162,6 +164,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         socket
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
+        |> assign(:adding_mapping, false)
         |> load_group_mappings([provider])
         |> load_synced_members(provider)
         |> assign_form(SSO.change_provider())
@@ -368,6 +371,21 @@ defmodule EmisarWeb.SSOSettingsLive do
       socket.assigns.can_configure_directory_sync?,
       &do_create_mapping(&1, id, params)
     )
+  end
+
+  def handle_event("add_mapping_form", _params, socket),
+    do: {:noreply, assign(socket, :adding_mapping, true)}
+
+  # Close the add form and reset it, so a re-open starts blank (not with the last
+  # partial input). do_create_mapping already resets the form on a successful add.
+  def handle_event("cancel_add_mapping", _params, socket) do
+    socket =
+      case socket.assigns.providers do
+        [provider | _] -> put_mapping_form(socket, provider.id, mapping_form(provider))
+        _ -> socket
+      end
+
+    {:noreply, assign(socket, :adding_mapping, false)}
   end
 
   def handle_event("start_edit_mapping", %{"id" => id}, socket) do
@@ -1226,6 +1244,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_role_options={@mapping_role_options}
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
+              adding_mapping={@adding_mapping}
             />
 
             <.synced_groups_card
@@ -1839,6 +1858,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
   attr :synced_groups, :list, default: []
+  attr :adding_mapping, :boolean, default: false
 
   # The group→role mapping island for one SCIM-enabled connection: intent line,
   # the current mappings (each a directory group → role, with inline edit and a
@@ -1848,7 +1868,19 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp group_mapping_section(assigns) do
     ~H"""
     <.card padding="p-5">
-      <.section_header title="Group → role mapping" count={length(@mappings)} count_tone={:neutral} />
+      <.section_header title="Group → role mapping" count={length(@mappings)} count_tone={:neutral}>
+        <:actions>
+          <.button
+            :if={not @adding_mapping}
+            variant="secondary"
+            size="sm"
+            phx-click="add_mapping_form"
+            icon="hero-plus"
+          >
+            Add mapping
+          </.button>
+        </:actions>
+      </.section_header>
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         Map an IdP group to the role its members land at — a member in several mapped groups
         gets the highest. Owner is never assignable through sync.
@@ -1942,10 +1974,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         directory group to a higher one.
       </p>
 
-      <%!-- Add a mapping — a divided region within the card (not a nested box);
-           account_id/provider_id are server-side. Pick from synced groups once
-           they exist; free-text before the first sync. --%>
-      <div :if={@mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
+      <%!-- Add a mapping — revealed by the "Add mapping" button (not always open);
+           a divided region within the card (not a nested box). account_id/provider_id
+           are server-side. Pick from synced groups once they exist; free-text before
+           the first sync. --%>
+      <div :if={@adding_mapping and @mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
         <p class="text-sm font-medium text-zinc-300">Add a mapping</p>
         <.simple_form
           for={@mapping_form}
@@ -1991,6 +2024,9 @@ defmodule EmisarWeb.SSOSettingsLive do
           </div>
           <:actions>
             <.button phx-disable-with="Adding...">Add mapping</.button>
+            <.button variant="ghost" type="button" phx-click="cancel_add_mapping">
+              Cancel
+            </.button>
           </:actions>
         </.simple_form>
       </div>
