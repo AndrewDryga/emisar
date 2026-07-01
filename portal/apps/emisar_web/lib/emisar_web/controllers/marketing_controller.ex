@@ -81,6 +81,8 @@ defmodule EmisarWeb.MarketingController do
      "OIDC SSO (Team and Enterprise) + Enterprise SCIM 2.0 directory sync for emisar — sign in with Google Workspace, Okta, or Keycloak; offboarding in your IdP revokes emisar access automatically."},
     {"/docs/runners", :docs_runners, :docs_runners, "Operating your runner fleet",
      "Groups and labels, single-use enrollment keys, pack credentials via inherit_env, updating the binary and packs, reconnect and stuck-run semantics, host-side troubleshooting, and clean removal."},
+    {"/docs/deployment", :docs_deployment, :docs_deployment, "Deploying emisar in production",
+     "From one runner to a governed fleet: a reference architecture, a phased rollout, best practices by layer, two worked examples, and a go-live checklist your security review will recognize."},
     {"/docs/audit-and-siem", :docs_audit, :docs_audit, "The audit trail & SIEM export",
      "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."}
   ]

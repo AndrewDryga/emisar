@@ -1,0 +1,668 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <.breadcrumbs items={[{"Docs", ~p"/docs"}, {"Deploying in production", nil}]} />
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        Deploying emisar in production
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+        The
+        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+          quickstart
+        </.link>
+        put one runner on one host. Production is a different question: dozens of hosts, real
+        blast radius, an agent you won't hand a shell — and a security review that will ask
+        exactly how a wrong call gets stopped. emisar's control plane is hosted, so you don't
+        stand anything up; "deploying" here means two things — rolling the runner across your
+        fleet, and setting the envelope around it. This page is the envelope.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">
+        None of it is much configuration. The defaults are already conservative — reads run,
+        mutations wait for a human, <code class="font-mono">critical</code>
+        is denied outright. Going to production is mostly deciding <em>where</em>
+        to tighten, and doing it once.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        The shape of a production fleet
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Two decisions carry most of the safety, and you make both up front: how runners are <strong class="text-zinc-200">grouped</strong>, and who — which person, which agent key —
+        is <strong class="text-zinc-200">scoped</strong>
+        to reach them. Get these right and the rest is defaults.
+      </p>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">One runner per host.</strong>
+            A runner's identity is its account plus a stable id; names are unique within an
+            account. Don't share one across hosts, and don't run two on the same box.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Group by tier, not by host.</strong>
+            A group is the unit that policy, runbooks, member scopes, and agent fan-out all target.
+            Name it for the fleet role — <code class="font-mono">web</code>, <code class="font-mono">edge</code>, <code class="font-mono">db-prod</code>,
+            <code class="font-mono">cache</code>
+            — not the machine. The installer defaults the group
+            to the hostname; change it on your second host. <code class="font-mono">web-01</code>
+            is a label, not a group.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Labels for the cross-cutting facts.</strong>
+            Free-form <code class="font-mono">key=value</code>
+            pairs — <code class="font-mono">region=us-east-1</code>, <code class="font-mono">environment=prod</code>,
+            <code class="font-mono">service=checkout</code>
+            — for filtering the fleet and targeting policy without redrawing your groups.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Keep policy and access aligned.</strong>
+            Policy decides what a runner will <em>run</em>; access decides who can <em>reach</em>
+            it. A locked-down database tier should have both — a strict ruleset <em>and</em>
+            only the DBAs (and their agent) in scope.
+          </span>
+        </li>
+      </ul>
+
+      <p class="mt-6 text-sm leading-6 text-zinc-400">
+        A three-tier layout, concretely — the same fleet three ways, each with the packs it needs
+        and the posture it warrants:
+      </p>
+      <div class="mt-3 divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-800">
+        <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
+          <div class="font-mono text-sm text-brand-300">web</div>
+          <div class="text-sm leading-6 text-zinc-400">
+            10 hosts · packs <code class="font-mono">nginx</code>, <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>.
+            Reads run on policy; a restart waits for one approval. The everyday tier.
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
+          <div class="font-mono text-sm text-amber-300">db-prod</div>
+          <div class="text-sm leading-6 text-zinc-400">
+            3 hosts · packs <code class="font-mono">postgres</code>, <code class="font-mono">linux-core</code>. Locked: a targeted ruleset denies <code class="font-mono">critical</code>, four-eyes on <code class="font-mono">high</code>, and signed dispatch is on. Only the DBA team in scope.
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-1 p-4 sm:grid-cols-[8rem_1fr]">
+          <div class="font-mono text-sm text-zinc-300">staging</div>
+          <div class="text-sm leading-6 text-zinc-400">
+            2 hosts · the full catalog, including the <code class="font-mono">shell</code>
+            break-glass pack. Looser so an agent can iterate on a fix — never a path to a prod host.
+          </div>
+        </div>
+      </div>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Roll out in phases
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Each phase is safe to stop at, and each is reversible. You never have a half-configured
+        fleet that's more open than the phase before it.
+      </p>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-sm leading-6 text-zinc-400">
+        <li>
+          <strong class="text-zinc-200">Pilot on one non-prod host.</strong>
+          Install, watch it connect, run a read, open the audit row it wrote. Prove the loop end to
+          end before it touches anything that matters.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Set the default policy.</strong>
+          Confirm the tier floor for the whole fleet — <code class="font-mono">low</code>/<code class="font-mono">medium</code> allow,
+          <code class="font-mono">high</code>
+          require approval, <code class="font-mono">critical</code>
+          deny. Higher tiers can't be made more permissive than lower ones; the editor enforces it.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Add approvals where they matter.</strong>
+          For anything that can drop a service or lose data, turn on four-eyes — two distinct
+          approvers, self-approval off. Approvers get an email with the request; the on-call decides.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Scope people and agents.</strong>
+          Give each member and each MCP key only the runners or groups they own. Out-of-scope hosts
+          don't render, 404 on their detail pages, and vanish from the dispatch surface — it hides
+          the host, it doesn't just gray out a button.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Lock the sensitive groups.</strong>
+          Add a targeted ruleset for your production tiers. A ruleset <em>replaces</em>
+          the default for its target (most specific wins: runner over group over default), so the
+          <code class="font-mono">db-prod</code>
+          group can deny <code class="font-mono">critical</code>
+          and four-eyes <code class="font-mono">high</code>
+          while the rest of the fleet stays on the default.
+        </li>
+        <li>
+          <strong class="text-zinc-200">
+            Turn on signed dispatch where it must be provable.
+          </strong>
+          On the hosts where "a real human asked for this" has to be cryptographically true — not
+          just policy-checked — enforce <.link
+            navigate={~p"/docs/signed-dispatch"}
+            class="text-brand-400 hover:text-brand-300"
+          >signed dispatch</.link>. Those
+          runners execute only a call carrying a valid Ed25519 signature the operator produced in
+          their own client; the portal Run button, runbooks, and API keys stop dispatching there.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Wire identity.</strong>
+          Require MFA account-wide. On Team and up, add SSO so people sign in through your IdP; on
+          Enterprise, add SCIM so offboarding someone in the directory suspends them here —
+          sessions killed, keys revoked — with no checklist.
+          <.plan_badge tier={:team} class="ml-1" />
+        </li>
+        <li>
+          <strong class="text-zinc-200">Ship the audit to your SIEM.</strong>
+          Mint an <code class="font-mono">audit:read</code>
+          key, point your collector at the NDJSON feed, and alert on the handful of events that
+          actually mean something (below).
+        </li>
+      </ol>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Best practices, by layer
+      </h2>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Runners &amp; the network</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            The installer already runs the binary as a dedicated non-root
+            <code class="font-mono">emisar</code>
+            user under systemd. Keep it that way. Grant elevated rights per action through sudoers
+            or polkit, not by running the runner as root.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Runners dial <strong class="text-zinc-200">out</strong>
+            over <code class="font-mono">:443</code>. Nothing listens on the host — there's no
+            inbound port and no bastion to stand up. Don't open one; there's nothing to open.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Give packs their secrets through the runner's environment, never through call
+            arguments. Put them in <code class="font-mono">/etc/emisar/runner.env</code>
+            (mode <code class="font-mono">0600</code>) and allowlist the names in <code class="font-mono">execution.inherit_env</code>. Only those names reach an action's
+            process; the runner's own token and the rest of its environment never do.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Set a local admission ceiling as a backstop.
+            <code class="font-mono">admission.max_risk: medium</code>
+            on a read-only box drops every <code class="font-mono">high</code>/<code class="font-mono">critical</code> action before it can run — even one a compromised control plane tried to push. It's the
+            host operator's veto over the cloud, baked in at boot.
+          </span>
+        </li>
+      </ul>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Policy</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Leave <code class="font-mono">critical</code>
+            denied. It's default-closed on purpose. Opt a single action out with a per-action
+            override if you must — not the whole tier.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Gate <code class="font-mono">high</code>, don't allow it. A restart, a kill, a drain —
+            one approval is cheap insurance against a bad call, human or model.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Reach for per-action overrides sparingly and specifically
+            (<code class="font-mono">nomad.job_stop</code> → <code class="font-mono">require_approval</code>), most specific first. The tier
+            defaults should carry the bulk of the fleet, not a wall of exceptions.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Use a targeted ruleset to <em>lock</em>
+            a group, not to loosen one broadly. A ruleset replaces the default for its target;
+            delete it to fall back. See <.link
+              navigate={~p"/docs/policies-and-approvals"}
+              class="text-brand-400 hover:text-brand-300"
+            >policies &amp; approvals</.link>.
+          </span>
+        </li>
+      </ul>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Approvals</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Four-eyes for anything destructive: <code class="font-mono">min_approvals</code>
+            of 2, self-approval off. The person who asked can't wave through their own change.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Standing grants are a scalpel, not a blanket. When you approve a repeat action, scope
+            it tight — exact arguments, a use cap, the shortest window that fits the job. A 90-day
+            any-arguments grant on a mutating action is a standing shell; don't mint one.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Let expiry do the cleanup. An undecided request cancels after 24 hours; a grant lapses
+            on schedule. You don't have to remember to revoke — but you can, in one click, from the
+            Approvals page.
+          </span>
+        </li>
+      </ul>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Access &amp; identity</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Least-privilege roles: <strong class="text-zinc-300">viewer</strong>
+            to watch, <strong class="text-zinc-300">operator</strong>
+            to drive and decide approvals, <strong class="text-zinc-300">admin</strong>
+            to manage policy and the fleet, <strong class="text-zinc-300">owner</strong>
+            for billing. Most people are operators.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Scope every member and every key to the hosts they own. "The DBA agent only reaches <code class="font-mono">db-*</code>" is one setting on the key — and out-of-scope hosts
+            never appear.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Require MFA account-wide — TOTP with one-time recovery codes; a replayed code is
+            rejected. On Team and up, an SSO session can satisfy it when your IdP enforces MFA.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              Wire your directory. <.plan_badge tier={:team} />
+            </span>
+            SSO binds people to your IdP by issuer and subject, never by email. On Enterprise, SCIM
+            lets the IdP drive the whole lifecycle: deactivate someone there and emisar suspends
+            them here, kills their sessions, and revokes their keys — offboarding stops being a
+            thing you can forget. See <.link
+              navigate={~p"/docs/sso"}
+              class="text-brand-400 hover:text-brand-300"
+            >single sign-on &amp; directory sync</.link>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Scope MCP keys per action and rotate them. A key carries
+            <code class="font-mono">actions:read</code>
+            / <code class="font-mono">actions:execute</code>
+            / <code class="font-mono">audit:read</code>
+            and an optional runner restriction — so the log-shipping key never executes, and the
+            agent key never sees a host it doesn't own.
+          </span>
+        </li>
+      </ul>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Packs</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Trust is deliberate, and that's the point. A pack runs only when its on-disk SHA-256
+            matches the hash you trusted on the Packs page; edit it and it goes
+            <strong class="text-zinc-300">pending</strong>
+            until you re-trust. Leave that drift guard on — it's how a changed pack never runs silently.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Ship a host only the packs it needs. A web box has no use for the
+            <code class="font-mono">postgres</code>
+            pack; a smaller catalog is a smaller surface and a shorter list for an agent to reason over.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Keep the <code class="font-mono">shell</code>
+            break-glass pack off production. It's the one action where the operator supplies the
+            whole command — <code class="font-mono">critical</code>-risk, default-denied — for
+            verifying a fix on staging before you encode it as a real action. Install it on
+            staging; never on a prod runner.
+          </span>
+        </li>
+      </ul>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">Audit</h3>
+      <ul class="mt-3 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Stream it to your SIEM. <code class="font-mono">GET /api/audit</code>
+            is forward-only NDJSON with cursor paging; an
+            <code class="font-mono">audit:read</code>
+            key reads events and can't run anything, so it's safe to hand to a Splunk or Datadog collector.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Keep the host journal too. <code class="font-mono">/var/log/emisar/events.jsonl</code>
+            is hash-chained — each line sealed by the one before it — so a cut or an edit is
+            detectable with <code class="font-mono">emisar audit verify</code>. The cloud audit is
+            the searchable system of record; the journal is on-host forensics that doesn't lean on
+            the cloud to exist.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Alert on signal, not noise: <code class="font-mono">policy.updated</code>
+            (someone changed the rules), pack-trust transitions (new bytes approved), and the most
+            interesting one — a runner logging repeated
+            <code class="font-mono">validation_failed</code>
+            or <code class="font-mono">action_blocked_by_admission</code>: an agent asking, over and
+            over, for things it can't have.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Two worked examples
+      </h2>
+
+      <div class="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+        <h3 class="text-base font-semibold text-zinc-100">
+          An on-call agent that reads the web tier and restarts behind approval
+        </h3>
+        <p class="mt-2 text-sm leading-6 text-zinc-400">
+          <strong class="text-zinc-300">Goal:</strong>
+          your incident agent should investigate nginx freely, and be able to restart it — but a
+          restart should need a human nod.
+        </p>
+        <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Fleet:</strong>
+              the ten web hosts share group <code class="font-mono">web</code>, packs
+              <code class="font-mono">nginx</code>
+              + <code class="font-mono">linux-core</code>
+              + <code class="font-mono">debugging</code>.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Policy:</strong>
+              the defaults already fit — log tails and status reads are <code class="font-mono">low</code>/<code class="font-mono">medium</code> (allow);
+              <code class="font-mono">nginx.restart</code>
+              is <code class="font-mono">high</code>
+              (require approval). No override to write.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Access:</strong>
+              one MCP key, <code class="font-mono">actions:read</code>
+              + <code class="font-mono">actions:execute</code>, restricted to the
+              <code class="font-mono">web</code>
+              group. That's the whole grant.
+            </span>
+          </li>
+        </ul>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          <strong class="text-zinc-300">Result:</strong>
+          the agent calls <code class="font-mono">nginx.error_log_tail</code>
+          and it runs; it calls <code class="font-mono">nginx.restart</code>
+          and the run holds for the on-call, who sees the host, the exact arguments, and the agent's
+          reason before approving. Every call lands in the audit with its client, key, and reason.
+        </p>
+      </div>
+
+      <div class="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+        <h3 class="text-base font-semibold text-zinc-100">
+          A destructive action on prod-db, done safely
+        </h3>
+        <p class="mt-2 text-sm leading-6 text-zinc-400">
+          <strong class="text-zinc-300">Goal:</strong>
+          a Postgres failover on <code class="font-mono">db-prod</code>
+          should be possible — but only when two people agree and a real human signed the request.
+        </p>
+        <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Fleet:</strong>
+              group <code class="font-mono">db-prod</code>, three hosts, packs
+              <code class="font-mono">postgres</code>
+              + <code class="font-mono">linux-core</code>. Signed dispatch enforced on all three.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Policy + approvals:</strong>
+              a targeted ruleset for the group — <code class="font-mono">critical</code>
+              denied, <code class="font-mono">high</code>
+              require approval — with four-eyes on: two approvers, self-approval off.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Signing:</strong>
+              each DBA holds a 24-hour leaf certificate from your offline CA in their MCP client;
+              the CA's public key sits in every <code class="font-mono">db-prod</code>
+              runner's config, shipped through normal config management.
+            </span>
+          </li>
+        </ul>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          <strong class="text-zinc-300">The flow:</strong>
+          a DBA's agent calls <code class="font-mono">postgres.promote_replica</code>
+          with a reason; the call carries the DBA's Ed25519 signature. The control plane relays it —
+          it can't forge or alter it, and holds no key to try. Policy holds the run for approval;
+          two other operators approve. The signed, twice-approved run dispatches; the runner verifies
+          the signature against its CA, checks the nonce hasn't been seen and the timestamp is fresh,
+          then runs it. The audit shows the requester, both approvers, the signature, and the
+          redacted command. If the cloud were compromised it could refuse to relay the call — but it
+          could never have originated that failover.
+        </p>
+      </div>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Go-live checklist
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The list to walk before you point production at emisar — the same one a security reviewer
+        will:
+      </p>
+      <div class="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+        <ul class="space-y-2.5 text-sm leading-6 text-zinc-300">
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Every runner runs as the non-root <code class="font-mono">emisar</code>
+              user — the installer default; confirm nobody changed it.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Runners are grouped by tier; every production group carries its own locked ruleset.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              <code class="font-mono">critical</code>
+              is denied fleet-wide; <code class="font-mono">high</code>
+              requires approval.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>Four-eyes is on for any group that can lose data or drop a service.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Members and MCP keys are scoped to the hosts they own — nothing is account-wide by accident.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>MFA is required; SSO / SCIM is wired if you're on Team or Enterprise.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Pack secrets live in <code class="font-mono">runner.env</code>
+              + <code class="font-mono">inherit_env</code>, never in call arguments.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              The <code class="font-mono">shell</code>
+              break-glass pack is on no production runner.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Signed dispatch is enforced wherever a human's signature must be provable.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <span>
+              Audit is streaming to your SIEM through an <code class="font-mono">audit:read</code>
+              key, with alerts on policy changes and admission blocks.
+            </span>
+          </li>
+        </ul>
+      </div>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        What emisar is not
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Worth saying plainly, because a good reviewer will ask. emisar bounds what can be run and
+        keeps the record; it doesn't replace the layers underneath it.
+      </p>
+      <ul class="mt-4 space-y-2.5 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Not a sandbox.</strong>
+            A restart still restarts the service. emisar bounds what can be <em>called</em>
+            and records it; process isolation is the host's job — systemd hardening, namespaces, SELinux.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Not an EDR.</strong>
+            It won't spot a malicious binary or lateral movement. It will refuse a pack whose bytes
+            drifted from what you trusted, and reject an argument its schema doesn't allow.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Signed dispatch is integrity, not availability.</strong>
+            A compromised control plane can refuse to relay a signed call; it can't forge one. And
+            there's no revocation list — short certificate TTLs (24h) are how a leaked key stops
+            mattering.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Redaction is pattern-bound.</strong>
+            Built-in rules mask tokens and keys before output leaves the host, but a secret in a
+            shape no rule matches will slip through — so design actions not to print secrets, and
+            pass them through the environment.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">The cloud audit is searchable and append-only, not
+              tamper-evident.</strong>
+            The hash-chained journal on the host is the tamper-evident record — and even that a root
+            attacker can delete. Ship it off-box if you need a copy beyond their reach.
+          </span>
+        </li>
+      </ul>
+
+      <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm leading-6 text-zinc-300">
+        <strong class="text-zinc-100">On Enterprise, you don't do this alone.</strong>
+        A security and procurement review, a rollout plan mapped to your fleet, and design-partner
+        support come with the plan. Tell us what you're running and we'll help you land it —
+        <.link href={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
+          see plans
+        </.link>
+        or email <a
+          href="mailto:sales@emisar.dev"
+          class="font-medium text-brand-400 hover:text-brand-300"
+        >sales@emisar.dev</a>.
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          The security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Policies &amp; approvals <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          Audit &amp; SIEM export <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

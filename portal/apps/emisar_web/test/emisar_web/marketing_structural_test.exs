@@ -33,6 +33,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/teams-and-access
     /docs/sso
     /docs/runners
+    /docs/deployment
     /docs/audit-and-siem
     /changelog
     /about

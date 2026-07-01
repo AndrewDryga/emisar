@@ -26,6 +26,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/teams-and-access",
     "/docs/sso",
     "/docs/runners",
+    "/docs/deployment",
     "/docs/audit-and-siem",
     "/docs/security-model",
     "/docs/signed-dispatch",

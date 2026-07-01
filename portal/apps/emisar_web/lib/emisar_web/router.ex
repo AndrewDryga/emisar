@@ -106,6 +106,7 @@ defmodule EmisarWeb.Router do
     get "/docs/teams-and-access", MarketingController, :docs_teams
     get "/docs/sso", MarketingController, :docs_sso
     get "/docs/runners", MarketingController, :docs_runners
+    get "/docs/deployment", MarketingController, :docs_deployment
     get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
