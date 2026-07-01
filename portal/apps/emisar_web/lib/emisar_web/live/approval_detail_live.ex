@@ -560,7 +560,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </.meta_strip>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <%!-- Left: context — what-it-does, reason, policy, args, link to run --%>
+        <%!-- Left: context — what-it-does, command, args, reason, approval gate, link to run --%>
         <div class="space-y-4">
           <%!-- Plain-English effect from the pack manifest, so a non-expert
                approver knows what they're signing off on — not just the
@@ -587,6 +587,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <pre class="overflow-x-auto bg-black/40 p-4 font-mono text-xs leading-relaxed text-zinc-200"><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
           </.card>
 
+          <%!-- Arguments sit right after the command (the "what will run" pair),
+               before Reason + the approval gate (the "why"). The raw args also
+               carry the detail when the command couldn't be resolved above. --%>
+          <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
+            <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                Arguments
+              </h3>
+              <span :if={@request.context["args_sha256"]} class="font-mono text-[11px] text-zinc-500">
+                sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
+              </span>
+            </header>
+            <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
+          </.card>
+
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               Reason
@@ -608,18 +623,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
               Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
             </div>
           </.notice>
-
-          <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
-            <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Arguments
-              </h3>
-              <span :if={@request.context["args_sha256"]} class="font-mono text-[11px] text-zinc-500">
-                sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
-              </span>
-            </header>
-            <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-          </.card>
 
           <%!-- Who has voted so far — surfaced for any multi-approver gate so
                an approver sees who's already signed off (and that a deny
