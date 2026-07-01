@@ -1243,46 +1243,64 @@ defmodule EmisarWeb.CoreComponents do
   def auth_layout(assigns) do
     ~H"""
     <div class="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-      <div class="hidden bg-gradient-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col lg:justify-between">
+      <div class="hidden bg-gradient-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col">
         <a href="/" class="text-zinc-100">
           <.brand size={:md} />
         </a>
 
-        <div class="max-w-md">
-          <p class="text-2xl font-semibold leading-snug tracking-tight text-zinc-100">
-            Give AI tools approved infrastructure actions, not SSH.
-          </p>
-          <ul class="mt-6 space-y-3 text-sm text-zinc-400">
-            <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-              <span>Pre-approved playbooks instead of arbitrary shell</span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-              <span>Fine-grained policy with human approvals for risky ops</span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-              <span>
-                Searchable audit of every action and decision, plus a hash-chained host journal
-              </span>
-            </li>
-          </ul>
+        <div class="flex flex-1 items-center">
+          <div class="max-w-md">
+            <p class="text-2xl font-semibold leading-snug tracking-tight text-zinc-100">
+              Give AI tools approved infrastructure actions, not SSH.
+            </p>
+            <ul class="mt-6 space-y-3 text-sm text-zinc-400">
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <span>Pre-approved playbooks instead of arbitrary shell</span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <span>Fine-grained policy with human approvals for risky ops</span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <span>
+                  Searchable audit of every action and decision, plus a hash-chained host journal
+                </span>
+              </li>
+            </ul>
+          </div>
         </div>
-
-        <p class="text-xs text-zinc-500">© {Date.utc_today().year} emisar</p>
       </div>
 
-      <div class="flex items-center justify-center p-6 lg:p-12">
-        <div class="w-full max-w-md">
-          <.link href={~p"/"} class="mb-12 inline-block lg:hidden">
-            <.brand size={:md} />
-          </.link>
+      <div class="flex flex-col p-6 lg:p-12">
+        <.link href={~p"/"} class="mb-10 inline-block lg:hidden">
+          <.brand size={:md} />
+        </.link>
 
-          <h1 class="text-3xl font-bold tracking-tight text-zinc-50">{@title}</h1>
-          <div class="mt-8">
-            {render_slot(@inner_block)}
+        <div class="flex flex-1 items-center justify-center">
+          <div class="w-full max-w-md">
+            <h1 class="text-3xl font-bold tracking-tight text-zinc-50">{@title}</h1>
+            <div class="mt-8">
+              {render_slot(@inner_block)}
+            </div>
           </div>
+        </div>
+
+        <div class="flex justify-center">
+          <footer class="mt-10 w-full max-w-md border-t border-zinc-900 pt-6">
+            <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+              <.link href={~p"/trust"} class="transition-colors hover:text-zinc-300">Trust</.link>
+              <.link href={~p"/privacy"} class="transition-colors hover:text-zinc-300">Privacy</.link>
+              <.link href={~p"/terms"} class="transition-colors hover:text-zinc-300">Terms</.link>
+              <.link href={~p"/security"} class="transition-colors hover:text-zinc-300">
+                Security
+              </.link>
+            </nav>
+            <p class="mt-3 text-xs text-zinc-600">
+              © {Date.utc_today().year} Andrii Dryga. All rights reserved.
+            </p>
+          </footer>
         </div>
       </div>
     </div>
