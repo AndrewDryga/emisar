@@ -1925,7 +1925,10 @@ defmodule EmisarWeb.SSOSettingsLive do
           class="mt-3"
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <%!-- One balanced row: group + optional display + role read left-to-right
+               (role rightmost, mirroring the list rows above). Three even columns
+               avoid the orphaned third field a 2-col grid leaves. --%>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <.input
               :if={@synced_groups != []}
               field={@mapping_form[:external_group_id]}
