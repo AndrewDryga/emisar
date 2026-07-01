@@ -74,6 +74,35 @@ defmodule Emisar.Workers.AuditRetentionTest do
     refute Repo.reload(expired)
   end
 
+  test "records one audit.retention_swept marker per pruned account (count in payload)" do
+    account = Fixtures.Accounts.create_account()
+    ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
+
+    {:ok, _stale} =
+      Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
+
+    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+
+    # The stale row is gone; a summary marker for the pruned account remains (and
+    # its own retain_until keeps it from being pruned in the same pass).
+    assert [swept] =
+             Emisar.Audit.Event |> Repo.all() |> Enum.filter(&(&1.event_type == "audit.retention_swept"))
+
+    assert swept.account_id == account.id
+    assert swept.payload["count"] == 1
+  end
+
+  test "records no marker when a sweep prunes nothing (no self-spam)" do
+    account = Fixtures.Accounts.create_account()
+    # A fresh row is within the Free window → nothing to prune, so no marker.
+    {:ok, _fresh} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+
+    events = Repo.all(Emisar.Audit.Event)
+    refute Enum.any?(events, &(&1.event_type == "audit.retention_swept"))
+  end
+
   # an account whose subscription carries an unknown /
   # renamed plan name resolves to the "free" window rather than crashing, so a
   # legacy plan string can't wedge the nightly prune.

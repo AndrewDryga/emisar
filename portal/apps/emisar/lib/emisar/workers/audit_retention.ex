@@ -22,7 +22,16 @@ defmodule Emisar.Workers.AuditRetention do
       worker: __MODULE__,
       prunable_ids: &Audit.Event.Query.prunable_ids/3,
       delete_by_ids: &Audit.Event.Query.by_ids/1,
+      on_swept: &audit_swept/3,
       label: "audit retention"
     })
+  end
+
+  # "Watch the watchers": each account whose trail was pruned gets one
+  # `audit.retention_swept` marker (count + sweep instant), so the log never
+  # shrinks invisibly. Per-row retain_until gives the marker the account's full
+  # window, so it isn't pruned in the same pass that records it.
+  defp audit_swept(account_id, count, swept_at) do
+    Audit.record(Audit.Events.audit_retention_swept(account_id, count, swept_at))
   end
 end

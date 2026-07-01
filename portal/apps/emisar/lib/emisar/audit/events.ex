@@ -1027,6 +1027,17 @@ defmodule Emisar.Audit.Events do
 
   # -- Audit -----------------------------------------------------------
 
+  @doc "Internal — the retention worker logs each account's pruned-count so the log never shrinks invisibly."
+  def audit_retention_swept(account_id, count, %DateTime{} = swept_at)
+      when is_binary(account_id) and is_integer(count) do
+    Audit.changeset(account_id, "audit.retention_swept",
+      actor_kind: "system",
+      subject_kind: "audit_log",
+      subject_label: "Audit log",
+      payload: %{count: count, swept_at: DateTime.to_iso8601(swept_at)}
+    )
+  end
+
   @doc "Internal — `Audit.record_export/3` logs a non-empty audit-log export (the exfil signal)."
   def audit_exported(%Subject{account: %{id: account_id}} = subject, opts, count)
       when is_integer(count) do

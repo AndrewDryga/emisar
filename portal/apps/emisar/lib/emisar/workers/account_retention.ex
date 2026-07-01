@@ -26,9 +26,12 @@ defmodule Emisar.Workers.AccountRetention do
         eligible for deletion (a Query-module fn).
       * `:delete_by_ids` — `(ids) -> queryable` to `Repo.delete_all`.
       * `:label` — the log prefix for a non-empty prune.
+      * `:on_swept` — OPTIONAL `(account_id, count, swept_at) -> any`, called once
+        per account that had rows pruned (`count > 0`). Lets a worker record a
+        summary (e.g. an `audit.retention_swept` audit row); nil = no callback.
     """
     @enforce_keys [:worker, :prunable_ids, :delete_by_ids, :label]
-    defstruct [:worker, :prunable_ids, :delete_by_ids, :label]
+    defstruct [:worker, :prunable_ids, :delete_by_ids, :label, :on_swept]
   end
 
   @doc """
@@ -66,15 +69,22 @@ defmodule Emisar.Workers.AccountRetention do
   end
 
   defp prune_account(%Accounts.Account{} = account, spec) do
+    now = DateTime.utc_now()
     plan = Billing.plan(Billing.account_plan(account)) || Billing.plan("free")
-    cutoff = DateTime.utc_now() |> DateTime.add(-plan.audit_retention_days * 86_400, :second)
+    cutoff = DateTime.add(now, -plan.audit_retention_days * 86_400, :second)
 
     pruned = delete_in_batches(account.id, cutoff, 0, spec)
 
     if pruned > 0 do
       Logger.info("#{spec.label}: pruned #{pruned} events from account #{account.id}")
+      maybe_on_swept(spec.on_swept, account.id, pruned, now)
     end
   end
+
+  defp maybe_on_swept(nil, _account_id, _count, _swept_at), do: :ok
+
+  defp maybe_on_swept(on_swept, account_id, count, swept_at) when is_function(on_swept, 3),
+    do: on_swept.(account_id, count, swept_at)
 
   # Delete ≤ @batch_size prunable rows by id, looping until a batch comes back
   # short (the prunable set is drained — it only ever shrinks across iterations).

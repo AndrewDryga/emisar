@@ -100,6 +100,7 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.link_request_approved", "SSO link request approved"},
     {"sso.link_request_dismissed", "SSO link request dismissed"},
     {"audit.exported", "Audit log exported"},
+    {"audit.retention_swept", "Audit log pruned (retention)"},
     {"subscription.changed", "Subscription plan changed"}
   ]
 
@@ -251,7 +252,8 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Audit",
      [
-       {"audit.exported", "Exported"}
+       {"audit.exported", "Exported"},
+       {"audit.retention_swept", "Pruned (retention)"}
      ]},
     {"Billing",
      [
