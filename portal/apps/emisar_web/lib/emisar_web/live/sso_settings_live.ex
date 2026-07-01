@@ -754,19 +754,23 @@ defmodule EmisarWeb.SSOSettingsLive do
           <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
         </.page_intro>
 
-        <%!-- Adding a connection is its own view (/settings/sso/new) so the form
-             + per-provider setup guide get the full width and don't compete with
-             the connection list. --%>
-        <.panel :if={@live_action == :new} padding="p-6" title="Add an identity provider">
-          <:subtitle>
-            We'll use the issuer's OIDC discovery document. Follow the steps below to create an
-            OAuth/OIDC app at your provider, then paste its client ID and secret.
-          </:subtitle>
-          <:actions>
-            <.button navigate={~p"/app/#{@current_account}/settings/sso"} variant="ghost" size="sm">
-              Back to connections
-            </.button>
-          </:actions>
+        <%!-- Adding a connection is its own view (/settings/sso/new): a bare
+             sub-header over sibling field islands (Provider · OIDC · …), never
+             one giant card. --%>
+        <div :if={@live_action == :new} class="space-y-5">
+          <div>
+            <.link
+              navigate={~p"/app/#{@current_account}/settings/sso"}
+              class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
+            >
+              <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
+            </.link>
+            <h2 class="mt-3 text-lg font-semibold text-zinc-100">Add an identity provider</h2>
+            <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
+              We'll use the issuer's OIDC discovery document. Follow the steps in each section to
+              create an OAuth/OIDC app at your provider, then paste its client ID and secret.
+            </p>
+          </div>
 
           <.simple_form
             :if={@form}
@@ -798,56 +802,54 @@ defmodule EmisarWeb.SSOSettingsLive do
               </.button>
             </:actions>
           </.simple_form>
-        </.panel>
+        </div>
 
-        <%!-- Editing is its own view (/settings/sso/:id/edit), like /new — the
-             form + setup guide get the full width instead of an inline collapsed
-             block wedged into the connection's other sections. --%>
+        <%!-- Editing is its own view (/settings/sso/:id/edit), like /new — a bare
+             sub-header over the same sibling field islands, never an inline
+             collapsed block and never one giant card. --%>
         <div :if={@live_action == :edit} class="space-y-5">
-          <div :for={provider <- @providers}>
-            <.panel padding="p-6" title={"Edit #{provider.name}"}>
-              <:subtitle>
+          <div :for={provider <- @providers} class="space-y-5">
+            <div>
+              <.link
+                navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
+              >
+                <.icon name="hero-arrow-left" class="h-4 w-4" /> {provider.name}
+              </.link>
+              <h2 class="mt-3 text-lg font-semibold text-zinc-100">Edit connection</h2>
+              <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
                 Update this connection's OIDC settings. Leave the client secret blank to keep the
                 stored one.
-              </:subtitle>
+              </p>
+            </div>
+
+            <.simple_form
+              :if={@edit_form}
+              for={@edit_form}
+              id={"edit-provider-#{provider.id}"}
+              phx-change="validate_edit"
+              phx-submit="update"
+            >
+              <input type="hidden" name="provider_id" value={provider.id} />
+              <.provider_fields
+                form={@edit_form}
+                kind_options={@kind_options}
+                role_options={@role_options}
+                provisioner_options={@provisioner_options}
+                guide_id={provider.id}
+                callback_url={@callback_url}
+                editing?
+              />
               <:actions>
+                <.button phx-disable-with="Saving...">Save changes</.button>
                 <.button
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
                   variant="ghost"
-                  size="sm"
                 >
-                  Back to connection
+                  Cancel
                 </.button>
               </:actions>
-
-              <.simple_form
-                :if={@edit_form}
-                for={@edit_form}
-                id={"edit-provider-#{provider.id}"}
-                phx-change="validate_edit"
-                phx-submit="update"
-              >
-                <input type="hidden" name="provider_id" value={provider.id} />
-                <.provider_fields
-                  form={@edit_form}
-                  kind_options={@kind_options}
-                  role_options={@role_options}
-                  provisioner_options={@provisioner_options}
-                  guide_id={provider.id}
-                  callback_url={@callback_url}
-                  editing?
-                />
-                <:actions>
-                  <.button phx-disable-with="Saving...">Save changes</.button>
-                  <.button
-                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                    variant="ghost"
-                  >
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-            </.panel>
+            </.simple_form>
           </div>
 
           <div :if={not @loaded?} class="text-sm text-zinc-500">Loading…</div>
@@ -1171,103 +1173,131 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :callback_url, :string, required: true
   attr :editing?, :boolean, default: false
 
+  # The connection form's fields, grouped into sibling islands (Provider · OIDC
+  # connection · User provisioning · Security) so /new and /edit read like the
+  # rest of the console — never one giant card. Shared by both actions; the outer
+  # <.simple_form> spaces the islands and renders the submit footer.
   defp provider_fields(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <.input field={@form[:kind]} type="select" label="Provider type" options={@kind_options} />
-      <.input field={@form[:name]} type="text" label="Display name" placeholder="Acme Okta" />
-      <%!-- Setup steps for the SELECTED provider, right under the dropdown that
-           drives them — pick a provider, then read what to create + paste. --%>
-      <div class="sm:col-span-2">
+    <div class="space-y-5">
+      <.panel title="Provider">
+        <:subtitle>Which identity provider this is, and what to call it here.</:subtitle>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <.input field={@form[:kind]} type="select" label="Provider type" options={@kind_options} />
+          <.input field={@form[:name]} type="text" label="Display name" placeholder="Acme Okta" />
+        </div>
+      </.panel>
+
+      <.panel title="OIDC connection">
+        <:subtitle>
+          The issuer we fetch discovery from, and the OAuth client we authenticate as.
+        </:subtitle>
+        <%!-- Setup steps for the SELECTED provider — what to create at the IdP and
+             what to paste back here. --%>
         <.provider_setup_guide
           id={@guide_id}
           kind={form_kind(@form, @kind_options)}
           callback_url={@callback_url}
         />
-      </div>
-      <div class="sm:col-span-2">
-        <.input
-          field={@form[:issuer]}
-          type="url"
-          label="Issuer URL"
-          placeholder="https://acme.okta.com"
-          class="font-mono"
-        />
-        <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
-        </p>
-      </div>
-      <.input field={@form[:client_id]} type="text" label="Client ID" />
-      <.input
-        field={@form[:client_secret]}
-        type="password"
-        label="Client secret"
-        placeholder={if @editing?, do: "Leave blank to keep current", else: nil}
-        autocomplete="off"
-      />
-      <div class="sm:col-span-2">
-        <.input
-          field={@form[:provisioner]}
-          type="select"
-          label="New-user provisioning"
-          options={@provisioner_options}
-        />
-        <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          <span class="font-medium text-zinc-400">Auto-provision</span>
-          creates a user on first sign-in. <span class="font-medium text-zinc-400">Manual</span>
-          holds first-time sign-ins as pending requests for an admin to approve. Either way
-          they land at the default role below.
-        </p>
-      </div>
-      <div>
-        <.input
-          field={@form[:identifier_claim]}
-          type="select"
-          label="Identifier claim"
-          options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
-        />
-        <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          The stable, provider-issued claim that identifies a user — restricted to immutable
-          subject identifiers (a mutable claim like email would allow account takeover). Leave
-          as <code>sub</code> unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
-        </p>
-      </div>
-      <.input
-        field={@form[:default_role]}
-        type="select"
-        label="Default role for new users"
-        options={@role_options}
-      />
-      <div class="sm:col-span-2">
-        <.input
-          field={@form[:allowed_email_domain]}
-          type="text"
-          label="Allowed email domain (optional)"
-          placeholder="acme.com"
-        />
-        <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-          Restricts sign-in to verified emails on this domain and routes that domain's
-          sign-ins here. Leave blank to accept any address the provider asserts.
-        </p>
-      </div>
-      <div class="space-y-3 sm:col-span-2">
-        <div>
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <.input
+              field={@form[:issuer]}
+              type="url"
+              label="Issuer URL"
+              placeholder="https://acme.okta.com"
+              class="font-mono"
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
+            </p>
+          </div>
+          <.input field={@form[:client_id]} type="text" label="Client ID" />
           <.input
-            field={@form[:satisfies_mfa]}
-            type="checkbox"
-            label="Sign-in through this provider satisfies the account's 2FA requirement"
+            field={@form[:client_secret]}
+            type="password"
+            label="Client secret"
+            placeholder={if @editing?, do: "Leave blank to keep current", else: nil}
+            autocomplete="off"
           />
-          <p class="mt-1 text-[11px] leading-relaxed text-amber-300/80">
-            Only enable if this provider enforces MFA itself — otherwise members who sign in
-            through it bypass your 2FA requirement.
-          </p>
         </div>
-        <.input
-          field={@form[:enabled]}
-          type="checkbox"
-          label="Enabled (members can sign in through this connection)"
-        />
-      </div>
+      </.panel>
+
+      <.panel title="User provisioning">
+        <:subtitle>How members map in when they sign in through this connection.</:subtitle>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <.input
+              field={@form[:provisioner]}
+              type="select"
+              label="New-user provisioning"
+              options={@provisioner_options}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              <span class="font-medium text-zinc-400">Auto-provision</span>
+              creates a user on first sign-in. <span class="font-medium text-zinc-400">Manual</span>
+              holds first-time sign-ins as pending requests for an admin to approve. Either way
+              they land at the default role below.
+            </p>
+          </div>
+          <.input
+            field={@form[:default_role]}
+            type="select"
+            label="Default role for new users"
+            options={@role_options}
+          />
+          <div>
+            <.input
+              field={@form[:identifier_claim]}
+              type="select"
+              label="Identifier claim"
+              options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              The stable, provider-issued claim that identifies a user — restricted to immutable
+              subject identifiers (a mutable claim like email would allow account takeover). Leave
+              as <code>sub</code>
+              unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
+            </p>
+          </div>
+          <div class="sm:col-span-2">
+            <.input
+              field={@form[:allowed_email_domain]}
+              type="text"
+              label="Allowed email domain (optional)"
+              placeholder="acme.com"
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              Restricts sign-in to verified emails on this domain and routes that domain's
+              sign-ins here. Leave blank to accept any address the provider asserts.
+            </p>
+          </div>
+        </div>
+      </.panel>
+
+      <.panel title="Security & activation">
+        <:subtitle>
+          Whether this provider satisfies 2FA, and whether members can use it yet.
+        </:subtitle>
+        <div class="space-y-3">
+          <div>
+            <.input
+              field={@form[:satisfies_mfa]}
+              type="checkbox"
+              label="Sign-in through this provider satisfies the account's 2FA requirement"
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-amber-300/80">
+              Only enable if this provider enforces MFA itself — otherwise members who sign in
+              through it bypass your 2FA requirement.
+            </p>
+          </div>
+          <.input
+            field={@form[:enabled]}
+            type="checkbox"
+            label="Enabled (members can sign in through this connection)"
+          />
+        </div>
+      </.panel>
     </div>
     """
   end
