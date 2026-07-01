@@ -91,6 +91,26 @@ defmodule EmisarWeb.BillingLiveTest do
       # Still on the page — no external redirect for the sales-led tier.
       assert html =~ "Current plan"
     end
+
+    test "an enterprise account can't self-downgrade — it surfaces contact-support", %{
+      conn: conn,
+      account: account
+    } do
+      insert_subscription_with(account, %{plan: "enterprise", status: "active"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # The special-state notice names the custom plan and carries the one real
+      # action — email support (a prefilled mailto), not a self-serve control.
+      assert html =~ "Custom Enterprise plan"
+      assert html =~ "mailto:support@emisar.dev"
+
+      # No self-serve downgrade off a custom plan: the lower tiers read "Contact
+      # support to switch", never a "Downgrade to …" routing to a Paddle portal
+      # this account has no customer in.
+      assert html =~ "Contact support to switch"
+      refute html =~ "Downgrade to"
+    end
   end
 
   describe "usage meter + plan display" do

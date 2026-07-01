@@ -187,6 +187,13 @@ defmodule EmisarWeb.BillingLive do
 
   defp humanize_reason(_), do: "unknown error"
 
+  # mailto for Enterprise billing changes — prefilled subject carrying the
+  # account name so support can route it without a round-trip.
+  defp support_mailto(account) do
+    subject = URI.encode("Enterprise billing change — #{account.name}")
+    "mailto:support@emisar.dev?subject=#{subject}"
+  end
+
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -340,6 +347,25 @@ defmodule EmisarWeb.BillingLive do
           </div>
         </.card>
 
+        <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so plan
+             + billing changes go through our team — a downgrade here would route
+             to a Paddle portal the account has no customer in. Surface the special
+             state + the one real action instead of dead self-serve controls. --%>
+        <.notice
+          :if={@summary.plan == "enterprise"}
+          variant={:info}
+          icon="hero-lifebuoy"
+          title="Custom Enterprise plan"
+        >
+          Your plan and billing are handled with our team, not self-serve. Contact support to
+          change your plan, ask about an invoice, or cancel — we'll take care of it.
+          <:action :if={Billing.subject_can_manage_billing?(@current_subject)}>
+            <.button variant="secondary" size="md" href={support_mailto(@current_account)}>
+              Contact support
+            </.button>
+          </:action>
+        </.notice>
+
         <%!-- Plan cards. Three across on desktop, single column on
              phones. Current plan visually pinned, popular plan
              highlighted with a ribbon. --%>
@@ -392,6 +418,13 @@ defmodule EmisarWeb.BillingLive do
                   <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
                     <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
                       Owners only
+                    </span>
+                  <% @summary.plan == "enterprise" -> %>
+                    <%!-- On a custom Enterprise plan every other tier is a downgrade,
+                         and there's no self-serve path off it — the notice above
+                         carries the one real action (contact support). --%>
+                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
+                      Contact support to switch
                     </span>
                   <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
                     <.button
