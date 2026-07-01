@@ -2119,13 +2119,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                  manual change here silently reverts. Read-only — set it via the
                  group → role mappings above. An OIDC-only provider (no directory sync)
                  keeps the editable select; those roles aren't recomputed. --%>
-              <.chip
+              <.tooltip
                 :if={@scim_enabled}
-                icon="hero-lock-closed-mini"
-                title="Role is managed by directory sync — set it with the group → role mappings above"
+                text="Role is managed by directory sync — set it with the group → role mappings above"
               >
-                {String.capitalize(to_string(member.membership.role))}
-              </.chip>
+                <.chip icon="hero-lock-closed-mini">
+                  {String.capitalize(to_string(member.membership.role))}
+                </.chip>
+              </.tooltip>
               <form
                 :if={not @scim_enabled}
                 id={"synced-role-#{member.membership.id}"}

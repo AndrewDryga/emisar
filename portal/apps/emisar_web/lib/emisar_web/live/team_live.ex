@@ -1068,13 +1068,14 @@ defmodule EmisarWeb.TeamLive do
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
                          change actually sticks — the identity provider. --%>
-                      <.chip
+                      <.tooltip
                         class="shrink-0"
-                        icon="hero-lock-closed-mini"
-                        title={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
+                        text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
                       >
-                        {String.capitalize(to_string(membership.role))}
-                      </.chip>
+                        <.chip icon="hero-lock-closed-mini">
+                          {String.capitalize(to_string(membership.role))}
+                        </.chip>
+                      </.tooltip>
                     <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
                       <%!-- A role change is a privilege grant — a dropdown (same skin as
                          the Actions menu beside it) whose items each carry their own

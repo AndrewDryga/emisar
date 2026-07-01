@@ -2636,6 +2636,35 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
+  Wraps a trigger element with a styled hover/focus tooltip — a dark bubble above
+  it carrying `text`, for the "why" a control is locked/disabled/limited. CSS-only
+  (named `group/tooltip`, so it's safe inside a row that has its own `group`); the
+  bubble is right-anchored so it grows leftward and won't clip off a right-edge
+  badge. `text` also rides as `aria-label` for assistive tech.
+
+      <.tooltip text="Role is managed by directory sync — change it in your IdP">
+        <.chip icon="hero-lock-closed-mini">Operator</.chip>
+      </.tooltip>
+  """
+  attr :text, :string, required: true
+  attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
+  slot :inner_block, required: true
+
+  def tooltip(assigns) do
+    ~H"""
+    <span class={["group/tooltip relative inline-flex", @class]} aria-label={@text}>
+      {render_slot(@inner_block)}
+      <span
+        role="tooltip"
+        class="pointer-events-none absolute bottom-full right-0 z-30 mb-2 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10 transition-opacity duration-100 group-hover/tooltip:opacity-100"
+      >
+        {@text}
+      </span>
+    </span>
+    """
+  end
+
+  @doc """
   Inline "back" breadcrumb for detail pages. Renders as a small label
   above the page title slot, so the operator always sees where they
   came from without a separate breadcrumb trail.

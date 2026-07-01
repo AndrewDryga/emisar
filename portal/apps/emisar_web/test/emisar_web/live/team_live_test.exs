@@ -673,8 +673,8 @@ defmodule EmisarWeb.TeamLiveTest do
                "button[phx-click='change_role'][phx-value-membership_id='#{synced.membership.id}']"
              )
 
-      # ...and it reads as provider-managed, not a bare chip.
-      assert has_element?(lv, "[title*='managed by']")
+      # ...and it reads as provider-managed, via a hover tooltip explaining the lock.
+      assert has_element?(lv, "[role='tooltip']", "managed by")
 
       html =
         render_click(lv, "change_role", %{
