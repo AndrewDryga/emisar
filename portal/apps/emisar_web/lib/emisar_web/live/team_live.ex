@@ -263,13 +263,10 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("reinstate", %{"membership_id" => id}, socket) do
     with_membership(socket, id, fn membership ->
-      # A member the IdP deactivated (scim_active:false) can't be reinstated here — the
-      # domain refuses (reactivate them in the IdP). The menu also hides the action.
-      identity = Map.get(socket.assigns.identity_by_user_id, membership.user_id)
-
-      case Accounts.reinstate_membership(membership, socket.assigns.current_subject,
-             deactivated_in_idp?: deactivated_in_idp?(identity)
-           ) do
+      # A member the IdP deactivated can't be reinstated here — the DOMAIN refuses
+      # off the membership's own `directory_suspended` flag (reactivate them in the
+      # IdP). The menu also hides the action, but the guard is domain-owned.
+      case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Access restored."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -1396,8 +1393,6 @@ defmodule EmisarWeb.TeamLive do
   # A member the directory (SCIM) has deactivated (`scim_active: false`) — the IdP
   # revoked their access, so emisar keeps them suspended and won't reinstate them here
   # (reactivate in the IdP instead). A nil identity (not synced) is never IdP-deactivated.
-  defp deactivated_in_idp?(nil), do: false
-  defp deactivated_in_idp?(identity), do: not identity.scim_active
 
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.

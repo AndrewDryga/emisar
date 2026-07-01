@@ -13,9 +13,13 @@ defmodule Emisar.Accounts.Membership.Changeset do
   end
 
   # Born suspended: SSO provisions a user the IdP created as deactivated
-  # (`active: false`) already `disabled_at`, so they never hold access.
+  # (`active: false`) already `disabled_at` — the IdP owns the suspension, so mark
+  # it `directory_suspended` too (a manual reinstate can't lift an IdP deactivation).
   def create_suspended(attrs) do
-    attrs |> create() |> put_change(:disabled_at, DateTime.utc_now())
+    attrs
+    |> create()
+    |> put_change(:disabled_at, DateTime.utc_now())
+    |> put_change(:directory_suspended, true)
   end
 
   def update(%Membership{} = membership, attrs) do
@@ -35,7 +39,17 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
   def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())
-  def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
+
+  # Directory sync deactivated the member (SCIM active:false/DELETE) — mark the
+  # suspension IdP-owned so a manual reinstate refuses; only the IdP reactivating
+  # (or a re-provision) lifts it.
+  def sync_suspend(%Membership{} = membership),
+    do: change(membership, disabled_at: DateTime.utc_now(), directory_suspended: true)
+
+  # Reinstating always clears the IdP-owned mark — a member back in is not
+  # IdP-deactivated (a manual reinstate is only reachable when it's already false).
+  def reinstate(%Membership{} = membership),
+    do: change(membership, disabled_at: nil, directory_suspended: false)
 
   def accept_invitation(%Membership{} = membership) do
     change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())

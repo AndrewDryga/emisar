@@ -718,18 +718,15 @@ defmodule Emisar.Accounts do
 
   defp ensure_role_not_directory_managed(%Membership{}), do: :ok
 
-  # A member the directory (SCIM) has deactivated (`scim_active: false`) must stay
-  # suspended — reinstating them in emisar would grant access the IdP revoked. The web
-  # boundary passes `deactivated_in_idp?: true` from the linked identity; reactivation
-  # is the IdP's to make (its `active: true` re-sync reinstates them). Cycle-free —
-  # Accounts can't consult `SSO`.
-  defp ensure_not_deactivated_in_idp(opts) do
-    if Keyword.get(opts, :deactivated_in_idp?, false) do
-      {:error, :deactivated_in_idp}
-    else
-      :ok
-    end
-  end
+  # A member the directory (SCIM) has deactivated (`directory_suspended`, set by the
+  # SCIM deprovision write path) must stay suspended — reinstating them in emisar
+  # would grant access the IdP revoked. Reactivation is the IdP's to make (its
+  # `active: true` re-sync reinstates them). Domain-owned: judged on the locked
+  # row, no UI hint, no context cycle into `SSO`.
+  defp ensure_not_deactivated_in_idp(%Membership{directory_suspended: true}),
+    do: {:error, :deactivated_in_idp}
+
+  defp ensure_not_deactivated_in_idp(%Membership{}), do: :ok
 
   # The last-owner invariant is NOT checked here — a pre-transaction
   # count races a concurrent demotion (two operators demoting the two
@@ -900,15 +897,15 @@ defmodule Emisar.Accounts do
   @doc """
   Re-enable a previously suspended member. Same authorization shape as suspend.
 
-  Pass `deactivated_in_idp?: true` for a member the directory (SCIM) has deactivated
-  (`scim_active: false`) — reinstating them would grant emisar access the IdP revoked,
-  so the domain refuses with `{:error, :deactivated_in_idp}`. Reactivation must happen
-  in the IdP (its `active: true` re-sync reinstates via `sync_reinstate_membership`).
-  The already-authorized web boundary supplies the flag from the linked identity.
+  A member the directory (SCIM) has deactivated (`directory_suspended` — set by the
+  SCIM deprovision write path) is refused with `{:error, :deactivated_in_idp}`:
+  reinstating them would grant emisar access the IdP revoked. Reactivation must
+  happen in the IdP (its `active: true` re-sync reinstates via
+  `sync_reinstate_membership`). The flag lives on the membership, so the domain
+  enforces this itself off the locked row — no caller-supplied hint, no cycle.
   """
-  def reinstate_membership(%Membership{} = membership, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_not_deactivated_in_idp(opts),
-         :ok <-
+  def reinstate_membership(%Membership{} = membership, %Subject{} = subject) do
+    with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
       Membership.Query.not_deleted()
@@ -916,10 +913,13 @@ defmodule Emisar.Accounts do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
-          # The guard judges the row's CURRENT role under the lock — the
-          # caller's struct is a stale socket snapshot.
-          case ensure_can_modify_membership(loaded_membership, subject) do
-            :ok -> Membership.Changeset.reinstate(loaded_membership)
+          # The guards judge the row's CURRENT state under the lock — the caller's
+          # struct is a stale socket snapshot. `directory_suspended` is judged here
+          # too, so a stale UI or crafted event can't reinstate an IdP-revoked member.
+          with :ok <- ensure_not_deactivated_in_idp(loaded_membership),
+               :ok <- ensure_can_modify_membership(loaded_membership, subject) do
+            Membership.Changeset.reinstate(loaded_membership)
+          else
             {:error, reason} -> reason
           end
         end,
@@ -951,7 +951,7 @@ defmodule Emisar.Accounts do
         # out the account's last owner.
         with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
              :ok <- ensure_not_last_active_owner(loaded_membership) do
-          Membership.Changeset.suspend(loaded_membership)
+          Membership.Changeset.sync_suspend(loaded_membership)
         else
           {:error, reason} -> reason
         end

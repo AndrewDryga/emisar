@@ -1363,6 +1363,20 @@ defmodule Emisar.SSOTest do
       assert {:ok, _identity} = SSO.scim_fetch_user(provider, identity.scim_external_id)
     end
 
+    test "marks the membership directory_suspended, so the DOMAIN refuses a manual reinstate" do
+      %{provider: provider, subject: subject} = scim_provider()
+      attrs = scim_attrs(%{external_id: "okta|dsusp", email: "dsusp@acme.test"})
+      {:ok, _} = SSO.scim_provision_user(provider, attrs)
+
+      assert {:ok, %{membership: membership}} = SSO.scim_deactivate_user(provider, "okta|dsusp")
+      assert membership.directory_suspended
+
+      # An operator can't lift an IdP deactivation — the guard is judged on the
+      # locked row's own flag, so a stale UI / crafted event is refused too.
+      assert Accounts.reinstate_membership(membership, subject) == {:error, :deactivated_in_idp}
+      assert Repo.reload!(membership).disabled_at
+    end
+
     test "deactivating the last active owner is refused (:last_owner), flag left untouched" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :viewer})
       attrs = scim_attrs(%{external_id: "okta|owner"})
@@ -1404,6 +1418,9 @@ defmodule Emisar.SSOTest do
 
       refute membership.disabled_at
       assert identity.scim_active
+      # The IdP reactivating clears the directory-suspended mark — an operator can
+      # reinstate them again if suspended manually later.
+      refute membership.directory_suspended
       refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
 
