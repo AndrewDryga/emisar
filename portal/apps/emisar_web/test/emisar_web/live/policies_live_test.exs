@@ -371,6 +371,39 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "four-eyes"
     end
 
+    test "the required-approvals label pluralizes with the count", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      # One approval — singular, and "distinct" drops (nothing to be distinct from).
+      assert html =~ "operator, before the action runs"
+      refute html =~ "operators, before the action runs"
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "distinct operators, before the action runs"
+    end
+
     test "self-approval + a single approval folds the warning into the in-effect line", %{
       conn: conn
     } do

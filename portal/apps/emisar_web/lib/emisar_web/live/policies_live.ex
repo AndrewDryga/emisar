@@ -451,15 +451,22 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp approval_count(_), do: 1
 
-  # The "who can approve" option card: recessed + quiet by default, brand-tinted
-  # ring + surface when it's the selected mode. focus-within lifts the ring when
-  # the (sr-only) radio inside takes keyboard focus.
+  # Singular when exactly one approval is required — "1 distinct operators" is wrong,
+  # and "distinct" is meaningless for a single approver (nothing to be distinct from).
+  defp approval_operators_noun(min_approvals) do
+    if approval_count(min_approvals) == 1, do: "operator", else: "distinct operators"
+  end
+
+  # The "who can approve" option card: recessed + quiet by default, a neutral-bright
+  # ring + surface lift when selected — color-neutral so the risky self-approval
+  # choice never reads as emerald "safe" (that semantic lives only in the verdict).
+  # focus-within lifts the ring when the (sr-only) radio inside takes keyboard focus.
   defp approval_option_class(selected?, can_manage?) do
     [
       "flex items-start gap-3 rounded-lg p-3 ring-1 transition",
       "focus-within:ring-2 focus-within:ring-brand-500/50",
       if(selected?,
-        do: "bg-brand-500/[0.08] ring-brand-500/40",
+        do: "bg-white/[0.04] ring-white/25",
         else: "bg-black/20 ring-zinc-800 hover:ring-zinc-700"
       ),
       if(can_manage?, do: "cursor-pointer", else: "cursor-not-allowed opacity-70")
@@ -469,7 +476,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp approval_icon_class(selected?) do
     "grid h-8 w-8 shrink-0 place-items-center rounded-lg " <>
-      if(selected?, do: "bg-brand-500/15 text-brand-300", else: "bg-zinc-800/80 text-zinc-500")
+      if(selected?, do: "bg-zinc-700 text-zinc-100", else: "bg-zinc-800/80 text-zinc-500")
   end
 
   defp weakening_sentence([one]), do: one
@@ -955,17 +962,14 @@ defmodule EmisarWeb.PoliciesLive do
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
-        <%!-- Two ORTHOGONAL knobs side by side: WHO may approve
-             (allow_self_approval) and HOW MANY (min_approvals). Both radios post
-             `allow_self_approval` (true/false), so merge_approval is unchanged. The
-             live status line below resolves the pair into one sentence (naming
-             four-eyes only where it's literally true), so the per-control copy stays
-             one short line each. --%>
         <%!-- Two orthogonal knobs — WHO may approve (allow_self_approval) and HOW
              MANY (min_approvals) — grouped in one recessed surface so they read as a
              single policy. Each "who" card wraps an sr-only radio (the card IS the
-             control): a meaning icon, a title, a one-line rationale, and a brand
-             check when picked. The verdict below resolves the pair into English. --%>
+             control): a meaning icon, a title, a one-line rationale, and a neutral
+             check when picked. Selection stays color-neutral on purpose — emerald and
+             amber are reserved for the verdict below, the one place who + count are
+             judged together, so the risky self-approval choice never wears the safe
+             color. The verdict resolves the pair into English. --%>
         <div class="mt-3 space-y-4 rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/5">
           <div>
             <.label variant={:eyebrow}>Who can approve</.label>
@@ -988,7 +992,7 @@ defmodule EmisarWeb.PoliciesLive do
                     <.icon
                       :if={!@approval["allow_self_approval"]}
                       name="hero-check-circle-solid"
-                      class="ml-auto h-4 w-4 shrink-0 text-brand-400"
+                      class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
                     />
                   </span>
                   <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
@@ -1014,7 +1018,7 @@ defmodule EmisarWeb.PoliciesLive do
                     <.icon
                       :if={@approval["allow_self_approval"]}
                       name="hero-check-circle-solid"
-                      class="ml-auto h-4 w-4 shrink-0 text-brand-400"
+                      class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
                     />
                   </span>
                   <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
@@ -1040,7 +1044,9 @@ defmodule EmisarWeb.PoliciesLive do
               disabled={!@can_manage}
               class="w-14 rounded-lg border-0 bg-black/40 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
             />
-            <span class="text-xs text-zinc-500">distinct operators, before the action runs.</span>
+            <span class="text-xs text-zinc-500">
+              {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
+            </span>
           </div>
         </div>
 
