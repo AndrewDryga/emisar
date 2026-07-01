@@ -417,29 +417,6 @@ defmodule EmisarWeb.PoliciesLive do
   defp single_reviewer_gate?(approval),
     do: approval["allow_self_approval"] && to_string(approval["min_approvals"]) == "1"
 
-  # Resolve the two orthogonal knobs (min_approvals + allow_self_approval) into one
-  # plain sentence — a bare "four-eyes" label misleads for most combinations, so we
-  # name four-eyes only when it's literally one approval from a different operator.
-  defp approval_summary(approval) do
-    n = approval_count(approval["min_approvals"])
-    self_ok? = approval["allow_self_approval"] == true
-    count = if n == 1, do: "1 approval", else: "#{n} approvals"
-
-    cond do
-      n == 1 and not self_ok? ->
-        "Needs #{count} from an operator other than the requester — the classic four-eyes check."
-
-      n == 1 ->
-        "Needs #{count} — the requester may approve their own request."
-
-      not self_ok? ->
-        "Needs #{count} from #{n} distinct operators, none of them the requester."
-
-      true ->
-        "Needs #{count} from #{n} distinct operators — the requester may be one of them."
-    end
-  end
-
   defp approval_count(n) when is_integer(n) and n >= 1, do: n
 
   defp approval_count(n) when is_binary(n) do
@@ -870,8 +847,8 @@ defmodule EmisarWeb.PoliciesLive do
   attr :save_label, :string, required: true
 
   defp policy_fields(assigns) do
-    # Self-approval + a single approval adds no SECOND party — the in-effect line
-    # renders amber and folds in the guidance rather than a separate warning banner.
+    # Self-approval + a single approval adds no SECOND party — the one case worth an
+    # amber callout (guidance folded in). A healthy gate shows none.
     assigns = assign(assigns, :single_reviewer?, single_reviewer_gate?(assigns.approval))
 
     ~H"""
@@ -954,9 +931,9 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
 
       <%!-- Approval requirements: WHO may approve (allow_self_approval) and HOW MANY
-           (min_approvals) — two independent knobs, plus a live summary that resolves
-           them into one sentence. Defaults to self-approval allowed + 1 approval;
-           buyers require a different operator for real separation of duties. --%>
+           (min_approvals) — two independent knobs, plus an amber callout only when the
+           pair is weak (self-approval + one approval). Defaults to self-approval allowed
+           + 1 approval; buyers require a different operator for real separation of duties. --%>
       <div>
         <h3 class="text-sm font-semibold text-zinc-200">Approval requirements</h3>
         <p class="mt-0.5 text-xs text-zinc-500">
@@ -1050,33 +1027,23 @@ defmodule EmisarWeb.PoliciesLive do
           </div>
         </div>
 
-        <%!-- The verdict — both knobs resolved into one plain sentence, and the
-             payoff of the section. Emerald when it's a real gate (independent
-             review); amber when a lone self-approver, with the fix folded in. --%>
-        <div class={[
-          "mt-4 flex items-start gap-3 rounded-xl p-4 ring-1",
-          if(@single_reviewer?,
-            do: "bg-amber-500/[0.07] ring-amber-500/30",
-            else: "bg-brand-500/[0.06] ring-brand-500/25"
-          )
-        ]}>
-          <span class={[
-            "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
-            if(@single_reviewer?,
-              do: "bg-amber-500/15 text-amber-300",
-              else: "bg-brand-500/15 text-brand-300"
-            )
-          ]}>
-            <.icon
-              name={if @single_reviewer?, do: "hero-shield-exclamation", else: "hero-shield-check"}
-              class="h-4 w-4"
-            />
+        <%!-- The callout earns its space only as a WARNING — when self-approval plus a
+             single approval lets the requester sign off on their own request. A healthy
+             gate shows no box: the cards + count already say what it does, and a green
+             "all good" callout is just noise that trains operators to ignore boxes. --%>
+        <div
+          :if={@single_reviewer?}
+          class="mt-4 flex items-start gap-3 rounded-xl bg-amber-500/[0.07] p-4 ring-1 ring-amber-500/30"
+        >
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
+            <.icon name="hero-shield-exclamation" class="h-4 w-4" />
           </span>
           <div class="min-w-0 flex-1 text-sm leading-relaxed">
-            <p class={if @single_reviewer?, do: "text-amber-50", else: "text-zinc-100"}>
-              <span class="font-semibold">In effect —</span> {approval_summary(@approval)}
+            <p class="text-amber-50">
+              <span class="font-semibold">In effect —</span>
+              a single approval is enough, and the requester may approve their own request.
             </p>
-            <p :if={@single_reviewer?} class="mt-1 text-xs text-amber-200/80">
+            <p class="mt-1 text-xs text-amber-200/80">
               Choose a different operator, or raise the count, to add independent review.
             </p>
           </div>

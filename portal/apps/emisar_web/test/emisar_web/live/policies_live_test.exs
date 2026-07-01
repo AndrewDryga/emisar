@@ -364,11 +364,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~
                ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
 
-      # The live summary resolves the two orthogonal knobs — 3 approvals from a
-      # different operator is NOT "four-eyes" (the exact confusion being fixed), so
-      # the summary spells out the real rule and never says four-eyes here.
-      assert html =~ "3 approvals from 3 distinct operators, none of them the requester"
-      refute html =~ "four-eyes"
+      # A healthy gate (3 approvals from a different operator) needs no callout — the
+      # cards + count already say what it does, so the amber warning box stays hidden.
+      refute html =~ "the requester may approve their own request"
+      refute html =~ "add independent review"
     end
 
     test "the required-approvals label pluralizes with the count", %{conn: conn} do
@@ -443,13 +442,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      assert html =~ "the requester may be one of them"
-      refute html =~ "Require a different operator or raise the count"
+      # Two approvals means a second person must sign off even if the requester is one —
+      # a real gate, so no single-reviewer warning box.
+      refute html =~ "the requester may approve their own request"
+      refute html =~ "add independent review"
     end
 
-    test "the live summary names four-eyes only at one approval from a different operator", %{
-      conn: conn
-    } do
+    test "a healthy four-eyes gate shows no verdict callout", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(user, account)
 
@@ -464,8 +463,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      assert html =~ "the classic four-eyes check"
-      assert html =~ "from an operator other than the requester"
+      # One approval from a different operator is a real gate — the callout is reserved
+      # for the weak self-single-approval case, so nothing shows here.
+      refute html =~ "add independent review"
+      refute html =~ "the requester may approve their own request"
     end
 
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
