@@ -21,6 +21,8 @@ defmodule Emisar.Fixtures.ApiKeys do
         description: attrs[:description],
         scopes: attrs[:scopes] || ["actions:read", "actions:execute"],
         runner_filter: attrs[:runner_filter] || [],
+        runner_group_filter: attrs[:runner_group_filter] || [],
+        action_scope: attrs[:action_scope] || [],
         expires_at: attrs[:expires_at]
       }
 

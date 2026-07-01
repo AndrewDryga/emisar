@@ -469,6 +469,58 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
     end
 
+    test "an MCP key can't dispatch an action outside its action_scope — DOMAIN-enforced" do
+      # The key's per-action allow-list is enforced in the domain, not only at the
+      # MCP boundary — a key scoped to linux.reboot can't run linux.uptime here.
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, action_scope: ["linux.reboot"])
+
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:error, :action_not_in_key_scope} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
+    test "an MCP key can't dispatch to a runner outside its runner_filter — DOMAIN-enforced" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      other = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, runner_filter: [other.id])
+
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:error, :runner_not_in_key_scope} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
+    test "an MCP key scoped to the action + runner dispatches normally" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          action_scope: ["linux.uptime"],
+          runner_filter: [runner.id]
+        )
+
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:ok, :running, %ActionRun{}} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
     test "audits only the policy decision + terminal outcome, decision first" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

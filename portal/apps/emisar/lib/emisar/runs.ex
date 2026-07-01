@@ -318,9 +318,22 @@ defmodule Emisar.Runs do
            ) do
       attrs
       |> put_dispatcher_context(subject)
+      |> put_api_key_scope(subject)
       |> dispatch_run_for_account(account_id)
     end
   end
+
+  # An MCP key carries its own scope grants — a per-key action allow-list
+  # (`action_scope`) and runner filter (`runner_filter`/`runner_group_filter`).
+  # Thread the key onto the attrs so the dispatch chain enforces them in the
+  # DOMAIN (`action_in_key_scope` / `runner_in_key_scope`), not only at the MCP
+  # boundary — a key scoped to `linux.uptime` on runner-A can't run `linux.reboot`
+  # or target runner-B even if the web check is bypassed (IL-15). A user subject
+  # carries no such grants, so nothing is threaded.
+  defp put_api_key_scope(attrs, %Subject{actor: %ApiKeys.ApiKey{} = key}),
+    do: Map.put(attrs, :dispatch_api_key, key)
+
+  defp put_api_key_scope(attrs, _subject), do: attrs
 
   # Snapshot the dispatcher's source ip/ua from the request context onto the run
   # attrs, so every run-lifecycle audit event — including the terminal one logged
@@ -351,18 +364,22 @@ defmodule Emisar.Runs do
     action_id = attrs[:action_id]
     reason = attrs[:reason]
     membership_id = Map.get(attrs, :requested_by_membership_id)
+    api_key = Map.get(attrs, :dispatch_api_key)
 
     with :none <- peek_idempotent_run(attrs),
          :ok <- require_runner(runner_id),
          :ok <- require_action(action_id),
+         :ok <- action_in_key_scope(api_key, action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
          :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+         :ok <- runner_in_key_scope(api_key, runner_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
          {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
       |> Map.delete(:requested_by_membership_id)
+      |> Map.delete(:dispatch_api_key)
       |> Map.put(:args_sha256, args_sha256(attrs[:args]))
       # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
       # so the run ships the exact bytes authorized here, not a send-time re-read.
@@ -510,6 +527,34 @@ defmodule Emisar.Runs do
               do: :ok,
               else: {:error, :runner_out_of_scope}
         end
+    end
+  end
+
+  # An MCP key's per-key action allow-list — the DOMAIN gate for `action_scope`,
+  # so a key scoped to specific actions can't dispatch others even if the MCP
+  # boundary check is bypassed (IL-15). `nil` (a user subject) is unrestricted.
+  defp action_in_key_scope(nil, _action_id), do: :ok
+
+  defp action_in_key_scope(%ApiKeys.ApiKey{} = key, action_id) do
+    if ApiKeys.ApiKey.action_allowed?(key, action_id),
+      do: :ok,
+      else: {:error, :action_not_in_key_scope}
+  end
+
+  # An MCP key's runner filter — the DOMAIN gate for `runner_filter` /
+  # `runner_group_filter`, so a key can't target a runner outside its scope.
+  # `runner_in_account/2` ran first, so the runner belongs to the account.
+  defp runner_in_key_scope(nil, _runner_id), do: :ok
+
+  defp runner_in_key_scope(%ApiKeys.ApiKey{} = key, runner_id) do
+    case Emisar.Runners.peek_runner_by_id(runner_id) do
+      nil ->
+        {:error, :runner_not_found}
+
+      runner ->
+        if ApiKeys.ApiKey.runner_allowed?(key, runner.id, runner.group),
+          do: :ok,
+          else: {:error, :runner_not_in_key_scope}
     end
   end
 

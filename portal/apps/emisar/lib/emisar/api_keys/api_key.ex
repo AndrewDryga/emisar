@@ -25,9 +25,9 @@ defmodule Emisar.ApiKeys.ApiKey do
     field :runner_group_filter, {:array, :string}, default: []
     field :scopes, {:array, :string}, default: []
     # Per-action allow-list. Empty = any action (the default); non-empty
-    # restricts dispatch to exactly these action_ids — enforced at the MCP
-    # dispatch boundary on top of the runner scope, so a leaked key can't run
-    # actions the operator never granted it.
+    # restricts dispatch to exactly these action_ids — enforced in the domain
+    # dispatch path (`Runs`) on top of the runner scope, so a leaked key can't run
+    # actions the operator never granted it even if the MCP boundary is bypassed.
     field :action_scope, {:array, :string}, default: []
 
     field :expires_at, :utc_datetime_usec
@@ -70,13 +70,29 @@ defmodule Emisar.ApiKeys.ApiKey do
   @doc """
   Whether this key may dispatch `action_id`. An empty `action_scope` means any
   action (the default + every pre-existing key); a non-empty list is an
-  allow-list — only those action_ids may run. Checked at the MCP dispatch
-  boundary in addition to the runner-scope checks.
+  allow-list — only those action_ids may run. Enforced in the domain dispatch
+  path (`Runs`) alongside the runner-scope checks, plus a fast-fail at MCP.
   """
   def action_allowed?(%__MODULE__{action_scope: scope}, _action_id) when scope in [nil, []],
     do: true
 
   def action_allowed?(%__MODULE__{action_scope: scope}, action_id), do: action_id in scope
+
+  @doc """
+  Whether this key may dispatch to a runner (by its id + group). Empty filters
+  mean any runner; otherwise the runner must be named in `runner_filter` or its
+  group in `runner_group_filter`. Takes the runner's id + group (not the struct)
+  so the schema stays context-pure. Enforced at the domain dispatch boundary.
+  """
+  def runner_allowed?(
+        %__MODULE__{runner_filter: [], runner_group_filter: []},
+        _runner_id,
+        _group
+      ),
+      do: true
+
+  def runner_allowed?(%__MODULE__{} = key, runner_id, runner_group),
+    do: runner_id in (key.runner_filter || []) or runner_group in (key.runner_group_filter || [])
 
   @doc """
   True when the key is auto-generated AND has never been used. Drives

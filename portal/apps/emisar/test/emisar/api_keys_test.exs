@@ -268,6 +268,20 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKey.action_allowed?(key, "linux.reboot")
     end
 
+    test "runner_allowed?/3 confines a key to its runner_filter + runner_group_filter" do
+      # Empty filters → any runner (the default). A pure predicate the domain
+      # dispatch path gates on, by the runner's id + group.
+      assert ApiKey.runner_allowed?(%ApiKey{runner_filter: [], runner_group_filter: []}, "r", "g")
+
+      by_id = %ApiKey{runner_filter: ["r-1"], runner_group_filter: []}
+      assert ApiKey.runner_allowed?(by_id, "r-1", "prod")
+      refute ApiKey.runner_allowed?(by_id, "r-2", "prod")
+
+      by_group = %ApiKey{runner_filter: [], runner_group_filter: ["prod"]}
+      assert ApiKey.runner_allowed?(by_group, "r-9", "prod")
+      refute ApiKey.runner_allowed?(by_group, "r-9", "staging")
+    end
+
     test "rejects a malformed action_scope entry" do
       {_user, _account, subject} = owner_subject_pair()
 
