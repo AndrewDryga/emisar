@@ -11,9 +11,11 @@ defmodule EmisarWeb.RunnerInstallLive do
     copy. Ring eviction in `Runners.mint_install_key/2` caps unused
     autos at 42 per account regardless of how many times this page
     loads.
-  - Subscribe to runner events. When a runner registers + connects,
-    flash + navigate back to `/app/runners` so they land on the page
-    that proves it worked.
+  - Subscribe to runner events. When the runner minted from THIS page's
+    key registers + connects, flash + navigate back to `/app/runners` so
+    they land on the page that proves it worked. A different runner joining
+    the account's presence (a reconnect, another host) is NOT this install
+    and must not redirect — the join is matched on `bootstrap_auth_key_id`.
   - Same install command shape + same links as the empty-state on the
     dashboard, kept in sync via shared helpers.
   """
@@ -34,12 +36,14 @@ defmodule EmisarWeb.RunnerInstallLive do
         Process.send_after(self(), :reveal_troubleshooting, @troubleshoot_after_ms)
 
         base = UrlHelpers.derive_base_url(socket)
+        {command, key_id} = mint_install_command(socket, base)
 
         socket
         |> assign(:base_url, base)
-        |> assign(:install_command, mint_install_command(socket, base))
+        |> assign(:install_command, command)
+        |> assign(:install_key_id, key_id)
       else
-        assign(socket, base_url: nil, install_command: nil)
+        assign(socket, base_url: nil, install_command: nil, install_key_id: nil)
       end
 
     {:ok,
@@ -48,16 +52,28 @@ defmodule EmisarWeb.RunnerInstallLive do
      |> assign(:show_troubleshooting?, false)}
   end
 
-  # A runner joined this account's presence (registered + connected) while
-  # the page was open — bounce the operator over to the runners list so
-  # they see their new host immediately. Only presence *joins* navigate, so
-  # a leaving/flapping runner doesn't redirect prematurely.
+  # A runner joined this account's presence — but only bounce the operator to
+  # the list when it's the runner minted from THIS page's key. Any OTHER runner
+  # joining (a reconnect, another host coming up) is not this operator's install
+  # and must not hijack the page. We check the joined runner's `bootstrap_auth_key_id`
+  # against the key we minted; a leaving/flapping runner never matches (joins only).
   def handle_info(%{event: "presence_diff", payload: %{joins: joins}}, socket)
       when map_size(joins) > 0 do
-    {:noreply,
-     socket
-     |> put_flash(:info, "Runner connected — taking you to the list.")
-     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
+    account = socket.assigns.current_account
+
+    if socket.assigns.install_key_id &&
+         Runners.any_runner_bootstrapped_by_key?(
+           Map.keys(joins),
+           socket.assigns.install_key_id,
+           account.id
+         ) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Runner connected — taking you to the list.")
+       |> push_navigate(to: ~p"/app/#{account}/runners")}
+    else
+      {:noreply, socket}
+    end
   end
 
   # The grace period elapsed with no runner — surface the troubleshooting
@@ -67,15 +83,21 @@ defmodule EmisarWeb.RunnerInstallLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
+  # Returns `{command, key_id}` — the key id lets the presence-join handler
+  # redirect ONLY for the runner that registers with this exact key. On mint
+  # failure, `{:mint_failed, nil}` (a nil key id can never match a join).
   defp mint_install_command(socket, base) do
     case Runners.mint_install_key(socket.assigns.current_subject) do
-      {:ok, raw, _key} ->
+      {:ok, raw, key} ->
         # Leading space keeps the key out of shell history under
         # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
-        " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
+        command =
+          " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
+
+        {command, key.id}
 
       {:error, _} ->
-        :mint_failed
+        {:mint_failed, nil}
     end
   end
 

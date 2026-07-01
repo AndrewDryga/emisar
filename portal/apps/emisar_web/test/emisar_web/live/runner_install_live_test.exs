@@ -97,5 +97,45 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # …and crucially mints no auth key.
       assert Repo.all(AuthKey) == []
     end
+
+    # Redirect only for the runner minted from THIS page's key — not any runner
+    # that joins the account's presence (a reconnect, another host coming up).
+    test "redirects when the runner minted from this page's key connects", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
+
+      # The connected mount auto-minted this page's install key.
+      assert [%AuthKey{} = key] = Repo.all(AuthKey)
+
+      # A runner registers with THAT key (its bootstrap key) and joins presence.
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_auth_key_id: key.id,
+          connected?: false
+        )
+
+      send(lv.pid, %{event: "presence_diff", payload: %{joins: %{runner.id => %{metas: [%{}]}}}})
+
+      assert_redirect(lv, ~p"/app/#{account}/runners")
+    end
+
+    test "does NOT redirect when a different runner joins the account's presence", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
+
+      # A runner that registered with some OTHER key (here: none) joins — it is
+      # not this operator's install, so the wizard must stay put. This is the
+      # exact scenario that used to hijack the page: any presence join redirected.
+      other = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      send(lv.pid, %{event: "presence_diff", payload: %{joins: %{other.id => %{metas: [%{}]}}}})
+
+      assert render(lv) =~ "curl -sSL"
+    end
   end
 end

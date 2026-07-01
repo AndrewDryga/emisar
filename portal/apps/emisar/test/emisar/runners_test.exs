@@ -294,6 +294,71 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "any_runner_bootstrapped_by_key?/3" do
+    test "true when a listed runner registered with that key" do
+      account = Fixtures.Accounts.create_account()
+      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_auth_key_id: key.id,
+          connected?: false
+        )
+
+      assert Runners.any_runner_bootstrapped_by_key?([runner.id], key.id, account.id)
+    end
+
+    test "false when the listed runner registered with a different key" do
+      account = Fixtures.Accounts.create_account()
+      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, other_key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_auth_key_id: other_key.id,
+          connected?: false
+        )
+
+      refute Runners.any_runner_bootstrapped_by_key?([runner.id], key.id, account.id)
+    end
+
+    test "false when the key's runner exists but its id isn't in the list" do
+      account = Fixtures.Accounts.create_account()
+      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+
+      _bootstrapped =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_auth_key_id: key.id,
+          connected?: false
+        )
+
+      unrelated = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      # The install page checks only the runners that just joined presence — a
+      # different runner from the same key connecting elsewhere mustn't count.
+      refute Runners.any_runner_bootstrapped_by_key?([unrelated.id], key.id, account.id)
+    end
+
+    test "false across accounts — scoped to the given account only" do
+      account = Fixtures.Accounts.create_account()
+      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          bootstrap_auth_key_id: key.id,
+          connected?: false
+        )
+
+      other = Fixtures.Accounts.create_account()
+
+      refute Runners.any_runner_bootstrapped_by_key?([runner.id], key.id, other.id)
+    end
+  end
+
   describe "runner_enforces_signatures?/2" do
     test "true for an enforcing runner, false for a plain one" do
       enforcing = Fixtures.Runners.create_runner(enforce_signatures: true)

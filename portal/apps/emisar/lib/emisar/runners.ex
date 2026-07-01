@@ -222,6 +222,22 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — true when any of `runner_ids` is a runner in `account_id` that
+  registered with `auth_key_id` as its bootstrap key. The install wizard checks
+  this on a presence join so it only advances when the runner minted from THIS
+  page's key connects — not any runner that happens to join the account's
+  presence (a reconnect, another host coming up).
+  """
+  def any_runner_bootstrapped_by_key?(runner_ids, auth_key_id, account_id)
+      when is_list(runner_ids) and is_binary(auth_key_id) and is_binary(account_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_ids(runner_ids)
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_bootstrap_auth_key_id(auth_key_id)
+    |> Repo.exists?()
+  end
+
+  @doc """
   Internal — the Runs dispatch gate: true when the runner advertises that it
   enforces client signatures, so the portal must refuse its own
   (operator/runbook) unsigned dispatch to it. Only a signed MCP call gets through.

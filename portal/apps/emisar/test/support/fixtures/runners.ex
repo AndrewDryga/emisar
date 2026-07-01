@@ -25,7 +25,8 @@ defmodule Emisar.Fixtures.Runners do
       group: attrs[:group] || "default",
       hostname: attrs[:hostname] || "host-#{Fixtures.Random.unique_int()}",
       labels: attrs[:labels] || %{},
-      runner_version: attrs[:runner_version] || "0.1.0"
+      runner_version: attrs[:runner_version] || "0.1.0",
+      bootstrap_auth_key_id: attrs[:bootstrap_auth_key_id]
     }
 
     {:ok, runner} =
