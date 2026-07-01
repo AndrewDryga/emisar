@@ -344,11 +344,55 @@ const MagicCodeInput = {
   }
 }
 
+// Auto-dismiss a transient flash after data-close-ms, with a subtle countdown bar
+// (`[data-flash-bar]`, scaleX shrinks toward the left) that shows the time left.
+// Hovering pauses it so a reader keeps the alert up; the alert also stays
+// click-to-dismiss (this just fires that same click on lapse). Reduced-motion:
+// the bar is hidden and doesn't animate, but the alert still auto-closes — motion
+// is never load-bearing. Connection-state flashes opt out (no data-close-ms).
+const FlashAutoClose = {
+  mounted() {
+    this.duration = parseInt(this.el.dataset.closeMs, 10)
+    if (!this.duration) return
+    this.bar = this.el.querySelector("[data-flash-bar]")
+    this.reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (this.reduce && this.bar) this.bar.style.display = "none"
+    this.frame = (now) => this.tick(now)
+    this.el.addEventListener("mouseenter", () => { this.paused = true })
+    this.el.addEventListener("mouseleave", () => { this.paused = false; this.last = performance.now() })
+    this.start()
+  },
+  updated() { if (this.duration) this.start() },   // a replaced message restarts the countdown
+  destroyed() { this.stop() },
+  start() {
+    this.stop()
+    this.paused = false
+    this.elapsed = 0
+    this.last = performance.now()
+    this.raf = requestAnimationFrame(this.frame)
+  },
+  stop() {
+    if (this.raf) cancelAnimationFrame(this.raf)
+    this.raf = null
+  },
+  tick(now) {
+    if (!this.paused) {
+      this.elapsed += now - this.last
+      if (this.bar && !this.reduce) {
+        this.bar.style.transform = `scaleX(${Math.max(0, 1 - this.elapsed / this.duration)})`
+      }
+      if (this.elapsed >= this.duration) { this.el.click(); return }
+    }
+    this.last = now
+    this.raf = requestAnimationFrame(this.frame)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, MagicCodeInput }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, MagicCodeInput, FlashAutoClose }
 })
 
 // Show progress bar on live navigation and form submits

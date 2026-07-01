@@ -37,21 +37,32 @@ defmodule EmisarWeb.CoreComponents do
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
   attr :title, :string, default: nil
   attr :kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup"
+
+  attr :auto_close, :boolean,
+    default: true,
+    doc: "auto-dismiss after a delay with a countdown bar; off for connection flashes"
+
   attr :rest, :global, doc: "the arbitrary HTML attributes to add to the flash container"
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
-    assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
+    assigns =
+      assigns
+      |> assign_new(:id, fn -> "flash-#{assigns.kind}" end)
+      # Errors get a beat longer to read; either way, hovering pauses the countdown.
+      |> assign(:close_ms, if(assigns.kind == :info, do: 5000, else: 7000))
 
     ~H"""
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
+      phx-hook={@auto_close && "FlashAutoClose"}
+      data-close-ms={@auto_close && @close_ms}
       role="alert"
       class={[
-        "fixed top-4 right-4 z-50 w-80 sm:w-96 rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
+        "fixed top-4 right-4 z-50 w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
         @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
         @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40"
       ]}
@@ -70,6 +81,15 @@ defmodule EmisarWeb.CoreComponents do
       >
         <.icon name="hero-x-mark-solid" class="h-4 w-4" />
       </button>
+      <div
+        :if={@auto_close}
+        data-flash-bar
+        class={[
+          "absolute inset-x-0 bottom-0 h-0.5 origin-left",
+          @kind == :info && "bg-brand-400/70",
+          @kind == :error && "bg-rose-400/70"
+        ]}
+      />
     </div>
     """
   end
@@ -93,6 +113,7 @@ defmodule EmisarWeb.CoreComponents do
         id="client-error"
         kind={:error}
         title={gettext("Connection lost")}
+        auto_close={false}
         phx-disconnected={show(".phx-client-error #client-error")}
         phx-connected={hide("#client-error")}
         hidden
@@ -105,6 +126,7 @@ defmodule EmisarWeb.CoreComponents do
         id="server-error"
         kind={:error}
         title={gettext("Server didn't respond")}
+        auto_close={false}
         phx-disconnected={show(".phx-server-error #server-error")}
         phx-connected={hide("#server-error")}
         hidden
