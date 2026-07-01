@@ -565,6 +565,21 @@ defmodule Emisar.SSOTest do
       assert updated.identifier_claim == :oid
     end
 
+    test "the provider type (kind) is create-only — a crafted update can't morph it" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{kind: :okta})
+
+      # kind is the IdP preset (and half of the (account, kind) uniqueness): the
+      # edit form renders it read-only, and update/2 never casts it — so even a
+      # forged param can't turn an Okta connection into a Google one.
+      assert {:ok, updated} =
+               SSO.update_provider(provider, %{kind: :google_workspace, name: "Renamed"}, subject)
+
+      assert updated.kind == :okta
+      assert updated.name == "Renamed"
+      assert Repo.reload!(provider).kind == :okta
+    end
+
     test "a new client_secret rotates the stored value" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "old-secret"})

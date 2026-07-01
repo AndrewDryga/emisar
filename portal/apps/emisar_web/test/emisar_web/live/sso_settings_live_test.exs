@@ -148,6 +148,19 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "super-secret-value-xyz"
     end
 
+    test "the edit page shows provider type read-only — it's create-only", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{kind: :okta})
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      # kind is create-only (update/2 never casts it); the edit form must not offer
+      # an editable select that would silently drop the change.
+      refute html =~ ~s(name="provider[kind]")
+      assert html =~ "Add a new connection to use a different provider"
+    end
+
     test "edits a connection's display name from the edit page", %{
       conn: conn,
       account: account
@@ -159,7 +172,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       |> form("#edit-provider-#{provider.id}", %{
         "provider_id" => provider.id,
         "provider" => %{
-          "kind" => "okta",
           "name" => "New Name",
           "issuer" => "https://idp.test",
           "client_id" => "cid"
@@ -200,7 +212,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       |> form("#edit-provider-#{provider.id}", %{
         "provider_id" => provider.id,
         "provider" => %{
-          "kind" => "okta",
           "name" => "Renamed",
           "issuer" => "https://idp.test",
           "client_id" => "cid",

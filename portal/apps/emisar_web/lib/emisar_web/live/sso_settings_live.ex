@@ -1183,7 +1183,27 @@ defmodule EmisarWeb.SSOSettingsLive do
       <.panel title="Provider">
         <:subtitle>Which identity provider this is, and what to call it here.</:subtitle>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <.input field={@form[:kind]} type="select" label="Provider type" options={@kind_options} />
+          <%!-- Provider type is create-only: Changeset.update/2 never casts :kind
+               (it's the IdP preset + half of the (account, kind) uniqueness). So on
+               edit it's read-only — a select here would silently drop the change.
+               Change the provider by adding a new connection. --%>
+          <.input
+            :if={not @editing?}
+            field={@form[:kind]}
+            type="select"
+            label="Provider type"
+            options={@kind_options}
+          />
+          <div :if={@editing?}>
+            <.label>Provider type</.label>
+            <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-400 ring-1 ring-inset ring-zinc-800">
+              <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              {selected_kind_label(@form, @kind_options)}
+            </div>
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              Set when the connection was created. Add a new connection to use a different provider.
+            </p>
+          </div>
           <.input field={@form[:name]} type="text" label="Display name" placeholder="Acme Okta" />
         </div>
       </.panel>
@@ -1423,6 +1443,13 @@ defmodule EmisarWeb.SSOSettingsLive do
       blank when blank in [nil, ""] -> elem(hd(kind_options), 1)
       value -> to_string(value)
     end
+  end
+
+  # The humanized label for the form's current kind — for the read-only display on
+  # the edit form, where provider type is create-only.
+  defp selected_kind_label(form, kind_options) do
+    value = form_kind(form, kind_options)
+    Enum.find_value(kind_options, value, fn {label, v} -> v == value && label end)
   end
 
   attr :provider, :map, required: true
