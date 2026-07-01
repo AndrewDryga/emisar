@@ -680,7 +680,9 @@ defmodule EmisarWeb.PoliciesLive do
         </p>
 
         <.panel title="Default policy">
-          <:subtitle>Applies to every runner unless a targeted ruleset below overrides it.</:subtitle>
+          <:subtitle>
+            The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+          </:subtitle>
 
           <.policy_fields
             editor_id="account"
@@ -867,12 +869,11 @@ defmodule EmisarWeb.PoliciesLive do
            practice; this is the defensive net. --%>
       <.error_banner :for={msg <- @rules_errors}>{msg}</.error_banner>
 
+      <%!-- No "Risk-tier defaults" heading — it just echoes the panel title "Default
+           policy". The tier grid is the card's primary content; the panel subtitle
+           labels it ("by risk tier") and the tier cards are self-evident. --%>
       <div>
-        <h3 class="text-sm font-semibold text-zinc-200">Risk-tier defaults</h3>
-        <p class="mt-0.5 text-xs text-zinc-500">
-          The default decision for any action in this tier. Overrides below win when they match.
-        </p>
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <.tier_card
             :for={tier <- ["low", "medium", "high", "critical"]}
             tier={tier}

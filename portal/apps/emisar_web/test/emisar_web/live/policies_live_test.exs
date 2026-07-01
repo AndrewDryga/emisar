@@ -21,7 +21,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
-      assert html =~ "Risk-tier defaults"
       assert html =~ "Per-action overrides"
       assert html =~ "Targeted rulesets"
 
