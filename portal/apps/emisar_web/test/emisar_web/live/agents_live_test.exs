@@ -517,12 +517,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
-      # Open a client so the scope picker renders, then tick the runner.
+      # Open a client so the scope picker renders, then select the runner.
       lv |> render_click("select_client", %{"client" => "claude_code"})
 
       render_change(
         element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"runner_filter" => %{runner.id => "true"}}
+        %{"scope" => ["runner:#{runner.id}"]}
       )
 
       # Switch tabs — the selection must survive, then re-mint with it. The new
@@ -549,7 +549,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       render_change(
         element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"runner_filter" => %{foreign.id => "true"}}
+        %{"scope" => ["runner:#{foreign.id}"]}
       )
 
       # Re-pick to mint — the foreign id was filtered out, so the key is unscoped.
@@ -559,13 +559,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert minted.runner_filter == []
     end
 
-    # Key scope — runner GROUPS. Regression: the group fieldset used to be
-    # hidden unless MORE THAN ONE distinct group existed, so a single-group
-    # account (every runner in one group, e.g. all in "va1-nomad") could never
-    # scope a key to that group — only all-runners or per-runner. The fieldset
-    # now renders for >=1 real group, because a single group is a valid, durable
-    # scope (it auto-covers runners added to it later).
-    test "the group fieldset renders when only a single runner group exists", %{conn: conn} do
+    # Key scope — runner GROUPS. Regression: a single-group account (every runner
+    # in one group, e.g. all in "va1-nomad") must still be able to scope a key to
+    # that group. The unified picker offers the group as a selectable option even
+    # when it's the only one — a single group is a valid, durable scope (it
+    # auto-covers runners added to it later).
+    test "a single runner group is offered as a scopable option", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       Fixtures.Runners.create_runner(
@@ -577,8 +576,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
-      assert html =~ "Allowed runner groups"
-      assert html =~ "va1-nomad"
+      assert html =~ ~s(value="group:va1-nomad")
     end
 
     test "ticking the single group + minting scopes the key to that group", %{conn: conn} do
@@ -595,7 +593,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       render_change(
         element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"runner_group_filter" => %{"va1-nomad" => "true"}}
+        %{"scope" => ["group:va1-nomad"]}
       )
 
       lv |> render_click("select_client", %{"client" => "cursor"})
@@ -612,12 +610,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
-      assert html =~ "prod"
-      assert html =~ "staging"
+      assert html =~ ~s(value="group:prod")
+      assert html =~ ~s(value="group:staging")
 
       render_change(
         element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"runner_group_filter" => %{"prod" => "true", "staging" => "false"}}
+        %{"scope" => ["group:prod"]}
       )
 
       lv |> render_click("select_client", %{"client" => "cursor"})
@@ -640,7 +638,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       render_change(
         element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"runner_group_filter" => %{"does-not-exist" => "true"}}
+        %{"scope" => ["group:does-not-exist"]}
       )
 
       lv |> render_click("select_client", %{"client" => "cursor"})

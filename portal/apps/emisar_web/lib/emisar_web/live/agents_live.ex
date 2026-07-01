@@ -22,7 +22,7 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Runners}
-  alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{LiveTable, Permissions, RunnerScope, UrlHelpers}
 
   @active_threshold_secs 5 * 60
   @idle_threshold_secs 24 * 60 * 60
@@ -135,17 +135,17 @@ defmodule EmisarWeb.AgentsLive do
   # Pure scope-picker change (no mint). Keeps the selection alive
   # across tab clicks; the next `select_client` reads these socket
   # assigns and propagates them into `mint_quick_key`.
-  def handle_event("update_scope", params, socket) do
+  def handle_event("update_scope", %{"scope" => values}, socket) do
+    %{groups: groups, runner_ids: runner_ids} = RunnerScope.parse(values, socket.assigns.runners)
+
     {:noreply,
      socket
-     |> assign(
-       :selected_runner_ids,
-       selected_runner_ids(params, socket.assigns.runners)
-     )
-     |> assign(
-       :selected_runner_groups,
-       selected_runner_groups(params, socket.assigns.runners)
-     )}
+     |> assign(:selected_runner_groups, groups)
+     |> assign(:selected_runner_ids, runner_ids)}
+  end
+
+  def handle_event("update_scope", _params, socket) do
+    {:noreply, socket |> assign(:selected_runner_groups, []) |> assign(:selected_runner_ids, [])}
   end
 
   def handle_event("validate", %{"api_key" => params} = all, socket) do
@@ -376,39 +376,21 @@ defmodule EmisarWeb.AgentsLive do
     |> Enum.reject(&(&1 == ""))
   end
 
-  # Allowlist submitted runner IDs against the account's real runners
-  # so a malicious POST can't sneak in IDs from another account.
+  # Allowlist submitted runner IDs (from the create form's `api_key[runner_filter][]`
+  # hidden inputs) against the account's real runners, so a malicious POST can't
+  # sneak in IDs from another account.
   defp selected_runner_ids(%{"runner_filter" => ids}, runners) when is_list(ids) do
     allowed = MapSet.new(Enum.map(runners, & &1.id))
     Enum.filter(ids, &MapSet.member?(allowed, &1))
   end
 
-  defp selected_runner_ids(%{"runner_filter" => ids}, runners) when is_map(ids) do
-    allowed = MapSet.new(Enum.map(runners, & &1.id))
-
-    ids
-    |> Enum.filter(fn {_k, v} -> v in ["true", "on", true] end)
-    |> Enum.map(fn {k, _} -> k end)
-    |> Enum.filter(&MapSet.member?(allowed, &1))
-  end
-
   defp selected_runner_ids(_, _), do: []
 
-  # Same allowlist treatment for groups: only accept group names that
-  # actually exist on at least one of the account's runners. Prevents
-  # a hand-rolled POST from sneaking in an arbitrary group string.
+  # Same allowlist treatment for groups: only accept group names that actually
+  # exist on at least one of the account's runners.
   defp selected_runner_groups(%{"runner_group_filter" => groups}, runners) when is_list(groups) do
     allowed = MapSet.new(Enum.map(runners, & &1.group))
     Enum.filter(groups, &MapSet.member?(allowed, &1))
-  end
-
-  defp selected_runner_groups(%{"runner_group_filter" => groups}, runners) when is_map(groups) do
-    allowed = MapSet.new(Enum.map(runners, & &1.group))
-
-    groups
-    |> Enum.filter(fn {_k, v} -> v in ["true", "on", true] end)
-    |> Enum.map(fn {k, _} -> k end)
-    |> Enum.filter(&MapSet.member?(allowed, &1))
   end
 
   defp selected_runner_groups(_, _), do: []
@@ -1537,75 +1519,36 @@ defmodule EmisarWeb.AgentsLive do
   # mint reads `selected_runner_ids` + `selected_runner_groups` from
   # the LV socket assigns at click time.
   defp scope_picker(assigns) do
-    groups =
-      assigns.runners
-      |> Enum.map(& &1.group)
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.uniq()
-      |> Enum.sort()
-
-    has_restrictions? =
-      assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
-
     assigns =
-      assigns
-      |> assign(:groups, groups)
-      |> assign(:has_restrictions?, has_restrictions?)
+      assign(
+        assigns,
+        :has_restrictions?,
+        assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
+      )
 
     ~H"""
     <div class="border-b border-zinc-900 bg-zinc-950/40">
-      <form phx-change="update_scope" class="space-y-4 px-6 py-4">
-        <%!-- Allowed groups — picked first because they scale better
-             than per-runner ticks. Shown whenever any runner declares a
-             group (a single group is a valid, useful scope: it durably
-             covers runners later added to it); hidden only when every
-             runner is ungrouped. --%>
-        <fieldset :if={@groups != []}>
-          <legend class="text-sm font-medium text-zinc-200">Allowed runner groups</legend>
+      <form phx-change="update_scope" class="space-y-3 px-6 py-4">
+        <div>
+          <p class="text-sm font-medium text-zinc-200">Allowed runners</p>
           <p class="mt-1 text-xs text-zinc-500">
-            Tick groups this key may target. Auto-includes runners later added to the same group.
+            Leave everything unselected to allow all runners. Select groups (auto-includes runners
+            later added to them) and/or individual runners to restrict this key; selecting a group
+            covers every runner in it.
           </p>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <.checkbox
-              :for={group <- @groups}
-              class="flex items-center gap-2.5 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1.5 text-sm text-zinc-300 hover:border-brand-500/40"
-              name="runner_group_filter[]"
-              value={group}
-              checked={group in @selected_runner_groups}
-            >
-              <span class="truncate">{group}</span>
-            </.checkbox>
-          </div>
-        </fieldset>
+        </div>
 
-        <fieldset>
-          <legend class="text-sm font-medium text-zinc-200">Allowed individual runners</legend>
-          <p :if={@groups != []} class="mt-1 text-xs text-zinc-500">
-            Leave groups and runners unticked to allow all runners. Tick specific runners to
-            narrow on top of any groups ticked above.
+        <%= if @runners == [] do %>
+          <p class="rounded-lg bg-zinc-900/60 p-3 text-xs text-zinc-400">
+            No runners registered yet.
           </p>
-          <p :if={@groups == []} class="mt-1 text-xs text-zinc-500">
-            Leave unticked to allow all runners. Tick specific runners to restrict this key.
-          </p>
-          <%= if @runners == [] do %>
-            <p class="mt-2 rounded-lg bg-zinc-900/60 p-3 text-xs text-zinc-400">
-              No runners registered yet.
-            </p>
-          <% else %>
-            <div class="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
-              <.checkbox
-                :for={runner <- @runners}
-                class="flex items-center gap-2.5 rounded px-1.5 py-1 text-sm text-zinc-300 hover:bg-zinc-900/60"
-                name="runner_filter[]"
-                value={runner.id}
-                checked={runner.id in @selected_runner_ids}
-              >
-                <span class="flex-1 truncate">{runner.name}</span>
-                <span class="text-xs text-zinc-500">{runner.group}</span>
-              </.checkbox>
-            </div>
-          <% end %>
-        </fieldset>
+        <% else %>
+          <.runner_scope_select
+            name="scope[]"
+            runners={@runners}
+            selected={RunnerScope.to_values(@selected_runner_groups, @selected_runner_ids)}
+          />
+        <% end %>
 
         <p :if={@has_restrictions?} class="text-[11px] text-zinc-500">
           Changing the scope <em>after</em> minting doesn't update the key —
