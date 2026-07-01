@@ -58,6 +58,17 @@ defmodule Emisar.Telemetry do
     :telemetry.execute([:emisar, :approval, :decided], %{count: 1}, %{decision: decision})
   end
 
+  @doc """
+  A magic-link sign-in failed for a token that couldn't be resolved to a user
+  (a consumed / unknown / undecodable token), so there was no account to write an
+  `user.sign_in_failed` audit row onto — this is the only visibility that failure
+  gets. Emits `[:emisar, :auth, :magic_link_failed]` tagged by the bounded `reason`.
+  """
+  @spec magic_link_failed(atom()) :: :ok
+  def magic_link_failed(reason) when is_atom(reason) do
+    :telemetry.execute([:emisar, :auth, :magic_link_failed], %{count: 1}, %{reason: reason})
+  end
+
   # -- Periodic gauges (poller-invoked samplers) ------------------------
 
   @doc """

@@ -9,7 +9,7 @@ defmodule Emisar.AuthAuditTest do
   in `Audit.list_events/1` scoped to that account.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Runners, Users}
+  alias Emisar.{Accounts, Audit, Auth, RequestContext, Runners, Users}
   alias Emisar.Fixtures
 
   defp events_of(account, event_type) do
@@ -132,6 +132,36 @@ defmodule Emisar.AuthAuditTest do
       assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
       assert [event] = events_of(account, "user.signed_in")
       assert event.payload["method"] == "magic_link"
+    end
+
+    test "a wrong secret on a live token audits user.sign_in_failed for that user", %{
+      user: user,
+      account: account
+    } do
+      {token_id, nonce, _secret} = Auth.issue_magic_link(user)
+      context = %RequestContext{ip_address: "198.51.100.9", user_agent: "Firefox"}
+
+      # Wrong secret on a valid, un-consumed token → digest mismatch → the token
+      # survives (attempt spent), so the failure still resolves to its owner.
+      assert {:error, :invalid_or_expired} =
+               Auth.verify_magic_link(token_id, "wrong-secret", nonce, context)
+
+      assert [event] = events_of(account, "user.sign_in_failed")
+      assert event.actor_id == user.id
+      assert event.ip_address == "198.51.100.9"
+      assert event.payload["reason"] == "invalid_or_expired"
+    end
+
+    test "an unresolvable token writes no audit row and returns the same error (no oracle)" do
+      context = %RequestContext{ip_address: "203.0.113.1"}
+      before = Repo.aggregate(Emisar.Audit.Event, :count)
+
+      # A random token id → no token → no user → nothing to hang an audit row on,
+      # and the SAME error a known-user failure returns (no enumeration oracle).
+      assert {:error, :invalid_or_expired} =
+               Auth.verify_magic_link(Ecto.UUID.generate(), "secret", "nonce", context)
+
+      assert Repo.aggregate(Emisar.Audit.Event, :count) == before
     end
 
     test "confirm_user_by_token audits user.email_confirmed", %{account: account} do

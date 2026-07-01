@@ -13,7 +13,9 @@ defmodule Emisar.Auth do
   alias Emisar.Crypto
   alias Emisar.Repo
   alias Emisar.RequestContext
+  alias Emisar.Telemetry
   alias Emisar.Users
+  require Logger
 
   # -- Session tokens ---------------------------------------------------
 
@@ -395,8 +397,57 @@ defmodule Emisar.Auth do
     )
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{outcome: outcome}} -> outcome
-      {:error, reason} -> {:error, reason}
+      {:ok, %{outcome: {:ok, %Users.User{} = user}}} ->
+        {:ok, user}
+
+      # Digest mismatch / soft-deleted user (the Multi committed the attempt spend).
+      {:ok, %{outcome: {:error, reason}}} ->
+        record_magic_link_failure(token_id, reason, context)
+
+      # The token step rolled back — token missing / expired / spent-out.
+      {:error, reason} ->
+        record_magic_link_failure(token_id, reason, context)
+    end
+  end
+
+  # A magic-link sign-in failed. `user.sign_in_failed` is account-scoped, so it
+  # only lands when the token still resolves to a real user (a live token with a
+  # bad secret, or an expired/spent one that wasn't deleted). A consumed or
+  # undecodable token has no user to attribute — logged + counted server-side
+  # instead, with the SAME `{:error, :invalid_or_expired}` return so the response
+  # can't be turned into an email-enumeration oracle. Always returns the error.
+  defp record_magic_link_failure(token_id, reason, context) do
+    case peek_magic_link_user(token_id) do
+      {:ok, %Users.User{} = user} ->
+        Audit.log_for_user(user, "user.sign_in_failed",
+          payload: %{reason: reason, method: "magic_link"},
+          context: context
+        )
+
+      :error ->
+        Logger.warning("magic-link sign-in failed for an unresolvable token")
+        Telemetry.magic_link_failed(reason)
+    end
+
+    {:error, reason}
+  end
+
+  # Resolve the user behind a magic-link token id WITHOUT the expiry/attempts
+  # filters, so a failed (expired / spent) token still attributes to its owner.
+  defp peek_magic_link_user(token_id) do
+    if Repo.valid_uuid?(token_id) do
+      queryable =
+        UserToken.Query.by_id(token_id)
+        |> UserToken.Query.by_context("magic_link")
+
+      with %UserToken{} = token <- Repo.peek(queryable),
+           {:ok, user} <- Users.fetch_user_by_id(token.user_id) do
+        {:ok, user}
+      else
+        _ -> :error
+      end
+    else
+      :error
     end
   end
 
