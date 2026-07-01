@@ -955,7 +955,13 @@ defmodule EmisarWeb.TeamLive do
                 </div>
 
                 <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                  <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
+                  <%!-- Role editability tracks PERMISSION, not access-state: a
+                     suspended member's role stays changeable (you set what they'll
+                     have on reinstate), matching the SSO synced-users list — so a
+                     synced member doesn't read as "role locked because synced" next
+                     to their sync badge when the real reason was suspension.
+                     Suspension shows as its own amber badge above. --%>
+                  <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) do %>
                     <%!-- A role change is a privilege grant — a dropdown (same skin as
                        the Actions menu beside it) whose items each carry their own
                        confirm, so the dialog fires only when you pick a DIFFERENT

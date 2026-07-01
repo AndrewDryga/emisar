@@ -486,6 +486,30 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(membership).role == :viewer
     end
 
+    test "a suspended member's role stays editable — not locked beside a sync badge", %{
+      lv: lv,
+      membership: membership
+    } do
+      # Role editability tracks permission, not access-state: suspending a member
+      # must NOT turn their role into a read-only chip (which, next to a synced
+      # member's SCIM badge, misreads as "locked because synced"). It stays a
+      # change_role control — matching the SSO synced-users list — and the change
+      # actually applies (you set the role they'll have on reinstate).
+      assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~ "Suspended"
+
+      assert has_element?(
+               lv,
+               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}']"
+             )
+
+      assert render_click(lv, "change_role", %{
+               "membership_id" => membership.id,
+               "role" => "operator"
+             }) =~ "Role updated."
+
+      assert Emisar.Repo.reload!(membership).role == :operator
+    end
+
     test "suspend then reinstate round-trips", %{lv: lv, membership: membership} do
       assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~
                "Access suspended."
