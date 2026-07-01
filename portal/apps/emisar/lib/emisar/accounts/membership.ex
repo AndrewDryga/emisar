@@ -10,6 +10,11 @@ defmodule Emisar.Accounts.Membership do
 
   schema "memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator
+    # True when a directory sync (SCIM group->role recompute) owns this role, so
+    # the operator role-change path (`Accounts.update_membership_role`) rejects a
+    # manual change independently of the UI. Set by the sync write path, cleared
+    # when SCIM is disabled for the provider.
+    field :directory_managed, :boolean, default: false
     field :invitation_token_digest, :string
     field :invitation_accepted_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec

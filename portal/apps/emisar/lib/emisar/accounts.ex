@@ -589,20 +589,14 @@ defmodule Emisar.Accounts do
   The caller passes their `%Subject{}` so the guard runs at the domain
   boundary, not just in LiveView templates.
 
-  Pass `directory_managed?: true` for a member whose role a directory (SCIM) sync
-  owns — the role is recomputed on every sync, so a manual change silently reverts;
-  the domain rejects it with `{:error, :role_managed_by_directory}`. The already-
-  authorized web boundary supplies the flag from the linked identity it loaded
-  (Accounts can't consult `SSO` itself without a context cycle).
+  A member whose role a directory sync owns (`directory_managed` — SCIM recomputes
+  it on every sync, so a manual change silently reverts) is rejected with
+  `{:error, :role_managed_by_directory}`. The flag lives on the membership (set by
+  the sync write path), so the domain enforces this itself — no caller-supplied
+  hint, no UI trust.
   """
-  def update_membership_role(
-        %Membership{} = membership,
-        new_role,
-        %Subject{} = subject,
-        opts \\ []
-      ) do
-    with :ok <- ensure_role_not_directory_managed(opts),
-         :ok <-
+  def update_membership_role(%Membership{} = membership, new_role, %Subject{} = subject) do
+    with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          {:ok, new_role} <- cast_new_role(membership, new_role) do
@@ -611,11 +605,11 @@ defmodule Emisar.Accounts do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
-          # The hierarchy guards judge the row's CURRENT role under the
-          # lock — the caller's struct is a stale socket snapshot, and a
-          # concurrent promotion must not let a stale-admin demote a
-          # freshly-promoted owner.
-          with :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
+          # The guards judge the row's CURRENT state under the lock — the caller's
+          # struct is a stale socket snapshot. `directory_managed` is judged here
+          # too, so a stale UI or crafted event can't slip a synced-role change past.
+          with :ok <- ensure_role_not_directory_managed(loaded_membership),
+               :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
                :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
             Membership.Changeset.update(loaded_membership, %{role: new_role})
           else
@@ -716,17 +710,13 @@ defmodule Emisar.Accounts do
 
   # A directory (SCIM) sync owns the role of a synced member — it recomputes it on
   # every push (group→role mapping, else the provider default), so a manual change
-  # silently reverts. The web boundary passes `directory_managed?: true` (from the
-  # linked identity it already loaded) and we refuse here — the invariant is enforced
-  # at the domain, not only hidden in the UI. Accounts can't ask `SSO` itself without
-  # a context cycle, so the already-authorized caller supplies the flag.
-  defp ensure_role_not_directory_managed(opts) do
-    if Keyword.get(opts, :directory_managed?, false) do
-      {:error, :role_managed_by_directory}
-    else
-      :ok
-    end
-  end
+  # silently reverts. The `directory_managed` flag on the membership records that
+  # (set by the sync write path, cleared when SCIM is disabled), so the domain
+  # refuses here off the LOCKED row — no UI hint, no context cycle into `SSO`.
+  defp ensure_role_not_directory_managed(%Membership{directory_managed: true}),
+    do: {:error, :role_managed_by_directory}
+
+  defp ensure_role_not_directory_managed(%Membership{}), do: :ok
 
   # A member the directory (SCIM) has deactivated (`scim_active: false`) must stay
   # suspended — reinstating them in emisar would grant access the IdP revoked. The web
@@ -1006,13 +996,15 @@ defmodule Emisar.Accounts do
   Defense in depth even though group→role mappings already exclude `:owner`
   (decision 7): the `:with` **refuses `:owner`** under the lock, and it **never
   demotes the account's last active owner** (`ensure_not_last_active_owner` when
-  the CURRENT role is `:owner` and the new role isn't — §9 N5). Idempotent: if
-  the role already matches, returns `{:ok, membership}` with no write or audit.
-  Returns `{:ok, membership} | {:error, :owner_not_assignable | :last_owner |
-  :not_found | %Ecto.Changeset{}}`.
+  the CURRENT role is `:owner` and the new role isn't — §9 N5). Marks the role
+  `directory_managed` (the domain-owned synced-role lock). Idempotent: when the
+  role AND the directory-managed mark already match, returns `{:ok, membership}`
+  with no write or audit — but a role that matches while still unmarked falls
+  through so the mark gets set. Returns `{:ok, membership} | {:error,
+  :owner_not_assignable | :last_owner | :not_found | %Ecto.Changeset{}}`.
   """
   def sync_set_membership_role(
-        %Membership{role: role} = membership,
+        %Membership{role: role, directory_managed: true} = membership,
         role,
         %SSO.IdentityProvider{}
       ),
@@ -1033,7 +1025,7 @@ defmodule Emisar.Accounts do
         with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
              :ok <- ensure_sync_role_assignable(role),
              :ok <- ensure_demotion_keeps_an_owner(loaded_membership, role) do
-          Membership.Changeset.update(loaded_membership, %{role: role})
+          Membership.Changeset.sync_role(loaded_membership, role)
         else
           {:error, reason} -> reason
         end
@@ -1048,6 +1040,20 @@ defmodule Emisar.Accounts do
       end,
       after_commit: &on_membership_role_changed/2
     )
+  end
+
+  @doc """
+  Internal — SCIM disable: return role control to operators by clearing the
+  `directory_managed` flag on the memberships of `user_ids` (a provider's synced
+  members) in `account_id`. No `%Subject{}` — the SSO caller is already authorized
+  by the provider's account scope. Returns `{count, nil}`.
+  """
+  def clear_directory_managed_for_users(account_id, user_ids)
+      when is_binary(account_id) and is_list(user_ids) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_user_ids(user_ids)
+    |> Repo.update_all(set: [directory_managed: false, updated_at: DateTime.utc_now()])
   end
 
   # Directory sync can never grant owner — owner stays a deliberate human

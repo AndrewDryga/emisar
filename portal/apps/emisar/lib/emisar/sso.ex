@@ -1125,9 +1125,22 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
         with: &IdentityProvider.Changeset.disable_scim/1,
-        audit: &Audit.Events.identity_provider_updated(subject, &1)
+        audit: &Audit.Events.identity_provider_updated(subject, &1),
+        # Sync no longer owns these members' roles — hand control back to operators.
+        after_commit: &return_role_control_to_operators/1
       )
     end
+  end
+
+  defp return_role_control_to_operators(%IdentityProvider{} = provider) do
+    user_ids =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.select_user_ids()
+      |> Repo.all()
+
+    Accounts.clear_directory_managed_for_users(provider.account_id, user_ids)
+    :ok
   end
 
   # -- Directory sync (SCIM) — group→role mapping config (Subject-gated) --

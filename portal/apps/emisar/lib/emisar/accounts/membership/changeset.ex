@@ -22,6 +22,16 @@ defmodule Emisar.Accounts.Membership.Changeset do
     cast(membership, attrs, @update_fields)
   end
 
+  # Directory sync sets the role AND marks it directory-managed, so the operator
+  # role-change path rejects a manual change to it (the lock is domain-owned, not
+  # UI-only). `role` is a validated atom off the sync path.
+  def sync_role(%Membership{} = membership, role),
+    do: change(membership, role: role, directory_managed: true)
+
+  # Return role control to operators — SCIM disabled for the provider.
+  def clear_directory_managed(%Membership{} = membership),
+    do: change(membership, directory_managed: false)
+
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
   def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())

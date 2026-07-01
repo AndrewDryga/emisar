@@ -1099,12 +1099,17 @@ defmodule EmisarWeb.TeamLiveTest do
 
     external_id = "ext-#{System.unique_integer([:positive])}"
 
-    {:ok, %{membership: membership}} =
+    {:ok, %{identity: identity}} =
       Emisar.SSO.scim_provision_user(provider, %{
         external_id: external_id,
         email: "synced-#{System.unique_integer([:positive])}@example.test",
         full_name: "Synced Member"
       })
+
+    # A sync recompute marks the role directory-managed — the domain-owned lock
+    # signal `update_membership_role` refuses on. A real synced member has been
+    # through this; without it the row isn't actually directory-managed.
+    {:ok, membership} = Emisar.SSO.recompute_role_for_identity(provider, identity)
 
     %{provider: provider, membership: membership, external_id: external_id}
   end

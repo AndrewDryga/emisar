@@ -58,6 +58,16 @@ defmodule Emisar.Fixtures.Memberships do
     suspended
   end
 
+  @doc "Marks a membership directory-managed (the SCIM synced-role lock), as a sync would."
+  def mark_directory_managed(%Membership{} = membership) do
+    {:ok, managed} =
+      membership
+      |> Membership.Changeset.sync_role(membership.role)
+      |> Repo.update()
+
+    managed
+  end
+
   @doc """
   Test inspector: the membership joining `account_id` + `user_id`, or
   `nil`. Lets a test read post-mutation membership state without the

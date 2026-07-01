@@ -1647,6 +1647,23 @@ defmodule Emisar.SSOTest do
       assert role_of(account.id, identity.user_id) == :admin
     end
 
+    test "marks the role directory-managed, so the DOMAIN refuses an operator's manual change", %{
+      provider: provider,
+      subject: subject
+    } do
+      %{identity: identity, membership: membership} = provision(provider, "okta|locked")
+      refute membership.directory_managed
+
+      # A sync recompute (even to the default role, no mapping) marks the role.
+      assert {:ok, _synced} = SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
+      assert Repo.reload!(membership).directory_managed
+
+      # The reject is judged on the LOCKED row's own flag — passing the STALE
+      # pre-sync struct (flag false) still refuses. No UI, no caller-supplied hint.
+      assert Accounts.update_membership_role(membership, "admin", subject) ==
+               {:error, :role_managed_by_directory}
+    end
+
     test "an identity in NO mapped group resets to the provider default_role (#3)", %{
       provider: provider,
       account: account
@@ -1809,6 +1826,20 @@ defmodule Emisar.SSOTest do
       assert is_nil(disabled.scim_token_prefix)
       assert is_nil(disabled.scim_token_hash)
       assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
+    end
+
+    test "hands role control back to operators — clears directory_managed on synced members", %{
+      subject: subject,
+      provider: provider
+    } do
+      {:ok, provider, _raw} = SSO.enable_scim(provider, subject)
+      %{identity: identity, membership: membership} = provision(provider, "okta|freed")
+      {:ok, _} = SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
+      assert Repo.reload!(membership).directory_managed
+
+      {:ok, _} = SSO.disable_scim(provider, subject)
+
+      refute Repo.reload!(membership).directory_managed
     end
 
     test "a non-admin (no manage_sso) is denied → :unauthorized", %{

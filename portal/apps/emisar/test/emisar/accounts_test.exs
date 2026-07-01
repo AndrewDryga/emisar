@@ -1705,6 +1705,21 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "clear_directory_managed_for_users/2" do
+    test "clears the flag only for the named members, leaving other synced members" do
+      account = Fixtures.Accounts.create_account()
+      freed = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      Fixtures.Memberships.mark_directory_managed(freed)
+      kept = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      Fixtures.Memberships.mark_directory_managed(kept)
+
+      Accounts.clear_directory_managed_for_users(account.id, [freed.user_id])
+
+      refute Repo.reload!(freed).directory_managed
+      assert Repo.reload!(kept).directory_managed
+    end
+  end
+
   describe "reset_member_mfa/2" do
     test "an owner clears a member's MFA + writes the user.mfa_reset_by_admin audit row" do
       account = Fixtures.Accounts.create_account()

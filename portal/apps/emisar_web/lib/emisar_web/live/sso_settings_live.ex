@@ -583,17 +583,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp do_change_member_role(socket, membership_id, role) do
-    provider = List.first(socket.assigns.providers)
-    directory_managed = provider != nil and provider.scim_enabled
-
     with_synced_membership(socket, membership_id, fn membership ->
-      # Directory sync owns the role (group→role mappings recompute it each sync), so
-      # pass the flag and let the DOMAIN refuse a manual change — the UI already shows
-      # it read-only, but a crafted event is rejected too. OIDC-only providers (no
-      # sync) pass false and keep the editable path.
-      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject,
-             directory_managed?: directory_managed
-           ) do
+      # Directory sync owns a synced member's role (recomputed each sync), and the
+      # DOMAIN refuses a manual change off the membership's own `directory_managed`
+      # flag — the UI read-only lock is a courtesy, not the guard. An OIDC-only
+      # member (no sync) isn't flagged, so the editable path still works.
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
         {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
       end

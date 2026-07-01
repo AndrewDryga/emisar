@@ -1010,12 +1010,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider = insert_provider(account, %{})
       {:ok, provider} = provider |> Ecto.Changeset.change(scim_enabled: true) |> Repo.update()
 
-      {:ok, %{membership: membership}} =
+      {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{
           external_id: "kc|erin",
           email: "erin@northstar.example",
           full_name: "Erin Sync"
         })
+
+      # A sync recompute marks the role directory-managed — the domain-owned signal
+      # `update_membership_role` refuses on (a real synced member has been synced).
+      {:ok, membership} = SSO.recompute_role_for_identity(provider, identity)
 
       %{conn: conn, account: account, provider: provider, membership: membership}
     end

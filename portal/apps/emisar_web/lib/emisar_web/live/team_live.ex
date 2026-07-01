@@ -219,14 +219,10 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
          %Accounts.Membership{} = membership <- find_membership(socket, id) do
-      # A directory-synced member's role is the IdP's; pass the flag so the DOMAIN
-      # refuses the change (`:role_managed_by_directory`) — the UI hides the control,
-      # but a crafted event is rejected server-side too (IL-15).
-      identity = Map.get(socket.assigns.identity_by_user_id, membership.user_id)
-
-      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject,
-             directory_managed?: directory_managed_role?(identity)
-           ) do
+      # A directory-synced member's role is the IdP's — the DOMAIN refuses the
+      # change (`:role_managed_by_directory`) off the membership's own
+      # `directory_managed` flag, so the UI lock is a courtesy, not the guard (IL-15).
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
         {:ok, _updated} ->
           {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
 

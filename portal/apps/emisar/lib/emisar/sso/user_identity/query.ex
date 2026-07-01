@@ -78,6 +78,9 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [identities: i], i.provider_id == ^provider_id)
 
+  def select_user_ids(queryable \\ all()),
+    do: select(queryable, [identities: i], i.user_id)
+
   # {provider_id, count} rows — the per-connection synced-user tallies for the
   # overview. Group by provider so one query covers every connection.
   def count_by_provider(queryable) do
