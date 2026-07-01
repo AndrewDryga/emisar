@@ -1193,7 +1193,9 @@ defmodule EmisarWeb.CoreComponents do
             </li>
             <li class="flex items-start gap-2.5">
               <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-              <span>Hash-chained audit trail of every action and decision</span>
+              <span>
+                Searchable audit of every action and decision, plus a hash-chained host journal
+              </span>
             </li>
           </ul>
         </div>

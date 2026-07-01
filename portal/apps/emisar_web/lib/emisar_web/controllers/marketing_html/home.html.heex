@@ -143,8 +143,8 @@
         <div class="mt-1 text-xs text-zinc-500">built to Anthropic's control set</div>
       </.link>
       <div class="px-4 py-6 text-center sm:py-7">
-        <div class="text-base font-semibold text-zinc-100">Hash-chained audit</div>
-        <div class="mt-1 text-xs text-zinc-500">every action, tamper-evident</div>
+        <div class="text-base font-semibold text-zinc-100">Hash-chained journal</div>
+        <div class="mt-1 text-xs text-zinc-500">every action, tamper-evident on the host</div>
       </div>
       <a
         href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -674,7 +674,7 @@
         <%= for {principle, detail} <- [
           {"Least agency", "The agent only sees the actions you declared"},
           {"Human in the loop", "High-risk actions stop for a one-click approval"},
-          {"Tamper-evident audit", "Searchable portal audit, a hash-chained host journal, and SIEM export"},
+          {"Full audit trail", "Searchable portal audit, a tamper-evident hash-chained host journal, and SIEM export"},
           {"Assume breach", "Even a jailbroken agent can't get past the catalog"}
         ] do %>
           <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-left">

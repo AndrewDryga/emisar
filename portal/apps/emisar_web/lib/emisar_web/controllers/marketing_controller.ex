@@ -61,7 +61,7 @@ defmodule EmisarWeb.MarketingController do
      "Custom MCP server vs emisar",
      "Custom MCP server vs emisar, honestly: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access — and emisar's real tradeoffs in return."},
     {"/how-it-works", :how_it_works, :how_it_works, "How emisar works",
-     "How emisar works: an agent calls one declared action; the control plane checks the pack hash and policy; a human approves anything risky; the outbound-only runner re-validates and executes on your host; and every step lands in a tamper-evident audit. The five-gate path from intent to receipt."},
+     "How emisar works: an agent calls one declared action; the control plane checks the pack hash and policy; a human approves anything risky; the outbound-only runner re-validates and executes on your host; and every step lands in a searchable audit, mirrored to a tamper-evident hash-chained journal on your host. The five-gate path from intent to receipt."},
     {"/trust", :trust, :trust, "Trust & compliance",
      "Everything a security or procurement team needs to evaluate emisar, in one place: SSO + SCIM, enforced MFA, RBAC and per-user runner scopes, the hash-chained audit and SIEM export, US data residency and encryption, retention and deletion rights, subprocessors, the signed-dispatch trust boundary — and our current compliance posture, stated honestly."},
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
@@ -373,7 +373,7 @@ defmodule EmisarWeb.MarketingController do
      "Should you give an AI agent SSH? The risks, and the alternative",
      "Handing an agent a shell on prod is the fastest way to give it access — and the fastest way to regret it. The real risks, why \"just be careful\" doesn't hold, and the alternative that keeps the capability without the blast radius.",
      "June 2026", "7 min read",
-     "The risks of giving an AI agent SSH access to production — full blast radius, prompt injection into arbitrary commands, no gate before the action and no durable record after — and the declared-action-catalog alternative that keeps the real commands but adds a policy gate, human approval, and a tamper-evident audit."}
+     "The risks of giving an AI agent SSH access to production — full blast radius, prompt injection into arbitrary commands, no gate before the action and no durable record after — and the declared-action-catalog alternative that keeps the real commands but adds a policy gate, human approval, and a hash-chained audit journal on the host."}
   ]
 
   def guides(conn, _params) do

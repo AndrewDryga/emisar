@@ -35,7 +35,7 @@
   <p>
     A raw shell has no concept of "this command needs a human first." Everything runs the instant
     it's typed. And when something goes wrong, the forensic trail is whatever happened to land in
-    shell history and scrollback — not a structured, complete, tamper-evident record of who ran
+    shell history and scrollback — not a structured, complete, verifiable record of who ran
     what, with which arguments, and why. You find out what the agent did by reconstructing it after
     the fact, usually during the incident it caused.
   </p>
@@ -82,7 +82,10 @@
       <strong>Human approval</strong>
       for the handful of mutating actions, with the actor, arguments, and target shown.
     </li>
-    <li>A <strong>tamper-evident audit</strong> of every call, streamable to your SIEM.</li>
+    <li>
+      A <strong>searchable audit</strong>
+      of every call — streamable to your SIEM — plus a tamper-evident, hash-chained journal on the host.
+    </li>
     <li>
       <strong>Per-user, per-host scopes</strong>
       and revocable, short-lived access — no standing key.
