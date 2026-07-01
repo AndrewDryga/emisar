@@ -528,6 +528,63 @@ defmodule Emisar.Auth do
     end
   end
 
+  @doc """
+  Begin a self-service email change: the DOMAIN decides the step-up factor from
+  the user's CURRENT row — an MFA user re-enters TOTP (`:totp`), otherwise a
+  one-time code is emailed to the current address to prove inbox control
+  (`:code`, issued here). Returns `{:ok, :totp | :code}`. The factor is the
+  domain's call so a stale MFA snapshot in the caller can't downgrade the
+  challenge, and `confirm_email_change/3` re-derives it the same way.
+  """
+  def begin_email_change(new_email, %Subject{actor: %Users.User{id: id}} = subject)
+      when is_binary(new_email) do
+    with {:ok, user} <- Users.fetch_user_by_id(id) do
+      case email_change_factor(user) do
+        :totp ->
+          {:ok, :totp}
+
+        :code ->
+          :ok = issue_email_change_code(new_email, subject)
+          {:ok, :code}
+      end
+    end
+  end
+
+  @doc """
+  Confirm a self-service email change: re-derive the required factor from the
+  user's CURRENT row, verify `code` against it (TOTP for an MFA user, the emailed
+  one-time code otherwise), and only on success apply the new email. The commit is
+  gated on a domain-verified step-up HERE — `update_user_email` is never reached
+  without it, so the web decides nothing. `{:ok, user} | {:error, :invalid |
+  :replay | %Ecto.Changeset{}}`.
+  """
+  def confirm_email_change(new_email, code, %Subject{actor: %Users.User{id: id}} = subject)
+      when is_binary(new_email) and is_binary(code) do
+    with {:ok, user} <- Users.fetch_user_by_id(id),
+         {:ok, email} <- verify_email_change_step_up(user, new_email, code, subject) do
+      Users.update_user_email(email, subject)
+    end
+  end
+
+  defp email_change_factor(%Users.User{mfa_enabled_at: %DateTime{}}), do: :totp
+  defp email_change_factor(%Users.User{}), do: :code
+
+  # MFA-on: the TOTP second factor stands in for re-auth; the requested email is
+  # applied. MFA-off: the emailed code proves current-inbox control AND binds the
+  # target email (the applied email is the token's, not the caller's).
+  defp verify_email_change_step_up(
+         %Users.User{mfa_enabled_at: %DateTime{}} = user,
+         new_email,
+         code,
+         subject
+       ) do
+    with :ok <- verify_mfa(user, code, subject.context), do: {:ok, new_email}
+  end
+
+  defp verify_email_change_step_up(%Users.User{}, _new_email, code, subject) do
+    verify_email_change_code(code, subject)
+  end
+
   # -- Email confirmation ----------------------------------------------
 
   @doc "Internal — the email-confirmation flow (registration / pre-auth) mints the confirm token; no Subject yet."

@@ -504,6 +504,108 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "begin_email_change/2" do
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject}
+    end
+
+    test "a user without MFA gets the emailed-code factor, bound to the new email", %{
+      user: user,
+      subject: subject
+    } do
+      current = user.email
+
+      assert {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
+
+      assert_received {:email, email}
+      assert [{_, ^current}] = email.to
+      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "an MFA user gets the TOTP factor — read from the fresh row, not the stale subject", %{
+      subject: subject
+    } do
+      secret = Auth.generate_mfa_secret()
+      # Enrolls MFA in the DB AFTER the subject was built, so `subject.actor` still
+      # carries `mfa_enabled_at: nil` — exactly the stale snapshot the web must not
+      # trust to pick the factor.
+      {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      refute subject.actor.mfa_enabled_at
+
+      # The domain re-reads the row, sees MFA, and demands TOTP — no code emailed.
+      assert {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
+      refute_received {:email, _}
+    end
+  end
+
+  describe "confirm_email_change/3" do
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject}
+    end
+
+    test "a non-MFA user confirms with the emailed code and the bound email is applied", %{
+      subject: subject
+    } do
+      {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
+      assert_received {:email, email}
+      [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      assert {:ok, %User{email: "new@example.com"}} =
+               Auth.confirm_email_change("new@example.com", code, subject)
+    end
+
+    test "the code path applies the TOKEN-bound email, not the argument passed to confirm", %{
+      subject: subject
+    } do
+      {:ok, :code} = Auth.begin_email_change("bound@example.com", subject)
+      assert_received {:email, email}
+      [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+      # The emailed code is bound to "bound@example.com"; even though a different
+      # target is passed here, the binding wins — a confirm can't swap the target.
+      assert {:ok, %User{email: "bound@example.com"}} =
+               Auth.confirm_email_change("other@example.com", code, subject)
+    end
+
+    test "a wrong code is rejected and the email is unchanged", %{user: user, subject: subject} do
+      {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
+      assert_received {:email, _email}
+
+      assert {:error, :invalid} = Auth.confirm_email_change("new@example.com", "000000", subject)
+      assert Repo.reload!(user).email == user.email
+    end
+
+    test "an MFA user confirms with a fresh TOTP — factor decided from the fresh row", %{
+      subject: subject
+    } do
+      secret = Auth.generate_mfa_secret()
+      {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
+
+      otp = NimbleTOTP.verification_code(secret)
+
+      assert {:ok, %User{email: "new@example.com"}} =
+               Auth.confirm_email_change("new@example.com", otp, subject)
+    end
+
+    test "an MFA user with a wrong TOTP is rejected and the email is unchanged", %{
+      user: user,
+      subject: subject
+    } do
+      secret = Auth.generate_mfa_secret()
+      {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
+
+      assert {:error, :invalid} = Auth.confirm_email_change("new@example.com", "000000", subject)
+      assert Repo.reload!(user).email == user.email
+    end
+  end
+
   describe "issue_confirmation_token!/1" do
     test "mints a raw confirm token that confirms the user" do
       user = Fixtures.Users.create_user(confirmed?: false)

@@ -108,32 +108,18 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("confirm_email_change", %{"email_step" => %{"code" => code}}, socket) do
-    user = socket.assigns.current_user
-    subject = socket.assigns.current_subject
+    %{email_step: step, pending_new_email: new_email, current_subject: subject} = socket.assigns
 
-    with {:ok, new_email} <- verify_email_step_up(socket, user, String.trim(code || "")),
-         {:ok, updated} <- Users.update_user_email(new_email, subject) do
-      {:noreply,
-       socket
-       |> put_flash(:info, "Email updated.")
-       |> assign(:current_user, updated)
-       |> assign_email_form(updated)
-       |> reset_email_step()}
+    # Sequencing guard is the web's own state; the step-up factor decision, the
+    # verify, and the commit are all `Auth.confirm_email_change`'s call — the
+    # domain re-derives the factor from the fresh row and gates the write.
+    if step in [:totp, :code] and is_binary(new_email) do
+      handle_email_change_confirmation(socket, new_email, String.trim(code || ""), subject, step)
     else
-      {:error, :replay} ->
-        {:noreply,
-         put_flash(socket, :error, "That code was just used — wait a moment for the next one.")}
-
-      {:error, :invalid} ->
-        {:noreply, put_flash(socket, :error, step_up_error(socket.assigns.email_step))}
-
-      # Step-up passed but the email itself was rejected (e.g. now taken) — the
-      # one-time proof is spent, so send them back to the start.
-      {:error, %Ecto.Changeset{}} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Could not change to that email — it may already be in use.")
-         |> reset_email_step()}
+      # Out-of-sequence (fired over the socket while :idle, before any save_email
+      # started a step-up) — fail closed (IL-15: a handler is reachable over the
+      # socket regardless of what's rendered).
+      {:noreply, put_flash(socket, :error, "Start an email change first.")}
     end
   end
 
@@ -300,37 +286,47 @@ defmodule EmisarWeb.ProfileLive do
     |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
   end
 
-  defp start_email_step_up(socket, user, new_email) do
-    socket = assign(socket, :pending_new_email, new_email)
+  defp handle_email_change_confirmation(socket, new_email, code, subject, step) do
+    case Auth.confirm_email_change(new_email, code, subject) do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Email updated.")
+         |> assign(:current_user, updated)
+         |> assign_email_form(updated)
+         |> reset_email_step()}
 
-    if socket.assigns.mfa_enabled? do
-      assign(socket, :email_step, :totp)
-    else
-      Auth.issue_email_change_code(new_email, socket.assigns.current_subject)
+      {:error, :replay} ->
+        {:noreply,
+         put_flash(socket, :error, "That code was just used — wait a moment for the next one.")}
 
-      socket
-      |> assign(:email_step, :code)
-      |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
+      {:error, :invalid} ->
+        {:noreply, put_flash(socket, :error, step_up_error(step))}
+
+      # Step-up passed but the email itself was rejected (e.g. now taken) — the
+      # one-time proof is spent, so send them back to the start.
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Could not change to that email — it may already be in use.")
+         |> reset_email_step()}
     end
   end
 
-  # MFA-on → the TOTP second factor stands in for re-auth; otherwise → the
-  # emailed code proves current-inbox control. Both yield the email to apply.
-  defp verify_email_step_up(socket, user, code) do
-    case socket.assigns.email_step do
-      :totp ->
-        with :ok <- Auth.verify_mfa(user, code, socket.assigns.current_subject.context),
-             do: {:ok, socket.assigns.pending_new_email}
+  # The DOMAIN decides the factor from the user's CURRENT row (`begin_email_change`
+  # re-reads it) — not `mfa_enabled?`, which is a stale mount snapshot that could
+  # downgrade the challenge — and issues the emailed code on the `:code` path.
+  defp start_email_step_up(socket, user, new_email) do
+    socket = assign(socket, :pending_new_email, new_email)
 
-      :code ->
-        Auth.verify_email_change_code(code, socket.assigns.current_subject)
+    case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
+      {:ok, :totp} ->
+        assign(socket, :email_step, :totp)
 
-      # Out-of-sequence confirm_email_change (e.g. fired over the socket while
-      # :idle, before any save_email started a step-up) — fail closed instead of
-      # crashing the LiveView with a CaseClauseError (IL-15: a handler is reachable
-      # over the socket regardless of what's rendered). The else-branch flashes.
-      _ ->
-        {:error, :invalid}
+      {:ok, :code} ->
+        socket
+        |> assign(:email_step, :code)
+        |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
     end
   end
 

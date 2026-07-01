@@ -114,11 +114,12 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Change the caller's own sign-in email. Returns `{:ok, user} |
-  {:error, %Ecto.Changeset{}}`. Self-service — the user is the subject's own
-  actor, and the authenticated session is the proof-of-control: passwords are
-  gone, so there's no credential to re-challenge (an SSO-provisioned user has
-  none either). Audits `user.email_changed` with both addresses for traceability.
+  Apply a new sign-in email to the caller's own user row. Returns `{:ok, user} |
+  {:error, %Ecto.Changeset{}}`. Self-service (the user is the subject's own actor)
+  and the low-level write ONLY — the step-up that proves control (TOTP for an MFA
+  user, an emailed one-time code otherwise) is enforced by the sole caller,
+  `Auth.confirm_email_change/3`, so this is never reached without a verified
+  challenge. Audits `user.email_changed` with both addresses for traceability.
   """
   def update_user_email(new_email, %Subject{actor: %User{id: user_id}} = subject)
       when is_binary(new_email) do

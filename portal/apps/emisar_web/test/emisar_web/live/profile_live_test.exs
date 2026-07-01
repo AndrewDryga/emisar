@@ -80,7 +80,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # LiveView (IL-15: never trust the rendered UI) — it fails closed.
       html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "123456"}})
 
-      assert html =~ "wrong or expired"
+      assert html =~ "Start an email change first."
       assert Emisar.Repo.reload!(user).email == user.email
     end
 
