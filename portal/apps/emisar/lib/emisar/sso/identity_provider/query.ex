@@ -27,6 +27,13 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def scim_enabled(queryable),
     do: where(queryable, [providers: p], p.scim_enabled)
 
+  # Rows whose SCIM last-seen is stale (never set, or older than `cutoff`) — the
+  # throttle for stamping `scim_last_seen_at` so a sync burst writes at most once
+  # per window instead of once per request.
+  def scim_last_seen_before(queryable, %DateTime{} = cutoff) do
+    where(queryable, [providers: p], is_nil(p.scim_last_seen_at) or p.scim_last_seen_at < ^cutoff)
+  end
+
   def ordered_by_name(queryable),
     do: order_by(queryable, [providers: p], asc: p.name)
 

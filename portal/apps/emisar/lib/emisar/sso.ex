@@ -438,11 +438,27 @@ defmodule Emisar.SSO do
       with %IdentityProvider{scim_token_hash: hash} = provider <- Repo.peek(queryable),
            true <- is_binary(hash),
            true <- Crypto.secure_compare(hash, Crypto.hash(raw)) do
-        {:ok, provider}
+        {:ok, touch_scim_last_seen(provider)}
       else
         _ -> {:error, :unauthorized}
       end
     end
+  end
+
+  # Record the IdP's last SCIM contact — the "is directory sync working?" signal
+  # on the connection detail page. Throttled to one write per minute (the
+  # `scim_last_seen_before` filter) so a reconciliation burst doesn't churn the
+  # row. Returns the provider unchanged (the caller authorizes the SCIM operation
+  # with it; it doesn't display the timestamp).
+  defp touch_scim_last_seen(%IdentityProvider{id: id} = provider) do
+    now = DateTime.utc_now()
+
+    IdentityProvider.Query.not_deleted()
+    |> IdentityProvider.Query.by_id(id)
+    |> IdentityProvider.Query.scim_last_seen_before(DateTime.add(now, -60, :second))
+    |> Repo.update_all(set: [scim_last_seen_at: now])
+
+    provider
   end
 
   # -- Directory sync (SCIM) — user lifecycle (internal, provider-scoped) --

@@ -32,6 +32,10 @@ defmodule Emisar.SSO.IdentityProvider do
     field :scim_enabled, :boolean, default: false
     field :scim_token_prefix, :string
     field :scim_token_hash, :binary, redact: true
+    # Last time the IdP's SCIM connector authenticated against us — the "is
+    # directory sync actually working?" signal on the connection detail page.
+    # Stamped (throttled) on every authenticated SCIM request; nil = never synced.
+    field :scim_last_seen_at, :utc_datetime_usec
 
     field :deleted_at, :utc_datetime_usec
 

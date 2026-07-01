@@ -1034,6 +1034,17 @@ defmodule Emisar.SSOTest do
       assert resolved.account_id == provider.account_id
     end
 
+    test "stamps scim_last_seen_at on a successful auth (the 'is sync working?' signal)", %{
+      provider: provider,
+      token: token
+    } do
+      assert is_nil(provider.scim_last_seen_at)
+
+      assert {:ok, _resolved} = SSO.authenticate_scim_token(token)
+
+      assert %DateTime{} = Repo.reload!(provider).scim_last_seen_at
+    end
+
     test "a garbage / too-short / wrong token is :unauthorized", %{token: token} do
       assert {:error, :unauthorized} = SSO.authenticate_scim_token("")
       assert {:error, :unauthorized} = SSO.authenticate_scim_token("ems-")
