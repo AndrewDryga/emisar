@@ -610,8 +610,21 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp do_reinstate_member(socket, membership_id) do
+    member =
+      Enum.find(
+        socket.assigns.synced_members,
+        &(&1.membership && &1.membership.id == membership_id)
+      )
+
+    deactivated = member != nil and not member.identity.scim_active
+
     with_synced_membership(socket, membership_id, fn membership ->
-      case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
+      # A member the IdP deactivated (scim_active:false) can't be reactivated here — the
+      # domain refuses; reactivate them in the IdP (its active:true re-syncs). The button
+      # hides for them too, but a crafted event is rejected server-side (IL-15).
+      case Accounts.reinstate_membership(membership, socket.assigns.current_subject,
+             deactivated_in_idp?: deactivated
+           ) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member reactivated.") |> reload()}
         {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
       end
@@ -852,6 +865,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp member_error(:role_managed_by_directory) do
     "Roles for directory-synced members are set by your identity provider — use the group → role mappings."
+  end
+
+  defp member_error(:deactivated_in_idp) do
+    "This member is deactivated in your identity provider — reactivate them there first."
   end
 
   defp member_error(%Ecto.Changeset{}),
@@ -2134,7 +2151,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 Suspend
               </.button>
               <.button
-                :if={Accounts.Membership.disabled?(member.membership)}
+                :if={Accounts.Membership.disabled?(member.membership) and member.identity.scim_active}
                 variant="ghost"
                 tone="success"
                 size="sm"
@@ -2143,6 +2160,16 @@ defmodule EmisarWeb.SSOSettingsLive do
               >
                 Reactivate
               </.button>
+              <%!-- The IdP deactivated them — emisar keeps them suspended; reactivation
+                 is the IdP's to make (its active:true re-syncs), so no Reactivate here. --%>
+              <span
+                :if={
+                  Accounts.Membership.disabled?(member.membership) and not member.identity.scim_active
+                }
+                class="text-xs text-zinc-500"
+              >
+                Reactivate in your IdP
+              </span>
             <% end %>
           </div>
         </li>

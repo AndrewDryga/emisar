@@ -717,6 +717,19 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # A member the directory (SCIM) has deactivated (`scim_active: false`) must stay
+  # suspended — reinstating them in emisar would grant access the IdP revoked. The web
+  # boundary passes `deactivated_in_idp?: true` from the linked identity; reactivation
+  # is the IdP's to make (its `active: true` re-sync reinstates them). Cycle-free —
+  # Accounts can't consult `SSO`.
+  defp ensure_not_deactivated_in_idp(opts) do
+    if Keyword.get(opts, :deactivated_in_idp?, false) do
+      {:error, :deactivated_in_idp}
+    else
+      :ok
+    end
+  end
+
   # The last-owner invariant is NOT checked here — a pre-transaction
   # count races a concurrent demotion (two operators demoting the two
   # last owners both pass `count > 1`); `ensure_not_last_active_owner/1`
@@ -883,9 +896,18 @@ defmodule Emisar.Accounts do
     end
   end
 
-  @doc "Re-enable a previously suspended member. Same authorization shape as suspend."
-  def reinstate_membership(%Membership{} = membership, %Subject{} = subject) do
-    with :ok <-
+  @doc """
+  Re-enable a previously suspended member. Same authorization shape as suspend.
+
+  Pass `deactivated_in_idp?: true` for a member the directory (SCIM) has deactivated
+  (`scim_active: false`) — reinstating them would grant emisar access the IdP revoked,
+  so the domain refuses with `{:error, :deactivated_in_idp}`. Reactivation must happen
+  in the IdP (its `active: true` re-sync reinstates via `sync_reinstate_membership`).
+  The already-authorized web boundary supplies the flag from the linked identity.
+  """
+  def reinstate_membership(%Membership{} = membership, %Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_not_deactivated_in_idp(opts),
+         :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
       Membership.Query.not_deleted()

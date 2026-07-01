@@ -625,6 +625,26 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "set by their identity provider"
       assert Emisar.Repo.reload!(synced.membership).role == :operator
     end
+
+    test "a member deactivated in the IdP can't be reinstated (stays suspended)", %{
+      conn: conn,
+      account: account
+    } do
+      # Deactivating in the directory (SCIM active:false) suspends the member; reinstating
+      # them in emisar would grant access the IdP revoked, so a crafted reinstate is
+      # refused and they stay suspended — reactivation is the IdP's to make.
+      synced = scim_synced_member(account)
+      {:ok, _} = Emisar.SSO.scim_deactivate_user(synced.provider, synced.external_id)
+
+      assert Emisar.Repo.reload!(synced.membership).disabled_at
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      html = render_click(lv, "reinstate", %{"membership_id" => synced.membership.id})
+
+      assert html =~ "deactivated in your identity provider"
+      assert Emisar.Repo.reload!(synced.membership).disabled_at
+    end
   end
 
   describe "invite form live validation (phx-change)" do
@@ -1077,13 +1097,15 @@ defmodule EmisarWeb.TeamLiveTest do
       })
       |> Emisar.Repo.insert()
 
+    external_id = "ext-#{System.unique_integer([:positive])}"
+
     {:ok, %{membership: membership}} =
       Emisar.SSO.scim_provision_user(provider, %{
-        external_id: "ext-#{System.unique_integer([:positive])}",
+        external_id: external_id,
         email: "synced-#{System.unique_integer([:positive])}@example.test",
         full_name: "Synced Member"
       })
 
-    %{provider: provider, membership: membership}
+    %{provider: provider, membership: membership, external_id: external_id}
   end
 end
