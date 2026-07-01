@@ -577,9 +577,21 @@ defmodule Emisar.Accounts do
 
   The caller passes their `%Subject{}` so the guard runs at the domain
   boundary, not just in LiveView templates.
+
+  Pass `directory_managed?: true` for a member whose role a directory (SCIM) sync
+  owns — the role is recomputed on every sync, so a manual change silently reverts;
+  the domain rejects it with `{:error, :role_managed_by_directory}`. The already-
+  authorized web boundary supplies the flag from the linked identity it loaded
+  (Accounts can't consult `SSO` itself without a context cycle).
   """
-  def update_membership_role(%Membership{} = membership, new_role, %Subject{} = subject) do
-    with :ok <-
+  def update_membership_role(
+        %Membership{} = membership,
+        new_role,
+        %Subject{} = subject,
+        opts \\ []
+      ) do
+    with :ok <- ensure_role_not_directory_managed(opts),
+         :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          {:ok, new_role} <- cast_new_role(membership, new_role) do
@@ -689,6 +701,20 @@ defmodule Emisar.Accounts do
       account_team_topic(membership.account_id),
       {:list_changed, :team, "membership.removed", membership.user_id}
     )
+  end
+
+  # A directory (SCIM) sync owns the role of a synced member — it recomputes it on
+  # every push (group→role mapping, else the provider default), so a manual change
+  # silently reverts. The web boundary passes `directory_managed?: true` (from the
+  # linked identity it already loaded) and we refuse here — the invariant is enforced
+  # at the domain, not only hidden in the UI. Accounts can't ask `SSO` itself without
+  # a context cycle, so the already-authorized caller supplies the flag.
+  defp ensure_role_not_directory_managed(opts) do
+    if Keyword.get(opts, :directory_managed?, false) do
+      {:error, :role_managed_by_directory}
+    else
+      :ok
+    end
   end
 
   # The last-owner invariant is NOT checked here — a pre-transaction

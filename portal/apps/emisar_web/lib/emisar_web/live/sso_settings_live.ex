@@ -584,25 +584,20 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp do_change_member_role(socket, membership_id, role) do
     provider = List.first(socket.assigns.providers)
+    directory_managed = provider != nil and provider.scim_enabled
 
-    # Directory sync owns the role (group→role mappings recompute it each sync), so
-    # reject a manual change even though the UI shows it read-only — a crafted change
-    # would just be overwritten. OIDC-only providers (no sync) keep the editable path.
-    if provider && provider.scim_enabled do
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "Roles for directory-synced members are set by your identity provider — use the group → role mappings."
-       )}
-    else
-      with_synced_membership(socket, membership_id, fn membership ->
-        case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
-          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
-          {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
-        end
-      end)
-    end
+    with_synced_membership(socket, membership_id, fn membership ->
+      # Directory sync owns the role (group→role mappings recompute it each sync), so
+      # pass the flag and let the DOMAIN refuse a manual change — the UI already shows
+      # it read-only, but a crafted event is rejected too. OIDC-only providers (no
+      # sync) pass false and keep the editable path.
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject,
+             directory_managed?: directory_managed
+           ) do
+        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+      end
+    end)
   end
 
   defp do_suspend_member(socket, membership_id) do
@@ -854,6 +849,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     do: "You can't change your own membership here — use Profile."
 
   defp member_error(:not_found), do: "That member no longer exists."
+
+  defp member_error(:role_managed_by_directory) do
+    "Roles for directory-synced members are set by your identity provider — use the group → role mappings."
+  end
 
   defp member_error(%Ecto.Changeset{}),
     do: "That change wasn't valid. Refresh to see the member's current state, then try again."

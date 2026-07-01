@@ -218,10 +218,15 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
-         %Accounts.Membership{} = membership <- find_membership(socket, id),
-         identity = Map.get(socket.assigns.identity_by_user_id, membership.user_id),
-         false <- directory_managed_role?(identity) do
-      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
+         %Accounts.Membership{} = membership <- find_membership(socket, id) do
+      # A directory-synced member's role is the IdP's; pass the flag so the DOMAIN
+      # refuses the change (`:role_managed_by_directory`) — the UI hides the control,
+      # but a crafted event is rejected server-side too (IL-15).
+      identity = Map.get(socket.assigns.identity_by_user_id, membership.user_id)
+
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject,
+             directory_managed?: directory_managed_role?(identity)
+           ) do
         {:ok, _updated} ->
           {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
 
@@ -229,16 +234,8 @@ defmodule EmisarWeb.TeamLive do
           {:noreply, put_flash(socket, :error, error_message(reason))}
       end
     else
-      false ->
-        {:noreply, put_flash(socket, :error, "Unknown role.")}
-
-      nil ->
-        {:noreply, socket}
-
-      # The role is the IdP's — reject a crafted change even though the UI hides it.
-      true ->
-        {:noreply,
-         put_flash(socket, :error, "That member's role is set by their identity provider.")}
+      false -> {:noreply, put_flash(socket, :error, "Unknown role.")}
+      nil -> {:noreply, socket}
     end
   end
 
@@ -351,6 +348,9 @@ defmodule EmisarWeb.TeamLive do
     do: "You can't change your own membership from here. Use Profile."
 
   defp error_message(:not_found), do: "User no longer exists."
+
+  defp error_message(:role_managed_by_directory),
+    do: "That member's role is set by their identity provider."
 
   defp error_message(%Ecto.Changeset{}),
     do: "That change wasn't valid. Refresh to see the member's current state, then try again."
