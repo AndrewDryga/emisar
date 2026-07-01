@@ -101,11 +101,11 @@ defmodule EmisarWeb.AnalyticsTest do
       user: user
     } do
       # Drive the real passwordless flow: request the link, pull token_id + the
-      # 6-digit secret from the email, then confirm from the same browser (the
+      # 6-character secret from the email, then confirm from the same browser (the
       # nonce cookie rides `recycle`). `log_in_user` fires the analytics event.
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
       assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert_receive {:mixpanel_engage, [%{"$distinct_id" => id, "$set" => set}]}

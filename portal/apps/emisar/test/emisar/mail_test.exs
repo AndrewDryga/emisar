@@ -9,6 +9,7 @@ defmodule Emisar.MailTest do
   alias Emisar.Fixtures
   alias Emisar.Mail
   alias Emisar.Mailers.UserNotifier
+  alias Emisar.RequestContext
 
   describe "suppressed?/1" do
     test "reports a suppressed address case-insensitively (citext key)" do
@@ -119,16 +120,53 @@ defmodule Emisar.MailTest do
     end
 
     test "deliver_magic_link appends an encoded return_to when given one", %{user: user} do
-      UserNotifier.deliver_magic_link(user, "tok", "123456", "/app/acme")
-      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok/123456?return_to=%2Fapp%2Facme"))
+      UserNotifier.deliver_magic_link(user, "tok", "ABC234", %RequestContext{}, "/app/acme")
+      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok/ABC234?return_to=%2Fapp%2Facme"))
     end
 
     test "deliver_magic_link without a return_to is unchanged", %{user: user} do
-      UserNotifier.deliver_magic_link(user, "tok", "123456")
+      UserNotifier.deliver_magic_link(user, "tok", "ABC234")
 
       assert_email_sent(
-        &(&1.text_body =~ "/sign_in/magic/tok/123456" and not (&1.text_body =~ "return_to"))
+        &(&1.text_body =~ "/sign_in/magic/tok/ABC234" and not (&1.text_body =~ "return_to"))
       )
+    end
+  end
+
+  describe "magic-link request context" do
+    setup do
+      %{user: Fixtures.Users.create_user()}
+    end
+
+    test "the sign-in email carries the time, IP, and a friendly device", %{user: user} do
+      context = %RequestContext{
+        ip_address: "203.0.113.7",
+        user_agent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " <>
+            "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+      }
+
+      UserNotifier.deliver_magic_link(user, "tok", "ABC234", context)
+
+      assert_email_sent(fn email ->
+        # A recipient can tell their own sign-in from a stranger's: when, where,
+        # and a parsed device — not the raw User-Agent string.
+        email.text_body =~ "This sign-in was requested" and
+          email.text_body =~ "203.0.113.7" and
+          email.text_body =~ "Chrome on macOS" and
+          email.text_body =~ "UTC"
+      end)
+    end
+
+    test "omits the lines it has no data for (no IP / unparseable device)", %{user: user} do
+      UserNotifier.deliver_magic_link(user, "tok", "ABC234", %RequestContext{})
+
+      # Time is always present; the Device line (block-only wording) is dropped
+      # rather than shown blank. ("From" also appears in the body prose, so the
+      # unambiguous Device label is the one to assert on.)
+      assert_email_sent(fn email ->
+        email.text_body =~ "Time" and not (email.text_body =~ "Device")
+      end)
     end
   end
 
@@ -197,15 +235,15 @@ defmodule Emisar.MailTest do
     # The magic-link subject, the /sign_in/magic/<token>/<code> link, and the
     # body copy "15 minutes" which AGREES with the enforced
     # @magic_link_validity_in_minutes.
-    test "carries the subject, link, the 6-digit code, and a 15-minute expiry" do
+    test "carries the subject, link, the code, and a 15-minute expiry" do
       user = Fixtures.Users.create_user()
-      UserNotifier.deliver_magic_link(user, "tok-magic", "123456")
+      UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234")
 
       assert_email_sent(fn email ->
         assert email.subject == "Your emisar sign-in code"
-        assert email.text_body =~ "/sign_in/magic/tok-magic/123456"
-        # The 6-digit code is shown standalone for cross-device entry.
-        assert email.text_body =~ "123456"
+        assert email.text_body =~ "/sign_in/magic/tok-magic/ABC234"
+        # The code is shown standalone for cross-device entry.
+        assert email.text_body =~ "ABC234"
         assert email.text_body =~ "15 minutes"
         true
       end)

@@ -12,7 +12,7 @@ defmodule EmisarWeb.UserSignInLive do
     ~H"""
     <.auth_layout title="Welcome back">
       <p class="mb-6 text-sm text-zinc-400">
-        Enter your email and we'll send a one-time sign-in link and a 6-digit code.
+        Enter your email and we'll send a one-time sign-in link and a 6-character code.
       </p>
 
       <.simple_form for={@form} action={~p"/sign_in/magic/start"} method="post">

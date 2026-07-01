@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSessionController do
   @moduledoc """
   Session controller for the passwordless sign-in flows: the split-code
-  magic-link request (`magic_link_start`), its link + 6-digit-code verifiers,
+  magic-link request (`magic_link_start`), its link + 6-character-code verifiers,
   and sign-out. The sign-in LiveViews render the email form and POST it here;
   MFA is enforced post-login by `UserAuth`'s `:ensure_mfa_compliant` gate.
   """
@@ -12,7 +12,7 @@ defmodule EmisarWeb.UserSessionController do
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
-  # 6-digit secret. Verifying needs BOTH — an intercepted link/code can't sign
+  # 6-character secret. Verifying needs BOTH — an intercepted link/code can't sign
   # in without this cookie. SameSite=Lax so the cookie still rides the top-level
   # GET when the operator clicks the email link.
   @magic_cookie "emisar_magic"
@@ -28,7 +28,7 @@ defmodule EmisarWeb.UserSessionController do
 
   @doc """
   Magic-link request (POST from the email form). Issues a split-code token,
-  emails the link + 6-digit code, and stashes the browser nonce in the signed
+  emails the link + 6-character code, and stashes the browser nonce in the signed
   cookie. Always lands on the "check your email" page — a throttled or unknown
   email skips the work but shows the same page (no account-existence leak).
   """
@@ -48,7 +48,7 @@ defmodule EmisarWeb.UserSessionController do
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
            {:ok, user} <- Users.fetch_user_by_email(email) do
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
-        Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, return_to)
+        Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to)
         put_magic_cookie(conn, token_id, nonce, registered?)
       else
         # Surfacing the throttle is safe: it's checked BEFORE the user lookup and
@@ -84,7 +84,7 @@ defmodule EmisarWeb.UserSessionController do
     |> DateTime.to_iso8601()
   end
 
-  @doc "Code path — the operator types the 6-digit code into the browser holding the nonce."
+  @doc "Code path — the operator types the 6-character code into the browser holding the nonce."
   def magic_link_verify_code(conn, %{"code" => code}) when is_binary(code),
     do: finish_magic_link(conn, code, & &1)
 
@@ -106,6 +106,10 @@ defmodule EmisarWeb.UserSessionController do
   # in the session at `magic_link_start`).
   defp finish_magic_link(conn, secret, prep, link_token_id \\ nil) do
     context = RequestContext.from_conn(conn)
+    # The typed code is case-insensitive and whitespace-tolerant; the emailed
+    # link already carries the canonical uppercase secret, so upcasing it is a
+    # no-op. The code alphabet is uppercase letters + digits (Emisar.Crypto).
+    secret = secret |> to_string() |> String.trim() |> String.upcase()
 
     with {:ok, cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
          token_id = link_token_id || cookie_token_id,

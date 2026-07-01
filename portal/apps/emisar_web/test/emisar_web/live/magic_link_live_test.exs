@@ -3,7 +3,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   Passwordless sign-in request page — now render-only. The split-code FLOW
   (issue the token, set the nonce cookie, verify both halves) lives in
   `UserSessionController` and is tested there; this LV just renders the email
-  form (POSTs to `:magic_link_start`) and, on `?sent=1`, the 6-digit code form.
+  form (POSTs to `:magic_link_start`) and, on `?sent=1`, the 6-character code form.
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -17,12 +17,14 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     assert html =~ ~r/<input[^>]*name="user\[email\]"[^>]*required/
   end
 
-  test "?sent=1 shows the check-inbox panel + the 6-digit code form", %{conn: conn} do
+  test "?sent=1 shows the check-inbox panel + the 6-character code form", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Check your inbox."
     assert html =~ ~s(action="/sign_in/magic/code")
-    assert html =~ ~r/<input[^>]*name="code"[^>]*required/
+    # The per-character boxes (MagicCodeInput hook) submit through one hidden field.
+    assert html =~ ~s(phx-hook="MagicCodeInput")
+    assert html =~ ~r/<input[^>]*type="hidden"[^>]*name="code"/
   end
 
   test "the sent panel links back to a fresh email form", %{conn: conn} do
@@ -37,7 +39,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
 
     # The address is inlined into the sentence as <code>, with the space before
     # it and NO stray space before the period (the HEEx-whitespace gotcha).
-    assert html =~ ~r{6-digit code to <code[^>]*>operator@example\.test</code>\. Enter}
+    assert html =~ ~r{6-character code to <code[^>]*>operator@example\.test</code>\. Enter}
     # ...and the cooldown-gated resend button is present.
     assert html =~ ~s(id="resend-code")
     assert html =~ ~s(phx-hook="ResendCooldown")
@@ -46,7 +48,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   test "?sent=1 with no stashed address shows neither the address nor Resend", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
-    assert html =~ "6-digit code. Enter"
+    assert html =~ "6-character code. Enter"
     refute html =~ ~s(id="resend-code")
   end
 

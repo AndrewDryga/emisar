@@ -77,21 +77,28 @@ defmodule Emisar.Crypto do
     end
   end
 
-  # The emailed magic-link secret is a short, typable numeric code; the
-  # browser-side nonce carries the entropy, so 6 digits + the attempt cap
-  # is safe (an email interceptor lacks the nonce and gets 5 guesses).
-  @magic_link_code_digits 6
+  # The emailed magic-link secret is a short, typable code; the browser-side
+  # nonce carries the entropy, so a 6-char code + the attempt cap is safe (an
+  # email interceptor lacks the nonce and gets @magic_link_attempts guesses).
+  @code_length 6
+
+  # Unambiguous uppercase alphabet for the typed sign-in code — no 0/O, 1/I/L,
+  # or U, each a read/type look-alike. 30 symbols, so a 6-char code spans
+  # 30^6 ≈ 7.3e8 values (vs 10^6 for digits) — a wider space to guess, though
+  # the nonce is still what makes the code secure. Letters are what buys the
+  # extra space and keep the code short enough to type by hand.
+  @code_alphabet ~c"23456789ABCDEFGHJKMNPQRSTVWXYZ"
 
   @doc """
   Mints a split-code magic-link token as `{nonce, secret, digest}`. The
-  high-entropy `nonce` stays in the browser, the 6-digit `secret` is emailed
-  (and typable cross-device), and only `digest = hash(nonce <> secret)` is
-  stored — neither half alone reconstructs it, so a DB breach plus an
+  high-entropy `nonce` stays in the browser, the short alphanumeric `secret` is
+  emailed (and typable cross-device), and only `digest = hash(nonce <> secret)`
+  is stored — neither half alone reconstructs it, so a DB breach plus an
   intercepted email still can't sign in. Verify with `magic_link_digest/2`.
   """
   def magic_link_token do
     nonce = random_secret()
-    secret = numeric_code(@magic_link_code_digits)
+    secret = typable_code(@code_length)
     {nonce, secret, hash(nonce <> secret)}
   end
 
@@ -108,7 +115,7 @@ defmodule Emisar.Crypto do
   plus a short expiry bound online guessing.
   """
   def email_change_code do
-    code = numeric_code(@magic_link_code_digits)
+    code = numeric_code(@code_length)
     {code, hash(code)}
   end
 
@@ -123,6 +130,25 @@ defmodule Emisar.Crypto do
     |> rem(max)
     |> Integer.to_string()
     |> String.pad_leading(digits, "0")
+  end
+
+  # Crypto-random N-char code over @code_alphabet: reduce 64 random bits into the
+  # code space (30^N), then base-convert. The reduction's modulo bias over 64
+  # bits is ~1e-10 (same shape as numeric_code), negligible for a code whose
+  # security is the nonce and the attempt cap.
+  defp typable_code(length) when is_integer(length) and length > 0 do
+    base = length(@code_alphabet)
+
+    :crypto.strong_rand_bytes(8)
+    |> :binary.decode_unsigned()
+    |> rem(Integer.pow(base, length))
+    |> encode_code(base, length, [])
+  end
+
+  defp encode_code(_n, _base, 0, acc), do: List.to_string(acc)
+
+  defp encode_code(n, base, remaining, acc) do
+    encode_code(div(n, base), base, remaining - 1, [Enum.at(@code_alphabet, rem(n, base)) | acc])
   end
 
   @doc """

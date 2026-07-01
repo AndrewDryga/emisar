@@ -32,7 +32,7 @@ defmodule Emisar.Auth.UserToken.Changeset do
   @doc """
   Split-code magic-link token row. `digest` is `Crypto.hash(nonce <> secret)` —
   neither half is stored, so a DB breach + an intercepted email still can't sign
-  in. `attempts` is the online-guess budget for the 6-digit secret.
+  in. `attempts` is the online-guess budget for the 6-character secret.
   """
   def magic_link(%Users.User{} = user, digest, sent_to, attempts)
       when is_binary(digest) and is_integer(attempts) do

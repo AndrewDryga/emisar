@@ -267,11 +267,88 @@ const MagicCodeExpiry = {
   }
 }
 
+// iPhone-style one-box-per-char sign-in code. The boxes are client-owned — the
+// form submits the hidden [data-code] aggregate — so the container carries
+// phx-update="ignore" and a LiveView re-render (flash, the expiry countdown)
+// can't wipe what you typed. Handles: uppercase + filter to the code alphabet,
+// auto-advance, backspace-to-previous, arrow nav, paste/autofill spread across
+// boxes, and auto-submit once all boxes are full. No-JS falls back to the email
+// link (which needs no code entry).
+const MagicCodeInput = {
+  mounted() {
+    this.boxes = Array.from(this.el.querySelectorAll("[data-box]"))
+    this.hidden = this.el.querySelector("[data-code]")
+    if (!this.boxes.length || !this.hidden) return
+
+    const clean = (s) => s.toUpperCase().replace(/[^0-9A-Z]/g, "")
+    const sync = () => { this.hidden.value = this.boxes.map(b => b.value).join("") }
+    const focusBox = (i) => { const b = this.boxes[i]; if (b) { b.focus(); b.select() } }
+
+    const maybeSubmit = () => {
+      if (this.boxes.every(b => b.value.length === 1)) {
+        const form = this.el.closest("form")
+        if (form) { form.requestSubmit ? form.requestSubmit() : form.submit() }
+      }
+    }
+
+    const spread = (chars, start) => {
+      for (let k = 0; start + k < this.boxes.length && k < chars.length; k++) {
+        this.boxes[start + k].value = chars[k]
+      }
+      sync()
+      focusBox(Math.min(start + chars.length, this.boxes.length - 1))
+      maybeSubmit()
+    }
+
+    this.boxes.forEach((box, i) => {
+      box.addEventListener("input", () => {
+        const v = clean(box.value)
+        if (v.length > 1) { spread(v, i); return }   // autofill dumped the whole code in one box
+        box.value = v
+        sync()
+        if (v && i < this.boxes.length - 1) focusBox(i + 1)
+        maybeSubmit()
+      })
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && box.value === "" && i > 0) {
+          e.preventDefault(); this.boxes[i - 1].value = ""; sync(); focusBox(i - 1)
+        } else if (e.key === "ArrowLeft" && i > 0) {
+          e.preventDefault(); focusBox(i - 1)
+        } else if (e.key === "ArrowRight" && i < this.boxes.length - 1) {
+          e.preventDefault(); focusBox(i + 1)
+        }
+      })
+      box.addEventListener("paste", (e) => {
+        e.preventDefault()
+        const text = (e.clipboardData || window.clipboardData).getData("text") || ""
+        spread(clean(text), 0)
+      })
+      box.addEventListener("focus", () => box.select())
+    })
+
+    // Don't let a manual "Sign in" click submit a half-typed code (it would burn
+    // an attempt) — bounce focus to the first empty box instead.
+    const form = this.el.closest("form")
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        if (this.hidden.value.length !== this.boxes.length) {
+          e.preventDefault()
+          const empty = this.boxes.find((b) => b.value === "")
+          if (empty) empty.focus()
+        }
+      })
+    }
+
+    sync()
+    focusBox(0)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry }
+  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, MagicCodeInput }
 })
 
 // Show progress bar on live navigation and form submits

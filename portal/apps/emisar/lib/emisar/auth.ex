@@ -314,14 +314,14 @@ defmodule Emisar.Auth do
     end)
   end
 
-  # Online-guess budget for the 6-digit magic-link secret. The nonce carries
+  # Online-guess budget for the alphanumeric magic-link secret. The nonce carries
   # the real entropy; this caps brute-force by anyone who somehow has it.
   @magic_link_attempts 5
 
   @doc """
   Issues a split-code magic-link token. Returns `{token_id, nonce, secret}`: the
   caller keeps `nonce` browser-side (a short-lived cookie) and emails the
-  `secret` (a 6-digit code) plus a link carrying `token_id` + `secret`. Deletes
+  `secret` (a short alphanumeric code) plus a link carrying `token_id` + `secret`. Deletes
   any prior outstanding magic-link token for the user (single outstanding).
   """
   def issue_magic_link(%Users.User{} = user, context \\ %RequestContext{}) do

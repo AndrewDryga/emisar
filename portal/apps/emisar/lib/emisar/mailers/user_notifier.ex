@@ -8,6 +8,7 @@ defmodule Emisar.Mailers.UserNotifier do
   alias Emisar.Mail
   alias Emisar.Mailer
   alias Emisar.PublicUrl
+  alias Emisar.RequestContext
   alias Emisar.Users
   require Logger
 
@@ -41,7 +42,13 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_magic_link(%Users.User{} = user, token_id, secret, return_to \\ nil) do
+  def deliver_magic_link(
+        %Users.User{} = user,
+        token_id,
+        secret,
+        context \\ %RequestContext{},
+        return_to \\ nil
+      ) do
     url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}#{return_to_query(return_to)}")
 
     deliver(user.email, "Your emisar sign-in code", """
@@ -49,18 +56,84 @@ defmodule Emisar.Mailers.UserNotifier do
 
         #{secret}
 
-    Type it into the sign-in page in the browser where you requested it. On that
-    same browser you can also just click:
+    Type it into the sign-in page in the browser where you asked to sign in. From
+    that same browser you can also just open:
 
     #{url}
 
-    The code and link only sign in from the browser that made the request, so an
-    intercepted email is useless on its own. They expire in 15 minutes and work
-    once. Didn't request this? You can safely ignore it.
+    This code only works in the browser that requested it, works once, and expires
+    in 15 minutes — an intercepted email can't sign in on its own.
+
+    This sign-in was requested:
+
+    #{request_details(context)}
+
+    Didn't ask to sign in? You can ignore this email — nothing happens without the
+    code, and it only works in the browser that made the request. If sign-in
+    emails you didn't ask for keep arriving, tell your administrator.
 
     — emisar
     """)
   end
+
+  # A small, human "who/when/where" block so the recipient can tell their own
+  # sign-in from a stranger's. Time is always present; IP and a parsed
+  # device summary are shown only when the request carried them.
+  defp request_details(%RequestContext{} = context) do
+    [
+      {"Time", Calendar.strftime(DateTime.utc_now(), "%-d %b %Y at %H:%M UTC")},
+      {"From", present(context.ip_address)},
+      {"Device", device_summary(context.user_agent)}
+    ]
+    |> Enum.reject(fn {_label, value} -> is_nil(value) end)
+    |> Enum.map_join("\n", fn {label, value} ->
+      "      #{String.pad_trailing(label, 8)} #{value}"
+    end)
+  end
+
+  defp present(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present(_), do: nil
+
+  # Best-effort "Chrome on macOS" from a User-Agent — friendlier than the raw
+  # string, and omitted entirely (nil) when we can't read either half. Order
+  # matters: Edge/Opera UAs also contain "Chrome", and Chrome's contains "Safari".
+  defp device_summary(ua) when is_binary(ua) and ua != "" do
+    browser =
+      cond do
+        String.contains?(ua, "Edg/") -> "Edge"
+        String.contains?(ua, "OPR/") or String.contains?(ua, "Opera") -> "Opera"
+        String.contains?(ua, "Firefox/") -> "Firefox"
+        String.contains?(ua, "Chrome/") -> "Chrome"
+        String.contains?(ua, "Safari/") -> "Safari"
+        true -> nil
+      end
+
+    os =
+      cond do
+        String.contains?(ua, "iPhone") -> "iOS"
+        String.contains?(ua, "iPad") -> "iPadOS"
+        String.contains?(ua, "Android") -> "Android"
+        String.contains?(ua, "Mac OS X") or String.contains?(ua, "Macintosh") -> "macOS"
+        String.contains?(ua, "Windows") -> "Windows"
+        String.contains?(ua, "Linux") -> "Linux"
+        true -> nil
+      end
+
+    case {browser, os} do
+      {nil, nil} -> nil
+      {browser, nil} -> browser
+      {nil, os} -> os
+      {browser, os} -> "#{browser} on #{os}"
+    end
+  end
+
+  defp device_summary(_), do: nil
 
   def deliver_email_change_code(%Users.User{} = user, code) do
     deliver(user.email, "Confirm your emisar email change", """

@@ -338,8 +338,10 @@ defmodule Emisar.AuthTest do
     test "returns {token_id, nonce, secret} that verifies back to the user", %{user: user} do
       {token_id, nonce, secret} = Auth.issue_magic_link(user)
       assert is_binary(token_id) and is_binary(nonce)
-      # The emailed half is a typable 6-digit code.
-      assert secret =~ ~r/^\d{6}$/
+      # The emailed half is a typable 6-char alphanumeric code, from an
+      # unambiguous uppercase alphabet — no 0/O, 1/I/L, or U to misread.
+      assert secret =~ ~r/^[0-9A-Z]{6}$/
+      refute secret =~ ~r/[01ILOU]/
 
       assert {:ok, %User{id: id}} = Auth.verify_magic_link(token_id, secret, nonce)
       assert id == user.id

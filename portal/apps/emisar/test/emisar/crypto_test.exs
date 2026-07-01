@@ -43,6 +43,33 @@ defmodule Emisar.CryptoTest do
     end
   end
 
+  describe "magic_link_token/0" do
+    test "the emailed secret is a 6-char code from the unambiguous alphabet" do
+      {_nonce, secret, _digest} = Crypto.magic_link_token()
+
+      # Uppercase alphanumeric, 6 chars, and none of the read/type look-alikes
+      # (0/O, 1/I/L, U) — that's what makes it typable by hand.
+      assert String.length(secret) == 6
+      assert secret =~ ~r/^[0-9A-Z]{6}$/
+      refute secret =~ ~r/[01ILOU]/
+    end
+
+    test "digest binds the (nonce, secret) pair — neither half alone reconstructs it" do
+      {nonce, secret, digest} = Crypto.magic_link_token()
+
+      assert digest == Crypto.magic_link_digest(nonce, secret)
+      refute digest == Crypto.magic_link_digest(nonce, "WRONG2")
+      refute digest == Crypto.magic_link_digest("wrong-nonce", secret)
+    end
+
+    test "two tokens differ (fresh randomness each mint)" do
+      {_, a, _} = Crypto.magic_link_token()
+      {_, b, _} = Crypto.magic_link_token()
+      # 30^6 space — a collision here would be a broken RNG, not bad luck.
+      refute a == b
+    end
+  end
+
   describe "hash/1" do
     test "is a deterministic 32-byte sha256 that varies with input" do
       assert Crypto.hash("emk-abc") == Crypto.hash("emk-abc")

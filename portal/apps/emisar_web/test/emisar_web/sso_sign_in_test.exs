@@ -28,7 +28,7 @@ defmodule EmisarWeb.SSOSignInTest do
 
   # Drive the real passwordless sign-in carrying a branded `return_to`: request
   # the link (threading return_to onto both the session and the emailed URL), pull
-  # token_id + the 6-digit secret out of the email, then confirm the link from the
+  # token_id + the 6-character secret out of the email, then confirm the link from the
   # same browser (the nonce cookie rides `recycle`). Returns the post-confirm conn.
   defp magic_sign_in(email, return_to) do
     conn =
@@ -38,7 +38,7 @@ defmodule EmisarWeb.SSOSignInTest do
       })
 
     assert_received {:email, sent}
-    [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+    [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
     recycle(conn)
     |> get(~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: return_to]}")

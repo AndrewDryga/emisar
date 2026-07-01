@@ -4,13 +4,13 @@ defmodule EmisarWeb.UserSessionControllerTest do
   alias Emisar.{Auth, Repo, Users}
 
   describe "split-code magic link" do
-    # Drive the real request, then pull token_id + the 6-digit secret out of the
+    # Drive the real request, then pull token_id + the 6-char secret out of the
     # email. The returned conn carries the signed nonce cookie (via recycle), so a
     # follow-up confirm/code request is "the same browser" that requested.
     defp request_magic_link(conn, email) do
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => email}})
       assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       {recycle(conn), token_id, secret}
     end
 
@@ -40,7 +40,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         })
 
       assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
       conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
@@ -52,7 +52,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
 
       assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/(\d{6})", sent.text_body)
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
       conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
@@ -70,7 +70,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
     end
 
-    test "the typed 6-digit code signs in from the browser holding the nonce", %{
+    test "the typed code signs in from the browser holding the nonce", %{
       conn: conn,
       user: user
     } do
@@ -98,7 +98,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     test "a wrong secret is uniformly invalid (no oracle)", %{conn: conn, user: user} do
       {conn, token_id, _secret} = request_magic_link(conn, user.email)
 
-      # `tamper` isn't 6 digits, so it can never hash-match the real secret.
+      # `tamper` can never hash-match the real secret, so it's uniformly invalid.
       conn = get(conn, ~p"/sign_in/magic/#{token_id}/tamper")
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
