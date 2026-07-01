@@ -179,6 +179,21 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "acme.audit"
       assert html =~ "medium"
+
+      # The disclosure stays OPEN across the lazy-load re-render — the bug was the
+      # stream re-insert stripping the browser's native `<details open>` and
+      # snapping it shut on the first click. The server now tracks the open state.
+      assert has_element?(lv, "details[open]")
+
+      # Toggling again closes it — the server's open state mirrors the browser's
+      # native toggle, so they stay in sync instead of fighting.
+      render_click(lv, "inspect_pack", %{
+        "id" => pack_version.id,
+        "pack-id" => pack_version.pack_id,
+        "version" => pack_version.version
+      })
+
+      refute has_element?(lv, "details[open]")
     end
 
     test "a no-baseline (TOFU) pending pack shows the 'no baseline' block copy", %{

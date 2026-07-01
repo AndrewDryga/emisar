@@ -32,6 +32,12 @@ defmodule EmisarWeb.PacksLive do
     # trusted versions can be many, so we never eagerly look them all up.
     socket = assign(socket, :inspected_actions, %{})
 
+    # Which "View contents" disclosures are open, keyed by version id. The rows
+    # are a stream, so opening one re-inserts its group; without tracking the open
+    # state server-side that re-render would strip the browser's native `<details
+    # open>` and snap the disclosure shut on the first click.
+    socket = assign(socket, :open_versions, MapSet.new())
+
     # Reject is IRREVERSIBLE-feeling (the trusted/pending decision flips
     # dispatch authorization), so it routes through a typed-confirm modal. The
     # pack rows live in a `phx-update="stream"` (static once pushed), so the
@@ -224,22 +230,36 @@ defmodule EmisarWeb.PacksLive do
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
 
-  # Lazily load a trusted version's action set the first time its "View
-  # contents" disclosure is opened (one query per opened disclosure, not per
-  # page — trusted versions can be many). The result is cached in
-  # `inspected_actions` keyed by version id; the disclosure renders the actions
-  # once present and stays open thereafter. We re-insert the affected pack
-  # group so the stream child re-renders against the new assign (a stream item
-  # is otherwise static once pushed). The Catalog read re-checks `view_catalog`
-  # itself (IL-15) — `pack_id`/`version` come from the rendered row, so a
-  # crafted event can't reach another account's actions.
+  # The "View contents" disclosure toggled. Track the open state server-side so
+  # the pack group's re-insert (a stream child is static once pushed) renders
+  # `<details open>` — otherwise the first open snaps shut when the re-render
+  # strips the browser's native `open`. We mirror the native toggle (which fired
+  # on the same click): open when it wasn't, close when it was, so the two stay in
+  # sync. The action set is loaded once, on first open, and cached in
+  # `inspected_actions` keyed by version id (trusted versions can be many, so we
+  # never eagerly look them all up). The Catalog read re-checks `view_catalog`
+  # itself (IL-15) — `pack_id`/`version` come from the rendered row, so a crafted
+  # event can't reach another account's actions.
   def handle_event(
         "inspect_pack",
         %{"id" => id, "pack-id" => pack_id, "version" => version},
         socket
       ) do
+    socket =
+      if MapSet.member?(socket.assigns.open_versions, id) do
+        update(socket, :open_versions, &MapSet.delete(&1, id))
+      else
+        socket
+        |> maybe_load_actions(id, pack_id, version)
+        |> update(:open_versions, &MapSet.put(&1, id))
+      end
+
+    {:noreply, reinsert_pack_group(socket, pack_id)}
+  end
+
+  defp maybe_load_actions(socket, id, pack_id, version) do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
-      {:noreply, socket}
+      socket
     else
       actions =
         case Catalog.list_pack_actions(pack_id, version, socket.assigns.current_subject) do
@@ -247,8 +267,7 @@ defmodule EmisarWeb.PacksLive do
           _ -> []
         end
 
-      socket = update(socket, :inspected_actions, &Map.put(&1, id, actions))
-      {:noreply, reinsert_pack_group(socket, pack_id)}
+      update(socket, :inspected_actions, &Map.put(&1, id, actions))
     end
   end
 
@@ -591,6 +610,7 @@ defmodule EmisarWeb.PacksLive do
                    authorized without waiting for a re-advertise. --%>
               <details
                 :if={v.trust_state == :trusted}
+                open={MapSet.member?(@open_versions, v.id)}
                 class="group rounded border border-zinc-800 bg-zinc-950/40"
               >
                 <summary
