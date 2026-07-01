@@ -94,6 +94,9 @@
           <span>
             Retention follows your plan — 7 days on Free, 90 on Team, 365 on Enterprise. Ship
             to your SIEM ahead of the window and retention becomes your SIEM's policy, not ours.
+            Each event's horizon is fixed when it's written, so a plan downgrade only shortens the
+            window for <em>new</em> events — it never retroactively deletes history — and both the
+            plan change and every retention prune are themselves recorded in the log.
           </span>
         </li>
       </ul>
