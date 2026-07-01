@@ -417,6 +417,40 @@ defmodule EmisarWeb.PoliciesLive do
   defp single_reviewer_gate?(approval),
     do: approval["allow_self_approval"] && to_string(approval["min_approvals"]) == "1"
 
+  # Resolve the two orthogonal knobs (min_approvals + allow_self_approval) into one
+  # plain sentence — a bare "four-eyes" label misleads for most combinations, so we
+  # name four-eyes only when it's literally one approval from a different operator.
+  defp approval_summary(approval) do
+    n = approval_count(approval["min_approvals"])
+    self_ok? = approval["allow_self_approval"] == true
+    count = if n == 1, do: "1 approval", else: "#{n} approvals"
+
+    cond do
+      n == 1 and not self_ok? ->
+        "Needs #{count} from an operator other than the requester — the classic four-eyes check."
+
+      n == 1 ->
+        "Needs #{count} — the requester may approve their own request."
+
+      not self_ok? ->
+        "Needs #{count} from #{n} distinct operators, none of them the requester."
+
+      true ->
+        "Needs #{count} from #{n} distinct operators — the requester may be one of them."
+    end
+  end
+
+  defp approval_count(n) when is_integer(n) and n >= 1, do: n
+
+  defp approval_count(n) when is_binary(n) do
+    case Integer.parse(n) do
+      {i, _} when i >= 1 -> i
+      _ -> 1
+    end
+  end
+
+  defp approval_count(_), do: 1
+
   defp weakening_sentence([one]), do: one
   defp weakening_sentence(many), do: Enum.join(many, " and ")
 
@@ -887,20 +921,23 @@ defmodule EmisarWeb.PoliciesLive do
         </div>
       </div>
 
-      <%!-- Approval requirements: the mode (single-operator vs four-eyes) and how
-           many distinct operators must approve. Defaults to single-operator (1
-           approval, self-approval allowed) — buyers pick four-eyes for a second party. --%>
+      <%!-- Approval requirements: WHO may approve (allow_self_approval) and HOW MANY
+           (min_approvals) — two independent knobs, plus a live summary that resolves
+           them into one sentence. Defaults to self-approval allowed + 1 approval;
+           buyers require a different operator for real separation of duties. --%>
       <div>
         <h3 class="text-sm font-semibold text-zinc-200">Approval requirements</h3>
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
-        <%!-- Name the security posture instead of a bare "self-approval" box.
-             Both radios post `allow_self_approval` (true = single-operator,
-             false = four-eyes), so the form state + merge_approval are unchanged
-             — a radio group always posts the selected value, no hidden companion. --%>
+        <%!-- Two ORTHOGONAL knobs, named for what each controls: WHO may approve
+             (allow_self_approval) and HOW MANY (min_approvals). "Four-eyes" is a
+             specific combination (one approval, a different approver), not a mode —
+             so we don't label the toggle that; the live summary below names it only
+             where it's true. Both radios post `allow_self_approval` (true/false), so
+             merge_approval is unchanged — a radio group posts the selected value. --%>
         <div class="mt-3">
-          <.label variant={:eyebrow}>Approval mode</.label>
+          <.label variant={:eyebrow}>Who can approve</.label>
         </div>
         <div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label class={[
@@ -920,11 +957,11 @@ defmodule EmisarWeb.PoliciesLive do
                 disabled={!@can_manage}
                 class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
               />
-              <span class="text-sm font-medium text-zinc-100">Four-eyes approval</span>
+              <span class="text-sm font-medium text-zinc-100">A different operator</span>
             </span>
             <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-              A <em>different</em>
-              operator must approve — the requester can't approve their own action.
+              Only an operator <em>other than</em>
+              the requester can approve — no signing off on your own request.
             </p>
           </label>
           <label class={[
@@ -944,10 +981,11 @@ defmodule EmisarWeb.PoliciesLive do
                 disabled={!@can_manage}
                 class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
               />
-              <span class="text-sm font-medium text-zinc-100">Single-operator approval</span>
+              <span class="text-sm font-medium text-zinc-100">Anyone, incl. the requester</span>
             </span>
             <p class="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-              The requester can approve their own action. Right for a solo account, but it adds no second reviewer.
+              The requester's own approval can count. Fine for a solo account, but it adds no
+              independent reviewer.
             </p>
           </label>
         </div>
@@ -964,18 +1002,31 @@ defmodule EmisarWeb.PoliciesLive do
             disabled={!@can_manage}
           />
           <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            How many <em>distinct</em> operators must approve before the action runs.
+            How many <em>distinct</em>
+            operators must approve before the action runs — the requester counts only if
+            self-approval is allowed above.
           </p>
         </div>
 
-        <%!-- Single-operator mode with 1 required approval adds no SECOND party:
-             the requester may supply the one approval. A deliberate choice for
-             solo accounts, but flag it so "require approval" isn't mistaken for
-             four-eyes. --%>
+        <%!-- The two knobs are independent, so resolve them into one plain sentence
+             (and name four-eyes only when it actually is one). This is what makes the
+             "different operator + 3 approvals" kind of combination unambiguous. --%>
+        <div class="mt-4 flex items-start gap-2 rounded-lg bg-zinc-900/50 p-3 text-xs leading-relaxed text-zinc-300 ring-1 ring-white/5">
+          <.icon name="hero-check-badge" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
+          <p>
+            <span class="font-medium text-zinc-100">In effect:</span>
+            {approval_summary(@approval)}
+          </p>
+        </div>
+
+        <%!-- Self-approval + a single required approval adds no SECOND party: the
+             requester may supply the one approval. A deliberate choice for solo
+             accounts, but flag it so "require approval" isn't mistaken for real
+             separation of duties. --%>
         <.notice :if={single_reviewer_gate?(@approval)} variant={:warning} class="mt-3">
-          Single-operator mode with 1 required approval adds no second reviewer — the
-          requester can approve their own gated action. Switch to four-eyes approval, or
-          raise required approvals, for a second party.
+          Self-approval is allowed and only one approval is required, so the requester can approve
+          their own gated action — no independent review. Require a different operator, or raise the
+          required approvals, to add a second party.
         </.notice>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override

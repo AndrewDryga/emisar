@@ -356,14 +356,40 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="3"/
 
-      # Four-eyes (allow_self_approval=false) is the stored state, so the
-      # value="false" radio renders checked and value="true" (single-operator)
-      # does not.
+      # allow_self_approval=false ("a different operator") is the stored state, so the
+      # value="false" radio renders checked and value="true" does not.
       assert html =~
                ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
 
       refute html =~
                ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
+
+      # The live summary resolves the two orthogonal knobs — 3 approvals from a
+      # different operator is NOT "four-eyes" (the exact confusion being fixed), so
+      # the summary spells out the real rule and never says four-eyes here.
+      assert html =~ "3 approvals from 3 distinct operators, none of them the requester"
+      refute html =~ "four-eyes"
+    end
+
+    test "the live summary names four-eyes only at one approval from a different operator", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "the classic four-eyes check"
+      assert html =~ "from an operator other than the requester"
     end
 
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
