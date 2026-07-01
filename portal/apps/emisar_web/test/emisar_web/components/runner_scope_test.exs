@@ -10,52 +10,48 @@ defmodule EmisarWeb.RunnerScopeTest do
     %{id: "u1", name: "lonely-runner", group: nil}
   ]
 
-  describe "options/2" do
-    test "orders each group ahead of its own runners, groups then ungrouped" do
-      values = @runners |> RunnerScope.options([]) |> Enum.map(& &1.value)
+  describe "tree/2" do
+    test "each group carries its own runners (sorted); ungrouped runners are separate" do
+      tree = RunnerScope.tree(@runners, [])
 
-      assert values == [
-               "group:app-api",
-               "runner:r3",
-               "group:edge-web",
-               "runner:r1",
-               "runner:r2",
-               "",
-               "runner:u1"
-             ]
+      assert Enum.map(tree.groups, & &1.name) == ["app-api", "edge-web"]
+
+      edge = Enum.find(tree.groups, &(&1.name == "edge-web"))
+      assert Enum.map(edge.runners, & &1.name) == ["edge-fra-01", "edge-sfo-03"]
+
+      assert Enum.map(tree.ungrouped, & &1.name) == ["lonely-runner"]
     end
 
-    test "group headers are selectable; runners are indented and under a disabled Ungrouped header" do
-      opts = RunnerScope.options(@runners, [])
+    test "values are prefixed group:/runner:" do
+      tree = RunnerScope.tree(@runners, [])
+      app = Enum.find(tree.groups, &(&1.name == "app-api"))
 
-      assert %{disabled: false} = Enum.find(opts, &(&1.value == "group:app-api"))
-
-      runner = Enum.find(opts, &(&1.value == "runner:r3"))
-      assert runner.label =~ "api-iad-02"
-      assert String.starts_with?(runner.label, " ")
-
-      assert Enum.any?(opts, &(&1.label == "Ungrouped" and &1.disabled))
+      assert app.value == "group:app-api"
+      assert hd(app.runners).value == "runner:r3"
     end
 
-    test "selecting a group disables its runners, tags them 'via group', leaves others alone" do
-      opts = RunnerScope.options(@runners, ["group:edge-web"])
+    test "selecting a group marks it selected and its runners covered — not individually selected" do
+      tree = RunnerScope.tree(@runners, ["group:edge-web"])
 
-      assert Enum.find(opts, &(&1.value == "group:edge-web")).selected
+      edge = Enum.find(tree.groups, &(&1.name == "edge-web"))
+      assert edge.selected
 
-      for value <- ["runner:r1", "runner:r2"] do
-        option = Enum.find(opts, &(&1.value == value))
-        assert option.disabled
-        assert option.label =~ "via group"
-        refute option.selected
+      for runner <- edge.runners do
+        assert runner.covered
+        refute runner.selected
       end
 
-      # A runner in a DIFFERENT group stays enabled.
-      refute Enum.find(opts, &(&1.value == "runner:r3")).disabled
+      # A runner in a DIFFERENT group is not covered.
+      app = Enum.find(tree.groups, &(&1.name == "app-api"))
+      refute hd(app.runners).covered
     end
 
-    test "an individually selected runner (no group selected) is marked selected" do
-      opts = RunnerScope.options(@runners, ["runner:r3"])
-      assert Enum.find(opts, &(&1.value == "runner:r3")).selected
+    test "an individually selected runner (no group selected) is selected, not covered" do
+      tree = RunnerScope.tree(@runners, ["runner:r3"])
+      runner = Enum.find(tree.groups, &(&1.name == "app-api")).runners |> hd()
+
+      assert runner.selected
+      refute runner.covered
     end
   end
 
@@ -87,7 +83,7 @@ defmodule EmisarWeb.RunnerScopeTest do
   end
 
   describe "runner_scope_select/1" do
-    test "renders one grouped multi-select; a selected group's runners render disabled" do
+    test "renders a checkbox tree; a selected group's runners render disabled + tagged" do
       html =
         render_component(&RunnerScope.runner_scope_select/1,
           name: "scope[]",
@@ -95,11 +91,23 @@ defmodule EmisarWeb.RunnerScopeTest do
           selected: ["group:edge-web"]
         )
 
-      assert html =~ ~s(<select)
-      assert html =~ "multiple"
-      assert html =~ "group:edge-web"
-      # The "via group" tag only appears on a runner disabled because its group is picked.
+      assert html =~ ~s(type="checkbox")
+      assert html =~ ~s(value="group:edge-web")
+      assert html =~ ~s(value="runner:r1")
+      # "via group" tags a runner disabled because its group is selected — the
+      # covered rendering the tree drives.
       assert html =~ "via group"
+    end
+
+    test "renders the empty state when the account has no runners" do
+      html =
+        render_component(&RunnerScope.runner_scope_select/1,
+          name: "scope[]",
+          runners: [],
+          selected: []
+        )
+
+      assert html =~ "No runners registered yet."
     end
   end
 end

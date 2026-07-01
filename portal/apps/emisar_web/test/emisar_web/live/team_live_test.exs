@@ -384,7 +384,9 @@ defmodule EmisarWeb.TeamLiveTest do
           %{"membership_id" => m.id, "scope" => ["group:dba"]}
         )
 
-      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{runner.id}")(?=[^>]*\bdisabled)[^>]*>/
+      # That group's checkbox is now checked, and its runner is covered — tagged
+      # "via group" and disabled (an individual tick would be redundant).
+      assert html =~ ~r/checked[^>]*value="group:dba"/
       assert html =~ "via group"
     end
 
@@ -408,10 +410,10 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
 
-      # One grouped multi-select (not two) that marks the stored group + runner selected.
+      # One grouped picker (not two) that marks the stored group + runner checked.
       assert html =~ ~s(name="scope[]")
-      assert html =~ ~r/<option(?=[^>]*\bvalue="group:dba")(?=[^>]*\bselected)[^>]*>/
-      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{web.id}")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/checked[^>]*value="group:dba"/
+      assert html =~ ~r/checked[^>]*value="runner:#{web.id}"/
     end
   end
 
