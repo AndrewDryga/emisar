@@ -310,7 +310,7 @@ defmodule Emisar.UsersTest do
 
       assert {:ok, %User{} = updated} =
                Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), digests,
-                 audit: &Audit.user_changeset(&1, "user.mfa_enabled")
+                 audit: &Audit.user_changesets(&1, "user.mfa_enabled")
                )
 
       assert updated.mfa_secret == "JBSWY3DPEHPK3PXP"
@@ -324,12 +324,12 @@ defmodule Emisar.UsersTest do
 
       {:ok, _} =
         Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [Crypto.hash("x")],
-          audit: &Audit.user_changeset(&1, "user.mfa_enabled")
+          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
         )
 
       assert {:ok, %User{} = disabled} =
                Users.update_user_mfa(user.id, nil, nil, [],
-                 audit: &Audit.user_changeset(&1, "user.mfa_disabled")
+                 audit: &Audit.user_changesets(&1, "user.mfa_disabled")
                )
 
       assert is_nil(disabled.mfa_secret)
@@ -346,7 +346,7 @@ defmodule Emisar.UsersTest do
 
       assert {:ok, %User{} = updated} =
                Users.put_user_mfa_recovery_codes(user.id, new_digests,
-                 audit: &Audit.user_changeset(&1, "user.mfa_recovery_codes_regenerated")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
                )
 
       assert updated.mfa_recovery_codes == new_digests
@@ -360,7 +360,7 @@ defmodule Emisar.UsersTest do
 
       assert {:error, :mfa_not_enabled} =
                Users.put_user_mfa_recovery_codes(user.id, [Crypto.hash("nope")],
-                 audit: &Audit.user_changeset(&1, "user.mfa_recovery_codes_regenerated")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
                )
 
       assert Repo.reload!(user).mfa_recovery_codes == []
@@ -375,7 +375,7 @@ defmodule Emisar.UsersTest do
 
       {:ok, _} =
         Users.put_user_mfa_recovery_codes(user.id, [digest_a, digest_b],
-          audit: &Audit.user_changeset(&1, "user.mfa_recovery_codes_regenerated")
+          audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
         )
 
       %{user: user, account: account, subject: subject, digest_a: digest_a, digest_b: digest_b}
@@ -388,7 +388,7 @@ defmodule Emisar.UsersTest do
     } do
       assert {:ok, %User{} = updated} =
                Users.consume_user_mfa_recovery_code(user.id, digest_a,
-                 audit: &Audit.user_changeset(&1, "user.mfa_recovery_code_used")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
                )
 
       # The used digest is gone; the unused one remains.
@@ -397,7 +397,7 @@ defmodule Emisar.UsersTest do
       # Re-presenting the now-consumed code is :invalid — single-use.
       assert {:error, :invalid} =
                Users.consume_user_mfa_recovery_code(user.id, digest_a,
-                 audit: &Audit.user_changeset(&1, "user.mfa_recovery_code_used")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
                )
     end
 
@@ -408,7 +408,7 @@ defmodule Emisar.UsersTest do
     } do
       assert {:error, :invalid} =
                Users.consume_user_mfa_recovery_code(user.id, Crypto.hash("never-issued"),
-                 audit: &Audit.user_changeset(&1, "user.mfa_recovery_code_used")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
                )
 
       assert Repo.reload!(user).mfa_recovery_codes == [digest_a, digest_b]
@@ -422,7 +422,7 @@ defmodule Emisar.UsersTest do
 
       {:ok, _} =
         Users.update_user_mfa(user.id, secret, DateTime.utc_now(), [],
-          audit: &Audit.user_changeset(&1, "user.mfa_enabled")
+          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
         )
 
       %{user: user, secret: secret}
@@ -460,7 +460,7 @@ defmodule Emisar.UsersTest do
 
       {:ok, _} =
         Users.update_user_mfa(user.id, nil, nil, [],
-          audit: &Audit.user_changeset(&1, "user.mfa_disabled")
+          audit: &Audit.user_changesets(&1, "user.mfa_disabled")
         )
 
       assert {:error, :invalid} = Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now())
@@ -519,7 +519,7 @@ defmodule Emisar.UsersTest do
 
       assert {:ok, %User{full_name: "New Name"}} =
                Users.update_user_profile_as_admin(member.id, %{"full_name" => "New Name"},
-                 audit: &Audit.user_changeset(&1, "user.profile_updated_by_admin")
+                 audit: &Audit.user_changesets(&1, "user.profile_updated_by_admin")
                )
 
       assert Repo.reload!(member).full_name == "New Name"
@@ -540,7 +540,7 @@ defmodule Emisar.UsersTest do
                Users.update_user_profile_as_admin(
                  member.id,
                  %{"full_name" => "Renamed", "email" => "hijacked@example.test"},
-                 audit: &Audit.user_changeset(&1, "user.profile_updated_by_admin")
+                 audit: &Audit.user_changesets(&1, "user.profile_updated_by_admin")
                )
 
       assert updated.full_name == "Renamed"
@@ -562,7 +562,7 @@ defmodule Emisar.UsersTest do
 
       assert {:ok, %User{} = reset} =
                Users.reset_user_mfa(member.id,
-                 audit: &Audit.user_changeset(&1, "user.mfa_reset_by_admin")
+                 audit: &Audit.user_changesets(&1, "user.mfa_reset_by_admin")
                )
 
       assert is_nil(reset.mfa_secret)
@@ -582,7 +582,7 @@ defmodule Emisar.UsersTest do
 
     {:ok, enrolled} =
       Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [],
-        audit: &Audit.user_changeset(&1, "user.mfa_enabled")
+        audit: &Audit.user_changesets(&1, "user.mfa_enabled")
       )
 
     {enrolled, account, subject}

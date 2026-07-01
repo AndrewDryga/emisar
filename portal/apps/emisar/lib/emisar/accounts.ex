@@ -57,7 +57,11 @@ defmodule Emisar.Accounts do
     end
   end
 
-  @doc "Internal — Approvals reads an account's settings to enforce them (e.g. the grant-lifetime cap). No subject; the approval flow already authorized the approver."
+  @doc """
+  Internal — Approvals reads an account's settings to enforce them
+  (e.g. the grant-lifetime cap). No subject; the approval flow
+  already authorized the approver.
+  """
   def fetch_account_settings(account_id) do
     if Repo.valid_uuid?(account_id) do
       Account.Query.not_deleted()
@@ -367,6 +371,19 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.with_preloaded_user()
     |> Repo.list(Membership.Query, opts)
+  end
+
+  @doc """
+  Internal — Audit's user-event fan-out: EVERY active (not-deleted, not-suspended)
+  membership the user holds, so a user-scoped security event lands one row per
+  account the user belongs to (each account legitimately sees its own copy). No
+  `%Subject{}` — the caller is the subject-less audit builder.
+  """
+  def list_active_memberships_for_user(%Users.User{id: user_id}) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_user_id(user_id)
+    |> Membership.Query.not_disabled()
+    |> Repo.all()
   end
 
   @doc """

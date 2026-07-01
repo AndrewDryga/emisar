@@ -193,8 +193,22 @@ defmodule Emisar.Repo do
       end
 
     case built do
-      nil -> {:ok, nil}
-      %Ecto.Changeset{} = audit_changeset -> insert(audit_changeset, mode: :savepoint)
+      nil ->
+        {:ok, nil}
+
+      %Ecto.Changeset{} = audit_changeset ->
+        insert(audit_changeset, mode: :savepoint)
+
+      # The user-event fan-out (`Audit.user_changesets/3`) returns a list — one
+      # row per active membership. Insert each in the same savepoint (atomic with
+      # the mutation); `[]` (no membership) → {:ok, []}, the skip.
+      changesets when is_list(changesets) ->
+        Enum.reduce_while(changesets, {:ok, []}, fn changeset, {:ok, acc} ->
+          case insert(changeset, mode: :savepoint) do
+            {:ok, event} -> {:cont, {:ok, [event | acc]}}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
     end
   end
 
@@ -286,14 +300,19 @@ defmodule Emisar.Repo do
   # the owning context implements it — so Repo never references a context
   # module, and a row with no implementation is simply skipped.
   defp broadcast_committed_rows(changes) when is_map(changes) do
-    Enum.each(changes, fn {_step, value} ->
-      if Broadcastable.impl_for(value), do: :ok = Broadcastable.broadcast(value)
-    end)
-
+    changes |> Map.values() |> Enum.each(&broadcast_value/1)
     :ok
   end
 
   defp broadcast_committed_rows(_), do: :ok
+
+  # A step's committed value: a list (the audit fan-out — broadcast each) or a
+  # single row (broadcast if it implements Broadcastable; skip otherwise).
+  defp broadcast_value(values) when is_list(values), do: Enum.each(values, &broadcast_value/1)
+
+  defp broadcast_value(value) do
+    if Broadcastable.impl_for(value), do: :ok = Broadcastable.broadcast(value)
+  end
 
   @doc """
   Paginated list with cursor metadata. Options:

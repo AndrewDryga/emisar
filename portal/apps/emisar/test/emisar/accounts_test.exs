@@ -609,6 +609,30 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "list_active_memberships_for_user/1" do
+    test "returns one membership per account the user actively belongs to" do
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+
+      account_ids =
+        user
+        |> Accounts.list_active_memberships_for_user()
+        |> Enum.map(& &1.account_id)
+        |> Enum.sort()
+
+      assert account_ids == Enum.sort([account_a.id, account_b.id])
+    end
+
+    test "returns [] for a user with no memberships" do
+      user = Fixtures.Users.create_user()
+
+      assert Accounts.list_active_memberships_for_user(user) == []
+    end
+  end
+
   describe "provision_sso_membership/3" do
     test "creates a membership at the given role for a JIT-provisioned user" do
       account = Fixtures.Accounts.create_account()

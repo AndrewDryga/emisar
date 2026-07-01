@@ -122,36 +122,42 @@ defmodule Emisar.Audit do
    subject_id: user.id, subject_label: user.email`).
   """
   def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
-    case user_changeset(user, event_type, attrs) do
-      %Ecto.Changeset{} = changeset -> Repo.insert(changeset)
-      nil -> :ok
+    case user_changesets(user, event_type, attrs) do
+      [] ->
+        :ok
+
+      # One row per account the user belongs to; commit them all-or-none. A
+      # deliberate per-row insert (N = a user's membership count, tiny), inside a
+      # txn — matching the prior no-broadcast standalone behaviour.
+      changesets ->
+        {:ok, _} = Repo.transaction(fn -> Enum.each(changesets, &Repo.insert!/1) end)
+        :ok
     end
   end
 
   @doc """
-  Audit-event changeset for a user-scoped event, with the user's primary
-  membership resolved to `account_id`. Build-only (no insert) so it
-  composes into a parent transaction — `Repo.fetch_and_update`'s `:audit`
-  and the `Audit.Multi` helpers insert it atomically with the mutation.
-  Returns `nil` (treated as "skip") when the user has no active membership.
-  Same defaults + override semantics as `log_for_user/3`.
+  Audit-event changesets for a user-scoped event — ONE per active membership the
+  user holds, since a row is `account_id`-scoped and each of the user's accounts
+  legitimately sees its own copy (an account's owners must be able to see that a
+  possibly-compromised member authenticated / disabled MFA / etc.). Build-only (no
+  insert) so it composes into a parent transaction — `Repo.fetch_and_update`'s
+  `:audit` and the `Audit.Multi` helpers insert the list atomically with the
+  mutation. Returns `[]` (treated as "skip") when the user has no active membership.
   """
-  def user_changeset(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
-    case Emisar.Accounts.fetch_membership_for_session(user, nil) do
-      {:ok, membership} ->
-        defaults = %{
-          actor_kind: "user",
-          actor_id: user.id,
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email
-        }
+  def user_changesets(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
+    defaults = %{
+      actor_kind: "user",
+      actor_id: user.id,
+      subject_kind: "user",
+      subject_id: user.id,
+      subject_label: user.email
+    }
 
-        changeset(membership.account_id, event_type, Map.merge(defaults, normalize(attrs)))
+    merged = Map.merge(defaults, normalize(attrs))
 
-      {:error, :not_found} ->
-        nil
-    end
+    user
+    |> Emisar.Accounts.list_active_memberships_for_user()
+    |> Enum.map(&changeset(&1.account_id, event_type, merged))
   end
 
   @doc """

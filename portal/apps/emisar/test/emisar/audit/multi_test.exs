@@ -29,7 +29,7 @@ defmodule Emisar.Audit.MultiTest do
     test "inserts an audit row, deriving account_id from the user's membership" do
       {user, account} = user_with_membership()
 
-      assert {:ok, %{audit: event}} =
+      assert {:ok, %{audit: [event]}} =
                Multi.new()
                |> Audit.Multi.log_for_user(:audit, user, "user.test_event")
                |> Repo.commit_multi()
@@ -39,10 +39,10 @@ defmodule Emisar.Audit.MultiTest do
       assert event.account_id == account.id
     end
 
-    test "no-ops (no row) when the user has no active membership" do
+    test "no-ops (empty fan-out) when the user has no active membership" do
       user = Fixtures.Users.create_user()
 
-      assert {:ok, %{audit: nil}} =
+      assert {:ok, %{audit: []}} =
                Multi.new()
                |> Audit.Multi.log_for_user(:audit, user, "user.test_event")
                |> Repo.commit_multi()
@@ -62,7 +62,7 @@ defmodule Emisar.Audit.MultiTest do
     test "a :payload_fn computes the payload from the multi's changes" do
       {user, _account} = user_with_membership()
 
-      assert {:ok, %{audit: event}} =
+      assert {:ok, %{audit: [event]}} =
                Multi.new()
                |> Multi.run(:revoked_count, fn _repo, _changes -> {:ok, 2} end)
                |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",

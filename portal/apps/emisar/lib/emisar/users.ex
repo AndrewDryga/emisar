@@ -105,7 +105,7 @@ defmodule Emisar.Users do
     |> Repo.fetch_and_update(User.Query,
       with: &User.Changeset.profile(&1, attrs),
       audit: fn updated ->
-        Audit.user_changeset(updated, "user.profile_updated",
+        Audit.user_changesets(updated, "user.profile_updated",
           context: subject.context,
           payload: %{full_name: updated.full_name}
         )
@@ -129,7 +129,7 @@ defmodule Emisar.Users do
       # `changeset.data` is the locked pre-update row — the accurate "from",
       # not `user.email` off the (possibly stale) socket-snapshot subject.
       audit: fn updated, changeset ->
-        Audit.user_changeset(updated, "user.email_changed",
+        Audit.user_changesets(updated, "user.email_changed",
           context: subject.context,
           payload: %{from: changeset.data.email, to: updated.email}
         )

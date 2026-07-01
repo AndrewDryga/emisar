@@ -9,7 +9,7 @@ defmodule Emisar.AuthAuditTest do
   in `Audit.list_events/1` scoped to that account.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, RequestContext, Runners, Users}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext, Runners, Users}
   alias Emisar.Fixtures
 
   defp events_of(account, event_type) do
@@ -585,6 +585,63 @@ defmodule Emisar.AuthAuditTest do
                )
 
       refute_receive {:audit_event, %Emisar.Audit.Event{event_type: "account.updated"}}, 100
+    end
+  end
+
+  describe "identity-event fan-out across memberships" do
+    test "a user-scoped event lands one row in EACH of the user's active accounts" do
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account_a.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          user_id: user.id,
+          role: "admin"
+        )
+
+      # The fetch_and_update :audit path (the hardest — its callback returns the
+      # per-membership list, inserted atomically in the mutation's transaction).
+      {:ok, _} =
+        Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [Crypto.hash("x")],
+          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
+        )
+
+      {:ok, _} =
+        Users.update_user_mfa(user.id, nil, nil, [],
+          audit: &Audit.user_changesets(&1, "user.mfa_disabled")
+        )
+
+      # One row in each account…
+      assert [row_a] = events_of(account_a, "user.mfa_disabled")
+      assert [row_b] = events_of(account_b, "user.mfa_disabled")
+      # …and each account sees ONLY its own copy (cross-account isolation).
+      assert row_a.account_id == account_a.id
+      assert row_b.account_id == account_b.id
+      assert row_a.actor_id == user.id
+    end
+
+    test "a single-account user still gets exactly one row (no duplicates)" do
+      {user, account, _} = Fixtures.Subjects.owner_subject()
+
+      assert :ok = Audit.log_for_user(user, "user.mfa_failed")
+      assert [_only] = events_of(account, "user.mfa_failed")
+    end
+
+    test "a user with no active membership produces no row (unchanged drop)" do
+      user = Fixtures.Users.create_user()
+      before = Repo.aggregate(Emisar.Audit.Event, :count)
+
+      assert :ok = Audit.log_for_user(user, "user.mfa_failed")
+      assert Repo.aggregate(Emisar.Audit.Event, :count) == before
     end
   end
 end

@@ -174,8 +174,8 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "user_changeset/3" do
-    test "stamps the user's primary-membership account + the user defaults" do
+  describe "user_changesets/3" do
+    test "one changeset per active membership, each stamped with the user defaults" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
@@ -186,10 +186,10 @@ defmodule Emisar.AuditTest do
           role: "owner"
         )
 
-      changeset = Audit.user_changeset(user, "user.signed_in")
+      assert [changeset] = Audit.user_changesets(user, "user.signed_in")
 
       assert %Ecto.Changeset{valid?: true} = changeset
-      # Scoped onto the user's primary membership account…
+      # Scoped onto the user's account…
       assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
       # …with the user-scoped defaults derived from the user row.
       assert Ecto.Changeset.get_field(changeset, :actor_kind) == "user"
@@ -199,20 +199,32 @@ defmodule Emisar.AuditTest do
       assert Ecto.Changeset.get_field(changeset, :subject_label) == user.email
     end
 
-    test "attrs override the defaults" do
+    test "fans out to every account the user is an active member of" do
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+
+      changesets = Audit.user_changesets(user, "user.signed_in")
+
+      account_ids = Enum.map(changesets, &Ecto.Changeset.get_field(&1, :account_id))
+      assert Enum.sort(account_ids) == Enum.sort([account_a.id, account_b.id])
+    end
+
+    test "attrs override the defaults on every row" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
-      changeset = Audit.user_changeset(user, "user.signed_in", actor_kind: "system")
-
+      assert [changeset] = Audit.user_changesets(user, "user.signed_in", actor_kind: "system")
       assert Ecto.Changeset.get_field(changeset, :actor_kind) == "system"
     end
 
-    test "returns nil (skip) when the user has no active membership" do
+    test "returns [] (skip) when the user has no active membership" do
       user = Fixtures.Users.create_user()
 
-      assert is_nil(Audit.user_changeset(user, "user.signed_in"))
+      assert Audit.user_changesets(user, "user.signed_in") == []
     end
   end
 

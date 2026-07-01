@@ -603,7 +603,7 @@ defmodule Emisar.Auth do
 
       user.id
       |> Users.update_user_mfa(secret, DateTime.utc_now(), digests,
-        audit: &Audit.user_changeset(&1, "user.mfa_enabled", context: subject.context)
+        audit: &Audit.user_changesets(&1, "user.mfa_enabled", context: subject.context)
       )
       |> case do
         {:ok, updated} -> {:ok, updated, plain_codes}
@@ -617,7 +617,7 @@ defmodule Emisar.Auth do
   @doc "Disable TOTP for the caller. Self-service — the user is the subject's own actor."
   def disable_mfa(%Subject{actor: %Users.User{} = user} = subject) do
     Users.update_user_mfa(user.id, nil, nil, [],
-      audit: &Audit.user_changeset(&1, "user.mfa_disabled", context: subject.context)
+      audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
     )
   end
 
@@ -634,7 +634,7 @@ defmodule Emisar.Auth do
     user.id
     |> Users.put_user_mfa_recovery_codes(digests,
       audit:
-        &Audit.user_changeset(&1, "user.mfa_recovery_codes_regenerated", context: subject.context)
+        &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated", context: subject.context)
     )
     |> case do
       {:ok, updated} -> {:ok, updated, plain_codes}
@@ -708,7 +708,7 @@ defmodule Emisar.Auth do
 
     case Users.consume_user_mfa_recovery_code(user.id, digest,
            audit: fn updated ->
-             Audit.user_changeset(updated, "user.mfa_recovery_code_used", %{
+             Audit.user_changesets(updated, "user.mfa_recovery_code_used", %{
                context: context,
                payload: %{remaining: length(updated.mfa_recovery_codes)}
              })

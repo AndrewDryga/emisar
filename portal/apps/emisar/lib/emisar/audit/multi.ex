@@ -46,14 +46,23 @@ defmodule Emisar.Audit.Multi do
       case user_fn.(changes) do
         %Users.User{} = resolved_user ->
           attrs = extra |> maybe_put_payload(payload_fn, changes) |> Map.new()
-
-          case Audit.user_changeset(resolved_user, event_type, attrs) do
-            %Ecto.Changeset{} = changeset -> Emisar.Repo.insert(changeset)
-            nil -> {:ok, nil}
-          end
+          resolved_user |> Audit.user_changesets(event_type, attrs) |> insert_each()
 
         nil ->
           {:ok, nil}
+      end
+    end)
+  end
+
+  # One row per active membership, inserted in the parent transaction so they
+  # commit atomically with the mutation; the events flow to `changes[name]` and
+  # `commit_multi` broadcasts each. A deliberate per-row insert (N = the user's
+  # membership count). `[]` (no membership) → {:ok, []}, the skip.
+  defp insert_each(changesets) do
+    Enum.reduce_while(changesets, {:ok, []}, fn changeset, {:ok, acc} ->
+      case Emisar.Repo.insert(changeset) do
+        {:ok, event} -> {:cont, {:ok, [event | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
   end
