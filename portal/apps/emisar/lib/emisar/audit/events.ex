@@ -1009,6 +1009,22 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # -- Billing ---------------------------------------------------------
+
+  @doc """
+  The account's plan changed (Paddle webhook / sync). System actor, no user.
+  DISTINCT from the Mixpanel `Analytics.Events.subscription_changed` — this is the
+  in-app AUDIT trail (so a downgrade-to-wipe leaves evidence), not analytics.
+  """
+  def subscription_changed(account_id, from_plan, to_plan) when is_binary(account_id) do
+    Audit.changeset(account_id, "subscription.changed",
+      actor_kind: "system",
+      subject_kind: "account",
+      subject_id: account_id,
+      payload: %{from: from_plan, to: to_plan}
+    )
+  end
+
   # -- Audit -----------------------------------------------------------
 
   @doc "Internal — `Audit.record_export/3` logs a non-empty audit-log export (the exfil signal)."

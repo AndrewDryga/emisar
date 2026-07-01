@@ -8,7 +8,7 @@ defmodule Emisar.Billing do
   """
   import Emisar.Maps, only: [put_present: 3]
   alias Ecto.Multi
-  alias Emisar.{Accounts, Analytics, Auth, PublicUrl, Repo, Runners}
+  alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Subscription}
 
@@ -122,19 +122,36 @@ defmodule Emisar.Billing do
   # off the committed state, instead of last-write-winning a stale status over a
   # fresh one.
   def upsert_subscription(account_id, attrs) do
-    case peek_subscription_for_account(account_id) do
-      nil ->
-        Subscription.Changeset.upsert(Map.put(attrs, :account_id, account_id))
-        |> Repo.insert()
+    existing = peek_subscription_for_account(account_id)
+    old_plan = plan_from_subscription(existing)
 
-      %Subscription{} ->
-        Subscription.Query.all()
-        |> Subscription.Query.by_account_id(account_id)
-        |> Repo.fetch_and_update(Subscription.Query,
-          with: &Subscription.Changeset.upsert(&1, attrs)
-        )
+    with {:ok, %Subscription{plan: new_plan} = subscription} <-
+           write_subscription(existing, account_id, attrs) do
+      # The webhook calls this inside its Multi, so the audit row commits with the
+      # subscription change (atomic there); the checkout/BillingSync paths get a
+      # best-effort standalone insert.
+      _ = maybe_audit_plan_change(account_id, old_plan, new_plan)
+      {:ok, subscription}
     end
   end
+
+  defp write_subscription(nil, account_id, attrs) do
+    Subscription.Changeset.upsert(Map.put(attrs, :account_id, account_id)) |> Repo.insert()
+  end
+
+  defp write_subscription(%Subscription{}, account_id, attrs) do
+    Subscription.Query.all()
+    |> Subscription.Query.by_account_id(account_id)
+    |> Repo.fetch_and_update(Subscription.Query, with: &Subscription.Changeset.upsert(&1, attrs))
+  end
+
+  # The in-app AUDIT trail of a plan change (distinct from the Mixpanel
+  # `subscription_changed`): only on an actual plan transition, so a status-only
+  # webhook (cancel / past_due, same plan) writes nothing.
+  defp maybe_audit_plan_change(_account_id, plan, plan), do: :ok
+
+  defp maybe_audit_plan_change(account_id, old_plan, new_plan),
+    do: Audit.record(Audit.Events.subscription_changed(account_id, old_plan, new_plan))
 
   @doc """
   Returns :ok if the account is within plan limits for `resource`.

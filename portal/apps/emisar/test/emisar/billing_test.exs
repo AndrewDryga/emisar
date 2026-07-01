@@ -498,6 +498,22 @@ defmodule Emisar.BillingTest do
       assert subscription.paddle_price_id == "pri_team_01"
     end
 
+    test "a plan change writes a subscription.changed AUDIT row (distinct from the Mixpanel event)" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_audit_01"})
+
+      event = subscription_created_event("evt_audit_1", account.paddle_customer_id, "pri_team_01")
+      assert :ok = Billing.record_and_apply_event("evt_audit_1", "subscription.created", event)
+
+      # free → team is a real plan transition → exactly one audit row, from/to,
+      # system-actor, account-scoped.
+      assert [audit] = Repo.all(Emisar.Audit.Event)
+      assert audit.event_type == "subscription.changed"
+      assert audit.account_id == account.id
+      assert audit.actor_kind == "system"
+      assert audit.payload["from"] == "free"
+      assert audit.payload["to"] == "team"
+    end
+
     test "emits [:emisar, :billing, :webhook] tagged by outcome (applied, then duplicate)" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_tel_01"})
 
@@ -1149,7 +1165,7 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "apply_webhook_event/1 — apply is Subject-less + emits no audit" do
+  describe "apply_webhook_event/1 — Subject-less; audits the plan change" do
     setup do
       Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
       on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
@@ -1172,22 +1188,25 @@ defmodule Emisar.BillingTest do
       assert {:ok, %Subscription{plan: "team"}} = Billing.apply_webhook_event(event)
     end
 
-    test "FINDING: a subscription mutation writes no audit event (invisible in the trail)" do
-      # The apply path writes only the subscriptions mirror — it never inserts an
-      # Audit.Event. A plan change therefore leaves no audit trace. Assert the
-      # documented gap (Fixtures.Accounts.create_account itself writes no audit rows, so a count of
-      # 0 after the apply isolates the apply's own emission).
+    test "a plan change writes a subscription.changed audit row (the trail is no longer blind)" do
+      # Was the documented gap: the apply path used to write only the subscriptions
+      # mirror, so a plan change left no audit trace (a downgrade-to-wipe with no
+      # evidence). It now emits `subscription.changed` from the write chokepoint.
+      # (Fixtures.Accounts.create_account writes no audit rows, so this isolates the
+      # apply's own emission.)
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_noaudit_01"})
       event = subscription_created_event("evt_noaudit", account.paddle_customer_id, "pri_team_01")
 
       assert {:ok, %Subscription{}} = Billing.apply_webhook_event(event)
 
-      audit_count =
-        Emisar.Audit.Event.Query.all()
-        |> Emisar.Audit.Event.Query.by_account_id(account.id)
-        |> Repo.aggregate(:count, :id)
+      assert [audit] =
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Repo.all()
 
-      assert audit_count == 0
+      assert audit.event_type == "subscription.changed"
+      assert audit.payload["from"] == "free"
+      assert audit.payload["to"] == "team"
     end
   end
 
