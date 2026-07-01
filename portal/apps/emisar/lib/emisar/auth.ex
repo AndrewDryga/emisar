@@ -634,7 +634,9 @@ defmodule Emisar.Auth do
     user.id
     |> Users.put_user_mfa_recovery_codes(digests,
       audit:
-        &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated", context: subject.context)
+        &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
+          context: subject.context
+        )
     )
     |> case do
       {:ok, updated} -> {:ok, updated, plain_codes}

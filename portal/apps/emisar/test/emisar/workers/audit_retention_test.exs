@@ -86,7 +86,9 @@ defmodule Emisar.Workers.AuditRetentionTest do
     # The stale row is gone; a summary marker for the pruned account remains (and
     # its own retain_until keeps it from being pruned in the same pass).
     assert [swept] =
-             Emisar.Audit.Event |> Repo.all() |> Enum.filter(&(&1.event_type == "audit.retention_swept"))
+             Emisar.Audit.Event
+             |> Repo.all()
+             |> Enum.filter(&(&1.event_type == "audit.retention_swept"))
 
     assert swept.account_id == account.id
     assert swept.payload["count"] == 1
