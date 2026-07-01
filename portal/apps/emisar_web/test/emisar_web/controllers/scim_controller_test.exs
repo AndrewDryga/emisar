@@ -1408,6 +1408,12 @@ defmodule EmisarWeb.SCIMControllerTest do
         end)
         |> Map.put("externalId", "okta|atoms")
 
+      # Warm the parser first: the invariant is that PARSING arbitrary keys mints
+      # no atoms, not that the VM is frozen — a cold first call lazy-loads the
+      # parser's modules (interning their atoms), which would inflate the snapshot
+      # when this test runs before any other parse (isolation / async shuffle).
+      _ = Resource.parse_user(%{"externalId" => "warmup"})
+
       before = :erlang.system_info(:atom_count)
       assert %{external_id: "okta|atoms"} = Resource.parse_user(payload)
       assert :erlang.system_info(:atom_count) == before
