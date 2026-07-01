@@ -218,7 +218,9 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
-         %Accounts.Membership{} = membership <- find_membership(socket, id) do
+         %Accounts.Membership{} = membership <- find_membership(socket, id),
+         identity = Map.get(socket.assigns.identity_by_user_id, membership.user_id),
+         false <- directory_managed_role?(identity) do
       case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
         {:ok, _updated} ->
           {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
@@ -227,8 +229,16 @@ defmodule EmisarWeb.TeamLive do
           {:noreply, put_flash(socket, :error, error_message(reason))}
       end
     else
-      false -> {:noreply, put_flash(socket, :error, "Unknown role.")}
-      nil -> {:noreply, socket}
+      false ->
+        {:noreply, put_flash(socket, :error, "Unknown role.")}
+
+      nil ->
+        {:noreply, socket}
+
+      # The role is the IdP's — reject a crafted change even though the UI hides it.
+      true ->
+        {:noreply,
+         put_flash(socket, :error, "That member's role is set by their identity provider.")}
     end
   end
 
@@ -955,44 +965,53 @@ defmodule EmisarWeb.TeamLive do
                 </div>
 
                 <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                  <%!-- Role editability tracks PERMISSION, not access-state: a
-                     suspended member's role stays changeable (you set what they'll
-                     have on reinstate), matching the SSO synced-users list — so a
-                     synced member doesn't read as "role locked because synced" next
-                     to their sync badge when the real reason was suspension.
-                     Suspension shows as its own amber badge above. --%>
-                  <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) do %>
-                    <%!-- A role change is a privilege grant — a dropdown (same skin as
-                       the Actions menu beside it) whose items each carry their own
-                       confirm, so the dialog fires only when you pick a DIFFERENT
-                       role, never just on opening the control. The handler still
-                       authorizes (IL-15). --%>
-                    <.dropdown
-                      class="inline-block shrink-0 text-left"
-                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                      panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
-                    >
-                      <:trigger>
-                        {String.capitalize(to_string(membership.role))}
-                        <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                      </:trigger>
-                      <.menu_item
-                        :for={role <- @roles}
-                        :if={role != to_string(membership.role)}
-                        phx-click="change_role"
-                        phx-value-membership_id={membership.id}
-                        phx-value-role={role}
-                        data-confirm={
-                          role_change_confirm(member_name(membership) || "this member", role)
-                        }
+                  <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
+                  <%= cond do %>
+                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed_role?(identity) -> %>
+                      <%!-- Synced role: the IdP owns it (a group→role mapping, or the
+                         provider default), so directory sync recomputes it and a manual
+                         change here silently reverts. Read-only, pointing to where the
+                         change actually sticks — the identity provider. --%>
+                      <.chip
+                        class="shrink-0"
+                        icon="hero-lock-closed-mini"
+                        title={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
                       >
-                        {String.capitalize(role)}
-                      </.menu_item>
-                    </.dropdown>
-                  <% else %>
-                    <.chip class="shrink-0">
-                      {String.capitalize(to_string(membership.role))}
-                    </.chip>
+                        {String.capitalize(to_string(membership.role))}
+                      </.chip>
+                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
+                      <%!-- A role change is a privilege grant — a dropdown (same skin as
+                         the Actions menu beside it) whose items each carry their own
+                         confirm, so the dialog fires only when you pick a DIFFERENT role,
+                         never just on opening the control. The handler still authorizes
+                         (IL-15). Suspension does NOT lock this — editability tracks
+                         permission, not access-state. --%>
+                      <.dropdown
+                        class="inline-block shrink-0 text-left"
+                        summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                        panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
+                      >
+                        <:trigger>
+                          {String.capitalize(to_string(membership.role))}
+                          <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                        </:trigger>
+                        <.menu_item
+                          :for={role <- @roles}
+                          :if={role != to_string(membership.role)}
+                          phx-click="change_role"
+                          phx-value-membership_id={membership.id}
+                          phx-value-role={role}
+                          data-confirm={
+                            role_change_confirm(member_name(membership) || "this member", role)
+                          }
+                        >
+                          {String.capitalize(role)}
+                        </.menu_item>
+                      </.dropdown>
+                    <% true -> %>
+                      <.chip class="shrink-0">
+                        {String.capitalize(to_string(membership.role))}
+                      </.chip>
                   <% end %>
 
                   <.member_actions
@@ -1359,6 +1378,15 @@ defmodule EmisarWeb.TeamLive do
     do: true
 
   defp self_owner?(_, _), do: false
+
+  # A member whose role is authoritatively the IdP's: they carry an identity for a
+  # provider with directory sync (SCIM) enabled, so the sync recomputes their role
+  # (group→role mapping, else the provider default) and any manual change here would
+  # be silently overwritten. Role is read-only for them — in the roster AND in the
+  # change_role handler. A nil identity (not synced) or an OIDC-only provider (no
+  # directory sync) stays editable.
+  defp directory_managed_role?(nil), do: false
+  defp directory_managed_role?(identity), do: identity.provider.scim_enabled
 
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.

@@ -583,12 +583,26 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp do_change_member_role(socket, membership_id, role) do
-    with_synced_membership(socket, membership_id, fn membership ->
-      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
-        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
-      end
-    end)
+    provider = List.first(socket.assigns.providers)
+
+    # Directory sync owns the role (group→role mappings recompute it each sync), so
+    # reject a manual change even though the UI shows it read-only — a crafted change
+    # would just be overwritten. OIDC-only providers (no sync) keep the editable path.
+    if provider && provider.scim_enabled do
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Roles for directory-synced members are set by your identity provider — use the group → role mappings."
+       )}
+    else
+      with_synced_membership(socket, membership_id, fn membership ->
+        case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
+          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
+          {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        end
+      end)
+    end
   end
 
   defp do_suspend_member(socket, membership_id) do
@@ -1222,6 +1236,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               member_role_options={@member_role_options}
               can_manage_team?={@can_manage_team?}
               current_user_id={@current_user.id}
+              scim_enabled={provider.scim_enabled}
             />
 
             <.card :if={!@can_configure_directory_sync?} padding="p-5">
@@ -2031,6 +2046,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :member_role_options, :list, required: true
   attr :can_manage_team?, :boolean, required: true
   attr :current_user_id, :string, required: true
+  attr :scim_enabled, :boolean, required: true
 
   # The users provisioned through this connection (SCIM sync / SSO first-login /
   # approved link), with portal-based lifecycle actions per row — re-role or
@@ -2079,7 +2095,23 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%= if member.membership.user_id == @current_user_id do %>
               <span class="text-xs text-zinc-500">you</span>
             <% else %>
-              <form id={"synced-role-#{member.membership.id}"} phx-change="change_member_role">
+              <%!-- On a directory-synced provider the role is the IdP's: a group→role
+                 mapping (or the provider default) recomputes it on every sync, so a
+                 manual change here silently reverts. Read-only — set it via the
+                 group → role mappings above. An OIDC-only provider (no directory sync)
+                 keeps the editable select; those roles aren't recomputed. --%>
+              <.chip
+                :if={@scim_enabled}
+                icon="hero-lock-closed-mini"
+                title="Role is managed by directory sync — set it with the group → role mappings above"
+              >
+                {String.capitalize(to_string(member.membership.role))}
+              </.chip>
+              <form
+                :if={not @scim_enabled}
+                id={"synced-role-#{member.membership.id}"}
+                phx-change="change_member_role"
+              >
                 <input type="hidden" name="membership_id" value={member.membership.id} />
                 <select
                   name="role"

@@ -588,6 +588,45 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "a directory-synced member's role is IdP-managed" do
+    setup %{conn: conn} do
+      # SSO/SCIM is enterprise-gated, so a synced member only exists on an enterprise
+      # account — and the team page loads identities only when SSO is available.
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, owner: owner, account: account}
+    end
+
+    test "the roster shows it read-only and refuses a crafted change_role", %{
+      conn: conn,
+      account: account
+    } do
+      # A member provisioned through a SCIM (directory-sync) provider has an IdP-owned
+      # role — recomputed on every sync — so a manual change silently reverts. The
+      # roster must NOT offer a change_role control, and a crafted change_role event is
+      # refused (not just hidden), leaving the role untouched.
+      synced = scim_synced_member(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      refute has_element?(
+               lv,
+               "button[phx-click='change_role'][phx-value-membership_id='#{synced.membership.id}']"
+             )
+
+      # ...and it reads as provider-managed, not a bare chip.
+      assert has_element?(lv, "[title*='managed by']")
+
+      html =
+        render_click(lv, "change_role", %{
+          "membership_id" => synced.membership.id,
+          "role" => "admin"
+        })
+
+      assert html =~ "set by their identity provider"
+      assert Emisar.Repo.reload!(synced.membership).role == :operator
+    end
+  end
+
   describe "invite form live validation (phx-change)" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -1014,5 +1053,37 @@ defmodule EmisarWeb.TeamLiveTest do
       |> Emisar.Repo.update()
 
     user
+  end
+
+  # Provision a member through a directory-sync (SCIM) provider so their role is the
+  # IdP's. Direct-build the provider with scim_enabled (trusted test data, as the
+  # seed does); scim_provision_user creates the user + identity + membership at the
+  # provider's default_role.
+  defp scim_synced_member(account) do
+    {:ok, provider} =
+      %Emisar.SSO.IdentityProvider{}
+      |> Ecto.Changeset.change(%{
+        account_id: account.id,
+        kind: :okta,
+        name: "Acme Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        client_secret: "secret",
+        identifier_claim: :sub,
+        default_role: :operator,
+        provisioner: :jit,
+        enabled: true,
+        scim_enabled: true
+      })
+      |> Emisar.Repo.insert()
+
+    {:ok, %{membership: membership}} =
+      Emisar.SSO.scim_provision_user(provider, %{
+        external_id: "ext-#{System.unique_integer([:positive])}",
+        email: "synced-#{System.unique_integer([:positive])}@example.test",
+        full_name: "Synced Member"
+      })
+
+    %{provider: provider, membership: membership}
   end
 end
