@@ -94,6 +94,8 @@ defmodule EmisarWeb do
       import Phoenix.HTML
       # Core UI components
       import EmisarWeb.CoreComponents
+      # Shared runner-scope picker (groups + nested runners in one multi-select)
+      import EmisarWeb.RunnerScope, only: [runner_scope_select: 1]
       # Shared formatters (relative_time, absolute_time, format_duration)
       import EmisarWeb.TimeHelpers
 

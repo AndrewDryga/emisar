@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Mailers, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -19,6 +19,7 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
      |> assign(:scope_editing_id, nil)
+     |> assign(:scope_draft, [])
      |> ConfirmDialog.init()
      |> assign_form(invite_changeset())}
   end
@@ -68,12 +69,30 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
-    {:noreply, assign(socket, :scope_editing_id, id)}
+    scopes = Map.get(socket.assigns.scopes_by_membership, id, [])
+    groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
+    runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
+
+    {:noreply,
+     socket
+     |> assign(:scope_editing_id, id)
+     |> assign(:scope_draft, RunnerScope.to_values(groups, runner_ids))}
   end
 
   def handle_event("cancel_scope_edit", _params, socket) do
-    {:noreply, assign(socket, :scope_editing_id, nil)}
+    {:noreply, socket |> assign(:scope_editing_id, nil) |> assign(:scope_draft, [])}
   end
+
+  # Live-normalize the scope selection so the picker can disable a runner the
+  # moment its group is selected (the group already covers it) — parse drops the
+  # now-redundant runners and re-seeds the draft the select renders from.
+  def handle_event("scope_changed", %{"scope" => values}, socket) do
+    %{groups: groups, runner_ids: runner_ids} = RunnerScope.parse(values, socket.assigns.runners)
+    {:noreply, assign(socket, :scope_draft, RunnerScope.to_values(groups, runner_ids))}
+  end
+
+  def handle_event("scope_changed", _params, socket),
+    do: {:noreply, assign(socket, :scope_draft, [])}
 
   def handle_event("toggle_require_mfa", _params, socket) do
     value = not socket.assigns.current_account.settings.require_mfa
@@ -172,11 +191,10 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
-      groups = (params["groups"] || []) |> List.wrap()
-      runner_ids = (params["runners"] || []) |> List.wrap()
+      %{groups: groups, runner_ids: runner_ids} =
+        RunnerScope.parse(List.wrap(params["scope"]), socket.assigns.runners)
 
-      new_scopes =
-        Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
+      new_scopes = Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
 
       case Runners.replace_runner_scopes(membership, new_scopes, socket.assigns.current_subject) do
         {:ok, :ok} -> {:ok, "Scope updated."}
@@ -490,7 +508,6 @@ defmodule EmisarWeb.TeamLive do
           Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
 
         runners_by_id = Map.new(runners, &{&1.id, &1})
-        runner_groups = runners |> Enum.map(& &1.group) |> Enum.uniq() |> Enum.sort()
 
         socket
         |> assign(:memberships, memberships)
@@ -502,8 +519,8 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:filter_params, params)
         |> assign(:scopes_by_membership, scopes_by_membership)
         |> assign(:identity_by_user_id, identity_by_user_id)
+        |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
-        |> assign(:runner_groups, runner_groups)
         |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
         |> assign(
           :suppressed_emails,
@@ -522,8 +539,8 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:mfa_stats, %{total: 0, enrolled: 0})
         |> assign(:filter_params, params)
         |> assign(:scopes_by_membership, %{})
+        |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
-        |> assign(:runner_groups, [])
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:require_sso_available?, false)
@@ -574,20 +591,13 @@ defmodule EmisarWeb.TeamLive do
   defp scope_type_label(:runner), do: "Runner"
 
   # Render a scope chip's value — humanizes runner-uuids into names.
-  defp scope_label(%{scope_type: :group, scope_value: v}, _groups, _runners),
-    do: v
+  defp scope_label(%{scope_type: :group, scope_value: value}, _runners), do: value
 
-  defp scope_label(%{scope_type: :runner, scope_value: id}, _groups, runners_by_id) do
+  defp scope_label(%{scope_type: :runner, scope_value: id}, runners_by_id) do
     case Map.get(runners_by_id, id) do
       %{name: name} -> name
       _ -> String.slice(id, 0, 8) <> "…"
     end
-  end
-
-  defp scope_selected?(membership_id, scopes_by_membership, type, value) do
-    scopes_by_membership
-    |> Map.get(membership_id, [])
-    |> Enum.any?(fn scope -> scope.scope_type == type and scope.scope_value == value end)
   end
 
   defp current_role(memberships, user_id) do
@@ -1043,11 +1053,7 @@ defmodule EmisarWeb.TeamLive do
                             scope:
                           </span>
                           <.chip :for={scope <- scopes} tone={:neutral}>
-                            {scope_type_label(scope.scope_type)}: {scope_label(
-                              scope,
-                              @runner_groups,
-                              @runners_by_id
-                            )}
+                            {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
                           </.chip>
                       <% end %>
                     </div>
@@ -1143,62 +1149,29 @@ defmodule EmisarWeb.TeamLive do
                 </.simple_form>
               </div>
 
-              <%!-- Inline scope editor — appears under the row when
-                   "Set runner scope" is clicked. Two HTML multi-selects
-                   (groups + individual runners). Empty selection on
-                   both = "all runners" default. --%>
+              <%!-- Inline scope editor — appears under the row when "Set runner
+                   scope" is clicked. ONE grouped multi-select (groups with their
+                   runners nested beneath); selecting a group disables its runners
+                   (already covered). Empty selection = "all runners" default. --%>
               <div
                 :if={@scope_editing_id == membership.id}
                 class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
               >
-                <form phx-submit="save_scopes" class="space-y-4">
+                <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
                   <input type="hidden" name="membership_id" value={membership.id} />
                   <p class="text-xs text-zinc-400">
-                    Restrict this member to specific runner groups or individual runners. Leaving
-                    both empty grants access to <strong>all runners</strong> in the account.
+                    Restrict this member to specific runner groups or individual runners. Selecting a
+                    group covers every runner in it. Leave everything unselected to grant access to
+                    <strong>all runners</strong>
+                    in the account.
                   </p>
 
-                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <label class="block">
-                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                        Groups
-                      </span>
-                      <.multi_select
-                        name="groups[]"
-                        options={
-                          Enum.map(@runner_groups, fn g ->
-                            %{
-                              value: g,
-                              label: g,
-                              disabled: false,
-                              selected:
-                                scope_selected?(membership.id, @scopes_by_membership, :group, g)
-                            }
-                          end)
-                        }
-                      />
-                    </label>
-
-                    <label class="block">
-                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                        Individual runners
-                      </span>
-                      <.multi_select
-                        name="runners[]"
-                        options={
-                          Enum.map(@runners_by_id, fn {id, r} ->
-                            %{
-                              value: id,
-                              label: if(r.group, do: "#{r.name} (#{r.group})", else: r.name),
-                              disabled: false,
-                              selected:
-                                scope_selected?(membership.id, @scopes_by_membership, :runner, id)
-                            }
-                          end)
-                        }
-                      />
-                    </label>
-                  </div>
+                  <.runner_scope_select
+                    name="scope[]"
+                    label="Runner scope"
+                    runners={@runners}
+                    selected={@scope_draft}
+                  />
 
                   <div class="flex items-center gap-3">
                     <.button phx-disable-with="Saving...">Save scope</.button>

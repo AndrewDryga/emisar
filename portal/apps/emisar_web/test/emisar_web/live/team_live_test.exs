@@ -318,8 +318,7 @@ defmodule EmisarWeb.TeamLiveTest do
       html =
         render_submit(lv, "save_scopes", %{
           "membership_id" => target_membership.id,
-          "groups" => ["dba"],
-          "runners" => []
+          "scope" => ["group:dba"]
         })
 
       # The Runners context denies with :unauthorized; the LV maps it to the same
@@ -330,7 +329,7 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "runner-scope editor (#238)" do
-    test "owner can save a group + runner scope for an invited admin", %{conn: conn} do
+    test "owner can save a group + an individual runner (in another group)", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg"}})
 
       # An invited admin we'll scope.
@@ -341,9 +340,10 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(email, "admin", subject)
 
-      # A runner the scope can target.
-      {:ok, runner} =
-        Emisar.Runners.create_runner(%{"name" => "r1", "group" => "dba"}, subject)
+      # A whole group, plus one runner from a DIFFERENT group (picking a runner
+      # inside the chosen group would be redundant — it collapses to the group).
+      {:ok, _dba} = Emisar.Runners.create_runner(%{"name" => "r1", "group" => "dba"}, subject)
+      {:ok, web} = Emisar.Runners.create_runner(%{"name" => "r2", "group" => "web"}, subject)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -353,48 +353,65 @@ defmodule EmisarWeb.TeamLiveTest do
       # Open the inline editor for the invited admin.
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
 
-      # Submit a scope with one group + one runner.
       render_submit(
         element(lv, "form[phx-submit='save_scopes']"),
-        %{
-          "membership_id" => m.id,
-          "groups" => ["dba"],
-          "runners" => [runner.id]
-        }
+        %{"membership_id" => m.id, "scope" => ["group:dba", "runner:#{web.id}"]}
       )
 
-      # Persisted as two scope rows.
+      # Persisted as two scope rows: the group, and the cross-group runner.
       scopes = Emisar.Runners.runner_scopes_for_membership(m.id)
       assert Enum.any?(scopes, &(&1.scope_type == :group and &1.scope_value == "dba"))
-      assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == runner.id))
+      assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == web.id))
     end
 
-    test "the scope multi-selects pre-select the member's existing scopes", %{conn: conn} do
+    test "picking a group disables its runners live, so they can't be double-scoped", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg3"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "scoped3-#{System.unique_integer([:positive])}@example.com"
+      {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+      {:ok, runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
+
+      # Selecting the group re-renders the picker with that group's runners disabled.
+      html =
+        render_change(
+          element(lv, "form[phx-submit='save_scopes']"),
+          %{"membership_id" => m.id, "scope" => ["group:dba"]}
+        )
+
+      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{runner.id}")(?=[^>]*\bdisabled)[^>]*>/
+      assert html =~ "via group"
+    end
+
+    test "the scope picker pre-selects the member's existing scopes", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped2-#{System.unique_integer([:positive])}@example.com"
       {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
-      {:ok, runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
+      {:ok, web} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "web"}, subject)
+      {:ok, _dba} = Emisar.Runners.create_runner(%{"name" => "r8", "group" => "dba"}, subject)
 
-      # Pre-existing scope: one group + one runner.
+      # Pre-existing scope: one group + one runner from another group.
       {:ok, :ok} =
         Emisar.Runners.replace_runner_scopes(
           m,
-          [{"group", "dba"}, {"runner", runner.id}],
+          [{"group", "dba"}, {"runner", web.id}],
           subject
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
 
-      # Both multi-selects mark the stored scope's option selected, so the
-      # editor opens reflecting current state (selection round-trips through
-      # the shared <.select>).
-      assert html =~ ~s(name="groups[]")
-      assert html =~ ~s(name="runners[]")
-      assert html =~ ~r/<option(?=[^>]*\bvalue="dba")(?=[^>]*\bselected)[^>]*>/
-      assert html =~ ~r/<option(?=[^>]*\bvalue="#{runner.id}")(?=[^>]*\bselected)[^>]*>/
+      # One grouped multi-select (not two) that marks the stored group + runner selected.
+      assert html =~ ~s(name="scope[]")
+      assert html =~ ~r/<option(?=[^>]*\bvalue="group:dba")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{web.id}")(?=[^>]*\bselected)[^>]*>/
     end
   end
 
@@ -1095,8 +1112,7 @@ defmodule EmisarWeb.TeamLiveTest do
       scopes_html =
         render_submit(lv, "save_scopes", %{
           "membership_id" => ghost_id,
-          "groups" => [],
-          "runners" => []
+          "scope" => []
         })
 
       refute scopes_html =~ "Scope updated."
