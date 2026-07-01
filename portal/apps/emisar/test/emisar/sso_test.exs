@@ -223,6 +223,41 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- provider_sync_stats/1 ------------------------------------------
+
+  describe "provider_sync_stats/1" do
+    test "counts synced users and group mappings per provider" do
+      %{provider: provider, subject: subject} = scim_provider()
+      provision(provider, "okta|a")
+      provision(provider, "okta|b")
+
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      assert {:ok, stats} = SSO.provider_sync_stats(subject)
+      assert stats[provider.id] == %{users: 2, groups: 1}
+    end
+
+    test "a viewer (no manage_sso) is denied" do
+      %{account: account} = scim_provider()
+
+      assert {:error, :unauthorized} = SSO.provider_sync_stats(viewer_in(account))
+    end
+
+    test "is account-scoped — B's stats never include A's connection" do
+      %{provider: provider} = scim_provider()
+      provision(provider, "okta|a")
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert {:ok, stats} = SSO.provider_sync_stats(sb)
+      refute Map.has_key?(stats, provider.id)
+    end
+  end
+
   # -- fetch_provider_by_id/2 ------------------------------------------
 
   describe "fetch_provider_by_id/2" do

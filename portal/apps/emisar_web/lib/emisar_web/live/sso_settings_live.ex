@@ -76,6 +76,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       # Connection(s) in scope: ALL on :index (a list), the one on :show (detail).
       # Set per-action in handle_params.
       |> assign(:providers, [])
+      # Per-connection {users, groups} tallies for the :index health line.
+      |> assign(:sync_stats, %{})
       # Group→role mapping state: the per-provider lists + create forms, and the
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
@@ -139,7 +141,17 @@ defmodule EmisarWeb.SSOSettingsLive do
     socket
     |> assign(:loaded?, true)
     |> assign(:providers, list_providers(socket))
+    |> assign(:sync_stats, sync_stats(socket))
     |> assign(:pending_requests, list_pending_requests(socket))
+  end
+
+  # Per-connection {users, groups} tallies for the overview health line; an
+  # unauthorized read (shouldn't happen on this page) degrades to empty counts.
+  defp sync_stats(socket) do
+    case SSO.provider_sync_stats(socket.assigns.current_subject) do
+      {:ok, stats} -> stats
+      {:error, _} -> %{}
+    end
   end
 
   # Detail: ONE connection (account-scoped — a cross-account or unknown id is
@@ -1069,6 +1081,10 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <div class="mt-1 truncate text-xs text-zinc-500">
                       {provider.issuer} · {provisioner_label(provider.provisioner)}
                     </div>
+                    <.sync_meta
+                      provider={provider}
+                      stats={Map.get(@sync_stats, provider.id, %{users: 0, groups: 0})}
+                    />
                   </div>
                   <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-600" />
                 </.link>
@@ -2057,6 +2073,33 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp provisioner_label(:jit), do: "Auto-provision"
   defp provisioner_label(:manual), do: "Manual approval"
+
+  attr :provider, :map, required: true
+  attr :stats, :map, required: true
+
+  # The overview health line for one connection: how many users + group mappings
+  # came through it, and — for a SCIM connection — how fresh the last sync is
+  # (green when it's synced, amber "never synced" while it's waiting on the IdP).
+  defp sync_meta(assigns) do
+    ~H"""
+    <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-500">
+      <span class="tabular-nums">{count_label(@stats.users, "user")}</span>
+      <span class="tabular-nums">· {count_label(@stats.groups, "group")}</span>
+      <span :if={@provider.scim_enabled and @provider.scim_last_seen_at} class="text-brand-300/90">
+        · synced <.local_time value={@provider.scim_last_seen_at} mode={:relative} />
+      </span>
+      <span
+        :if={@provider.scim_enabled and is_nil(@provider.scim_last_seen_at)}
+        class="text-amber-300/90"
+      >
+        · never synced
+      </span>
+    </div>
+    """
+  end
+
+  defp count_label(count, singular),
+    do: "#{count} #{singular}#{if count == 1, do: "", else: "s"}"
 
   defp request_label(request),
     do: request.full_name || request.email || request.provider_identifier

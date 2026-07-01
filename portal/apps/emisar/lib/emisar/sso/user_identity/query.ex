@@ -78,6 +78,14 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [identities: i], i.provider_id == ^provider_id)
 
+  # {provider_id, count} rows — the per-connection synced-user tallies for the
+  # overview. Group by provider so one query covers every connection.
+  def count_by_provider(queryable) do
+    queryable
+    |> group_by([identities: i], i.provider_id)
+    |> select([identities: i], {i.provider_id, count(i.id)})
+  end
+
   # The SCIM reconciliation lookup — `(provider, externalId)`. Distinct from
   # `by_provider_and_identifier/3` so a deactivate/fetch by the IdP's
   # externalId stays explicit, even though the two ids coincide today

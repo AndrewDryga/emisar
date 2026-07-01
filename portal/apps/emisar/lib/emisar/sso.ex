@@ -71,6 +71,40 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc """
+  Per-connection sync tallies for the overview — `%{provider_id => %{users: n,
+  groups: n}}` (provisioned identities + group→role mappings) — so the connection
+  list shows each one's scale and health at a glance (paired with the provider's
+  `scim_last_seen_at`). One grouped query per table. Requires `manage_sso`;
+  account-scoped. Returns `{:ok, stats}`.
+  """
+  def provider_sync_stats(%Subject{} = subject) do
+    with :ok <- ensure_can_configure_sso(subject) do
+      users =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.count_by_provider()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new()
+
+      groups =
+        GroupRoleMapping.Query.not_deleted()
+        |> GroupRoleMapping.Query.count_by_provider()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new()
+
+      provider_ids = Enum.uniq(Map.keys(users) ++ Map.keys(groups))
+
+      stats =
+        Map.new(provider_ids, fn id ->
+          {id, %{users: Map.get(users, id, 0), groups: Map.get(groups, id, 0)}}
+        end)
+
+      {:ok, stats}
+    end
+  end
+
   def fetch_provider_by_id(id, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject),
          true <- Repo.valid_uuid?(id) do
