@@ -388,10 +388,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      # The in-effect line states the effect AND folds in the guidance in one place
+      # The verdict states the effect AND folds in the guidance in one place
       # (no separate warning banner).
       assert html =~ "the requester may approve their own request"
-      assert html =~ "Require a different operator or raise the count"
+      assert html =~ "Choose a different operator, or raise the count, to add independent review"
       refute html =~ "Self-approval is allowed and only one approval is required"
     end
 

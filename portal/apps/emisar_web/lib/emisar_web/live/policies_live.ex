@@ -451,6 +451,27 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp approval_count(_), do: 1
 
+  # The "who can approve" option card: recessed + quiet by default, brand-tinted
+  # ring + surface when it's the selected mode. focus-within lifts the ring when
+  # the (sr-only) radio inside takes keyboard focus.
+  defp approval_option_class(selected?, can_manage?) do
+    [
+      "flex items-start gap-3 rounded-lg p-3 ring-1 transition",
+      "focus-within:ring-2 focus-within:ring-brand-500/50",
+      if(selected?,
+        do: "bg-brand-500/[0.08] ring-brand-500/40",
+        else: "bg-black/20 ring-zinc-800 hover:ring-zinc-700"
+      ),
+      if(can_manage?, do: "cursor-pointer", else: "cursor-not-allowed opacity-70")
+    ]
+    |> Enum.join(" ")
+  end
+
+  defp approval_icon_class(selected?) do
+    "grid h-8 w-8 shrink-0 place-items-center rounded-lg " <>
+      if(selected?, do: "bg-brand-500/15 text-brand-300", else: "bg-zinc-800/80 text-zinc-500")
+  end
+
   defp weakening_sentence([one]), do: one
   defp weakening_sentence(many), do: Enum.join(many, " and ")
 
@@ -940,106 +961,119 @@ defmodule EmisarWeb.PoliciesLive do
              live status line below resolves the pair into one sentence (naming
              four-eyes only where it's literally true), so the per-control copy stays
              one short line each. --%>
-        <div class="mt-3 space-y-4">
+        <%!-- Two orthogonal knobs — WHO may approve (allow_self_approval) and HOW
+             MANY (min_approvals) — grouped in one recessed surface so they read as a
+             single policy. Each "who" card wraps an sr-only radio (the card IS the
+             control): a meaning icon, a title, a one-line rationale, and a brand
+             check when picked. The verdict below resolves the pair into English. --%>
+        <div class="mt-3 space-y-4 rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/5">
           <div>
             <.label variant={:eyebrow}>Who can approve</.label>
-            <div class="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label class={[
-                "block rounded-lg border bg-black/30 p-2.5 transition",
-                @can_manage && "cursor-pointer",
-                if(@approval["allow_self_approval"],
-                  do: "border-zinc-800 hover:border-zinc-700",
-                  else: "border-brand-500/50 ring-1 ring-brand-500/20"
-                )
-              ]}>
-                <span class="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="policy[approval][allow_self_approval]"
-                    value="false"
-                    checked={!@approval["allow_self_approval"]}
-                    disabled={!@can_manage}
-                    class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
-                  />
-                  <span class="text-sm font-medium text-zinc-100">A different operator</span>
+            <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label class={approval_option_class(!@approval["allow_self_approval"], @can_manage)}>
+                <input
+                  type="radio"
+                  name="policy[approval][allow_self_approval]"
+                  value="false"
+                  checked={!@approval["allow_self_approval"]}
+                  disabled={!@can_manage}
+                  class="sr-only"
+                />
+                <span class={approval_icon_class(!@approval["allow_self_approval"])}>
+                  <.icon name="hero-user-group" class="h-4 w-4" />
                 </span>
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                  No signing off on your own request.
-                </p>
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-center gap-1.5">
+                    <span class="text-sm font-medium text-zinc-100">A different operator</span>
+                    <.icon
+                      :if={!@approval["allow_self_approval"]}
+                      name="hero-check-circle-solid"
+                      class="ml-auto h-4 w-4 shrink-0 text-brand-400"
+                    />
+                  </span>
+                  <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
+                    No signing off on your own request.
+                  </span>
+                </span>
               </label>
-              <label class={[
-                "block rounded-lg border bg-black/30 p-2.5 transition",
-                @can_manage && "cursor-pointer",
-                if(@approval["allow_self_approval"],
-                  do: "border-brand-500/50 ring-1 ring-brand-500/20",
-                  else: "border-zinc-800 hover:border-zinc-700"
-                )
-              ]}>
-                <span class="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="policy[approval][allow_self_approval]"
-                    value="true"
-                    checked={@approval["allow_self_approval"]}
-                    disabled={!@can_manage}
-                    class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
-                  />
-                  <span class="text-sm font-medium text-zinc-100">Anyone, incl. requester</span>
+              <label class={approval_option_class(@approval["allow_self_approval"], @can_manage)}>
+                <input
+                  type="radio"
+                  name="policy[approval][allow_self_approval]"
+                  value="true"
+                  checked={@approval["allow_self_approval"]}
+                  disabled={!@can_manage}
+                  class="sr-only"
+                />
+                <span class={approval_icon_class(@approval["allow_self_approval"])}>
+                  <.icon name="hero-user" class="h-4 w-4" />
                 </span>
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                  The requester's own approval can count.
-                </p>
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-center gap-1.5">
+                    <span class="text-sm font-medium text-zinc-100">Anyone, incl. requester</span>
+                    <.icon
+                      :if={@approval["allow_self_approval"]}
+                      name="hero-check-circle-solid"
+                      class="ml-auto h-4 w-4 shrink-0 text-brand-400"
+                    />
+                  </span>
+                  <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
+                    The requester's own approval can count.
+                  </span>
+                </span>
               </label>
             </div>
           </div>
 
-          <%!-- A compact inline row (a small number + hint on one line), not an
-               isolated narrow column. The "In effect" line below carries the
-               requester-counts nuance. --%>
-          <div>
-            <.label variant={:eyebrow}>Required approvals</.label>
-            <div class="mt-1.5 flex items-center gap-3">
-              <input
-                type="number"
-                name="policy[approval][min_approvals]"
-                value={@approval["min_approvals"]}
-                min="1"
-                step="1"
-                disabled={!@can_manage}
-                class="w-16 rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
-              />
-              <span class="text-xs leading-relaxed text-zinc-500">
-                distinct operators must approve before the action runs.
-              </span>
-            </div>
+          <%!-- Count, hairline-divided from the who-choice but in the same surface —
+               a small centered field reading inline as part of one rule. --%>
+          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-white/5 pt-4">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Required approvals
+            </span>
+            <input
+              type="number"
+              name="policy[approval][min_approvals]"
+              value={@approval["min_approvals"]}
+              min="1"
+              step="1"
+              disabled={!@can_manage}
+              class="w-14 rounded-lg border-0 bg-black/40 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
+            />
+            <span class="text-xs text-zinc-500">distinct operators, before the action runs.</span>
           </div>
         </div>
 
-        <%!-- One live status line resolving both knobs into a sentence. It turns
-             amber in-place when the config adds no SECOND party (self-approval + a
-             single approval) — same warning as a separate banner, folded in, so the
-             effect and the caveat read as one thing instead of two stacked blocks. --%>
+        <%!-- The verdict — both knobs resolved into one plain sentence, and the
+             payoff of the section. Emerald when it's a real gate (independent
+             review); amber when a lone self-approver, with the fix folded in. --%>
         <div class={[
-          "mt-4 flex items-start gap-2 rounded-lg p-3 text-xs leading-relaxed ring-1",
+          "mt-4 flex items-start gap-3 rounded-xl p-4 ring-1",
           if(@single_reviewer?,
-            do: "bg-amber-500/10 text-amber-100 ring-amber-500/25",
-            else: "bg-zinc-900/50 text-zinc-300 ring-white/5"
+            do: "bg-amber-500/[0.07] ring-amber-500/30",
+            else: "bg-brand-500/[0.06] ring-brand-500/25"
           )
         ]}>
-          <.icon
-            name={if @single_reviewer?, do: "hero-exclamation-triangle", else: "hero-check-badge"}
-            class={
-              "mt-0.5 h-4 w-4 shrink-0 " <>
-                if(@single_reviewer?, do: "text-amber-400", else: "text-brand-400")
-            }
-          />
-          <p>
-            <span class="font-medium text-zinc-100">In effect:</span>
-            {approval_summary(@approval)}
-            <span :if={@single_reviewer?}>
-              Require a different operator or raise the count to add independent review.
-            </span>
-          </p>
+          <span class={[
+            "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
+            if(@single_reviewer?,
+              do: "bg-amber-500/15 text-amber-300",
+              else: "bg-brand-500/15 text-brand-300"
+            )
+          ]}>
+            <.icon
+              name={if @single_reviewer?, do: "hero-shield-exclamation", else: "hero-shield-check"}
+              class="h-4 w-4"
+            />
+          </span>
+          <div class="min-w-0 flex-1 text-sm leading-relaxed">
+            <p class={if @single_reviewer?, do: "text-amber-50", else: "text-zinc-100"}>
+              <span class="font-semibold">In effect —</span> {approval_summary(@approval)}
+            </p>
+            <p :if={@single_reviewer?} class="mt-1 text-xs text-amber-200/80">
+              Choose a different operator, or raise the count, to add independent review.
+            </p>
+          </div>
         </div>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
