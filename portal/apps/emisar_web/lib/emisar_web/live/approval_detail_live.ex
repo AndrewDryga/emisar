@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions}
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -61,6 +61,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:run, run)
          |> assign(:action_risk, action && action.risk)
          |> assign(:action_description, action && action.description)
+         # The exact command the runner will execute, arguments resolved into
+         # the action's template — shown only when our compiled pack is provably
+         # the runner's (its pinned hash, or advertised version when unpinned).
+         |> assign(:executed_command, build_command_preview(action, run))
          |> assign(:runner_connection, runner_connection(run))
          |> assign(:requested_by, requested_by)
          |> assign(:decided_by, decided_by)
@@ -152,6 +156,31 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp fetch_action_for(_context, _subject), do: nil
+
+  # Resolve the run's args into the action's command template for display —
+  # gated on our compiled pack provably being the runner's (its pinned hash, or
+  # the advertised pack version when unpinned), so we only ever render the exact
+  # template the runner holds. Returns nil (no command card) for a drift, a
+  # script-kind action, or a template we can't fully resolve — the raw Arguments
+  # card still carries the detail.
+  defp build_command_preview(%Catalog.RunnerAction{} = action, %Runs.ActionRun{} = run) do
+    specs = List.wrap(action.args_schema["args"])
+
+    with {:ok, command} <-
+           PacksRegistry.resolve_command(
+             action.pack_id,
+             action.action_id,
+             run.expected_pack_hash,
+             action.pack_version
+           ),
+         {:ok, line} <- CommandPreview.render(command, run.args, specs) do
+      line
+    else
+      _ -> nil
+    end
+  end
+
+  defp build_command_preview(_action, _run), do: nil
 
   defp request_expired?(%{expires_at: %DateTime{} = expires_at}),
     do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
@@ -542,6 +571,22 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </h3>
             <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@action_description}</p>
           </.card>
+
+          <%!-- The exact command the runner will execute, the run's arguments
+               resolved into the action's template. Only shown when our compiled
+               pack is provably the runner's (pinned hash, or advertised version),
+               so the template is the one the runner holds; otherwise the raw
+               Arguments card below carries the detail. Sensitive args are masked. --%>
+          <.card :if={@executed_command} class="overflow-hidden" padding="">
+            <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                Command
+              </h3>
+              <span class="text-[11px] text-zinc-500">what the runner will execute</span>
+            </header>
+            <pre class="overflow-x-auto bg-black/40 p-4 font-mono text-xs leading-relaxed text-zinc-200"><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
+          </.card>
+
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               Reason

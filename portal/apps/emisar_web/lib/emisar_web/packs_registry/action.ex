@@ -6,12 +6,18 @@ defmodule EmisarWeb.PacksRegistry.Action do
   """
 
   @enforce_keys [:id, :title, :kind, :risk]
-  defstruct [:id, :title, :kind, :risk]
+  # `command` is the exec-kind action's `execution.command` template
+  # (`%{binary, argv}`) — the argv slots still carry their `{{ args.x }}`
+  # placeholders. It drives the approval-page command preview (resolved
+  # against the run's args). `nil` for script-kind actions, whose real
+  # invocation is an on-host script path we can't render from here.
+  defstruct [:id, :title, :kind, :risk, :command]
 
   @type t :: %__MODULE__{
           id: String.t(),
           title: String.t(),
           kind: String.t(),
-          risk: String.t()
+          risk: String.t(),
+          command: %{binary: String.t(), argv: [String.t()]} | nil
         }
 end

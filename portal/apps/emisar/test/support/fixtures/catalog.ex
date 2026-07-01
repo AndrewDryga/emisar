@@ -20,6 +20,7 @@ defmodule Emisar.Fixtures.Catalog do
       runner_id: runner.id,
       action_id: attrs[:action_id] || "linux.uptime",
       pack_id: attrs[:pack_id] || "linux-core",
+      pack_version: attrs[:pack_version],
       title: attrs[:title] || "Uptime",
       kind: attrs[:kind] || "exec",
       risk: attrs[:risk] || "low",

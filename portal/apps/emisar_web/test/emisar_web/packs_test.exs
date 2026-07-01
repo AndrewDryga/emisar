@@ -256,6 +256,94 @@ defmodule EmisarWeb.PacksTest do
     test "tarball/1 is :error for an unknown id" do
       assert PacksRegistry.tarball("nope") == :error
     end
+
+    test "build_action parses an exec action's command template" do
+      pack = PacksRegistry.get("cloud-init")
+      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
+
+      assert action.command == %{
+               binary: "cloud-init",
+               argv: ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"]
+             }
+    end
+
+    test "a script-kind action carries no command template" do
+      pack = PacksRegistry.get("cassandra")
+      action = Enum.find(pack.actions, &(&1.id == "cassandra.analyze_disk_pressure"))
+
+      assert action.kind == "script"
+      assert action.command == nil
+    end
+
+    test "resolve_command/4 returns the compiled command when the pinned hash matches" do
+      pack = PacksRegistry.get("cloud-init")
+      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
+
+      assert PacksRegistry.resolve_command(
+               "cloud-init",
+               "cloud-init.single_module",
+               pack.content_hash,
+               nil
+             ) == {:ok, action.command}
+    end
+
+    test "resolve_command/4 falls back to the advertised version when no hash is pinned" do
+      pack = PacksRegistry.get("cloud-init")
+      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
+
+      assert PacksRegistry.resolve_command(
+               "cloud-init",
+               "cloud-init.single_module",
+               nil,
+               pack.version
+             ) == {:ok, action.command}
+    end
+
+    test "resolve_command/4 trusts a pinned hash over the version — a hash drift is :error" do
+      # The pinned hash is authoritative: even a matching advertised version
+      # must not paper over a hash the runner will actually enforce differently.
+      pack = PacksRegistry.get("cloud-init")
+
+      assert PacksRegistry.resolve_command(
+               "cloud-init",
+               "cloud-init.single_module",
+               "sha256:#{String.duplicate("0", 64)}",
+               pack.version
+             ) == :error
+    end
+
+    test "resolve_command/4 is :error when neither hash nor version matches" do
+      assert PacksRegistry.resolve_command("cloud-init", "cloud-init.single_module", nil, "9.9.9") ==
+               :error
+
+      assert PacksRegistry.resolve_command("cloud-init", "cloud-init.single_module", nil, nil) ==
+               :error
+    end
+
+    test "resolve_command/4 is :error for a script-kind action even on a hash match" do
+      pack = PacksRegistry.get("cassandra")
+
+      assert PacksRegistry.resolve_command(
+               "cassandra",
+               "cassandra.analyze_disk_pressure",
+               pack.content_hash,
+               nil
+             ) == :error
+    end
+
+    test "resolve_command/4 is :error for an unknown pack or action" do
+      assert PacksRegistry.resolve_command("nope", "nope.x", "sha256:abc", nil) == :error
+
+      pack = PacksRegistry.get("cloud-init")
+
+      assert PacksRegistry.resolve_command(
+               "cloud-init",
+               "cloud-init.nope",
+               pack.content_hash,
+               nil
+             ) ==
+               :error
+    end
   end
 
   describe "registry endpoints" do

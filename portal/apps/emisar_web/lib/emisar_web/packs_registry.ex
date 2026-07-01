@@ -76,12 +76,27 @@ defmodule EmisarWeb.PacksRegistry do
              end
            end
 
+           # Exec-kind command template (binary + argv, placeholders intact),
+           # or nil for a script-kind action (no single-line invocation to
+           # preview). The shape mirrors the runner's actionspec.
+           exec_command = fn data ->
+             case {Map.get(data, "kind", "exec"), get_in(data, ["execution", "command"])} do
+               {"exec", %{"binary" => binary, "argv" => argv}}
+               when is_binary(binary) and is_list(argv) ->
+                 %{binary: binary, argv: argv}
+
+               _ ->
+                 nil
+             end
+           end
+
            build_action = fn data ->
              %Action{
                id: Map.fetch!(data, "id"),
                title: Map.get(data, "title", ""),
                kind: Map.get(data, "kind", "exec"),
-               risk: Map.get(data, "risk", "low")
+               risk: Map.get(data, "risk", "low"),
+               command: exec_command.(data)
              }
            end
 
@@ -311,6 +326,49 @@ defmodule EmisarWeb.PacksRegistry do
   @doc "Fetch a single pack by id, or nil if not in the registry."
   @spec get(String.t()) :: Pack.t() | nil
   def get(id) when is_binary(id), do: Enum.find(@packs, &(&1.id == id))
+
+  @doc """
+  The exec-kind command template (`%{binary, argv}`, placeholders intact)
+  for an action — but only when we can prove our compiled pack is the one the
+  runner holds, so the template is exactly what will run. Drives the
+  approval-page command preview.
+
+  The proof uses the strongest evidence available: a run's pinned
+  `expected_pack_hash` must equal our content hash byte-for-byte; if the run
+  carries no pinned hash, the runner's advertised `pack_version` must equal
+  ours (a contract change always bumps the version, and pack trust couples
+  version to hash, so a version match means the same argv template). A pinned
+  hash that *differs* is a genuine drift and never falls back to the version.
+
+  `:error` on a drift, an unknown pack/action, a script-kind action (no
+  single-line command to render), or when neither hash nor version matches.
+  """
+  @spec resolve_command(String.t(), String.t(), String.t() | nil, String.t() | nil) ::
+          {:ok, %{binary: String.t(), argv: [String.t()]}} | :error
+  def resolve_command(pack_id, action_id, expected_pack_hash, pack_version)
+      when is_binary(pack_id) and is_binary(action_id) do
+    with %Pack{} = pack <- get(pack_id),
+         true <- pack_matches?(pack, expected_pack_hash, pack_version),
+         %Action{command: %{} = command} <- Enum.find(pack.actions, &(&1.id == action_id)) do
+      {:ok, command}
+    else
+      _ -> :error
+    end
+  end
+
+  def resolve_command(_pack_id, _action_id, _expected_pack_hash, _pack_version), do: :error
+
+  # A pinned hash is authoritative — require an exact match, never downgrade to
+  # the version. With no pinned hash, an advertised version match is the proof.
+  defp pack_matches?(%Pack{content_hash: hash}, expected_hash, _version)
+       when is_binary(expected_hash),
+       do: hash == expected_hash
+
+  defp pack_matches?(%Pack{version: version}, _expected_hash, pack_version)
+       when is_binary(pack_version),
+       do: version == pack_version
+
+  defp pack_matches?(_pack, _expected_hash, _version), do: false
 
   @doc "Repo source URL for a pack, suitable for an external link."
   @spec source_url(Pack.t()) :: String.t()

@@ -9,6 +9,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Approvals, Repo, Runs}
   alias Emisar.Runners.Runner
+  alias EmisarWeb.PacksRegistry
 
   defp pending_request(account, requested_by) do
     {:ok, runner} =
@@ -55,6 +56,118 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     # The risk is looked up from the catalog and rendered as a pill.
     assert html =~ "high"
+  end
+
+  test "shows the resolved command when the pinned pack hash matches ours", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    args_schema = %{
+      "args" => [
+        %{"name" => "module", "type" => "string", "required" => true},
+        %{"name" => "frequency", "type" => "string", "default" => "always"}
+      ]
+    }
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "cloud-init.single_module",
+      pack_id: "cloud-init",
+      kind: "exec",
+      args_schema: args_schema
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "cloud-init.single_module",
+        source: "operator",
+        reason: "re-run module",
+        args: %{"module" => "ssh"},
+        expected_pack_hash: PacksRegistry.get("cloud-init").content_hash
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # The omitted `frequency` falls back to its declared default — exactly what
+    # the runner will do — so the approver sees the full command, not just args.
+    assert html =~ "cloud-init single --name=ssh --frequency=always"
+    assert html =~ "what the runner will execute"
+  end
+
+  test "shows the resolved command via the advertised version when no hash is pinned",
+       %{conn: conn} do
+    # The seeded/queued case: the run carries no pinned hash, but the runner
+    # advertised the pack at a version that matches our compiled copy.
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    pack = PacksRegistry.get("systemd-deep")
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "systemd.unit_restart",
+      pack_id: "systemd-deep",
+      pack_version: pack.version,
+      kind: "exec",
+      args_schema: %{"args" => [%{"name" => "unit", "type" => "string"}]}
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "systemd.unit_restart",
+        source: "operator",
+        reason: "restart the api",
+        args: %{"unit" => "checkout-api.service"},
+        expected_pack_hash: nil
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "systemctl restart checkout-api.service"
+    assert html =~ "what the runner will execute"
+  end
+
+  test "hides the command when a pinned hash differs, even if the version matches",
+       %{conn: conn} do
+    # A pinned hash is authoritative: a drift must never be papered over by a
+    # coincidentally-matching advertised version. No command; args still show.
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    pack = PacksRegistry.get("cloud-init")
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "cloud-init.single_module",
+      pack_id: "cloud-init",
+      pack_version: pack.version,
+      kind: "exec",
+      args_schema: %{"args" => [%{"name" => "module", "type" => "string"}]}
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "cloud-init.single_module",
+        source: "operator",
+        reason: "re-run module",
+        args: %{"module" => "ssh"},
+        expected_pack_hash: "sha256:#{String.duplicate("0", 64)}"
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    refute html =~ "what the runner will execute"
+    assert html =~ "ssh"
   end
 
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
