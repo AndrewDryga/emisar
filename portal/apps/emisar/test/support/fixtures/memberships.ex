@@ -48,6 +48,16 @@ defmodule Emisar.Fixtures.Memberships do
     updated
   end
 
+  @doc "Suspends a membership (sets `disabled_at`) directly, returning the updated struct."
+  def suspend_membership(%Membership{} = membership) do
+    {:ok, suspended} =
+      membership
+      |> Membership.Changeset.suspend()
+      |> Repo.update()
+
+    suspended
+  end
+
   @doc """
   Test inspector: the membership joining `account_id` + `user_id`, or
   `nil`. Lets a test read post-mutation membership state without the

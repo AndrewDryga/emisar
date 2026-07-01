@@ -1296,6 +1296,25 @@ defmodule Emisar.SSOTest do
       assert identity.scim_active
     end
 
+    test "a re-POST does NOT undo a MANUAL suspend (still active in the IdP) — break-glass holds",
+         %{
+           provider: provider,
+           account: account
+         } do
+      attrs = scim_attrs(%{external_id: "okta|manual", email: "manual@acme.test"})
+      assert {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+
+      # An operator suspends them in the portal; the IdP still lists them active,
+      # so scim_active stays true — this is NOT an IdP deprovision.
+      membership = Accounts.peek_sync_membership(account.id, user.id)
+      assert Fixtures.Memberships.suspend_membership(membership).disabled_at
+
+      # A routine re-POST (an IdP that re-creates the still-active user) must NOT
+      # lift the manual suspend.
+      assert {:ok, %{membership: reprovisioned}} = SSO.scim_provision_user(provider, attrs)
+      assert reprovisioned.disabled_at
+    end
+
     test "a colliding email fails :email_taken — never merges onto the existing user", %{
       provider: provider
     } do

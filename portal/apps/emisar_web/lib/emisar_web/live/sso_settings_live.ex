@@ -2088,8 +2088,12 @@ defmodule EmisarWeb.SSOSettingsLive do
       <.section_header title="Synced users" count={length(@members)} count_tone={:neutral} />
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         People provisioned through this connection — by directory sync, an SSO first sign-in, or an
-        approved link request. Re-role or suspend them here; directory sync also offboards a member
-        automatically when your IdP does.
+        approved link request.
+        <span :if={@scim_enabled}>
+          Suspend a member here and it holds until you lift it. Roles follow your group → role
+          mappings, and directory sync offboards a member automatically when your IdP does.
+        </span>
+        <span :if={not @scim_enabled}>Re-role or suspend a member here.</span>
       </p>
 
       <ul :if={@members != []} class="mt-4 divide-y divide-zinc-800/70">

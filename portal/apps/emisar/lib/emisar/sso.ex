@@ -573,12 +573,38 @@ defmodule Emisar.SSO do
   # and flip the identity back to scim_active. Idempotent for an active member.
   defp load_provisioned(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
     with {:ok, user} <- Users.fetch_user_by_id(identity.user_id),
-         {:ok, membership} <- ensure_active_membership(provider, user),
+         {:ok, membership} <- reprovision_membership(provider, user, identity),
          {:ok, identity} <- ensure_scim_active(identity) do
       {:ok, %{user: user, identity: identity, membership: membership}}
     end
   end
 
+  # The membership half of a SCIM re-POST — unlike an admin link-approval, it must
+  # respect a break-glass MANUAL suspend.
+  defp reprovision_membership(%IdentityProvider{} = provider, user, %UserIdentity{} = identity) do
+    case Accounts.peek_sync_membership(provider.account_id, user.id) do
+      %Accounts.Membership{disabled_at: nil} = membership ->
+        {:ok, membership}
+
+      %Accounts.Membership{} = membership ->
+        # A disabled membership while the IdP still has them active (scim_active:
+        # true) is a MANUAL suspend — a break-glass security action that HOLDS; a
+        # routine re-POST never silently lifts it. scim_active: false means the IdP
+        # is re-activating a member it DEACTIVATED, so reinstate. Same scim_active
+        # boundary the manual-reinstate block uses.
+        if identity.scim_active do
+          {:ok, membership}
+        else
+          Accounts.sync_reinstate_membership(membership, provider)
+        end
+
+      nil ->
+        Accounts.provision_sso_membership(provider.account_id, user.id, provider.default_role)
+    end
+  end
+
+  # Ensure the member has an active membership, reinstating or (re)creating one —
+  # the link-approval flow, where an admin explicitly grants access.
   defp ensure_active_membership(%IdentityProvider{} = provider, user) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do
       %Accounts.Membership{disabled_at: nil} = membership ->
