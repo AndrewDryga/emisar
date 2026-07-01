@@ -378,8 +378,9 @@ services:
   #
   #   ./dev/keycloak/e2e/run.sh
   #
-  # drives BOTH halves — SCIM provision/read/deprovision + the full OIDC login
-  # as alice → JIT-provision at /app/demo.
+  # drives BOTH halves — SCIM provisions alice (the real IdP user) + a
+  # deprovision lifecycle, then the full OIDC login as alice converges on that
+  # SCIM identity (sub == externalId) at /app/demo.
   # ----------------------------------------------------------------
 
 volumes:

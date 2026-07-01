@@ -21,4 +21,5 @@ PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
   SCIM_TOKEN="${SCIM_TOKEN:-ems-scim-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD}" \
   KC_USER="${KC_USER:-alice}" \
   KC_PASS="${KC_PASS:-Sleep-tight-1234}" \
+  ALICE_KC_ID="${ALICE_KC_ID:-a11ce000-0000-4000-8000-000000000001}" \
   exec python3 dev/keycloak/e2e/sso_e2e.py

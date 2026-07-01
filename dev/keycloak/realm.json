@@ -31,6 +31,7 @@
   ],
   "users": [
     {
+      "id": "a11ce000-0000-4000-8000-000000000001",
       "username": "alice",
       "email": "alice@northstar.example",
       "emailVerified": true,
@@ -43,6 +44,7 @@
       "groups": ["/emisar-admins"]
     },
     {
+      "id": "b0b00000-0000-4000-8000-000000000002",
       "username": "bob",
       "email": "bob@northstar.example",
       "emailVerified": true,

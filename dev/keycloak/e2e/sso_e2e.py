@@ -4,14 +4,20 @@ SSO end-to-end driver. Runs FROM THE HOST (via dev/keycloak/e2e/run.sh) against
 the published localhost ports — portal localhost:4010, Keycloak localhost:8443 —
 which is the exact path a host browser takes, so a green run proves the
 host-browser SSO flow works. Reads PORTAL_URL / KEYCLOAK_ISSUER / KEYCLOAK_CA /
-PROVIDER_ID / SCIM_TOKEN / KC_USER / KC_PASS from the environment.
+PROVIDER_ID / SCIM_TOKEN / KC_USER / KC_PASS / ALICE_KC_ID from the environment.
 
-Tests both halves against the seeded Keycloak IdentityProvider:
+Tests both halves against the seeded Keycloak IdentityProvider, and crucially
+their CONVERGENCE:
 
-  1. SCIM  — provision (POST), read (GET), then deprovision (PATCH active:false)
-             a user against /scim/v2 with the fixed dev bearer.
+  1. SCIM  — provision alice, the real IdP user, keyed by her Keycloak id as
+             externalId (ALICE_KC_ID); plus a provision/read/deprovision
+             lifecycle on a throwaway user — all against /scim/v2 with the fixed
+             dev bearer.
   2. OIDC  — the full auth-code login as alice through Keycloak's real login
-             page, landing back on emisar's /sign_in/sso/callback → JIT-provision.
+             page, landing back on emisar's /sign_in/sso/callback. Her OIDC
+             `sub` equals the SCIM externalId, so the login CONVERGES on the
+             identity SCIM just provisioned (decision 4) — it does NOT park her
+             as an email collision.
 
 Exit 0 on success, non-zero on any failure. Stdlib only. DEV ONLY.
 """
@@ -34,6 +40,10 @@ PROVIDER_ID = os.environ["PROVIDER_ID"]
 SCIM_TOKEN = os.environ["SCIM_TOKEN"]
 KC_USER = os.environ["KC_USER"]
 KC_PASS = os.environ["KC_PASS"]
+# alice's PINNED Keycloak id (dev/keycloak/realm.json). Keycloak issues it as the
+# OIDC `sub`, and we POST it as the SCIM externalId — so directory sync and login
+# resolve to one identity (decision 4) instead of parking her as a collision.
+ALICE_KC_ID = os.environ["ALICE_KC_ID"]
 
 # Trust the dev CA for HTTPS calls to Keycloak (the portal trusts the same CA
 # via update-ca-certificates → :public_key.cacerts_get/0).
@@ -93,8 +103,29 @@ def scim(method, path, body=None):
 
 
 def test_scim():
-    log("SCIM: provisioning carol@northstar.example …")
-    user = {
+    # Real directory sync: provision alice — the actual IdP user — keyed by her
+    # Keycloak id as externalId. Her OIDC login below carries the same value as
+    # `sub`, so the two converge on ONE identity (decision 4); test_oidc proves it.
+    log(f"SCIM: provisioning alice@northstar.example (externalId={ALICE_KC_ID}) …")
+    alice = {
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "userName": "alice@northstar.example",
+        "name": {"givenName": "Alice", "familyName": "Admin"},
+        "emails": [{"value": "alice@northstar.example", "primary": True}],
+        "active": True,
+        "externalId": ALICE_KC_ID,
+    }
+    status, resp = scim("POST", "/scim/v2/Users", alice)
+    if status not in (200, 201):
+        fail(f"SCIM provision of alice returned {status}: {resp}")
+    if not resp.get("id"):
+        fail(f"SCIM provision of alice missing id: {resp}")
+    log(f"SCIM: alice provisioned id={resp.get('id')} active={resp.get('active')} ✓")
+
+    # Deprovision lifecycle on a throwaway (carol) — exercises active:false →
+    # suspended WITHOUT deactivating alice before her OIDC login.
+    log("SCIM: provisioning carol@northstar.example (deprovision lifecycle) …")
+    carol = {
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
         "userName": "carol@northstar.example",
         "name": {"givenName": "Carol", "familyName": "SCIM"},
@@ -102,20 +133,20 @@ def test_scim():
         "active": True,
         "externalId": "kc-carol-1",
     }
-    status, resp = scim("POST", "/scim/v2/Users", user)
+    status, resp = scim("POST", "/scim/v2/Users", carol)
     if status not in (200, 201):
         fail(f"SCIM create returned {status}: {resp}")
     uid = resp.get("id")
     if not uid:
         fail(f"SCIM create missing id: {resp}")
-    log(f"SCIM: created id={uid} active={resp.get('active')} ✓")
+    log(f"SCIM: carol created id={uid} active={resp.get('active')} ✓")
 
     status, resp = scim("GET", f"/scim/v2/Users/{uid}")
     if status != 200 or resp.get("active") is not True:
         fail(f"SCIM read-after-create unexpected: {status} {resp}")
     log("SCIM: read back active=true ✓")
 
-    log("SCIM: deprovisioning (active:false) …")
+    log("SCIM: deprovisioning carol (active:false) …")
     patch = {
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
         "Operations": [{"op": "replace", "path": "active", "value": False}],
@@ -159,20 +190,23 @@ def test_oidc():
     ).encode()
 
     # 3) POST → Keycloak 302 back to the portal callback → portal exchanges the
-    #    code (token endpoint over TLS), JIT-provisions alice, sets the session,
-    #    and 302s to /app/<slug>. urllib follows the whole chain; a SUCCESSFUL
-    #    login lands on the authenticated /app, a FAILED one stays on Keycloak or
-    #    bounces to /sign_in.
+    #    code (token endpoint over TLS), resolves alice's `sub` to the identity
+    #    SCIM provisioned (sub == externalId), sets the session, and 302s to
+    #    /app/<slug>. urllib follows the whole chain; a SUCCESSFUL login lands on
+    #    the authenticated /app. If the sub did NOT converge on the SCIM identity,
+    #    alice's existing email would collide and the login would PARK (no /app) —
+    #    so landing on /app is the convergence proof.
     with op.open(urllib.request.Request(action, data=data), timeout=20) as r:
         final_url = r.geturl()
         final_status = r.status
     if "/app" not in final_url:
         fail(
             f"OIDC login did NOT land on the authenticated app "
-            f"(status={final_status}, url={final_url}) — token exchange / JIT likely failed"
+            f"(status={final_status}, url={final_url}) — token exchange failed, or "
+            f"alice's sub did not converge on her SCIM identity and she was parked"
         )
     log(f"OIDC: callback → authenticated app at {final_url} ✓")
-    log("OIDC e2e PASSED (alice JIT-provisioned + signed in)")
+    log("OIDC e2e PASSED (alice signed in — converged on her SCIM-provisioned identity)")
 
 
 def main():

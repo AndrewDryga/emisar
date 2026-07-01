@@ -1337,8 +1337,17 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
   provider_id =
     System.get_env("EMISAR_DEV_KEYCLOAK_PROVIDER_ID") || "11111111-1111-7111-8111-111111111111"
 
+  # Build the row directly (Changeset.change, not create): the dev Keycloak runs
+  # as the portal's localhost sidecar, so its issuer is a loopback URL — which
+  # `IssuerUrl` (the SSRF guard in Changeset.create) correctly rejects for
+  # OPERATOR-supplied issuers. The seed is trusted infra pointing at a known dev
+  # provider, not attacker input, so it bypasses that guard; the console config
+  # path stays fully guarded.
   {:ok, provider} =
-    Emisar.SSO.IdentityProvider.Changeset.create(account.id, %{
+    %Emisar.SSO.IdentityProvider{}
+    |> Ecto.Changeset.change(%{
+      id: provider_id,
+      account_id: account.id,
       kind: :keycloak,
       name: "Keycloak (dev)",
       issuer: issuer,
@@ -1350,7 +1359,6 @@ if not keycloak_present? and is_binary(keycloak_secret) and keycloak_secret != "
       provisioner: :jit,
       enabled: true
     })
-    |> Ecto.Changeset.put_change(:id, provider_id)
     |> Repo.insert()
 
   IO.puts(IO.ANSI.green() <> "✓ Seeded Keycloak OIDC provider (#{issuer})" <> IO.ANSI.reset())
