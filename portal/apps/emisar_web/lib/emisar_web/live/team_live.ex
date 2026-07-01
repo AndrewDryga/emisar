@@ -454,6 +454,18 @@ defmodule EmisarWeb.TeamLive do
           |> Enum.map(& &1.id)
           |> Runners.runner_scopes_for_membership_ids()
 
+        # Which of the visible members were provisioned by an SSO/SCIM connection
+        # (and which one), so the row can attribute + link them. manage_sso-gated,
+        # so a non-SSO-admin viewing the team simply sees no sync badge.
+        identity_by_user_id =
+          case SSO.list_identities_for_users(
+                 Enum.map(memberships, & &1.user_id),
+                 socket.assigns.current_subject
+               ) do
+            {:ok, identities} -> Map.new(identities, &{&1.user_id, &1})
+            {:error, _} -> %{}
+          end
+
         {:ok, runners, _} =
           Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
 
@@ -469,6 +481,7 @@ defmodule EmisarWeb.TeamLive do
         )
         |> assign(:filter_params, params)
         |> assign(:scopes_by_membership, scopes_by_membership)
+        |> assign(:identity_by_user_id, identity_by_user_id)
         |> assign(:runners_by_id, runners_by_id)
         |> assign(:runner_groups, runner_groups)
         |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
@@ -895,6 +908,14 @@ defmodule EmisarWeb.TeamLive do
                         user={membership.user}
                         require_mfa?={@current_account.settings.require_mfa}
                       />
+                      <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
+                         it, so an admin can see where this member came from and
+                         jump to the provider. Renders nothing for a manually-added
+                         member (or when the viewer can't read SSO). --%>
+                      <.sync_badge
+                        identity={Map.get(@identity_by_user_id, membership.user_id)}
+                        account={@current_account}
+                      />
                       <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
                         You
                       </.chip>
@@ -1157,6 +1178,33 @@ defmodule EmisarWeb.TeamLive do
     <.chip title="No two-factor authentication enrolled.">No 2FA</.chip>
     """
   end
+
+  attr :identity, :any, default: nil
+  attr :account, :map, required: true
+
+  # A linked chip attributing a member to the SSO/SCIM connection that
+  # provisioned them — SCIM directory sync, an SSO first-login (JIT), or an admin
+  # approving a link request — and jumping to that provider. A manually-added
+  # member (nil identity) renders nothing.
+  defp sync_badge(%{identity: nil} = assigns), do: ~H""
+
+  defp sync_badge(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/app/#{@account}/settings/sso/#{@identity.provider_id}"}
+      class="inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
+      title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider.name}"}
+    >
+      <.icon name="hero-arrow-path" class="h-3 w-3 text-brand-400" />
+      {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider.name}
+    </.link>
+    """
+  end
+
+  defp provisioned_via_label(:scim), do: "SCIM"
+  defp provisioned_via_label(:oidc_jit), do: "SSO"
+  defp provisioned_via_label(:manual), do: "Linked"
+  defp provisioned_via_label(_), do: "Synced"
 
   # own row (use Profile) and short-circuited for non-managers.
   attr :membership, :map, required: true

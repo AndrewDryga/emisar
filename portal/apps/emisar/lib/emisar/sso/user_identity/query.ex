@@ -27,6 +27,30 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
 
+  def by_user_ids(queryable, user_ids),
+    do: where(queryable, [identities: i], i.user_id in ^user_ids)
+
+  # Join (if needed) + preload the identity's provider — powers the team page's
+  # "synced from <provider>" attribution and the provider's synced-users list.
+  def with_joined_provider(queryable) do
+    with_named_binding(queryable, :provider, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [identities: i],
+        provider in ^Emisar.SSO.IdentityProvider.Query.not_deleted(),
+        on: i.provider_id == provider.id,
+        as: ^binding
+      )
+    end)
+  end
+
+  def with_preloaded_provider(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> preload([identities: i, provider: provider], provider: provider)
+  end
+
   def by_ids(queryable, ids),
     do: where(queryable, [identities: i], i.id in ^ids)
 

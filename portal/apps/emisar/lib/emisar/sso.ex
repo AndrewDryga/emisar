@@ -31,6 +31,25 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc """
+  The SSO identities for the given member `user_ids` in the subject's account,
+  each preloaded with its provider — powers the "synced from <provider>"
+  attribution on the team page. Requires `manage_sso`; scoped to the account.
+  Returns `{:ok, [%UserIdentity{}]}`.
+  """
+  def list_identities_for_users(user_ids, %Subject{} = subject) when is_list(user_ids) do
+    with :ok <- ensure_can_configure_sso(subject) do
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_user_ids(user_ids)
+        |> UserIdentity.Query.with_preloaded_provider()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, identities}
+    end
+  end
+
   def fetch_provider_by_id(id, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject),
          true <- Repo.valid_uuid?(id) do

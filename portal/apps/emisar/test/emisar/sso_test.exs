@@ -166,6 +166,37 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- list_identities_for_users/2 -------------------------------------
+
+  describe "list_identities_for_users/2" do
+    test "returns the given users' SSO/SCIM identities, provider preloaded" do
+      %{provider: provider, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|alice")
+
+      assert {:ok, [found]} = SSO.list_identities_for_users([identity.user_id], subject)
+      assert found.id == identity.id
+      assert found.provisioned_via == :scim
+      assert found.provider.id == provider.id
+      assert found.provider.name == provider.name
+    end
+
+    test "a viewer (no manage_sso) is denied" do
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|bob")
+
+      assert {:error, :unauthorized} =
+               SSO.list_identities_for_users([identity.user_id], viewer_in(account))
+    end
+
+    test "is account-scoped — B never sees A's synced members" do
+      %{provider: provider} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|carol")
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert {:ok, []} = SSO.list_identities_for_users([identity.user_id], sb)
+    end
+  end
+
   # -- fetch_provider_by_id/2 ------------------------------------------
 
   describe "fetch_provider_by_id/2" do
