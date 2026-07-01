@@ -925,7 +925,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
           </.link>
 
-          <div :for={provider <- @providers} class="space-y-6">
+          <div :for={provider <- @providers} class="space-y-8">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
@@ -994,13 +994,17 @@ defmodule EmisarWeb.SSOSettingsLive do
               provider={provider}
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
+            />
+
+            <.group_mapping_section
+              :if={@can_configure_directory_sync? and provider.scim_enabled}
+              provider={provider}
               mappings={Map.get(@group_mappings, provider.id, [])}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               mapping_form={Map.get(@mapping_forms, provider.id)}
               mapping_role_options={@mapping_role_options}
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
-              typed={@typed}
             />
             <div
               :if={!@can_configure_directory_sync?}
@@ -1346,17 +1350,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :provider, :map, required: true
   attr :scim_base_url, :string, required: true
   attr :scim_token, :map, default: nil
-  attr :mappings, :list, default: []
-  attr :mapping_form, Phoenix.HTML.Form, default: nil
-  attr :mapping_role_options, :list, required: true
-  attr :editing_mapping_id, :string, default: nil
-  attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
-  attr :typed, :string, default: ""
-  attr :synced_groups, :list, default: []
 
-  # Directory sync (SCIM) controls for one connection. The bearer is shown
-  # ONCE on enable/rotate (write-only); after that only the base URL + the
-  # enabled state render — the token is never read back from the provider.
+  # Directory sync (SCIM) — a flat section on the connection detail (NOT a card):
+  # header + one-line intent + the base URL, the once-shown bearer, and the IdP
+  # setup steps. The bearer is write-only (shown once on enable/rotate). Group→role
+  # is a sibling section, not nested here.
   defp scim_panel(assigns) do
     provider_id = assigns.provider.id
 
@@ -1369,127 +1367,116 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
-    <div class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-medium text-zinc-200">Directory sync (SCIM)</span>
-            <.chip :if={@provider.scim_enabled} tone={:brand}>Enabled</.chip>
-            <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
+    <section>
+      <.section_header title="Directory sync (SCIM)">
+        <:actions>
+          <.chip :if={@provider.scim_enabled} tone={:brand}>Enabled</.chip>
+          <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
+          <div class="ml-auto flex items-center gap-2">
+            <.button
+              :if={not @provider.scim_enabled}
+              variant="secondary"
+              size="sm"
+              phx-click="enable_scim"
+              phx-value-id={@provider.id}
+            >
+              Enable
+            </.button>
+            <.button
+              :if={@provider.scim_enabled}
+              variant="secondary"
+              size="sm"
+              phx-click="rotate_scim"
+              phx-value-id={@provider.id}
+              data-confirm="Rotate the SCIM token? Your IdP will lose access until you paste the new one."
+            >
+              Rotate token
+            </.button>
+            <.button
+              :if={@provider.scim_enabled}
+              variant="ghost"
+              tone="danger"
+              size="sm"
+              phx-click="disable_scim"
+              phx-value-id={@provider.id}
+              data-confirm="Disable directory sync? Your IdP can no longer provision or deprovision members through it."
+            >
+              Disable
+            </.button>
           </div>
-          <p class="mt-1 max-w-prose text-xs text-zinc-500">
-            Let your IdP push joins and — critically — offboards: a member removed from
-            your directory is suspended here automatically. Point your provider's SCIM
-            connector at the base URL below and authenticate with the bearer token — until
-            that's wired up, nothing syncs.
+        </:actions>
+      </.section_header>
+
+      <p class="max-w-prose text-sm leading-6 text-zinc-400">
+        Your IdP provisions new members and — critically — offboards removed ones automatically:
+        drop someone from your directory and they're suspended here.
+        <.doc_link href="/docs/sso">Directory sync docs</.doc_link>
+      </p>
+
+      <div :if={@provider.scim_enabled} class="mt-4 space-y-4">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            SCIM base URL
           </p>
-        </div>
-
-        <div class="flex shrink-0 items-center gap-2">
-          <.button
-            :if={not @provider.scim_enabled}
-            variant="secondary"
-            size="sm"
-            phx-click="enable_scim"
-            phx-value-id={@provider.id}
-          >
-            Enable directory sync
-          </.button>
-          <.button
-            :if={@provider.scim_enabled}
-            variant="secondary"
-            size="sm"
-            phx-click="rotate_scim"
-            phx-value-id={@provider.id}
-            data-confirm="Rotate the SCIM token? Your IdP will lose access until you paste the new one."
-          >
-            Rotate token
-          </.button>
-          <.button
-            :if={@provider.scim_enabled}
-            variant="ghost"
-            tone="danger"
-            size="sm"
-            phx-click="disable_scim"
-            phx-value-id={@provider.id}
-            data-confirm="Disable directory sync? Your IdP can no longer provision or deprovision members through it."
-          >
-            Disable
-          </.button>
-        </div>
-      </div>
-
-      <div :if={@provider.scim_enabled} class="mt-3">
-        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          SCIM base URL
-        </span>
-        <div class="mt-1 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
-          <code
-            id={"scim-url-#{@provider.id}"}
-            class="flex-1 break-all font-mono text-xs text-zinc-300"
-          >
-            {@scim_base_url}
-          </code>
-          <.copy_button target={"#scim-url-#{@provider.id}"}>Copy</.copy_button>
-        </div>
-      </div>
-
-      <%!-- The one-time token reveal — only for the provider whose token was
-           just minted. Dismissing it (or any reload) drops it for good. --%>
-      <div
-        :if={@revealed_token}
-        class="mt-3 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <p class="text-xs font-semibold text-amber-100">
-              Copy this SCIM token now — it's shown only once.
-            </p>
-            <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
-              <code
-                id={"scim-token-#{@provider.id}"}
-                class="flex-1 break-all font-mono text-xs text-zinc-100"
-              >
-                {@revealed_token}
-              </code>
-              <.copy_button
-                target={"#scim-token-#{@provider.id}"}
-                class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
-              >
-                Copy
-              </.copy_button>
-            </div>
-            <p class="mt-2 text-xs text-amber-100/70">
-              Didn't copy it? Use <span class="font-semibold">Rotate token</span>
-              above to mint a fresh one — the old token stops working.
-            </p>
+          <div class="mt-1.5 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
+            <code
+              id={"scim-url-#{@provider.id}"}
+              class="flex-1 break-all font-mono text-xs text-zinc-300"
+            >
+              {@scim_base_url}
+            </code>
+            <.copy_button target={"#scim-url-#{@provider.id}"}>Copy</.copy_button>
           </div>
-          <button
-            type="button"
-            phx-click="dismiss_scim_token"
-            class="rounded-lg p-1 text-amber-200/80 hover:bg-amber-500/10 hover:text-amber-100"
-            aria-label="Dismiss"
-          >
-            <.icon name="hero-x-mark" class="h-4 w-4" />
-          </button>
         </div>
-      </div>
 
-      <%!-- IdP-side SCIM setup — collapsed once enabled so a working connection
-           doesn't dump its setup steps every visit; auto-opens right after the
-           token's minted (you're mid-setup then). The base URL + bearer are
-           above; this is how to wire them in, plus the externalId↔subject note. --%>
-      <details
-        :if={@provider.scim_enabled}
-        class="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40"
-        {if(@revealed_token, do: %{open: ""}, else: %{})}
-      >
-        <summary class="flex cursor-pointer items-center justify-between gap-3 p-4 text-sm font-medium text-zinc-200 hover:bg-zinc-900/60">
-          <span>Point your IdP at this connection</span>
-          <span class="text-xs font-normal text-zinc-500">setup steps</span>
-        </summary>
-        <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
-          <ol class="space-y-2.5 text-xs leading-relaxed text-zinc-400">
+        <%!-- The one-time token reveal — only for the provider whose token was
+             just minted. Dismissing it (or any reload) drops it for good. --%>
+        <div :if={@revealed_token} class="rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-semibold text-amber-100">
+                Copy this SCIM token now — it's shown only once.
+              </p>
+              <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
+                <code
+                  id={"scim-token-#{@provider.id}"}
+                  class="flex-1 break-all font-mono text-xs text-zinc-100"
+                >
+                  {@revealed_token}
+                </code>
+                <.copy_button
+                  target={"#scim-token-#{@provider.id}"}
+                  class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
+                >
+                  Copy
+                </.copy_button>
+              </div>
+              <p class="mt-2 text-xs text-amber-100/70">
+                Didn't copy it? Use <span class="font-semibold">Rotate token</span>
+                above to mint a fresh one — the old token stops working.
+              </p>
+            </div>
+            <button
+              type="button"
+              phx-click="dismiss_scim_token"
+              class="rounded-lg p-1 text-amber-200/80 hover:bg-amber-500/10 hover:text-amber-100"
+              aria-label="Dismiss"
+            >
+              <.icon name="hero-x-mark" class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <%!-- IdP-side SCIM setup — a light disclosure (no heavy box); auto-opens
+             right after the token's minted (you're mid-setup then). --%>
+        <details class="group" {if(@revealed_token, do: %{open: ""}, else: %{})}>
+          <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100">
+            <.icon
+              name="hero-chevron-right"
+              class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-90"
+            /> Point your IdP at this connection
+          </summary>
+          <ol class="mt-3 space-y-2.5 pl-5 text-xs leading-relaxed text-zinc-400">
             <li>
               <span class="font-semibold text-zinc-300">1.</span>
               Enable SCIM provisioning {scim_location_hint(@provider.kind)}.
@@ -1512,32 +1499,16 @@ defmodule EmisarWeb.SSOSettingsLive do
               claim carries — so a member's SSO login and their synced record are one identity.
             </li>
           </ol>
-          <p :if={@provider.kind == :okta} class="mt-3 text-[11px] leading-relaxed text-zinc-500">
+          <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-500">
             The SCIM app is a second Okta integration, separate from your sign-in app — its own
             SSO doesn't need to be functional. Okta defaults both the OIDC
             <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
             and the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5">externalId</code>
             to the Okta user id, so step 3 usually needs no change.
           </p>
-        </div>
-      </details>
-
-      <%!-- Group → role mapping — only when directory sync is on. Maps an IdP
-           group (by its SCIM externalId) to the role a member in it lands at;
-           sync recomputes a member's role as the HIGHEST mapped role over their
-           groups. Owner is never offered (decision 7). --%>
-      <.group_mapping_section
-        :if={@provider.scim_enabled}
-        provider={@provider}
-        mappings={@mappings}
-        synced_groups={@synced_groups}
-        mapping_form={@mapping_form}
-        mapping_role_options={@mapping_role_options}
-        editing_mapping_id={@editing_mapping_id}
-        mapping_edit_form={@mapping_edit_form}
-        typed={@typed}
-      />
-    </div>
+        </details>
+      </div>
+    </section>
     """
   end
 
@@ -1547,7 +1518,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :mapping_role_options, :list, required: true
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
-  attr :typed, :string, default: ""
   attr :synced_groups, :list, default: []
 
   # The group→role mapping list + create form for one SCIM-enabled connection.
@@ -1556,107 +1526,103 @@ defmodule EmisarWeb.SSOSettingsLive do
   # role value (rendering a label is fine; never branch authz on it).
   defp group_mapping_section(assigns) do
     ~H"""
-    <div class="mt-4 border-t border-zinc-800 pt-4">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Group → role mapping
-        </span>
-        <.chip>{length(@mappings)}</.chip>
-      </div>
-      <p class="mt-1 max-w-prose text-xs text-zinc-500">
-        Map an IdP group to the role its members land at. A member in several mapped groups
-        gets the highest one. Owner is never assignable through directory sync.
+    <section>
+      <.section_header
+        title="Group → role mapping"
+        count={length(@mappings)}
+        count_tone={:neutral}
+      />
+      <p class="max-w-prose text-sm leading-6 text-zinc-400">
+        Map an IdP group to the role its members land at — a member in several mapped groups
+        gets the highest. Owner is never assignable through sync.
+        <.doc_link href="/docs/teams-and-access">Roles docs</.doc_link>
       </p>
 
-      <ul :if={@mappings != []} class="mt-3 space-y-2">
-        <li
-          :for={mapping <- @mappings}
-          class="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5"
-        >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="min-w-0">
-              <span class="truncate font-mono text-xs text-zinc-300">
-                {mapping.external_group_display || mapping.external_group_id}
-              </span>
-              <span :if={mapping.external_group_display} class="ml-1 text-[11px] text-zinc-600">
-                {mapping.external_group_id}
-              </span>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <.chip>{role_label(mapping.role)}</.chip>
-              <.button
-                :if={@editing_mapping_id != mapping.id}
-                variant="ghost"
-                size="sm"
-                phx-click="start_edit_mapping"
-                phx-value-id={mapping.id}
-              >
-                Edit
-              </.button>
-              <%!-- Reversible config (re-addable; members keep their role until
+      <.card :if={@mappings != []} padding="p-0" class="mt-4">
+        <ul class="divide-y divide-zinc-900">
+          <li :for={mapping <- @mappings} class="px-4 py-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
+                <span class="truncate font-mono text-xs text-zinc-300">
+                  {mapping.external_group_display || mapping.external_group_id}
+                </span>
+                <span :if={mapping.external_group_display} class="ml-1 text-[11px] text-zinc-600">
+                  {mapping.external_group_id}
+                </span>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <.chip>{role_label(mapping.role)}</.chip>
+                <.button
+                  :if={@editing_mapping_id != mapping.id}
+                  variant="ghost"
+                  size="sm"
+                  phx-click="start_edit_mapping"
+                  phx-value-id={mapping.id}
+                >
+                  Edit
+                </.button>
+                <%!-- Reversible config (re-addable; members keep their role until
                    the next sync) — a native confirm fits the tier, not a
                    typed-confirm. `delete_mapping` stays server-authz-gated. --%>
-              <.button
-                variant="ghost"
-                tone="danger"
-                size="sm"
-                type="button"
-                phx-click="delete_mapping"
-                phx-value-id={mapping.id}
-                data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
-              >
-                Delete
-              </.button>
+                <.button
+                  variant="ghost"
+                  tone="danger"
+                  size="sm"
+                  type="button"
+                  phx-click="delete_mapping"
+                  phx-value-id={mapping.id}
+                  data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
+                >
+                  Delete
+                </.button>
+              </div>
             </div>
-          </div>
 
-          <%!-- Inline edit — display + role (the group's externalId is the
+            <%!-- Inline edit — display + role (the group's externalId is the
                immutable key). Reuses the page's mapping changeset; the owner
                error surfaces inline here too. --%>
-          <div
-            :if={@editing_mapping_id == mapping.id and @mapping_edit_form}
-            class="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3"
-          >
-            <.simple_form
-              for={@mapping_edit_form}
-              id={"edit-mapping-#{mapping.id}"}
-              phx-change="validate_edit_mapping"
-              phx-submit="update_mapping"
-            >
-              <input type="hidden" name="mapping_id" value={mapping.id} />
-              <.input
-                field={@mapping_edit_form[:external_group_display]}
-                type="text"
-                label="Display name"
-                placeholder="Admins"
-              />
-              <.input
-                field={@mapping_edit_form[:role]}
-                type="select"
-                label="Role"
-                options={@mapping_role_options}
-              />
-              <:actions>
-                <.button phx-disable-with="Saving...">Save</.button>
-                <.button variant="ghost" type="button" phx-click="cancel_edit_mapping">
-                  Cancel
-                </.button>
-              </:actions>
-            </.simple_form>
-          </div>
-        </li>
-      </ul>
+            <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-3">
+              <.simple_form
+                for={@mapping_edit_form}
+                id={"edit-mapping-#{mapping.id}"}
+                phx-change="validate_edit_mapping"
+                phx-submit="update_mapping"
+              >
+                <input type="hidden" name="mapping_id" value={mapping.id} />
+                <.input
+                  field={@mapping_edit_form[:external_group_display]}
+                  type="text"
+                  label="Display name"
+                  placeholder="Admins"
+                />
+                <.input
+                  field={@mapping_edit_form[:role]}
+                  type="select"
+                  label="Role"
+                  options={@mapping_role_options}
+                />
+                <:actions>
+                  <.button phx-disable-with="Saving...">Save</.button>
+                  <.button variant="ghost" type="button" phx-click="cancel_edit_mapping">
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+            </div>
+          </li>
+        </ul>
+      </.card>
 
-      <%!-- Create form. account_id/provider_id are server-side; the operator
-           supplies the group externalId, an optional display, and the role
-           (owner excluded). --%>
-      <div class="mt-3 rounded-lg border border-dashed border-zinc-800 p-3">
+      <%!-- Add a mapping — inline, no framed box; account_id/provider_id are
+           server-side. Pick from synced groups once they exist; free-text before. --%>
+      <div :if={@mapping_form} class="mt-5">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Add a mapping</p>
         <.simple_form
-          :if={@mapping_form}
           for={@mapping_form}
           id={"create-mapping-#{@provider.id}"}
           phx-change="validate_mapping"
           phx-submit="create_mapping"
+          class="mt-2"
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1697,7 +1663,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </:actions>
         </.simple_form>
       </div>
-    </div>
+    </section>
     """
   end
 
