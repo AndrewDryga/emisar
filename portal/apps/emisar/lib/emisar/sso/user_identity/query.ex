@@ -51,6 +51,27 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> preload([identities: i, provider: provider], provider: provider)
   end
 
+  # Join (if needed) + preload the identity's user — for the provider's
+  # synced-users list (name/email alongside the SCIM external id + state).
+  def with_joined_user(queryable) do
+    with_named_binding(queryable, :user, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [identities: i],
+        user in ^Emisar.Users.User.Query.not_deleted(),
+        on: i.user_id == user.id,
+        as: ^binding
+      )
+    end)
+  end
+
+  def with_preloaded_user(queryable) do
+    queryable
+    |> with_joined_user()
+    |> preload([identities: i, user: user], user: user)
+  end
+
   def by_ids(queryable, ids),
     do: where(queryable, [identities: i], i.id in ^ids)
 

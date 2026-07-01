@@ -1,6 +1,6 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.SSO
+  alias Emisar.{Accounts, SSO}
   alias EmisarWeb.{ConfirmDialog, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -31,6 +31,14 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   @mapping_role_options @role_options
 
+  # The synced-users list re-roles a real membership, so its select offers ALL
+  # roles (incl. owner) — unlike the JIT/mapping selects. update_membership_role
+  # still enforces the owner / last-owner / self guards server-side.
+  @member_role_options Enum.map(
+                         Emisar.Auth.Role.all(),
+                         &{&1 |> Atom.to_string() |> String.capitalize(), Atom.to_string(&1)}
+                       )
+
   # New-user provisioning modes for the form's select. JIT auto-creates a user on
   # first sign-in; manual parks first sign-ins as pending requests an admin
   # approves. Bespoke prose labels, so a literal list (not capitalized atoms).
@@ -51,7 +59,16 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:kind_options, @kind_options)
       |> assign(:role_options, @role_options)
       |> assign(:mapping_role_options, @mapping_role_options)
+      |> assign(:member_role_options, @member_role_options)
       |> assign(:provisioner_options, @provisioner_options)
+      # Suspend/re-role a synced member acts on the Accounts membership, which
+      # needs manage_team (distinct from the page's manage_sso view gate).
+      |> assign(
+        :can_manage_team?,
+        Accounts.subject_can_manage_team?(socket.assigns.current_subject)
+      )
+      # The provider's synced users (identity + membership), loaded on :show.
+      |> assign(:synced_members, [])
       |> assign(:edit_form, nil)
       # Pending manual-link requests across the account — loaded on :index, where
       # the overview triages them (the detail page is config-only).
@@ -134,6 +151,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
         |> load_group_mappings([provider])
+        |> load_synced_members(provider)
         |> assign_form(SSO.change_provider())
 
       {:error, :not_found} ->
@@ -141,6 +159,36 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> put_flash(:error, "Connection not found.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")
     end
+  end
+
+  # The users provisioned through this connection, each paired with its account
+  # membership (nil if the person was fully removed but the identity lingers) — so
+  # the "Synced users" card can show state and act on the membership. Two reads
+  # (SSO identities + Accounts memberships), zipped by user id; either failing
+  # (e.g. a viewer without manage_sso) degrades to an empty list.
+  defp load_synced_members(socket, provider) do
+    subject = socket.assigns.current_subject
+
+    members =
+      with {:ok, identities} <- SSO.list_synced_users(provider, subject),
+           user_ids = Enum.map(identities, & &1.user_id),
+           {:ok, memberships} <-
+             Accounts.list_memberships_for_users(
+               socket.assigns.current_account,
+               user_ids,
+               subject
+             ) do
+        membership_by_user = Map.new(memberships, &{&1.user_id, &1})
+
+        Enum.map(
+          identities,
+          &%{identity: &1, membership: Map.get(membership_by_user, &1.user_id)}
+        )
+      else
+        _ -> []
+      end
+
+    assign(socket, :synced_members, members)
   end
 
   # Edit: its own page (like /new) so the form gets the full width — one
@@ -362,6 +410,26 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
 
+  # -- Synced users — member lifecycle (acts on the Accounts membership) ---
+  # These mutate a real membership, so they gate on manage_team, not the page's
+  # manage_sso view gate; Accounts enforces the owner / last-owner / self guards.
+
+  def handle_event("change_member_role", %{"membership_id" => id, "role" => role}, socket) do
+    Permissions.gated(
+      socket,
+      socket.assigns.can_manage_team?,
+      &do_change_member_role(&1, id, role)
+    )
+  end
+
+  def handle_event("suspend_member", %{"membership_id" => id}, socket) do
+    Permissions.gated(socket, socket.assigns.can_manage_team?, &do_suspend_member(&1, id))
+  end
+
+  def handle_event("reinstate_member", %{"membership_id" => id}, socket) do
+    Permissions.gated(socket, socket.assigns.can_manage_team?, &do_reinstate_member(&1, id))
+  end
+
   # No-op for the on_mount badge/fleet hooks' broadcasts (approvals, packs,
   # runner presence). Those nav cues are owned by the hooks; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -491,6 +559,46 @@ defmodule EmisarWeb.SSOSettingsLive do
       nil -> {:noreply, socket}
       provider -> fun.(provider)
     end
+  end
+
+  defp do_change_member_role(socket, membership_id, role) do
+    with_synced_membership(socket, membership_id, fn membership ->
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
+        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+      end
+    end)
+  end
+
+  defp do_suspend_member(socket, membership_id) do
+    with_synced_membership(socket, membership_id, fn membership ->
+      case Accounts.suspend_membership(membership, socket.assigns.current_subject) do
+        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member suspended.") |> reload()}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+      end
+    end)
+  end
+
+  defp do_reinstate_member(socket, membership_id) do
+    with_synced_membership(socket, membership_id, fn membership ->
+      case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
+        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member reactivated.") |> reload()}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+      end
+    end)
+  end
+
+  defp with_synced_membership(socket, membership_id, fun) do
+    case find_synced_membership(socket, membership_id) do
+      nil -> {:noreply, socket}
+      membership -> fun.(membership)
+    end
+  end
+
+  defp find_synced_membership(socket, membership_id) do
+    socket.assigns.synced_members
+    |> Enum.map(& &1.membership)
+    |> Enum.find(&(&1 && &1.id == membership_id))
   end
 
   defp do_create_mapping(socket, provider_id, params) do
@@ -695,6 +803,28 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp error_message(_) do
     "That action didn't complete. Refresh to see the connection's current state, then try again."
   end
+
+  # Member-lifecycle errors from Accounts (change role / suspend / reinstate) —
+  # kept separate from the SSO-config error_message/1 so each reads for its surface.
+  defp member_error(:unauthorized), do: "Only owners and admins can manage members."
+
+  defp member_error(:insufficient_privileges),
+    do: "You can't manage a member whose role is equal to or above yours."
+
+  defp member_error(:last_owner) do
+    "This is the account's last owner — promote someone else before demoting or suspending them."
+  end
+
+  defp member_error(reason) when reason in [:cannot_self_promote, :cannot_modify_self],
+    do: "You can't change your own membership here — use Profile."
+
+  defp member_error(:not_found), do: "That member no longer exists."
+
+  defp member_error(%Ecto.Changeset{}),
+    do: "That change wasn't valid. Refresh to see the member's current state, then try again."
+
+  defp member_error(_),
+    do: "That didn't complete. Refresh to see the member's current state, then try again."
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
@@ -1055,6 +1185,13 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_role_options={@mapping_role_options}
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
+            />
+
+            <.synced_users_card
+              members={@synced_members}
+              member_role_options={@member_role_options}
+              can_manage_team?={@can_manage_team?}
+              current_user_id={@current_user.id}
             />
 
             <.card :if={!@can_configure_directory_sync?} padding="p-5">
@@ -1797,6 +1934,116 @@ defmodule EmisarWeb.SSOSettingsLive do
     </.card>
     """
   end
+
+  attr :members, :list, required: true
+  attr :member_role_options, :list, required: true
+  attr :can_manage_team?, :boolean, required: true
+  attr :current_user_id, :string, required: true
+
+  # The users provisioned through this connection (SCIM sync / SSO first-login /
+  # approved link), with portal-based lifecycle actions per row — re-role or
+  # suspend/reactivate. The controls act on the Accounts membership (manage_team,
+  # which enforces owner / last-owner / self); someone removed from the account
+  # whose identity lingers shows "Removed" with no actions.
+  defp synced_users_card(assigns) do
+    ~H"""
+    <.card padding="p-5">
+      <.section_header title="Synced users" count={length(@members)} count_tone={:neutral} />
+      <p class="max-w-prose text-sm leading-6 text-zinc-400">
+        People provisioned through this connection — by directory sync, an SSO first sign-in, or an
+        approved link request. Re-role or suspend them here; directory sync also offboards a member
+        automatically when your IdP does.
+      </p>
+
+      <ul :if={@members != []} class="mt-4 divide-y divide-zinc-800/70">
+        <li
+          :for={member <- @members}
+          class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+        >
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="truncate text-sm text-zinc-200">
+                {member.identity.user.full_name || member.identity.user.email}
+              </span>
+              <.chip :if={is_nil(member.membership)} tone={:rose}>Removed</.chip>
+              <.chip
+                :if={member.membership && Accounts.Membership.disabled?(member.membership)}
+                tone={:amber}
+              >
+                Suspended
+              </.chip>
+              <.chip :if={not member.identity.scim_active}>Deactivated in IdP</.chip>
+              <.chip>{provisioned_via_label(member.identity.provisioned_via)}</.chip>
+            </div>
+            <div class="mt-0.5 truncate text-xs text-zinc-500">
+              <span class="font-mono">{synced_external_id(member.identity)}</span>
+              <span :if={member.identity.last_seen_at}>
+                · last synced <.local_time value={member.identity.last_seen_at} mode={:relative} />
+              </span>
+            </div>
+          </div>
+
+          <div :if={@can_manage_team? and member.membership} class="flex shrink-0 items-center gap-2">
+            <%= if member.membership.user_id == @current_user_id do %>
+              <span class="text-xs text-zinc-500">you</span>
+            <% else %>
+              <form id={"synced-role-#{member.membership.id}"} phx-change="change_member_role">
+                <input type="hidden" name="membership_id" value={member.membership.id} />
+                <select
+                  name="role"
+                  class="rounded-lg border-0 bg-zinc-900 py-1 pl-2 pr-7 text-xs text-zinc-200 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500"
+                >
+                  {Phoenix.HTML.Form.options_for_select(
+                    @member_role_options,
+                    to_string(member.membership.role)
+                  )}
+                </select>
+              </form>
+              <.button
+                :if={not Accounts.Membership.disabled?(member.membership)}
+                variant="ghost"
+                tone="danger"
+                size="sm"
+                phx-click="suspend_member"
+                phx-value-membership_id={member.membership.id}
+                data-confirm="Suspend this member? They're signed out and blocked until reactivated — and directory sync may reactivate them if your IdP still lists them."
+              >
+                Suspend
+              </.button>
+              <.button
+                :if={Accounts.Membership.disabled?(member.membership)}
+                variant="ghost"
+                tone="success"
+                size="sm"
+                phx-click="reinstate_member"
+                phx-value-membership_id={member.membership.id}
+              >
+                Reactivate
+              </.button>
+            <% end %>
+          </div>
+        </li>
+      </ul>
+
+      <p
+        :if={@members == []}
+        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
+      >
+        No one has been provisioned through this connection yet. Users appear here after they sign in
+        through it, or after directory sync provisions them.
+      </p>
+    </.card>
+    """
+  end
+
+  # The identity's directory id — the SCIM externalId if synced, else the OIDC sub.
+  defp synced_external_id(identity),
+    do: identity.scim_external_id || identity.provider_identifier
+
+  defp provisioned_via_label(:scim), do: "SCIM"
+  defp provisioned_via_label(:oidc_jit), do: "SSO"
+  defp provisioned_via_label(:manual), do: "Linked"
+  defp provisioned_via_label(_), do: "Synced"
 
   defp approve_confirm(%{matched_user_id: nil}) do
     "Approve access for this user? They'll be able to sign in at the connection's default role."

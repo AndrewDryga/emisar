@@ -50,6 +50,27 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc """
+  The users provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
+  SSO first-login, or approved link), each preloaded with the user, most-recent
+  first. Powers the connection page's "Synced users" list. Requires `manage_sso`;
+  scoped to the account. Returns `{:ok, [%UserIdentity{}]}`.
+  """
+  def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject) do
+    with :ok <- ensure_can_configure_sso(subject),
+         {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_id(provider.id)
+        |> UserIdentity.Query.with_preloaded_user()
+        |> UserIdentity.Query.ordered_by_recent()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, identities}
+    end
+  end
+
   def fetch_provider_by_id(id, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject),
          true <- Repo.valid_uuid?(id) do

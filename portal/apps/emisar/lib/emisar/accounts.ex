@@ -292,6 +292,33 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  The memberships for the given `user_ids` in `account`, each preloaded with its
+  user — for surfacing and acting on synced members from the SSO connection page.
+  Bounded (the caller passes a known set of ids), so it returns the full list, not
+  a page. Requires `view_own_account`; scoped to the account.
+  Returns `{:ok, [%Membership{}]}`.
+  """
+  def list_memberships_for_users(%Account{id: account_id}, user_ids, %Subject{} = subject)
+      when is_list(user_ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
+      memberships =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_user_ids(user_ids)
+        |> Membership.Query.with_preloaded_user()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, memberships}
+    end
+  end
+
   # Rendering concerns are the caller's: pass `preload: [:user]` (and/or
   # `:account`) only when the page actually shows those fields — a
   # counting or existence caller pays for no joins. Unknown atoms raise.

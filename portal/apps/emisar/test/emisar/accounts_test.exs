@@ -489,6 +489,39 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "list_memberships_for_users/3" do
+    test "returns the given users' memberships, user preloaded" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      second = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, memberships} =
+               Accounts.list_memberships_for_users(account, [owner.id, second.user_id], subject)
+
+      assert memberships |> Enum.map(& &1.user_id) |> Enum.sort() ==
+               Enum.sort([owner.id, second.user_id])
+
+      assert Enum.all?(memberships, &match?(%Emisar.Users.User{}, &1.user))
+    end
+
+    test "ignores user_ids that aren't members of the account" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      stranger = Fixtures.Users.create_user()
+
+      assert {:ok, [membership]} =
+               Accounts.list_memberships_for_users(account, [owner.id, stranger.id], subject)
+
+      assert membership.user_id == owner.id
+    end
+
+    test "a subject cannot read another account's memberships" do
+      {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :unauthorized} =
+               Accounts.list_memberships_for_users(account_b, [owner_b.id], subject_a)
+    end
+  end
+
   describe "team_mfa_stats/2" do
     test "counts members and MFA enrollment account-wide (not per page)" do
       {owner, account, subject} = Fixtures.Subjects.owner_subject()

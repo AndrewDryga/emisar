@@ -197,6 +197,32 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- list_synced_users/2 --------------------------------------------
+
+  describe "list_synced_users/2" do
+    test "returns the provider's provisioned users with the user preloaded" do
+      %{provider: provider, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|alice")
+
+      assert {:ok, [synced]} = SSO.list_synced_users(provider, subject)
+      assert synced.id == identity.id
+      assert synced.user.id == identity.user_id
+    end
+
+    test "a viewer (no manage_sso) is denied" do
+      %{provider: provider, account: account} = scim_provider()
+
+      assert {:error, :unauthorized} = SSO.list_synced_users(provider, viewer_in(account))
+    end
+
+    test "another account's subject can't read the provider (:not_found)" do
+      %{provider: provider} = scim_provider()
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert {:error, :not_found} = SSO.list_synced_users(provider, sb)
+    end
+  end
+
   # -- fetch_provider_by_id/2 ------------------------------------------
 
   describe "fetch_provider_by_id/2" do
