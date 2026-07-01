@@ -87,8 +87,8 @@ defmodule Emisar.SSOTest do
 
   # Drive a manual-provider sign-in for an unknown sub → the captured request.
   defp capture_request(provider, claims) do
-    {:error, :identity_pending_approval} = SSO.complete_auth(provider, callback(claims), %{})
-    hd(link_requests(provider.id))
+    {:pending, %LinkRequest{} = request} = SSO.complete_auth(provider, callback(claims), %{})
+    request
   end
 
   defp viewer_in(account) do
@@ -1051,14 +1051,14 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account, provisioner: :manual)
       claims = %{"sub" => "okta|unknown", "email" => "u@acme.test", "email_verified" => true}
 
-      assert {:error, :identity_pending_approval} =
+      assert {:pending, %LinkRequest{} = request} =
                SSO.complete_auth(provider, callback(claims), %{})
 
       # The real sub + claims are captured for the admin; no user/identity yet.
-      assert [%LinkRequest{} = request] = link_requests(provider.id)
       assert request.provider_identifier == "okta|unknown"
       assert request.email == "u@acme.test"
       assert request.claims["sub"] == "okta|unknown"
+      assert [_only] = link_requests(provider.id)
       assert UserIdentity.Query.not_deleted() |> Repo.all() == []
     end
 
@@ -1076,10 +1076,9 @@ defmodule Emisar.SSOTest do
 
       claims = %{"sub" => "okta|jit", "email" => "jit@acme.test", "email_verified" => true}
 
-      assert {:error, :identity_pending_approval} =
+      assert {:pending, request} =
                SSO.complete_auth(provider, callback(claims), %{})
 
-      assert [request] = link_requests(provider.id)
       assert request.matched_user_id == member.id
     end
 
@@ -2093,6 +2092,25 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  # -- fetch_pending_link_request/1 -----------------------------------
+
+  describe "fetch_pending_link_request/1" do
+    test "loads a captured request by id (no subject), account preloaded" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      request = capture_request(provider, %{"sub" => "okta|pending", "email" => "p@acme.test"})
+
+      assert {:ok, loaded} = SSO.fetch_pending_link_request(request.id)
+      assert loaded.id == request.id
+      assert loaded.account.id == account.id
+    end
+
+    test "an unknown or malformed id is :not_found (approved/dismissed requests are gone)" do
+      assert {:error, :not_found} = SSO.fetch_pending_link_request(Ecto.UUID.generate())
+      assert {:error, :not_found} = SSO.fetch_pending_link_request("not-a-uuid")
+    end
+  end
+
   # -- approve_link_request/2 ------------------------------------------
 
   describe "approve_link_request/2" do
@@ -2133,6 +2151,22 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, %{user: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
       assert signed_in.id == user.id
+    end
+
+    test "broadcasts to the waiting pending page on approval", %{
+      subject: subject,
+      provider: provider
+    } do
+      request =
+        capture_request(provider, %{"sub" => "okta|notify", "email" => "notify@acme.test"})
+
+      :ok = SSO.subscribe_link_request(request.id)
+
+      assert {:ok, _} = SSO.approve_link_request(request, subject)
+
+      assert_receive {:sso_link_request, :approved, %{id: id, provider_id: provider_id}}
+      assert id == request.id
+      assert provider_id == provider.id
     end
 
     test "a matched request links the identity to the EXISTING user — no dup, role kept", %{
@@ -2275,6 +2309,22 @@ defmodule Emisar.SSOTest do
 
       assert {:error, :not_found} = SSO.dismiss_link_request(request, sb)
       assert [_still_pending] = link_requests(provider.id)
+    end
+  end
+
+  # -- subscribe_link_request/1 ---------------------------------------
+
+  describe "subscribe_link_request/1" do
+    test "the subscriber receives the request's dismiss broadcast" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      request = capture_request(provider, %{"sub" => "okta|sub", "email" => "sub@acme.test"})
+
+      :ok = SSO.subscribe_link_request(request.id)
+      assert {:ok, _} = SSO.dismiss_link_request(request, subject)
+
+      assert_receive {:sso_link_request, :dismissed, %{id: id}}
+      assert id == request.id
     end
   end
 

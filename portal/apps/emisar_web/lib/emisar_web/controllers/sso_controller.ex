@@ -65,8 +65,20 @@ defmodule EmisarWeb.SSOController do
       )
     else
       nil -> sso_error(conn, "Your sign-in session expired. Start again.")
+      {:pending, request} -> redirect_to_pending(conn, request)
       {:error, reason} -> sso_error(conn, callback_error_message(reason))
     end
+  end
+
+  # A :manual-provisioner first login is parked as a link request — send them to
+  # the live pending-approval page instead of bouncing to /sign_in with an error.
+  # The request id rides a signed session cookie, so only this browser (the person
+  # who just authenticated) sees this request.
+  defp redirect_to_pending(conn, request) do
+    conn
+    |> delete_session(@stash_key)
+    |> put_session(:sso_pending_request, request.id)
+    |> redirect(to: ~p"/sign_in/sso/pending")
   end
 
   defp callback_error_message(:email_taken) do

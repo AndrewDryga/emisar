@@ -17,6 +17,27 @@ defmodule Emisar.SSO.LinkRequest.Query do
   def ordered_by_recent(queryable),
     do: order_by(queryable, [requests: r], desc: r.inserted_at, desc: r.id)
 
+  # Join (if needed) + preload the request's account — the pending-approval page
+  # shows the org name the person is waiting to join.
+  def with_joined_account(queryable) do
+    with_named_binding(queryable, :account, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [requests: r],
+        account in ^Emisar.Accounts.Account.Query.not_deleted(),
+        on: r.account_id == account.id,
+        as: ^binding
+      )
+    end)
+  end
+
+  def with_preloaded_account(queryable) do
+    queryable
+    |> with_joined_account()
+    |> preload([requests: r, account: account], account: account)
+  end
+
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:requests, :desc, :inserted_at}, {:requests, :desc, :id}]

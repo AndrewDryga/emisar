@@ -128,6 +128,11 @@ defmodule EmisarWeb.Router do
 
       # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + magic link.
       live "/app/:account_id_or_slug/sign_in", AccountSignInLive
+
+      # A :manual-provisioner SSO first login parks here (request id in the session)
+      # and live-updates when an admin approves. Declared before the `:provider_id`
+      # begin route below so "pending" isn't read as a provider id.
+      live "/sign_in/sso/pending", SSOPendingLive
     end
 
     # Split-code magic link: the LV form POSTs the email to :magic_link_start

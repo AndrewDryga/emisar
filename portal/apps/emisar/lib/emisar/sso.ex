@@ -283,9 +283,9 @@ defmodule Emisar.SSO do
   + RFC 9207 issuer check), then resolve the identity strictly by
   `(provider, sub)` — never email. An unknown `sub` JIT-provisions a fresh user
   when the provider's `provisioner` is `:jit`, or is captured as a pending link
-  request and returns `{:error, :identity_pending_approval}` when it is
-  `:manual`. Returns `{:ok, %{user, identity, provider}}` for the web layer to
-  log in.
+  request and returns `{:pending, request}` when it is `:manual` (the web layer
+  parks the person on the pending-approval page). Returns
+  `{:ok, %{user, identity, provider}}` for the web layer to log in.
   """
   def complete_auth(%IdentityProvider{} = provider, params, stashed) do
     with {:ok, %{identifier: identifier, claims: claims}} <-
@@ -335,7 +335,7 @@ defmodule Emisar.SSO do
         # request for an admin to approve (never auto-merge, C1); otherwise it's
         # a genuine collision (a non-member owns that email) — fail closed.
         case capture_member_link(provider, identifier, claims["email"], claims["name"], claims) do
-          :captured -> {:error, :identity_pending_approval}
+          {:captured, request} -> {:pending, request}
           :no_match -> {:error, :email_taken}
         end
 
@@ -348,8 +348,12 @@ defmodule Emisar.SSO do
   # is captured as a pending link request (the real `sub` + claims, so an admin
   # recognizes the person) and parked — re-attempts upsert, never pile up.
   defp provision_for(%IdentityProvider{provisioner: :manual} = provider, identifier, claims) do
-    _ = capture_link_request(provider, identifier, claims["email"], claims["name"], claims)
-    {:error, :identity_pending_approval}
+    case capture_link_request(provider, identifier, claims["email"], claims["name"], claims) do
+      {:ok, request} -> {:pending, request}
+      # An upsert failure (rare) has no request to park them on — fall back to the
+      # generic pending error so the callback still explains the wait.
+      {:error, _reason} -> {:error, :identity_pending_approval}
+    end
   end
 
   # Capture (or refresh) a pending link request. When the email matches an
@@ -381,8 +385,10 @@ defmodule Emisar.SSO do
   # (C1). Returns `:captured | :no_match`.
   defp capture_member_link(%IdentityProvider{} = provider, identifier, email, full_name, claims) do
     if matched_member_id(provider, email) do
-      _ = capture_link_request(provider, identifier, email, full_name, claims)
-      :captured
+      case capture_link_request(provider, identifier, email, full_name, claims) do
+        {:ok, request} -> {:captured, request}
+        {:error, _} -> :no_match
+      end
     else
       :no_match
     end
@@ -1199,6 +1205,23 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — the SSO pending-approval page loads its OWN captured request by the
+  id stashed in the browser session (authorized by possession — no `%Subject{}`,
+  the person isn't a member yet), account preloaded for the org label. A missing
+  row means it was already approved or dismissed. `{:ok, request} | {:error,
+  :not_found}`.
+  """
+  def fetch_pending_link_request(id) do
+    if Repo.valid_uuid?(id) do
+      LinkRequest.Query.by_id(id)
+      |> LinkRequest.Query.with_preloaded_account()
+      |> Repo.fetch(LinkRequest.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
   Approve a pending manual-link request: provision the captured identity at the
   provider's `default_role` and delete the request, atomically. `manage_sso` +
   Team or Enterprise; account-scoped. Binds the captured `sub` (never email — H1).
@@ -1211,8 +1234,12 @@ defmodule Emisar.SSO do
       multi = approve_link_request_multi(provider, request, subject)
 
       case Repo.commit_multi(multi) do
-        {:ok, %{user: user, identity: identity}} -> {:ok, %{user: user, identity: identity}}
-        {:error, reason} -> {:error, reason}
+        {:ok, %{user: user, identity: identity}} ->
+          broadcast_link_request_approved(request)
+          {:ok, %{user: user, identity: identity}}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -1227,11 +1254,40 @@ defmodule Emisar.SSO do
         |> Multi.insert(:audit, Audit.Events.sso_link_request_dismissed(subject, request))
 
       case Repo.commit_multi(multi) do
-        {:ok, %{request: request}} -> {:ok, request}
-        {:error, reason} -> {:error, reason}
+        {:ok, %{request: request}} ->
+          broadcast_link_request_dismissed(request)
+          {:ok, request}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
+
+  # -- PubSub ---------------------------------------------------------
+  # The pending-approval page subscribes to its own link request so it can react
+  # the instant an admin approves (re-auth → signed in) or dismisses it — keyed by
+  # the request id, which only that person's browser holds.
+
+  @doc "Internal — the pending-approval page subscribes to its captured request."
+  def subscribe_link_request(id) when is_binary(id),
+    do: Emisar.PubSub.subscribe(link_request_topic(id))
+
+  defp broadcast_link_request_approved(%LinkRequest{} = request) do
+    Emisar.PubSub.broadcast(
+      link_request_topic(request.id),
+      {:sso_link_request, :approved, %{id: request.id, provider_id: request.provider_id}}
+    )
+  end
+
+  defp broadcast_link_request_dismissed(%LinkRequest{} = request) do
+    Emisar.PubSub.broadcast(
+      link_request_topic(request.id),
+      {:sso_link_request, :dismissed, %{id: request.id}}
+    )
+  end
+
+  defp link_request_topic(id), do: "sso_link_request:#{id}"
 
   # No existing user matched → provision a fresh user (the original flow).
   defp approve_link_request_multi(
