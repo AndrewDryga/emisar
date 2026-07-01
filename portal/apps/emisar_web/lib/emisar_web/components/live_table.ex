@@ -343,14 +343,18 @@ defmodule EmisarWeb.LiveTable do
       assigns
       |> assign(:selected, List.wrap(assigns.value))
       |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class="flex flex-col text-xs font-medium text-zinc-400">
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <select
         name={"#{@filter.name}"}
         disabled={@disabled}
-        class="rounded-lg border border-zinc-700 bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed"
+        class={[
+          "rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed",
+          filter_control_class(@active?)
+        ]}
       >
         <option value="">All</option>
         <%= for {group_label, options} <- @groups do %>
@@ -372,10 +376,16 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp filter_input(%{filter: %Filter{type: :boolean}} = assigns) do
+    assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
+
     ~H"""
     <label class="flex flex-col text-xs font-medium text-zinc-400">
       <span class="mb-1 invisible">{@filter.title}</span>
-      <span class="inline-flex h-[34px] items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-xs text-zinc-300">
+      <span class={[
+        "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
+        filter_control_class(@active?),
+        if(@active?, do: "text-brand-300", else: "text-zinc-300")
+      ]}>
         <input
           type="checkbox"
           name={@filter.name}
@@ -391,8 +401,10 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp filter_input(%{filter: %Filter{type: :datetime}} = assigns) do
+    assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
+
     ~H"""
-    <label class="flex flex-col text-xs font-medium text-zinc-400">
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <%!-- Apply on blur, not per spinner tick: a datetime-local emits an
            event for every field edit, and a half-typed value parses to nil
@@ -403,15 +415,20 @@ defmodule EmisarWeb.LiveTable do
         value={@value}
         phx-debounce="blur"
         disabled={@disabled}
-        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed"
+        class={[
+          "rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
+          filter_control_class(@active?)
+        ]}
       />
     </label>
     """
   end
 
   defp filter_input(assigns) do
+    assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
+
     ~H"""
-    <label class="flex flex-col text-xs font-medium text-zinc-400">
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <input
         type="text"
@@ -419,7 +436,10 @@ defmodule EmisarWeb.LiveTable do
         value={@value}
         phx-debounce="300"
         disabled={@disabled}
-        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed"
+        class={[
+          "rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed",
+          filter_control_class(@active?)
+        ]}
       />
     </label>
     """
@@ -432,6 +452,20 @@ defmodule EmisarWeb.LiveTable do
   # can take one path.
   defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
   defp normalize_groups(flat), do: [{nil, flat}]
+
+  # A filter is "active" when its value differs from the default (blank / "All"
+  # / unchecked). Drives the brand highlight below so an operator sees at a
+  # glance which filters are narrowing the list.
+  defp filter_active?(%Filter{type: :boolean}, value), do: value == "true"
+  defp filter_active?(_filter, value), do: value not in [nil, "", []]
+
+  # An active filter's label and control switch from muted zinc to the brand
+  # accent (a tinted border + faint ring) so enabled filters stand out.
+  defp filter_label_class(true), do: "flex flex-col text-xs font-medium text-brand-300"
+  defp filter_label_class(false), do: "flex flex-col text-xs font-medium text-zinc-400"
+
+  defp filter_control_class(true), do: "border-brand-500/60 ring-1 ring-brand-500/25"
+  defp filter_control_class(false), do: "border-zinc-700"
 
   @doc """
   True if any of `filters` has a non-blank value in `params`. A page uses this
