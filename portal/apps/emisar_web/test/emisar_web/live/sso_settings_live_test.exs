@@ -1001,4 +1001,44 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Add an identity provider"
     end
   end
+
+  # Placed at the end (not in the "synced users" describe above) only to keep a clean
+  # commit apart from that describe's in-flight rework — logically it belongs there.
+  describe "synced users — a directory-synced role is read-only" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      provider = insert_provider(account, %{})
+      {:ok, provider} = provider |> Ecto.Changeset.change(scim_enabled: true) |> Repo.update()
+
+      {:ok, %{membership: membership}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "kc|erin",
+          email: "erin@northstar.example",
+          full_name: "Erin Sync"
+        })
+
+      %{conn: conn, account: account, provider: provider, membership: membership}
+    end
+
+    test "the role has no editable select and a crafted change_member_role is refused", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      membership: membership
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      # Directory sync owns the role (recomputed each sync), so the row shows it
+      # read-only — no editable <select> — and a crafted change_member_role is rejected
+      # at the domain, leaving the role untouched.
+      refute has_element?(lv, ~s(select[name="role"]))
+
+      render_click(lv, "change_member_role", %{
+        "membership_id" => membership.id,
+        "role" => "admin"
+      })
+
+      assert Repo.reload!(membership).role == membership.role
+    end
+  end
 end
