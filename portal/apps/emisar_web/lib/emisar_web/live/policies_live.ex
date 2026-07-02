@@ -696,29 +696,26 @@ defmodule EmisarWeb.PoliciesLive do
         </.panel>
 
         <section class="space-y-4">
-          <header class="flex items-end justify-between gap-4">
-            <div>
-              <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-                Targeted rulesets
-              </h2>
-              <p class="mt-0.5 max-w-xl text-xs text-zinc-500">
-                A ruleset <strong class="text-zinc-300">replaces</strong>
-                the default policy for one runner or group. Most specific wins — runner,
-                then group, then the default policy.
-              </p>
-            </div>
-            <.button
-              :if={@can_manage?}
-              variant="secondary"
-              size="md"
-              type="button"
-              phx-click="add_ruleset"
-              icon="hero-plus"
-              disabled={not addable_any?(@runners, @groups, @rulesets)}
-            >
-              Add ruleset
-            </.button>
-          </header>
+          <.section_header title="Targeted rulesets" class="mb-0">
+            <:subtitle>
+              A ruleset <strong class="text-zinc-300">replaces</strong>
+              the default policy for one runner or group. Most specific wins — runner,
+              then group, then the default policy.
+            </:subtitle>
+            <:actions>
+              <.button
+                :if={@can_manage?}
+                variant="secondary"
+                size="md"
+                type="button"
+                phx-click="add_ruleset"
+                icon="hero-plus"
+                disabled={not addable_any?(@runners, @groups, @rulesets)}
+              >
+                Add ruleset
+              </.button>
+            </:actions>
+          </.section_header>
 
           <.empty_state
             :if={@load_error? and @rulesets == []}

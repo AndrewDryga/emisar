@@ -643,40 +643,37 @@ defmodule EmisarWeb.RunbookRunLive do
              the planned-step count stays in the header for context — a
              step fans out to one run per targeted runner, so there can be
              more runs than steps. --%>
-        <.card
+        <.panel
           :if={@loaded?}
           id="execution"
-          class="overflow-hidden"
-          padding=""
+          variant={:split}
+          title={if @execution, do: "Execution", else: "Plan"}
         >
-          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="flex items-center gap-2 font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-              {if @execution, do: "Execution", else: "Plan"}
-              <%!-- Headline risk: the most-severe step's risk, so the operator
-                   sees the worst this runbook can do at a glance. Hidden when no
-                   step's action is in the catalog yet (never a false low). --%>
-              <.risk_pill
-                :if={plan_max_risk(@action_risk, @steps)}
-                risk={plan_max_risk(@action_risk, @steps)}
-                class="flex-none"
-              />
-            </h2>
-            <span class="text-xs text-zinc-500">
-              {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-              <span :if={!@execution && @blast_radius.total} class="text-brand-300/70">
-                → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
-                  @blast_radius.waves,
-                  "wave"
-                )}
-              </span>
-              <span :if={@execution}>
-                · {finished_count(@run_statuses)}/{@execution.total} finished
-                <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
-                  · {failed_count(@run_statuses)} failed
-                </span>
+          <%!-- Headline risk: the most-severe step's risk, so the operator
+               sees the worst this runbook can do at a glance. Hidden when no
+               step's action is in the catalog yet (never a false low). --%>
+          <:badge>
+            <.risk_pill
+              :if={plan_max_risk(@action_risk, @steps)}
+              risk={plan_max_risk(@action_risk, @steps)}
+              class="flex-none"
+            />
+          </:badge>
+          <:annotation>
+            {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
+            <span :if={!@execution && @blast_radius.total} class="text-brand-300/70">
+              → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
+                @blast_radius.waves,
+                "wave"
+              )}
+            </span>
+            <span :if={@execution}>
+              · {finished_count(@run_statuses)}/{@execution.total} finished
+              <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
+                · {failed_count(@run_statuses)} failed
               </span>
             </span>
-          </header>
+          </:annotation>
 
           <%!-- The engine stops launching waves after a failed/denied run, so
                the remaining placeholder rows never dispatch — without this they
@@ -835,7 +832,7 @@ defmodule EmisarWeb.RunbookRunLive do
             </.link>
             first.
           </div>
-        </.card>
+        </.panel>
 
         <%!-- Dispatch form — full width below the plan; doubles as the re-run
              form once a run settles. Hidden while a run is IN PROGRESS so a

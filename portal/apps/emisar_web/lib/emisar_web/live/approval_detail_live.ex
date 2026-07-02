@@ -562,12 +562,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <%!-- Plain-English effect from the pack manifest, so a non-expert
                approver knows what they're signing off on — not just the
                action id + raw args. --%>
-          <.card :if={@action_description} padding="p-4">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              What this does
-            </h3>
-            <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@action_description}</p>
-          </.card>
+          <.panel
+            :if={@action_description}
+            title="What this does"
+            title_variant={:eyebrow}
+            padding="p-4"
+          >
+            <p class="text-sm leading-relaxed text-zinc-200">{@action_description}</p>
+          </.panel>
 
           <%!-- The exact command the runner will execute, the run's arguments
                resolved into the action's template. Only shown when our compiled
@@ -596,15 +598,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
             code={format_json(@run.args)}
           />
 
-          <.card :if={@request.reason && @request.reason != ""} padding="p-4">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Reason
-            </h3>
+          <.panel
+            :if={@request.reason && @request.reason != ""}
+            title="Reason"
+            title_variant={:eyebrow}
+            padding="p-4"
+          >
             <%!-- No whitespace-pre-wrap: it preserved the template's own leading
                  indentation and pushed the reason right of every other section
                  body. The reason is prose, so normal flow (flush-left) is correct. --%>
-            <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
-          </.card>
+            <p class="text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
+          </.panel>
 
           <.callout
             :if={@run && @run.policy_reason}
@@ -622,19 +626,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                an approver sees who's already signed off (and that a deny
                finalized). A single-approver request shows it only once decided
                (the decision-history panel covers the lone vote). --%>
-          <.card
+          <.panel
             :if={@decisions != [] and @request.min_approvals > 1}
-            class="overflow-hidden"
-            padding=""
+            variant={:split}
+            title="Decisions"
+            title_variant={:eyebrow}
           >
-            <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Decisions
-              </h3>
-              <span class="text-[11px] text-zinc-500">
-                {@approved_count} of {@request.min_approvals} approvals
-              </span>
-            </header>
+            <:annotation>{@approved_count} of {@request.min_approvals} approvals</:annotation>
             <ul class="divide-y divide-zinc-900">
               <li :for={decision <- @decisions} class="flex items-center gap-3 px-4 py-2 text-sm">
                 <.icon
@@ -648,7 +646,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 <.local_time value={decision.decided_at} class="text-xs text-zinc-500" />
               </li>
             </ul>
-          </.card>
+          </.panel>
 
           <div :if={@run}>
             <.link

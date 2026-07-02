@@ -363,9 +363,7 @@ defmodule EmisarWeb.BillingLive do
              phones. Current plan visually pinned, popular plan
              highlighted with a ribbon. --%>
         <section>
-          <h2 class="mb-3 font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-            Plans
-          </h2>
+          <.section_header title="Plans" />
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <article
               :for={plan <- @plans}

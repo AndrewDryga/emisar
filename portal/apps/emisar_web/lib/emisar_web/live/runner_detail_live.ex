@@ -274,13 +274,8 @@ defmodule EmisarWeb.RunnerDetailLive do
              usually trying to figure out "is this thing healthy?" so
              the catalog gets the wide column, recent runs sit
              alongside as a freshness check. --%>
-        <.card class="overflow-hidden lg:col-span-2 lg:order-1" padding="">
-          <header class="flex items-center gap-2 border-b border-zinc-900 px-5 py-3">
-            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-              Advertised actions
-            </h2>
-            <.count_badge count={@actions_metadata.count} tone={:neutral} />
-          </header>
+        <.panel variant={:split} title="Advertised actions" class="lg:col-span-2 lg:order-1">
+          <:badge><.count_badge count={@actions_metadata.count} tone={:neutral} /></:badge>
 
           <%= if @actions == [] do %>
             <.empty_state icon="hero-cpu-chip" title="No actions yet">
@@ -360,15 +355,9 @@ defmodule EmisarWeb.RunnerDetailLive do
               />
             </div>
           <% end %>
-        </.card>
+        </.panel>
 
-        <.card class="overflow-hidden lg:order-2" padding="">
-          <header class="border-b border-zinc-900 px-5 py-3">
-            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-              Recent runs
-            </h2>
-          </header>
-
+        <.panel variant={:split} title="Recent runs" class="lg:order-2">
           <%= if @recent_runs == [] do %>
             <div class="px-5 py-10 text-center text-sm text-zinc-500">
               Nothing dispatched yet.
@@ -380,7 +369,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               </li>
             </ul>
           <% end %>
-        </.card>
+        </.panel>
       </div>
 
       <%!-- Danger zone — destructive actions live in their own

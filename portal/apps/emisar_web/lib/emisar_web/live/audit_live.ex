@@ -469,23 +469,19 @@ defmodule EmisarWeb.AuditLive do
            itself leads the page. Admin-only `audit:read` tokens live
            here, not on the LLM agents page (which is for MCP connections).
            Lists existing tokens with revoke + the mint affordance. --%>
-      <.card
+      <.panel
         :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
         id="siem-export"
-        class="mt-8 overflow-hidden"
-        padding=""
+        variant={:split}
+        title="SIEM export"
+        class="mt-8"
       >
-        <header class="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
-          <div>
-            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-              SIEM export
-            </h2>
-            <p class="mt-0.5 text-xs leading-relaxed text-zinc-500">
-              Stream audit events as NDJSON to your SIEM. Mint an
-              <code class="font-mono text-zinc-300">audit:read</code>
-              token below, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
-            </p>
-          </div>
+        <:subtitle>
+          Stream audit events as NDJSON to your SIEM. Mint an
+          <code class="font-mono text-zinc-300">audit:read</code>
+          token below, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
+        </:subtitle>
+        <:actions>
           <.button
             :if={is_nil(@export_secret)}
             variant="secondary"
@@ -497,7 +493,7 @@ defmodule EmisarWeb.AuditLive do
           >
             Mint export token
           </.button>
-        </header>
+        </:actions>
 
         <%!-- One-shot reveal. The raw secret only ever exists in the
              socket assigns — refreshing the page hides it for good,
@@ -557,7 +553,7 @@ defmodule EmisarWeb.AuditLive do
             </.list_row>
           </ul>
         </div>
-      </.card>
+      </.panel>
     </.dashboard_shell>
     """
   end

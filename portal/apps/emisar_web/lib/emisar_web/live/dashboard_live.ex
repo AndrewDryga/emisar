@@ -306,18 +306,15 @@ defmodule EmisarWeb.DashboardLive do
 
     <%!-- Recent runs — full width, no parallel "activity" mirror at
          the bottom (that just duplicated the audit page). --%>
-    <.card class="mt-8 overflow-hidden" padding="">
-      <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-        <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-          Recent runs
-        </h2>
+    <.panel variant={:split} title="Recent runs" class="mt-8">
+      <:actions>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
         </.link>
-      </header>
+      </:actions>
 
       <%= if @recent_runs == [] do %>
         <%!-- Brand-new-account state. Cover both shapes: no runners
@@ -347,7 +344,7 @@ defmodule EmisarWeb.DashboardLive do
           </li>
         </ul>
       <% end %>
-    </.card>
+    </.panel>
     """
   end
 

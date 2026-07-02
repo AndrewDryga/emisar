@@ -434,9 +434,8 @@ defmodule EmisarWeb.RunbookEditorLive do
       </:actions>
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <.card class="overflow-hidden" padding="">
-          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">Steps</h2>
+        <.panel variant={:split} title="Steps">
+          <:actions>
             <.button
               variant="secondary"
               size="md"
@@ -446,7 +445,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             >
               Add step
             </.button>
-          </header>
+          </:actions>
 
           <div class="space-y-3 p-5">
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
@@ -501,7 +500,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               </.button>
             </div>
           </div>
-        </.card>
+        </.panel>
 
         <aside class="space-y-4">
           <.panel title="Metadata">

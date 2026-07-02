@@ -94,5 +94,50 @@ defmodule EmisarWeb.Components.PanelTest do
       refute html =~ "<h2"
       assert html =~ "bare body"
     end
+
+    test ":split renders the bordered header row over an unpadded body" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.panel variant={:split} title="Recent runs">
+          <:actions><a href="/runs">View all</a></:actions>
+          <ul>rows</ul>
+        </CoreComponents.panel>
+        """)
+
+      assert html =~ "border-b border-zinc-900 px-5 py-3"
+      assert html =~ "overflow-hidden"
+      assert html =~ "View all"
+      refute html =~ ~s(class="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5")
+    end
+
+    test "title_variant={:eyebrow} renders the uppercase content label" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.panel title="Reason" title_variant={:eyebrow}>prose</CoreComponents.panel>
+        """)
+
+      assert html =~ "uppercase tracking-wider text-zinc-400"
+      assert html =~ "Reason"
+    end
+
+    test ":badge slots after the title; :annotation is the quiet right-side meta" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.panel variant={:split} title="Decisions">
+          <:badge><span data-badge>3</span></:badge>
+          <:annotation>2 of 3 approvals</:annotation>
+          list
+        </CoreComponents.panel>
+        """)
+
+      assert html =~ "data-badge"
+      assert html =~ "2 of 3 approvals"
+    end
   end
 end

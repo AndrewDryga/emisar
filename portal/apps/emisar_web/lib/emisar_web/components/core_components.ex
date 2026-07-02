@@ -2124,28 +2124,65 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Section card with a header — a `<.card>` plus the canonical title row, so
-  every "panel with a heading" reads the same (one heading size, one subtitle
-  style, actions right-aligned). Pass `title` (and optional `:subtitle` /
-  `:actions`); the body is the default slot.
+  every "panel with a heading" reads the same. A hand-rolled `<header>` inside
+  a `<.card>` is banned (console-ux §3) — this component IS that header.
+
+  Two variants: `:padded` (default) keeps the header inside the card padding;
+  `:split` is the bordered header row (`px-5 py-3` + hairline) over an
+  UNpadded body — the shape for `divide-y` lists and framed content.
+  `title_variant={:eyebrow}` renders the small uppercase content label (a
+  detail card's "Reason") instead of the display title. `:badge` renders
+  inline after the title (a `<.count_badge>`, a `<.risk_pill>`); `:annotation`
+  is the quiet right-side meta, before `:actions`.
 
       <.panel title="Default policy">
         <:subtitle>Applies to every runner unless a ruleset overrides it.</:subtitle>
         <.policy_fields ... />
       </.panel>
 
-      <.panel title="Security">
-        <:subtitle>When enforced, members without 2FA are funneled…</:subtitle>
-        <:actions><.button>Enforce</.button></:actions>
-        ...
+      <.panel variant={:split} title="Recent runs">
+        <:actions><.link navigate={...}>View all</.link></:actions>
+        <ul class="divide-y divide-zinc-900">...</ul>
+      </.panel>
+
+      <.panel title="Reason" title_variant={:eyebrow} padding="p-4">
+        <p class="text-sm text-zinc-200">{@request.reason}</p>
       </.panel>
   """
   attr :title, :string, default: nil
+  attr :title_variant, :atom, default: :default, values: [:default, :eyebrow]
+  attr :variant, :atom, default: :padded, values: [:padded, :split]
   attr :class, :string, default: nil
   attr :padding, :string, default: "p-5"
   attr :rest, :global
   slot :subtitle
+  slot :badge, doc: "inline after the title — a count badge, a risk pill"
+  slot :annotation, doc: "quiet right-side meta, before :actions"
   slot :actions
   slot :inner_block, required: true
+
+  def panel(%{variant: :split} = assigns) do
+    ~H"""
+    <.card padding="" class={"overflow-hidden #{@class}"} {@rest}>
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-900 px-5 py-3">
+        <div class="min-w-0">
+          <div class="flex min-w-0 items-center gap-2">
+            <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
+            {render_slot(@badge)}
+          </div>
+          <p :if={@subtitle != []} class="mt-0.5 text-xs leading-relaxed text-zinc-500">
+            {render_slot(@subtitle)}
+          </p>
+        </div>
+        <div class="flex min-w-0 shrink-0 items-center gap-3">
+          <div :if={@annotation != []} class="text-xs text-zinc-500">{render_slot(@annotation)}</div>
+          {render_slot(@actions)}
+        </div>
+      </header>
+      {render_slot(@inner_block)}
+    </.card>
+    """
+  end
 
   def panel(assigns) do
     ~H"""
@@ -2155,19 +2192,29 @@ defmodule EmisarWeb.CoreComponents do
         class="mb-4 flex items-start justify-between gap-4"
       >
         <div class="min-w-0">
-          <h2 :if={@title} class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-            {@title}
-          </h2>
+          <div class="flex min-w-0 items-center gap-2">
+            <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
+            {render_slot(@badge)}
+          </div>
           <p :if={@subtitle != []} class="mt-1 text-xs leading-relaxed text-zinc-500">
             {render_slot(@subtitle)}
           </p>
         </div>
-        <div :if={@actions != []} class="shrink-0">{render_slot(@actions)}</div>
+        <div class="flex shrink-0 items-center gap-3">
+          <div :if={@annotation != []} class="text-xs text-zinc-500">{render_slot(@annotation)}</div>
+          {render_slot(@actions)}
+        </div>
       </header>
       {render_slot(@inner_block)}
     </.card>
     """
   end
+
+  defp panel_title_class(:default),
+    do: "font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100"
+
+  defp panel_title_class(:eyebrow),
+    do: "text-xs font-semibold uppercase tracking-wider text-zinc-400"
 
   @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
@@ -2422,23 +2469,39 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The bare heading-row above an UNbordered list/table section (distinct from
   `<.panel>`, which owns a bordered header). A `text-sm` section title, an
-  optional inline `<.count_badge>`, and an optional `:actions` slot.
+  optional inline `<.count_badge>`, an optional `:subtitle` line, and a
+  right-aligned `:actions` slot.
 
       <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
-      <.section_header title="Connected agents" />
+      <.section_header title="Targeted rulesets">
+        <:subtitle>A ruleset replaces the default policy for one runner or group.</:subtitle>
+        <:actions><.button phx-click="add_ruleset">Add ruleset</.button></:actions>
+      </.section_header>
   """
   attr :title, :string, required: true
   attr :count, :integer, default: nil
   attr :count_tone, :atom, default: :neutral, values: [:amber, :neutral, :brand]
   attr :class, :string, default: nil
+  slot :subtitle
   slot :actions
 
   def section_header(assigns) do
     ~H"""
-    <header class={["mb-3 flex items-center gap-2", @class]}>
-      <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">{@title}</h2>
-      <.count_badge count={@count} tone={@count_tone} />
-      {render_slot(@actions)}
+    <header class={["mb-3 flex flex-wrap items-end justify-between gap-3", @class]}>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+            {@title}
+          </h2>
+          <.count_badge count={@count} tone={@count_tone} />
+        </div>
+        <p :if={@subtitle != []} class="mt-0.5 max-w-xl text-xs text-zinc-500">
+          {render_slot(@subtitle)}
+        </p>
+      </div>
+      <div :if={@actions != []} class="flex shrink-0 items-center gap-2">
+        {render_slot(@actions)}
+      </div>
     </header>
     """
   end
