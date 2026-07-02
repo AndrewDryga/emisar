@@ -169,12 +169,19 @@ defmodule Emisar.BillingTest do
 
     test "an sso entitlement overrides the plan gate in both directions", %{account: account} do
       # Withdrawn on Team by entitlement…
-      Fixtures.Accounts.create_subscription(account, "team", entitlements: %{"sso" => false})
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_sso_enabled?" => false}
+      )
+
       refute Billing.sso_available?(account)
 
       # …and granted on a plan slug the compiled map doesn't know.
       custom = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(custom, "pro", entitlements: %{"sso" => true})
+
+      Fixtures.Accounts.create_subscription(custom, "pro",
+        entitlements: %{"features_sso_enabled?" => true}
+      )
+
       assert Billing.sso_available?(custom)
     end
   end
@@ -200,7 +207,9 @@ defmodule Emisar.BillingTest do
     end
 
     test "a scim entitlement unlocks directory sync below Enterprise", %{account: account} do
-      Fixtures.Accounts.create_subscription(account, "team", entitlements: %{"scim" => true})
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_scim_enabled?" => true}
+      )
 
       assert Billing.directory_sync_available?(account)
     end
@@ -567,7 +576,7 @@ defmodule Emisar.BillingTest do
             "plan" => "team",
             "runners_limit" => "25",
             "members_limit" => "unlimited",
-            "sso" => "true",
+            "features_sso_enabled?" => "true",
             "typo_key" => "dropped"
           }
         )
@@ -580,7 +589,7 @@ defmodule Emisar.BillingTest do
       assert subscription.entitlements == %{
                "runners_limit" => 25,
                "members_limit" => "unlimited",
-               "sso" => true
+               "features_sso_enabled?" => true
              }
     end
 

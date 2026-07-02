@@ -34,7 +34,8 @@ import Config
 #                            limits flow BACK on the webhook via the Paddle
 #                            product's custom_data — keys: plan, runners_limit,
 #                            members_limit, audit_retention_days ("unlimited"
-#                            or an integer), sso, scim (booleans) — see
+#                            or an integer), features_sso_enabled?,
+#                            features_scim_enabled? (booleans) — see
 #                            Emisar.Billing.Entitlements.
 #   RELEASE_VSN            — used in Sentry's `release` field
 #   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)

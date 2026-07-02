@@ -131,16 +131,21 @@ defmodule Emisar.Billing do
     |> entitled_retention_days()
   end
 
-  @doc "True when the account's plan includes OIDC single sign-on (an `sso` entitlement, else Team and Enterprise)."
+  @doc "True when the account's plan includes OIDC single sign-on (a `features_sso_enabled?` entitlement, else Team and Enterprise)."
   def sso_available?(%Accounts.Account{} = account) do
     posture = account.id |> peek_subscription_for_account() |> effective_plan()
-    entitled_feature(posture, "sso", posture.plan_name in ["team", "enterprise"])
+
+    entitled_feature(
+      posture,
+      "features_sso_enabled?",
+      posture.plan_name in ["team", "enterprise"]
+    )
   end
 
-  @doc "True when the account's plan includes SCIM directory sync (a `scim` entitlement, else Enterprise only)."
+  @doc "True when the account's plan includes SCIM directory sync (a `features_scim_enabled?` entitlement, else Enterprise only)."
   def directory_sync_available?(%Accounts.Account{} = account) do
     posture = account.id |> peek_subscription_for_account() |> effective_plan()
-    entitled_feature(posture, "scim", posture.plan_name == "enterprise")
+    entitled_feature(posture, "features_scim_enabled?", posture.plan_name == "enterprise")
   end
 
   # Internal nil-or-struct helper. Used by `upsert_subscription/2` and

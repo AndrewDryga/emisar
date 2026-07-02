@@ -4,10 +4,10 @@ defmodule Emisar.Billing.EntitlementsTest do
 
   describe "from_paddle_subscription/1" do
     test "extracts + normalizes the first item's product custom_data" do
-      custom_data = %{"runners_limit" => 100, "sso" => true}
+      custom_data = %{"runners_limit" => 100, "features_sso_enabled?" => true}
 
       assert Entitlements.from_paddle_subscription(product_data(custom_data)) ==
-               %{"runners_limit" => 100, "sso" => true}
+               %{"runners_limit" => 100, "features_sso_enabled?" => true}
     end
 
     test "a product with null custom_data normalizes to an empty map" do
@@ -42,16 +42,16 @@ defmodule Emisar.Billing.EntitlementsTest do
         "runners_limit" => "100",
         "members_limit" => "Unlimited",
         "audit_retention_days" => 90,
-        "sso" => "true",
-        "scim" => false
+        "features_sso_enabled?" => "true",
+        "features_scim_enabled?" => false
       }
 
       assert Entitlements.parse(raw) == %{
                "runners_limit" => 100,
                "members_limit" => "unlimited",
                "audit_retention_days" => 90,
-               "sso" => true,
-               "scim" => false
+               "features_sso_enabled?" => true,
+               "features_scim_enabled?" => false
              }
     end
 
@@ -60,7 +60,7 @@ defmodule Emisar.Billing.EntitlementsTest do
         "runners_limit" => "lots",
         "members_limit" => -1,
         "audit_retention_days" => 10_000_000_000,
-        "sso" => "yes",
+        "features_sso_enabled?" => "yes",
         "plan" => "team",
         "upgrade_description" => "marketing copy"
       }
@@ -84,9 +84,13 @@ defmodule Emisar.Billing.EntitlementsTest do
 
   describe "feature/2" do
     test "booleans pass through; absent is nil" do
-      assert Entitlements.feature(%{"sso" => false}, "sso") == false
-      assert Entitlements.feature(%{"scim" => true}, "scim") == true
-      assert Entitlements.feature(%{}, "scim") == nil
+      assert Entitlements.feature(%{"features_sso_enabled?" => false}, "features_sso_enabled?") ==
+               false
+
+      assert Entitlements.feature(%{"features_scim_enabled?" => true}, "features_scim_enabled?") ==
+               true
+
+      assert Entitlements.feature(%{}, "features_scim_enabled?") == nil
     end
   end
 
