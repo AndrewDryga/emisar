@@ -37,7 +37,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run
   end
 
-  test "shows the policy decision + reason", %{conn: conn} do
+  test "the policy panel carries the WHY, not a verdict chip (told once by status)",
+       %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     run =
@@ -49,10 +50,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
+    # Eyebrow + the reason (the WHY) + the audit trail (matched rules / version).
     assert html =~ "Policy"
-    assert html =~ "Requires approval"
     assert html =~ "Default for high-risk actions"
     assert html =~ "v4"
+    # The verdict word is NOT restated as a chip — the run's status badge is the
+    # single source of the outcome.
+    refute html =~ "Requires approval"
   end
 
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do

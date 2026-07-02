@@ -65,12 +65,10 @@ defmodule EmisarWeb.AuditDetailLive do
       width={:detail}
     >
       <:title>
+        <%!-- No leading status dot — a lone colored bullet before the title read
+             as an orphan decoration. The event name carries the outcome; the
+             audit LIST keeps the per-row dot where scanning actually happens. --%>
         <.detail_header back="Audit log" navigate={~p"/app/#{@current_account}/audit"}>
-          <.status_dot
-            tone={EmisarWeb.AuditLive.outcome_tone(@event.event_type)}
-            size={:md}
-            class="mr-2 align-middle"
-          />
           <span class="font-semibold">{format_event_type(@event.event_type)}</span>
           <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
         </.detail_header>
@@ -132,8 +130,14 @@ defmodule EmisarWeb.AuditDetailLive do
         <div class="hidden flex-none items-center sm:flex">
           <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
         </div>
+        <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
+             the actor byte-for-byte beside itself is noise — say "same as actor". --%>
         <.entity_card
           role="Subject"
+          self?={
+            not is_nil(@event.actor_kind) and @event.actor_kind == @event.subject_kind and
+              @event.actor_id == @event.subject_id
+          }
           kind={@event.subject_kind}
           id={@event.subject_id}
           label={@event.subject_label}
@@ -305,6 +309,7 @@ defmodule EmisarWeb.AuditDetailLive do
   # device); the Subject card doesn't take one.
   attr :role, :string, required: true
   attr :current_account, :map, required: true
+  attr :self?, :boolean, default: false
   attr :kind, :string, default: nil
   attr :id, :any, default: nil
   attr :label, :string, default: nil
@@ -317,6 +322,17 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :mcp_client_os, :string, default: nil
   attr :auth_method, :string, default: nil
   attr :mfa, :boolean, default: nil
+
+  defp entity_card(%{self?: true} = assigns) do
+    ~H"""
+    <.card class="min-w-0 flex-1" padding="p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
+      <p class="mt-1 text-sm text-zinc-400">
+        same as actor <span class="text-zinc-600">(self)</span>
+      </p>
+    </.card>
+    """
+  end
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""

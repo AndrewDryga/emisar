@@ -214,6 +214,25 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert length(String.split(html, "— (not recorded)")) == 3
   end
 
+  test "a self-action renders the subject as 'same as actor (self)', not a duplicate card",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    # A sign-in acts on itself: actor and subject are the same user.
+    {:ok, event} =
+      Audit.log(account.id, "user.signed_in",
+        actor_kind: "user",
+        actor_id: user.id,
+        subject_kind: "user",
+        subject_id: user.id
+      )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert html =~ "same as actor"
+    assert html =~ "(self)"
+  end
+
   test "the event id is a first-class copyable meta field; payload copy says Copy JSON",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

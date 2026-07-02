@@ -229,7 +229,7 @@ defmodule EmisarWeb.RunDetailLive do
             size={:md}
             navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           >
-            Review approval →
+            View approval →
           </.button>
         </:action>
       </.callout>
@@ -254,7 +254,7 @@ defmodule EmisarWeb.RunDetailLive do
             size={:md}
             navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           >
-            Review approval →
+            View approval →
           </.button>
         </:action>
       </.callout>
@@ -305,37 +305,37 @@ defmodule EmisarWeb.RunDetailLive do
         <p class="text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
       </.panel>
 
-      <%!-- Policy decision strip — single horizontal line. Hidden for
-           `allow` (the boring default the run wouldn't exist without).
-           For `require_approval`/`deny`, shows the chip + reason +
-           matched rules inline so there's no duplicated decision and
-           no whole-section visual weight for what's effectively one
-           data point. --%>
-      <.card
+      <%!-- Policy decision — same eyebrow-panel anatomy as Reason. The verdict
+           is told ONCE by the run's status badge above; this panel carries the
+           WHY (the policy reason as prose) plus the matched-rules/version audit
+           trail, not a chip that restates the outcome word. Hidden for `allow`
+           (the boring default the run wouldn't exist without). --%>
+      <.panel
         :if={show_policy?(@run)}
-        class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-        padding="px-4 py-2.5"
+        title="Policy"
+        title_variant={:eyebrow}
+        padding="p-4"
+        class="mt-4"
       >
-        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Policy
-        </span>
-        <.chip tone={policy_decision_tone(@run.policy_decision)}>
-          {policy_label(@run.policy_decision)}
-        </.chip>
-        <span
+        <p
           :if={@run.policy_reason && @run.policy_reason != ""}
-          class="text-zinc-300"
+          class="text-sm leading-relaxed text-zinc-200"
         >
           {@run.policy_reason}
-        </span>
-        <span :if={matched_rules_label(@run.matched_rules) != "—"} class="text-xs text-zinc-500">
-          · Matched
-          <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
-        </span>
-        <span :if={is_integer(@run.policy_version)} class="text-xs text-zinc-500">
-          · Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
-        </span>
-      </.card>
+        </p>
+        <div
+          :if={matched_rules_label(@run.matched_rules) != "—" or is_integer(@run.policy_version)}
+          class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
+        >
+          <span :if={matched_rules_label(@run.matched_rules) != "—"}>
+            Matched
+            <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
+          </span>
+          <span :if={is_integer(@run.policy_version)}>
+            Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
+          </span>
+        </div>
+      </.panel>
 
       <%!-- Arguments before output. Operators read the page top→down:
            "what was called → what came back". Putting args first
@@ -416,11 +416,6 @@ defmodule EmisarWeb.RunDetailLive do
   defp exit_code_class(0), do: "text-brand-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
 
-  defp policy_label("allow"), do: "Allowed"
-  defp policy_label("require_approval"), do: "Requires approval"
-  defp policy_label("deny"), do: "Denied"
-  defp policy_label(other), do: other
-
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
     do: name
 
@@ -462,11 +457,6 @@ defmodule EmisarWeb.RunDetailLive do
        do: false
 
   defp show_output?(_run, _output_present?), do: true
-
-  defp policy_decision_tone("allow"), do: :brand
-  defp policy_decision_tone("require_approval"), do: :amber
-  defp policy_decision_tone("deny"), do: :rose
-  defp policy_decision_tone(_), do: :neutral
 
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"
