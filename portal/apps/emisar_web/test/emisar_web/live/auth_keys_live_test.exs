@@ -23,14 +23,12 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "live-key-aaa"
     refute html =~ "dead-key-zzz"
 
-    # Selecting "All" must go through the real dropdown path: phx-change
-    # "filter" submits status="", which LiveTable strips out of the URL. Once
-    # the operator has interacted, an absent status has to mean "All" — not
-    # snap back to the "active" default — so the revoked key now shows. (The
-    # earlier version of this test hand-built `?status=`, a URL the dropdown
-    # can never actually produce, and so missed the bug.)
+    # Selecting "All" goes through the real dropdown path: phx-change "filter"
+    # submits status="", and because the status filter declares a default,
+    # apply_filter KEEPS the explicit blank in the URL — that's what overrides
+    # the "active" default on the next load instead of snapping back to it.
     lv |> form("#auth-keys-filter", %{"status" => ""}) |> render_change()
-    assert_patched(lv, ~p"/app/#{account}/settings/runners/auth-keys")
+    assert_patched(lv, ~p"/app/#{account}/settings/runners/auth-keys?status=")
 
     html = render(lv)
     assert html =~ "live-key-aaa"

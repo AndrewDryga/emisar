@@ -34,6 +34,9 @@ defmodule Emisar.Runners.AuthKey.Query do
         type: {:list, :string},
         # Single-select dropdown (LiveTable adds the "All" option that clears
         # the filter). The list shape lets a value arrive as ["active"].
+        # Fresh visits hide revoked keys by default; the default renders as the
+        # BASELINE, never as an applied filter (console-ux §7.4).
+        default: "active",
         values: [
           {"active", "Active"},
           {"revoked", "Revoked"}

@@ -628,8 +628,19 @@ defmodule EmisarWeb.LiveTable do
   phx-change `_target` marker is stripped, and `handle_params/3` re-loads
   from the patched params as usual. Filtering on change resets to page 1
   by design — the cursor params aren't carried over.
+
+  A page whose filters declare a `%Filter{default:}` must pass them as the
+  fourth argument: a defaulted filter's explicit blank ("All") then STAYS in
+  the URL, where `filter_value/3` reads it as an override — dropping it would
+  resolve back to the default on the next load, snapping the control away
+  from the operator's choice.
   """
-  def apply_filter(socket, path, params) when is_map(params) do
+  def apply_filter(socket, path, params, filters \\ []) when is_map(params) do
+    defaulted =
+      for %Filter{default: default, name: name} <- filters,
+          not is_nil(default),
+          do: to_string(name)
+
     # Plug.Conn.Query.encode (NOT URI.encode_query) so a list-valued filter —
     # `outcome: ["danger", "warn"]` from the "Problems only" toggle, a multi-select
     # picker — encodes as `outcome[]=danger&outcome[]=warn` and round-trips back to
@@ -638,7 +649,7 @@ defmodule EmisarWeb.LiveTable do
     query =
       params
       |> Map.drop(["_target"])
-      |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
+      |> Enum.reject(fn {k, v} -> v in [nil, ""] and k not in defaulted end)
       |> Plug.Conn.Query.encode()
 
     to = if query == "", do: path, else: "#{path}?#{query}"

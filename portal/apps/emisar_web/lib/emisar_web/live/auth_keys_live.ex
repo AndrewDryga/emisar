@@ -93,7 +93,8 @@ defmodule EmisarWeb.AuthKeysLive do
      LiveTable.apply_filter(
        socket,
        ~p"/app/#{socket.assigns.current_account}/settings/runners/auth-keys",
-       params
+       params,
+       Runners.AuthKey.Query.filters()
      )}
   end
 
@@ -146,18 +147,11 @@ defmodule EmisarWeb.AuthKeysLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    # Hide revoked keys by default — but only on the first load (a fresh visit).
-    # LiveTable strips the dropdown's empty "All" value out of the URL, so once
-    # the operator has touched the filter we can't tell "All" from "unset" by
-    # the params alone: treat an absent status as their "All" rather than
-    # snapping back to "active". `filter_params` is unset until the first load.
-    effective_params =
-      if socket.assigns[:filter_params],
-        do: params,
-        else: Map.put_new(params, "status", "active")
-
+    # Revoked keys hide by default via the status filter's `%Filter{default:}` —
+    # LiveTable resolves absent → "active" and keeps an explicit "All" in the
+    # URL (apply_filter gets the filters below), so no param injection here.
     filters = Runners.AuthKey.Query.filters()
-    opts = LiveTable.params_to_opts(effective_params, filters)
+    opts = LiveTable.params_to_opts(params, filters)
 
     case Runners.list_auth_keys(
            socket.assigns.current_subject,
@@ -167,7 +161,7 @@ defmodule EmisarWeb.AuthKeysLive do
         socket
         |> assign(:auth_keys, auth_keys)
         |> assign(:metadata, meta)
-        |> assign(:filter_params, effective_params)
+        |> assign(:filter_params, params)
         |> assign(:filters, filters)
 
       # A clean reload can fail too (e.g. the subject can't list keys) —
@@ -176,7 +170,7 @@ defmodule EmisarWeb.AuthKeysLive do
         socket
         |> assign(:auth_keys, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
-        |> assign(:filter_params, effective_params)
+        |> assign(:filter_params, params)
         |> assign(:filters, filters)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
