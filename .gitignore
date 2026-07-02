@@ -57,3 +57,6 @@ __pycache__/
 !**/.agent/scripts
 .expert/*.log
 .claude/.sweep-active
+
+# Self-signed dev/e2e TLS certs (mix phx.gen.cert)
+**/priv/cert/

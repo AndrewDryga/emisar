@@ -252,18 +252,19 @@ defmodule Emisar.Billing do
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       if Map.has_key?(@plans, plan_name) do
-        # checkout_url is OUR /checkout page (running Paddle.js) — Paddle has
-        # no hosted checkout; it appends ?_ptxn=<transaction> to this URL and
-        # the page's Paddle.js opens the overlay. The post-payment redirect is
-        # the page's successUrl setting, not a transaction field.
+        # The returned URL is the account's DEFAULT PAYMENT LINK (our /checkout
+        # page running Paddle.js) + ?_ptxn=<transaction> — Paddle has no hosted
+        # checkout. Deliberately no per-transaction checkout.url override: that
+        # requires its own domain approval, while the default link is the
+        # canonical mechanism. The post-payment redirect is the page's
+        # successUrl setting, not a transaction field.
         with {:ok, price_id} <- resolve_checkout_price_id(plan_name),
              {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
              {:ok, %{"url" => url}} <-
                Emisar.Billing.PaddleClient.create_checkout_session(%{
                  customer: customer_id,
                  price_id: price_id,
-                 quantity: current_count(account, :runners),
-                 checkout_url: PublicUrl.url("/checkout")
+                 quantity: current_count(account, :runners)
                }) do
           {:ok, url}
         end
@@ -337,7 +338,9 @@ defmodule Emisar.Billing do
 
   defp do_open_billing_portal(%Accounts.Account{paddle_customer_id: customer_id})
        when is_binary(customer_id) do
-    return_url = PublicUrl.url("/app/settings/billing")
+    # Bare /app — the slugless billing path doesn't resolve (every tenant page
+    # nests under the account slug); /app redirects to the session's account.
+    return_url = PublicUrl.url("/app")
 
     if Application.get_env(:emisar, :paddle_api_key) do
       case Emisar.Billing.PaddleClient.create_billing_portal_session(%{

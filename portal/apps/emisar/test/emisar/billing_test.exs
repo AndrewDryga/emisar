@@ -418,7 +418,7 @@ defmodule Emisar.BillingTest do
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
       assert {:ok, url} = Billing.open_billing_portal(account, subject)
-      assert url =~ "/app/settings/billing?status=stub-portal"
+      assert url =~ "/app?status=stub-portal"
     end
 
     test "an owner of another account is refused", %{account: account} do
@@ -1876,18 +1876,18 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert_received {:create_checkout_session, %{quantity: 5, price_id: "pri_team_01"}}
   end
 
-  test "the checkout session points Paddle at the /checkout Paddle.js page" do
-    # Paddle has no hosted checkout: checkout.url must be our page running
-    # Paddle.js (it comes back as data.checkout.url + ?_ptxn=). The post-payment
-    # redirect is the page's successUrl setting, so no success/cancel URLs ride
-    # on the transaction.
+  test "the checkout session carries no URL overrides — the default payment link is the page" do
+    # Paddle mints data.checkout.url from the account's default payment link
+    # (our /checkout Paddle.js page) + ?_ptxn=. A per-transaction checkout.url
+    # override needs its own domain approval, and the post-payment redirect is
+    # the page's successUrl setting — so nothing URL-ish rides on the transaction.
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_urls_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
 
     assert_received {:create_checkout_session, attrs}
-    assert attrs.checkout_url =~ "/checkout"
+    refute Map.has_key?(attrs, :checkout_url)
     refute Map.has_key?(attrs, :success_url)
     refute Map.has_key?(attrs, :cancel_url)
   end

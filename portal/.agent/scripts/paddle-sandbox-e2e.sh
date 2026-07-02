@@ -50,25 +50,36 @@ curl -sf -X PATCH "https://sandbox-api.paddle.com/notification-settings/$PADDLE_
   -H "Authorization: Bearer $PADDLE_API_KEY" -H "Content-Type: application/json" \
   -d "{\"destination\":\"$TUNNEL/webhooks/paddle\",\"active\":true}" >/dev/null
 
+# Plain HTTP throughout: this Mac's security agent blocks browser TLS to
+# private addresses, so the driver rewrites Paddle's forced-https checkout
+# URL (https://localhost:4000/checkout?_ptxn=…) back to http in-flight.
 echo "==> dev server with sandbox creds"
+BASE="http://localhost:4000"
 STALE="$(lsof -nP -iTCP:4000 -sTCP:LISTEN -t 2>/dev/null || true)"
 [ -n "$STALE" ] && kill -9 $STALE 2>/dev/null || true
-(cd "$PORTAL" && mix phx.server >/tmp/phx-e2e.log 2>&1 &)
-for _ in $(seq 1 60); do
-  curl -sf -o /dev/null http://localhost:4000/ && break
-  sleep 2
-done
-curl -sf http://localhost:4000/checkout | grep -q 'data-sandbox="true"' ||
-  { echo "FAIL: /checkout is not running sandbox Paddle.js"; exit 1; }
 
 cleanup() {
-  SERVER="$(lsof -nP -iTCP:4000 -sTCP:LISTEN -t 2>/dev/null || true)"
-  [ -n "$SERVER" ] && kill $SERVER 2>/dev/null || true
+  LISTENERS="$(lsof -nP -iTCP:4000 -sTCP:LISTEN -t 2>/dev/null || true)"
+  [ -n "$LISTENERS" ] && kill $LISTENERS 2>/dev/null || true
 }
 trap cleanup EXIT
 
+(cd "$PORTAL" && mix phx.server >/tmp/phx-e2e.log 2>&1 &)
+UP=0
+for _ in $(seq 1 90); do
+  curl -sf -o /dev/null "$BASE/healthz" && UP=1 && break
+  sleep 2
+done
+if [ "$UP" != "1" ]; then
+  echo "FAIL: dev server never came up — /tmp/phx-e2e.log tail:"
+  tail -15 /tmp/phx-e2e.log
+  exit 1
+fi
+curl -sf "$BASE/checkout" | grep -q 'data-sandbox="true"' ||
+  { echo "FAIL: /checkout is not running sandbox Paddle.js"; exit 1; }
+
 echo "==> browser purchase (test card via the real overlay)"
-(cd "$SCRIPTS" && node paddle-e2e.mjs)
+(cd "$SCRIPTS" && E2E_BASE="$BASE" node paddle-e2e.mjs)
 
 echo "==> waiting for the subscription webhook to mirror"
 ROW=""

@@ -1,6 +1,6 @@
 import puppeteer from "puppeteer-core";
 import { resolve } from "node:path";
-const BASE = "http://localhost:4000", SLUG = "demo";
+const BASE = process.env.E2E_BASE || "http://localhost:4000", SLUG = "demo";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const OUT = resolve("/Users/andrewdryga/Projects/os/emisar/portal/.agent/screenshots");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -46,9 +46,11 @@ async function login(page) {
   await sleep(1000);
 }
 
-// The Paddle checkout renders inside a sandbox-buy.paddle.com iframe. Selectors
-// differ across versions, so try a testid, a name, and a placeholder variant —
-// and dump the frame's inventory when something is missing so the next run can adapt.
+// The Paddle checkout renders inside a sandbox-buy.paddle.com iframe, and the
+// CARD fields live in nested per-field iframes inside it (the PCI hosted-field
+// pattern) — so every fill/click searches ALL paddle frames, and the
+// inventories are dumped per frame so a changed layout is diagnosable from
+// the run log alone.
 async function paddleFrame(page) {
   for (let i = 0; i < 60; i++) {
     const frame = page.frames().find((f) => /buy\.paddle\.com/.test(f.url()));
@@ -58,30 +60,86 @@ async function paddleFrame(page) {
   throw new Error("paddle checkout iframe never appeared");
 }
 
-async function dumpInventory(frame, label) {
-  const inv = await frame.evaluate(() =>
-    [...document.querySelectorAll("input, button, select")].map((el) => ({
-      tag: el.tagName,
-      type: el.type || null,
-      name: el.name || null,
-      id: el.id || null,
-      testid: el.getAttribute("data-testid"),
-      placeholder: el.placeholder || null,
-      text: el.tagName === "BUTTON" ? el.textContent.trim().slice(0, 40) : null,
-    }))
-  );
-  console.log(`--- frame inventory (${label}) ---`);
-  console.log(JSON.stringify(inv, null, 1));
+function paddleFrames(page) {
+  return page.frames().filter((f) => /paddle\.com/.test(f.url()));
 }
 
-async function fillIn(frame, candidates, value, label) {
-  for (const sel of candidates) {
-    const el = await frame.$(sel);
-    if (el) {
-      await el.click({ clickCount: 3 });
-      await el.type(value, { delay: 20 });
-      console.log(`  ✓ filled ${label} via ${sel}`);
-      return true;
+async function dumpInventory(page, label) {
+  console.log(`--- frames (${label}) ---`);
+  for (const frame of paddleFrames(page)) {
+    let inv = [];
+    try {
+      inv = await frame.evaluate(() =>
+        [...document.querySelectorAll("input, button, select")].map((el) =>
+          [
+            el.tagName,
+            el.name || "",
+            el.getAttribute("data-testid") || "",
+            el.placeholder || "",
+            el.tagName === "BUTTON" ? el.textContent.trim().slice(0, 30) : "",
+          ].join("|")
+        )
+      );
+    } catch {}
+    if (inv.length) console.log(frame.url().slice(0, 80), "\n   ", inv.join("\n    "));
+  }
+}
+
+async function fillIn(page, candidates, value, label) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    for (const frame of paddleFrames(page)) {
+      for (const sel of candidates) {
+        const el = await frame.$(sel).catch(() => null);
+        if (!el) continue;
+
+        const current = await el.evaluate((node) => node.value).catch(() => null);
+        if (current === value) {
+          console.log(`  ✓ ${label} already "${value}"`);
+          return true;
+        }
+
+        // React-controlled inputs ignore a plain .value= — clear through the
+        // native setter + input event, then type (triple-click select-all
+        // doesn't reliably take here, which is how fills end up doubled).
+        await el.click();
+        await el.evaluate((node) => {
+          const setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            "value"
+          ).set;
+          setter.call(node, "");
+          node.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        await el.type(value, { delay: 20 });
+
+        const after = await el.evaluate((node) => node.value).catch(() => null);
+        console.log(`  ✓ filled ${label} via ${sel} (now "${after}")`);
+        return after === value;
+      }
+    }
+    await sleep(1000);
+  }
+  console.log(`  ✗ ${label}: no selector matched in any paddle frame`);
+  return false;
+}
+
+// True when `selector` exists in any paddle frame right now.
+async function present(page, selector) {
+  for (const frame of paddleFrames(page)) {
+    if (await frame.$(selector).catch(() => null)) return true;
+  }
+  return false;
+}
+
+async function clickIn(page, candidates, label) {
+  for (const frame of paddleFrames(page)) {
+    for (const sel of candidates) {
+      const el = await frame.$(sel).catch(() => null);
+      if (el) {
+        await el.click();
+        console.log(`  ✓ clicked ${label} via ${sel}`);
+        return true;
+      }
     }
   }
   console.log(`  ✗ ${label}: no selector matched`);
@@ -96,6 +154,23 @@ const b = await puppeteer.launch({
 try {
   const page = await b.newPage();
   await page.setViewport({ width: 1440, height: 1024, deviceScaleFactor: 1 });
+
+  // Paddle stores the sandbox default payment link as httpS://localhost:4000
+  // (its form forces the scheme), but this machine blocks browser TLS to
+  // private addresses — so rewrite that one forced-https hop back to the
+  // plain-http dev server in flight. Everything else runs http already.
+  await page.setRequestInterception(true);
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.startsWith("https://localhost:4000/")) {
+      return request.respond({
+        status: 302,
+        headers: { location: url.replace("https://", "http://") },
+      });
+    }
+    return request.continue();
+  });
+
   await login(page);
 
   await page.goto(`${BASE}/app/${SLUG}/settings/billing`, { waitUntil: "networkidle2" });
@@ -122,72 +197,115 @@ try {
 
   const frame = await paddleFrame(page);
   console.log("paddle frame:", frame.url().slice(0, 90));
-  await sleep(4000);
+  await sleep(6000);
   await page.screenshot({ path: resolve(OUT, "e2e-2-overlay.png") });
-  await dumpInventory(frame, "on open");
+  await dumpInventory(page, "on open");
 
-  // Some checkouts ask for email + country first (customer prefill usually skips it).
-  const emailFilled = await fillIn(
-    frame,
-    ['input[name="email"]', '[data-testid="authenticationEmailInput"]', 'input[type="email"]'],
+  // Step 1 — identity: email + country, advanced by its own named submit
+  // (the quantity-picker +/- are ALSO type=submit, so never click "first
+  // submit"). The email is usually prefilled from the attached customer.
+  await fillIn(
+    page,
+    ['[data-testid="authenticationEmailInput"]', 'input[name="email"]'],
     "demo@emisar.dev",
     "email"
   );
-  const postcode1 = await fillIn(
-    frame,
-    ['input[name="postcode"]', '[data-testid="postcodeInput"]'],
-    "90210",
-    "postcode (step 1)"
-  );
-  if (emailFilled || postcode1) {
-    const cont = await frame.$('button[type="submit"]');
-    if (cont) {
-      await cont.click();
-      console.log("  submitted identity step");
-      await sleep(4000);
-      await dumpInventory(frame, "after identity step");
+  for (const f of paddleFrames(page)) {
+    if (await f.$('select[name="countryCode"]').catch(() => null)) {
+      await f.select('select[name="countryCode"]', "US");
+      console.log("  ✓ country -> US");
+      break;
     }
   }
 
+  // Continue reveals ZIP for US on the same form; fill it and Continue again
+  // until the identity form actually yields to the payment step.
+  for (let round = 0; round < 4; round++) {
+    if (!(await present(page, '[data-testid="authenticationEmailInput"]'))) break;
+
+    if (await present(page, '[data-testid="postcodeInput"]')) {
+      await fillIn(page, ['[data-testid="postcodeInput"]'], "90210", "postcode");
+    }
+
+    await clickIn(
+      page,
+      ['[data-testid="combinedAuthenticationLocationFormSubmitButton"]'],
+      `identity Continue (round ${round + 1})`
+    );
+    await sleep(6000);
+  }
+  await dumpInventory(page, "payment step");
+
+  // US buyers must tick the recurring-charge consent — do it BEFORE the card
+  // fill (a rejected submit re-renders the form and can drop typed fields),
+  // and through a JS click: the input is styled/overlaid, so a coordinate
+  // click reports success without toggling it. Verify .checked, never trust
+  // the click.
+  for (const f of paddleFrames(page)) {
+    const checked = await f
+      .$eval('[data-testid="us-compliance-checkbox"]', (el) => {
+        if (!el.checked) el.click();
+        return el.checked;
+      })
+      .catch(() => null);
+    if (checked !== null) {
+      console.log("  recurring-consent checked:", checked);
+      break;
+    }
+  }
+
+  // Step 2 — the card form; each field may live in its own nested iframe.
   await fillIn(
-    frame,
-    ['input[name="cardNumber"]', '[data-testid="cardNumberInput"]', 'input[id="cardNumber"]'],
+    page,
+    ['[data-testid="cardNumberInput"]', 'input[name="cardNumber"]', 'input[id="cardNumber"]'],
     "4242424242424242",
     "card number"
   );
   await fillIn(
-    frame,
-    ['input[name="cardholderName"]', '[data-testid="cardholderNameInput"]'],
+    page,
+    ['[data-testid="cardholderNameInput"]', 'input[name="cardholderName"]', 'input[name="name"]'],
     "Demo Operator",
     "cardholder"
   );
   await fillIn(
-    frame,
-    ['input[name="expiryDate"]', '[data-testid="cardExpiryInput"]', 'input[name="cardExpiry"]'],
+    page,
+    ['[data-testid="expiryDateField"]', 'input[name="expiry"]', '[data-testid="cardExpiryInput"]'],
     "12/30",
     "expiry"
   );
   await fillIn(
-    frame,
+    page,
     [
-      'input[name="verificationValue"]',
       '[data-testid="cardVerificationValueInput"]',
+      'input[name="verificationValue"]',
       'input[name="cvv"]',
     ],
     "100",
     "cvc"
   );
-  await fillIn(frame, ['input[name="postcode"]', '[data-testid="postcodeInput"]'], "90210", "postcode");
+  if (await present(page, '[data-testid="postcodeInput"]')) {
+    await fillIn(page, ['[data-testid="postcodeInput"]'], "90210", "postcode (card step)");
+  }
   await page.screenshot({ path: resolve(OUT, "e2e-3-filled.png") });
 
-  const paid = await frame.evaluate(() => {
-    const btn = [...document.querySelectorAll("button")].find(
-      (candidate) =>
-        candidate.type === "submit" || /pay|subscribe|start/i.test(candidate.textContent)
-    );
-    if (btn) btn.click();
-    return btn ? btn.textContent.trim().slice(0, 40) : null;
-  });
+  // The pay button is the one whose LABEL says pay/subscribe (never a bare
+  // first-submit — see the quantity picker above).
+  let paid = null;
+  for (const f of paddleFrames(page)) {
+    paid = await f
+      .evaluate(() => {
+        const buttons = [...document.querySelectorAll("button")];
+        const byTestid = buttons.find((b) =>
+          /paymentformsubmit/i.test(b.getAttribute("data-testid") || "")
+        );
+        const byText = buttons.find((b) => /pay|subscribe|start trial/i.test(b.textContent));
+        const btn = byTestid || byText;
+        if (btn) btn.click();
+        return btn ? (btn.textContent.trim() || btn.getAttribute("data-testid")).slice(0, 50) : null;
+      })
+      .catch(() => null);
+    if (paid) break;
+  }
   console.log("clicked pay button:", paid);
 
   // Success = Paddle redirects the top page to our successUrl → billing page.

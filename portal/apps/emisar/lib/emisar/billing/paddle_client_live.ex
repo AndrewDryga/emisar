@@ -29,12 +29,12 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @impl true
   def create_checkout_session(attrs) do
-    # checkout.url must be a domain-approved page running Paddle.js (our
-    # /checkout) — Paddle returns it with ?_ptxn= appended as data.checkout.url.
+    # No checkout.url on the transaction: Paddle then mints data.checkout.url
+    # from the account's default payment link (our /checkout page) + ?_ptxn= —
+    # an explicit override would need its own domain approval for zero gain.
     body = %{
       "customer_id" => attrs[:customer],
-      "items" => [%{"price_id" => attrs[:price_id], "quantity" => attrs[:quantity] || 1}],
-      "checkout" => %{"url" => attrs[:checkout_url]}
+      "items" => [%{"price_id" => attrs[:price_id], "quantity" => attrs[:quantity] || 1}]
     }
 
     with {:ok, %{"data" => %{"checkout" => %{"url" => url}} = data}} <-
