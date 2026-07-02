@@ -392,7 +392,7 @@ defmodule EmisarWeb.ProfileLive do
               placeholder="Ada Lovelace"
             />
             <:actions>
-              <.button phx-disable-with="Saving...">Save</.button>
+              <.button variant={:secondary} phx-disable-with="Saving...">Save</.button>
             </:actions>
           </.simple_form>
         </.settings_section>
@@ -421,7 +421,7 @@ defmodule EmisarWeb.ProfileLive do
                   change before it takes effect.
                 </p>
                 <:actions>
-                  <.button phx-disable-with="Checking...">Update email</.button>
+                  <.button variant={:secondary} phx-disable-with="Checking...">Update email</.button>
                 </:actions>
               </.simple_form>
             <% step -> %>
@@ -560,7 +560,9 @@ defmodule EmisarWeb.ProfileLive do
                 Generate a TOTP secret, scan it with your authenticator app, then confirm with a
                 6-digit code to turn it on.
               </p>
-              <.button phx-click="start_mfa" size={:md} class="mt-4">
+              <%!-- Secondary like every profile island action — this page has
+                   no single primary (ONE emerald fill per viewport). --%>
+              <.button variant={:secondary} phx-click="start_mfa" size={:md} class="mt-4">
                 Set up 2FA
               </.button>
           <% end %>

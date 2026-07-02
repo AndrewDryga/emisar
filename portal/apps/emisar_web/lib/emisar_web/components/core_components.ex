@@ -2571,13 +2571,17 @@ defmodule EmisarWeb.CoreComponents do
       type="button"
       role="switch"
       aria-checked={to_string(@on)}
-      class={[
-        "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
-        if(@on,
-          do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-          else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
-        )
-      ]}
+      class={
+        [
+          "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+          if(@on,
+            do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+            # Bordered neutral, not a brand fill: a settings toggle is not the
+            # page's primary action (ONE emerald fill per viewport).
+            else: "border border-zinc-800 text-zinc-200 hover:bg-zinc-900"
+          )
+        ]
+      }
       {@rest}
     >
       {if @on, do: @on_label, else: @off_label}

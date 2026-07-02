@@ -314,10 +314,13 @@ defmodule EmisarWeb.RunnerDetailLive do
                         Run
                       </.button>
                     <% @runner.online? -> %>
+                      <%!-- Secondary: a brand fill per catalog row out-shouts the
+                           page's real primary; the row's affordance is enough. --%>
                       <.button
                         navigate={
                           ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
                         }
+                        variant={:secondary}
                         size={:sm}
                         class="shrink-0"
                       >

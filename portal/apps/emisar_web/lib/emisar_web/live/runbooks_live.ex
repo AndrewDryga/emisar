@@ -183,9 +183,12 @@ defmodule EmisarWeb.RunbooksLive do
                   </.meta_line>
                 </:meta>
                 <:actions>
+                  <%!-- Secondary: the page's ONE brand fill is "New runbook" —
+                       a green per row turns the fill into wallpaper. --%>
                   <.button
                     :if={runbook.status == :published}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
+                    variant={:secondary}
                     size={:sm}
                   >
                     Run

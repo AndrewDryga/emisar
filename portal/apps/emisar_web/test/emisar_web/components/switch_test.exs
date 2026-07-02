@@ -24,11 +24,13 @@ defmodule EmisarWeb.Components.SwitchTest do
   end
 
   describe "switch/1" do
-    test "OFF renders the enabling action — solid brand + off_label" do
+    test "OFF renders the enabling action — bordered neutral + off_label" do
       html = render_switch(%{on: false})
 
       assert html =~ ~s(aria-checked="false")
-      assert html =~ "bg-brand-500"
+      # A settings toggle is not the page's primary — never a brand fill.
+      assert html =~ "border-zinc-800"
+      refute html =~ "bg-brand-500"
       assert html =~ "Enforce 2FA"
       refute html =~ "Stop enforcing 2FA"
     end
