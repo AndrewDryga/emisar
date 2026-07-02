@@ -1,0 +1,52 @@
+<%!-- ============================================================
+  Paddle checkout — the default payment link. Paddle.js reads the
+  transaction from ?_ptxn= and auto-opens the overlay; this page is
+  the calm surface behind it. Config rides on data attributes because
+  HEEx forbids interpolation inside <script>; the init script itself
+  is static and runs under the CSP nonce.
+============================================================ --%>
+<div class="mx-auto flex min-h-[60vh] w-full max-w-md flex-col items-center justify-center px-6 py-24 text-center">
+  <span class="grid h-12 w-12 place-items-center rounded-xl bg-brand-500/10 text-brand-300 ring-1 ring-brand-500/25">
+    <.icon name="hero-lock-closed" class="h-5 w-5" />
+  </span>
+  <h1 class="font-display mt-5 text-xl font-semibold tracking-[-0.01em] text-zinc-100">
+    Opening secure checkout…
+  </h1>
+  <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+    Payment is handled by Paddle, our merchant of record. If the checkout
+    window doesn't open, allow pop-ups and refresh this page.
+  </p>
+  <p class="mt-6 text-xs text-zinc-500">
+    Closed it by mistake?
+    <.link navigate={~p"/app"} class="text-brand-300 hover:text-brand-200">
+      Back to your console
+    </.link>
+  </p>
+</div>
+
+<div
+  id="paddle-checkout-config"
+  data-token={@paddle_client_token}
+  data-sandbox={to_string(@paddle_sandbox?)}
+  data-success-url={@success_url}
+  hidden
+>
+</div>
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js">
+</script>
+<script nonce={@csp_nonce}>
+  (function () {
+    var config = document.getElementById("paddle-checkout-config").dataset;
+    if (config.sandbox === "true") Paddle.Environment.set("sandbox");
+    Paddle.Initialize({
+      token: config.token,
+      checkout: {
+        settings: {
+          displayMode: "overlay",
+          theme: "dark",
+          successUrl: config.successUrl
+        }
+      }
+    });
+  })();
+</script>

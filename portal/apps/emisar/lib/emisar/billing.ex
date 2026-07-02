@@ -252,6 +252,10 @@ defmodule Emisar.Billing do
           {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
 
         true ->
+          # checkout_url is OUR /checkout page (running Paddle.js) — Paddle has
+          # no hosted checkout; it appends ?_ptxn=<transaction> to this URL and
+          # the page's Paddle.js opens the overlay. The post-payment redirect is
+          # the page's successUrl setting, not a transaction field.
           with {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
                price_id <-
                  Map.fetch!(Application.get_env(:emisar, :paddle_price_ids, %{}), plan_name),
@@ -260,8 +264,7 @@ defmodule Emisar.Billing do
                    customer: customer_id,
                    price_id: price_id,
                    quantity: current_count(account, :runners),
-                   success_url: PublicUrl.url("/app/settings/billing?status=success"),
-                   cancel_url: PublicUrl.url("/app/settings/billing?status=cancelled")
+                   checkout_url: PublicUrl.url("/checkout")
                  }) do
             {:ok, url}
           end

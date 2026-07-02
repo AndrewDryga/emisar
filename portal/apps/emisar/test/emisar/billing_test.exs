@@ -1884,24 +1884,20 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert_received {:create_checkout_session, %{quantity: 5, price_id: "pri_team_01"}}
   end
 
-  test "FINDING: the success/cancel URLs are non-account-scoped /app/settings/billing" do
-    # The checkout session is created with success/cancel URLs that point at the
-    # bare `/app/settings/billing`, NOT the real account-scoped
-    # `/app/:account/settings/billing`. Assert the documented redirect-target
-    # mismatch (whether Paddle's post-checkout return resolves it is UNVERIFIED).
+  test "the checkout session points Paddle at the /checkout Paddle.js page" do
+    # Paddle has no hosted checkout: checkout.url must be our page running
+    # Paddle.js (it comes back as data.checkout.url + ?_ptxn=). The post-payment
+    # redirect is the page's successUrl setting, so no success/cancel URLs ride
+    # on the transaction.
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_urls_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
 
-    assert_received {:create_checkout_session,
-                     %{success_url: success_url, cancel_url: cancel_url}}
-
-    assert success_url =~ "/app/settings/billing?status=success"
-    assert cancel_url =~ "/app/settings/billing?status=cancelled"
-    # The account slug never appears — the documented mismatch.
-    refute success_url =~ account.slug
-    refute cancel_url =~ account.slug
+    assert_received {:create_checkout_session, attrs}
+    assert attrs.checkout_url =~ "/checkout"
+    refute Map.has_key?(attrs, :success_url)
+    refute Map.has_key?(attrs, :cancel_url)
   end
 
   test "create_customer forwards the acting email + account name verbatim" do

@@ -58,29 +58,41 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
   end
 
   describe "csp_extra opt-in" do
-    test "additively merges a page's extra directives onto the base policy", %{conn: conn} do
-      # A page that needs an extra origin (e.g. Paddle checkout) assigns
-      # conn.assigns[:csp_extra]; the plug appends those directives WITHOUT
-      # dropping any base directive. Driven through the plug directly so the
-      # test owns the assign (no marketing page sets csp_extra today).
+    test "merges a page's extra sources into the base policy", %{conn: conn} do
+      # A page that needs extra origins (the Paddle /checkout page) assigns a
+      # map of directive → extra sources. The plug MERGES them into the base
+      # directive's source list — a second same-named directive would be
+      # ignored by browsers — and appends net-new directives. Driven through
+      # the plug + a send: the policy is computed at send time, because a
+      # controller action assigns :csp_extra long after the router pipeline
+      # ran this plug.
       conn =
         conn
-        |> Plug.Conn.assign(:csp_extra, ["frame-src https://checkout.paddle.com"])
+        |> Plug.Conn.assign(:csp_extra, %{
+          "script-src" => ["https://cdn.paddle.com"],
+          "frame-src" => ["https://buy.paddle.com"]
+        })
         |> EmisarWeb.Plugs.ContentSecurityPolicy.call([])
+        |> Plug.Conn.send_resp(200, "ok")
 
       [csp] = get_resp_header(conn, "content-security-policy")
 
-      # The extra directive is present...
-      assert csp =~ "frame-src https://checkout.paddle.com"
-      # ...and every base directive is still intact (additive, not replacing).
+      # The widened directive keeps its base sources and gains the extra…
+      assert csp =~ ~r/script-src 'self' 'nonce-[^']+' https:\/\/cdn\.paddle\.com/
+      # …a net-new directive is appended…
+      assert csp =~ "frame-src https://buy.paddle.com"
+      # …and every base directive is still intact.
       assert csp =~ "default-src 'self'"
-      assert csp =~ "script-src 'self' 'nonce-"
       assert csp =~ "frame-ancestors 'none'"
       assert csp =~ "object-src 'none'"
     end
 
     test "no csp_extra leaves the base policy unchanged", %{conn: conn} do
-      conn = EmisarWeb.Plugs.ContentSecurityPolicy.call(conn, [])
+      conn =
+        conn
+        |> EmisarWeb.Plugs.ContentSecurityPolicy.call([])
+        |> Plug.Conn.send_resp(200, "ok")
+
       [csp] = get_resp_header(conn, "content-security-policy")
 
       refute csp =~ "paddle.com"

@@ -161,6 +161,11 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex]
 
     get "/confirm/:token", UserConfirmationController, :confirm
+
+    # The Paddle default payment link: Paddle.js auto-opens the checkout
+    # overlay for the ?_ptxn= transaction. Utility page — noindex, no auth
+    # (the transaction id is the capability; Paddle's overlay does the rest).
+    get "/checkout", CheckoutController, :show
   end
 
   # -- Authenticated product surface ----------------------------------
@@ -174,6 +179,12 @@ defmodule EmisarWeb.Router do
     # require_authenticated_user has already resolved current_account (or bounced a
     # no-membership/suspended user), so this just forwards to the canonical URL.
     get "/", AccountRedirectController, :show
+
+    # Paddle's post-payment redirect. The checkout page can't know the account
+    # slug at render time, so this resolves the session's current account and
+    # lands on its billing page. Before the slug scope so "checkout" never
+    # parses as an account ref.
+    get "/checkout/success", CheckoutController, :success
 
     # require_sso step-up shim: :ensure_sso_compliant bounces a non-SSO session here;
     # it logs out and lands on the account's branded SSO sign-in. OUTSIDE the slug

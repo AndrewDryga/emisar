@@ -8,6 +8,8 @@ import Config
 #   SECRET_KEY_BASE        — `mix phx.gen.secret`
 #   PADDLE_API_KEY         — OR set EMISAR_DISABLE_BILLING=1 to use stub
 #   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
+#   PADDLE_CLIENT_TOKEN    — required when PADDLE_API_KEY is set; the client-side
+#                            token Paddle.js initializes with on /checkout
 #
 # Optional prod env vars:
 #   PHX_HOST               — public hostname (defaults to emisar.dev)
@@ -211,7 +213,15 @@ if config_env() == :prod do
       config :emisar,
         paddle_client: Emisar.Billing.PaddleClient.Live,
         paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
-        paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET")
+        paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET"),
+        paddle_client_token:
+          System.get_env("PADDLE_CLIENT_TOKEN") ||
+            raise("""
+            PADDLE_CLIENT_TOKEN is missing. The /checkout page needs a Paddle
+            client-side token to open Paddle Checkout — create one in the Paddle
+            dashboard under Developer Tools → Authentication and set it alongside
+            PADDLE_API_KEY (or set EMISAR_DISABLE_BILLING=1 to ship the stub).
+            """)
 
       # Keyed by plan name under one atom key — Elixir 1.20's Config.config/3
       # only accepts an atom key, so the old `{:paddle_price_id, "team"}`
@@ -256,7 +266,8 @@ if config_env() in [:dev, :test] do
     config :emisar,
       paddle_client: Emisar.Billing.PaddleClient.Live,
       paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
-      paddle_webhook_secret: System.get_env("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test"
+      paddle_webhook_secret: System.get_env("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test",
+      paddle_client_token: System.get_env("PADDLE_CLIENT_TOKEN")
   else
     config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
   end
