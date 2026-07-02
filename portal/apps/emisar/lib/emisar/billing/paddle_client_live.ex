@@ -11,7 +11,8 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @behaviour Emisar.Billing.PaddleClient
 
-  @base "https://api.paddle.com"
+  @live_base "https://api.paddle.com"
+  @sandbox_base "https://sandbox-api.paddle.com"
 
   @impl true
   def create_customer(attrs) do
@@ -128,7 +129,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   defp post_json(path, params) do
     body = Jason.encode!(params)
-    request = Finch.build(:post, @base <> path, headers(), body)
+    request = Finch.build(:post, base() <> path, headers(), body)
 
     case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
@@ -143,7 +144,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   defp get(path) do
-    request = Finch.build(:get, @base <> path, headers())
+    request = Finch.build(:get, base() <> path, headers())
 
     case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
@@ -157,13 +158,19 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
-  defp headers do
-    api_key = Application.fetch_env!(:emisar, :paddle_api_key)
+  # Sandbox keys carry the _sdbx_ marker, so ONE secret switches the whole
+  # environment — no separate env var to drift out of sync with the key.
+  defp base do
+    if String.contains?(api_key(), "_sdbx_"), do: @sandbox_base, else: @live_base
+  end
 
+  defp headers do
     [
-      {"authorization", "Bearer " <> api_key},
+      {"authorization", "Bearer " <> api_key()},
       {"content-type", "application/json"},
       {"accept", "application/json"}
     ]
   end
+
+  defp api_key, do: Application.fetch_env!(:emisar, :paddle_api_key)
 end

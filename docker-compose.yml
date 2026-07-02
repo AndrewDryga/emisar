@@ -157,9 +157,16 @@ services:
       # Speak plain HTTP for local. force_ssl in runtime.exs is gated
       # on this knob — see config/runtime.exs.
       FORCE_SSL: "false"
-      # Use the Paddle stub client locally — prod runtime.exs refuses to
-      # boot without PADDLE_API_KEY unless this is set.
+      # Billing: stub by default (prod runtime.exs refuses to boot without
+      # PADDLE_API_KEY unless the disable flag is set). To run REAL Paddle
+      # sandbox billing in this stack instead, export the PADDLE_* vars before
+      # `docker compose up` — `source portal/.agent/secrets/paddle-sandbox.env`
+      # — and the API-key branch wins over the disable flag. Blank passthrough
+      # values (unset host env) are treated as absent by runtime.exs.
       EMISAR_DISABLE_BILLING: "1"
+      PADDLE_API_KEY: "${PADDLE_API_KEY:-}"
+      PADDLE_WEBHOOK_SECRET: "${PADDLE_WEBHOOK_SECRET:-}"
+      PADDLE_CLIENT_TOKEN: "${PADDLE_CLIENT_TOKEN:-}"
       # DEV-ONLY: deliver mail into the in-memory mailbox served at /dev/mailbox
       # (the /dev routes are compiled in via the build arg above). Lets you
       # complete the passwordless magic-link sign-in with no mail provider.

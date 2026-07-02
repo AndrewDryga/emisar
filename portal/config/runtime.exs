@@ -206,14 +206,27 @@ if config_env() == :prod do
   # revenue events would land). To run a prod build with billing
   # disabled (e.g. an internal staging tier), set
   # `EMISAR_DISABLE_BILLING=1` — that's the only way to skip Paddle.
+  #
+  # Blank values count as absent: the docker-compose e2e stack passes
+  # PADDLE_* through as "${VAR:-}", so an unset host env must mean "stub",
+  # never a live client holding an empty credential.
+  paddle_env = fn name ->
+    case System.get_env(name) do
+      "" -> nil
+      value -> value
+    end
+  end
+
   cond do
-    System.get_env("PADDLE_API_KEY") ->
+    paddle_api_key = paddle_env.("PADDLE_API_KEY") ->
       config :emisar,
         paddle_client: Emisar.Billing.PaddleClient.Live,
-        paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
-        paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET"),
+        paddle_api_key: paddle_api_key,
+        paddle_webhook_secret:
+          paddle_env.("PADDLE_WEBHOOK_SECRET") ||
+            raise("PADDLE_WEBHOOK_SECRET is required whenever PADDLE_API_KEY is set."),
         paddle_client_token:
-          System.get_env("PADDLE_CLIENT_TOKEN") ||
+          paddle_env.("PADDLE_CLIENT_TOKEN") ||
             raise("""
             PADDLE_CLIENT_TOKEN is missing. The /checkout page needs a Paddle
             client-side token to open Paddle Checkout — create one in the Paddle
@@ -252,12 +265,20 @@ if config_env() == :prod do
   end
 end
 
-# Always use the stub Paddle client in dev / test unless a real key was set.
+# Always use the stub Paddle client in dev / test unless a real key was set
+# (the sandbox e2e harness exports one — see .agent/scripts/paddle-sandbox-e2e.sh).
+# Blank values count as absent, matching the prod branch.
 if config_env() in [:dev, :test] do
-  if System.get_env("PADDLE_API_KEY") do
+  dev_paddle_api_key =
+    case System.get_env("PADDLE_API_KEY") do
+      "" -> nil
+      value -> value
+    end
+
+  if dev_paddle_api_key do
     config :emisar,
       paddle_client: Emisar.Billing.PaddleClient.Live,
-      paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
+      paddle_api_key: dev_paddle_api_key,
       paddle_webhook_secret: System.get_env("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test",
       paddle_client_token: System.get_env("PADDLE_CLIENT_TOKEN")
   else
