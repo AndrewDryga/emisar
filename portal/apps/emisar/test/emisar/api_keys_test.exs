@@ -463,6 +463,97 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "auto_rotate_expiring/1" do
+    test "an expiring mcp key self-mints a marked, scope-preserving successor exactly once" do
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{
+            name: "claude",
+            scopes: ["actions:read", "actions:execute"],
+            action_scope: ["linux.uptime"],
+            expires_at: soon
+          },
+          subject
+        )
+
+      key_subject = Subject.for_api_key(key, account)
+
+      assert {:ok, raw, successor} = ApiKeys.auto_rotate_expiring(key_subject)
+
+      assert String.starts_with?(raw, "emk-")
+      assert successor.name == key.name
+      assert successor.kind == :mcp
+      assert Enum.sort(successor.scopes) == Enum.sort(key.scopes)
+      assert successor.action_scope == key.action_scope
+      assert successor.created_by_id == key.created_by_id
+      assert successor.created_by_membership_id == key.created_by_membership_id
+      # Fresh default expiry — not the source's dying one.
+      assert DateTime.compare(successor.expires_at, soon) == :gt
+
+      # The source is marked superseded (the at-most-once guard) but NOT
+      # revoked — it overlaps until its own expiry.
+      {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
+      assert reloaded.rotated_to_id == successor.id
+      assert is_nil(reloaded.revoked_at)
+
+      # A concurrent session still holding the pre-rotation struct loses the
+      # mark-race, and its provisional successor rolls back with it.
+      assert {:error, :already_rotated} = ApiKeys.auto_rotate_expiring(key_subject)
+      assert length(Repo.all(ApiKey)) == 2
+
+      rotation =
+        Enum.find(Repo.all(Audit.Event), &(&1.event_type == "api_key.auto_rotated"))
+
+      assert rotation.subject_id == key.id
+      assert rotation.payload["successor_prefix"] == successor.key_prefix
+    end
+
+    test "a quick key (no expiry) and a far-from-expiry key are not eligible" do
+      {_user, account, subject} = owner_subject_pair()
+
+      {:ok, _raw, quick} = ApiKeys.mint_quick_key(subject)
+
+      far = DateTime.add(DateTime.utc_now(), 30, :day)
+
+      {:ok, _raw, far_key} =
+        ApiKeys.create_key(%{name: "far", scopes: ["actions:read"], expires_at: far}, subject)
+
+      assert {:error, :not_eligible} =
+               ApiKeys.auto_rotate_expiring(Subject.for_api_key(quick, account))
+
+      assert {:error, :not_eligible} =
+               ApiKeys.auto_rotate_expiring(Subject.for_api_key(far_key, account))
+    end
+
+    test "a revoked key and an audit-export token are not eligible" do
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "r", scopes: ["actions:read"], expires_at: soon}, subject)
+
+      {:ok, revoked} = ApiKeys.revoke_api_key(key, subject)
+
+      {:ok, _raw, export} =
+        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"], expires_at: soon}, subject)
+
+      assert {:error, :not_eligible} =
+               ApiKeys.auto_rotate_expiring(Subject.for_api_key(revoked, account))
+
+      assert {:error, :not_eligible} =
+               ApiKeys.auto_rotate_expiring(Subject.for_api_key(export, account))
+    end
+
+    test "possession is the authorization — a user subject is refused" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:error, :not_eligible} = ApiKeys.auto_rotate_expiring(subject)
+    end
+  end
+
   describe "subscribe_account_api_keys/1" do
     test "the subscriber receives the account's api-key list broadcasts" do
       {_user, account, subject} = owner_subject_pair()

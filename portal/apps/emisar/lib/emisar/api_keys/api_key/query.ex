@@ -24,6 +24,9 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_revoked(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.revoked_at))
 
+  def not_rotated(queryable \\ all()),
+    do: where(queryable, [api_keys: k], is_nil(k.rotated_to_id))
+
   @doc """
   Hides auto-generated keys until an LLM has authenticated with one.
   Auto-unused entries stay invisible to operator-facing surfaces.

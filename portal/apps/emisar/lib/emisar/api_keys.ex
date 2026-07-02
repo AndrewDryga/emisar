@@ -28,6 +28,11 @@ defmodule Emisar.ApiKeys do
   # LLM makes its first MCP call" gap.
   @quick_eviction_grace_seconds 60
 
+  # A key expiring within this window auto-rotates at the MCP boundary —
+  # matches the agents page's amber near-expiry cue, so the UI warning and
+  # the bridge's self-rotation fire on the same horizon.
+  @rotation_window_days 7
+
   # -- Reads -----------------------------------------------------------
 
   @doc """
@@ -165,18 +170,94 @@ defmodule Emisar.ApiKeys do
     # Re-fetch scoped to the subject so a caller can't rotate a key outside its
     # account; `create_key/2` then re-gates on `manage_api_keys` and mints.
     with {:ok, source} <- fetch_api_key_by_id(key.id, subject) do
-      attrs = %{
-        name: source.name,
-        description: source.description,
-        kind: source.kind,
-        scopes: source.scopes,
-        action_scope: source.action_scope,
-        runner_filter: source.runner_filter,
-        runner_group_filter: source.runner_group_filter
-      }
-
-      create_key(attrs, subject)
+      create_key(successor_attrs(source), subject)
     end
+  end
+
+  @doc """
+  Possession-based self-succession for the MCP bridge (response-carried
+  rotation): when the subject's OWN `:mcp` key expires within
+  #{@rotation_window_days} days, mints a scope-preserving successor exactly
+  once and returns `{:ok, raw_secret, successor}`. The
+  `%Subject{actor: %ApiKey{}}` match IS the authorization — the credential
+  rotates itself; no `manage_api_keys` involved — so any other subject, or an
+  ineligible key, gets `{:error, :not_eligible}`, and losing the mark-race to
+  a concurrent session gets `{:error, :already_rotated}`. The source key
+  keeps working until its own expiry (the overlap window).
+  """
+  def auto_rotate_expiring(%Subject{actor: %ApiKey{} = key} = subject) do
+    if auto_rotation_eligible?(key) do
+      mint_successor(key, subject)
+    else
+      {:error, :not_eligible}
+    end
+  end
+
+  def auto_rotate_expiring(%Subject{}), do: {:error, :not_eligible}
+
+  defp auto_rotation_eligible?(%ApiKey{} = key) do
+    key.kind == :mcp and is_nil(key.revoked_at) and is_nil(key.deleted_at) and
+      is_nil(key.rotated_to_id) and expiring_soon?(key.expires_at)
+  end
+
+  # Quick-connect keys carry no expiry and never rotate; auth already
+  # guarantees the key isn't past its expiry when this runs.
+  defp expiring_soon?(nil), do: false
+
+  defp expiring_soon?(%DateTime{} = expires_at) do
+    window_end = DateTime.add(DateTime.utc_now(), @rotation_window_days, :day)
+    DateTime.compare(expires_at, window_end) == :lt
+  end
+
+  defp mint_successor(%ApiKey{} = source, subject) do
+    {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+
+    changeset =
+      ApiKey.Changeset.create(
+        source.account_id,
+        source.created_by_id,
+        source.created_by_membership_id,
+        prefix,
+        hash,
+        successor_attrs(source)
+      )
+
+    Multi.new()
+    |> Multi.insert(:successor, changeset)
+    |> Multi.run(:mark_rotated, fn repo, %{successor: successor} ->
+      # The conditional update is the at-most-once guard: a concurrent
+      # initialize that already marked the source loses here, rolling the
+      # freshly-inserted successor back out.
+      queryable =
+        ApiKey.Query.all() |> ApiKey.Query.by_id(source.id) |> ApiKey.Query.not_rotated()
+
+      case repo.update_all(queryable, set: [rotated_to_id: successor.id]) do
+        {1, _} -> {:ok, successor.id}
+        {0, _} -> {:error, :already_rotated}
+      end
+    end)
+    |> Multi.insert(:audit, fn %{successor: successor} ->
+      Audit.Events.api_key_auto_rotated(subject, source, successor)
+    end)
+    |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.successor))
+    |> case do
+      {:ok, %{successor: successor}} -> {:ok, raw, successor}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The scope-preserving attribute set a successor inherits — shared by
+  # operator rotation and auto-rotation so the two paths can't drift.
+  defp successor_attrs(%ApiKey{} = source) do
+    %{
+      name: source.name,
+      description: source.description,
+      kind: source.kind,
+      scopes: source.scopes,
+      action_scope: source.action_scope,
+      runner_filter: source.runner_filter,
+      runner_group_filter: source.runner_group_filter
+    }
   end
 
   # Rendering concerns are the caller's: pass `preload:` only for the

@@ -33,6 +33,7 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.created", "API key created"},
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
+    {"api_key.auto_rotated", "API key auto-rotated"},
     {"oauth.consent_granted", "OAuth client authorized"},
     {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
     {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
@@ -167,6 +168,7 @@ defmodule Emisar.Audit.Event.Query do
        {"api_key.created", "Created"},
        {"api_key.revoked", "Revoked"},
        {"api_key.bound", "First use"},
+       {"api_key.auto_rotated", "Auto-rotated"},
        {"oauth.consent_granted", "OAuth client authorized"}
      ]},
     {"Sign-in",

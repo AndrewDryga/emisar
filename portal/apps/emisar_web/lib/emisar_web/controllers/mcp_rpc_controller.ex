@@ -44,7 +44,7 @@ defmodule EmisarWeb.MCPRpcController do
   def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) do
     id = Map.get(req, "id")
     params = Map.get(req, "params") || %{}
-    conn = maybe_emit_session_id(conn, method)
+    conn = conn |> maybe_emit_session_id(method) |> maybe_offer_successor(method)
 
     case dispatch(conn, method, params) do
       :no_reply ->
@@ -548,6 +548,36 @@ defmodule EmisarWeb.MCPRpcController do
     case get_req_header(conn, "mcp-session-id") do
       [v | _] when is_binary(v) and v != "" -> v
       _ -> nil
+    end
+  end
+
+  # Response-carried key rotation for the stdio bridge: when the caller's key
+  # is expiring soon, `initialize`'s response carries a freshly-minted
+  # successor in HEADERS only — never the JSON-RPC body, which the bridge
+  # forwards verbatim into the LLM transcript. Gated on the bridge's
+  # User-Agent so the at-most-once successor isn't burned on a remote
+  # connector that ignores response headers (same-trust gate: the bearer
+  # holder is the recipient either way).
+  defp maybe_offer_successor(conn, "initialize") do
+    with true <- bridge_client?(conn),
+         {:ok, raw, successor} <- ApiKeys.auto_rotate_expiring(conn.assigns.current_subject) do
+      conn
+      |> put_resp_header("x-emisar-successor-key", raw)
+      |> put_resp_header(
+        "x-emisar-successor-expires-at",
+        DateTime.to_iso8601(successor.expires_at)
+      )
+    else
+      _ -> conn
+    end
+  end
+
+  defp maybe_offer_successor(conn, _method), do: conn
+
+  defp bridge_client?(conn) do
+    case get_req_header(conn, "user-agent") do
+      [ua | _] -> String.starts_with?(ua, "emisar-mcp/")
+      [] -> false
     end
   end
 

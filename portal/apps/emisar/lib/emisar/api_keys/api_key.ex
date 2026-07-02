@@ -50,6 +50,9 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
+    # Successor minted by auto-rotation — non-nil marks this key superseded
+    # and is the at-most-once guard for response-carried rotation.
+    belongs_to :rotated_to, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
     # Membership of the user who minted this key. MCP dispatch resolves
     # this membership's per-user runner scope at call-time so revoking
     # the operator's scope shrinks every key they ever issued. Nilable —

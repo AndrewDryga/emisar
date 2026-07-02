@@ -581,6 +581,80 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
+  describe "initialize — response-carried rotation" do
+    test "a bridge client with an expiring key gets a one-shot successor in headers",
+         %{conn: conn, account: account, user: user} do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, raw, _key} =
+        ApiKeys.create_key(%{name: "bridge-#{unique()}", expires_at: soon}, subject)
+
+      first =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(first, 200)
+      assert [successor_raw] = get_resp_header(first, "x-emisar-successor-key")
+      assert String.starts_with?(successor_raw, "emk-")
+      assert [expires] = get_resp_header(first, "x-emisar-successor-expires-at")
+      assert {:ok, _expiry, _offset} = DateTime.from_iso8601(expires)
+
+      # The successor authenticates immediately (the header is live).
+      pong =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> successor_raw)
+        |> rpc("ping")
+
+      assert %{"result" => %{}} = json_response(pong, 200)
+
+      # At most once — the superseded key's next initialize offers nothing.
+      second =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(second, 200)
+      assert get_resp_header(second, "x-emisar-successor-key") == []
+    end
+
+    test "no successor for a non-bridge client or a far-from-expiry key",
+         %{conn: conn, account: account, user: user} do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      far = DateTime.add(DateTime.utc_now(), 30, :day)
+
+      {:ok, expiring_raw, _key} =
+        ApiKeys.create_key(%{name: "close-#{unique()}", expires_at: soon}, subject)
+
+      {:ok, far_raw, _key} =
+        ApiKeys.create_key(%{name: "far-#{unique()}", expires_at: far}, subject)
+
+      far_conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> far_raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(far_conn, 200)
+      assert get_resp_header(far_conn, "x-emisar-successor-key") == []
+
+      # A remote connector ignores response headers — don't burn the one-shot
+      # successor on it.
+      remote =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> expiring_raw)
+        |> put_req_header("user-agent", "Mozilla/5.0 (claude.ai connector)")
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(remote, 200)
+      assert get_resp_header(remote, "x-emisar-successor-key") == []
+    end
+  end
+
   describe "ping" do
     test "returns empty result", %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
