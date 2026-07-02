@@ -410,6 +410,10 @@ accent hue or a second green. ❌ Overriding the global focus ring.
 - **Logo assets:** `priv/static/images/brand/`, favicon family at the static root.
 - **Engagement history + locked decisions:** `[[marketing-redesign-gate-direction]]`
   (memory). **Component/shape rules:** `.agent/rules/ui-shared-components.md`.
+- **The console IA/UX doctrine — page archetypes, the component-first law, the ONE tone
+  system, confirm ladder, state matrix, density budgets:** `.agent/rules/console-ux.md`.
+  This file is the visual layer; that one is the structural layer. Read both before any
+  console change.
 - **The frontend execution hat:** `/frontend` skill (LiveView/HEEx/Tailwind
   rules + the make-interfaces-feel-better pass). **Art direction:**
   `/creative-director`.
