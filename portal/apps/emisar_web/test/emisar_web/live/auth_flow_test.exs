@@ -6,7 +6,7 @@ defmodule EmisarWeb.AuthFlowTest do
       {:ok, _lv, html} = live(conn, ~p"/sign_in")
       assert html =~ "Welcome back"
       assert html =~ "Work email"
-      assert html =~ "one-time sign-in link"
+      assert html =~ "sign-in link"
       # Passwordless: no password field, no forgot-password link.
       refute html =~ "Password"
       refute html =~ "reset_password"
@@ -23,7 +23,7 @@ defmodule EmisarWeb.AuthFlowTest do
       {:ok, _lv, html} = live(conn, ~p"/sign_up")
       assert html =~ "Start your free workspace"
       assert html =~ "Work email"
-      assert html =~ "one-time sign-in link"
+      assert html =~ "sign-in link"
       refute html =~ "Password"
     end
 
@@ -36,7 +36,7 @@ defmodule EmisarWeb.AuthFlowTest do
   describe "GET /sign_in/magic" do
     test "renders the magic-link request form", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
-      assert html =~ "one-time link"
+      assert html =~ "one-time"
       assert html =~ ~s(action="/sign_in/magic/start")
     end
   end

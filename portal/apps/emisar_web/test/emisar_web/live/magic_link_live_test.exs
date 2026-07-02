@@ -13,7 +13,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   test "renders the email form that POSTs to the start action", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
 
-    assert html =~ "one-time link"
+    assert html =~ "one-time"
     assert html =~ ~s(action="/sign_in/magic/start")
     # Blank email is gated client-side (the flow has no server-side email error,
     # by anti-enumeration design) — the `required` attr is the only gate.

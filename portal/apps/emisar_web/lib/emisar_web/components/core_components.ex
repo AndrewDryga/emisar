@@ -1218,6 +1218,13 @@ defmodule EmisarWeb.CoreComponents do
             </ul>
           </div>
         </div>
+
+        <%!-- Invisible mirror of the logo row above, so the pitch's flex-1
+             centering area is vertically symmetric and its optical center
+             matches the form column's (which hides its logo at lg). --%>
+        <div class="invisible" aria-hidden="true">
+          <.brand size={:md} />
+        </div>
       </div>
 
       <div class="flex flex-col p-6 lg:p-12">
@@ -1225,7 +1232,10 @@ defmodule EmisarWeb.CoreComponents do
           <.brand size={:md} />
         </.link>
 
-        <div class="flex flex-1 items-center justify-center">
+        <%!-- Mobile anchors to a consistent top (centering short content
+             leaves a floating dead-zone that varies per sibling page);
+             lg keeps the vertical centering. --%>
+        <div class="flex flex-1 items-start justify-center pt-2 lg:items-center lg:pt-0">
           <div class="w-full max-w-md">
             <h1 class="text-3xl font-bold tracking-tight text-zinc-50">{@title}</h1>
             <div class="mt-8">
@@ -2356,7 +2366,7 @@ defmodule EmisarWeb.CoreComponents do
   the check icon marks the current pick. Values compare as strings.
 
       <.choice_cards name="invite[role]" value={@form[:role].value}>
-        <:card :for={role <- @roles} value={role} title={String.capitalize(role)}>
+        <:card :for={role <- @roles} value={role} title={Emisar.Auth.Role.label(role)}>
           {role_description(role)}
         </:card>
       </.choice_cards>

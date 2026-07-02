@@ -134,7 +134,8 @@ defmodule EmisarWeb.MagicLinkLive do
         </.auth_footer_link>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
-          We'll email you a one-time link and a 6-character code. They expire in 15 minutes.
+          We'll email you a one-time <span class="whitespace-nowrap">sign-in link</span>
+          and a <span class="whitespace-nowrap">6-character code</span>. They expire in 15 minutes.
         </p>
 
         <.simple_form for={@email_form} action={~p"/sign_in/magic/start"} method="post">
@@ -148,10 +149,21 @@ defmodule EmisarWeb.MagicLinkLive do
           />
           <:actions>
             <.button class="w-full">
-              Email me a code <span aria-hidden="true">→</span>
+              Email me a sign-in link <span aria-hidden="true">→</span>
             </.button>
           </:actions>
         </.simple_form>
+
+        <%!-- Never a dead end: a cold/expired-link visit gets the same
+             exits the sign-in page offers. --%>
+        <.auth_footer_link navigate={~p"/sign_in"}>
+          <:lead>Prefer SSO?</:lead>
+          Back to sign in
+        </.auth_footer_link>
+        <.auth_footer_link navigate={~p"/sign_up"}>
+          <:lead>New to emisar?</:lead>
+          Create an account
+        </.auth_footer_link>
       <% end %>
     </.auth_layout>
     """
