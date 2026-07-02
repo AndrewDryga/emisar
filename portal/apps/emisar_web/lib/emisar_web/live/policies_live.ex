@@ -883,12 +883,9 @@ defmodule EmisarWeb.PoliciesLive do
           </.button>
         </div>
 
-        <div
-          :if={@overrides == []}
-          class="mt-4 rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
-        >
+        <.empty_state :if={@overrides == []} variant={:hint} class="mt-4">
           No overrides. The tier defaults above decide every action.
-        </div>
+        </.empty_state>
 
         <div :if={@overrides != []} class="mt-4 space-y-3">
           <%!-- First-match wins, so an override whose glob is subsumed by an

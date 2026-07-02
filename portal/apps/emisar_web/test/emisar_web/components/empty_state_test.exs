@@ -38,5 +38,36 @@ defmodule EmisarWeb.Components.EmptyStateTest do
       assert html =~ "text-rose-400/70"
       assert html =~ "text-rose-200"
     end
+
+    test ":hint is the compact dashed body-first placeholder — no icon or title needed" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.empty_state variant={:hint}>
+          No overrides. The tier defaults above decide every action.
+        </CoreComponents.empty_state>
+        """)
+
+      assert html =~ "border-dashed"
+      assert html =~ "text-xs leading-relaxed text-zinc-500"
+      assert html =~ "No overrides."
+      refute html =~ "<h2"
+      refute html =~ "hero-"
+    end
+
+    test ":hint renders an optional small title above the body" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.empty_state variant={:hint} title="Pick a client above to get started.">
+          We won't mint a key until you do.
+        </CoreComponents.empty_state>
+        """)
+
+      assert html =~ ~r/<h2[^>]*mb-1 text-sm text-zinc-300/
+      assert html =~ "Pick a client above to get started."
+    end
   end
 end

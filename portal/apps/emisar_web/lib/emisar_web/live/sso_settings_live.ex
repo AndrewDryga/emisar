@@ -1963,13 +1963,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <p
-        :if={@mappings == []}
-        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
-      >
+      <.empty_state :if={@mappings == []} variant={:hint} class="mt-4">
         No group mappings yet. New members land at the connection's default role until you map a
         directory group to a higher one.
-      </p>
+      </.empty_state>
 
       <%!-- Add a mapping — revealed by the "Add mapping" button (not always open);
            a divided region within the card (not a nested box). account_id/provider_id
@@ -2076,13 +2073,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <p
-        :if={@synced_groups == []}
-        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
-      >
+      <.empty_state :if={@synced_groups == []} variant={:hint} class="mt-4">
         No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
         with their member counts.
-      </p>
+      </.empty_state>
     </.card>
     """
   end
@@ -2212,13 +2206,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <p
-        :if={@members == []}
-        class="mt-4 rounded-lg bg-zinc-950/40 px-4 py-3 text-sm leading-relaxed text-zinc-500 ring-1 ring-white/5"
-      >
+      <.empty_state :if={@members == []} variant={:hint} class="mt-4">
         No one has been provisioned through this connection yet. Users appear here after they sign in
         through it, or after directory sync provisions them.
-      </p>
+      </.empty_state>
     </.card>
     """
   end

@@ -1001,12 +1001,9 @@ defmodule EmisarWeb.AgentsLive do
       <%= cond do %>
         <% is_nil(@selected_client) -> %>
           <div class="px-6 py-10">
-            <div class="rounded-lg border border-dashed border-zinc-800 p-8 text-center">
-              <p class="text-sm text-zinc-300">Pick a client above to get started.</p>
-              <p class="mt-1 text-xs text-zinc-500">
-                We won't mint a key until you do — keeps the audit trail and the agents list clean.
-              </p>
-            </div>
+            <.empty_state variant={:hint} title="Pick a client above to get started.">
+              We won't mint a key until you do — keeps the audit trail and the agents list clean.
+            </.empty_state>
           </div>
         <% @selected_client == "custom" -> %>
           <div class="space-y-5 px-6 py-5">

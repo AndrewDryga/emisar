@@ -3507,15 +3507,20 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.
+  `:boxed`/`:bare` expect `icon` + `title`; `:hint` is the compact dashed
+  body-first placeholder ("No overrides. …") with an optional small title
+  and usually no icon.
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
         Mint a runner key and run the installer on a host.
         <:cta navigate={~p"/app/\#{@current_account}/settings/runners/auth-keys"}>New runner key</:cta>
       </.empty_state>
+
+      <.empty_state variant={:hint}>No overrides. The tier defaults decide.</.empty_state>
   """
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-  attr :variant, :atom, default: :boxed, values: [:boxed, :bare]
+  attr :icon, :string, default: nil
+  attr :title, :string, default: nil
+  attr :variant, :atom, default: :boxed, values: [:boxed, :bare, :hint]
   attr :tone, :atom, default: :zinc, values: [:zinc, :danger]
   attr :class, :string, default: nil
   slot :inner_block, required: true
@@ -3528,8 +3533,8 @@ defmodule EmisarWeb.CoreComponents do
   def empty_state(assigns) do
     ~H"""
     <div class={[empty_state_wrapper(@variant), @class]}>
-      <.icon name={@icon} class={empty_state_icon(@variant, @tone)} />
-      <h2 class={empty_state_title(@variant, @tone)}>{@title}</h2>
+      <.icon :if={@icon} name={@icon} class={empty_state_icon(@variant, @tone)} />
+      <h2 :if={@title} class={empty_state_title(@variant, @tone)}>{@title}</h2>
       <p class={empty_state_body(@variant)}>{render_slot(@inner_block)}</p>
 
       <%= for cta <- @cta do %>
@@ -3549,8 +3554,12 @@ defmodule EmisarWeb.CoreComponents do
 
   defp empty_state_wrapper(:bare), do: "mx-auto max-w-md text-center"
 
+  defp empty_state_wrapper(:hint),
+    do: "rounded-lg border border-dashed border-zinc-800 p-6 text-center"
+
   defp empty_state_icon(:boxed, tone), do: "mx-auto h-10 w-10 " <> empty_state_icon_color(tone)
   defp empty_state_icon(:bare, tone), do: "mx-auto h-8 w-8 " <> empty_state_icon_color(tone)
+  defp empty_state_icon(:hint, tone), do: "mx-auto h-6 w-6 " <> empty_state_icon_color(tone)
 
   defp empty_state_icon_color(:zinc), do: "text-zinc-700"
   defp empty_state_icon_color(:danger), do: "text-rose-400/70"
@@ -3561,16 +3570,25 @@ defmodule EmisarWeb.CoreComponents do
   defp empty_state_title(:bare, tone),
     do: "mt-3 text-sm font-medium " <> empty_state_title_color(:bare, tone)
 
+  defp empty_state_title(:hint, tone),
+    do: "mb-1 text-sm " <> empty_state_title_color(:hint, tone)
+
   defp empty_state_title_color(:boxed, :zinc), do: "text-zinc-200"
   defp empty_state_title_color(:bare, :zinc), do: "text-zinc-300"
+  defp empty_state_title_color(:hint, :zinc), do: "text-zinc-300"
   defp empty_state_title_color(_variant, :danger), do: "text-rose-200"
 
   defp empty_state_body(:boxed), do: "mt-2 text-sm text-zinc-500"
   defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"
+  defp empty_state_body(:hint), do: "text-xs leading-relaxed text-zinc-500"
 
   defp empty_state_cta(:boxed) do
     "mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
   end
+
+  # A hint placeholder points at the control that creates content, so its
+  # CTA reuses the bare treatment.
+  defp empty_state_cta(:hint), do: empty_state_cta(:bare)
 
   defp empty_state_cta(:bare) do
     "mt-4 inline-flex items-center gap-2 text-sm font-medium text-brand-400 hover:text-brand-300"

@@ -453,12 +453,9 @@ defmodule EmisarWeb.RunbookEditorLive do
                  Steps panel rather than in a top flash banner. --%>
             <.callout :if={msg = save_error_message(@form)} tone={:rose}>{msg}</.callout>
 
-            <div
-              :if={@steps == []}
-              class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-500"
-            >
+            <.empty_state :if={@steps == []} variant={:hint}>
               No steps. Add an action step above to start.
-            </div>
+            </.empty_state>
 
             <datalist id="catalog-actions">
               <option :for={a <- @catalog_actions} value={a}></option>
