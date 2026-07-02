@@ -2593,6 +2593,32 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Renders text that may carry markdown-style backtick spans — pack
+  descriptions, side-effect notes — with the `` `code` `` parts as inline
+  mono instead of leaking literal backticks into the UI. Everything is
+  escaped as usual; only the presentation changes. Odd/unbalanced
+  backticks degrade to plain text for the trailing segment.
+
+      <.inline_code text={@action.description} />
+  """
+  attr :text, :string, required: true
+
+  def inline_code(assigns) do
+    assigns = assign(assigns, :segments, Enum.with_index(String.split(assigns.text, "`")))
+
+    ~H"""
+    <%= for {segment, idx} <- @segments do %>
+      <code
+        :if={rem(idx, 2) == 1}
+        class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[0.92em] text-zinc-300"
+      >
+        {segment}
+      </code><span :if={rem(idx, 2) == 0}>{segment}</span>
+    <% end %>
+    """
+  end
+
+  @doc """
   One-line code value with its copy button — a sign-in link, a callback
   URI, a SCIM base URL. The framed multi-line snippet is `code_panel`;
   this is the single-value row.

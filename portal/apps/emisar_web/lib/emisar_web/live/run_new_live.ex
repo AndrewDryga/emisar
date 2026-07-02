@@ -241,16 +241,43 @@ defmodule EmisarWeb.RunNewLive do
         </.back_link>
         Run <span class="font-mono text-base">{@action.action_id}</span>
       </:title>
-      <:actions>
-        <.risk_pill risk={@action.risk} />
-      </:actions>
-
       <div class="space-y-6">
-        <%!-- Action context — what you're about to do. Description
-             prose + meta strip (risk/kind/pack). Replaces the
-             stranded right-side info card. --%>
-        <.panel :if={@action.description && @action.description != ""} title={@action.title}>
-          <p class="text-sm leading-relaxed text-zinc-400">{@action.description}</p>
+        <%!-- About this action — ONE island for everything the operator
+             reads before deciding: description prose, side effects, and
+             the pack's canonical examples. The meta strip below carries
+             risk/kind/pack, so the risk pill renders exactly once. --%>
+        <.panel title={@action.title}>
+          <p
+            :if={@action.description && @action.description != ""}
+            class="text-sm leading-relaxed text-zinc-400"
+          >
+            <.inline_code text={@action.description} />
+          </p>
+
+          <%!-- Side effects — amber only when this action MUTATES real
+               state (risk above low). A read-only action's side-effect
+               note stays neutral, so amber keeps meaning "caution". --%>
+          <div
+            :if={@action.side_effects && @action.side_effects != []}
+            class={["mt-4", @action.description in [nil, ""] && "mt-0"]}
+          >
+            <div class={[
+              "text-[10px] font-semibold uppercase tracking-wider",
+              if(@action.risk == :low, do: "text-zinc-400", else: "text-amber-300")
+            ]}>
+              Side effects
+            </div>
+            <ul class="mt-1.5 space-y-1 text-sm text-zinc-400">
+              <li :for={effect <- @action.side_effects} class="flex items-start gap-2">
+                <span class={[
+                  "mt-2 h-1 w-1 flex-none rounded-full",
+                  if(@action.risk == :low, do: "bg-zinc-600", else: "bg-amber-300")
+                ]}>
+                </span>
+                <span><.inline_code text={effect} /></span>
+              </li>
+            </ul>
+          </div>
 
           <%!-- Pack-provided examples — short canonical invocations
                with sample args. Big UX win when an operator has the
@@ -283,21 +310,6 @@ defmodule EmisarWeb.RunNewLive do
             <span class="truncate text-zinc-200">{@action.pack_id || "—"}</span>
           </.meta_field>
         </.meta_strip>
-
-        <%!-- Side-effects warning — loud when this action will mutate
-             real state. Empty list (read-only action) hides it. --%>
-        <.callout
-          :if={@action.side_effects && @action.side_effects != []}
-          tone={:amber}
-          title="Side effects"
-        >
-          <ul class="space-y-1">
-            <li :for={effect <- @action.side_effects} class="flex items-start gap-2">
-              <span class="mt-2 h-1 w-1 flex-none rounded-full bg-amber-300"></span>
-              <span>{effect}</span>
-            </li>
-          </ul>
-        </.callout>
 
         <%!-- Offline-runner notice. The runner is only looked up on the
              connected render, so this stays quiet on the dead pass. We
@@ -355,13 +367,16 @@ defmodule EmisarWeb.RunNewLive do
             />
 
             <:actions>
+              <%!-- The last glance binds action + host: the button names the
+                   TARGET, so a mis-aimed dispatch is caught at the click. --%>
               <.button
                 :if={@can_dispatch? and not signed_only?(@runner)}
                 class="w-full"
                 phx-disable-with="Dispatching..."
                 data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
-                Dispatch to runner <span aria-hidden="true">→</span>
+                Dispatch to {(@runner && @runner.name) || "runner"}
+                <span aria-hidden="true">→</span>
               </.button>
               <%!-- Signed-only runner — the run would be refused, so there's no
                    Dispatch button; point the operator at their MCP client. --%>

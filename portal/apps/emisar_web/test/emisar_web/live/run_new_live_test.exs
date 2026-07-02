@@ -125,9 +125,10 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert has_element?(lv, "textarea[name=\"reason\"]")
   end
 
-  # an action declaring side-effects renders the loud
-  # "Side effects" warning panel listing each effect.
-  test "renders the side-effects warning when the action declares any", %{conn: conn} do
+  # Side effects render inside the About panel — amber only when the action
+  # can mutate (risk above :low), so amber keeps meaning "caution". Backtick
+  # spans in pack text render as inline mono, never literal backticks.
+  test "renders the side-effects list, amber for a risky action", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -135,6 +136,7 @@ defmodule EmisarWeb.RunNewLiveTest do
       Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "linux.reboot",
+        risk: "high",
         side_effects: ["restarts the host", "drops all active connections"]
       )
 
@@ -143,6 +145,29 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "Side effects"
     assert html =~ "restarts the host"
     assert html =~ "drops all active connections"
+    assert html =~ "text-amber-300"
+  end
+
+  test "a read-only action's side effects stay neutral and backticks render as code", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.arp_neighbors",
+        risk: "low",
+        side_effects: ["One `ip` invocation. Read-only."]
+      )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert html =~ "Side effects"
+    assert html =~ ~r{<code[^>]*>\s*ip\s*</code>}
+    refute html =~ "One `ip` invocation"
+    refute html =~ "text-amber-300"
   end
 
   test "an enforcing runner replaces the Dispatch button with a signed-only notice", %{conn: conn} do
@@ -162,7 +187,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "Signed dispatch only"
     assert html =~ "run it from your MCP client"
     # No Dispatch submit — the run would be refused at the runner.
-    refute html =~ "Dispatch to runner"
+    refute html =~ "Dispatch to"
   end
 
   test "live validation surfaces an inline error once the field is touched", %{conn: conn} do
@@ -342,7 +367,8 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    assert has_element?(lv, "button", "Dispatch to runner")
+    # The button names the TARGET — the last glance binds action + host.
+    assert has_element?(lv, "button", "Dispatch to #{runner.name}")
     refute has_element?(lv, "button[data-confirm]")
   end
 
@@ -379,7 +405,7 @@ defmodule EmisarWeb.RunNewLiveTest do
       |> log_in_user(viewer)
       |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    refute has_element?(lv, "button", "Dispatch to runner")
+    refute has_element?(lv, "button", "Dispatch to")
     assert html =~ "Your role can&#39;t dispatch runs"
   end
 
