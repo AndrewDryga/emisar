@@ -43,9 +43,12 @@ defmodule EmisarWeb.DashboardLive do
   defp load(socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
-    {:ok, runners} = Runners.list_all_runners_for_account(subject)
-    {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
-    {:ok, api_keys, _} = ApiKeys.list_api_keys_for_account(subject)
+    # Tolerate {:error, :unauthorized} per tile — a billing_manager (or any
+    # future narrow role) still gets a rendering dashboard; tiles it can't
+    # read show empty rather than crashing the landing page.
+    runners = list_or_empty(Runners.list_all_runners_for_account(subject))
+    pending = list_or_empty(Approvals.list_pending_approval_requests(subject))
+    api_keys = list_or_empty(ApiKeys.list_api_keys_for_account(subject))
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -352,6 +355,7 @@ defmodule EmisarWeb.DashboardLive do
   # don't show Prev/Next. Treat any unauthorized / unexpected reply as
   # empty so the tile still renders cleanly.
   defp list_or_empty({:ok, list, _meta}), do: list
+  defp list_or_empty({:ok, list}) when is_list(list), do: list
   defp list_or_empty(_), do: []
 
   # -- Stat tiles ------------------------------------------------------

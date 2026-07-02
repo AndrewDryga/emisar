@@ -29,7 +29,7 @@ defmodule EmisarWeb.TeamLive do
       # The invite page needs no member load — it renders from the subject alone,
       # so it skips the connected?/loading dance and shows the form immediately.
       :new ->
-        {:noreply, reset_invite_form(socket)}
+        {:noreply, socket |> assign(:page_title, "Invite a member") |> reset_invite_form()}
 
       # Gate load/2's reads behind connected? — they run once on the live mount,
       # not also on the dead render (IL-18). The dead render shows <.loading_state>.
@@ -395,13 +395,18 @@ defmodule EmisarWeb.TeamLive do
   # One-line capability summary per role for the invite picker. Each says what the
   # role CAN do and where it stops, so the grant is a deliberate choice. Kept in
   # sync with the authorizers: owner manages billing + adds owners; admin manages
-  # members/runners/policies and approves runs but only *views* billing; operator
+  # members/runners/policies and approves runs but only *views* billing;
+  # billing_manager is the orthogonal finance seat (billing only); operator
   # dispatches + approves but manages nothing; viewer is read-only.
   defp role_description("owner"),
     do: "Full control of the workspace, including billing and adding or removing other owners."
 
   defp role_description("admin"),
     do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
+
+  defp role_description("billing_manager") do
+    "Manages the subscription, payment method, and invoices — no team, runners, or actions."
+  end
 
   defp role_description("operator"),
     do: "Dispatches actions and approves them. No team, policy, or billing management."
@@ -671,7 +676,14 @@ defmodule EmisarWeb.TeamLive do
       section={:team}
       width={:settings}
     >
-      <:title>Team</:title>
+      <:title>
+        <%= if @live_action == :new do %>
+          <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+          Invite a member
+        <% else %>
+          Team
+        <% end %>
+      </:title>
       <:actions :if={@live_action == :index and not @loading? and can_manage?(assigns)}>
         <.button
           navigate={~p"/app/#{@current_account}/settings/team/invite"}
@@ -687,13 +699,6 @@ defmodule EmisarWeb.TeamLive do
            readable radio-card per role (name + what it can do), and a real
            success step (Invite another / Back to members) instead of a flash. --%>
       <div :if={@live_action == :new} class="mx-auto max-w-2xl space-y-5">
-        <.link
-          navigate={~p"/app/#{@current_account}/settings/team"}
-          class="inline-flex items-center gap-1.5 text-sm text-zinc-400 transition hover:text-zinc-200"
-        >
-          <.icon name="hero-arrow-left" class="h-4 w-4" /> Members
-        </.link>
-
         <.empty_state
           :if={not can_manage?(assigns)}
           variant={:bare}
@@ -732,11 +737,13 @@ defmodule EmisarWeb.TeamLive do
           </div>
         </.panel>
 
-        <.panel :if={can_manage?(assigns) and is_nil(@invited_email)} title="Invite a member">
-          <:subtitle>
+        <%!-- No panel title — the shell title already says "Invite a member"
+             (never a stacked near-synonym pair); the lead line carries intent. --%>
+        <.panel :if={can_manage?(assigns) and is_nil(@invited_email)}>
+          <p class="mb-5 text-sm leading-relaxed text-zinc-400">
             We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They'll sign in
             with a magic link or SSO — no password — and land in this workspace.
-          </:subtitle>
+          </p>
 
           <.simple_form
             for={@form}
@@ -768,7 +775,7 @@ defmodule EmisarWeb.TeamLive do
                   :for={role <- @roles}
                   :if={role_description(role)}
                   value={role}
-                  title={String.capitalize(role)}
+                  title={Emisar.Auth.Role.label(role)}
                 >
                   {role_description(role)}
                 </:card>
@@ -1030,7 +1037,7 @@ defmodule EmisarWeb.TeamLive do
                         text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
                       >
                         <.chip icon="hero-lock-closed-mini">
-                          {String.capitalize(to_string(membership.role))}
+                          {Emisar.Auth.Role.label(membership.role)}
                         </.chip>
                       </.tooltip>
                     <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
@@ -1046,7 +1053,7 @@ defmodule EmisarWeb.TeamLive do
                         panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                       >
                         <:trigger>
-                          {String.capitalize(to_string(membership.role))}
+                          {Emisar.Auth.Role.label(membership.role)}
                           <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
                         </:trigger>
                         <.menu_item
@@ -1059,12 +1066,12 @@ defmodule EmisarWeb.TeamLive do
                             role_change_confirm(member_name(membership) || "this member", role)
                           }
                         >
-                          {String.capitalize(role)}
+                          {Emisar.Auth.Role.label(role)}
                         </.menu_item>
                       </.dropdown>
                     <% true -> %>
                       <.chip class="shrink-0">
-                        {String.capitalize(to_string(membership.role))}
+                        {Emisar.Auth.Role.label(membership.role)}
                       </.chip>
                   <% end %>
 
@@ -1097,14 +1104,12 @@ defmodule EmisarWeb.TeamLive do
                     Only display name can be changed from here. Members
                     update their own sign-in email on their Profile page.
                   </p>
-                  <%!-- Cancel sits next to Save (not pushed right by simple_form's
-                       <:actions> justify-between), matching the scope editor below. --%>
-                  <div class="flex items-center gap-3 pt-2">
+                  <:actions>
                     <.button phx-disable-with="Saving...">Save</.button>
                     <.button variant={:ghost} type="button" phx-click="cancel_edit">
                       Cancel
                     </.button>
-                  </div>
+                  </:actions>
                 </.simple_form>
               </div>
 
@@ -1434,7 +1439,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp role_change_confirm(name, role),
-    do: "Change #{name}'s role to #{String.capitalize(role)}?"
+    do: "Change #{name}'s role to #{Emisar.Auth.Role.label(role)}?"
 
   # Two cases worth surfacing to admins: "active in the last 90 days"
   # is a no-op (don't clutter the row), "never signed in" hints at a

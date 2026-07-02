@@ -17,7 +17,7 @@
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
           src="/images/screenshots/team-page.webp"
-          alt="The Team page: members with their roles (owner, admin, operator, viewer), per-member runner scopes, and pending invitations."
+          alt="The Team page: members with their roles (owner, admin, billing manager, operator, viewer), per-member runner scopes, and pending invitations."
           loading="lazy"
           class="w-full"
         />
@@ -25,8 +25,8 @@
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Roles</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Four roles, strictly ordered. Authorization is permission-based under the hood, so this
-        table is the contract:
+        Four ordered roles plus one specialist seat. Authorization is permission-based under
+        the hood, so this table is the contract:
       </p>
       <div class="mt-4 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
@@ -50,6 +50,14 @@
               <td class="px-4 py-3">
                 Manage the team (invite, change roles, suspend), policies, runbooks, runner
                 fleet, pack trust, API keys, and runner scopes. Plus everything below.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Billing manager</td>
+              <td class="px-4 py-3">
+                The finance seat: manage the subscription, payment method, and invoices —
+                and nothing else. No team, runner, policy, or action access, so procurement
+                can own billing without touching infrastructure.
               </td>
             </tr>
             <tr>

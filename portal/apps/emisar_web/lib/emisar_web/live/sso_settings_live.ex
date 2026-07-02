@@ -26,7 +26,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # deliberate human grant). Don't offer what can't be chosen.
   @role_options Enum.map(
                   Emisar.Auth.Role.all() -- [:owner],
-                  &{&1 |> Atom.to_string() |> String.capitalize(), Atom.to_string(&1)}
+                  &{Emisar.Auth.Role.label(&1), Atom.to_string(&1)}
                 )
 
   @mapping_role_options @role_options
@@ -36,7 +36,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # still enforces the owner / last-owner / self guards server-side.
   @member_role_options Enum.map(
                          Emisar.Auth.Role.all(),
-                         &{&1 |> Atom.to_string() |> String.capitalize(), Atom.to_string(&1)}
+                         &{Emisar.Auth.Role.label(&1), Atom.to_string(&1)}
                        )
 
   # New-user provisioning modes for the form's select. JIT auto-creates a user on
@@ -2101,7 +2101,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 text="Role is managed by directory sync — set it with the group → role mappings above"
               >
                 <.chip icon="hero-lock-closed-mini">
-                  {String.capitalize(to_string(member.membership.role))}
+                  {Emisar.Auth.Role.label(member.membership.role)}
                 </.chip>
               </.tooltip>
               <form
@@ -2181,7 +2181,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
   end
 
-  defp role_label(role), do: role |> Atom.to_string() |> String.capitalize()
+  defp role_label(role), do: Emisar.Auth.Role.label(role)
 
   defp provisioner_label(:jit), do: "Auto-provision"
   defp provisioner_label(:manual), do: "Manual approval"

@@ -23,8 +23,26 @@ defmodule Emisar.Auth.PermissionsTest do
     test "an owner subject covers every membership role" do
       owner = %Subject{permissions: Permissions.for_role(:owner)}
 
-      for role <- [:owner, :admin, :operator, :viewer] do
+      for role <- [:owner, :admin, :billing_manager, :operator, :viewer] do
         assert Permissions.covers_role?(owner, role)
+      end
+    end
+
+    test "an admin does NOT cover billing_manager — granting it stays owner-only" do
+      # billing_manager carries manage_billing, which admins lack, so the
+      # covers_role? delegation guard refuses without any special-casing.
+      admin = %Subject{permissions: Permissions.for_role(:admin)}
+
+      refute Permissions.covers_role?(admin, :billing_manager)
+    end
+
+    test "a billing_manager covers only itself and viewer-of-nothing roles" do
+      billing_manager = %Subject{permissions: Permissions.for_role(:billing_manager)}
+
+      assert Permissions.covers_role?(billing_manager, :billing_manager)
+
+      for role <- [:owner, :admin, :operator, :viewer] do
+        refute Permissions.covers_role?(billing_manager, role)
       end
     end
 
@@ -47,6 +65,12 @@ defmodule Emisar.Auth.PermissionsTest do
     test "an owner-only permission resolves to exactly [:owner]" do
       assert Permissions.roles_with_permission(Accounts.Authorizer.manage_owners_permission()) ==
                [:owner]
+    end
+
+    test "manage_billing resolves to owner + billing_manager only" do
+      assert Permissions.roles_with_permission(
+               Emisar.Billing.Authorizer.manage_billing_permission()
+             ) == [:owner, :billing_manager]
     end
 
     test "a permission no role grants resolves to []" do

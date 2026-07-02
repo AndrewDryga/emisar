@@ -13,6 +13,10 @@ defmodule Emisar.Billing.Authorizer do
   def list_permissions_for_role(:admin),
     do: [view_billing_permission()]
 
+  # The finance seat: full billing control is this role's entire job.
+  def list_permissions_for_role(:billing_manager),
+    do: [manage_billing_permission(), view_billing_permission()]
+
   def list_permissions_for_role(role) when role in [:operator, :viewer],
     do: [view_billing_permission()]
 

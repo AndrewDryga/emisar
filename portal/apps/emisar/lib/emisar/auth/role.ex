@@ -8,11 +8,25 @@ defmodule Emisar.Auth.Role do
   Listed most-privileged first (the order the team UI renders). Actor-kind
   roles that aren't account memberships (`:api_client`, `:runner`) live on
   `Auth.Subject`, not here.
+
+  `:billing_manager` is the one ORTHOGONAL role — full billing control,
+  nothing else (a finance seat). It sorts after `:admin` for the UI but has
+  no rank: permission comparison (`covers_role?/2`) is what makes an owner
+  the only role able to grant it (only owners hold `manage_billing`).
   """
-  @roles [:owner, :admin, :operator, :viewer]
+  @roles [:owner, :admin, :billing_manager, :operator, :viewer]
 
   @doc "All assignable membership roles, most-privileged first."
   def all, do: @roles
+
+  @doc """
+  Display label for a role (atom or string) — the one place multi-word roles
+  get their human form, so no surface renders a raw `billing_manager`.
+  Unknown strings capitalize as-is (legacy/renamed roles must still render).
+  """
+  def label(role) when is_atom(role), do: role |> Atom.to_string() |> label()
+  def label("billing_manager"), do: "Billing manager"
+  def label(role) when is_binary(role), do: String.capitalize(role)
 
   @doc """
   Coerce a role name (atom or string) into a known role atom. Returns

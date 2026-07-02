@@ -156,7 +156,7 @@
                 <span class="flex-none text-zinc-600">—</span>
                 <span>
                   <strong class="text-zinc-200">Default role for new users</strong>
-                  — the role a newly provisioned member lands at (viewer / operator / admin). Sync
+                  — the role a newly provisioned member lands at (viewer / operator / billing manager / admin). Sync
                   never grants <span class="text-zinc-300">owner</span>; that stays a deliberate
                   human grant. See <.link
                     navigate={~p"/docs/teams-and-access"}
@@ -390,7 +390,7 @@
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Group → role mapping</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
-        — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>,
+        — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
         or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
         <strong class="text-zinc-200">highest</strong>
         role mapped to any of them.

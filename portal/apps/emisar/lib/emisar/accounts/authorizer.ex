@@ -44,7 +44,10 @@ defmodule Emisar.Accounts.Authorizer do
       edit_own_profile_permission()
     ]
 
-  def list_permissions_for_role(role) when role in [:operator, :viewer],
+  # billing_manager gets the same account floor as operator/viewer — enough
+  # to sign in, see the account, and edit their own profile; team management
+  # and security settings stay owner/admin.
+  def list_permissions_for_role(role) when role in [:billing_manager, :operator, :viewer],
     do: [view_own_account_permission(), edit_own_profile_permission()]
 
   def list_permissions_for_role(:api_client),

@@ -837,7 +837,12 @@ defmodule Emisar.SSO do
   # never grants owner (decision 7). `Auth.Role` has no rank by design, so the
   # precedence the recompute needs lives here, narrowed to the sync-assignable
   # roles, most-privileged first.
-  @sync_role_precedence [:admin, :operator, :viewer]
+  # Group-sync precedence when a member is in SEVERAL mapped groups — mirrors
+  # Role.all()'s order. billing_manager (the orthogonal finance seat) outranks
+  # the day-to-day roles: an explicit finance-group mapping is a deliberate
+  # specialist assignment, but an admin mapping still wins. Never :owner
+  # (mappings can't mint owners — decision 7).
+  @sync_role_precedence [:admin, :billing_manager, :operator, :viewer]
 
   @doc """
   Internal — SCIM group upsert (`PUT /Groups`): refresh the group's display on
