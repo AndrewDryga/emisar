@@ -18,8 +18,7 @@ defmodule EmisarWeb.UserSignUpLive do
     ~H"""
     <.auth_layout title="Start your free workspace">
       <p class="mb-6 text-sm text-zinc-400">
-        Free plan: 3 runners, 7-day audit retention, single user. No credit card.
-        There's no password to set — we'll email you a one-time sign-in link.
+        Free plan: 3 runners, 7-day audit retention, 1 seat. No credit card.
       </p>
 
       <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
@@ -45,6 +44,12 @@ defmodule EmisarWeb.UserSignUpLive do
           required
         />
 
+        <%!-- The auth mechanism, stated where it happens (the CTA) — not
+             mixed into the plan facts above. --%>
+        <p class="text-xs leading-relaxed text-zinc-500">
+          No password to set — we'll email you a one-time sign-in link and a 6-character code.
+        </p>
+
         <%!-- Marks this magic-link request as a registration, so the first
              sign-in completing the round-trip fires sign_up_completed. --%>
         <input type="hidden" name="registration" value="1" />
@@ -55,6 +60,15 @@ defmodule EmisarWeb.UserSignUpLive do
           </.button>
         </:actions>
       </.simple_form>
+
+      <%!-- Consent at the point of account creation — footer links don't
+           read as agreement on a trust product. --%>
+      <p class="mt-3 text-center text-xs text-zinc-500">
+        By creating an account you agree to the
+        <.link href={~p"/terms"} class="text-zinc-400 underline hover:text-zinc-200">Terms</.link>
+        and <.link href={~p"/privacy"} class="text-zinc-400 underline hover:text-zinc-200">
+          Privacy Policy</.link>.
+      </p>
 
       <.auth_footer_link href={~p"/sign_in"}>
         <:lead>Already have an account?</:lead>
