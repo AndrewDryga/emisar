@@ -127,8 +127,8 @@ defmodule EmisarWeb.BillingLive do
   defp limit_label(n) when is_integer(n), do: Integer.to_string(n)
   defp limit_label(_), do: "—"
 
-  defp price_label(%{monthly_price_cents: nil}), do: "Custom"
-  defp price_label(%{monthly_price_cents: 0}), do: "Free"
+  defp price_label(%{monthly_price_cents: nil}), do: "Custom pricing"
+  defp price_label(%{monthly_price_cents: 0}), do: "$0"
 
   defp price_label(%{monthly_price_cents: cents}),
     do: "$#{div(cents, 100)} / runner / month"
@@ -209,8 +209,7 @@ defmodule EmisarWeb.BillingLive do
       <:title>Billing</:title>
 
       <.page_intro>
-        Your plan, usage against its limits, and invoices.
-        <.doc_link href="/pricing">Compare plans</.doc_link>
+        Your plan and usage against its limits. <.doc_link href="/pricing">Compare plans</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@loading?} />
@@ -252,7 +251,7 @@ defmodule EmisarWeb.BillingLive do
               <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Current plan
               </div>
-              <div class="mt-1 flex items-baseline gap-2">
+              <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>
                 <span class="text-sm text-zinc-500">·</span>
                 <span class="text-sm text-zinc-400">
@@ -260,7 +259,7 @@ defmodule EmisarWeb.BillingLive do
                 </span>
                 <span class="text-sm text-zinc-500">·</span>
                 <span class="text-sm text-zinc-400">
-                  {@summary.audit_retention_days}d audit retention
+                  {@summary.audit_retention_days}-day audit retention
                 </span>
               </div>
               <%!-- Subscription cycle notes — only rendered when the
@@ -345,7 +344,7 @@ defmodule EmisarWeb.BillingLive do
              state + the one real action instead of dead self-serve controls. --%>
         <.callout
           :if={@summary.plan == "enterprise"}
-          tone={:brand}
+          tone={:neutral}
           icon="hero-lifebuoy"
           title="Custom Enterprise plan"
         >
@@ -379,7 +378,9 @@ defmodule EmisarWeb.BillingLive do
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
                     <.chip upcase tone={:neutral}>Current</.chip>
-                  <% plan.key == "team" -> %>
+                  <% plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan) -> %>
+                    <%!-- Upsell merch only reads as such BELOW the badged plan —
+                         a customer already above it gets silence. --%>
                     <.chip upcase tone={:amber}>Most popular</.chip>
                   <% true -> %>
                     <span></span>
@@ -398,9 +399,9 @@ defmodule EmisarWeb.BillingLive do
               <div class="mt-5">
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
-                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-400">
-                      You're here
-                    </span>
+                    <%!-- No footer: the CURRENT chip + brand border already say it —
+                         a disabled "You're here" button was a fake affordance. --%>
+                    <span></span>
                   <% plan.key == "enterprise" -> %>
                     <.button variant={:secondary} size={:md} class="w-full" phx-click="contact_sales">
                       Contact sales
@@ -413,9 +414,14 @@ defmodule EmisarWeb.BillingLive do
                     <%!-- On a custom Enterprise plan every other tier is a downgrade,
                          and there's no self-serve path off it — the notice above
                          carries the one real action (contact support). --%>
-                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
+                    <.button
+                      variant={:ghost}
+                      size={:sm}
+                      class="w-full"
+                      href={support_mailto(@current_account)}
+                    >
                       Contact support to switch
-                    </span>
+                    </.button>
                   <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
                     <.button
                       size={:md}

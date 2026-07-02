@@ -985,11 +985,16 @@ defmodule EmisarWeb.CoreComponents do
       <p :if={@title} class="font-semibold">{@title}</p>
       <div class={@title && "mt-0.5 opacity-90"}>{render_slot(@body)}</div>
     </div>
-    <div :if={@action != []} class="shrink-0 self-center">{render_slot(@action)}</div>
+    <%!-- Below sm the action drops to its own full-width row — a button
+         beside an 11-line strangled text column isn't a layout. --%>
+    <div :if={@action != []} class="w-full shrink-0 self-center sm:w-auto">
+      {render_slot(@action)}
+    </div>
     """
   end
 
-  defp callout_frame(:boxed), do: "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm"
+  defp callout_frame(:boxed),
+    do: "flex flex-wrap items-start gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-nowrap"
 
   defp callout_frame(:strip),
     do: "flex flex-wrap items-center gap-3 border-b px-4 py-2.5 text-sm sm:px-6"
