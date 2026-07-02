@@ -347,8 +347,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      # Default state — no scopes = "all runners" label rendered.
-      assert html =~ "access: all runners"
+      # Default state — no scopes renders NO scope line (default ≠ signal).
+      refute html =~ "scope:"
 
       # Open the inline editor for the invited admin.
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})

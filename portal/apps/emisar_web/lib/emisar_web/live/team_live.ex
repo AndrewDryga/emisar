@@ -931,7 +931,10 @@ defmodule EmisarWeb.TeamLive do
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <div class="flex min-w-0 flex-1 items-start gap-4">
+                <div class={[
+                  "flex min-w-0 flex-1 items-start gap-4",
+                  Accounts.Membership.disabled?(membership) && "opacity-60"
+                ]}>
                   <.avatar name={
                     (membership.user && (membership.user.full_name || membership.user.email)) ||
                       "?"
@@ -1006,20 +1009,21 @@ defmodule EmisarWeb.TeamLive do
                     <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
                        Group/runner scopes appear as inline chips. --%>
-                    <div class="mt-1 flex flex-wrap items-center gap-1">
-                      <%= case Map.get(@scopes_by_membership, membership.id, []) do %>
-                        <% [] -> %>
-                          <span class="text-[10px] text-zinc-400">
-                            access: all runners
-                          </span>
-                        <% scopes -> %>
-                          <span class="text-[10px] uppercase tracking-wider text-zinc-400">
-                            scope:
-                          </span>
-                          <.chip :for={scope <- scopes} tone={:neutral}>
-                            {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
-                          </.chip>
-                      <% end %>
+                    <%!-- All-runners is the DEFAULT — render nothing (default ≠
+                       signal); only a narrowed scope earns chips. --%>
+                    <div
+                      :if={Map.get(@scopes_by_membership, membership.id, []) != []}
+                      class="mt-1 flex flex-wrap items-center gap-1"
+                    >
+                      <span class="text-[10px] uppercase tracking-wider text-zinc-400">
+                        scope:
+                      </span>
+                      <.chip
+                        :for={scope <- Map.get(@scopes_by_membership, membership.id, [])}
+                        tone={:neutral}
+                      >
+                        {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
+                      </.chip>
                     </div>
                   </div>
                 </div>
@@ -1215,11 +1219,10 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp mfa_badge(assigns) do
-    ~H"""
-    <.chip title="No two-factor authentication enrolled.">No 2FA</.chip>
-    """
-  end
+  # Not enrolled and the account doesn't enforce: render NOTHING — the 2FA
+  # card already aggregates the count, and a "No 2FA" chip on every row of an
+  # unenforced account carries zero discrimination (default ≠ signal).
+  defp mfa_badge(assigns), do: ~H""
 
   attr :identity, :any, default: nil
   attr :account, :map, required: true
