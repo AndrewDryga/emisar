@@ -11,6 +11,11 @@ import Config
 #   PADDLE_CLIENT_TOKEN    — required when PADDLE_API_KEY is set; the client-side
 #                            token Paddle.js initializes with on /checkout
 #
+# There is no price-id env var: checkout prices come from the live Paddle
+# catalog, and plan identity + limits ride the webhook via the product's
+# custom_data (plan, runners_limit, members_limit, audit_retention_days,
+# features_sso_enabled?, features_scim_enabled?) — see Emisar.Billing.Entitlements.
+#
 # Optional prod env vars:
 #   PHX_HOST               — public hostname (defaults to emisar.dev)
 #   PORT                   — HTTP listen port (default 4000)
@@ -29,14 +34,6 @@ import Config
 #   SENTRY_DSN             — enables error uploads when set
 #   SENTRY_ENVIRONMENT     — Sentry env tag (default "production")
 #   STATUS_PAGE_URL        — status-page URL surfaced in nav + footer
-#   PADDLE_PRICE_ID_TEAM   — Paddle price id for the Team plan (the checkout
-#                            direction: which price to buy). Plan identity +
-#                            limits flow BACK on the webhook via the Paddle
-#                            product's custom_data — keys: plan, runners_limit,
-#                            members_limit, audit_retention_days ("unlimited"
-#                            or an integer), features_sso_enabled?,
-#                            features_scim_enabled? (booleans) — see
-#                            Emisar.Billing.Entitlements.
 #   RELEASE_VSN            — used in Sentry's `release` field
 #   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)
 #   MIXPANEL_API_HOST      — Mixpanel host (default api.mixpanel.com; EU: api-eu.mixpanel.com)
@@ -224,19 +221,13 @@ if config_env() == :prod do
             PADDLE_API_KEY (or set EMISAR_DISABLE_BILLING=1 to ship the stub).
             """)
 
-      # Keyed by plan name under one atom key — Elixir 1.20's Config.config/3
-      # only accepts an atom key, so the old `{:paddle_price_id, "team"}`
-      # tuple key now raises in the config provider and aborts boot.
-      if id = System.get_env("PADDLE_PRICE_ID_TEAM"),
-        do: config(:emisar, paddle_price_ids: %{"team" => id})
-
     System.get_env("EMISAR_DISABLE_BILLING") in ~w(true 1) ->
       config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
 
     true ->
       raise """
       PADDLE_API_KEY is missing in production. Set it (along with
-      PADDLE_WEBHOOK_SECRET and PADDLE_PRICE_ID_TEAM) to enable billing,
+      PADDLE_WEBHOOK_SECRET and PADDLE_CLIENT_TOKEN) to enable billing,
       or set EMISAR_DISABLE_BILLING=1 to ship with the stub client.
       """
   end

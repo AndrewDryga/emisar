@@ -36,6 +36,24 @@ defmodule Emisar.Billing.EntitlementsTest do
     end
   end
 
+  describe "plan_slug_of_product/1" do
+    test "reads the slug from a bare catalog product entity" do
+      product = %{"id" => "pro_1", "custom_data" => %{"plan" => "team"}}
+
+      assert Entitlements.plan_slug_of_product(product) == "team"
+      assert Entitlements.plan_slug_of_product(%{"id" => "pro_1", "custom_data" => nil}) == nil
+    end
+  end
+
+  describe "product_name/1" do
+    test "the embedded product's name; nil when the payload carries no product" do
+      payload = %{"items" => [%{"product" => %{"id" => "pro_1", "name" => "team"}}]}
+
+      assert Entitlements.product_name(payload) == "team"
+      assert Entitlements.product_name(%{"items" => [%{"price" => %{"id" => "pri_1"}}]}) == nil
+    end
+  end
+
   describe "parse/1" do
     test "normalizes dashboard-typed strings to canonical values" do
       raw = %{

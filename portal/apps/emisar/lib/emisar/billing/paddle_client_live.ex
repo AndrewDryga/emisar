@@ -65,6 +65,16 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def list_products do
+    # The catalog is a handful of products; per_page=200 is far above any
+    # real count, so pagination is deliberately not followed.
+    case get("/products?include=prices&status=active&per_page=200") do
+      {:ok, %{"data" => products}} -> {:ok, products}
+      other -> other
+    end
+  end
+
+  @impl true
   def construct_webhook_event(payload, signature, secret) do
     with :ok <- verify_signature(payload, signature, secret),
          {:ok, event} <- Jason.decode(payload) do

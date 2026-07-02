@@ -45,9 +45,18 @@ defmodule Emisar.Billing.Entitlements do
   absent or not a valid slug. This is what lets a plan created in the Paddle
   dashboard identify itself without a deployed price-id mapping.
   """
-  def plan_slug(subscription_data) do
-    case product_custom_data(subscription_data) do
-      %{"plan" => slug} when is_binary(slug) -> validate_slug(String.trim(slug))
+  def plan_slug(subscription_data), do: plan_slug_of_product(product(subscription_data))
+
+  @doc "Same as `plan_slug/1` but for a bare product entity (a catalog listing entry)."
+  def plan_slug_of_product(%{"custom_data" => %{"plan" => slug}}) when is_binary(slug),
+    do: validate_slug(String.trim(slug))
+
+  def plan_slug_of_product(_product), do: nil
+
+  @doc "The embedded product's display name, or `nil` when the payload carries no product."
+  def product_name(subscription_data) do
+    case product(subscription_data) do
+      %{"name" => name} when is_binary(name) -> name
       _ -> nil
     end
   end
@@ -83,10 +92,15 @@ defmodule Emisar.Billing.Entitlements do
   # The webhook embeds the full product per item and we bill a single line
   # item. `nil` (no product object — e.g. a lean API shape) is distinct from a
   # product whose custom_data is empty/null, which normalizes to %{}.
-  defp product_custom_data(%{"items" => [%{"product" => %{} = product} | _]}),
-    do: product["custom_data"] || %{}
+  defp product_custom_data(subscription_data) do
+    case product(subscription_data) do
+      nil -> nil
+      product -> product["custom_data"] || %{}
+    end
+  end
 
-  defp product_custom_data(_subscription_data), do: nil
+  defp product(%{"items" => [%{"product" => %{} = product} | _]}), do: product
+  defp product(_subscription_data), do: nil
 
   defp normalized_entry({key, raw}) when key in @limit_keys do
     case parse_limit(raw) do

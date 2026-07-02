@@ -20,6 +20,9 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def retrieve_subscription(_id), do: {:error, :paddle_unavailable}
 
   @impl true
+  def list_products, do: {:error, :paddle_unavailable}
+
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :invalid_payload}
 end
 
@@ -98,13 +101,14 @@ defmodule Emisar.BillingTest do
       # writes subscriptions.plan, so plan gating must read from there, not a
       # stale accounts.plan copy. Before this change a paid customer's account
       # stayed on "free" and SSO was wrongly unavailable.
-      Application.put_env(:emisar, :paddle_price_ids, %{"enterprise" => "pri_ent_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upgrade_01"})
       refute Billing.sso_available?(account)
 
-      event = subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01")
+      event =
+        subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01",
+          product_name: "enterprise"
+        )
+
       assert :ok = Billing.record_and_apply_event("evt_upgrade", "subscription.created", event)
 
       # The SAME in-memory struct (never re-fetched) now resolves to
@@ -360,12 +364,12 @@ defmodule Emisar.BillingTest do
       assert {:error, :unknown_plan} = Billing.start_checkout(account, "platinum", subject)
     end
 
-    test "returns the stub checkout URL when no Paddle price id is configured", %{
+    test "resolves the price from the (stub) catalog and returns the checkout URL", %{
       account: account,
       subject: subject
     } do
-      assert {:ok, "/paddle-checkout-stub?plan=team"} =
-               Billing.start_checkout(account, "team", subject)
+      assert {:ok, url} = Billing.start_checkout(account, "team", subject)
+      assert url =~ "stub.paddle.test/checkout"
     end
 
     test "an admin (manage_billing is owner-only) is refused with :unauthorized", %{
@@ -538,15 +542,7 @@ defmodule Emisar.BillingTest do
   end
 
   describe "record_and_apply_event/3 — subscription.created" do
-    setup do
-      # Map the team price id to the "team" plan, exactly as the webhook
-      # payload nests it under items[].price.id (mirrors `:paddle_price_ids`).
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
-    test "persists a subscription with the plan derived from the price id" do
+    test "persists a subscription with the plan derived from the embedded product" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_team_01"})
 
       event =
@@ -568,8 +564,8 @@ defmodule Emisar.BillingTest do
     test "mirrors product custom_data into entitlements and takes the plan from its slug" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_01"})
 
-      # The price id is deliberately NOT in :paddle_price_ids — the product's
-      # own custom_data identifies the plan, no deployed mapping needed.
+      # The product's own custom_data slug identifies the plan — it wins over
+      # the (mismatching) product name and needs no deployed mapping.
       event =
         subscription_created_event("evt_ent_1", account.paddle_customer_id, "pri_unmapped_99",
           product_custom_data: %{
@@ -639,13 +635,15 @@ defmodule Emisar.BillingTest do
       assert_receive {:billing_webhook, %{count: 1}, %{outcome: :duplicate}}
     end
 
-    test "falls back to the account's current plan when the price id is unknown" do
+    test "falls back to the account's current plan when the payload carries no plan identity" do
       account =
         Fixtures.Accounts.create_account(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
 
-      # Enterprise is sales-led; no configured price id maps to it.
+      # A lean payload with no product object — nothing identifies the plan.
       event =
-        subscription_created_event("evt_created_2", account.paddle_customer_id, "pri_unmapped")
+        subscription_created_event("evt_created_2", account.paddle_customer_id, "pri_unmapped",
+          product: false
+        )
 
       assert :ok = Billing.record_and_apply_event("evt_created_2", "subscription.created", event)
 
@@ -823,12 +821,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "record_and_apply_event/3 — dedup + apply commit atomically" do
-    setup do
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
     test "on success the dedup row AND the subscription mutation commit together" do
       # The dedup insert and apply run in ONE Multi (record_and_apply_event), so a
       # successful delivery leaves BOTH the processed-events row AND the mirror row
@@ -946,17 +938,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "apply_webhook_event/1 — subscription.updated" do
-    setup do
-      # Two plans mapped so an update can move a row from team → enterprise.
-      Application.put_env(:emisar, :paddle_price_ids, %{
-        "team" => "pri_team_01",
-        "enterprise" => "pri_ent_01"
-      })
-
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
     test "re-derives the plan on the existing row (no new row inserted)" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_plan_01"})
 
@@ -965,13 +946,14 @@ defmodule Emisar.BillingTest do
 
       assert {:ok, %Subscription{plan: "team"}} = Billing.apply_webhook_event(created)
 
-      # Same subscription id, a price that now maps to enterprise.
+      # Same subscription id, now carrying the enterprise product.
       updated =
         subscription_updated_event(
           "evt_upd_plan_c",
           account.paddle_customer_id,
           "pri_ent_01",
-          status: "active"
+          status: "active",
+          product_name: "enterprise"
         )
 
       assert {:ok, %Subscription{plan: "enterprise"}} = Billing.apply_webhook_event(updated)
@@ -986,8 +968,8 @@ defmodule Emisar.BillingTest do
     end
 
     test "an update without a product object preserves stored entitlements" do
-      # subscription_updated_event carries no product — put_present skips the
-      # absent entitlements rather than nulling the mirror.
+      # A product-less payload — put_present skips the absent entitlements
+      # rather than nulling the mirror.
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_keep_01"})
 
       Fixtures.Accounts.create_subscription(account, "team",
@@ -997,7 +979,8 @@ defmodule Emisar.BillingTest do
 
       updated =
         subscription_updated_event("ent_keep", account.paddle_customer_id, "pri_team_01",
-          status: "past_due"
+          status: "past_due",
+          product: false
         )
 
       assert {:ok, _} = Billing.apply_webhook_event(updated)
@@ -1125,7 +1108,8 @@ defmodule Emisar.BillingTest do
       # No created event first — the very first event is an `updated`.
       updated =
         subscription_updated_event("evt_upd_noprior", account.paddle_customer_id, "pri_ent_01",
-          status: "active"
+          status: "active",
+          product_name: "enterprise"
         )
 
       assert {:ok, %Subscription{}} = Billing.apply_webhook_event(updated)
@@ -1136,10 +1120,10 @@ defmodule Emisar.BillingTest do
                |> Repo.all()
     end
 
-    test "an unmapped price id on update falls back to the account's current plan" do
-      # plan_for_subscription/2 can't resolve an unmapped price id, so it falls
-      # back to account_plan/1 — the existing subscription's plan. A sales-led
-      # price the map doesn't carry keeps the row on its current (team) plan.
+    test "an identity-less update falls back to the account's current plan" do
+      # An update whose payload carries no product identity falls back to
+      # account_plan/1 — the existing subscription's plan — so the row keeps
+      # its current (team) plan rather than failing validate_required.
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_unmapped_01"})
 
       created =
@@ -1156,7 +1140,8 @@ defmodule Emisar.BillingTest do
           "evt_upd_unmapped_c",
           account.paddle_customer_id,
           "pri_not_in_map",
-          status: "active"
+          status: "active",
+          product: false
         )
 
       assert {:ok, %Subscription{}} = Billing.apply_webhook_event(updated)
@@ -1190,12 +1175,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "apply_webhook_event/1 — subscription.updated rollback + ordering" do
-    setup do
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
     test "a missing status on an update fails the apply and rolls the dedup row back" do
       # An update lacking `status` fails `validate_required([..., :status])` exactly
       # as a created does (the upsert changeset is shared), so the apply returns
@@ -1283,12 +1262,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "apply_webhook_event/1 — Subject-less; audits the plan change" do
-    setup do
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
     test "applying a subscription event takes no %Subject{} — the signature is the edge auth" do
       # apply_webhook_event/1 and record_and_apply_event/3 are the webhook entry
       # points; they carry NO per-account authorization because the BILL-005
@@ -1378,12 +1351,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "apply_webhook_event/1 — subscription.updated status transition" do
-    setup do
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
-      :ok
-    end
-
     test "a status-only transition rewrites status on the existing row" do
       # An update re-sending the same price/items but a new status rewrites
       # status on the same mirror row (peek-then-update), plan unchanged.
@@ -1470,19 +1437,6 @@ defmodule Emisar.BillingTest do
   # A minimal Paddle subscription.created webhook envelope. The price id is
   # nested under data.items[].price.id, matching Paddle's Billing API.
   defp subscription_created_event(event_id, customer_id, price_id, opts \\ []) do
-    item = %{"price" => %{"id" => price_id}}
-
-    # Paddle embeds the full product per item; `product_custom_data:` models
-    # the entitlement contract (plan slug + limits on the product).
-    item =
-      case opts[:product_custom_data] do
-        nil ->
-          item
-
-        custom_data ->
-          Map.put(item, "product", %{"id" => "pro_test_01", "custom_data" => custom_data})
-      end
-
     %{
       "event_id" => event_id,
       "event_type" => "subscription.created",
@@ -1491,7 +1445,7 @@ defmodule Emisar.BillingTest do
         "customer_id" => customer_id,
         "status" => "active",
         "next_billed_at" => "2026-07-01T00:00:00Z",
-        "items" => [item]
+        "items" => [subscription_item(price_id, opts)]
       }
     }
   end
@@ -1508,9 +1462,29 @@ defmodule Emisar.BillingTest do
         "customer_id" => customer_id,
         "status" => Keyword.fetch!(opts, :status),
         "next_billed_at" => "2026-09-01T00:00:00Z",
-        "items" => [%{"price" => %{"id" => price_id}}]
+        "items" => [subscription_item(price_id, opts)]
       }
     }
+  end
+
+  # Real payloads always embed the full product per item — plan identity rides
+  # its name (`product_name:`, default "team") and custom_data
+  # (`product_custom_data:`). `product: false` models the lean shape carrying
+  # no product identity at all.
+  defp subscription_item(price_id, opts) do
+    item = %{"price" => %{"id" => price_id}}
+
+    if Keyword.get(opts, :product, true) do
+      product = %{
+        "id" => "pro_test_01",
+        "name" => Keyword.get(opts, :product_name, "team"),
+        "custom_data" => opts[:product_custom_data]
+      }
+
+      Map.put(item, "product", product)
+    else
+      item
+    end
   end
 
   describe "extract_next_billed_at/1" do
@@ -1740,19 +1714,10 @@ defmodule Emisar.BillingVendorErrorTest do
   end
 
   describe "start_checkout/3 — vendor failures" do
-    setup do
-      # A configured price id forces the real Paddle call path (not the
-      # stub-URL short-circuit), so the failing client's error surfaces.
-      prev_prices = Application.get_env(:emisar, :paddle_price_ids)
-      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
-      on_exit(fn -> restore(:paddle_price_ids, prev_prices) end)
-      :ok
-    end
-
     test "a vendor error on checkout-session creation bubbles up" do
-      # An already-linked customer skips create_customer, so the only failing
-      # call is create_checkout_session — its {:error, term} propagates out of
-      # start_checkout unchanged (the LV turns it into a flash, no redirect).
+      # The catalog read fails first on this client — its {:error, term}
+      # propagates out of start_checkout unchanged (the LV turns it into a
+      # flash, no redirect).
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
@@ -1842,6 +1807,29 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   def retrieve_subscription(_id), do: {:error, :unused}
 
   @impl true
+  # The canned catalog carries the same price id the old env mapping used, so
+  # the captured create_checkout_session args keep asserting on pri_team_01.
+  def list_products do
+    {:ok,
+     [
+       %{
+         "id" => "pro_captured_team",
+         "name" => "team",
+         "status" => "active",
+         "custom_data" => %{"plan" => "team"},
+         "prices" => [
+           %{
+             "id" => "pri_team_01",
+             "status" => "active",
+             "billing_cycle" => %{"interval" => "month", "frequency" => 1},
+             "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+           }
+         ]
+       }
+     ]}
+  end
+
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
@@ -1860,17 +1848,12 @@ defmodule Emisar.BillingCheckoutArgsTest do
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
-    prev_prices = Application.get_env(:emisar, :paddle_price_ids)
 
     Application.put_env(:emisar, :paddle_client, CapturingPaddleClient)
     Application.put_env(:emisar, :billing_capture_pid, self())
-    # A configured price id forces the real client path (not the stub-URL
-    # short-circuit), so the captured args are the ones a live checkout sends.
-    Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
 
     on_exit(fn ->
       restore(:paddle_client, prev_client)
-      restore(:paddle_price_ids, prev_prices)
       Application.delete_env(:emisar, :billing_capture_pid)
     end)
 

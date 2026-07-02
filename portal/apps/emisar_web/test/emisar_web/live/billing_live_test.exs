@@ -59,21 +59,13 @@ defmodule EmisarWeb.BillingLiveTest do
       # team plan card both carry it).
       assert has_element?(lv, "button[phx-click='upgrade'][phx-value-plan='team']")
 
-      # `Billing.start_checkout/3` returns a checkout URL (the stub
-      # `/paddle-checkout-stub?plan=…` when no Paddle price id is
-      # configured, or a stub Paddle URL when one is) and the LV
-      # redirects to it. Drive the event by name to avoid matching the
-      # two identical "team" buttons; assert the external redirect, not
-      # the exact host, so the test is immune to whether
-      # `:paddle_price_ids` happens to be set by a concurrent test.
-      # Accept either redirect shape: an internal `%{to:}` to the stub path
-      # (no :paddle_price_ids configured — the test default) or an external
-      # `%{external:}` to a Paddle URL (if a concurrent test set the price id).
-      assert {:error, {:redirect, redirect}} =
+      # `Billing.start_checkout/3` resolves the price from the (stub) catalog
+      # and returns the checkout URL; the LV redirects externally to it. Drive
+      # the event by name to avoid matching the two identical "team" buttons.
+      assert {:error, {:redirect, %{to: url}}} =
                render_click(lv, "upgrade", %{"plan" => "team"})
 
-      url = redirect[:to] || redirect[:external]
-      assert is_binary(url) and url != ""
+      assert url =~ "stub.paddle.test/checkout"
     end
 
     test "the enterprise card surfaces contact-sales, not checkout", %{

@@ -44,6 +44,35 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def list_products do
+    {:ok,
+     [
+       %{
+         "id" => "pro_stub_team",
+         "name" => "team",
+         "status" => "active",
+         "custom_data" => %{"plan" => "team"},
+         "prices" => [
+           %{
+             "id" => "pri_stub_team_month",
+             "status" => "active",
+             "description" => "team_monthly",
+             "billing_cycle" => %{"interval" => "month", "frequency" => 1},
+             "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+           },
+           %{
+             "id" => "pri_stub_team_year",
+             "status" => "active",
+             "description" => "team_annual",
+             "billing_cycle" => %{"interval" => "year", "frequency" => 1},
+             "unit_price" => %{"amount" => "20000", "currency_code" => "USD"}
+           }
+         ]
+       }
+     ]}
+  end
+
+  @impl true
   def retrieve_subscription(id) do
     {:ok,
      %{

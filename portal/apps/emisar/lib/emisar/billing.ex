@@ -238,8 +238,10 @@ defmodule Emisar.Billing do
 
   @doc """
   Creates a Paddle Checkout (Transaction) for the chosen plan and returns
-  the URL the operator should be redirected to. Falls back to a stub
-  URL when no Paddle price ID is configured (dev/test).
+  the URL the operator should be redirected to. The price comes from the
+  live Paddle catalog, so a new/changed price needs no deploy;
+  `{:error, :plan_not_in_catalog}` when no product identifies as the plan
+  or it has no active recurring price.
   """
   def start_checkout(%Accounts.Account{} = account, plan_name, %Subject{} = subject)
       when is_binary(plan_name) do
@@ -249,33 +251,65 @@ defmodule Emisar.Billing do
              Authorizer.manage_billing_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
-      cond do
-        not Map.has_key?(@plans, plan_name) ->
-          {:error, :unknown_plan}
-
-        is_nil(Application.get_env(:emisar, :paddle_price_ids, %{})[plan_name]) ->
-          {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
-
-        true ->
-          # checkout_url is OUR /checkout page (running Paddle.js) — Paddle has
-          # no hosted checkout; it appends ?_ptxn=<transaction> to this URL and
-          # the page's Paddle.js opens the overlay. The post-payment redirect is
-          # the page's successUrl setting, not a transaction field.
-          with {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
-               price_id <-
-                 Map.fetch!(Application.get_env(:emisar, :paddle_price_ids, %{}), plan_name),
-               {:ok, %{"url" => url}} <-
-                 Emisar.Billing.PaddleClient.create_checkout_session(%{
-                   customer: customer_id,
-                   price_id: price_id,
-                   quantity: current_count(account, :runners),
-                   checkout_url: PublicUrl.url("/checkout")
-                 }) do
-            {:ok, url}
-          end
+      if Map.has_key?(@plans, plan_name) do
+        # checkout_url is OUR /checkout page (running Paddle.js) — Paddle has
+        # no hosted checkout; it appends ?_ptxn=<transaction> to this URL and
+        # the page's Paddle.js opens the overlay. The post-payment redirect is
+        # the page's successUrl setting, not a transaction field.
+        with {:ok, price_id} <- resolve_checkout_price_id(plan_name),
+             {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
+             {:ok, %{"url" => url}} <-
+               Emisar.Billing.PaddleClient.create_checkout_session(%{
+                 customer: customer_id,
+                 price_id: price_id,
+                 quantity: current_count(account, :runners),
+                 checkout_url: PublicUrl.url("/checkout")
+               }) do
+          {:ok, url}
+        end
+      else
+        {:error, :unknown_plan}
       end
     end
   end
+
+  # The live catalog is the checkout-price source — one extra API call per
+  # human checkout click, deliberately uncached (always fresh, no staleness
+  # machinery). Prefers the monthly price so the default Upgrade action bills
+  # the smallest commitment; annual-only plans still resolve.
+  defp resolve_checkout_price_id(plan_name) do
+    with {:ok, products} <- Emisar.Billing.PaddleClient.list_products() do
+      products
+      |> Enum.find(&(product_plan_slug(&1) == plan_name))
+      |> checkout_price_of_product()
+    end
+  end
+
+  # A catalog product identifies its plan by the custom_data `plan` slug,
+  # falling back to its normalized display name when that matches a plan we
+  # sell (the dashboard products are literally named "team"/"enterprise").
+  defp product_plan_slug(product),
+    do: Entitlements.plan_slug_of_product(product) || known_plan_from_name(product["name"])
+
+  defp known_plan_from_name(name) when is_binary(name) do
+    slug = name |> String.trim() |> String.downcase()
+    if Map.has_key?(@plans, slug), do: slug
+  end
+
+  defp known_plan_from_name(_name), do: nil
+
+  defp checkout_price_of_product(%{"prices" => prices}) when is_list(prices) do
+    active = Enum.filter(prices, &(&1["status"] == "active"))
+    monthly = Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == "month"))
+    annual = Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == "year"))
+
+    case monthly || annual do
+      %{"id" => price_id} -> {:ok, price_id}
+      _ -> {:error, :plan_not_in_catalog}
+    end
+  end
+
+  defp checkout_price_of_product(_product), do: {:error, :plan_not_in_catalog}
 
   @doc """
   Creates a Paddle Customer Portal session for the account's customer and
@@ -459,18 +493,24 @@ defmodule Emisar.Billing do
         price_id = extract_price_id(subscription_data)
         cancel_scheduled? = scheduled_cancel?(subscription_data)
 
+        # Plan identity: the product custom_data's own slug wins, then the
+        # embedded product's name when it matches a plan we sell, then the
+        # account's current plan — so the subscription can always persist
+        # rather than failing validate_required([:plan]) and stranding the
+        # account's entitlement.
         plan =
-          Entitlements.plan_slug(subscription_data) || plan_for_subscription(account, price_id)
+          Entitlements.plan_slug(subscription_data) ||
+            known_plan_from_name(Entitlements.product_name(subscription_data)) ||
+            account_plan(account)
 
         # A partial subscription.updated (status-only, no items / next_billed_at)
         # must not null price/period/entitlements — omit those keys via
         # put_present so the peek-then-update preserves the stored values rather
-        # than casting them to nil. `plan` stays put: the product custom_data's
-        # own slug wins, then the price-id mapping, then account_plan/1.
-        # `cancel_at_period_end` IS always set: Paddle's payload carries the full
-        # object, so it reflects the current scheduled state, and the billing
-        # dashboard's "cancels on …" banner must CLEAR when a scheduled cancel is
-        # removed — not just appear when one is added.
+        # than casting them to nil. `cancel_at_period_end` IS always set:
+        # Paddle's payload carries the full object, so it reflects the current
+        # scheduled state, and the billing dashboard's "cancels on …" banner
+        # must CLEAR when a scheduled cancel is removed — not just appear when
+        # one is added.
         attrs =
           %{
             paddle_subscription_id: subscription_data["id"],
@@ -522,21 +562,6 @@ defmodule Emisar.Billing do
     do: id
 
   defp extract_price_id(_), do: nil
-
-  # `:paddle_price_ids` is configured as `%{plan_name => price_id}` (the
-  # same map `start_checkout/3` reads). Invert it to map the webhook's
-  # price id back to a plan. If it can't be resolved (price id absent or
-  # not configured — e.g. the sales-led enterprise tier), fall back to the
-  # account's current plan (its existing subscription, via `account_plan/1`),
-  # else "free", so the subscription can persist rather than failing
-  # `validate_required([:plan])` and stranding the account's entitlement.
-  defp plan_for_subscription(%Accounts.Account{} = account, price_id) do
-    price_to_plan =
-      Application.get_env(:emisar, :paddle_price_ids, %{})
-      |> Map.new(fn {plan, pid} -> {pid, plan} end)
-
-    price_to_plan[price_id] || account_plan(account)
-  end
 
   # nil-tolerant adapter: Paddle payloads may omit the customer id.
   defp peek_account_by_paddle_customer(customer_id) when is_binary(customer_id),

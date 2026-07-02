@@ -30,19 +30,12 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   # The controller reads the secret from app env (nil on the
   # EMISAR_DISABLE_BILLING deployment → 503). test.exs leaves it unset,
   # so set it for the suite and restore the prior value on exit.
-  # `:paddle_price_ids` maps the webhook's price id back to a plan name
-  # so the applied subscription lands on a deterministic plan.
   setup do
     prev_secret = Application.get_env(:emisar, :paddle_webhook_secret)
-    prev_prices = Application.get_env(:emisar, :paddle_price_ids)
 
     Application.put_env(:emisar, :paddle_webhook_secret, @secret)
-    Application.put_env(:emisar, :paddle_price_ids, %{"team" => @price_team})
 
-    on_exit(fn ->
-      restore(:paddle_webhook_secret, prev_secret)
-      restore(:paddle_price_ids, prev_prices)
-    end)
+    on_exit(fn -> restore(:paddle_webhook_secret, prev_secret) end)
 
     :ok
   end
@@ -71,7 +64,14 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
         "id" => opts[:subscription_id] || "sub_#{System.unique_integer([:positive])}",
         "customer_id" => opts[:customer_id],
         "status" => opts[:status] || "active",
-        "items" => [%{"price" => %{"id" => opts[:price_id] || @price_team}}]
+        # Real payloads embed the full product per item — its name identifies
+        # the plan, so the applied subscription lands on a deterministic plan.
+        "items" => [
+          %{
+            "price" => %{"id" => opts[:price_id] || @price_team},
+            "product" => %{"id" => "pro_test_01", "name" => "team", "custom_data" => nil}
+          }
+        ]
       }
     }
   end
