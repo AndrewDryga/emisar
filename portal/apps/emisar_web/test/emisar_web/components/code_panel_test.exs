@@ -32,6 +32,12 @@ defmodule EmisarWeb.Components.CodePanelTest do
         )
 
       assert html =~ "sha256:abc…"
+      # The annotation cluster shrinks (truncate engages); the label holds its
+      # width — a long annotation must never collide with the eyebrow or push
+      # the Copy button off-viewport on a phone.
+      assert html =~ ~s(class="flex shrink-0 items-center gap-2")
+      assert html =~ ~s(class="flex min-w-0 items-center gap-2")
+      assert html =~ "truncate font-mono"
     end
 
     test "copy renders a copy button targeting the pre id" do

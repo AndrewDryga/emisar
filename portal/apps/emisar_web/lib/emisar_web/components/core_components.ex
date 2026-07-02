@@ -2769,12 +2769,16 @@ defmodule EmisarWeb.CoreComponents do
   def code_panel(assigns) do
     ~H"""
     <.card class={"overflow-hidden #{@class}"} padding="" {@rest}>
+      <%!-- The label eyebrow is short by design, so it holds its width; the
+           annotation cluster is the one that shrinks — its truncate ellipsizes
+           a long value (a sha256, an event id) instead of colliding with the
+           label or pushing Copy off-viewport on a phone. --%>
       <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
-        <div class="flex min-w-0 items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</h3>
           {render_slot(@badge)}
         </div>
-        <div class="flex min-w-0 shrink-0 items-center gap-2">
+        <div class="flex min-w-0 items-center gap-2">
           <span
             :if={@annotation}
             class="truncate font-mono text-[11px] text-zinc-500"
