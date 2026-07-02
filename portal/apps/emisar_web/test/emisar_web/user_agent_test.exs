@@ -45,4 +45,58 @@ defmodule EmisarWeb.UserAgentTest do
     assert %{browser: nil, browser_version: nil, os: nil, device: nil} = UserAgent.parse(nil)
     assert %{browser: nil, os: nil} = UserAgent.parse("curl/8.5.0")
   end
+
+  describe "label/1" do
+    test "browser + OS combine with the short everyday names" do
+      chrome_mac =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+      edge_windows =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+
+      safari_iphone =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " <>
+          "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+
+      assert UserAgent.label(chrome_mac) == "Chrome on Mac"
+      assert UserAgent.label(edge_windows) == "Edge on Windows"
+      assert UserAgent.label(safari_iphone) == "Safari on iOS"
+    end
+
+    test "one recognized side renders alone" do
+      assert UserAgent.label("Mozilla/5.0 (Windows NT 10.0)") == "Windows"
+      assert UserAgent.label("Chrome/120.0.0.0") == "Chrome"
+    end
+
+    test "unrecognized UAs fall back to the first token, nil to Unknown device" do
+      assert UserAgent.label("curl/8.5.0") == "curl/8.5.0"
+      assert UserAgent.label("emisar-mcp/1.2 (os=darwin)") == "emisar-mcp/1.2"
+      assert UserAgent.label(nil) == "Unknown device"
+      assert UserAgent.label("") == "Unknown device"
+    end
+  end
+
+  describe "icon/1" do
+    test "phone beats desktop for mobile UAs; Go clients read as servers" do
+      assert UserAgent.icon("Mozilla/5.0 (iPhone; ...) AppleWebKit/605.1.15") ==
+               "hero-device-phone-mobile"
+
+      assert UserAgent.icon("Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36") ==
+               "hero-computer-desktop"
+
+      assert UserAgent.icon("Go-http-client/1.1") == "hero-server"
+      assert UserAgent.icon("curl/8.5.0") == "hero-globe-alt"
+      assert UserAgent.icon(nil) == "hero-globe-alt"
+    end
+  end
+
+  describe "go_http_client?/1" do
+    test "matches only the bare Go client prefix" do
+      assert UserAgent.go_http_client?("Go-http-client/2.0")
+      refute UserAgent.go_http_client?("Mozilla/5.0 (Windows NT 10.0)")
+      refute UserAgent.go_http_client?(nil)
+    end
+  end
 end

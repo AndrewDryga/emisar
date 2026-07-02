@@ -1,6 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
+  alias EmisarWeb.UserAgent
 
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
@@ -347,48 +348,10 @@ defmodule EmisarWeb.ProfileLive do
   defp session_ip(%{metadata: %{"ip_address" => ip}}) when is_binary(ip) and ip != "", do: ip
   defp session_ip(_), do: nil
 
-  # Best-effort device label from the User-Agent string. Recognizes the
-  # common browser/OS combos a human session will produce; falls back
-  # to the raw UA token or "Unknown device" when nothing parses.
   defp session_device_label(%{metadata: %{"user_agent" => ua}}) when is_binary(ua),
-    do: classify_ua(ua)
+    do: UserAgent.label(ua)
 
   defp session_device_label(_), do: "Unknown device"
-
-  defp classify_ua(ua) do
-    browser =
-      cond do
-        ua =~ ~r/Edg\//i -> "Edge"
-        ua =~ ~r/Chrome\//i -> "Chrome"
-        ua =~ ~r/Firefox\//i -> "Firefox"
-        ua =~ ~r/Safari\//i and not (ua =~ ~r/Chrome\//i) -> "Safari"
-        true -> nil
-      end
-
-    os =
-      cond do
-        ua =~ ~r/Mac OS X/i -> "Mac"
-        ua =~ ~r/Windows/i -> "Windows"
-        ua =~ ~r/iPhone|iPad|iOS/i -> "iOS"
-        ua =~ ~r/Android/i -> "Android"
-        ua =~ ~r/Linux/i -> "Linux"
-        true -> nil
-      end
-
-    case {browser, os} do
-      {nil, nil} -> short_ua(ua)
-      {b, nil} -> b
-      {nil, o} -> o
-      {b, o} -> "#{b} on #{o}"
-    end
-  end
-
-  defp short_ua(ua) do
-    case Regex.run(~r{^([^\s]+)}, ua) do
-      [_, token] -> token
-      _ -> "Unknown device"
-    end
-  end
 
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
@@ -725,13 +688,6 @@ defmodule EmisarWeb.ProfileLive do
 
   # Picks an icon for the session row that hints at the device class —
   # makes the row visually scannable instead of "wall of identical text".
-  defp session_device_icon(%{metadata: %{"user_agent" => ua}}) when is_binary(ua) do
-    cond do
-      ua =~ ~r/iPhone|iPad|Android/i -> "hero-device-phone-mobile"
-      ua =~ ~r/Mozilla|WebKit/i -> "hero-computer-desktop"
-      true -> "hero-globe-alt"
-    end
-  end
-
+  defp session_device_icon(%{metadata: %{"user_agent" => ua}}), do: UserAgent.icon(ua)
   defp session_device_icon(_), do: "hero-globe-alt"
 end

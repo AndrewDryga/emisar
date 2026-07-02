@@ -9,7 +9,7 @@ defmodule EmisarWeb.AuditDetailLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Audit, Runners, Runs}
-  alias EmisarWeb.AuditSummary
+  alias EmisarWeb.{AuditSummary, UserAgent}
 
   def mount(%{"id" => id}, _session, socket) do
     case Audit.fetch_event_by_id(id, socket.assigns.current_subject) do
@@ -353,7 +353,7 @@ defmodule EmisarWeb.AuditDetailLive do
         class="mt-2 flex items-center gap-1.5 truncate text-[11px] text-zinc-500"
         title={@user_agent}
       >
-        <.icon name={device_icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
+        <.icon name={UserAgent.icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
         <span class="truncate">{device}</span>
       </p>
       <%!-- How the human actor authenticated this session + whether a second
@@ -391,49 +391,15 @@ defmodule EmisarWeb.AuditDetailLive do
     """
   end
 
-  # Compact device label for the UA — same parser shape as ProfileLive's
-  # session list, so the audit page and the profile page agree about
-  # "what does this string mean." Strips the verbose Mozilla/AppleWebKit
-  # cruft into something a reader can scan.
   defp auth_method_label("magic_link"), do: "Magic link"
   defp auth_method_label("sso"), do: "SSO"
   defp auth_method_label(other), do: other
 
-  defp device_label(ua) when is_binary(ua) do
+  defp device_label(ua) do
     # The runner (and any bare Go HTTP client that didn't set a custom UA)
     # isn't a "device" worth showing on the actor — return nil so the line
     # hides. The runner appears under the Subject when an event is about one.
-    if ua =~ ~r/^Go-http-client/i, do: nil, else: browser_os_label(ua)
-  end
-
-  defp device_label(_), do: nil
-
-  defp browser_os_label(ua) do
-    browser =
-      cond do
-        ua =~ ~r/Edg\//i -> "Edge"
-        ua =~ ~r/Chrome\//i -> "Chrome"
-        ua =~ ~r/Firefox\//i -> "Firefox"
-        ua =~ ~r/Safari\//i and not (ua =~ ~r/Chrome\//i) -> "Safari"
-        true -> nil
-      end
-
-    os =
-      cond do
-        ua =~ ~r/Mac OS X/i -> "Mac"
-        ua =~ ~r/Windows/i -> "Windows"
-        ua =~ ~r/iPhone|iPad|iOS/i -> "iOS"
-        ua =~ ~r/Android/i -> "Android"
-        ua =~ ~r/Linux/i -> "Linux"
-        true -> nil
-      end
-
-    case {browser, os} do
-      {nil, nil} -> short_ua(ua)
-      {b, nil} -> b
-      {nil, o} -> o
-      {b, o} -> "#{b} on #{o}"
-    end
+    if is_nil(ua) or UserAgent.go_http_client?(ua), do: nil, else: UserAgent.label(ua)
   end
 
   # `runner: name (group) version` for the subject runner line — group and
@@ -449,26 +415,6 @@ defmodule EmisarWeb.AuditDetailLive do
       do: base,
       else: "#{base} #{runner.runner_version}"
   end
-
-  # Last-resort: the first whitespace-delimited token, so a missing UA
-  # parser doesn't print a 200-char Mozilla string into the card.
-  defp short_ua(ua) do
-    case Regex.run(~r{^([^\s]+)}, ua) do
-      [_, token] -> token
-      _ -> "Unknown device"
-    end
-  end
-
-  defp device_icon(ua) when is_binary(ua) do
-    cond do
-      ua =~ ~r/iPhone|iPad|Android/i -> "hero-device-phone-mobile"
-      ua =~ ~r/Mozilla|WebKit/i -> "hero-computer-desktop"
-      ua =~ ~r/^Go-http-client/i -> "hero-server"
-      true -> "hero-globe-alt"
-    end
-  end
-
-  defp device_icon(_), do: "hero-globe-alt"
 
   # Pulls structured device-posture fields out of the MCP bridge's
   # User-Agent. The bridge stamps a parens-delimited posture:

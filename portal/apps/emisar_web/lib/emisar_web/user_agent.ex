@@ -1,9 +1,11 @@
 defmodule EmisarWeb.UserAgent do
   @moduledoc """
-  Minimal User-Agent parser for server-side analytics enrichment — maps the
-  request UA to Mixpanel's `$browser` / `$browser_version` / `$os` / `$device`
-  special properties (Mixpanel does NOT parse the UA for server-side events;
-  the client SDK would).
+  Minimal User-Agent parser — ONE parsing brain for every surface that
+  reads a UA: `parse/1` feeds server-side analytics enrichment (Mixpanel's
+  `$browser` / `$browser_version` / `$os` / `$device` special properties —
+  Mixpanel does NOT parse the UA for server-side events), and `label/1` /
+  `icon/1` render the compact device line on the audit detail's actor card
+  and the profile page's session list.
 
   Deliberately small and dependency-free: it covers the browsers/OSes that
   make up the overwhelming majority of real traffic and returns `nil` for
@@ -85,6 +87,65 @@ defmodule EmisarWeb.UserAgent do
       String.contains?(ua, "iPad") -> "iPad"
       String.contains?(ua, "Android") -> "Android"
       true -> nil
+    end
+  end
+
+  @doc """
+  Compact display label built on `parse/1` — "Chrome on Mac", one side
+  when only one parses, the first UA token as a last resort, and
+  "Unknown device" for a missing UA.
+  """
+  def label(user_agent) when is_binary(user_agent) do
+    case parse(user_agent) do
+      %{browser: nil, os: nil} -> short_ua(user_agent)
+      %{browser: browser, os: nil} -> display_browser(browser)
+      %{browser: nil, os: os} -> display_os(os)
+      %{browser: browser, os: os} -> "#{display_browser(browser)} on #{display_os(os)}"
+    end
+  end
+
+  def label(_), do: "Unknown device"
+
+  @doc """
+  Hero icon name hinting at the device class — phone / desktop browser /
+  bare Go client (the runner's signature) / globe fallback.
+  """
+  def icon(user_agent) when is_binary(user_agent) do
+    cond do
+      user_agent =~ ~r/iPhone|iPad|Android/i -> "hero-device-phone-mobile"
+      user_agent =~ ~r/Mozilla|WebKit/i -> "hero-computer-desktop"
+      user_agent =~ ~r/^Go-http-client/i -> "hero-server"
+      true -> "hero-globe-alt"
+    end
+  end
+
+  def icon(_), do: "hero-globe-alt"
+
+  @doc """
+  A bare Go HTTP client that didn't set a custom UA — the runner's
+  signature. Callers hide the device line for it: a machine client isn't
+  a "device" worth showing.
+  """
+  def go_http_client?(user_agent) when is_binary(user_agent),
+    do: user_agent =~ ~r/^Go-http-client/i
+
+  def go_http_client?(_), do: false
+
+  # `parse/1` names are Mixpanel-canonical ("Microsoft Edge", "Mac OS X");
+  # the device line wants the short everyday forms.
+  defp display_browser("Microsoft Edge"), do: "Edge"
+  defp display_browser("Mobile Safari"), do: "Safari"
+  defp display_browser(browser), do: browser
+
+  defp display_os("Mac OS X"), do: "Mac"
+  defp display_os(os), do: os
+
+  # Last-resort: the first whitespace-delimited token, so a missing UA
+  # parser doesn't print a 200-char Mozilla string into the card.
+  defp short_ua(user_agent) do
+    case Regex.run(~r{^([^\s]+)}, user_agent) do
+      [_, token] -> token
+      _ -> "Unknown device"
     end
   end
 end
