@@ -26,15 +26,23 @@ defmodule Emisar.Workers.BillingSync do
        }) do
     case Billing.PaddleClient.retrieve_subscription(paddle_subscription_id) do
       {:ok, subscription_data} ->
-        # Only set current_period_end / paddle_updated_at when Paddle reports
-        # them: a non-renewing sub (canceled/paused) has NO next-billed date, and
-        # passing an explicit nil would NULL the stored value every hourly tick (a
-        # paying account mid-cancel silently loses its "access until"). Status
-        # always updates; paddle_updated_at lets the upsert drop an out-of-order
-        # write (the live retrieve is always freshest, so the sweep itself never
-        # loses — the guard only blocks a stale webhook).
+        # Only set current_period_end / paddle_updated_at / plan / entitlements
+        # when Paddle reports them: a non-renewing sub (canceled/paused) has NO
+        # next-billed date, and passing an explicit nil would NULL the stored
+        # value every hourly tick (a paying account mid-cancel silently loses
+        # its "access until"). Status always updates; paddle_updated_at lets the
+        # upsert drop an out-of-order write (the live retrieve is always
+        # freshest, so the sweep itself never loses — the guard only blocks a
+        # stale webhook). Plan + entitlements refresh from the embedded product
+        # custom_data when the API includes it, so a dashboard limit edit lands
+        # within the hour even if its webhook was missed.
+        plan = Billing.Entitlements.plan_slug(subscription_data)
+        entitlements = Billing.Entitlements.from_paddle_subscription(subscription_data)
+
         attrs =
           %{status: subscription_data["status"]}
+          |> put_present(:plan, plan)
+          |> put_present(:entitlements, entitlements)
           |> put_present(:current_period_end, Billing.extract_next_billed_at(subscription_data))
           |> put_present(:paddle_updated_at, Billing.extract_paddle_updated_at(subscription_data))
 

@@ -70,8 +70,8 @@ defmodule Emisar.Workers.AccountRetention do
 
   defp prune_account(%Accounts.Account{} = account, spec) do
     now = DateTime.utc_now()
-    plan = Billing.plan(Billing.account_plan(account)) || Billing.plan("free")
-    cutoff = DateTime.add(now, -plan.audit_retention_days * 86_400, :second)
+    retention_days = Billing.account_audit_retention_days(account.id)
+    cutoff = DateTime.add(now, -retention_days * 86_400, :second)
 
     pruned = delete_in_batches(account.id, cutoff, 0, spec)
 

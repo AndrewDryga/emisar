@@ -131,6 +131,22 @@ defmodule Emisar.BillingTest do
 
       assert Billing.account_audit_retention_days(account.id) == 7
     end
+
+    test "an audit_retention_days entitlement overrides the plan default" do
+      account = Fixtures.Accounts.create_account()
+      entitlements = %{"audit_retention_days" => 30}
+      Fixtures.Accounts.create_subscription(account, "team", entitlements: entitlements)
+
+      assert Billing.account_audit_retention_days(account.id) == 30
+    end
+
+    test "retention must stay a positive integer — \"unlimited\" or 0 falls back" do
+      account = Fixtures.Accounts.create_account()
+      entitlements = %{"audit_retention_days" => "unlimited"}
+      Fixtures.Accounts.create_subscription(account, "team", entitlements: entitlements)
+
+      assert Billing.account_audit_retention_days(account.id) == 90
+    end
   end
 
   describe "sso_available?/1" do
@@ -149,6 +165,17 @@ defmodule Emisar.BillingTest do
 
     test "false on Free (never subscribed) — SSO is a paid feature", %{account: account} do
       refute Billing.sso_available?(account)
+    end
+
+    test "an sso entitlement overrides the plan gate in both directions", %{account: account} do
+      # Withdrawn on Team by entitlement…
+      Fixtures.Accounts.create_subscription(account, "team", entitlements: %{"sso" => false})
+      refute Billing.sso_available?(account)
+
+      # …and granted on a plan slug the compiled map doesn't know.
+      custom = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(custom, "pro", entitlements: %{"sso" => true})
+      assert Billing.sso_available?(custom)
     end
   end
 
@@ -170,6 +197,12 @@ defmodule Emisar.BillingTest do
       team = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(team, "team")
       refute Billing.directory_sync_available?(team)
+    end
+
+    test "a scim entitlement unlocks directory sync below Enterprise", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team", entitlements: %{"scim" => true})
+
+      assert Billing.directory_sync_available?(account)
     end
   end
 
@@ -280,6 +313,31 @@ defmodule Emisar.BillingTest do
 
       assert Billing.account_plan(account) == "free"
       assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+    end
+  end
+
+  describe "check_limit/2 — entitlements override the compiled plan limits" do
+    test "a lower runners_limit entitlement blocks before the plan default would" do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"runners_limit" => 1}
+      )
+
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert Billing.check_limit(account, :runners) == {:error, :over_limit, "team", 1}
+    end
+
+    test "an \"unlimited\" entitlement lifts the plan cap" do
+      account = Fixtures.Accounts.create_account()
+      entitlements = %{"runners_limit" => "unlimited"}
+      Fixtures.Accounts.create_subscription(account, "free", entitlements: entitlements)
+
+      # Four billable runners — over free's compiled cap of 3.
+      for _ <- 1..4, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert Billing.check_limit(account, :runners) == :ok
     end
   end
 
@@ -496,6 +554,34 @@ defmodule Emisar.BillingTest do
       assert subscription.status == "active"
       assert subscription.paddle_subscription_id == "sub_evt_created_1"
       assert subscription.paddle_price_id == "pri_team_01"
+    end
+
+    test "mirrors product custom_data into entitlements and takes the plan from its slug" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_01"})
+
+      # The price id is deliberately NOT in :paddle_price_ids — the product's
+      # own custom_data identifies the plan, no deployed mapping needed.
+      event =
+        subscription_created_event("evt_ent_1", account.paddle_customer_id, "pri_unmapped_99",
+          product_custom_data: %{
+            "plan" => "team",
+            "runners_limit" => "25",
+            "members_limit" => "unlimited",
+            "sso" => "true",
+            "typo_key" => "dropped"
+          }
+        )
+
+      assert :ok = Billing.record_and_apply_event("evt_ent_1", "subscription.created", event)
+
+      subscription = Repo.one(Subscription)
+      assert subscription.plan == "team"
+
+      assert subscription.entitlements == %{
+               "runners_limit" => 25,
+               "members_limit" => "unlimited",
+               "sso" => true
+             }
     end
 
     test "a plan change writes a subscription.changed AUDIT row (distinct from the Mixpanel event)" do
@@ -888,6 +974,28 @@ defmodule Emisar.BillingTest do
         |> Repo.all()
 
       assert [%Subscription{plan: "enterprise", status: "active"}] = subscriptions
+    end
+
+    test "an update without a product object preserves stored entitlements" do
+      # subscription_updated_event carries no product — put_present skips the
+      # absent entitlements rather than nulling the mirror.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_keep_01"})
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_ent_keep",
+        entitlements: %{"runners_limit" => 25}
+      )
+
+      updated =
+        subscription_updated_event("ent_keep", account.paddle_customer_id, "pri_team_01",
+          status: "past_due"
+        )
+
+      assert {:ok, _} = Billing.apply_webhook_event(updated)
+
+      subscription = Repo.one(Subscription)
+      assert subscription.status == "past_due"
+      assert subscription.entitlements == %{"runners_limit" => 25}
     end
 
     test "a payload re-stating its fields preserves plan + price + period" do
@@ -1352,7 +1460,20 @@ defmodule Emisar.BillingTest do
 
   # A minimal Paddle subscription.created webhook envelope. The price id is
   # nested under data.items[].price.id, matching Paddle's Billing API.
-  defp subscription_created_event(event_id, customer_id, price_id) do
+  defp subscription_created_event(event_id, customer_id, price_id, opts \\ []) do
+    item = %{"price" => %{"id" => price_id}}
+
+    # Paddle embeds the full product per item; `product_custom_data:` models
+    # the entitlement contract (plan slug + limits on the product).
+    item =
+      case opts[:product_custom_data] do
+        nil ->
+          item
+
+        custom_data ->
+          Map.put(item, "product", %{"id" => "pro_test_01", "custom_data" => custom_data})
+      end
+
     %{
       "event_id" => event_id,
       "event_type" => "subscription.created",
@@ -1361,7 +1482,7 @@ defmodule Emisar.BillingTest do
         "customer_id" => customer_id,
         "status" => "active",
         "next_billed_at" => "2026-07-01T00:00:00Z",
-        "items" => [%{"price" => %{"id" => price_id}}]
+        "items" => [item]
       }
     }
   end
@@ -1435,6 +1556,41 @@ defmodule Emisar.BillingTest do
       assert summary.monthly_total_cents == 0
       refute summary.subscription_status
       refute summary.current_period_end
+    end
+
+    test "entitlement limits surface in the summary instead of the compiled plan defaults" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      entitlements = %{
+        "runners_limit" => 250,
+        "members_limit" => 10,
+        "audit_retention_days" => 180
+      }
+
+      Fixtures.Accounts.create_subscription(account, "team", entitlements: entitlements)
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.runner_limit == 250
+      assert summary.member_limit == 10
+      assert summary.audit_retention_days == 180
+    end
+
+    test "an unknown plan slug shows its capitalized name and no self-serve price" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      Fixtures.Accounts.create_subscription(account, "pro",
+        entitlements: %{"runners_limit" => 50}
+      )
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.plan == "pro"
+      assert summary.plan_name == "Pro"
+      assert summary.runner_limit == 50
+      # Free-floor fallback for the fields no entitlement covers…
+      assert summary.member_limit == 1
+      # …and nil pricing (custom), never the free plan's $0.
+      refute summary.monthly_per_runner_cents
+      refute summary.monthly_total_cents
     end
 
     test "an owner of account B cannot read account A's summary (cross-account)" do

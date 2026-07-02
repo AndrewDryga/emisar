@@ -27,7 +27,13 @@ import Config
 #   SENTRY_DSN             — enables error uploads when set
 #   SENTRY_ENVIRONMENT     — Sentry env tag (default "production")
 #   STATUS_PAGE_URL        — status-page URL surfaced in nav + footer
-#   PADDLE_PRICE_ID_TEAM   — Paddle price id for the Team plan
+#   PADDLE_PRICE_ID_TEAM   — Paddle price id for the Team plan (the checkout
+#                            direction: which price to buy). Plan identity +
+#                            limits flow BACK on the webhook via the Paddle
+#                            product's custom_data — keys: plan, runners_limit,
+#                            members_limit, audit_retention_days ("unlimited"
+#                            or an integer), sso, scim (booleans) — see
+#                            Emisar.Billing.Entitlements.
 #   RELEASE_VSN            — used in Sentry's `release` field
 #   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)
 #   MIXPANEL_API_HOST      — Mixpanel host (default api.mixpanel.com; EU: api-eu.mixpanel.com)

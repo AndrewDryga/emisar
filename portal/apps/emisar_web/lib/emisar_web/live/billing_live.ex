@@ -139,13 +139,6 @@ defmodule EmisarWeb.BillingLive do
   # (an unknown/legacy plan ranks last so a card never mislabels it an "upgrade").
   defp plan_rank(key) when is_binary(key), do: Enum.find_index(@plan_order, &(&1 == key)) || -1
 
-  defp plan_limit(plans, plan_name, key) do
-    case Enum.find(plans, &(&1.key == plan_name)) do
-      nil -> nil
-      plan -> Map.get(plan, key)
-    end
-  end
-
   # Formats a monthly total in cents as a clean dollar string. The
   # inline `:io_lib.format(...) |> IO.iodata_to_binary()` it replaces
   # buried the actual rendering logic inside a HEEx template.
@@ -328,21 +321,21 @@ defmodule EmisarWeb.BillingLive do
             </.button>
           </div>
 
-          <% runner_limit = plan_limit(@plans, @summary.plan, :runners_limit) %>
-          <% member_limit = plan_limit(@plans, @summary.plan, :members_limit) %>
-
+          <%!-- The summary limits are entitlement-aware (Paddle product
+               custom_data overrides the compiled plan defaults) — never
+               re-derive them from the plans map by name. --%>
           <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <.usage_meter
               label="Runners"
               count={@summary.runner_count}
-              limit_label={limit_label(runner_limit)}
-              pct={usage_pct(@summary.runner_count, runner_limit)}
+              limit_label={limit_label(@summary.runner_limit)}
+              pct={usage_pct(@summary.runner_count, @summary.runner_limit)}
             />
             <.usage_meter
               label="Team members"
               count={@member_count}
-              limit_label={limit_label(member_limit)}
-              pct={usage_pct(@member_count, member_limit)}
+              limit_label={limit_label(@summary.member_limit)}
+              pct={usage_pct(@member_count, @summary.member_limit)}
             />
           </div>
         </.card>

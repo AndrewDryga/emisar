@@ -1,8 +1,11 @@
 defmodule Emisar.Billing do
   @moduledoc """
   Plan + subscription glue. Paddle is the source of truth; we mirror
-  the subset (plan + status + period end) needed to enforce limits
-  without round-tripping per request. The Paddle HTTP layer is swappable
+  the subset (plan + status + period end + entitlements) needed to enforce
+  limits without round-tripping per request. Paid-plan limits live in the
+  Paddle product's custom_data (see `Billing.Entitlements`) so pricing/limit
+  changes need no deploy; the compiled `@plans` map is the free tier, the
+  per-field fallback, and display copy. The Paddle HTTP layer is swappable
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
@@ -10,7 +13,7 @@ defmodule Emisar.Billing do
   alias Ecto.Multi
   alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Billing.{Authorizer, Subscription}
+  alias Emisar.Billing.{Authorizer, Entitlements, Subscription}
 
   @plans %{
     "free" => %{
@@ -73,29 +76,72 @@ defmodule Emisar.Billing do
   defp plan_from_subscription(%Subscription{plan: plan}) when is_binary(plan), do: plan
   defp plan_from_subscription(_), do: "free"
 
+  # One derivation for every plan-gated read: the plan slug from the mirrored
+  # subscription, the compiled definition (free floor when the slug is unknown
+  # and no entitlement covers a field), and the Paddle-sourced entitlements
+  # that override the definition per field.
+  defp effective_plan(subscription) do
+    plan_name = plan_from_subscription(subscription)
+    known_plan = plan(plan_name)
+
+    %{
+      plan_name: plan_name,
+      known_plan: known_plan,
+      plan_def: known_plan || plan("free"),
+      entitlements: (subscription && subscription.entitlements) || %{}
+    }
+  end
+
+  # Entitlement first, compiled plan default second. `0` and `:unlimited` are
+  # both truthy, so `||` only falls through on an absent entitlement.
+  defp entitled_limit(%{entitlements: entitlements, plan_def: plan_def}, key),
+    do: Entitlements.limit(entitlements, Atom.to_string(key)) || Map.get(plan_def, key)
+
+  # Retention must stay a positive integer — an "unlimited" or 0-day
+  # entitlement falls back rather than disabling (or instant-sweeping) audit.
+  defp entitled_retention_days(%{entitlements: entitlements, plan_def: plan_def}) do
+    case Entitlements.limit(entitlements, "audit_retention_days") do
+      days when is_integer(days) and days > 0 -> days
+      _ -> plan_def.audit_retention_days
+    end
+  end
+
+  defp entitled_feature(%{entitlements: entitlements}, key, default) do
+    case Entitlements.feature(entitlements, key) do
+      nil -> default
+      enabled -> enabled
+    end
+  end
+
+  # An unknown slug (a plan minted in Paddle this build doesn't know) shows as
+  # its capitalized slug, never the free plan's display name.
+  defp plan_display_name(%{known_plan: %{name: name}}), do: name
+  defp plan_display_name(%{plan_name: plan_name}), do: String.capitalize(plan_name)
+
   @doc """
-  Internal — Audit's per-row retention stamp: the account's plan audit-retention
-  window, in days. Resolves `account_id` → subscription → plan; free floor (7d)
-  for no or an unknown/renamed plan (same read-tolerant degradation as `plan/1`).
+  Internal — Audit's per-row retention stamp: the account's audit-retention
+  window, in days. An `audit_retention_days` entitlement mirrored from Paddle
+  overrides the plan default; free floor (7d) for no or an unknown/renamed
+  plan (same read-tolerant degradation as `plan/1`).
   """
   def account_audit_retention_days(account_id) when is_binary(account_id) do
     account_id
     |> peek_subscription_for_account()
-    |> plan_from_subscription()
-    |> plan()
-    |> case do
-      %{audit_retention_days: days} -> days
-      nil -> plan("free").audit_retention_days
-    end
+    |> effective_plan()
+    |> entitled_retention_days()
   end
 
-  @doc "True when the account's plan includes OIDC single sign-on (Team and Enterprise)."
-  def sso_available?(%Accounts.Account{} = account),
-    do: account_plan(account) in ["team", "enterprise"]
+  @doc "True when the account's plan includes OIDC single sign-on (an `sso` entitlement, else Team and Enterprise)."
+  def sso_available?(%Accounts.Account{} = account) do
+    posture = account.id |> peek_subscription_for_account() |> effective_plan()
+    entitled_feature(posture, "sso", posture.plan_name in ["team", "enterprise"])
+  end
 
-  @doc "True when the account's plan includes SCIM directory sync (Enterprise only)."
-  def directory_sync_available?(%Accounts.Account{} = account),
-    do: account_plan(account) == "enterprise"
+  @doc "True when the account's plan includes SCIM directory sync (a `scim` entitlement, else Enterprise only)."
+  def directory_sync_available?(%Accounts.Account{} = account) do
+    posture = account.id |> peek_subscription_for_account() |> effective_plan()
+    entitled_feature(posture, "scim", posture.plan_name == "enterprise")
+  end
 
   # Internal nil-or-struct helper. Used by `upsert_subscription/2` and
   # webhook event application. Not exposed to LiveView/MCP because
@@ -163,20 +209,14 @@ defmodule Emisar.Billing do
   account-scoped (the runner counting), not subject-scoped.
   """
   def check_limit(%Accounts.Account{} = account, resource) do
-    # Resolve the plan from the account's subscription; fall back to the
-    # free plan when the name isn't a current plan (legacy/renamed) — the
-    # same guard billing_summary and audit_retention use, and it avoids
-    # Map.get on a nil plan.
-    plan_name = account_plan(account)
-    plan = plan(plan_name) || plan("free")
-    limit = Map.get(plan, limit_key(resource))
-
+    posture = account.id |> peek_subscription_for_account() |> effective_plan()
+    limit = entitled_limit(posture, limit_key(resource))
     current = current_count(account, resource)
 
     cond do
       limit == :unlimited -> :ok
       current < limit -> :ok
-      true -> {:error, :over_limit, plan_name, limit}
+      true -> {:error, :over_limit, posture.plan_name, limit}
     end
   end
 
@@ -411,10 +451,14 @@ defmodule Emisar.Billing do
         price_id = extract_price_id(subscription_data)
         cancel_scheduled? = scheduled_cancel?(subscription_data)
 
+        plan =
+          Entitlements.plan_slug(subscription_data) || plan_for_subscription(account, price_id)
+
         # A partial subscription.updated (status-only, no items / next_billed_at)
-        # must not null price/period — omit those keys via put_present so the
-        # peek-then-update preserves the stored values rather than casting them to
-        # nil. `plan` stays put: plan_for_subscription/2 falls back to account_plan/1.
+        # must not null price/period/entitlements — omit those keys via
+        # put_present so the peek-then-update preserves the stored values rather
+        # than casting them to nil. `plan` stays put: the product custom_data's
+        # own slug wins, then the price-id mapping, then account_plan/1.
         # `cancel_at_period_end` IS always set: Paddle's payload carries the full
         # object, so it reflects the current scheduled state, and the billing
         # dashboard's "cancels on …" banner must CLEAR when a scheduled cancel is
@@ -422,10 +466,11 @@ defmodule Emisar.Billing do
         attrs =
           %{
             paddle_subscription_id: subscription_data["id"],
-            plan: plan_for_subscription(account, price_id),
+            plan: plan,
             status: subscription_data["status"],
             cancel_at_period_end: cancel_scheduled?
           }
+          |> put_present(:entitlements, Entitlements.from_paddle_subscription(subscription_data))
           |> put_present(:paddle_price_id, price_id)
           |> put_present(:current_period_end, period_end(subscription_data, cancel_scheduled?))
           |> put_present(:current_period_start, extract_current_period_start(subscription_data))
@@ -547,26 +592,24 @@ defmodule Emisar.Billing do
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       subscription = peek_subscription_for_account(account.id)
-      plan_name = plan_from_subscription(subscription)
-      plan_def = plan(plan_name) || plan("free")
+      posture = effective_plan(subscription)
       runner_count = current_count(account, :runners)
       member_count = current_count(account, :members)
+      # nil pricing for a plan this build doesn't know (a slug minted in
+      # Paddle) — the UI treats it like custom pricing, not free's $0.
+      monthly_cents = posture.known_plan && posture.known_plan.monthly_price_cents
 
       {:ok,
        %{
-         plan: plan_name,
-         plan_name: plan_def.name,
+         plan: posture.plan_name,
+         plan_name: plan_display_name(posture),
          runner_count: runner_count,
-         runner_limit: plan_def.runners_limit,
+         runner_limit: entitled_limit(posture, :runners_limit),
          member_count: member_count,
-         member_limit: plan_def.members_limit,
-         monthly_per_runner_cents: plan_def.monthly_price_cents,
-         monthly_total_cents:
-           case plan_def.monthly_price_cents do
-             nil -> nil
-             cents -> cents * runner_count
-           end,
-         audit_retention_days: plan_def.audit_retention_days,
+         member_limit: entitled_limit(posture, :members_limit),
+         monthly_per_runner_cents: monthly_cents,
+         monthly_total_cents: monthly_cents && monthly_cents * runner_count,
+         audit_retention_days: entitled_retention_days(posture),
          # Subscription state mirrored from Paddle webhooks. nil when
          # the account is on a free plan and has never subscribed.
          subscription_status: subscription && subscription.status,

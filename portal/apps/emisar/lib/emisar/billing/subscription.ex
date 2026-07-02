@@ -18,6 +18,12 @@ defmodule Emisar.Billing.Subscription do
     # inclusion (Subscription.Changeset); Paddle is the source of truth.
     field :plan, :string
     field :status, :string
+    # Paddle-mirrored plan entitlements (the product's custom_data), validated
+    # into canonical form by `Billing.Entitlements` at extraction — limits are
+    # non-negative ints or the string "unlimited", feature flags booleans. A
+    # plain :map, not an embed: the int-or-"unlimited" union has no embed field
+    # type, and the write-side validator already guarantees the shape.
+    field :entitlements, :map, default: %{}
     field :quantity, :integer, default: 1
     field :current_period_start, :utc_datetime_usec
     field :current_period_end, :utc_datetime_usec
