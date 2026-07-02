@@ -849,6 +849,28 @@ defmodule EmisarWeb.CoreComponents do
   defp checkbox_row_state(false), do: "cursor-pointer hover:bg-zinc-900/60"
 
   @doc """
+  Dashed add-row — the composer-standard affordance at the END of a
+  repeating list ("+ Add step"), so a long list doesn't scroll back to a
+  header button. The header's own Add stays as the secondary access.
+
+      <.add_row label="Add step" phx-click="add_action_step" />
+  """
+  attr :label, :string, required: true
+  attr :rest, :global
+
+  def add_row(assigns) do
+    ~H"""
+    <button
+      type="button"
+      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900/40 hover:text-zinc-200"
+      {@rest}
+    >
+      <.icon name="hero-plus" class="h-4 w-4" />{@label}
+    </button>
+    """
+  end
+
+  @doc """
   Renders a form label. `:default` is the standard `text-sm` form label;
   `:eyebrow` is the compact small-caps label the dense editors use above their
   fields. One component so the two field-label treatments don't drift into more.

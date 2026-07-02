@@ -23,6 +23,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> assign(:slug, "")
     |> assign(:description, "")
     |> assign(:steps, [example_action_step()])
+    |> assign(:dirty?, false)
     |> assign_form(Runbooks.change_runbook())
     |> assign_catalog()
   end
@@ -39,6 +40,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         |> assign(:slug, runbook.slug || "")
         |> assign(:description, runbook.description || "")
         |> assign(:steps, Enum.map(raw_steps, &from_raw_step/1))
+        |> assign(:dirty?, false)
         |> assign_form(
           Runbooks.change_runbook(%{
             "title" => runbook.title,
@@ -146,7 +148,8 @@ defmodule EmisarWeb.RunbookEditorLive do
      |> assign(:title, title)
      |> assign(:slug, slug)
      |> assign(:description, description)
-     |> assign_form(changeset)}
+     |> assign_form(changeset)
+     |> mark_dirty()}
   end
 
   def handle_event("step_change", %{"index" => idx} = params, socket) do
@@ -172,11 +175,12 @@ defmodule EmisarWeb.RunbookEditorLive do
         |> maybe_autoderive_step_id(step)
       end)
 
-    {:noreply, assign(socket, :steps, steps)}
+    {:noreply, socket |> assign(:steps, steps) |> mark_dirty()}
   end
 
   def handle_event("add_action_step", _params, socket) do
-    {:noreply, assign(socket, :steps, socket.assigns.steps ++ [example_action_step()])}
+    {:noreply,
+     socket |> assign(:steps, socket.assigns.steps ++ [example_action_step()]) |> mark_dirty()}
   end
 
   def handle_event("remove_step", %{"index" => idx}, socket) do
@@ -194,7 +198,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     else
       step = Enum.at(steps, i)
       steps = steps |> List.delete_at(i) |> List.insert_at(target, step)
-      {:noreply, assign(socket, :steps, steps)}
+      {:noreply, socket |> assign(:steps, steps) |> mark_dirty()}
     end
   end
 
@@ -207,7 +211,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         Map.put(step, "args", args ++ [%{"key" => "", "value" => ""}])
       end)
 
-    {:noreply, assign(socket, :steps, steps)}
+    {:noreply, socket |> assign(:steps, steps) |> mark_dirty()}
   end
 
   def handle_event("remove_arg", %{"index" => idx, "arg" => arg_idx}, socket) do
@@ -220,7 +224,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         Map.put(step, "args", List.delete_at(args, a))
       end)
 
-    {:noreply, assign(socket, :steps, steps)}
+    {:noreply, socket |> assign(:steps, steps) |> mark_dirty()}
   end
 
   def handle_event("arg_change", %{"index" => idx, "arg" => arg_idx} = params, socket) do
@@ -234,7 +238,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         Map.put(step, "args", updated)
       end)
 
-    {:noreply, assign(socket, :steps, steps)}
+    {:noreply, socket |> assign(:steps, steps) |> mark_dirty()}
   end
 
   def handle_event("save", _params, socket) do
@@ -305,6 +309,10 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp success_message(_, true), do: "Runbook published."
   defp success_message(%{version: v}, false) when v > 1, do: "Draft v#{v} saved."
   defp success_message(_, false), do: "Draft saved."
+
+  # Draft-state marker: any editor mutation sets it; Cancel's discard
+  # guard reads it, so an untouched editor leaves without friction.
+  defp mark_dirty(socket), do: assign(socket, :dirty?, true)
 
   defp derive_slug(slug, title) do
     case String.trim(slug || "") do
@@ -428,7 +436,14 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.detail_header>
       </:title>
       <:actions>
-        <.button variant={:secondary} size={:md} navigate={~p"/app/#{@current_account}/runbooks"}>
+        <%!-- Editor archetype: no silent data loss on navigate — a dirty
+             draft confirms the discard; an untouched editor leaves freely. --%>
+        <.button
+          variant={:secondary}
+          size={:md}
+          navigate={~p"/app/#{@current_account}/runbooks"}
+          data-confirm={if @dirty?, do: "Discard unsaved changes?"}
+        >
           Cancel
         </.button>
       </:actions>
@@ -483,19 +498,10 @@ defmodule EmisarWeb.RunbookEditorLive do
               />
             <% end %>
 
-            <div class="flex items-center justify-end gap-3 pt-2">
-              <.button
-                variant={:secondary}
-                type="button"
-                phx-click="save"
-                phx-disable-with="Saving..."
-              >
-                Save draft
-              </.button>
-              <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
-                Publish
-              </.button>
-            </div>
+            <%!-- Composer standard: the add affordance lives where the next
+                 step goes, so a 3-card list doesn't scroll back to the
+                 header's button. --%>
+            <.add_row :if={@steps != []} label="Add step" phx-click="add_action_step" />
           </div>
         </.panel>
 
@@ -551,6 +557,19 @@ defmodule EmisarWeb.RunbookEditorLive do
             </p>
           </.panel>
         </aside>
+      </div>
+
+      <%!-- Page-level footer: Save/Publish govern the WHOLE runbook (the
+           Title lives in the right column), so they sit below the grid —
+           inside the Steps panel, mobile stacking rendered Publish above
+           the very field it validates. --%>
+      <div class="mt-6 flex items-center gap-3 border-t border-zinc-900 pt-4">
+        <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
+          Publish
+        </.button>
+        <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
+          Save draft
+        </.button>
       </div>
     </.dashboard_shell>
     """
@@ -727,10 +746,11 @@ defmodule EmisarWeb.RunbookEditorLive do
           variant={:ghost}
           tone={:brand}
           size={:sm}
+          icon="hero-plus"
           phx-click="add_arg"
           phx-value-index={@index}
         >
-          + Add
+          Add
         </.button>
       </div>
       <p :if={@args == []} class="mt-1 text-[11px] text-zinc-500">
