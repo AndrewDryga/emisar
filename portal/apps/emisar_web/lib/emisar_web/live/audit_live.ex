@@ -530,12 +530,17 @@ defmodule EmisarWeb.AuditLive do
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>
-                {key.key_prefix}… · last used{" "}<.local_time
-                  value={key.last_used_at}
-                  mode={:relative}
-                  placeholder="never"
-                />
-                <span :if={key.created_by}>· by {key.created_by.email}</span>
+                <.meta_line mono class="text-[11px]">
+                  <:seg>{key.key_prefix}…</:seg>
+                  <:seg>
+                    last used{" "}<.local_time
+                      value={key.last_used_at}
+                      mode={:relative}
+                      placeholder="never"
+                    />
+                  </:seg>
+                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                </.meta_line>
               </:meta>
               <:actions>
                 <.button

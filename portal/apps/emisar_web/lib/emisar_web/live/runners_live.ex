@@ -253,14 +253,10 @@ defmodule EmisarWeb.RunnersLive do
                         Signed-only
                       </.chip>
                     </div>
-                    <div class="mt-0.5 truncate text-xs text-zinc-500">
-                      <%!-- {" "} guards the space before the component — HEEx trims
-                         the newline the formatter inserts between "·" and the tag. --%>
-                      {runner.hostname || runner.external_id || "no host"} ·{" "}<.heartbeat_status
-                        runner={runner}
-                        status={state}
-                      />
-                    </div>
+                    <.meta_line class="mt-0.5 text-xs text-zinc-500">
+                      <:seg>{runner.hostname || runner.external_id || "no host"}</:seg>
+                      <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
+                    </.meta_line>
                   </div>
 
                   <div class="flex items-center gap-4 text-right">

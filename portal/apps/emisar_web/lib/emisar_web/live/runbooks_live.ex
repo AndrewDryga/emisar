@@ -175,10 +175,12 @@ defmodule EmisarWeb.RunbooksLive do
                 </:title>
                 <:meta>
                   <%!-- Row 2: description preview + slug --%>
-                  <span :if={runbook.description && runbook.description != ""}>
-                    {preview(runbook.description)} ·
-                  </span>
-                  <span class="font-mono">{runbook.slug}</span>
+                  <.meta_line>
+                    <:seg :if={runbook.description && runbook.description != ""}>
+                      {preview(runbook.description)}
+                    </:seg>
+                    <:seg><span class="font-mono">{runbook.slug}</span></:seg>
+                  </.meta_line>
                 </:meta>
                 <:actions>
                   <.button

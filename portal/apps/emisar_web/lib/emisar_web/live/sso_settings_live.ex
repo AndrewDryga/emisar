@@ -1151,12 +1151,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             Share this with your members — it opens this team's sign-in page with your SSO
             connections (and email sign-in as a fallback).
           </p>
-          <div class="mt-3 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
-            <code id="sso-sign-in-link" class="flex-1 break-all font-mono text-xs text-zinc-300">
-              {@sign_in_url}
-            </code>
-            <.copy_button target="#sso-sign-in-link">Copy</.copy_button>
-          </div>
+          <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
         </.card>
 
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
@@ -1542,13 +1537,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         </:step>
         <:step>
           Register this <span class="text-zinc-300">redirect URI</span>
-          on the app:
-          <div class="mt-1.5 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
-            <code id={"sso-callback-#{@id}"} class="flex-1 break-all font-mono text-zinc-300">
-              {@callback_url}
-            </code>
-            <.copy_button target={"#sso-callback-#{@id}"}>Copy</.copy_button>
-          </div>
+          on the app: <.code_line id={"sso-callback-#{@id}"} value={@callback_url} class="mt-1.5" />
         </:step>
         <:step>
           Set the <span class="text-zinc-300">Issuer URL</span>
@@ -1744,15 +1733,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             SCIM base URL
           </p>
-          <div class="mt-1.5 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
-            <code
-              id={"scim-url-#{@provider.id}"}
-              class="flex-1 break-all font-mono text-xs text-zinc-300"
-            >
-              {@scim_base_url}
-            </code>
-            <.copy_button target={"#scim-url-#{@provider.id}"}>Copy</.copy_button>
-          </div>
+          <.code_line id={"scim-url-#{@provider.id}"} value={@scim_base_url} class="mt-1.5" />
         </div>
 
         <%!-- The one-time token reveal — only for the provider whose token was

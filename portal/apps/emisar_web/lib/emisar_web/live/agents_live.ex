@@ -781,22 +781,24 @@ defmodule EmisarWeb.AgentsLive do
               </:chips>
               <:meta>
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
-                <div class="truncate font-mono text-[11px]">
-                  {key.key_prefix}…
-                  · {format_key_scope(key, @runners)} · last call{" "}<.local_time
-                    value={key.last_used_at}
-                    mode={:relative}
-                    placeholder="never"
-                  />
-                  <span :if={key.expires_at} class={expiry_class(key)}>
-                    · {if expired?(key), do: "expired", else: "expires"}
-                    <.local_time
-                      value={key.expires_at}
+                <.meta_line mono class="text-[11px]">
+                  <:seg>{key.key_prefix}…</:seg>
+                  <:seg>{format_key_scope(key, @runners)}</:seg>
+                  <:seg>
+                    last call{" "}<.local_time
+                      value={key.last_used_at}
                       mode={:relative}
+                      placeholder="never"
                     />
-                  </span>
-                  <span :if={key.created_by}>· by {key.created_by.email}</span>
-                </div>
+                  </:seg>
+                  <:seg :if={key.expires_at}>
+                    <span class={expiry_class(key)}>
+                      {if expired?(key), do: "expired", else: "expires"}
+                      <.local_time value={key.expires_at} mode={:relative} />
+                    </span>
+                  </:seg>
+                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                </.meta_line>
 
                 <%!-- Row 3: the MCP client this key reported at `initialize`
                      (clientInfo) — what's actually talking, vs the operator

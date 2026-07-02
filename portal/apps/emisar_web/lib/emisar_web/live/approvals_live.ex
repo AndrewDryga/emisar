@@ -485,23 +485,22 @@ defmodule EmisarWeb.ApprovalsLive do
                     {grant_args_line(g)}
                   </div>
 
-                  <div class="mt-1 truncate">
-                    via {grant_key_label(g)}
-                    <span :if={g.granted_by}>· granted by {g.granted_by.email}</span>
-                    · {format_uses(g)}
-                  </div>
+                  <.meta_line class="mt-1">
+                    <:seg>via {grant_key_label(g)}</:seg>
+                    <:seg :if={g.granted_by}>granted by {g.granted_by.email}</:seg>
+                    <:seg>{format_uses(g)}</:seg>
+                  </.meta_line>
 
-                  <%!-- Both render their timestamp through <.local_time>
-                       (viewer-local, hoverable, live); {" "} guards the space
-                       before each component tag from HEEx newline-trimming. --%>
-                  <div class="mt-0.5">
-                    <.expiry_status grant={g} />
-                    · last used{" "}<.local_time
-                      value={g.last_used_at}
-                      mode={:relative}
-                      placeholder="never"
-                    />
-                  </div>
+                  <.meta_line class="mt-0.5">
+                    <:seg><.expiry_status grant={g} /></:seg>
+                    <:seg>
+                      last used{" "}<.local_time
+                        value={g.last_used_at}
+                        mode={:relative}
+                        placeholder="never"
+                      />
+                    </:seg>
+                  </.meta_line>
                 </:meta>
                 <:actions>
                   <.button

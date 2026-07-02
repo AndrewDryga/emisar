@@ -2559,6 +2559,57 @@ defmodule EmisarWeb.CoreComponents do
   defp steps_content_class(:plan), do: "min-w-0 flex-1 text-sm"
 
   @doc """
+  The ONE middot meta row — `a · b · c` under a row title (the `list_row`
+  `:meta` convention, but also standalone). Segments ride `:seg` slots and
+  the separator renders only BETWEEN visible segments, so a conditional
+  segment can never leave a dangling or doubled middot — and no call site
+  fights HEEx newline-trimming with `{" "}` hacks or the non-idempotent
+  trailing `{expr} ·` the formatter loops on.
+
+      <.meta_line mono class="text-[11px]">
+        <:seg>{key.key_prefix}…</:seg>
+        <:seg>last used{" "}<.local_time value={key.last_used_at} mode={:relative} /></:seg>
+        <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+      </.meta_line>
+  """
+  attr :mono, :boolean, default: false
+  attr :class, :any, default: nil
+  slot :seg, required: true
+
+  def meta_line(assigns) do
+    ~H"""
+    <div class={["truncate", @mono && "font-mono", @class]}>
+      <span :for={{seg, idx} <- Enum.with_index(@seg)}>
+        {if idx > 0, do: " · "}{render_slot(seg)}
+      </span>
+    </div>
+    """
+  end
+
+  @doc """
+  One-line code value with its copy button — a sign-in link, a callback
+  URI, a SCIM base URL. The framed multi-line snippet is `code_panel`;
+  this is the single-value row.
+
+      <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
+  """
+  attr :id, :string, required: true
+  attr :value, :string, required: true
+  attr :class, :any, default: nil
+
+  def code_line(assigns) do
+    ~H"""
+    <div class={[
+      "flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
+      @class
+    ]}>
+      <code id={@id} class="flex-1 break-all font-mono text-xs text-zinc-300">{@value}</code>
+      <.copy_button target={"##{@id}"}>Copy</.copy_button>
+    </div>
+    """
+  end
+
+  @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (console-ux §1).

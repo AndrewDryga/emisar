@@ -23,6 +23,8 @@ its Tailwind. The canonical surfaces:
 | Reveal-once credential | `<.secret_reveal secret=\|codes= variant={:banner\|:card} download_name= on_dismiss=>` (`:install_command`, `:actions` for "I've saved them"; per-code cells + Copy all ride `data-copy-text`) | an amber `bg-amber-500/10 ring-amber-500/30` box with its own copy wiring, or a hidden blob element for Copy all |
 | TOTP enrollment block | `<.mfa_enrollment qr_svg= uri= form= variant={:stacked\|:split}>` (`:instructions`, `:actions`; owns the QR wrapper + can't-scan disclosure + the `code_input` confirm form) | a hand-rolled white QR box + URI disclosure, or a plain text input for the OTP |
 | Numbered steps list | `<.steps variant={:guide\|:plan}>` + `:step` slots (circle numbers derive from slot order; `:plan` = the runbook's divide-y rows) | a hand-numbered `<ol>` with "1." spans, `list-decimal`, middot bullets for ordered checks, or bespoke number circles |
+| Middot meta row | `<.meta_line mono>` + `:seg` slots — separators render only BETWEEN visible segments | hand-joined `a · b · c` runs with `{" "}` whitespace hacks, or a trailing `{expr} ·` (formatter-looping) |
+| One-line code + copy | `<.code_line id= value=>` (single value; multi-line snippets are `code_panel`) | a bespoke `flex … bg-zinc-950/80 ring-zinc-800` row wrapping `<code>` + `copy_button` |
 
 **The stat trio** — three count/number components that look alike and get confused.
 Pick by *where it lives*:

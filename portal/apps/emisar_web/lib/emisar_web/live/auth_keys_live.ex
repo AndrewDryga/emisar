@@ -380,16 +380,18 @@ defmodule EmisarWeb.AuthKeysLive do
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>
-                <span class="font-mono text-[11px]">
-                  {key.key_prefix}… · {key.uses_count} {if key.uses_count == 1,
-                    do: "use",
-                    else: "uses"} · last used{" "}<.local_time
-                    value={key.last_used_at}
-                    mode={:relative}
-                    placeholder="never"
-                  />
-                  <span :if={key.created_by}>· by {key.created_by.email}</span>
-                </span>
+                <.meta_line mono class="text-[11px]">
+                  <:seg>{key.key_prefix}…</:seg>
+                  <:seg>{key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"}</:seg>
+                  <:seg>
+                    last used{" "}<.local_time
+                      value={key.last_used_at}
+                      mode={:relative}
+                      placeholder="never"
+                    />
+                  </:seg>
+                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                </.meta_line>
               </:meta>
               <:actions>
                 <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm.
