@@ -7,7 +7,7 @@ defmodule Emisar.Fixtures.Subjects do
   alias Emisar.Accounts
   alias Emisar.Accounts.Membership
   alias Emisar.Auth.Subject
-  alias Emisar.{Fixtures, RequestContext}
+  alias Emisar.{Fixtures, Repo, RequestContext}
   alias Emisar.Users.User
 
   @doc """
@@ -34,6 +34,23 @@ defmodule Emisar.Fixtures.Subjects do
       mfa: opts[:mfa],
       user_identity_id: opts[:user_identity_id]
     )
+  end
+
+  @doc "Builds a `%Subject{}` for an existing membership — loads its user and account, carrying the membership's own role and id."
+  def membership_subject(%Membership{} = membership) do
+    %{user: user, account: account} = Repo.preload(membership, [:user, :account])
+    Subject.for_user(user, account, membership)
+  end
+
+  @doc "Builds a bare `%Subject{}` from keyword fields — `:user` sets the `actor`, other keys map straight onto the struct."
+  def build_subject(fields \\ []) do
+    fields =
+      case Keyword.pop(fields, :user) do
+        {%User{} = user, rest} -> Keyword.put(rest, :actor, user)
+        {nil, rest} -> rest
+      end
+
+    struct!(Subject, fields)
   end
 
   @doc """

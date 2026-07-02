@@ -230,12 +230,13 @@ defmodule EmisarWeb.DashboardLive do
 
     <.subscription_banner status={@billing.subscription_status}>
       <:cta :if={@can_manage_billing}>
-        <.link
+        <.button
+          variant="secondary"
+          size="sm"
           navigate={~p"/app/#{@current_account}/settings/billing"}
-          class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
         >
           Manage billing
-        </.link>
+        </.button>
       </:cta>
     </.subscription_banner>
     <.plan_limit_banner

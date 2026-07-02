@@ -69,14 +69,13 @@ defmodule EmisarWeb.MagicLinkLive do
     ~H"""
     <.auth_layout title="Sign in via email">
       <%= if @sent? do %>
-        <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-5 text-brand-200">
-          <h3 class="font-semibold">Check your inbox.</h3>
-          <p :if={@email} class="mt-2 text-sm">
+        <.callout tone={:brand} icon={false} title="Check your inbox.">
+          <p :if={@email} class="mt-1.5">
             We emailed a sign-in link and a 6-character code to <code class="font-mono text-brand-100">{@email}</code>. Enter
             the code here, or open the link from <em>this same browser</em>. Both expire in
             15 minutes.
           </p>
-          <p :if={!@email} class="mt-2 text-sm">
+          <p :if={!@email} class="mt-1.5">
             We emailed a sign-in link and a 6-character code. Enter the code here, or open the
             link from <em>this same browser</em>. Both expire in 15 minutes.
           </p>
@@ -92,7 +91,7 @@ defmodule EmisarWeb.MagicLinkLive do
             class="mt-3 text-xs font-medium text-brand-300/80"
           >
           </p>
-        </div>
+        </.callout>
 
         <.simple_form for={@code_form} phx-submit="verify_code" class="mt-5">
           <.code_input id="magic-code" name="code" label="Sign-in code" error={@code_error} />

@@ -365,20 +365,19 @@ defmodule EmisarWeb.RunNewLive do
               </.button>
               <%!-- Signed-only runner — the run would be refused, so there's no
                    Dispatch button; point the operator at their MCP client. --%>
-              <p
+              <.callout
                 :if={@can_dispatch? and signed_only?(@runner)}
-                class="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-center text-sm text-zinc-400"
+                tone={:neutral}
+                icon={false}
+                class="text-center"
               >
                 This runner only runs signed dispatches — run it from your MCP client.
-              </p>
+              </.callout>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>
-              <p
-                :if={not @can_dispatch?}
-                class="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-center text-sm text-zinc-400"
-              >
+              <.callout :if={not @can_dispatch?} tone={:neutral} icon={false} class="text-center">
                 Your role can't dispatch runs. Ask an operator, admin, or owner to run this.
-              </p>
+              </.callout>
             </:actions>
           </.simple_form>
         </.panel>

@@ -682,16 +682,14 @@ defmodule EmisarWeb.RunbookRunLive do
                the remaining placeholder rows never dispatch — without this they
                sit grey and the page reads as stuck/broken. In-flight runs still
                finish; only the un-launched waves are dropped. --%>
-          <div
+          <.callout
             :if={@execution && halted_count(@run_statuses, @execution.total) > 0}
-            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
+            tone={:amber}
+            variant={:strip}
           >
-            <.icon name="hero-exclamation-triangle" class="mt-0.5 h-3.5 w-3.5 flex-none" />
-            <span>
-              Halted — {halted_count(@run_statuses, @execution.total)} of the planned runs won't
-              dispatch because an earlier step failed. Any in-flight runs will still finish.
-            </span>
-          </div>
+            Halted — {halted_count(@run_statuses, @execution.total)} of the planned runs won't
+            dispatch because an earlier step failed. Any in-flight runs will still finish.
+          </.callout>
 
           <%!-- Live runs once dispatched. Each row updates in place as its
                run transitions (the status badge flips to success / failed). --%>
@@ -748,29 +746,24 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <%!-- A group step that resolves to zero active runners makes dispatch
                refuse the whole runbook — surface that here, before Start. --%>
-          <div
-            :if={!@execution && @blast_radius.no_runners_step}
-            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
-          >
-            <.icon name="hero-exclamation-triangle" class="mt-0.5 h-3.5 w-3.5 flex-none" />
-            <span>
-              Step {@blast_radius.no_runners_step}'s target has no active runners — dispatch
-              will refuse it until one connects.
-            </span>
-          </div>
+          <.callout :if={!@execution && @blast_radius.no_runners_step} tone={:amber} variant={:strip}>
+            Step {@blast_radius.no_runners_step}'s target has no active runners — dispatch
+            will refuse it until one connects.
+          </.callout>
 
           <%!-- Offline preflight: a planned target that's offline queues (doesn't
                fail) until it reconnects — surface it before Start so a half-dark
                fleet isn't a surprise mid-run. --%>
           <% offline_targets =
             offline_planned_runners(@blast_radius.plan, @runners, @current_account.id) %>
-          <div
+          <.callout
             :if={!@execution && offline_targets != []}
-            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
+            tone={:amber}
+            variant={:strip}
+            icon="hero-signal-slash"
           >
-            <.icon name="hero-signal-slash" class="mt-0.5 h-3.5 w-3.5 flex-none" />
-            <span>{offline_preflight_message(offline_targets)}</span>
-          </div>
+            {offline_preflight_message(offline_targets)}
+          </.callout>
 
           <%!-- Plan steps, shown until the first dispatch. --%>
           <ol :if={!@execution && @steps != []} class="divide-y divide-zinc-900">

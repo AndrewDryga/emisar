@@ -75,10 +75,9 @@ defmodule EmisarWeb.SSOPendingLive do
       </div>
 
       <div :if={@status == :dismissed} class="space-y-6">
-        <div class="flex items-start gap-3 rounded-lg bg-rose-500/10 p-4 ring-1 ring-rose-500/30">
-          <.icon name="hero-x-circle" class="mt-0.5 h-5 w-5 shrink-0 text-rose-400" />
-          <p class="text-sm text-rose-100">Your access request was declined.</p>
-        </div>
+        <.callout tone={:rose} icon="hero-x-circle">
+          Your access request was declined.
+        </.callout>
 
         <p class="text-sm leading-relaxed text-zinc-400">
           An administrator at <span class="font-medium text-zinc-200">{@request.account.name}</span>

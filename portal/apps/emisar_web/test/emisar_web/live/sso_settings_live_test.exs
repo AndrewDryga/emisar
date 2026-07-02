@@ -675,6 +675,54 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
+  describe "synced users" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      provider = insert_provider(account, %{})
+
+      {:ok, %{membership: membership}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "kc|dana",
+          email: "dana@northstar.example",
+          full_name: "Dana Sync"
+        })
+
+      %{conn: conn, user: user, account: account, provider: provider, membership: membership}
+    end
+
+    test "lists the provisioned user and suspends them from the connection page", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      membership: membership
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "Synced users"
+      assert html =~ "Dana Sync"
+      refute Emisar.Accounts.Membership.disabled?(membership)
+
+      render_click(lv, "suspend_member", %{"membership_id" => membership.id})
+
+      assert Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
+    end
+
+    test "a crafted suspend is refused for a non-admin viewer", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      membership: membership,
+      user: user
+    } do
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      _ = render_click(lv, "suspend_member", %{"membership_id" => membership.id})
+
+      refute Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
+    end
+  end
+
   describe "group → role mapping" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})

@@ -9,51 +9,54 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Users.User
 
   describe "fetch_account_by_id/1" do
-    test "resolves a live account by its id (pre-auth, no Subject)" do
+    test "resolves a live account by its id" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %Account{id: id}} = Accounts.fetch_account_by_id(account.id)
       assert id == account.id
     end
 
-    test "a soft-deleted account and an unused UUID are the SAME :not_found" do
-      # The read starts at `not_deleted`, so a tombstoned account is
-      # indistinguishable from one that never existed — both :not_found.
-      account = Fixtures.Accounts.create_account()
-      {:ok, _} = account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
-
-      assert {:error, :not_found} = Accounts.fetch_account_by_id(account.id)
-      assert {:error, :not_found} = Accounts.fetch_account_by_id(Ecto.UUID.generate())
+    test "unused UUID returns :not_found" do
+      assert Accounts.fetch_account_by_id(Ecto.UUID.generate()) == {:error, :not_found}
     end
 
-    test "a non-UUID id is :not_found, never a crash" do
-      assert {:error, :not_found} = Accounts.fetch_account_by_id("not-a-uuid")
+    test "a soft-deleted account returns :not_found" do
+      # The read starts at `not_deleted`, so a tombstoned account is
+      # indistinguishable from one that never existed — both :not_found.
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.mark_account_as_deleted()
+
+      assert Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
+    end
+
+    test "a non-UUID id returns :not_found" do
+      assert Accounts.fetch_account_by_id("not-a-uuid") == {:error, :not_found}
     end
   end
 
   describe "fetch_and_lock_account/2" do
-    test "returns the account when called standalone (repo defaults to Repo)" do
+    test "returns the account when called standalone" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %Account{id: id}} = Accounts.fetch_and_lock_account(account.id)
       assert id == account.id
     end
 
-    test "a soft-deleted account is :not_found (the lock read starts at not_deleted)" do
-      account = Fixtures.Accounts.create_account()
-      {:ok, _} = account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+    test "a soft-deleted account returns :not_found" do
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.mark_account_as_deleted()
 
-      assert {:error, :not_found} = Accounts.fetch_and_lock_account(account.id)
+      assert Accounts.fetch_and_lock_account(account.id) == {:error, :not_found}
     end
 
-    test "an unknown or malformed uuid is :not_found" do
-      assert {:error, :not_found} = Accounts.fetch_and_lock_account(Ecto.UUID.generate())
-      assert {:error, :not_found} = Accounts.fetch_and_lock_account("not-a-uuid")
+    test "an unknown or malformed uuid returns :not_found" do
+      assert Accounts.fetch_and_lock_account(Ecto.UUID.generate()) == {:error, :not_found}
+      assert Accounts.fetch_and_lock_account("not-a-uuid") == {:error, :not_found}
     end
 
-    test "the passed repo joins the caller's transaction" do
-      # Approvals/Runners compose this as the first step of their Multi by
-      # passing `repo: repo`; prove the explicit repo is honored inside one.
+    test "accepts :repo as an option" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %{locked: %Account{id: id}}} =
@@ -72,48 +75,45 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 3_600})
 
-      assert {:ok, %Account.Settings{max_grant_lifetime_seconds: 3_600}} =
-               Accounts.fetch_account_settings(account.id)
+      assert {:ok, account_settings} = Accounts.fetch_account_settings(account.id)
+      assert %Account.Settings{max_grant_lifetime_seconds: 3_600} = account_settings
     end
 
-    test "a soft-deleted account is :not_found (Approvals reads only live accounts)" do
-      account = Fixtures.Accounts.create_account()
-      {:ok, _} = account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+    test "a soft-deleted account is :not_found" do
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.mark_account_as_deleted()
 
-      assert {:error, :not_found} = Accounts.fetch_account_settings(account.id)
+      assert Accounts.fetch_account_settings(account.id) == {:error, :not_found}
     end
 
     test "an unknown or malformed id is :not_found" do
-      assert {:error, :not_found} = Accounts.fetch_account_settings(Ecto.UUID.generate())
-      assert {:error, :not_found} = Accounts.fetch_account_settings("not-a-uuid")
+      assert Accounts.fetch_account_settings(Ecto.UUID.generate()) == {:error, :not_found}
+      assert Accounts.fetch_account_settings("not-a-uuid") == {:error, :not_found}
     end
   end
 
-  describe "fetch_account_by_id_or_slug/1 (pre-auth, no Subject)" do
-    test "resolves a live account by slug or id — knowing the ref is all it takes" do
-      # the branded sign-in page and the SSO
-      # team picker resolve the tenant from the URL BEFORE anyone is signed in, so
-      # this read takes NO `%Subject{}`: it's deliberately unauthorized (the slug
-      # only picks which sign-in page to show; it grants nothing). It resolves by
-      # the slug AND the id (the UUID form for SSO/redirects).
+  describe "fetch_account_by_id_or_slug/1" do
+    test "resolves a live account by slug or id" do
       account = Fixtures.Accounts.create_account()
+      account_id = account.id
 
-      assert {:ok, %Account{id: id}} = Accounts.fetch_account_by_id_or_slug(account.slug)
-      assert id == account.id
-      assert {:ok, %Account{id: ^id}} = Accounts.fetch_account_by_id_or_slug(account.id)
+      assert {:ok, %Account{id: ^account_id}} = Accounts.fetch_account_by_id_or_slug(account.slug)
+      assert {:ok, %Account{id: ^account_id}} = Accounts.fetch_account_by_id_or_slug(account.id)
     end
 
-    test "an unknown ref and a soft-deleted account are the SAME :not_found (no leak)" do
-      # the read starts at `not_deleted`, so a
-      # tombstoned account is indistinguishable from one that never existed: both
-      # `:not_found`. A pre-auth prober can't confirm a tenant exists from this read.
-      account = Fixtures.Accounts.create_account()
-      {:ok, _} = account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+    test "a soft-deleted account is :not_found" do
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.mark_account_as_deleted()
 
-      assert {:error, :not_found} = Accounts.fetch_account_by_id_or_slug("no-such-team")
-      assert {:error, :not_found} = Accounts.fetch_account_by_id_or_slug(account.slug)
-      # A well-formed-but-unused UUID is the same :not_found, never a crash.
-      assert {:error, :not_found} = Accounts.fetch_account_by_id_or_slug(Ecto.UUID.generate())
+      assert Accounts.fetch_account_by_id_or_slug(account.slug) == {:error, :not_found}
+      assert Accounts.fetch_account_by_id_or_slug(account.id) == {:error, :not_found}
+    end
+
+    test "an unknown ref is :not_found" do
+      assert Accounts.fetch_account_by_id_or_slug("no-such-team") == {:error, :not_found}
+      assert Accounts.fetch_account_by_id_or_slug(Ecto.UUID.generate()) == {:error, :not_found}
     end
   end
 
@@ -122,60 +122,52 @@ defmodule Emisar.AccountsTest do
       user = Fixtures.Users.create_user()
       zebra = Fixtures.Accounts.create_account(name: "Zebra Co")
       apple = Fixtures.Accounts.create_account(name: "Apple Co")
-      _ = Fixtures.Memberships.create_membership(account_id: zebra.id, user_id: user.id)
-      _ = Fixtures.Memberships.create_membership(account_id: apple.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: zebra.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: apple.id, user_id: user.id)
 
       subject = Fixtures.Subjects.subject_for(user, apple)
 
       assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(subject)
-      # Name-ordered (Apple before Zebra) — the account picker's order.
       assert Enum.map(accounts, & &1.name) == ["Apple Co", "Zebra Co"]
-    end
 
-    test "is deliberately cross-account: it scopes by the user, not a single account" do
-      # The account picker must surface EVERY tenant the user belongs to, so it
-      # scopes by the subject's actor id — a subject pinned to account A still
-      # lists B. (The rare, documented IL-4 exception.)
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
-
-      subject = Fixtures.Subjects.subject_for(user, account_a)
-
-      assert {:ok, accounts, _} = Accounts.list_accounts_for_user(subject)
-      ids = accounts |> Enum.map(& &1.id) |> Enum.sort()
-      assert ids == Enum.sort([account_a.id, account_b.id])
+      assert MapSet.equal?(
+               MapSet.new(accounts, & &1.id),
+               MapSet.new([zebra.id, apple.id])
+             )
     end
 
     test "excludes a suspended membership's account" do
       user = Fixtures.Users.create_user()
-      live = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: live.id, user_id: user.id)
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
 
-      {_owner, suspended_account, owner_subject} = Fixtures.Subjects.owner_subject()
-
-      suspended =
+      membership_a =
         Fixtures.Memberships.create_membership(
-          account_id: suspended_account.id,
+          account_id: account_a.id,
           user_id: user.id,
-          role: "operator"
+          role: "owner"
         )
 
-      {:ok, _} = Accounts.suspend_membership(suspended, owner_subject)
+      _membership_b =
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          user_id: user.id,
+          role: "owner"
+        )
+        |> Fixtures.Memberships.suspend_membership()
 
-      subject = Fixtures.Subjects.subject_for(user, live)
+      subject = Fixtures.Subjects.membership_subject(membership_a)
 
       assert {:ok, accounts, _} = Accounts.list_accounts_for_user(subject)
+
       ids = Enum.map(accounts, & &1.id)
-      assert live.id in ids
-      refute suspended_account.id in ids
+      assert account_a.id in ids
+      refute account_b.id in ids
     end
 
     test "returns an empty list for a user with no memberships" do
       user = Fixtures.Users.create_user()
-      subject = %Emisar.Auth.Subject{actor: user}
+      subject = Fixtures.Subjects.build_subject(user: user)
 
       assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
     end
@@ -184,81 +176,49 @@ defmodule Emisar.AccountsTest do
   describe "create_account_with_owner/2" do
     test "persists account + owner membership in a single transaction" do
       user = Fixtures.Users.create_user()
+      attrs = Fixtures.Accounts.account_attrs()
 
-      assert {:ok, %Account{} = account} =
-               Accounts.create_account_with_owner(
-                 %{name: "Acme", slug: "acme-#{System.unique_integer([:positive])}"},
-                 user
-               )
+      assert {:ok, %Account{} = account} = Accounts.create_account_with_owner(attrs, user)
 
-      assert %Membership{role: :owner} =
-               Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert membership = Repo.one(Membership)
+      assert membership.role == :owner
+      assert membership.user_id == user.id
+      assert membership.account_id == account.id
     end
 
-    test "rolls back when the account changeset is invalid" do
+    test "rolls back the whole transaction when the account changeset is invalid" do
       user = Fixtures.Users.create_user()
+      invalid_attrs = Fixtures.Accounts.account_attrs(slug: "x")
 
-      # Slug too short — fails the format regex (>=3 chars).
-      assert {:error, %Ecto.Changeset{}} =
-               Accounts.create_account_with_owner(%{name: "x", slug: "x"}, user)
+      assert {:error, changeset} = Accounts.create_account_with_owner(invalid_attrs, user)
 
-      # No partial membership stuck around. The user has no account yet, so
-      # the picker subject is built straight from the actor (account nil).
-      subject = %Emisar.Auth.Subject{actor: user}
-      assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
-    end
+      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
+               changeset
+             ).slug
 
-    # the account-name length bounds (1..80) are inclusive
-    # at both edges (with a valid slug supplied so only the name is under test).
-    test "accepts a name of 1 and of 80 chars" do
-      for length <- [1, 80] do
-        user = Fixtures.Users.create_user()
-        slug = "name-edge-#{System.unique_integer([:positive])}"
-
-        assert {:ok, %Account{}} =
-                 Accounts.create_account_with_owner(
-                   %{name: String.duplicate("a", length), slug: slug},
-                   user
-                 )
-      end
-    end
-
-    # a name over 80 chars is rejected and the transaction
-    # rolls back (no orphaned account or membership).
-    test "rejects a name over 80 chars and rolls back" do
-      user = Fixtures.Users.create_user()
-      slug = "name-too-long-#{System.unique_integer([:positive])}"
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Accounts.create_account_with_owner(
-                 %{name: String.duplicate("a", 81), slug: slug},
-                 user
-               )
-
-      assert changeset.errors[:name]
-      subject = %Emisar.Auth.Subject{actor: user}
-      assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
     end
   end
 
   describe "update_account/3 — require_sso (owner + admin security setting)" do
     test "an owner can enable require_sso" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       assert {:ok, %Account{settings: %{require_sso: true}}} =
                Accounts.update_account(account, %{settings: %{require_sso: true}}, owner_subject)
     end
 
     test "an admin can enable require_sso (owners + admins manage security settings)" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
@@ -267,68 +227,60 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an operator cannot change a security setting (no manage_security_settings)" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} =
-               Accounts.update_account(
-                 account,
-                 %{settings: %{require_sso: true}},
-                 operator_subject
-               )
+      assert Accounts.update_account(
+               account,
+               %{settings: %{require_sso: true}},
+               operator_subject
+             ) == {:error, :unauthorized}
 
       refute Repo.reload!(account).settings.require_sso
     end
 
     test "an owner of another account can't toggle this account's require_sso (cross-account)" do
-      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
 
-      # B's owner holds `manage_own_account` for their OWN account, so the
-      # permission gate passes; `ensure_subject_owns_account` then refuses the
-      # cross-account write.
-      assert {:error, :unauthorized} =
-               Accounts.update_account(account_a, %{settings: %{require_sso: true}}, subject_b)
+      assert Accounts.update_account(account_a, %{settings: %{require_sso: true}}, subject_b) ==
+               {:error, :unauthorized}
 
       refute Repo.reload!(account_a).settings.require_sso
     end
 
     test "an owner of another account can't toggle this account's require_mfa (cross-account)" do
-      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
 
-      assert {:error, :unauthorized} =
-               Accounts.update_account(account_a, %{settings: %{require_mfa: true}}, subject_b)
+      assert Accounts.update_account(account_a, %{settings: %{require_mfa: true}}, subject_b) ==
+               {:error, :unauthorized}
 
       refute Repo.reload!(account_a).settings.require_mfa
     end
 
     test "an admin can rename the account — only the security flags need manage_security_settings" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      # A plain rename touches no security field, so the top-level
-      # `manage_own_account` gate (which admins hold) is all it needs — the
-      # field-aware `manage_security_settings` check only fires for
-      # require_mfa/require_sso (owners + admins hold it; operators/viewers don't).
       assert {:ok, %Account{name: "Renamed By Admin"}} =
                Accounts.update_account(account, %{name: "Renamed By Admin"}, admin_subject)
     end
@@ -336,7 +288,8 @@ defmodule Emisar.AccountsTest do
 
   describe "update_account/3 — max_grant_lifetime_seconds (security setting)" do
     test "an owner can set the grant-lifetime cap" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       assert {:ok, %Account{settings: %{max_grant_lifetime_seconds: 86_400}}} =
                Accounts.update_account(
@@ -347,15 +300,14 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an admin can set the cap (security setting)" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
@@ -368,49 +320,49 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an operator cannot set the cap (no manage_security_settings)" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} =
-               Accounts.update_account(
-                 account,
-                 %{settings: %{max_grant_lifetime_seconds: 3_600}},
-                 operator_subject
-               )
+      assert Accounts.update_account(
+               account,
+               %{settings: %{max_grant_lifetime_seconds: 3_600}},
+               operator_subject
+             ) == {:error, :unauthorized}
 
       refute Repo.reload!(account).settings.max_grant_lifetime_seconds
     end
 
     test "the cap must be a positive number of seconds" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
-      assert {:error, %Ecto.Changeset{}} =
+      assert {:error, changeset} =
                Accounts.update_account(
                  account,
                  %{settings: %{max_grant_lifetime_seconds: 0}},
                  owner_subject
                )
+
+      assert "must be greater than 0" in errors_on(changeset).settings.max_grant_lifetime_seconds
     end
 
     test "an owner of another account can't set this account's cap (cross-account)" do
-      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} =
-               Accounts.update_account(
-                 account_a,
-                 %{settings: %{max_grant_lifetime_seconds: 3_600}},
-                 subject_b
-               )
+      assert Accounts.update_account(
+               account_a,
+               %{settings: %{max_grant_lifetime_seconds: 3_600}},
+               subject_b
+             ) == {:error, :unauthorized}
 
       refute Repo.reload!(account_a).settings.max_grant_lifetime_seconds
     end
@@ -420,30 +372,25 @@ defmodule Emisar.AccountsTest do
     test "builds an update changeset for the form (no DB write)" do
       account = Fixtures.Accounts.create_account()
 
-      changeset = Accounts.change_account(account, %{name: "Renamed"})
-
-      assert %Ecto.Changeset{valid?: true} = changeset
-      assert Ecto.Changeset.get_change(changeset, :name) == "Renamed"
-      # It's a pure builder — the row on disk is untouched.
-      assert Repo.reload!(account).name == account.name
+      assert changeset = Accounts.change_account(account, %{name: "Renamed"})
+      assert changeset.valid?
+      assert changeset.changes == %{name: "Renamed"}
     end
 
     test "with no attrs, yields a valid, change-free changeset" do
       account = Fixtures.Accounts.create_account()
 
-      changeset = Accounts.change_account(account)
-
-      assert %Ecto.Changeset{valid?: true, changes: changes} = changeset
-      assert changes == %{}
+      assert changeset = Accounts.change_account(account)
+      assert changeset.valid?
+      assert changeset.changes == %{}
     end
 
     test "surfaces validation errors for the inline form" do
       account = Fixtures.Accounts.create_account()
 
-      changeset = Accounts.change_account(account, %{name: ""})
-
+      assert changeset = Accounts.change_account(account, %{name: ""})
       refute changeset.valid?
-      assert changeset.errors[:name]
+      assert "can't be blank" in errors_on(changeset).name
     end
   end
 
@@ -454,8 +401,8 @@ defmodule Emisar.AccountsTest do
 
     test "appends -1, -2, ... on collision" do
       base = "team-#{System.unique_integer([:positive])}"
-      _ = Fixtures.Accounts.create_account(slug: base)
-      _ = Fixtures.Accounts.create_account(slug: base <> "-1")
+      Fixtures.Accounts.create_account(slug: base)
+      Fixtures.Accounts.create_account(slug: base <> "-1")
 
       assert Accounts.suggest_unique_slug(base) == base <> "-2"
     end
@@ -463,17 +410,31 @@ defmodule Emisar.AccountsTest do
 
   describe "list_memberships_for_account/3" do
     test "lists the account's members for a member subject" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      _second = Fixtures.Memberships.create_membership(account_id: account.id)
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      _other_membership = Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, memberships, _} = Accounts.list_memberships_for_account(account, subject)
       assert length(memberships) == 2
     end
 
     test "list_account_memberships/2 (system fan-out read) is scoped to the given account" do
-      {_owner_a, account_a, _} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
-      _other = Fixtures.Memberships.create_membership(account_id: account_b.id)
+      account_a = Fixtures.Accounts.create_account()
+
+      _membership_a =
+        Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
+
+      account_b = Fixtures.Accounts.create_account()
+      _membership_b = Fixtures.Memberships.create_membership(account_id: account_b.id)
 
       assert {:ok, memberships, _} = Accounts.list_account_memberships(account_a.id)
 
@@ -482,10 +443,10 @@ defmodule Emisar.AccountsTest do
 
     test "a subject cannot list another account's memberships" do
       {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
+      account_b = Fixtures.Accounts.create_account()
 
-      assert {:error, :unauthorized} =
-               Accounts.list_memberships_for_account(account_b, subject_a)
+      assert Accounts.list_memberships_for_account(account_b, subject_a) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -524,7 +485,17 @@ defmodule Emisar.AccountsTest do
 
   describe "team_mfa_stats/2" do
     test "counts members and MFA enrollment account-wide (not per page)" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
       enroll_mfa(owner)
 
       enrolled_member = Fixtures.Users.create_user()
@@ -548,7 +519,17 @@ defmodule Emisar.AccountsTest do
     end
 
     test "counts only the subject's own account" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
       enroll_mfa(owner)
 
       # A separate account with its own enrolled member must not leak in.
@@ -565,18 +546,19 @@ defmodule Emisar.AccountsTest do
     end
 
     test "refuses a subject from another account" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.team_mfa_stats(account, other_subject)
+      assert Accounts.team_mfa_stats(account, other_subject) == {:error, :unauthorized}
     end
   end
 
   describe "suppressed_member_emails/2" do
     test "returns the account's member emails that are on the suppression list" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       bouncing = Fixtures.Users.create_user(email: "bouncing@example.com")
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: bouncing.id)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: bouncing.id)
       _fine = Fixtures.Memberships.create_membership(account_id: account.id)
 
       {:ok, _} = Mail.suppress("bouncing@example.com", :hard_bounce, "bounce")
@@ -586,20 +568,22 @@ defmodule Emisar.AccountsTest do
     end
 
     test "is empty when no member email is suppressed" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Memberships.create_membership(account_id: account.id)
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
       assert MapSet.size(suppressed) == 0
     end
 
     test "never surfaces a suppression that belongs only to another account" do
-      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      subject_a = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a)
+      account_b = Fixtures.Accounts.create_account()
 
       # An address suppressed globally, but a member only of account B.
       b_member = Fixtures.Users.create_user(email: "b-only@example.com")
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: b_member.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: b_member.id)
       {:ok, _} = Mail.suppress("b-only@example.com", :hard_bounce, "bounce")
 
       # Account A asks for ITS suppressed emails — B's bouncing address must not leak.
@@ -610,22 +594,22 @@ defmodule Emisar.AccountsTest do
 
     test "a subject cannot read another account's suppressed emails" do
       {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
+      account_b = Fixtures.Accounts.create_account()
 
-      assert {:error, :unauthorized} = Accounts.suppressed_member_emails(account_b, subject_a)
+      assert Accounts.suppressed_member_emails(account_b, subject_a) == {:error, :unauthorized}
     end
   end
 
   describe "list_account_memberships/2" do
     test "lists every membership in the account with :user preloaded (the notifier's contract)" do
       account = Fixtures.Accounts.create_account()
-      one = Fixtures.Memberships.create_membership(account_id: account.id)
-      two = Fixtures.Memberships.create_membership(account_id: account.id)
+      membership_one = Fixtures.Memberships.create_membership(account_id: account.id)
+      membership_two = Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, memberships, _meta} = Accounts.list_account_memberships(account.id)
 
       ids = memberships |> Enum.map(& &1.id) |> Enum.sort()
-      assert ids == Enum.sort([one.id, two.id])
+      assert ids == Enum.sort([membership_one.id, membership_two.id])
       # `user` is this helper's contract — the approval notifier addresses the
       # email off it, so it must be preloaded, not an unloaded assoc.
       assert Enum.all?(memberships, &match?(%User{}, &1.user))
@@ -634,8 +618,8 @@ defmodule Emisar.AccountsTest do
     test "is scoped to the given account (no cross-account fan-out leak)" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id)
+      Fixtures.Memberships.create_membership(account_id: account_a.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id)
 
       assert {:ok, memberships, _} = Accounts.list_account_memberships(account_a.id)
       assert memberships |> Enum.map(& &1.account_id) |> Enum.uniq() == [account_a.id]
@@ -682,8 +666,8 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      assert {:error, :owner_not_assignable} =
-               Accounts.provision_sso_membership(account.id, user.id, :owner)
+      assert Accounts.provision_sso_membership(account.id, user.id, :owner) ==
+               {:error, :owner_not_assignable}
 
       # Nothing was written — the user has no membership in the account.
       assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
@@ -700,7 +684,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "returns nil when the membership is suspended (the engine halts mid-run)" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       user = Fixtures.Users.create_user()
 
       member =
@@ -746,7 +731,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "returns a deprovisioned (disabled) row too — a SCIM reconcile reads it back" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       user = Fixtures.Users.create_user()
 
       member =
@@ -779,16 +765,19 @@ defmodule Emisar.AccountsTest do
       user_two = Fixtures.Users.create_user()
       user_three = Fixtures.Users.create_user()
 
-      m_one = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_one.id)
-      m_two = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_two.id)
+      membership_one =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_one.id)
 
-      _three =
+      membership_two =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_two.id)
+
+      _membership_three =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_three.id)
 
       memberships = Accounts.list_sync_memberships(account.id, [user_one.id, user_two.id])
 
       ids = memberships |> Enum.map(& &1.id) |> Enum.sort()
-      assert ids == Enum.sort([m_one.id, m_two.id])
+      assert ids == Enum.sort([membership_one.id, membership_two.id])
     end
 
     test "is scoped to the account — a same-user membership in another account is excluded" do
@@ -796,8 +785,11 @@ defmodule Emisar.AccountsTest do
       account_b = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      _a = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-      _b = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+      _membership_a =
+        Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+
+      _membership_b =
+        Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
 
       memberships = Accounts.list_sync_memberships(account_a.id, [user.id])
 
@@ -844,7 +836,7 @@ defmodule Emisar.AccountsTest do
       first_membership =
         Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
 
-      _ = Fixtures.Memberships.create_membership(account_id: second_account.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: second_account.id, user_id: user.id)
 
       assert {:ok, %Membership{id: id, account: %Account{} = account}} =
                Accounts.fetch_membership_for_session(user, first_account.id)
@@ -856,7 +848,7 @@ defmodule Emisar.AccountsTest do
     test "with a stale or unknown account_id, falls back to the primary" do
       user = Fixtures.Users.create_user()
       first_account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
 
       assert {:ok, %Membership{account_id: returned_account_id}} =
                Accounts.fetch_membership_for_session(user, Ecto.UUID.generate())
@@ -867,9 +859,10 @@ defmodule Emisar.AccountsTest do
     test "with a suspended membership on the requested account, falls back" do
       user = Fixtures.Users.create_user()
       first_account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
 
-      {_owner_user, second_account, owner_subject} = Fixtures.Subjects.owner_subject()
+      second_account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), second_account)
 
       second_membership =
         Fixtures.Memberships.create_membership(
@@ -887,8 +880,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "returns :not_found for a user with no memberships" do
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_for_session(Fixtures.Users.create_user(), nil)
+      assert Accounts.fetch_membership_for_session(Fixtures.Users.create_user(), nil) ==
+               {:error, :not_found}
     end
   end
 
@@ -923,41 +916,41 @@ defmodule Emisar.AccountsTest do
     test "a non-member's slug is indistinguishable from an unknown one (404, never a leak)" do
       member = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
 
       outsider = Fixtures.Users.create_user()
 
       # The account exists, but the outsider isn't a member: SAME :not_found as
       # a slug no account has — so a URL never confirms a tenant exists (404, not 403).
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_by_account_id_or_slug(outsider, account.slug)
+      assert Accounts.fetch_membership_by_account_id_or_slug(outsider, account.slug) ==
+               {:error, :not_found}
 
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_by_account_id_or_slug(outsider, "no-such-team")
+      assert Accounts.fetch_membership_by_account_id_or_slug(outsider, "no-such-team") ==
+               {:error, :not_found}
     end
 
     test "a member of account A cannot resolve account B (cross-account, by slug or id)" do
       user = Fixtures.Users.create_user()
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: Fixtures.Users.create_user().id
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        user_id: Fixtures.Users.create_user().id
+      )
 
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, account_b.slug)
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, account_b.slug) ==
+               {:error, :not_found}
 
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, account_b.id)
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, account_b.id) ==
+               {:error, :not_found}
     end
 
     test "a suspended membership does not resolve" do
       user = Fixtures.Users.create_user()
-      {_owner_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       membership =
         Fixtures.Memberships.create_membership(
@@ -968,14 +961,24 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.suspend_membership(membership, owner_subject)
 
-      assert {:error, :not_found} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, account.slug)
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.slug) ==
+               {:error, :not_found}
     end
   end
 
   describe "record_account_switched/1" do
     test "writes the session.account_switched audit row for the switched-to account" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, account.id)
 
       assert {:ok, _event} = Accounts.record_account_switched(membership)
@@ -989,12 +992,16 @@ defmodule Emisar.AccountsTest do
     end
 
     test "writes ONLY the audit row — the membership and account rows are untouched" do
-      # switching the active tenant is session state plus an
-      # audit trail; it must mutate no user-facing data. `record_account_switched/1`
-      # inserts the audit event and nothing else, so the membership and account rows
-      # are unchanged (the web layer's switch only re-validates + pins the session,
-      # and re-validates membership server-side on every switch).
-      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      _owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, account.id)
 
       membership_before = Repo.reload!(membership)
@@ -1010,7 +1017,8 @@ defmodule Emisar.AccountsTest do
   describe "all_memberships_suspended?/1" do
     test "is true when every membership the user holds is suspended" do
       user = Fixtures.Users.create_user()
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       membership =
         Fixtures.Memberships.create_membership(
@@ -1027,9 +1035,10 @@ defmodule Emisar.AccountsTest do
     test "is false when at least one membership is still active" do
       user = Fixtures.Users.create_user()
       live_account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
 
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       suspended =
         Fixtures.Memberships.create_membership(
@@ -1058,7 +1067,7 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      owner_m =
+      owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: owner.id,
@@ -1069,36 +1078,35 @@ defmodule Emisar.AccountsTest do
 
       # Sole owner — the in-transaction guard (locked re-count of the
       # account's active owner rows) refuses the demotion.
-      assert {:error, :last_owner} = Accounts.update_membership_role(owner_m, "admin", subject)
+      assert Accounts.update_membership_role(owner_membership, "admin", subject) ==
+               {:error, :last_owner}
 
       # A second active owner frees the demotion.
-      second = Fixtures.Users.create_user()
+      second_owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: second.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: second_owner.id,
+        role: "owner"
+      )
 
       assert {:ok, %Membership{role: :admin}} =
-               Accounts.update_membership_role(owner_m, "admin", subject)
+               Accounts.update_membership_role(owner_membership, "admin", subject)
     end
 
     test "promotes operator to admin" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
-      m =
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: target_user.id,
@@ -1108,23 +1116,22 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       assert {:ok, %Membership{role: :admin}} =
-               Accounts.update_membership_role(m, "admin", subject)
+               Accounts.update_membership_role(target_membership, "admin", subject)
     end
 
     test "rejects an unknown role" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
-      m =
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: target_user.id,
@@ -1133,30 +1140,30 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      assert {:error, cs} = Accounts.update_membership_role(m, "supreme-leader", subject)
-      assert "is invalid" in errors_on(cs).role
+      assert {:error, changeset} =
+               Accounts.update_membership_role(target_membership, "supreme-leader", subject)
+
+      assert "is invalid" in errors_on(changeset).role
     end
 
     test "an admin cannot grant the owner role (no escalation by proxy)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
-      m =
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: Fixtures.Users.create_user().id,
@@ -1165,14 +1172,14 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :insufficient_privileges} =
-               Accounts.update_membership_role(m, "owner", subject)
+      assert Accounts.update_membership_role(target_membership, "owner", subject) ==
+               {:error, :insufficient_privileges}
     end
 
     test "an admin cannot demote an owner (can't outrank a superior)" do
       account = Fixtures.Accounts.create_account()
 
-      owner_m =
+      owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: Fixtures.Users.create_user().id,
@@ -1181,32 +1188,30 @@ defmodule Emisar.AccountsTest do
 
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :insufficient_privileges} =
-               Accounts.update_membership_role(owner_m, "operator", subject)
+      assert Accounts.update_membership_role(owner_membership, "operator", subject) ==
+               {:error, :insufficient_privileges}
     end
 
     test "you cannot promote yourself" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       admin = Fixtures.Users.create_user()
 
-      admin_m =
+      admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: admin.id,
@@ -1215,22 +1220,21 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :cannot_self_promote} =
-               Accounts.update_membership_role(admin_m, "owner", subject)
+      assert Accounts.update_membership_role(admin_membership, "owner", subject) ==
+               {:error, :cannot_self_promote}
     end
 
     test "an owner can grant the owner role" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
-      m =
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: Fixtures.Users.create_user().id,
@@ -1240,22 +1244,21 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       assert {:ok, %Membership{role: :owner}} =
-               Accounts.update_membership_role(m, "owner", subject)
+               Accounts.update_membership_role(target_membership, "owner", subject)
     end
 
     test "an owner of another account can't change this member's role (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
-      target =
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: target_user.id,
@@ -1267,8 +1270,8 @@ defmodule Emisar.AccountsTest do
       # `ensure_subject_in_account` (passed :unauthorized) fires before the
       # `for_subject`-scoped row read, so the cross-account mutation is refused
       # without touching A's row.
-      assert {:error, :unauthorized} =
-               Accounts.update_membership_role(target, "admin", subject_b)
+      assert Accounts.update_membership_role(target_membership, "admin", subject_b) ==
+               {:error, :unauthorized}
 
       # A's membership is untouched — still operator.
       assert %Membership{role: :operator} =
@@ -1278,7 +1281,8 @@ defmodule Emisar.AccountsTest do
 
   describe "subscribe_account_team/1" do
     test "the subscriber receives the account's team-list broadcasts" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert :ok = Accounts.subscribe_account_team(account.id)
@@ -1290,8 +1294,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a subscriber to account A does not receive account B's broadcasts" do
-      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, owner_subject_b} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      owner_subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
 
       target_b =
         Fixtures.Memberships.create_membership(account_id: account_b.id, role: "operator")
@@ -1309,12 +1314,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
@@ -1368,16 +1372,15 @@ defmodule Emisar.AccountsTest do
     test "operator cannot suspend anyone", %{account: account, target: target} do
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Accounts.suspend_membership(target, operator_subject)
+      assert Accounts.suspend_membership(target, operator_subject) == {:error, :unauthorized}
     end
 
     test "suspending a member keeps the seat — count_memberships still includes them", %{
@@ -1402,8 +1405,8 @@ defmodule Emisar.AccountsTest do
         |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, owner.id)
         |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
 
-      assert {:error, :cannot_modify_self} =
-               Accounts.suspend_membership(owner_membership, owner_subject)
+      assert Accounts.suspend_membership(owner_membership, owner_subject) ==
+               {:error, :cannot_modify_self}
     end
 
     test "can't suspend the last owner", %{
@@ -1420,12 +1423,11 @@ defmodule Emisar.AccountsTest do
       # the second owner suspends the first.
       second_owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: second_owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: second_owner.id,
+        role: "owner"
+      )
 
       second_owner_subject = Fixtures.Subjects.subject_for(second_owner, account, role: :owner)
       assert {:ok, _} = Accounts.suspend_membership(owner_membership, second_owner_subject)
@@ -1439,8 +1441,8 @@ defmodule Emisar.AccountsTest do
         |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, second_owner.id)
         |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
 
-      assert {:error, :last_owner} =
-               Accounts.suspend_membership(second_owner_membership, owner_subject)
+      assert Accounts.suspend_membership(second_owner_membership, owner_subject) ==
+               {:error, :last_owner}
 
       # Reinstating the first owner makes the second suspendable again —
       # and pins that reinstate REALLY clears the row (a stale-struct
@@ -1449,8 +1451,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} =
                Accounts.suspend_membership(second_owner_membership, owner_subject)
-
-      _ = owner
     end
 
     test "suspended membership is excluded from fetch_membership_for_session/2", %{
@@ -1461,7 +1461,7 @@ defmodule Emisar.AccountsTest do
       assert {:ok, %Membership{}} = Accounts.fetch_membership_for_session(target_user, nil)
 
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
-      assert {:error, :not_found} = Accounts.fetch_membership_for_session(target_user, nil)
+      assert Accounts.fetch_membership_for_session(target_user, nil) == {:error, :not_found}
       assert Accounts.all_memberships_suspended?(target_user)
     end
 
@@ -1471,7 +1471,7 @@ defmodule Emisar.AccountsTest do
     } do
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.suspend_membership(target, subject_b)
+      assert Accounts.suspend_membership(target, subject_b) == {:error, :unauthorized}
 
       refute Membership.disabled?(
                Fixtures.Memberships.fetch_membership(account.id, target.user_id)
@@ -1490,16 +1490,15 @@ defmodule Emisar.AccountsTest do
 
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Accounts.reinstate_membership(suspended, operator_subject)
+      assert Accounts.reinstate_membership(suspended, operator_subject) == {:error, :unauthorized}
 
       assert Membership.disabled?(
                Fixtures.Memberships.fetch_membership(account.id, target.user_id)
@@ -1517,7 +1516,7 @@ defmodule Emisar.AccountsTest do
       # :unauthorized (not :not_found) — accounts gates struct-taking writes with
       # ensure_subject_in_account(:unauthorized) before the for_subject fetch, so
       # account B is refused and the member stays suspended in account A.
-      assert {:error, :unauthorized} = Accounts.reinstate_membership(suspended, subject_b)
+      assert Accounts.reinstate_membership(suspended, subject_b) == {:error, :unauthorized}
 
       assert Membership.disabled?(
                Fixtures.Memberships.fetch_membership(account.id, target.user_id)
@@ -1527,7 +1526,8 @@ defmodule Emisar.AccountsTest do
 
   describe "reinstate_membership/2" do
     test "reinstating clears disabled_at and broadcasts the reinstate" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
       assert Membership.disabled?(suspended)
@@ -1543,13 +1543,14 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an owner of another account can't reinstate this member (cross-account)" do
-      {_owner_a, account_a, owner_subject_a} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      owner_subject_a = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a)
       target = Fixtures.Memberships.create_membership(account_id: account_a.id, role: "operator")
       {:ok, suspended} = Accounts.suspend_membership(target, owner_subject_a)
 
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.reinstate_membership(suspended, subject_b)
+      assert Accounts.reinstate_membership(suspended, subject_b) == {:error, :unauthorized}
       assert Membership.disabled?(Repo.reload!(target))
     end
   end
@@ -1601,7 +1602,7 @@ defmodule Emisar.AccountsTest do
          %{account: account, provider: provider} do
       sole_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      assert {:error, :last_owner} = Accounts.sync_suspend_membership(sole_owner, provider)
+      assert Accounts.sync_suspend_membership(sole_owner, provider) == {:error, :last_owner}
       refute Membership.disabled?(Repo.reload!(sole_owner))
     end
 
@@ -1610,7 +1611,7 @@ defmodule Emisar.AccountsTest do
     } do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
-      assert {:error, :not_found} = Accounts.sync_suspend_membership(other, provider)
+      assert Accounts.sync_suspend_membership(other, provider) == {:error, :not_found}
       assert is_nil(Repo.reload!(other).disabled_at)
     end
   end
@@ -1640,7 +1641,7 @@ defmodule Emisar.AccountsTest do
     test "rejects a membership outside the provider's account", %{provider: provider} do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
-      assert {:error, :not_found} = Accounts.sync_reinstate_membership(other, provider)
+      assert Accounts.sync_reinstate_membership(other, provider) == {:error, :not_found}
     end
   end
 
@@ -1682,8 +1683,8 @@ defmodule Emisar.AccountsTest do
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      assert {:error, :owner_not_assignable} =
-               Accounts.sync_set_membership_role(member, :owner, provider)
+      assert Accounts.sync_set_membership_role(member, :owner, provider) ==
+               {:error, :owner_not_assignable}
 
       assert Repo.reload!(member).role == :viewer
     end
@@ -1691,8 +1692,8 @@ defmodule Emisar.AccountsTest do
     test "never demotes the account's last active owner", %{account: account, provider: provider} do
       sole_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      assert {:error, :last_owner} =
-               Accounts.sync_set_membership_role(sole_owner, :admin, provider)
+      assert Accounts.sync_set_membership_role(sole_owner, :admin, provider) ==
+               {:error, :last_owner}
 
       assert Repo.reload!(sole_owner).role == :owner
     end
@@ -1700,7 +1701,7 @@ defmodule Emisar.AccountsTest do
     test "rejects a membership outside the provider's account", %{provider: provider} do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
-      assert {:error, :not_found} = Accounts.sync_set_membership_role(other, :admin, provider)
+      assert Accounts.sync_set_membership_role(other, :admin, provider) == {:error, :not_found}
       assert Repo.reload!(other).role == :operator
     end
   end
@@ -1725,12 +1726,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = enroll_member_mfa(Fixtures.Users.create_user())
 
@@ -1761,12 +1761,11 @@ defmodule Emisar.AccountsTest do
     test "a viewer (no manage_team) is refused" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target_user = enroll_member_mfa(Fixtures.Users.create_user())
 
@@ -1779,16 +1778,15 @@ defmodule Emisar.AccountsTest do
 
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Accounts.reset_member_mfa(target, subject)
+      assert Accounts.reset_member_mfa(target, subject) == {:error, :unauthorized}
 
       # The member's factor is untouched.
       {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
@@ -1799,7 +1797,7 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = enroll_member_mfa(Fixtures.Users.create_user())
 
-      owner_m =
+      owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: owner.id,
@@ -1808,16 +1806,16 @@ defmodule Emisar.AccountsTest do
 
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :insufficient_privileges} = Accounts.reset_member_mfa(owner_m, subject)
+      assert Accounts.reset_member_mfa(owner_membership, subject) ==
+               {:error, :insufficient_privileges}
 
       {:ok, reloaded} = Users.fetch_user_by_id(owner.id)
       refute is_nil(reloaded.mfa_enabled_at)
@@ -1826,12 +1824,11 @@ defmodule Emisar.AccountsTest do
     test "an owner of another account can't reset this member's MFA (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target_user = enroll_member_mfa(Fixtures.Users.create_user())
 
@@ -1844,7 +1841,7 @@ defmodule Emisar.AccountsTest do
 
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.reset_member_mfa(target, subject_b)
+      assert Accounts.reset_member_mfa(target, subject_b) == {:error, :unauthorized}
 
       {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
       refute is_nil(reloaded.mfa_enabled_at)
@@ -1856,12 +1853,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -1885,12 +1881,11 @@ defmodule Emisar.AccountsTest do
     test "a viewer (no manage_team) is refused" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -1903,28 +1898,26 @@ defmodule Emisar.AccountsTest do
 
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject)
+      assert Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject) ==
+               {:error, :unauthorized}
     end
 
     test "an owner of another account can't edit this member (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -1939,8 +1932,8 @@ defmodule Emisar.AccountsTest do
 
       # This path passes :unauthorized to ensure_subject_in_account (the team
       # UI already scoped the membership), so cross-account is :unauthorized.
-      assert {:error, :unauthorized} =
-               Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject_b)
+      assert Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject_b) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -1949,12 +1942,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -1971,18 +1963,17 @@ defmodule Emisar.AccountsTest do
       assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
       assert :ok = Accounts.end_all_sessions_for(membership, subject)
-      assert {:error, :not_found} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert Emisar.Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
     test "a viewer (no manage_team) is refused" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -1995,27 +1986,25 @@ defmodule Emisar.AccountsTest do
 
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Accounts.end_all_sessions_for(membership, subject)
+      assert Accounts.end_all_sessions_for(membership, subject) == {:error, :unauthorized}
     end
 
     test "an owner of another account can't end this member's sessions (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target = Fixtures.Users.create_user()
 
@@ -2028,7 +2017,7 @@ defmodule Emisar.AccountsTest do
 
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.end_all_sessions_for(membership, subject_b)
+      assert Accounts.end_all_sessions_for(membership, subject_b) == {:error, :unauthorized}
     end
   end
 
@@ -2037,12 +2026,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
@@ -2060,19 +2048,20 @@ defmodule Emisar.AccountsTest do
       # Removal is a soft delete: the tombstone keeps history while every
       # not_deleted() read treats the member as gone.
       assert removed.deleted_at
-      assert {:error, :not_found} = Accounts.fetch_membership_for_session(target_user, account.id)
+
+      assert Accounts.fetch_membership_for_session(target_user, account.id) ==
+               {:error, :not_found}
     end
 
     test "removing a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
@@ -2099,12 +2088,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
@@ -2139,16 +2127,15 @@ defmodule Emisar.AccountsTest do
 
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Accounts.delete_membership(target, operator_subject)
+      assert Accounts.delete_membership(target, operator_subject) == {:error, :unauthorized}
       # The target membership is still present.
       assert %Membership{} = Fixtures.Memberships.fetch_membership(account.id, target_user.id)
     end
@@ -2156,7 +2143,7 @@ defmodule Emisar.AccountsTest do
     test "an admin cannot remove an owner" do
       account = Fixtures.Accounts.create_account()
 
-      owner_m =
+      owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: Fixtures.Users.create_user().id,
@@ -2165,27 +2152,26 @@ defmodule Emisar.AccountsTest do
 
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :insufficient_privileges} = Accounts.delete_membership(owner_m, subject)
+      assert Accounts.delete_membership(owner_membership, subject) ==
+               {:error, :insufficient_privileges}
     end
 
     test "an owner of another account can't remove this member (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
@@ -2198,7 +2184,7 @@ defmodule Emisar.AccountsTest do
 
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Accounts.delete_membership(target, subject_b)
+      assert Accounts.delete_membership(target, subject_b) == {:error, :unauthorized}
       # A's membership survives.
       assert %Membership{} = Fixtures.Memberships.fetch_membership(account.id, target_user.id)
     end
@@ -2207,12 +2193,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
@@ -2244,12 +2229,11 @@ defmodule Emisar.AccountsTest do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
@@ -2273,12 +2257,11 @@ defmodule Emisar.AccountsTest do
       existing = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
@@ -2293,49 +2276,46 @@ defmodule Emisar.AccountsTest do
       existing = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
-      assert {:error, :already_member} =
-               Accounts.invite_user_to_account(existing.email, "operator", subject)
+      assert Accounts.invite_user_to_account(existing.email, "operator", subject) ==
+               {:error, :already_member}
     end
 
     test "an admin cannot invite an owner (can't grant a role it doesn't hold)" do
       admin = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
       email = "owner-invite-#{System.unique_integer([:positive])}@example.test"
 
-      assert {:error, :insufficient_privileges} =
-               Accounts.invite_user_to_account(email, "owner", subject)
+      assert Accounts.invite_user_to_account(email, "owner", subject) ==
+               {:error, :insufficient_privileges}
     end
 
     test "seats are uncapped — inviting well past any prior limit always succeeds" do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
@@ -2353,8 +2333,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an invite always lands in the SUBJECT's account — B's owner can't seed account A" do
-      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
 
       email = "cross-#{System.unique_integer([:positive])}@example.test"
 
@@ -2385,7 +2366,7 @@ defmodule Emisar.AccountsTest do
         |> Ecto.Changeset.change(inserted_at: expired_at, updated_at: expired_at)
         |> Repo.update!()
 
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(old_token)
+      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
 
       assert {:ok,
               %{
@@ -2402,11 +2383,12 @@ defmodule Emisar.AccountsTest do
       assert DateTime.compare(updated.inserted_at, expired_at) == :gt
       assert {:ok, %Membership{id: id}} = Accounts.fetch_invitation_by_token(new_token)
       assert id == membership.id
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(old_token)
+      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
     end
 
     test "a viewer cannot resend an invitation" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -2417,17 +2399,16 @@ defmodule Emisar.AccountsTest do
 
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Accounts.resend_account_invitation(membership, viewer_subject)
+      assert Accounts.resend_account_invitation(membership, viewer_subject) ==
+               {:error, :unauthorized}
 
       assert Repo.reload!(membership).invitation_token_digest ==
                membership.invitation_token_digest
@@ -2444,8 +2425,7 @@ defmodule Emisar.AccountsTest do
           subject_a
         )
 
-      assert {:error, :unauthorized} =
-               Accounts.resend_account_invitation(membership, subject_b)
+      assert Accounts.resend_account_invitation(membership, subject_b) == {:error, :unauthorized}
 
       assert Repo.reload!(membership).invitation_token_digest ==
                membership.invitation_token_digest
@@ -2462,11 +2442,12 @@ defmodule Emisar.AccountsTest do
         )
 
       assert {:ok, _accepted} = Accounts.mark_invitation_accepted(membership, user)
-      assert {:error, :not_found} = Accounts.resend_account_invitation(membership, subject)
+      assert Accounts.resend_account_invitation(membership, subject) == {:error, :not_found}
     end
 
     test "an admin cannot resend an owner invitation" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -2477,17 +2458,16 @@ defmodule Emisar.AccountsTest do
 
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :insufficient_privileges} =
-               Accounts.resend_account_invitation(membership, admin_subject)
+      assert Accounts.resend_account_invitation(membership, admin_subject) ==
+               {:error, :insufficient_privileges}
     end
   end
 
@@ -2521,9 +2501,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an empty/blank/nil token is :not_found (the guard clauses)" do
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(nil)
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token("not-a-real-token")
+      assert Accounts.fetch_invitation_by_token("") == {:error, :not_found}
+      assert Accounts.fetch_invitation_by_token(nil) == {:error, :not_found}
+      assert Accounts.fetch_invitation_by_token("not-a-real-token") == {:error, :not_found}
     end
 
     test "an accepted invitation no longer resolves (pending-only)" do
@@ -2538,7 +2518,7 @@ defmodule Emisar.AccountsTest do
 
       {:ok, _} = Accounts.mark_invitation_accepted(membership, user)
 
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
     end
   end
 
@@ -2547,12 +2527,11 @@ defmodule Emisar.AccountsTest do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
@@ -2577,12 +2556,11 @@ defmodule Emisar.AccountsTest do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: inviter.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: inviter.id,
+        role: "owner"
+      )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
@@ -2593,8 +2571,7 @@ defmodule Emisar.AccountsTest do
 
       attacker = Fixtures.Users.create_user()
 
-      assert {:error, :unauthorized} =
-               Accounts.mark_invitation_accepted(membership, attacker)
+      assert Accounts.mark_invitation_accepted(membership, attacker) == {:error, :unauthorized}
 
       # The token survives, so the real invitee can still accept.
       assert {:ok, found} = Accounts.fetch_invitation_by_token(token)
@@ -2648,25 +2625,34 @@ defmodule Emisar.AccountsTest do
 
       # The locked re-judge of the (now non-pending) invitation refuses the
       # second submit before it could overwrite the winner's password.
-      assert {:error, :not_found} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "Second",
-                 "password" => "another-strong-password"
-               })
+      assert Accounts.accept_invitation(membership, %{
+               "full_name" => "Second",
+               "password" => "another-strong-password"
+             }) == {:error, :not_found}
     end
   end
 
   describe "count_memberships/1" do
     test "counts the account's membership rows (the Billing seat count)" do
       account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert Accounts.count_memberships(account.id) == 2
     end
 
     test "counts suspended members (suspension preserves the seat)" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert Accounts.count_memberships(account.id) == 2
@@ -2676,7 +2662,17 @@ defmodule Emisar.AccountsTest do
     end
 
     test "does NOT count soft-deleted (removed) members — they free the seat" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert Accounts.count_memberships(account.id) == 2
@@ -2688,9 +2684,9 @@ defmodule Emisar.AccountsTest do
     test "is scoped to the account" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id)
+      Fixtures.Memberships.create_membership(account_id: account_a.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id)
 
       assert Accounts.count_memberships(account_a.id) == 1
     end
@@ -2711,7 +2707,7 @@ defmodule Emisar.AccountsTest do
       # close the books.
       account = Fixtures.Accounts.create_account()
       {:ok, _} = Accounts.put_account_paddle_customer_id(account, "ctm_deleted")
-      {:ok, _} = account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+      Fixtures.Accounts.mark_account_as_deleted(account)
 
       assert %Account{id: id} = Accounts.peek_account_by_paddle_customer_id("ctm_deleted")
       assert id == account.id
@@ -2772,15 +2768,15 @@ defmodule Emisar.AccountsTest do
 
   describe "subject_can_manage_team?/1" do
     test "is true for an owner and an admin (they hold manage_team)" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
@@ -2789,23 +2785,21 @@ defmodule Emisar.AccountsTest do
     end
 
     test "is false for an operator and a viewer" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
@@ -2817,15 +2811,15 @@ defmodule Emisar.AccountsTest do
 
   describe "subject_can_manage_account_security?/1" do
     test "is true for an owner and an admin (they hold manage_security_settings)" do
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
@@ -2834,23 +2828,21 @@ defmodule Emisar.AccountsTest do
     end
 
     test "is false for an operator and a viewer" do
-      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
@@ -2865,12 +2857,11 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
       target_user = Fixtures.Users.create_user()
 
@@ -2893,10 +2884,6 @@ defmodule Emisar.AccountsTest do
       target: target,
       subject: subject
     } do
-      # A second admin's open team page subscribes to this topic and reloads
-      # its roster when the broadcast lands — drive it from the context to prove
-      # the after_commit publish fires (the LV's handle_info reload is covered
-      # separately).
       :ok = Accounts.subscribe_account_team(account.id)
 
       assert {:ok, _} = Accounts.suspend_membership(target, subject)

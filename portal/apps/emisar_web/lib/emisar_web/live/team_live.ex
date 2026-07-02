@@ -715,13 +715,10 @@ defmodule EmisarWeb.TeamLive do
               roster as pending until they accept.
             </p>
 
-            <p
-              :if={@invite_suppressed?}
-              class="mt-4 max-w-sm rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200"
-            >
+            <.callout :if={@invite_suppressed?} tone={:amber} class="mt-4 max-w-sm text-left">
               We couldn't email {@invited_email} — it bounced or was marked spam. Send them the
               join link another way, or invite a different address.
-            </p>
+            </.callout>
 
             <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
               <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>

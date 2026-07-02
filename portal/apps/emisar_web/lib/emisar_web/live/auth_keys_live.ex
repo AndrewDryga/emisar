@@ -250,38 +250,24 @@ defmodule EmisarWeb.AuthKeysLive do
       <div class="space-y-6">
         <%!-- Runner-cap warning: a key minted here is useless if the
              runner that tries to use it bounces off a 402. --%>
-        <div
+        <.callout
           :if={@billing && Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
-          class={[
-            "flex items-start gap-3 rounded-xl border p-4 text-sm",
-            if(Emisar.Billing.headroom(@billing, :runners) == :at_limit,
-              do: "border-rose-500/40 bg-rose-500/10 text-rose-100",
-              else: "border-amber-500/40 bg-amber-500/10 text-amber-100"
-            )
-          ]}
+          tone={runner_cap_tone(@billing)}
+          icon="hero-exclamation-triangle"
+          title={runner_cap_title(@billing)}
         >
-          <.icon name="hero-exclamation-triangle" class="mt-0.5 h-5 w-5 flex-none" />
-          <div class="flex-1">
-            <p class="font-semibold">
-              <%= if Emisar.Billing.headroom(@billing, :runners) == :at_limit do %>
-                At runner limit — new installs will fail.
-              <% else %>
-                One runner slot left on the {String.capitalize(@billing.plan)} plan.
-              <% end %>
-            </p>
-            <p class="mt-1 text-xs opacity-90">
-              {@billing.runner_count} of {@billing.runner_limit} runners in use.
-              Issuing a key doesn't reserve a slot — the runner only counts after it registers.
-            </p>
-          </div>
-          <.button
-            variant="secondary"
-            size="md"
-            navigate={~p"/app/#{@current_account}/settings/billing"}
-          >
-            See plans →
-          </.button>
-        </div>
+          {@billing.runner_count} of {@billing.runner_limit} runners in use.
+          Issuing a key doesn't reserve a slot — the runner only counts after it registers.
+          <:action>
+            <.button
+              variant="secondary"
+              size="md"
+              navigate={~p"/app/#{@current_account}/settings/billing"}
+            >
+              See plans →
+            </.button>
+          </:action>
+        </.callout>
 
         <.secret_reveal
           :if={@new_secret}
@@ -466,6 +452,18 @@ defmodule EmisarWeb.AuthKeysLive do
       </div>
     </.dashboard_shell>
     """
+  end
+
+  defp runner_cap_tone(billing) do
+    if Emisar.Billing.headroom(billing, :runners) == :at_limit, do: :rose, else: :amber
+  end
+
+  defp runner_cap_title(billing) do
+    if Emisar.Billing.headroom(billing, :runners) == :at_limit do
+      "At runner limit — new installs will fail."
+    else
+      "One runner slot left on the #{String.capitalize(billing.plan)} plan."
+    end
   end
 
   defp show_create do

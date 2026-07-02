@@ -7,18 +7,22 @@ defmodule Emisar.Fixtures.Accounts do
   alias Emisar.Accounts.Account
   alias Emisar.{Billing, Repo}
 
+  @doc ~S|Valid default account attrs. Pass `overrides` to change keys — a bare call for success cases, one override (`account_attrs(slug: "x")`) for a validation test.|
+  def account_attrs(overrides \\ %{}) do
+    %{
+      name: Emisar.Fixtures.Random.unique_account_name(),
+      slug: Emisar.Fixtures.Random.unique_slug()
+    }
+    |> Map.merge(Map.new(overrides))
+  end
+
   @doc ~S|Persists an account. A non-"free" `:plan` mints a matching subscription (plan lives on the subscription, not the account).|
   def create_account(attrs \\ %{}) do
     {plan, attrs} = pop_plan(attrs)
 
-    base = %{
-      name: Emisar.Fixtures.Random.unique_account_name(),
-      slug: Emisar.Fixtures.Random.unique_slug()
-    }
-
     {:ok, account} =
-      base
-      |> Map.merge(attrs)
+      attrs
+      |> account_attrs()
       |> Account.Changeset.create()
       |> Repo.insert()
 
@@ -30,6 +34,13 @@ defmodule Emisar.Fixtures.Accounts do
   def set_account_settings(%Account{} = account, settings_attrs) do
     account
     |> Account.Changeset.update(%{settings: settings_attrs})
+    |> Repo.update!()
+  end
+
+  @doc "Soft-deletes an account (sets `deleted_at`), returning the tombstoned struct."
+  def mark_account_as_deleted(%Account{} = account) do
+    account
+    |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
     |> Repo.update!()
   end
 
