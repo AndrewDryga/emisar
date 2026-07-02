@@ -42,12 +42,17 @@ defmodule EmisarWeb.CheckoutController do
     |> redirect(to: ~p"/app/#{account}/settings/billing")
   end
 
-  # Paddle.js loads from cdn.paddle.com and opens the checkout overlay in an
-  # iframe on buy.paddle.com (sandbox-buy in sandbox); its price/transaction
-  # reads hit *.paddle.com service hosts. Scoped to this page only.
+  # Paddle.js loads its script + loader stylesheet from cdn.paddle.com and
+  # opens the checkout overlay in an iframe on buy.paddle.com (sandbox-buy in
+  # sandbox); its price/transaction reads hit *.paddle.com service hosts.
+  # Scoped to this page only. Paddle.js also tries to pull ProfitWell/Retain
+  # (public.profitwell.com) — DELIBERATELY not allowed: it's a tracker, /trust
+  # promises none, and the checkout completes fine with it blocked (the
+  # sandbox e2e pays under this exact policy).
   defp paddle_csp do
     %{
       "script-src" => ["https://cdn.paddle.com"],
+      "style-src" => ["https://cdn.paddle.com"],
       "connect-src" => ["https://*.paddle.com"],
       "frame-src" => ["'self'", "https://buy.paddle.com", "https://sandbox-buy.paddle.com"]
     }

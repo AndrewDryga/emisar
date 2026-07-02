@@ -26,13 +26,18 @@ defmodule EmisarWeb.Endpoint do
 
   # Serve at "/" the static files from "priv/static" directory.
   #
-  # You should set gzip to true if you are running phx.digest
-  # when deploying your static files in production.
+  # The release runs phx.digest, so serve the pregzipped assets — and match
+  # root-level files by STEM (only_matching): the digested request is
+  # /favicon-<hash>.ico, which the literal `only: ~w(favicon.ico …)` list
+  # rejected, 404ing every favicon/manifest in prod while dev (undigested
+  # paths) looked fine. `EmisarWeb.static_paths/0` keeps the literal names
+  # for ~p verified-route checking.
   plug Plug.Static,
     at: "/",
     from: :emisar_web,
-    gzip: false,
-    only: EmisarWeb.static_paths()
+    gzip: true,
+    only: ~w(assets fonts images robots.txt .well-known),
+    only_matching: ~w(favicon apple-touch-icon android-chrome site)
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

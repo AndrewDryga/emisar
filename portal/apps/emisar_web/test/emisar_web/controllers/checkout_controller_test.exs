@@ -40,6 +40,10 @@ defmodule EmisarWeb.CheckoutControllerTest do
       # The extra source WIDENS script-src (a duplicate directive would be
       # ignored by browsers, silently breaking Paddle.js).
       assert csp =~ ~r/script-src 'self' 'nonce-[^']+' https:\/\/cdn\.paddle\.com/
+      # Paddle's loader stylesheet; ProfitWell/Retain stays deliberately
+      # blocked (a tracker — /trust promises none; payment works without it).
+      assert csp =~ "style-src 'self' 'unsafe-inline' https://cdn.paddle.com"
+      refute csp =~ "profitwell"
     end
 
     test "a test_ client token initializes the sandbox environment", %{conn: conn} do
