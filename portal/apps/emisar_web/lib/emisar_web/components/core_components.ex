@@ -1599,6 +1599,23 @@ defmodule EmisarWeb.CoreComponents do
   attr :current_account, :map, required: true
 
   defp shell_nav(assigns) do
+    # One domain predicate per section — the nav shows only what the member
+    # can actually open (a billing_manager sees Billing + Team, not six dead
+    # links). Courtesy only: every context still denies server-side (IL-15).
+    subject = assigns.current_subject
+
+    assigns =
+      assign(assigns,
+        can_view_runners?: Emisar.Runners.subject_can_view_runners?(subject),
+        can_view_agents?: Emisar.ApiKeys.subject_can_view_api_keys?(subject),
+        can_view_runs?: Emisar.Runs.subject_can_view_runs?(subject),
+        can_view_approvals?: Emisar.Approvals.subject_can_view_approvals?(subject),
+        can_view_audit?: Emisar.Audit.subject_can_view_audit?(subject),
+        can_view_packs?: Emisar.Catalog.subject_can_view_packs?(subject),
+        can_view_policies?: Emisar.Policies.subject_can_view_policies?(subject),
+        can_view_runbooks?: Emisar.Runbooks.subject_can_view_runbooks?(subject)
+      )
+
     ~H"""
     <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
       <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
@@ -1607,8 +1624,9 @@ defmodule EmisarWeb.CoreComponents do
 
       <%!-- Connect — the two things you need to USE emisar: a runner to execute and
            an agent to call it. Surfaced at the top so setup is one glance away. --%>
-      <.nav_group label="Connect" />
+      <.nav_group :if={@can_view_runners? or @can_view_agents?} label="Connect" />
       <.nav_link
+        :if={@can_view_runners?}
         to={~p"/app/#{@current_account}/runners"}
         active={@section == :runners}
         icon="hero-cpu-chip"
@@ -1618,6 +1636,7 @@ defmodule EmisarWeb.CoreComponents do
         Runners
       </.nav_link>
       <.nav_link
+        :if={@can_view_agents?}
         to={~p"/app/#{@current_account}/settings/agents"}
         active={@section == :agents}
         icon="hero-sparkles"
@@ -1627,11 +1646,20 @@ defmodule EmisarWeb.CoreComponents do
         LLM agents
       </.nav_link>
 
-      <.nav_group label="Operate" />
-      <.nav_link to={~p"/app/#{@current_account}/runs"} active={@section == :runs} icon="hero-bolt">
+      <.nav_group
+        :if={@can_view_runs? or @can_view_approvals? or @can_view_audit?}
+        label="Operate"
+      />
+      <.nav_link
+        :if={@can_view_runs?}
+        to={~p"/app/#{@current_account}/runs"}
+        active={@section == :runs}
+        icon="hero-bolt"
+      >
         Runs
       </.nav_link>
       <.nav_link
+        :if={@can_view_approvals?}
         to={~p"/app/#{@current_account}/approvals"}
         active={@section == :approvals}
         icon="hero-shield-check"
@@ -1640,6 +1668,7 @@ defmodule EmisarWeb.CoreComponents do
         Approvals
       </.nav_link>
       <.nav_link
+        :if={@can_view_audit?}
         to={~p"/app/#{@current_account}/audit"}
         active={@section == :audit}
         icon="hero-list-bullet"
@@ -1647,8 +1676,12 @@ defmodule EmisarWeb.CoreComponents do
         Audit
       </.nav_link>
 
-      <.nav_group label="Control" />
+      <.nav_group
+        :if={@can_view_packs? or @can_view_policies? or @can_view_runbooks?}
+        label="Control"
+      />
       <.nav_link
+        :if={@can_view_packs?}
         to={~p"/app/#{@current_account}/packs"}
         active={@section == :packs}
         icon="hero-cube"
@@ -1657,6 +1690,7 @@ defmodule EmisarWeb.CoreComponents do
         Packs
       </.nav_link>
       <.nav_link
+        :if={@can_view_policies?}
         to={~p"/app/#{@current_account}/policies"}
         active={@section == :policies}
         icon="hero-document-text"
@@ -1664,6 +1698,7 @@ defmodule EmisarWeb.CoreComponents do
         Policy
       </.nav_link>
       <.nav_link
+        :if={@can_view_runbooks?}
         to={~p"/app/#{@current_account}/runbooks"}
         active={@section == :runbooks}
         icon="hero-book-open"
@@ -2605,7 +2640,10 @@ defmodule EmisarWeb.CoreComponents do
 
   def meta_line(assigns) do
     ~H"""
-    <div class={["truncate", @mono && "font-mono", @class]}>
+    <%!-- Mobile wraps to two lines (security meta like "last used" must
+         never silently truncate away); sm+ restores the single-line
+         truncate. Mirrors list_row's :meta wrapper. --%>
+    <div class={["line-clamp-2 sm:line-clamp-none sm:truncate", @mono && "font-mono", @class]}>
       <span :for={{seg, idx} <- Enum.with_index(@seg)}>
         {if idx > 0, do: " · "}{render_slot(seg)}
       </span>
@@ -3109,7 +3147,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def list_row(assigns) do
     ~H"""
-    <li class={["flex items-start gap-4 px-5 py-4", @class]}>
+    <li class={["flex flex-wrap items-start gap-4 px-5 py-4 sm:flex-nowrap", @class]}>
       <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
       <span
         :if={@leading == [] && @icon}
@@ -3123,12 +3161,18 @@ defmodule EmisarWeb.CoreComponents do
           {render_slot(@title)}
           {render_slot(@chips)}
         </div>
-        <div :if={@meta != []} class="mt-1 truncate text-xs text-zinc-500">
+        <%!-- Two lines on mobile (a credential row's "last used" is its
+             security signal — never silently truncated away), single-line
+             truncate from sm up. --%>
+        <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-500 sm:line-clamp-none">
           {render_slot(@meta)}
         </div>
       </div>
 
-      <div :if={@actions != []} class="flex shrink-0 items-center gap-2">
+      <%!-- Below sm the actions take their own full-width row under the
+           content, so the title — the row's identity — owns the width
+           instead of being crushed to a clipped glyph by three buttons. --%>
+      <div :if={@actions != []} class="flex w-full shrink-0 items-center gap-2 sm:w-auto">
         {render_slot(@actions)}
       </div>
     </li>
@@ -3173,7 +3217,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <span
       class={[
-        "rounded px-1.5 py-0.5 text-[10px]",
+        "whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]",
         @icon && "inline-flex items-center gap-1",
         if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
         chip_class(@tone),
