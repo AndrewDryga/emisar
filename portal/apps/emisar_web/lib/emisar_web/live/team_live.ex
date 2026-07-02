@@ -807,11 +807,11 @@ defmodule EmisarWeb.TeamLive do
           <:actions>
             <%= cond do %>
               <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <button
-                  type="button"
+                <.switch
+                  on={@current_account.settings.require_mfa}
+                  on_label="Stop enforcing 2FA"
+                  off_label="Enforce 2FA"
                   phx-click="toggle_require_mfa"
-                  role="switch"
-                  aria-checked={to_string(@current_account.settings.require_mfa)}
                   aria-label="Enforce 2FA account-wide"
                   data-confirm={
                     if @current_account.settings.require_mfa,
@@ -819,18 +819,7 @@ defmodule EmisarWeb.TeamLive do
                       else:
                         "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
                   }
-                  class={[
-                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
-                    if(@current_account.settings.require_mfa,
-                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
-                    )
-                  ]}
-                >
-                  {if @current_account.settings.require_mfa,
-                    do: "Stop enforcing 2FA",
-                    else: "Enforce 2FA"}
-                </button>
+                />
               <% true -> %>
                 <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
             <% end %>
@@ -877,11 +866,11 @@ defmodule EmisarWeb.TeamLive do
                   Set up SSO first →
                 </.link>
               <% true -> %>
-                <button
-                  type="button"
+                <.switch
+                  on={@current_account.settings.require_sso}
+                  on_label="Stop requiring SSO"
+                  off_label="Require SSO"
                   phx-click="toggle_require_sso"
-                  role="switch"
-                  aria-checked={to_string(@current_account.settings.require_sso)}
                   aria-label="Require single sign-on account-wide"
                   data-confirm={
                     if @current_account.settings.require_sso do
@@ -890,18 +879,7 @@ defmodule EmisarWeb.TeamLive do
                       "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
                     end
                   }
-                  class={[
-                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
-                    if(@current_account.settings.require_sso,
-                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
-                    )
-                  ]}
-                >
-                  {if @current_account.settings.require_sso,
-                    do: "Stop requiring SSO",
-                    else: "Require SSO"}
-                </button>
+                />
             <% end %>
           </:actions>
 

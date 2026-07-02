@@ -2428,6 +2428,88 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The ONE bordered navigation card — icon + title + one-line description,
+  whole card clickable. `href` means an external destination (new tab +
+  outward arrow); `navigate` stays in-app (right arrow).
+
+      <.link_card navigate={~p"/packs"} icon="hero-cube-transparent" title="Pack registry">
+        Browse linux-core, cassandra, showcase.
+      </.link_card>
+  """
+  attr :title, :string, required: true
+  attr :icon, :string, required: true
+  attr :navigate, :string, default: nil
+  attr :href, :string, default: nil
+  slot :inner_block, required: true
+
+  def link_card(%{href: href} = assigns) when is_binary(href) do
+    ~H"""
+    <.link href={@href} target="_blank" rel="noopener noreferrer" class={link_card_class()}>
+      <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+        <.icon name={@icon} class="h-4 w-4 text-brand-400" /> {@title}
+        <.icon name="hero-arrow-top-right-on-square" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+      </div>
+      <p class="mt-1 text-xs text-zinc-500">{render_slot(@inner_block)}</p>
+    </.link>
+    """
+  end
+
+  def link_card(assigns) do
+    ~H"""
+    <.link navigate={@navigate} class={link_card_class()}>
+      <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+        <.icon name={@icon} class="h-4 w-4 text-brand-400" /> {@title}
+        <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+      </div>
+      <p class="mt-1 text-xs text-zinc-500">{render_slot(@inner_block)}</p>
+    </.link>
+    """
+  end
+
+  defp link_card_class,
+    do: "rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+
+  @doc """
+  The ONE enforcement toggle — a two-state `role="switch"` action button:
+  solid brand while OFF (the enabling action), rose outline while ON (the
+  disabling action). The caller supplies both labels and, via the global
+  attrs, `phx-click` and the state-dependent `data-confirm`.
+
+      <.switch
+        on={@current_account.settings.require_mfa}
+        on_label="Stop enforcing 2FA"
+        off_label="Enforce 2FA"
+        aria-label="Enforce 2FA account-wide"
+        phx-click="toggle_require_mfa"
+        data-confirm={...}
+      />
+  """
+  attr :on, :boolean, required: true
+  attr :on_label, :string, required: true, doc: "shown while ON — the turn-off action"
+  attr :off_label, :string, required: true, doc: "shown while OFF — the turn-on action"
+  attr :rest, :global, include: ~w(phx-click data-confirm aria-label)
+
+  def switch(assigns) do
+    ~H"""
+    <button
+      type="button"
+      role="switch"
+      aria-checked={to_string(@on)}
+      class={[
+        "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+        if(@on,
+          do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+          else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
+        )
+      ]}
+      {@rest}
+    >
+      {if @on, do: @on_label, else: @off_label}
+    </button>
+    """
+  end
+
+  @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (console-ux §1).
@@ -3456,35 +3538,12 @@ defmodule EmisarWeb.CoreComponents do
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <.link
-                href="/docs/quickstart"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
-              >
-                <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                  <.icon name="hero-book-open" class="h-4 w-4 text-brand-400" /> Installation guide
-                  <.icon
-                    name="hero-arrow-top-right-on-square"
-                    class="ml-auto h-3.5 w-3.5 text-zinc-600"
-                  />
-                </div>
-                <p class="mt-1 text-xs text-zinc-500">
-                  Image-bake, cloud-init, manual install.
-                </p>
-              </.link>
-              <.link
-                navigate="/packs"
-                class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
-              >
-                <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                  <.icon name="hero-cube-transparent" class="h-4 w-4 text-brand-400" /> Pack registry
-                  <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
-                </div>
-                <p class="mt-1 text-xs text-zinc-500">
-                  Browse linux-core, cassandra, showcase. Install snippets included.
-                </p>
-              </.link>
+              <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
+                Image-bake, cloud-init, manual install.
+              </.link_card>
+              <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
+                Browse linux-core, cassandra, showcase. Install snippets included.
+              </.link_card>
             </div>
           </div>
         <% @install_command == :mint_failed -> %>
@@ -3765,9 +3824,15 @@ defmodule EmisarWeb.CoreComponents do
   def event_chunk(_), do: ""
 
   @doc """
-  "Reveal once" banner for newly-created secrets — auth keys, API
-  keys. Shown until dismissed; warns the operator the value won't be
-  shown again.
+  The ONE "reveal once" amber box for freshly-minted credentials — runner
+  keys, SIEM export tokens, SCIM bearers, MFA recovery codes. Warns the
+  operator the value won't be shown again. Pass exactly one of `secret`
+  (a single value with its copy button) or `codes` (a list rendered as
+  per-code copy cells + "Copy all" + an optional "Download .txt" when
+  `download_name` is set). `variant={:banner}` is the standalone
+  top-of-page box; `:card` sits inside a page section. `on_dismiss` adds
+  the X; an acknowledgement control ("I've saved them") rides the
+  `:actions` slot instead.
 
       <.secret_reveal
         :if={@new_secret}
@@ -3782,11 +3847,31 @@ defmodule EmisarWeb.CoreComponents do
           curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} bash
         </:install_command>
       </.secret_reveal>
+
+      <.secret_reveal
+        id="mfa-recovery-codes"
+        variant={:card}
+        title="Save your recovery codes"
+        codes={@mfa_recovery_codes}
+        download_name="emisar-recovery-codes.txt"
+      >
+        Each code works once if you can't reach your authenticator.
+        <:actions>
+          <.button variant="secondary" size="sm" phx-click="dismiss_recovery_codes">
+            I've saved them
+          </.button>
+        </:actions>
+      </.secret_reveal>
   """
+  attr :id, :string, default: "reveal-secret"
   attr :title, :string, required: true
-  attr :secret, :string, required: true
-  attr :on_dismiss, :string, required: true
+  attr :secret, :string, default: nil
+  attr :codes, :list, default: nil, doc: "reveal-once code list (alternative to :secret)"
+  attr :download_name, :string, default: nil, doc: "codes mode: offer the set as a .txt file"
+  attr :on_dismiss, :string, default: nil
+  attr :variant, :atom, default: :banner, values: [:banner, :card]
   slot :inner_block, required: true
+  slot :actions, doc: "acknowledgement controls, rendered in the copy-button row"
 
   slot :install_command do
     attr :label, :string
@@ -3794,29 +3879,50 @@ defmodule EmisarWeb.CoreComponents do
 
   def secret_reveal(assigns) do
     ~H"""
-    <div class="mb-6 rounded-xl bg-amber-500/10 p-6 ring-1 ring-amber-500/30">
+    <div id={@id} class={secret_reveal_box(@variant)}>
       <div class="flex items-start justify-between gap-4">
-        <div class="flex-1">
-          <h2 class="text-sm font-semibold text-amber-100">{@title}</h2>
+        <div class="min-w-0 flex-1">
+          <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
+          <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
           <p class="mt-1 text-xs text-amber-200/80">{render_slot(@inner_block)}</p>
 
           <%!-- Same copy pattern as the dashboard install reveal:
-               grab text from the visible `<code>` instead of
+               grab text from the visible `<pre>` instead of
                interpolating into a JS string literal (safer + escape-
                proof), and flip the label to "Copied" for 1.5s as
                visible click feedback. --%>
-          <div class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
+          <div
+            :if={@secret}
+            class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800"
+          >
             <pre
-              id="reveal-secret"
+              id={"#{@id}-secret"}
               class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-100"
             >{@secret}</pre>
             <.copy_button
-              target="#reveal-secret"
+              target={"##{@id}-secret"}
               class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
             >
               Copy
             </.copy_button>
           </div>
+
+          <%!-- Each cell IS a copy button, so one code can be grabbed
+               without selecting text; "Copy all" carries the joined set
+               as a data-copy-text literal (no hidden blob element). --%>
+          <ul :if={@codes} class="mt-3 space-y-1.5">
+            <li :for={code <- @codes}>
+              <button
+                type="button"
+                data-copy-text={code}
+                data-copy-label-copied="Copied!"
+                title="Click to copy this code"
+                class="block w-full select-all rounded-md border border-amber-500/40 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-amber-50 hover:border-amber-400 hover:bg-black/80"
+              >
+                {code}
+              </button>
+            </li>
+          </ul>
 
           <%= for {cmd, idx} <- Enum.with_index(@install_command) do %>
             <div class="mt-4">
@@ -3825,11 +3931,11 @@ defmodule EmisarWeb.CoreComponents do
               </h3>
               <div class="mt-2 flex items-start gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
                 <pre
-                  id={"reveal-install-#{idx}"}
+                  id={"#{@id}-install-#{idx}"}
                   class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300"
                 >{render_slot(cmd)}</pre>
                 <.copy_button
-                  target={"#reveal-install-#{idx}"}
+                  target={"##{@id}-install-#{idx}"}
                   class="shrink-0 self-start bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
                 >
                   Copy
@@ -3837,9 +3943,33 @@ defmodule EmisarWeb.CoreComponents do
               </div>
             </div>
           <% end %>
+
+          <div :if={@codes || @actions != []} class="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              :if={@codes}
+              type="button"
+              data-copy-text={Enum.join(@codes, "\n")}
+              data-copy-label-copied="Copied!"
+              class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400"
+            >
+              Copy all
+            </button>
+            <%!-- A real file beats the volatile clipboard for a credential
+                 the operator must keep — clipboards get overwritten. --%>
+            <a
+              :if={@codes && @download_name}
+              href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}
+              download={@download_name}
+              class="rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
+            >
+              Download .txt
+            </a>
+            {render_slot(@actions)}
+          </div>
         </div>
 
         <button
+          :if={@on_dismiss}
           phx-click={@on_dismiss}
           class="rounded-lg p-1 text-amber-200/80 hover:bg-amber-500/10 hover:text-amber-100"
           aria-label="Dismiss"
@@ -3850,6 +3980,11 @@ defmodule EmisarWeb.CoreComponents do
     </div>
     """
   end
+
+  defp secret_reveal_box(:banner),
+    do: "mb-6 rounded-xl bg-amber-500/10 p-6 ring-1 ring-amber-500/30"
+
+  defp secret_reveal_box(:card), do: "rounded-xl bg-amber-500/10 p-4 ring-1 ring-amber-500/30"
 
   # -- Marketing chrome ------------------------------------------------
 
