@@ -293,13 +293,17 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp find_ruleset(socket, uid), do: Enum.find(socket.assigns.rulesets, &(&1.uid == uid))
 
+  # Every mutation path runs through here, so the editor's dirty flag rides
+  # along for free — "Add override" LOOKED immediate but only persists on
+  # Save; the chip makes the draft boundary visible. replace_saved rebuilds
+  # the editor without the flag, clearing it on a successful save.
   defp update_editor(socket, "account", fun),
-    do: assign(socket, :account, fun.(socket.assigns.account))
+    do: assign(socket, :account, socket.assigns.account |> fun.() |> Map.put(:dirty?, true))
 
   defp update_editor(socket, uid, fun) do
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
-        if ruleset.uid == uid, do: fun.(ruleset), else: ruleset
+        if ruleset.uid == uid, do: ruleset |> fun.() |> Map.put(:dirty?, true), else: ruleset
       end)
 
     assign(socket, :rulesets, rulesets)
@@ -639,15 +643,9 @@ defmodule EmisarWeb.PoliciesLive do
 
       <div :if={not @loading?} class="space-y-6">
         <.page_intro>
-          <:help>
-            Every action has a <strong class="text-zinc-100">risk tier</strong>
-            from the catalog. Your <strong class="text-zinc-100">default policy</strong>
-            sets what happens per tier — allow, require approval, or deny — plus
-            <strong class="text-zinc-100">overrides</strong>
-            for the exceptions. Need different rules for one runner or a group? Add a
-            <strong class="text-zinc-100">targeted ruleset</strong>
-            below. <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
-          </:help>
+          Each action's risk tier meets your default policy — allow, require approval,
+          or deny — with overrides and targeted rulesets for the exceptions.
+          <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
         </.page_intro>
 
         <p
@@ -670,6 +668,7 @@ defmodule EmisarWeb.PoliciesLive do
             rules_errors={@account.rules_errors}
             can_manage={@can_manage?}
             save_label="Save default policy"
+            dirty={@account[:dirty?] || false}
           />
         </.panel>
 
@@ -802,6 +801,7 @@ defmodule EmisarWeb.PoliciesLive do
         rules_errors={@ruleset.rules_errors}
         can_manage={@can_manage}
         save_label="Save ruleset"
+        dirty={@ruleset[:dirty?] || false}
       />
       <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
         Pick a runner or group above, then set its rules.
@@ -822,6 +822,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :rules_errors, :list, required: true
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
+  attr :dirty, :boolean, default: false
 
   defp policy_fields(assigns) do
     # Self-approval + a single approval adds no SECOND party — the one case worth an
@@ -863,9 +864,11 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
 
       <div>
-        <div class="flex items-start justify-between gap-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div>
-            <h3 class="text-sm font-semibold text-zinc-200">Per-action overrides</h3>
+            <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Per-action overrides
+            </h3>
             <p class="mt-0.5 text-xs text-zinc-500">
               First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
             </p>
@@ -908,7 +911,9 @@ defmodule EmisarWeb.PoliciesLive do
            pair is weak (self-approval + one approval). Defaults to self-approval allowed
            + 1 approval; buyers require a different operator for real separation of duties. --%>
       <div>
-        <h3 class="text-sm font-semibold text-zinc-200">Approval requirements</h3>
+        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Approval requirements
+        </h3>
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
@@ -997,7 +1002,8 @@ defmodule EmisarWeb.PoliciesLive do
         </.callout>
       </div>
 
-      <div :if={@can_manage} class="flex justify-end border-t border-zinc-900 pt-4">
+      <div :if={@can_manage} class="flex items-center justify-end gap-3 border-t border-zinc-900 pt-4">
+        <.chip :if={@dirty} tone={:amber}>Unsaved changes</.chip>
         <.button type="submit" phx-disable-with="Saving...">{@save_label}</.button>
       </div>
     </form>
@@ -1141,10 +1147,11 @@ defmodule EmisarWeb.PoliciesLive do
   # allow decision, which the tier's own dropdown shows). Matches `risk_pill`
   # (`risk_classes/1`) one-for-one so a tier reads the same color here and on the
   # action/pack lists. No sky — there is no fifth accent hue.
-  defp tier_border("low"), do: "border-zinc-700/50"
-  defp tier_border("medium"), do: "border-amber-500/20"
-  defp tier_border("high"), do: "border-rose-500/20"
-  defp tier_border("critical"), do: "border-rose-600/40"
+  # One quiet border for every tier: the tinted ramp read wrong (HIGH's
+  # rose/20 was invisible between MEDIUM and CRITICAL, and amber on an
+  # "Allow" card read as a warning about the setting). The dot + label
+  # carry severity.
+  defp tier_border(_tier), do: "border-zinc-700/50"
 
   defp tier_dot("low"), do: "bg-zinc-500"
   defp tier_dot("medium"), do: "bg-amber-400"
