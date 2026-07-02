@@ -45,6 +45,8 @@ defmodule EmisarWeb.PacksLive do
     # being rejected from `@reject_target`, set by the `open_reject` event.
     socket = socket |> ConfirmDialog.init() |> assign(:reject_target, nil)
 
+    socket = assign(socket, :name_filter, "")
+
     if connected?(socket) do
       {:ok, socket |> load_packs() |> assign(:loading?, false)}
     else
@@ -56,6 +58,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:loading?, true)
        |> assign(:load_error?, false)
        |> assign(:pack_count, 0)
+       |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
        |> assign(:advertising, %{})
        |> assign(:pack_actions, %{})
@@ -72,12 +75,16 @@ defmodule EmisarWeb.PacksLive do
   defp load_packs(socket) do
     case fetch_rows(socket) do
       {:ok, rows} ->
+        # Pending counts + the sidebar badge reflect the ACCOUNT, not the
+        # current name filter — only the rendered groups narrow.
         pending = Enum.count(rows, &(&1.trust_state == :pending))
-        groups = group_by_pack(rows)
+        visible_rows = filter_rows(rows, socket.assigns.name_filter)
+        groups = group_by_pack(visible_rows)
 
         socket
         |> assign(:load_error?, false)
         |> assign(:pack_count, length(groups))
+        |> assign(:version_count, length(visible_rows))
         |> assign(:pending_count, pending)
         # Keep the sidebar badge in step after Trust/Reject on this page.
         |> assign(:pending_packs_count, pending)
@@ -91,12 +98,24 @@ defmodule EmisarWeb.PacksLive do
         socket
         |> assign(:load_error?, true)
         |> assign(:pack_count, 0)
+        |> assign(:version_count, 0)
         |> assign(:pending_count, 0)
         |> assign(:advertising, %{})
         |> assign(:pack_actions, %{})
         |> assign(:pack_diffs, %{})
         |> stream(:packs, [], reset: true)
     end
+  end
+
+  # Real catalogs run dozens of packs — the filter narrows by pack id,
+  # case-insensitive contains. The rows live in the stream (not an assign,
+  # by design), so filtering re-reads; same DB-per-change model as
+  # LiveTable's filter bar, debounced at the input.
+  defp filter_rows(rows, ""), do: rows
+
+  defp filter_rows(rows, name_filter) do
+    needle = String.downcase(name_filter)
+    Enum.filter(rows, &String.contains?(String.downcase(&1.pack_id), needle))
   end
 
   # What trusting each pending version authorizes, keyed by pack_version id
@@ -170,6 +189,10 @@ defmodule EmisarWeb.PacksLive do
 
   defp pending_review_title(1), do: "1 pack version needs trust review."
   defp pending_review_title(count), do: "#{count} pack versions need trust review."
+
+  def handle_event("filter", %{"name" => name}, socket) do
+    {:noreply, socket |> assign(:name_filter, String.trim(name)) |> load_packs()}
+  end
 
   def handle_event("trust", %{"id" => id}, socket) do
     case Catalog.trust_pack_version(id, socket.assigns.current_subject) do
@@ -366,12 +389,8 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <.page_intro>
-        A pack is a versioned set of actions a runner is allowed to run. Each <em>(pack, version)</em>
-        has a pinned trusted hash. Runners advertising the same
-        contents match the pin; a different hash flips the pack into
-        <strong class="text-amber-300">pending</strong>
-        — dispatch refuses runs against it until
-        you Trust (adopt the new contents) or Reject (keep the pinned hash).
+        Each pack version is pinned to a trusted hash — a runner advertising different
+        contents flips it to pending, and dispatch refuses it until you review.
         <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 
@@ -399,7 +418,7 @@ defmodule EmisarWeb.PacksLive do
       </.empty_state>
 
       <.empty_state
-        :if={@pack_count == 0 and not @load_error? and not @loading?}
+        :if={@pack_count == 0 and @name_filter == "" and not @load_error? and not @loading?}
         icon="hero-cube"
         title="No packs reported yet"
         class="mt-8"
@@ -408,7 +427,30 @@ defmodule EmisarWeb.PacksLive do
         it loads appear here to trust or reject.
       </.empty_state>
 
-      <ul id="packs" phx-update="stream" class="mt-6 space-y-4">
+      <form
+        :if={not @loading? and not @load_error? and (@pack_count > 0 or @name_filter != "")}
+        phx-change="filter"
+        class="mt-6"
+      >
+        <.input
+          name="name"
+          value={@name_filter}
+          type="search"
+          placeholder="Filter by pack id…"
+          phx-debounce="300"
+          class="max-w-xs"
+        />
+      </form>
+
+      <%!-- Filter-empty ≠ account-empty: a quiet line, the filter stays live. --%>
+      <p
+        :if={@pack_count == 0 and @name_filter != "" and not @load_error? and not @loading?}
+        class="mt-6 text-sm text-zinc-500"
+      >
+        No packs match "{@name_filter}".
+      </p>
+
+      <ul id="packs" phx-update="stream" class="mt-4 space-y-4">
         <%!-- Sanctioned hand-rolled card (see .agent/rules/ui-shared-components.md):
              a stream <li> wrapping a nested version list, so it can't be a <div>
              <.card> and isn't a flat <.list_row>. Keep the card chrome inline. --%>
@@ -423,8 +465,8 @@ defmodule EmisarWeb.PacksLive do
               <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
               <span class="text-xs text-zinc-500">·</span>
               <span class="text-xs text-zinc-500">{version_count_label(pack.versions)}</span>
-              <.chip :if={any_pending?(pack.versions)} upcase tone={:amber} class="ml-2">
-                Pending
+              <.chip :if={any_pending?(pack.versions)} tone={:amber} class="ml-2">
+                pending
               </.chip>
             </div>
           </header>
@@ -437,19 +479,26 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <.chip :if={v.trust_state == :trusted} upcase tone={:brand}>Trusted</.chip>
-                  <.chip :if={v.trust_state == :pending} upcase tone={:amber}>Pending</.chip>
+                  <%!-- Lowercase like every status chip in the console — packs
+                       was the lone uppercase holdout (one casing, one family). --%>
+                  <.chip :if={v.trust_state == :trusted} tone={:brand}>trusted</.chip>
+                  <.chip :if={v.trust_state == :pending} tone={:amber}>pending</.chip>
                   <%!-- If this exact trusted hash is a published pack version,
                        link out to its public registry page (opens in a new tab). --%>
                   <.registry_link version={v} />
                 </div>
+                <%!-- Relative like every peer list ("1d ago"); chronology reads
+                     first→last; absolute rides the local_time hover. --%>
                 <div class="ml-auto shrink-0 text-right text-xs text-zinc-500">
-                  <div>last seen <.local_time value={v.last_seen_at} class="text-zinc-300" /></div>
                   <div
                     :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}
                     class="text-[10px] text-zinc-400"
                   >
-                    first seen <.local_time value={v.first_seen_at} class="inline" />
+                    first seen <.local_time value={v.first_seen_at} mode={:relative} class="inline" />
+                  </div>
+                  <div>
+                    last seen
+                    <.local_time value={v.last_seen_at} mode={:relative} class="text-zinc-300" />
                   </div>
                 </div>
               </div>
@@ -646,6 +695,12 @@ defmodule EmisarWeb.PacksLive do
         </li>
       </ul>
 
+      <%!-- Family-standard count footer (runners/runs/approvals/audit all
+           carry one). --%>
+      <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-600">
+        {count_footer(@pack_count, @version_count)}
+      </p>
+
       <%!-- One page-level reject dialog (the rows are a stream, so it can't be
            per-row). It's always in the DOM so the trigger's `show` finds it;
            `open_reject` then fills @reject_target with the version's token +
@@ -690,8 +745,20 @@ defmodule EmisarWeb.PacksLive do
     "#{n} #{if n == 1, do: "version", else: "versions"}"
   end
 
+  defp count_footer(pack_count, version_count) do
+    packs = if pack_count == 1, do: "pack", else: "packs"
+    versions = if version_count == 1, do: "version", else: "versions"
+    "#{pack_count} #{packs} · #{version_count} #{versions}"
+  end
+
+  # The stored hash already carries the "sha256:" prefix the template
+  # labels — strip it before slicing, or the row reads "sha256:sha256:…"
+  # and shows five useful hex chars of the value operators verify.
   defp short_hash(nil), do: "—"
-  defp short_hash(h) when is_binary(h), do: String.slice(h, 0, 12)
+
+  defp short_hash(hash) when is_binary(hash) do
+    hash |> String.replace_prefix("sha256:", "") |> String.slice(0, 12)
+  end
 
   attr :version, :map, required: true
 
