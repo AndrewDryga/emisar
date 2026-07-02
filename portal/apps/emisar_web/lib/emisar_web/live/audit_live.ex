@@ -383,6 +383,7 @@ defmodule EmisarWeb.AuditLive do
         row_id={fn event -> "event-#{event.id}" end}
         row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
         responsive
+        card_accent={&audit_card_accent(&1.event_type)}
         class="[&_td]:align-top"
       >
         <:col :let={event} label="When" class="whitespace-nowrap">
@@ -422,7 +423,8 @@ defmodule EmisarWeb.AuditLive do
             current_account={@current_account}
           />
         </:col>
-        <:col :let={event} label="IP" class="w-32 whitespace-nowrap hidden lg:table-cell">
+        <%!-- card={false}: an IP earns no phone space — it's on the detail page. --%>
+        <:col :let={event} label="IP" card={false} class="w-32 whitespace-nowrap hidden lg:table-cell">
           <span class="font-mono text-xs tabular-nums text-zinc-400">{event.ip_address || "—"}</span>
         </:col>
         <:empty>
@@ -650,6 +652,16 @@ defmodule EmisarWeb.AuditLive do
     case Audit.Event.Query.outcome(event_type) do
       :danger -> :rose
       :warn -> :amber
+      :neutral -> :neutral
+    end
+  end
+
+  # Mobile-card spine — outcome mapped onto the verdict atoms LiveTable's
+  # card_accent speaks, so problem rows pop in a long phone scroll.
+  defp audit_card_accent(event_type) do
+    case Audit.Event.Query.outcome(event_type) do
+      :danger -> :deny
+      :warn -> :pending
       :neutral -> :neutral
     end
   end

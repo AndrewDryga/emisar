@@ -93,6 +93,12 @@ defmodule EmisarWeb.LiveTable do
   slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
     attr :label, :string
     attr :class, :string
+
+    attr :card, :boolean,
+      doc:
+        "set false to skip this column in the responsive mobile card — for a " <>
+          "column whose value the card already carries elsewhere (runs' in-cell " <>
+          "source badge) or that earns no phone space (audit's IP)"
   end
 
   slot :item, doc: "`:cards` layout row body — receives `row`. Required when `layout == :cards`."
@@ -243,7 +249,11 @@ defmodule EmisarWeb.LiveTable do
               @row_click && "cursor-pointer hover:bg-zinc-900/40"
             ]}
           >
-            <div :for={col <- @col} class="flex items-baseline gap-3">
+            <div
+              :for={col <- @col}
+              :if={col[:card] != false}
+              class="flex items-baseline gap-3"
+            >
               <span
                 :if={col[:label] not in [nil, ""]}
                 class="w-24 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
