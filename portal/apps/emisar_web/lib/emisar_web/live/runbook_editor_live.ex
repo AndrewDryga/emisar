@@ -452,7 +452,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
                  has no metadata input to bind to, so it surfaces here on the
                  Steps panel rather than in a top flash banner. --%>
-            <.error_banner :if={msg = save_error_message(@form)}>{msg}</.error_banner>
+            <.callout :if={msg = save_error_message(@form)} tone={:rose}>{msg}</.callout>
 
             <div
               :if={@steps == []}

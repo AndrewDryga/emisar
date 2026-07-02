@@ -867,7 +867,7 @@ defmodule EmisarWeb.PoliciesLive do
            Render it inline (rose border) on this card — never a flash. The
            constrained selects + monotonic enforcement keep it empty in
            practice; this is the defensive net. --%>
-      <.error_banner :for={msg <- @rules_errors}>{msg}</.error_banner>
+      <.callout :for={msg <- @rules_errors} tone={:rose}>{msg}</.callout>
 
       <%!-- No "Risk-tier defaults" heading — it just echoes the panel title "Default
            policy". The tier grid is the card's primary content; the panel subtitle
@@ -1053,16 +1053,16 @@ defmodule EmisarWeb.PoliciesLive do
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval
              gate for its target. Nudge the operator when that's the case. --%>
-        <.notice
+        <.callout
           :if={@approval_weakenings != []}
-          variant={:warning}
+          tone={:amber}
           title="Weaker approval gate than the default policy"
           class="mt-3"
         >
           This ruleset replaces the default for its target, and its gate is laxer — it {weakening_sentence(
             @approval_weakenings
           )}. Tighten it here if that isn't intended.
-        </.notice>
+        </.callout>
       </div>
 
       <div :if={@can_manage} class="flex justify-end border-t border-zinc-900 pt-4">

@@ -162,9 +162,9 @@ defmodule EmisarWeb.RunnersLive do
           <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
                portal is locked out account-wide. Surface it once here instead of leaving
                the operator to infer it from N per-runner chips + failed dispatches. --%>
-          <.notice
+          <.callout
             :if={@fleet_signed?}
-            variant={:info}
+            tone={:brand}
             icon="hero-shield-check"
             title="Fleet is signed-only"
             class="mb-4"
@@ -172,7 +172,7 @@ defmodule EmisarWeb.RunnersLive do
             Every runner in this account verifies a client signature and refuses unsigned runs, so
             the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
             configured with each runner's signing key.
-          </.notice>
+          </.callout>
           <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group sidebar +
              list below), counted from presence — there's no `:stale` state

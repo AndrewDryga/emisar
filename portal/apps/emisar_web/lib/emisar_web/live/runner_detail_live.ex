@@ -229,9 +229,9 @@ defmodule EmisarWeb.RunnerDetailLive do
            a client signature on every run, so operator/runbook/API dispatch
            from here is refused. Surfacing it up top keeps the disabled Run
            buttons below from reading as a bug. --%>
-      <.notice
+      <.callout
         :if={@runner.enforce_signatures}
-        variant={:info}
+        tone={:brand}
         icon="hero-shield-check"
         title="Signed dispatch only"
         class="mt-4"
@@ -243,7 +243,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           emisar signing init
         </code>
         on the host.
-      </.notice>
+      </.callout>
 
       <%!-- Labels + last-disconnect reason. Both are written to the DB
            and previously invisible. Labels show only when set;

@@ -344,9 +344,9 @@ defmodule EmisarWeb.BillingLive do
              + billing changes go through our team — a downgrade here would route
              to a Paddle portal the account has no customer in. Surface the special
              state + the one real action instead of dead self-serve controls. --%>
-        <.notice
+        <.callout
           :if={@summary.plan == "enterprise"}
-          variant={:info}
+          tone={:brand}
           icon="hero-lifebuoy"
           title="Custom Enterprise plan"
         >
@@ -357,7 +357,7 @@ defmodule EmisarWeb.BillingLive do
               Contact support
             </.button>
           </:action>
-        </.notice>
+        </.callout>
 
         <%!-- Plan cards. Three across on desktop, single column on
              phones. Current plan visually pinned, popular plan

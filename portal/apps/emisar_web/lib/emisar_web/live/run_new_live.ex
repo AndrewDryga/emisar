@@ -286,9 +286,9 @@ defmodule EmisarWeb.RunNewLive do
 
         <%!-- Side-effects warning — loud when this action will mutate
              real state. Empty list (read-only action) hides it. --%>
-        <.notice
+        <.callout
           :if={@action.side_effects && @action.side_effects != []}
-          variant={:warning}
+          tone={:amber}
           title="Side effects"
         >
           <ul class="space-y-1">
@@ -297,7 +297,7 @@ defmodule EmisarWeb.RunNewLive do
               <span>{effect}</span>
             </li>
           </ul>
-        </.notice>
+        </.callout>
 
         <%!-- Offline-runner notice. The runner is only looked up on the
              connected render, so this stays quiet on the dead pass. We
@@ -317,16 +317,16 @@ defmodule EmisarWeb.RunNewLive do
         <%!-- Signed-only runner — the portal is locked out. Takes precedence over
              the offline notice above (whose "you can still dispatch" copy would
              contradict this), and replaces the Dispatch button below. --%>
-        <.notice
+        <.callout
           :if={signed_only?(@runner)}
-          variant={:info}
+          tone={:brand}
           icon="hero-shield-check"
           title="Signed dispatch only"
         >
           {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
           the portal can't dispatch to it. Run this action from an MCP client configured with the
           runner's signing key.
-        </.notice>
+        </.callout>
 
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the

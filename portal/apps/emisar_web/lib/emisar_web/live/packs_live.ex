@@ -375,15 +375,15 @@ defmodule EmisarWeb.PacksLive do
         <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 
-      <.notice
+      <.callout
         :if={@pending_count > 0}
-        variant={:warning}
+        tone={:amber}
         icon="hero-shield-exclamation"
         title={pending_review_title(@pending_count)}
         class="mt-4"
       >
         Dispatch against these versions is blocked until an admin reviews the new hash.
-      </.notice>
+      </.callout>
 
       <.loading_state :if={@loading?} />
 

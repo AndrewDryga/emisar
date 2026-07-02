@@ -212,9 +212,9 @@ defmodule EmisarWeb.RunDetailLive do
 
       <%!-- Approval banner — the run is held on a human decision. Loud amber
            + a one-click jump to the approval page. --%>
-      <.notice
+      <.callout
         :if={@run.status == :pending_approval and @approval_request}
-        variant={:warning}
+        tone={:amber}
         icon="hero-hand-raised"
         title="Waiting on approval"
         class="mt-4"
@@ -229,16 +229,16 @@ defmodule EmisarWeb.RunDetailLive do
             Review approval →
           </.button>
         </:action>
-      </.notice>
+      </.callout>
 
       <%!-- Cancelled-with-reason banner — an approver's denial cancels the run
            and writes "approval denied: …" into reason_text; a bare grey badge
            would drop that reason, leaving the requester with no "why didn't it
            run". Driven by the run (not the approval row, which a prune may have
            removed), with a best-effort jump to the decision. --%>
-      <.notice
+      <.callout
         :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-        variant={:danger}
+        tone={:rose}
         icon="hero-no-symbol"
         title="Cancelled"
         class="mt-4"
@@ -253,12 +253,12 @@ defmodule EmisarWeb.RunDetailLive do
             Review approval →
           </.button>
         </:action>
-      </.notice>
+      </.callout>
 
       <%!-- Error banner — only when terminal-failed and we got a message back. --%>
-      <.notice :if={@run.error_message} variant={:danger} title="Error" class="mt-4">
+      <.callout :if={@run.error_message} tone={:rose} title="Error" class="mt-4">
         <span class="whitespace-pre-wrap">{@run.error_message}</span>
-      </.notice>
+      </.callout>
 
       <%!-- Runner-dropped warning — the run is in flight but its runner's
            socket is gone. Don't fake a terminal status; just flag that the

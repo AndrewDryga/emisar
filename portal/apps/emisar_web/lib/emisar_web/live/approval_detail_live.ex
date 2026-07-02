@@ -612,9 +612,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
           </.card>
 
-          <.notice
+          <.callout
             :if={@run && @run.policy_reason}
-            variant={:warning}
+            tone={:amber}
             icon="hero-shield-exclamation"
             title="Why approval is required"
           >
@@ -622,7 +622,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <div :if={@run.matched_rules && @run.matched_rules != []} class="mt-2 text-xs opacity-80">
               Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
             </div>
-          </.notice>
+          </.callout>
 
           <%!-- Who has voted so far — surfaced for any multi-approver gate so
                an approver sees who's already signed off (and that a deny

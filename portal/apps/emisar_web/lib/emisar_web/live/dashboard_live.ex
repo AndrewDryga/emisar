@@ -487,14 +487,16 @@ defmodule EmisarWeb.DashboardLive do
 
   defp packs_pending_banner(assigns) do
     ~H"""
-    <.attention_banner
-      navigate={~p"/app/#{@current_account}/packs"}
+    <.callout
+      tone={:amber}
       icon="hero-shield-exclamation"
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} trust review"}
+      navigate={~p"/app/#{@current_account}/packs"}
+      class="mb-4"
     >
       Dispatch is blocked against these until an admin trusts or rejects the new hash.
-      <:cta>Review pack trust</:cta>
-    </.attention_banner>
+      <:action>Review pack trust →</:action>
+    </.callout>
     """
   end
 
@@ -570,24 +572,43 @@ defmodule EmisarWeb.DashboardLive do
 
     ~H"""
     <%= if @headroom == :at_limit do %>
-      <.attention_banner
+      <.callout
         tone={:rose}
         icon="hero-exclamation-triangle"
         title={"You're at your runner limit (#{@billing.runner_count} of #{@billing.runner_limit})."}
+        class="mb-4"
       >
         The next runner that tries to register will get a 402 response and fail to come
         online. Upgrade the plan to add more, or remove an unused runner first.
-        <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
-      </.attention_banner>
+        <:action>
+          <.button
+            variant="secondary"
+            size="sm"
+            navigate={~p"/app/#{@current_account}/settings/billing"}
+          >
+            See plans
+          </.button>
+        </:action>
+      </.callout>
     <% else %>
-      <.attention_banner
+      <.callout
+        tone={:amber}
         icon="hero-exclamation-triangle"
         title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
+        class="mb-4"
       >
         Heads up — your next install will use the last slot. Upgrade now if you expect to
         add more.
-        <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
-      </.attention_banner>
+        <:action>
+          <.button
+            variant="secondary"
+            size="sm"
+            navigate={~p"/app/#{@current_account}/settings/billing"}
+          >
+            See plans
+          </.button>
+        </:action>
+      </.callout>
     <% end %>
     """
   end

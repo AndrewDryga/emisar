@@ -386,7 +386,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # A step targeting 51 groups blows the changeset's per-step selector cap
       # (max 50) — a `:definition` error with no metadata input to bind to. It
       # must surface as one concise line on the Steps panel via
-      # save_error_message/1 (the error_banner), not a top flash.
+      # save_error_message/1 (a rose callout), not a top flash.
       targets = for n <- 1..51, do: "group#{n}"
 
       render_change(lv, "step_change", %{

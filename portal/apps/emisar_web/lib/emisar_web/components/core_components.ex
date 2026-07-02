@@ -886,86 +886,123 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  A card/section-level error banner — the shared rose box (icon + message) for
-  a failure that has no single form field to attach to: a structural save error
-  keyed to a whole map (`:rules`, `:definition`), not the per-field inline
-  `<.error>`. The message renders escaped through HEEx (IL-16) — it can carry a
-  changeset/validation string. Pass the message as the inner block; `class`
-  appends positioning (e.g. a top margin).
+  The ONE tinted callout — leading icon, optional bold `title`, the message
+  (default slot), and an optional right-aligned `:action`. Every console
+  banner, warning box, and heads-up renders through this, or through a thin
+  domain wrapper that only maps domain state → tone/copy (`<.offline_notice>`,
+  `<.subscription_banner>`) — never a fresh class table (console-ux §1). The
+  message renders escaped through HEEx (IL-16).
 
-      <.error_banner :if={msg = save_error_message(@form)}>{msg}</.error_banner>
-      <.error_banner :for={msg <- @rules_errors}>{msg}</.error_banner>
+  Tones are the house hue atoms (console-ux §2), meaning assigned at the call
+  site: `:brand` informational/affirmative, `:amber` caution/pending, `:rose`
+  danger/error, `:neutral` quiet note. Variants: `:boxed` (default) is the
+  rounded bordered box; `:strip` is the flush full-width row with a bottom
+  hairline (shell nudges, in-card warning strips). Pass `navigate` to make the
+  whole callout a link — the `:action` then renders as static text inside the
+  link (no nested interactive element).
+
+      <.callout tone={:amber}>Copy the token now — we won't show it again.</.callout>
+
+      <.callout tone={:rose} icon="hero-no-symbol" title="Cancelled">
+        {@run.reason_text}
+        <:action><.button variant="danger" size="md" navigate={...}>Review</.button></:action>
+      </.callout>
+
+      <.callout tone={:amber} title="2 packs need trust review" navigate={~p"/app/…/packs"}>
+        Dispatch is blocked until an admin decides.
+        <:action>Review pack trust →</:action>
+      </.callout>
   """
-  attr :class, :string, default: nil
-  slot :inner_block, required: true
-
-  def error_banner(assigns) do
-    ~H"""
-    <p class={[
-      "flex items-start gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",
-      @class
-    ]}>
-      <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
-      <span>{render_slot(@inner_block)}</span>
-    </p>
-    """
-  end
-
-  @doc """
-  The canonical section banner — the non-form sibling of `<.error_banner>`: a
-  leading icon, an optional bold `title`, the message (default slot), and an
-  optional right-aligned `:action` (a button/link). Four severities: `:info`
-  (brand), `:success` (brand-green), `:warning` (amber), `:danger` (rose). For any
-  section-level heads-up — a held-approval banner, an offline warning, a
-  "needs trust review" notice, a freshly-minted credential reminder. The message
-  renders escaped through HEEx (IL-16).
-
-      <.notice variant={:warning}>Copy the token now — we won't show it again.</.notice>
-      <.notice variant={:danger} title="Run failed">
-        The runner exited non-zero. Check the output below.
-      </.notice>
-      <.notice variant={:warning} title="1 pack needs trust review">
-        Dispatch is blocked until you decide.
-        <:action><.button navigate={~p"/app/.../packs"}>Review</.button></:action>
-      </.notice>
-  """
-  attr :variant, :atom, default: :info, values: [:info, :success, :warning, :danger]
+  attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
+  attr :variant, :atom, default: :boxed, values: [:boxed, :strip]
   attr :title, :string, default: nil
+  attr :icon, :any, default: nil, doc: "heroicon override; `false` renders no icon"
+  attr :navigate, :any, default: nil, doc: "makes the whole callout a link"
+  attr :class, :any, default: nil
+  attr :rest, :global
 
-  attr :icon, :string,
-    default: nil,
-    doc: "override the per-severity icon (e.g. a held-approval hand)"
-
-  attr :class, :string, default: nil
   slot :inner_block, required: true
-  slot :action, doc: "right-aligned action (button/link)"
+  slot :action, doc: "right-aligned action — a button/link, or static text under `navigate`"
 
-  def notice(assigns) do
+  def callout(%{navigate: nil} = assigns) do
     ~H"""
-    <div class={[
-      "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm",
-      notice_class(@variant),
-      @class
-    ]}>
-      <.icon name={@icon || notice_icon(@variant)} class="mt-0.5 h-4 w-4 flex-none" />
-      <div class="min-w-0 flex-1">
-        <p :if={@title} class="font-semibold">{@title}</p>
-        <div class={@title && "mt-0.5 opacity-90"}>{render_slot(@inner_block)}</div>
-      </div>
-      <div :if={@action != []} class="shrink-0 self-center">{render_slot(@action)}</div>
+    <div class={[callout_frame(@variant), callout_tone(@tone), @class]} {@rest}>
+      <.callout_content
+        variant={@variant}
+        tone={@tone}
+        title={@title}
+        icon={@icon}
+        body={@inner_block}
+        action={@action}
+      />
     </div>
     """
   end
 
-  defp notice_class(:info), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
-  defp notice_class(:success), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
-  defp notice_class(:warning), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
-  defp notice_class(:danger), do: "border-rose-500/30 bg-rose-500/10 text-rose-200"
+  def callout(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class={[callout_frame(@variant), callout_tone(@tone), callout_hover(@tone), @class]}
+      {@rest}
+    >
+      <.callout_content
+        variant={@variant}
+        tone={@tone}
+        title={@title}
+        icon={@icon}
+        body={@inner_block}
+        action={@action}
+      />
+    </.link>
+    """
+  end
 
-  defp notice_icon(:info), do: "hero-information-circle-mini"
-  defp notice_icon(:success), do: "hero-check-circle-mini"
-  defp notice_icon(:warning), do: "hero-exclamation-triangle-mini"
-  defp notice_icon(:danger), do: "hero-exclamation-triangle-mini"
+  attr :variant, :atom, required: true
+  attr :tone, :atom, required: true
+  attr :title, :string, required: true
+  attr :icon, :any, required: true
+  attr :body, :any, required: true
+  attr :action, :any, required: true
+
+  defp callout_content(assigns) do
+    ~H"""
+    <.icon
+      :if={@icon != false}
+      name={@icon || callout_icon(@tone)}
+      class={callout_icon_class(@variant)}
+    />
+    <div class="min-w-0 flex-1">
+      <p :if={@title} class="font-semibold">{@title}</p>
+      <div class={@title && "mt-0.5 opacity-90"}>{render_slot(@body)}</div>
+    </div>
+    <div :if={@action != []} class="shrink-0 self-center">{render_slot(@action)}</div>
+    """
+  end
+
+  defp callout_frame(:boxed), do: "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm"
+
+  defp callout_frame(:strip),
+    do: "flex flex-wrap items-center gap-3 border-b px-4 py-2.5 text-sm sm:px-6"
+
+  # The icon top-nudge only makes sense against the boxed variant's items-start.
+  defp callout_icon_class(:boxed), do: "mt-0.5 h-4 w-4 flex-none"
+  defp callout_icon_class(:strip), do: "h-4 w-4 flex-none"
+
+  defp callout_tone(:neutral), do: "border-zinc-700 bg-zinc-900/40 text-zinc-300"
+  defp callout_tone(:brand), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
+  defp callout_tone(:amber), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
+  defp callout_tone(:rose), do: "border-rose-500/30 bg-rose-500/10 text-rose-200"
+
+  defp callout_hover(:neutral), do: "transition hover:bg-zinc-900/60"
+  defp callout_hover(:brand), do: "transition hover:bg-brand-500/[0.16]"
+  defp callout_hover(:amber), do: "transition hover:bg-amber-500/[0.16]"
+  defp callout_hover(:rose), do: "transition hover:bg-rose-500/[0.16]"
+
+  defp callout_icon(:neutral), do: "hero-information-circle-mini"
+  defp callout_icon(:brand), do: "hero-information-circle-mini"
+  defp callout_icon(:amber), do: "hero-exclamation-triangle-mini"
+  defp callout_icon(:rose), do: "hero-exclamation-triangle-mini"
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
@@ -992,24 +1029,16 @@ defmodule EmisarWeb.CoreComponents do
     assigns = assign(assigns, :alert, subscription_alert(assigns.status))
 
     ~H"""
-    <div
+    <.callout
       :if={@alert}
-      class={[
-        "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
-        @alert.tone == :rose && "border-rose-500/40 bg-rose-500/10 text-rose-200",
-        @alert.tone == :amber && "border-amber-500/40 bg-amber-500/10 text-amber-200",
-        @class
-      ]}
+      tone={@alert.tone}
+      icon="hero-exclamation-triangle"
+      title={@alert.title}
+      class={@class}
     >
-      <div class="flex items-start gap-2">
-        <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 flex-none" />
-        <span>
-          <span class="font-semibold">{@alert.title}</span>
-          <span class="text-zinc-300">— {@alert.body}</span>
-        </span>
-      </div>
-      {render_slot(@cta)}
-    </div>
+      {@alert.body}
+      <:action :if={@cta != []}>{render_slot(@cta)}</:action>
+    </.callout>
     """
   end
 
@@ -1041,94 +1070,6 @@ defmodule EmisarWeb.CoreComponents do
     }
 
   defp subscription_alert(_), do: nil
-
-  @doc """
-  A tone-colored attention banner: icon, bold title, one-line body, optional CTA.
-  Amber is "heads up", rose is "you're blocked".
-
-  Pass `navigate` to make the whole banner a link (the CTA renders as a static
-  badge); omit it and give the `:cta` its own `navigate` when only the action
-  should link. The trailing `→` is supplied — the CTA slot carries just the label.
-
-      <.attention_banner tone={:rose} icon="hero-exclamation-triangle" title="At your runner limit">
-        The next runner to register gets a 402 and fails to come online.
-        <:cta navigate={~p"/app/\#{@account}/settings/billing"}>See plans</:cta>
-      </.attention_banner>
-  """
-  attr :tone, :atom, default: :amber, values: [:amber, :rose]
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-  attr :navigate, :any, default: nil
-
-  slot :inner_block, required: true
-
-  slot :cta do
-    attr :navigate, :any
-  end
-
-  def attention_banner(%{navigate: nil} = assigns) do
-    assigns = assign(assigns, :c, attention_banner_classes(assigns.tone))
-
-    ~H"""
-    <div class={["mb-4 flex items-start gap-3 rounded-xl border p-4", @c.box]}>
-      <.icon name={@icon} class={"mt-0.5 h-5 w-5 flex-none #{@c.icon}"} />
-      <div class="flex-1 text-sm">
-        <p class={["font-semibold", @c.title]}>{@title}</p>
-        <p class={["mt-1 text-xs", @c.body]}>{render_slot(@inner_block)}</p>
-      </div>
-      <.link
-        :for={cta <- @cta}
-        navigate={cta[:navigate]}
-        class={["shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold", @c.cta]}
-      >
-        {render_slot(cta)} →
-      </.link>
-    </div>
-    """
-  end
-
-  def attention_banner(assigns) do
-    assigns = assign(assigns, :c, attention_banner_classes(assigns.tone))
-
-    ~H"""
-    <.link
-      navigate={@navigate}
-      class={["mb-4 flex items-start gap-3 rounded-xl border p-4 transition", @c.box, @c.hover]}
-    >
-      <.icon name={@icon} class={"mt-0.5 h-5 w-5 flex-none #{@c.icon}"} />
-      <div class="flex-1 text-sm">
-        <p class={["font-semibold", @c.title]}>{@title}</p>
-        <p class={["mt-1 text-xs", @c.body]}>{render_slot(@inner_block)}</p>
-      </div>
-      <span
-        :for={cta <- @cta}
-        class={["shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold", @c.cta]}
-      >
-        {render_slot(cta)} →
-      </span>
-    </.link>
-    """
-  end
-
-  defp attention_banner_classes(:rose),
-    do: %{
-      box: "border-rose-500/40 bg-rose-500/10",
-      hover: "hover:bg-rose-500/[0.16]",
-      icon: "text-rose-300",
-      title: "text-rose-100",
-      body: "text-rose-200/90",
-      cta: "bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
-    }
-
-  defp attention_banner_classes(:amber),
-    do: %{
-      box: "border-amber-500/40 bg-amber-500/10",
-      hover: "hover:bg-amber-500/[0.16]",
-      icon: "text-amber-300",
-      title: "text-amber-100",
-      body: "text-amber-200/90",
-      cta: "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
-    }
 
   @doc """
   Renders a [Heroicon](https://heroicons.com).
@@ -1427,6 +1368,7 @@ defmodule EmisarWeb.CoreComponents do
             pending_approvals_count={@pending_approvals_count}
             pending_packs_count={@pending_packs_count}
             fleet_all_offline?={@fleet_all_offline?}
+            no_agents?={@no_agents?}
           />
           <.shell_user current_user={@current_user} current_account={@current_account} />
         </aside>
@@ -1437,24 +1379,19 @@ defmodule EmisarWeb.CoreComponents do
              confirmed yet. Shown on every page until they verify; the
              "Resend" button is handled by the global `:email_confirmation`
              on_mount hook so it works regardless of which LV is mounted. --%>
-        <div
+        <.callout
           :if={@current_user && is_nil(@current_user.confirmed_at)}
-          class="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 sm:px-6"
+          tone={:amber}
+          variant={:strip}
+          icon="hero-envelope"
         >
-          <p class="flex items-center gap-2 text-sm text-amber-200">
-            <.icon name="hero-envelope" class="h-4 w-4 shrink-0" />
-            <span>
-              Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
-            </span>
-          </p>
-          <button
-            type="button"
-            phx-click="resend_confirmation"
-            class="shrink-0 rounded-md bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30"
-          >
-            Resend email
-          </button>
-        </div>
+          Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
+          <:action>
+            <.button variant="secondary" size="sm" phx-click="resend_confirmation">
+              Resend email
+            </.button>
+          </:action>
+        </.callout>
 
         <%!-- Onboarding nudge: an operator whose account has no MCP key yet —
              emisar does nothing until an LLM is connected. Brand-toned (an
@@ -1463,23 +1400,24 @@ defmodule EmisarWeb.CoreComponents do
              upstream, so only operators who can act see it. Suppressed on the
              agents page (where they'd act) and the dashboard (whose onboarding
              checklist already carries the same nudge) to avoid double-nudging. --%>
-        <div
+        <.callout
           :if={@no_agents? && @section not in [:agents, :dashboard]}
-          class="flex flex-wrap items-center justify-between gap-3 border-b border-brand-500/30 bg-brand-500/10 px-4 py-2.5 sm:px-6"
+          tone={:brand}
+          variant={:strip}
+          icon="hero-cpu-chip"
         >
-          <p class="flex items-center gap-2 text-sm text-brand-200">
-            <.icon name="hero-cpu-chip" class="h-4 w-4 shrink-0" />
-            <span>
-              No LLM connected yet — give an MCP client like Claude or Cursor a scoped key to start dispatching actions.
-            </span>
-          </p>
-          <.link
-            navigate={~p"/app/#{@current_account}/settings/agents"}
-            class="shrink-0 rounded-md bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-100 ring-1 ring-brand-500/40 hover:bg-brand-500/30"
-          >
-            Connect an LLM
-          </.link>
-        </div>
+          No LLM connected yet — give an MCP client like Claude or Cursor a scoped key to start
+          dispatching actions.
+          <:action>
+            <.button
+              variant="secondary"
+              size="sm"
+              navigate={~p"/app/#{@current_account}/settings/agents"}
+            >
+              Connect an LLM
+            </.button>
+          </:action>
+        </.callout>
 
         <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 backdrop-blur sm:px-6">
           <%!-- Mobile hamburger (hidden on lg) --%>
@@ -3276,33 +3214,22 @@ defmodule EmisarWeb.CoreComponents do
   slot :action
 
   def offline_notice(assigns) do
+    assigns = assign(assigns, :tone, offline_tone(assigns.severity))
+
     ~H"""
-    <div class={["flex items-start gap-3 rounded-xl border p-4", offline_box(@severity), @class]}>
-      <.icon name="hero-signal-slash" class={offline_icon(@severity)} />
-      <div class="flex-1">
-        <p class={["text-sm font-semibold", offline_title(@severity)]}>{@title}</p>
-        <p class={["mt-1 text-xs", offline_body(@severity)]}>{render_slot(@inner_block)}</p>
-      </div>
-      <div :if={@action != []} class="shrink-0 self-start">{render_slot(@action)}</div>
-    </div>
+    <.callout tone={@tone} icon="hero-signal-slash" title={@title} class={@class}>
+      {render_slot(@inner_block)}
+      <:action :if={@action != []}>{render_slot(@action)}</:action>
+    </.callout>
     """
   end
 
-  defp offline_box(:info), do: "border-zinc-700 bg-zinc-900/40"
-  defp offline_box(:caution), do: "border-amber-500/30 bg-amber-500/[0.06]"
-  defp offline_box(:critical), do: "border-rose-500/40 bg-rose-500/10"
-
-  defp offline_icon(:info), do: "mt-0.5 h-5 w-5 flex-none text-zinc-400"
-  defp offline_icon(:caution), do: "mt-0.5 h-5 w-5 flex-none text-amber-300"
-  defp offline_icon(:critical), do: "mt-0.5 h-5 w-5 flex-none text-rose-300"
-
-  defp offline_title(:info), do: "text-zinc-200"
-  defp offline_title(:caution), do: "text-amber-100"
-  defp offline_title(:critical), do: "text-rose-100"
-
-  defp offline_body(:info), do: "text-zinc-400"
-  defp offline_body(:caution), do: "text-amber-200/80"
-  defp offline_body(:critical), do: "text-rose-200/90"
+  # The severity → tone convention this wrapper exists to encode: informational
+  # offline (dispatch still works, the run queues) is a quiet note; caution
+  # names an affected run/action; critical means the whole fleet is down.
+  defp offline_tone(:info), do: :neutral
+  defp offline_tone(:caution), do: :amber
+  defp offline_tone(:critical), do: :rose
 
   @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's

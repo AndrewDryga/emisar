@@ -1014,11 +1014,11 @@ defmodule EmisarWeb.AgentsLive do
         <% @selected_client == "custom" -> %>
           <div class="space-y-5 px-6 py-5">
             <%= if @quick_secret do %>
-              <.notice variant={:warning}>
+              <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
                 Copy the bearer token below before you leave this page; we won't show it
                 again. If you lose it, create another key.
-              </.notice>
+              </.callout>
 
               <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
                 <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
@@ -1045,11 +1045,11 @@ defmodule EmisarWeb.AgentsLive do
         <% @config && @config.kind == :remote -> %>
           <div class="space-y-6 px-6 py-5">
             <%= if @quick_secret do %>
-              <.notice variant={:warning}>
+              <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
                 Copy the bearer token below before you leave this page; we won't show it
                 again. If you lose it, pick the client again to mint a new one.
-              </.notice>
+              </.callout>
             <% end %>
 
             <.remote_mcp_panel
@@ -1069,12 +1069,12 @@ defmodule EmisarWeb.AgentsLive do
         <% @config -> %>
           <div class="space-y-6 px-6 py-5">
             <%= if @quick_secret do %>
-              <.notice variant={:warning}>
+              <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
                 The snippet below contains it — copy the whole snippet, not just part. We
                 won't show this key again after you leave the page; pick the client again to
                 mint a new one.
-              </.notice>
+              </.callout>
             <% end %>
 
             <.local_install_block />
