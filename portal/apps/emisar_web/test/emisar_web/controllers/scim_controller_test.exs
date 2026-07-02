@@ -388,7 +388,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         SSO.scim_provision_user(provider, %{external_id: "okta|np", email: "np@acme.test"})
 
       patch_body = %{
-        "Operations" => [%{"op" => "replace", "path" => "displayName", "value" => "Renamed"}]
+        "Operations" => [%{"op" => "replace", "path" => "title", "value" => "Chief Renamer"}]
       }
 
       body =
@@ -443,6 +443,82 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(400)
 
       assert body["scimType"] == "invalidPath"
+    end
+
+    test "a displayName-only PATCH renames the synced user", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|rename-only",
+          email: "rename-only@acme.test",
+          full_name: "Old Name"
+        })
+
+      patch_body = %{
+        "Operations" => [%{"op" => "replace", "path" => "displayName", "value" => "New Name"}]
+      }
+
+      conn
+      |> scim_patch(token, ~p"/scim/v2/Users/okta|rename-only", patch_body)
+      |> json_response(200)
+
+      assert Repo.reload!(user).full_name == "New Name"
+    end
+
+    test "a pathless Entra-style PATCH value map renames too", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|entra-rename",
+          email: "entra-rename@acme.test",
+          full_name: "Old Name"
+        })
+
+      patch_body = %{
+        "Operations" => [%{"op" => "Replace", "value" => %{"displayName" => "Entra Name"}}]
+      }
+
+      conn
+      |> scim_patch(token, ~p"/scim/v2/Users/okta|entra-rename", patch_body)
+      |> json_response(200)
+
+      assert Repo.reload!(user).full_name == "Entra Name"
+    end
+
+    test "one PatchOp carrying displayName AND active applies both", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|both-ops",
+          email: "both-ops@acme.test",
+          full_name: "Old Name"
+        })
+
+      patch_body = %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "displayName", "value" => "Renamed"},
+          %{"op" => "replace", "path" => "active", "value" => false}
+        ]
+      }
+
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|both-ops", patch_body)
+        |> json_response(200)
+
+      assert body["active"] == false
+      assert Repo.reload!(user).full_name == "Renamed"
+      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
     test "a non-list `Operations` → 400 invalidValue", %{
@@ -716,6 +792,30 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "PUT with a changed displayName renames the synced user", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|put-rename",
+          email: "put-rename@acme.test",
+          full_name: "Old Name"
+        })
+
+      body =
+        conn
+        |> scim_put(token, ~p"/scim/v2/Users/okta|put-rename", %{
+          "active" => true,
+          "displayName" => "New Name"
+        })
+        |> json_response(200)
+
+      assert body["active"] == true
+      assert Repo.reload!(user).full_name == "New Name"
+    end
+
     test "PUT with the Entra string `\"False\"` suspends the membership", %{
       conn: conn,
       token: token,
@@ -739,7 +839,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
     end
 
-    test "PUT acts on `active` only — other body attributes are ignored", %{
+    test "PUT applies displayName + active — email stays immutable", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -752,8 +852,9 @@ defmodule EmisarWeb.SCIMControllerTest do
           full_name: "Original Name"
         })
 
-      # The PUT flips active:false and ALSO carries a displayName + emails — only
-      # `active` is acted on; the other attributes are immutable post-provision.
+      # The PUT flips active:false and carries a displayName + emails: the
+      # IdP-owned name and lifecycle apply; the sign-in email never does (an
+      # email rewrite via sync would be an account-takeover surface).
       body =
         conn
         |> scim_put(token, ~p"/scim/v2/Users/okta|put-ignore", %{
@@ -766,9 +867,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["active"] == false
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
-      # The user's name + email were NOT rewritten by the PUT.
       {:ok, reloaded} = Users.fetch_user_by_id(user.id)
-      assert reloaded.full_name == "Original Name"
+      assert reloaded.full_name == "Renamed By IdP"
       assert reloaded.email == "ignore@acme.test"
     end
 

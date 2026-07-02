@@ -199,6 +199,31 @@ defmodule Emisar.SSOTest do
 
   # -- list_synced_users/2 --------------------------------------------
 
+  describe "user_profile_directory_managed?/2" do
+    test "true for a member synced under a SCIM-enabled provider" do
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|managed")
+
+      assert SSO.user_profile_directory_managed?(account.id, identity.user_id)
+    end
+
+    test "false once directory sync is disabled — the lock lifts with SCIM" do
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|unlocked")
+
+      {:ok, _provider} = SSO.disable_scim(provider, subject)
+
+      refute SSO.user_profile_directory_managed?(account.id, identity.user_id)
+    end
+
+    test "false for a member with no directory identity" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      refute SSO.user_profile_directory_managed?(account.id, user.id)
+    end
+  end
+
   describe "list_synced_users/2" do
     test "returns the provider's provisioned users with the user preloaded" do
       %{provider: provider, subject: subject} = scim_provider()

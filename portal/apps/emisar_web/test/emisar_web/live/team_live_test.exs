@@ -686,6 +686,32 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(synced.membership).role == :operator
     end
 
+    test "the roster hides Edit name and refuses a crafted save_edit", %{
+      conn: conn,
+      account: account
+    } do
+      # A synced member's profile is the directory's — the IdP re-pushes the name,
+      # so a local edit silently reverts. The roster hides the affordance and the
+      # domain refuses a crafted save (IL-15), leaving the name untouched.
+      synced = scim_synced_member(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      refute has_element?(
+               lv,
+               "[phx-click='start_edit'][phx-value-membership_id='#{synced.membership.id}']"
+             )
+
+      html =
+        render_click(lv, "save_edit", %{
+          "membership_id" => synced.membership.id,
+          "user" => %{"full_name" => "Hijacked"}
+        })
+
+      assert html =~ "managed by your identity provider"
+      assert Emisar.Repo.reload!(synced.user).full_name == "Synced Member"
+    end
+
     test "a member deactivated in the IdP can't be reinstated (stays suspended)", %{
       conn: conn,
       account: account
@@ -1158,7 +1184,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     external_id = "ext-#{System.unique_integer([:positive])}"
 
-    {:ok, %{identity: identity}} =
+    {:ok, %{identity: identity, user: user}} =
       Emisar.SSO.scim_provision_user(provider, %{
         external_id: external_id,
         email: "synced-#{System.unique_integer([:positive])}@example.test",
@@ -1170,6 +1196,6 @@ defmodule EmisarWeb.TeamLiveTest do
     # through this; without it the row isn't actually directory-managed.
     {:ok, membership} = Emisar.SSO.recompute_role_for_identity(provider, identity)
 
-    %{provider: provider, membership: membership, external_id: external_id}
+    %{provider: provider, membership: membership, external_id: external_id, user: user}
   end
 end
