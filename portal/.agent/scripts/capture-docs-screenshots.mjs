@@ -4,12 +4,18 @@
 // console, and rewrites portal/apps/emisar_web/priv/static/images/screenshots/*.webp
 // (the images embedded in the /docs pages).
 //
-// Prereqs (macOS): the dev server on :4000, the dev seed applied so
-// demo@emisar.dev has data, Google Chrome, and ImageMagick (`magick`). See README.
+// Login is passwordless (auth is magic-link only): submits the seeded demo
+// email on /sign_in, then pulls the magic-link URL out of the dev mailbox
+// (/dev/mailbox/json) and opens it in the SAME browser — the link is
+// nonce-cookie-bound to the requesting browser.
+//
+// Prereqs (macOS): the dev server on :4000 (or DEV_URL=http://localhost:4010
+// for the compose stack), the dev seed applied so demo@emisar.dev exists,
+// Google Chrome, and ImageMagick (`magick`). See README.
 //
 //   cd portal/.agent/scripts && npm install && npm run capture
 //
-// Env overrides: DEV_URL, EMAIL, PASSWORD, ACCOUNT_SLUG, CHROME, OUT_DIR.
+// Env overrides: DEV_URL, EMAIL, ACCOUNT_SLUG, CHROME, OUT_DIR.
 
 import puppeteer from "puppeteer-core";
 import { execFileSync } from "node:child_process";
@@ -19,7 +25,6 @@ import { join, resolve } from "node:path";
 
 const DEV_URL = process.env.DEV_URL ?? "http://localhost:4000";
 const EMAIL = process.env.EMAIL ?? "demo@emisar.dev";
-const PASSWORD = process.env.PASSWORD ?? "Sleep-tight-1234";
 const SLUG = process.env.ACCOUNT_SLUG ?? "demo";
 const CHROME =
   process.env.CHROME ??
@@ -44,6 +49,35 @@ const OUT = process.env.OUT_DIR
 mkdirSync(OUT, { recursive: true });
 
 const tmp = mkdtempSync(join(tmpdir(), "emisar-shots-"));
+
+async function mailboxMessages() {
+  const res = await fetch(`${DEV_URL}/dev/mailbox/json`);
+  if (!res.ok) throw new Error(`mailbox fetch failed: ${res.status}`);
+  const body = await res.json();
+  return body.data ?? body;
+}
+
+// The magic-link URL from the newest mail to EMAIL that isn't in `seenIds`.
+async function pollMagicLink(seenIds) {
+  for (let i = 0; i < 20; i++) {
+    const messages = await mailboxMessages();
+    const fresh = messages.find(
+      (m) =>
+        !seenIds.has(m.id) &&
+        JSON.stringify(m.to ?? "").includes(EMAIL) &&
+        /sign_in\/magic\//.test(m.text_body ?? ""),
+    );
+    if (fresh) {
+      const match = (fresh.text_body ?? "").match(
+        /https?:\/\/[^\s"]*\/sign_in\/magic\/[^\s")]+/,
+      );
+      if (match) return match[0].replace(/^https?:\/\/[^/]+/, DEV_URL);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("no magic-link email showed up in /dev/mailbox");
+}
+
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: "new",
@@ -54,13 +88,20 @@ try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 1024, deviceScaleFactor: 2 });
 
+  const seenIds = new Set((await mailboxMessages()).map((m) => m.id));
   await page.goto(`${DEV_URL}/sign_in`, { waitUntil: "networkidle2" });
-  await page.type('input[name="user[email]"]', EMAIL);
-  await page.type('input[name="user[password]"]', PASSWORD);
+  await page.type('input[type="email"]', EMAIL);
   await Promise.all([
     page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {}),
-    page.keyboard.press("Enter"), // submit from the focused password field
+    page.keyboard.press("Enter"),
   ]);
+  const magicLink = await pollMagicLink(seenIds);
+  await page.goto(magicLink, { waitUntil: "networkidle2" });
+  await page
+    .waitForFunction(() => location.pathname.startsWith("/app/"), {
+      timeout: 20000,
+    })
+    .catch(() => {});
 
   if (!page.url().includes(`/app/${SLUG}`)) {
     throw new Error(
