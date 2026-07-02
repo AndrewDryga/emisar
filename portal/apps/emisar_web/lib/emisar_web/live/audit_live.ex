@@ -484,8 +484,8 @@ defmodule EmisarWeb.AuditLive do
         <:actions>
           <.button
             :if={is_nil(@export_secret)}
-            variant="secondary"
-            size="md"
+            variant={:secondary}
+            size={:md}
             class="shrink-0"
             type="button"
             icon="hero-key"
@@ -545,8 +545,9 @@ defmodule EmisarWeb.AuditLive do
               <:actions>
                 <.button
                   :if={is_nil(key.revoked_at)}
-                  variant="danger"
-                  size="sm"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
                   class="shrink-0"
                   phx-click="revoke_export_key"
                   phx-value-id={key.id}

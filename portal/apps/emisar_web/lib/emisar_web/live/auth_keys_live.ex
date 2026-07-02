@@ -230,7 +230,7 @@ defmodule EmisarWeb.AuthKeysLive do
     >
       <:title>Runner keys</:title>
       <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
-        <.button phx-click={show_create()} size="md" icon="hero-plus">
+        <.button phx-click={show_create()} size={:md} icon="hero-plus">
           New key
         </.button>
       </:actions>
@@ -254,8 +254,8 @@ defmodule EmisarWeb.AuthKeysLive do
           Issuing a key doesn't reserve a slot — the runner only counts after it registers.
           <:action>
             <.button
-              variant="secondary"
-              size="md"
+              variant={:secondary}
+              size={:md}
               navigate={~p"/app/#{@current_account}/settings/billing"}
             >
               See plans →
@@ -401,8 +401,9 @@ defmodule EmisarWeb.AuthKeysLive do
                   :if={
                     is_nil(key.revoked_at) and Runners.subject_can_manage_auth_keys?(@current_subject)
                   }
-                  variant="danger"
-                  size="sm"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
                   type="button"
                   phx-click={show_confirm_dialog("revoke-key-#{key.id}")}
                 >

@@ -428,7 +428,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.detail_header>
       </:title>
       <:actions>
-        <.button variant="secondary" size="md" navigate={~p"/app/#{@current_account}/runbooks"}>
+        <.button variant={:secondary} size={:md} navigate={~p"/app/#{@current_account}/runbooks"}>
           Cancel
         </.button>
       </:actions>
@@ -437,8 +437,8 @@ defmodule EmisarWeb.RunbookEditorLive do
         <.panel variant={:split} title="Steps">
           <:actions>
             <.button
-              variant="secondary"
-              size="md"
+              variant={:secondary}
+              size={:md}
               type="button"
               icon="hero-plus"
               phx-click="add_action_step"
@@ -485,7 +485,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
             <div class="flex items-center justify-end gap-3 pt-2">
               <.button
-                variant="secondary"
+                variant={:secondary}
                 type="button"
                 phx-click="save"
                 phx-disable-with="Saving..."
@@ -589,7 +589,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           <.icon_button
             icon="hero-trash"
             label="Remove step"
-            tone="danger"
+            tone={:rose}
             phx-click="remove_step"
             phx-value-index={@index}
             data-confirm="Remove this step?"
@@ -724,9 +724,9 @@ defmodule EmisarWeb.RunbookEditorLive do
         </div>
         <.button
           type="button"
-          variant="ghost"
-          tone="success"
-          size="sm"
+          variant={:ghost}
+          tone={:brand}
+          size={:sm}
           phx-click="add_arg"
           phx-value-index={@index}
         >

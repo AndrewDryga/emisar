@@ -118,7 +118,7 @@ defmodule EmisarWeb.MagicLinkLive do
           <.button
             id="resend-code"
             type="submit"
-            variant="secondary"
+            variant={:secondary}
             class="w-full"
             phx-hook="ResendCooldown"
             data-seconds="30"

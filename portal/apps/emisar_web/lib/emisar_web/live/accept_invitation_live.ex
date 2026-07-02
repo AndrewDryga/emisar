@@ -122,7 +122,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
           Sign out first, then re-open the invitation link to accept it as {@membership.user.email}.
         </p>
 
-        <.button variant="danger" href={~p"/sign_out"} method="delete" class="mt-2 w-full">
+        <.button
+          variant={:secondary}
+          tone={:rose}
+          href={~p"/sign_out"}
+          method="delete"
+          class="mt-2 w-full"
+        >
           Sign out
         </.button>
       </div>

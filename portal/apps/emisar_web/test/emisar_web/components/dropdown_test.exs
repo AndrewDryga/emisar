@@ -87,9 +87,9 @@ defmodule EmisarWeb.Components.DropdownTest do
 
     test "tones mirror the ghost button vocabulary (zinc/amber/rose/emerald)" do
       assert render_menu_item(%{}, "Edit") =~ "text-zinc-300"
-      assert render_menu_item(%{tone: "caution"}, "Suspend") =~ "text-amber-300"
-      assert render_menu_item(%{tone: "danger"}, "Remove") =~ "text-rose-300"
-      assert render_menu_item(%{tone: "success"}, "Restore") =~ "text-brand-300"
+      assert render_menu_item(%{tone: :amber}, "Suspend") =~ "text-amber-300"
+      assert render_menu_item(%{tone: :rose}, "Remove") =~ "text-rose-300"
+      assert render_menu_item(%{tone: :brand}, "Restore") =~ "text-brand-300"
     end
 
     test "a leading icon renders before the label" do

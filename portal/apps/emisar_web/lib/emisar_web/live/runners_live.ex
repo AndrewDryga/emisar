@@ -116,7 +116,7 @@ defmodule EmisarWeb.RunnersLive do
     >
       <:title>Runners</:title>
       <:actions>
-        <.button navigate={~p"/app/#{@current_account}/runners/install"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/runners/install"} size={:md} icon="hero-plus">
           Add a runner
         </.button>
       </:actions>

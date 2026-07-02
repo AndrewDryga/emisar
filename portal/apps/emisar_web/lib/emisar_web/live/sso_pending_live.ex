@@ -65,7 +65,7 @@ defmodule EmisarWeb.SSOPendingLive do
           Until then you can't reach anything in the account — there's nothing you need to do here.
         </p>
 
-        <.button variant="secondary" href={~p"/sign_in"} class="w-full">
+        <.button variant={:secondary} href={~p"/sign_in"} class="w-full">
           Back to sign in
         </.button>
       </div>
@@ -80,7 +80,7 @@ defmodule EmisarWeb.SSOPendingLive do
           dismissed your request. If you think that's a mistake, reach out to them directly.
         </p>
 
-        <.button variant="secondary" href={~p"/sign_in"} class="w-full">
+        <.button variant={:secondary} href={~p"/sign_in"} class="w-full">
           Back to sign in
         </.button>
       </div>

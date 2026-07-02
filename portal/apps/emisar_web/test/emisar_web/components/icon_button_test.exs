@@ -30,7 +30,7 @@ defmodule EmisarWeb.Components.IconButtonTest do
     test "neutral is the default tone; danger maps to the rose hover" do
       assert render_icon_button(%{icon: "hero-trash", label: "Remove"}) =~ "hover:text-zinc-200"
 
-      assert render_icon_button(%{icon: "hero-trash", label: "Remove", tone: "danger"}) =~
+      assert render_icon_button(%{icon: "hero-trash", label: "Remove", tone: :rose}) =~
                "hover:text-rose-300"
     end
 

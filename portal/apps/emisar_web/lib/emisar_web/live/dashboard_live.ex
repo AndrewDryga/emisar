@@ -231,8 +231,8 @@ defmodule EmisarWeb.DashboardLive do
     <.subscription_banner status={@billing.subscription_status}>
       <:cta :if={@can_manage_billing}>
         <.button
-          variant="secondary"
-          size="sm"
+          variant={:secondary}
+          size={:sm}
           navigate={~p"/app/#{@current_account}/settings/billing"}
         >
           Manage billing
@@ -469,7 +469,12 @@ defmodule EmisarWeb.DashboardLive do
       No actions can be dispatched until a runner reconnects. Check the runner
       host's logs or the systemd/launchd unit.
       <:action>
-        <.button variant="danger" size="sm" navigate={~p"/app/#{@current_account}/runners"}>
+        <.button
+          variant={:secondary}
+          tone={:rose}
+          size={:sm}
+          navigate={~p"/app/#{@current_account}/runners"}
+        >
           View runners →
         </.button>
       </:action>
@@ -577,8 +582,8 @@ defmodule EmisarWeb.DashboardLive do
         online. Upgrade the plan to add more, or remove an unused runner first.
         <:action>
           <.button
-            variant="secondary"
-            size="sm"
+            variant={:secondary}
+            size={:sm}
             navigate={~p"/app/#{@current_account}/settings/billing"}
           >
             See plans
@@ -596,8 +601,8 @@ defmodule EmisarWeb.DashboardLive do
         add more.
         <:action>
           <.button
-            variant="secondary"
-            size="sm"
+            variant={:secondary}
+            size={:sm}
             navigate={~p"/app/#{@current_account}/settings/billing"}
           >
             See plans

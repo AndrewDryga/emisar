@@ -118,7 +118,7 @@ defmodule EmisarWeb.RunnerInstallLive do
     >
       <:title>Install a runner</:title>
       <:actions>
-        <.button variant="secondary" size="md" navigate={~p"/app/#{@current_account}/runners"}>
+        <.button variant={:secondary} size={:md} navigate={~p"/app/#{@current_account}/runners"}>
           ← Back to runners
         </.button>
       </:actions>

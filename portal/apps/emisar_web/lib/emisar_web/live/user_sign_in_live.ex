@@ -26,7 +26,7 @@ defmodule EmisarWeb.UserSignInLive do
 
       <.or_separator />
 
-      <.button variant="secondary" href={~p"/sign_in/sso"} class="w-full">
+      <.button variant={:secondary} href={~p"/sign_in/sso"} class="w-full">
         Sign in with SSO
       </.button>
 

@@ -873,7 +873,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.disclosure>
 
             <.button
-              variant="success"
               class="w-full"
               icon="hero-check"
               phx-disable-with="Approving…"
@@ -886,19 +885,25 @@ defmodule EmisarWeb.ApprovalDetailLive do
                the one with nowhere to record *why*, leaving a blank reason in
                the decision history. The handler already accepts it. --%>
           <form phx-submit="deny" class="mt-3 space-y-3">
-            <%!-- `tone="danger"` tints the focus ring rose — this is the
+            <%!-- `tone={:rose}` tints the focus ring rose — this is the
                  destructive decision. `aria-label` names it for AT. --%>
             <.input
               type="textarea"
               name="reason"
               value={nil}
-              tone="danger"
+              tone={:rose}
               rows="2"
               aria-label="Reason for denial"
               placeholder="Why are you denying this? (optional, logged in the decision history)"
               class="min-h-0 resize-none"
             />
-            <.button variant="danger" class="w-full" icon="hero-x-mark" phx-disable-with="Denying…">
+            <.button
+              variant={:secondary}
+              tone={:rose}
+              class="w-full"
+              icon="hero-x-mark"
+              phx-disable-with="Denying…"
+            >
               Deny
             </.button>
           </form>

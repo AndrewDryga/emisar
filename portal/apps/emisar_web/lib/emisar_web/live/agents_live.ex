@@ -817,8 +817,8 @@ defmodule EmisarWeb.AgentsLive do
                      are engine-attributed), so this pivots to the runs feed. --%>
                 <.button
                   navigate={~p"/app/#{@current_account}/runs?#{[api_key_id: key.id]}"}
-                  variant="ghost"
-                  size="sm"
+                  variant={:ghost}
+                  size={:sm}
                 >
                   View activity
                 </.button>
@@ -826,8 +826,8 @@ defmodule EmisarWeb.AgentsLive do
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
                   }
-                  variant="ghost"
-                  size="sm"
+                  variant={:ghost}
+                  size={:sm}
                   phx-click="rotate"
                   phx-value-id={key.id}
                   data-confirm="Rotate this key? A new key with the same scope is minted; the old one keeps working until you revoke it, so update your agent before revoking."
@@ -838,8 +838,9 @@ defmodule EmisarWeb.AgentsLive do
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
                   }
-                  variant="danger"
-                  size="sm"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
                   phx-click="revoke"
                   phx-value-id={key.id}
                   data-confirm="Revoke this API key? The connected client will get 401s on its next call."

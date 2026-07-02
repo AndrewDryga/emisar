@@ -377,6 +377,9 @@ defmodule EmisarWeb.TeamLive do
 
   defp error_message(:not_found), do: "User no longer exists."
 
+  defp error_message(:directory_managed_profile),
+    do: "This member's name is managed by your identity provider — change it there."
+
   defp error_message(:role_managed_by_directory),
     do: "That member's role is set by their identity provider."
 
@@ -672,7 +675,7 @@ defmodule EmisarWeb.TeamLive do
       <:actions :if={@live_action == :index and not @loading? and can_manage?(assigns)}>
         <.button
           navigate={~p"/app/#{@current_account}/settings/team/invite"}
-          size="md"
+          size={:md}
           icon="hero-plus"
         >
           Invite member
@@ -722,7 +725,7 @@ defmodule EmisarWeb.TeamLive do
 
             <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
               <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
-              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant="secondary">
+              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
                 Back to members
               </.button>
             </div>
@@ -774,7 +777,7 @@ defmodule EmisarWeb.TeamLive do
 
             <:actions>
               <.button phx-disable-with="Sending…">Send invite</.button>
-              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant="ghost">
+              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
                 Cancel
               </.button>
             </:actions>
@@ -1017,7 +1020,7 @@ defmodule EmisarWeb.TeamLive do
                 <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
                   <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
                   <%= cond do %>
-                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed_role?(identity) -> %>
+                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed?(identity) -> %>
                       <%!-- Synced role: the IdP owns it (a group→role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
@@ -1071,6 +1074,7 @@ defmodule EmisarWeb.TeamLive do
                     can_manage?={can_manage?(assigns)}
                     current_account={@current_account}
                     typed={@typed}
+                    name_locked?={directory_managed?(identity)}
                   />
                 </div>
               </div>
@@ -1097,7 +1101,7 @@ defmodule EmisarWeb.TeamLive do
                        <:actions> justify-between), matching the scope editor below. --%>
                   <div class="flex items-center gap-3 pt-2">
                     <.button phx-disable-with="Saving...">Save</.button>
-                    <.button variant="ghost" type="button" phx-click="cancel_edit">
+                    <.button variant={:ghost} type="button" phx-click="cancel_edit">
                       Cancel
                     </.button>
                   </div>
@@ -1130,7 +1134,7 @@ defmodule EmisarWeb.TeamLive do
 
                   <div class="flex items-center gap-3">
                     <.button phx-disable-with="Saving...">Save scope</.button>
-                    <.button variant="ghost" type="button" phx-click="cancel_scope_edit">
+                    <.button variant={:ghost} type="button" phx-click="cancel_scope_edit">
                       Cancel
                     </.button>
                   </div>
@@ -1245,6 +1249,7 @@ defmodule EmisarWeb.TeamLive do
   attr :can_manage?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :typed, :string, required: true
+  attr :name_locked?, :boolean, required: true
 
   defp member_actions(assigns) do
     ~H"""
@@ -1253,9 +1258,9 @@ defmodule EmisarWeb.TeamLive do
         <div class="flex shrink-0 items-center gap-2">
           <.button
             :if={@membership.user && is_nil(@membership.user.confirmed_at)}
-            variant="ghost"
-            tone="success"
-            size="sm"
+            variant={:ghost}
+            tone={:brand}
+            size={:sm}
             phx-click="resend_confirmation"
           >
             Resend confirmation
@@ -1294,7 +1299,13 @@ defmodule EmisarWeb.TeamLive do
           >
             View activity
           </.menu_item>
-          <.menu_item phx-click="start_edit" phx-value-membership_id={@membership.id}>
+          <%!-- A synced member's name is the IdP's (the domain refuses the save
+               with :directory_managed_profile — this hide is the courtesy, IL-15). --%>
+          <.menu_item
+            :if={not @name_locked?}
+            phx-click="start_edit"
+            phx-value-membership_id={@membership.id}
+          >
             Edit name
           </.menu_item>
           <.menu_item phx-click="start_scope_edit" phx-value-membership_id={@membership.id}>
@@ -1302,7 +1313,7 @@ defmodule EmisarWeb.TeamLive do
           </.menu_item>
           <.menu_item
             :if={Emisar.Accounts.Membership.disabled?(@membership)}
-            tone="success"
+            tone={:brand}
             phx-click="reinstate"
             phx-value-membership_id={@membership.id}
           >
@@ -1310,7 +1321,7 @@ defmodule EmisarWeb.TeamLive do
           </.menu_item>
           <.menu_item
             :if={not Emisar.Accounts.Membership.disabled?(@membership)}
-            tone="caution"
+            tone={:amber}
             phx-click="suspend"
             phx-value-membership_id={@membership.id}
             data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
@@ -1336,7 +1347,7 @@ defmodule EmisarWeb.TeamLive do
                admin is wrong about who's really asking. --%>
           <.menu_item
             :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
-            tone="caution"
+            tone={:amber}
             phx-click="reset_mfa"
             phx-value-membership_id={@membership.id}
             data-confirm={"Reset 2FA for #{@membership.user.email}? Their authenticator and recovery codes are wiped and they'll enroll a NEW factor on next sign-in. Only do this for someone you've confirmed is locked out — a new factor is an account-takeover vector if you're wrong about who's asking."}
@@ -1354,7 +1365,7 @@ defmodule EmisarWeb.TeamLive do
           <%!-- IRREVERSIBLE — typed-confirm modal instead of native
                data-confirm. The button only OPENS the dialog; `remove`
                still fires from Confirm and stays server-authz-gated. --%>
-          <.menu_item tone="danger" phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}>
+          <.menu_item tone={:rose} phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}>
             Remove from team
           </.menu_item>
         </.dropdown>
@@ -1395,8 +1406,8 @@ defmodule EmisarWeb.TeamLive do
   # be silently overwritten. Role is read-only for them — in the roster AND in the
   # change_role handler. A nil identity (not synced) or an OIDC-only provider (no
   # directory sync) stays editable.
-  defp directory_managed_role?(nil), do: false
-  defp directory_managed_role?(identity), do: identity.provider.scim_enabled
+  defp directory_managed?(nil), do: false
+  defp directory_managed?(identity), do: identity.provider.scim_enabled
 
   # A member the directory (SCIM) has deactivated (`scim_active: false`) — the IdP
   # revoked their access, so emisar keeps them suspended and won't reinstate them here

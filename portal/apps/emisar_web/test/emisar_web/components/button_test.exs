@@ -48,19 +48,24 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert render_button(%{patch: "/y"}) =~ "<a "
     end
 
-    test "variant + size + icon are reflected in the markup" do
-      html = render_button(%{variant: "danger", size: "sm", icon: "hero-trash"})
+    test "variant + tone + size + icon are reflected in the markup" do
+      html = render_button(%{variant: :secondary, tone: :rose, size: :sm, icon: "hero-trash"})
       assert html =~ "text-rose-200"
       assert html =~ "px-2.5 py-1 text-xs"
       assert html =~ "hero-trash"
     end
 
-    test "caution is filled amber; ghost takes a color tone" do
-      assert render_button(%{variant: "caution"}) =~ "bg-amber-500"
-      assert render_button(%{variant: "ghost"}) =~ "text-zinc-300"
-      assert render_button(%{variant: "ghost", tone: "danger"}) =~ "text-rose-300"
-      assert render_button(%{variant: "ghost", tone: "caution"}) =~ "text-amber-300"
-      assert render_button(%{variant: "ghost", tone: "success"}) =~ "text-brand-300"
+    test "nil tone resolves to the variant's natural tone" do
+      assert render_button(%{}) =~ "bg-brand-500"
+      assert render_button(%{variant: :secondary}) =~ "border-zinc-800"
+      assert render_button(%{variant: :ghost}) =~ "text-zinc-300"
+    end
+
+    test "the amber primary and the ghost tone ramp" do
+      assert render_button(%{tone: :amber}) =~ "bg-amber-500"
+      assert render_button(%{variant: :ghost, tone: :rose}) =~ "text-rose-300"
+      assert render_button(%{variant: :ghost, tone: :amber}) =~ "text-amber-300"
+      assert render_button(%{variant: :ghost, tone: :brand}) =~ "text-brand-300"
     end
   end
 end

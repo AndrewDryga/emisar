@@ -106,7 +106,7 @@ defmodule EmisarWeb.RunbooksLive do
     >
       <:title>Runbooks</:title>
       <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
-        <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size={:md} icon="hero-plus">
           New runbook
         </.button>
       </:actions>
@@ -186,8 +186,7 @@ defmodule EmisarWeb.RunbooksLive do
                   <.button
                     :if={runbook.status == :published}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
-                    variant="success"
-                    size="sm"
+                    size={:sm}
                   >
                     Run
                   </.button>

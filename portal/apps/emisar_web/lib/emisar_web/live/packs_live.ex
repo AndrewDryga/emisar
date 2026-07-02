@@ -567,8 +567,8 @@ defmodule EmisarWeb.PacksLive do
                   class="mt-3 flex flex-wrap gap-2"
                 >
                   <.button
-                    variant="caution"
-                    size="sm"
+                    tone={:amber}
+                    size={:sm}
                     phx-click="trust"
                     phx-value-id={v.id}
                     data-confirm={
@@ -586,8 +586,8 @@ defmodule EmisarWeb.PacksLive do
                        (stashing this version as the target); `reject` still fires
                        from Confirm and stays server-authz-gated (manage_catalog). --%>
                   <.button
-                    variant="secondary"
-                    size="sm"
+                    variant={:secondary}
+                    size={:sm}
                     type="button"
                     phx-click={
                       JS.push("open_reject",

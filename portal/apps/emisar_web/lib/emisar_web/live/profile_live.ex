@@ -450,16 +450,16 @@ defmodule EmisarWeb.ProfileLive do
                   <.button phx-disable-with="Confirming...">Confirm change</.button>
                   <.button
                     :if={step == :code}
-                    variant="secondary"
-                    size="md"
+                    variant={:secondary}
+                    size={:md}
                     type="button"
                     phx-click="resend_email_code"
                   >
                     Resend code
                   </.button>
                   <.button
-                    variant="secondary"
-                    size="md"
+                    variant={:secondary}
+                    size={:md}
                     type="button"
                     phx-click="cancel_email_change"
                   >
@@ -495,8 +495,8 @@ defmodule EmisarWeb.ProfileLive do
                 password manager — we can't show them again.
                 <:actions>
                   <.button
-                    variant="secondary"
-                    size="sm"
+                    variant={:secondary}
+                    size={:sm}
                     type="button"
                     phx-click="dismiss_recovery_codes"
                     data-confirm="Got them stored somewhere safe?"
@@ -525,16 +525,17 @@ defmodule EmisarWeb.ProfileLive do
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
                 <.button
-                  variant="secondary"
-                  size="md"
+                  variant={:secondary}
+                  size={:md}
                   phx-click="regenerate_recovery_codes"
                   data-confirm="Generate a new set of recovery codes? Old codes will stop working."
                 >
                   Regenerate recovery codes
                 </.button>
                 <.button
-                  variant="danger"
-                  size="md"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:md}
                   phx-click="disable_mfa"
                   data-confirm="Disable 2FA on your account?"
                 >
@@ -549,7 +550,7 @@ defmodule EmisarWeb.ProfileLive do
                 </:instructions>
                 <:actions>
                   <.button phx-disable-with="Verifying...">Confirm and enable</.button>
-                  <.button variant="ghost" type="button" phx-click="cancel_mfa">
+                  <.button variant={:ghost} type="button" phx-click="cancel_mfa">
                     Cancel
                   </.button>
                 </:actions>
@@ -559,7 +560,7 @@ defmodule EmisarWeb.ProfileLive do
                 Generate a TOTP secret, scan it with your authenticator app, then confirm with a
                 6-digit code to turn it on.
               </p>
-              <.button phx-click="start_mfa" size="md" class="mt-4">
+              <.button phx-click="start_mfa" size={:md} class="mt-4">
                 Set up 2FA
               </.button>
           <% end %>
@@ -574,8 +575,9 @@ defmodule EmisarWeb.ProfileLive do
                with the heading in the narrow left column. --%>
           <div :if={length(@sessions) > 1} class="mb-3 flex justify-end">
             <.button
-              variant="danger"
-              size="sm"
+              variant={:secondary}
+              tone={:rose}
+              size={:sm}
               phx-click="revoke_other_sessions"
               data-confirm="Sign out of every other browser and device?"
             >
@@ -611,8 +613,8 @@ defmodule EmisarWeb.ProfileLive do
                      (which keeps the danger tone). --%>
                 <.button
                   :if={not current_session?(session, @current_session_digest)}
-                  variant="ghost"
-                  size="sm"
+                  variant={:ghost}
+                  size={:sm}
                   phx-click="revoke_session"
                   phx-value-id={session.id}
                   data-confirm="Sign out this session?"

@@ -505,8 +505,9 @@ defmodule EmisarWeb.ApprovalsLive do
                 <:actions>
                   <.button
                     :if={Approvals.subject_can_manage_grants?(@current_subject)}
-                    variant="danger"
-                    size="sm"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
                     phx-click="revoke_grant"
                     phx-value-id={g.id}
                     data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}

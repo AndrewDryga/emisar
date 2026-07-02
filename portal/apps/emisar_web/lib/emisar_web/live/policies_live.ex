@@ -683,8 +683,8 @@ defmodule EmisarWeb.PoliciesLive do
             <:actions>
               <.button
                 :if={@can_manage?}
-                variant="secondary"
-                size="md"
+                variant={:secondary}
+                size={:md}
                 type="button"
                 phx-click="add_ruleset"
                 icon="hero-plus"
@@ -777,8 +777,8 @@ defmodule EmisarWeb.PoliciesLive do
 
         <.button
           :if={@can_manage}
-          variant="secondary"
-          size="md"
+          variant={:secondary}
+          size={:md}
           type="button"
           phx-click="remove_ruleset"
           phx-value-uid={@ruleset.uid}
@@ -872,8 +872,8 @@ defmodule EmisarWeb.PoliciesLive do
           </div>
           <.button
             :if={@can_manage}
-            variant="secondary"
-            size="md"
+            variant={:secondary}
+            size={:md}
             type="button"
             phx-click="add_override"
             phx-value-editor={@editor_id}

@@ -9,7 +9,7 @@ defmodule EmisarWeb.SSOSignInHTML do
         <.button
           :for={team <- @recent}
           href={~p"/app/#{team["slug"]}/sign_in"}
-          variant="secondary"
+          variant={:secondary}
           class="w-full justify-between"
         >
           <span class="flex min-w-0 flex-col text-left">

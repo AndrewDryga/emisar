@@ -177,38 +177,37 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Renders a button.
 
-  Variants: `primary` (default, filled brand-green), `secondary` (bordered neutral),
-  `danger` (bordered rose — destructive actions read identically everywhere),
-  `success` (filled brand-green — affirmative), `caution` (filled amber — needs
-  attention but isn't "safe", e.g. trusting a pack's new contents), `ghost`
-  (text-only; tint with `tone="danger|caution|success"` for low-prominence inline
-  actions like remove/revoke/restore). Sizes: `lg` (default), `md`, `sm`. An
-  optional leading `icon` (heroicon name) renders before the label. `disabled` is
-  honored by every variant. Pass `navigate`/`patch`/`href` and it renders a styled
-  `<.link>` instead of a `<button>` — so a primary action that navigates reads
-  identically to one that submits.
+  `variant` is STRUCTURE (console-ux §2): `:primary` (filled, the default),
+  `:secondary` (bordered), `:ghost` (text-only). `tone` is the hue atom that
+  carries MEANING at the call site — `:brand` (affirmative/primary action),
+  `:neutral`, `:amber` (attention-worthy, e.g. trusting a pack's new
+  contents), `:rose` (destructive) — defaulting per variant (primary→brand,
+  secondary/ghost→neutral) so the common cases stay terse. A destructive
+  action is `variant={:secondary} tone={:rose}`. Sizes: `:lg` (default),
+  `:md`, `:sm`. An optional leading `icon` (heroicon name) renders before
+  the label. `disabled` is honored by every variant. Pass
+  `navigate`/`patch`/`href` and it renders a styled `<.link>` instead of a
+  `<button>` — so a primary action that navigates reads identically to one
+  that submits.
 
   ## Examples
 
       <.button>Send!</.button>
-      <.button variant="danger" size="sm" phx-click="revoke" phx-value-id={id}>Revoke</.button>
-      <.button variant="success" icon="hero-check">Approve</.button>
-      <.button variant="caution" phx-click="trust">Trust new contents</.button>
-      <.button variant="ghost" tone="danger" phx-click="remove">Remove</.button>
+      <.button variant={:secondary} tone={:rose} size={:sm} phx-click="revoke">Revoke</.button>
+      <.button icon="hero-check">Approve</.button>
+      <.button tone={:amber} phx-click="trust">Trust new contents</.button>
+      <.button variant={:ghost} tone={:rose} phx-click="remove">Remove</.button>
       <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
+  attr :variant, :atom, default: :primary, values: [:primary, :secondary, :ghost]
 
-  attr :variant, :string,
-    default: "primary",
-    values: ~w(primary secondary danger success caution ghost)
+  attr :tone, :atom,
+    default: nil,
+    values: [nil, :neutral, :brand, :amber, :rose],
+    doc: "hue atom; nil resolves to the variant's natural tone"
 
-  attr :tone, :string,
-    default: "neutral",
-    values: ~w(neutral danger caution success),
-    doc: ~s(tints a variant="ghost" text button)
-
-  attr :size, :string, default: "lg", values: ~w(sm md lg)
+  attr :size, :atom, default: :lg, values: [:sm, :md, :lg]
   attr :icon, :string, default: nil, doc: ~s(leading heroicon name, e.g. "hero-plus")
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled form name value href navigate patch method download)
@@ -219,7 +218,7 @@ defmodule EmisarWeb.CoreComponents do
       when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
     ~H"""
     <.link
-      class={[button_base(), button_variant(@variant, @tone), button_size(@size), @class]}
+      class={[button_base(), button_face(@variant, @tone), button_size(@size), @class]}
       {@rest}
     >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
@@ -231,7 +230,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type={@type}
-      class={[button_base(), button_variant(@variant, @tone), button_size(@size), @class]}
+      class={[button_base(), button_face(@variant, @tone), button_size(@size), @class]}
       {@rest}
     >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
@@ -245,45 +244,52 @@ defmodule EmisarWeb.CoreComponents do
       "disabled:opacity-50 disabled:cursor-not-allowed"
   end
 
-  defp button_variant("primary", _tone) do
+  # The variant×tone face matrix — only the combinations in use exist, so a
+  # meaningless pair (e.g. filled rose) is a FunctionClauseError, not a
+  # silently-invented style. nil tone resolves to the variant's natural one.
+  defp button_face(variant, nil), do: button_face(variant, default_button_tone(variant))
+
+  defp button_face(:primary, :brand) do
     "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
   end
 
-  defp button_variant("success", _tone) do
-    "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
-  end
-
-  # Caution: filled amber for attention-worthy actions where success-green
-  # would wrongly read as "safe" — e.g. trusting a pack's new contents.
-  defp button_variant("caution", _tone) do
+  # Filled amber for attention-worthy actions where brand-green would wrongly
+  # read as "safe" — e.g. trusting a pack's new contents.
+  defp button_face(:primary, :amber) do
     "bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
   end
 
-  defp button_variant("danger", _tone) do
-    "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
-  end
-
-  defp button_variant("secondary", _tone) do
+  defp button_face(:secondary, :neutral) do
     "border border-zinc-800 font-medium text-zinc-200 hover:bg-zinc-900 focus-visible:outline-zinc-600"
   end
 
-  # Ghost is the only tone-aware variant: a text-only button tinted by `tone`,
-  # for low-prominence inline actions (remove, revoke, suspend, restore).
-  defp button_variant("ghost", "danger"),
-    do: "font-medium text-rose-300 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+  # The destructive button: bordered rose, so delete/revoke/disable read
+  # identically everywhere without shouting like a filled fill would.
+  defp button_face(:secondary, :rose) do
+    "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+  end
 
-  defp button_variant("ghost", "caution"),
-    do: "font-medium text-amber-300 hover:bg-amber-500/10 focus-visible:outline-amber-400"
-
-  defp button_variant("ghost", "success"),
-    do: "font-medium text-brand-300 hover:bg-brand-500/10 focus-visible:outline-brand-400"
-
-  defp button_variant("ghost", _neutral),
+  # Ghost: a text-only button tinted by tone, for low-prominence inline
+  # actions (remove, revoke, suspend, restore).
+  defp button_face(:ghost, :neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
 
-  defp button_size("lg"), do: "px-4 py-2.5 text-sm"
-  defp button_size("md"), do: "px-3 py-1.5 text-sm"
-  defp button_size("sm"), do: "px-2.5 py-1 text-xs"
+  defp button_face(:ghost, :brand),
+    do: "font-medium text-brand-300 hover:bg-brand-500/10 focus-visible:outline-brand-400"
+
+  defp button_face(:ghost, :amber),
+    do: "font-medium text-amber-300 hover:bg-amber-500/10 focus-visible:outline-amber-400"
+
+  defp button_face(:ghost, :rose),
+    do: "font-medium text-rose-300 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+
+  defp default_button_tone(:primary), do: :brand
+  defp default_button_tone(:secondary), do: :neutral
+  defp default_button_tone(:ghost), do: :neutral
+
+  defp button_size(:lg), do: "px-4 py-2.5 text-sm"
+  defp button_size(:md), do: "px-3 py-1.5 text-sm"
+  defp button_size(:sm), do: "px-2.5 py-1 text-xs"
 
   @doc """
   An icon-only button. `label` is REQUIRED — it becomes both `aria-label` and
@@ -295,7 +301,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :icon, :string, required: true
   attr :label, :string, required: true
-  attr :tone, :string, default: "neutral", values: ~w(neutral danger)
+  attr :tone, :atom, default: :neutral, values: [:neutral, :rose]
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled)
 
@@ -318,8 +324,8 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp icon_button_tone("neutral"), do: "hover:text-zinc-200 focus-visible:outline-zinc-600"
-  defp icon_button_tone("danger"), do: "hover:text-rose-300 focus-visible:outline-rose-400"
+  defp icon_button_tone(:neutral), do: "hover:text-zinc-200 focus-visible:outline-zinc-600"
+  defp icon_button_tone(:rose), do: "hover:text-rose-300 focus-visible:outline-rose-400"
 
   @doc """
   A click-to-open dropdown built on native `<details>` — no JS, so it opens on
@@ -346,7 +352,7 @@ defmodule EmisarWeb.CoreComponents do
       <.dropdown summary_class="rounded px-2 py-1 ring-1 ring-zinc-800" panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl">
         <:trigger>Actions <span class="group-open:hidden">▾</span></:trigger>
         <.menu_item phx-click="edit">Edit</.menu_item>
-        <.menu_item tone="danger" phx-click="remove">Remove</.menu_item>
+        <.menu_item tone={:rose} phx-click="remove">Remove</.menu_item>
       </.dropdown>
   """
   attr :align, :atom, default: :right, values: [:left, :right, :stretch]
@@ -388,7 +394,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or
-  link) with an optional leading `icon`. `tone` mirrors `<.button variant="ghost">`
+  link) with an optional leading `icon`. `tone` mirrors `<.button variant={:ghost}>`
   exactly (neutral → zinc, `caution` → amber, `danger` → rose, `success` →
   brand-green), so an action reads the same color whether it sits inline or in a menu.
 
@@ -400,10 +406,10 @@ defmodule EmisarWeb.CoreComponents do
   ## Example
 
       <.menu_item phx-click="start_edit" phx-value-membership_id={id}>Edit name</.menu_item>
-      <.menu_item tone="danger" phx-click="remove" data-confirm="Sure?">Remove</.menu_item>
+      <.menu_item tone={:rose} phx-click="remove" data-confirm="Sure?">Remove</.menu_item>
   """
   attr :icon, :string, default: nil, doc: "leading heroicon name"
-  attr :tone, :string, default: "neutral", values: ~w(neutral danger caution success)
+  attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled href navigate patch method download)
 
@@ -431,10 +437,10 @@ defmodule EmisarWeb.CoreComponents do
 
   # Tone mirrors button_variant("ghost", tone) — same hover tints, so a menu row
   # and an inline ghost button of the same tone are visually identical.
-  defp menu_item_tone("danger"), do: "text-rose-300 hover:bg-rose-500/10"
-  defp menu_item_tone("caution"), do: "text-amber-300 hover:bg-amber-500/10"
-  defp menu_item_tone("success"), do: "text-brand-300 hover:bg-brand-500/10"
-  defp menu_item_tone(_neutral), do: "text-zinc-300 hover:bg-zinc-900"
+  defp menu_item_tone(:rose), do: "text-rose-300 hover:bg-rose-500/10"
+  defp menu_item_tone(:amber), do: "text-amber-300 hover:bg-amber-500/10"
+  defp menu_item_tone(:brand), do: "text-brand-300 hover:bg-brand-500/10"
+  defp menu_item_tone(:neutral), do: "text-zinc-300 hover:bg-zinc-900"
 
   @doc """
   Renders an input with label and error messages.
@@ -468,9 +474,9 @@ defmodule EmisarWeb.CoreComponents do
   attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :value, :any
 
-  attr :tone, :string,
-    default: "neutral",
-    values: ~w(neutral danger),
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :rose],
     doc: ~s(tints the focus ring rose for a destructive field — e.g. a deny reason)
 
   attr :type, :string,
@@ -610,11 +616,11 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   # Resting + focus ring for an input/select/textarea. An actual validation
-  # error always wins with the rose ring; absent errors, `tone="danger"` tints
+  # error always wins with the rose ring; absent errors, `tone={:rose}` tints
   # only the FOCUS ring rose (a destructive field, e.g. a deny reason) while
   # neutral keeps the brand focus.
-  defp input_ring([], "danger"), do: "ring-zinc-800 focus:ring-rose-500"
-  defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-brand-500"
+  defp input_ring([], :rose), do: "ring-zinc-800 focus:ring-rose-500"
+  defp input_ring([], :neutral), do: "ring-zinc-800 focus:ring-brand-500"
   defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
 
   # Box metrics for an input/select/textarea. `:compact` tightens the padding
@@ -905,7 +911,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.callout tone={:rose} icon="hero-no-symbol" title="Cancelled">
         {@run.reason_text}
-        <:action><.button variant="danger" size="md" navigate={...}>Review</.button></:action>
+        <:action><.button variant={:secondary} tone={:rose} size={:md} navigate={...}>Review</.button></:action>
       </.callout>
 
       <.callout tone={:amber} title="2 packs need trust review" navigate={~p"/app/…/packs"}>
@@ -1419,7 +1425,7 @@ defmodule EmisarWeb.CoreComponents do
         >
           Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
           <:action>
-            <.button variant="secondary" size="sm" phx-click="resend_confirmation">
+            <.button variant={:secondary} size={:sm} phx-click="resend_confirmation">
               Resend email
             </.button>
           </:action>
@@ -1442,8 +1448,8 @@ defmodule EmisarWeb.CoreComponents do
           dispatching actions.
           <:action>
             <.button
-              variant="secondary"
-              size="sm"
+              variant={:secondary}
+              size={:sm}
               navigate={~p"/app/#{@current_account}/settings/agents"}
             >
               Connect an LLM
@@ -3301,7 +3307,13 @@ defmodule EmisarWeb.CoreComponents do
         <p class={["mt-1 text-xs", confirm_zone_body(@tone)]}>{render_slot(@body)}</p>
       </div>
       <div class="shrink-0">
-        <.button variant={confirm_zone_variant(@tone)} size="md" data-confirm={@confirm} {@rest}>
+        <.button
+          variant={confirm_zone_button_variant(@tone)}
+          tone={confirm_zone_button_tone(@tone)}
+          size={:md}
+          data-confirm={@confirm}
+          {@rest}
+        >
           {render_slot(@inner_block)}
         </.button>
       </div>
@@ -3317,8 +3329,11 @@ defmodule EmisarWeb.CoreComponents do
   defp confirm_zone_title(:success), do: "text-brand-100"
   defp confirm_zone_body(:danger), do: "text-rose-300/70"
   defp confirm_zone_body(:success), do: "text-brand-300/70"
-  defp confirm_zone_variant(:danger), do: "danger"
-  defp confirm_zone_variant(:success), do: "success"
+  defp confirm_zone_button_variant(:danger), do: :secondary
+  defp confirm_zone_button_variant(:success), do: :primary
+
+  defp confirm_zone_button_tone(:danger), do: :rose
+  defp confirm_zone_button_tone(:success), do: :brand
 
   @doc ~S"""
   Centered, danger-toned confirmation modal with a **typed-confirm**: the
@@ -3427,15 +3442,21 @@ defmodule EmisarWeb.CoreComponents do
           </form>
 
           <div class="mt-6 flex items-center justify-end gap-3">
-            <.button variant="secondary" size="md" type="button" phx-click={hide_confirm_dialog(@id)}>
+            <.button
+              variant={:secondary}
+              size={:md}
+              type="button"
+              phx-click={hide_confirm_dialog(@id)}
+            >
               Cancel
             </.button>
             <%!-- Enabled only when the typed value matches a NON-empty token —
                  a blank token can never be confirmed, so a page-level dialog
                  with no target selected yet stays inert. --%>
             <.button
-              variant="danger"
-              size="md"
+              variant={:secondary}
+              tone={:rose}
+              size={:md}
               type="button"
               disabled={@confirm_token in ["", nil] or @typed != @confirm_token}
               phx-click={@on_confirm}
@@ -4025,7 +4046,7 @@ defmodule EmisarWeb.CoreComponents do
       >
         Each code works once if you can't reach your authenticator.
         <:actions>
-          <.button variant="secondary" size="sm" phx-click="dismiss_recovery_codes">
+          <.button variant={:secondary} size={:sm} phx-click="dismiss_recovery_codes">
             I've saved them
           </.button>
         </:actions>

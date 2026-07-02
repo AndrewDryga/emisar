@@ -147,8 +147,9 @@ defmodule EmisarWeb.RunDetailLive do
             @run.status in [:sent, :running, :pending] and
               Runs.subject_can_cancel_run?(@current_subject)
           }
-          variant="danger"
-          size="md"
+          variant={:secondary}
+          tone={:rose}
+          size={:md}
           phx-click="cancel"
           data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
         >
@@ -222,8 +223,8 @@ defmodule EmisarWeb.RunDetailLive do
         This run is held until an approver decides.
         <:action>
           <.button
-            variant="caution"
-            size="md"
+            tone={:amber}
+            size={:md}
             navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           >
             Review approval →
@@ -246,8 +247,9 @@ defmodule EmisarWeb.RunDetailLive do
         <span class="whitespace-pre-wrap">{@run.reason_text}</span>
         <:action :if={@approval_request}>
           <.button
-            variant="danger"
-            size="md"
+            variant={:secondary}
+            tone={:rose}
+            size={:md}
             navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           >
             Review approval →

@@ -923,7 +923,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     >
       <:title>Single sign-on</:title>
       <:actions :if={@can_configure? and @live_action == :index}>
-        <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size={:md} icon="hero-plus">
           Add connection
         </.button>
       </:actions>
@@ -979,7 +979,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                    type="button" so it probes (phx-click) instead of submitting. --%>
               <.button
                 type="button"
-                variant="secondary"
+                variant={:secondary}
                 phx-click="test_connection"
                 phx-disable-with="Testing…"
               >
@@ -1029,7 +1029,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <.button phx-disable-with="Saving...">Save changes</.button>
                 <.button
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  variant="ghost"
+                  variant={:ghost}
                 >
                   Cancel
                 </.button>
@@ -1073,8 +1073,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                   <.button
-                    variant="secondary"
-                    size="sm"
+                    variant={:secondary}
+                    size={:sm}
                     phx-click="approve_request"
                     phx-value-id={request.id}
                     data-confirm={approve_confirm(request)}
@@ -1082,9 +1082,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                     Approve
                   </.button>
                   <.button
-                    variant="ghost"
-                    tone="danger"
-                    size="sm"
+                    variant={:ghost}
+                    tone={:rose}
+                    size={:sm}
                     phx-click="dismiss_request"
                     phx-value-id={request.id}
                     data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
@@ -1179,15 +1179,15 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <div class="flex shrink-0 items-center gap-2">
                   <.button
                     navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
-                    variant="secondary"
-                    size="sm"
+                    variant={:secondary}
+                    size={:sm}
                   >
                     Edit
                   </.button>
                   <.button
-                    variant="ghost"
-                    tone="danger"
-                    size="sm"
+                    variant={:ghost}
+                    tone={:rose}
+                    size={:sm}
                     type="button"
                     phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
                   >
@@ -1675,8 +1675,8 @@ defmodule EmisarWeb.SSOSettingsLive do
           <div class="ml-auto flex items-center gap-2">
             <.button
               :if={not @provider.scim_enabled}
-              variant="secondary"
-              size="sm"
+              variant={:secondary}
+              size={:sm}
               phx-click="enable_scim"
               phx-value-id={@provider.id}
             >
@@ -1684,8 +1684,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.button>
             <.button
               :if={@provider.scim_enabled}
-              variant="secondary"
-              size="sm"
+              variant={:secondary}
+              size={:sm}
               phx-click="rotate_scim"
               phx-value-id={@provider.id}
               data-confirm="Rotate the SCIM token? Your IdP will lose access until you paste the new one."
@@ -1694,9 +1694,9 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.button>
             <.button
               :if={@provider.scim_enabled}
-              variant="ghost"
-              tone="danger"
-              size="sm"
+              variant={:ghost}
+              tone={:rose}
+              size={:sm}
               phx-click="disable_scim"
               phx-value-id={@provider.id}
               data-confirm="Disable directory sync? Your IdP can no longer provision or deprovision members through it."
@@ -1819,8 +1819,8 @@ defmodule EmisarWeb.SSOSettingsLive do
         <:actions>
           <.button
             :if={not @adding_mapping}
-            variant="secondary"
-            size="sm"
+            variant={:secondary}
+            size={:sm}
             phx-click="add_mapping_form"
             icon="hero-plus"
           >
@@ -1855,8 +1855,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.chip tone={:brand}>{role_label(mapping.role)}</.chip>
               <.button
                 :if={@editing_mapping_id != mapping.id}
-                variant="ghost"
-                size="sm"
+                variant={:ghost}
+                size={:sm}
                 phx-click="start_edit_mapping"
                 phx-value-id={mapping.id}
               >
@@ -1866,9 +1866,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                    the next sync) — a native confirm fits the tier, not a
                    typed-confirm. `delete_mapping` stays server-authz-gated. --%>
               <.button
-                variant="ghost"
-                tone="danger"
-                size="sm"
+                variant={:ghost}
+                tone={:rose}
+                size={:sm}
                 type="button"
                 phx-click="delete_mapping"
                 phx-value-id={mapping.id}
@@ -1904,7 +1904,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               />
               <:actions>
                 <.button phx-disable-with="Saving...">Save</.button>
-                <.button variant="ghost" type="button" phx-click="cancel_edit_mapping">
+                <.button variant={:ghost} type="button" phx-click="cancel_edit_mapping">
                   Cancel
                 </.button>
               </:actions>
@@ -1968,7 +1968,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </div>
           <:actions>
             <.button phx-disable-with="Adding...">Add mapping</.button>
-            <.button variant="ghost" type="button" phx-click="cancel_add_mapping">
+            <.button variant={:ghost} type="button" phx-click="cancel_add_mapping">
               Cancel
             </.button>
           </:actions>
@@ -2122,9 +2122,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               </form>
               <.button
                 :if={not Accounts.Membership.disabled?(member.membership)}
-                variant="ghost"
-                tone="danger"
-                size="sm"
+                variant={:ghost}
+                tone={:rose}
+                size={:sm}
                 phx-click="suspend_member"
                 phx-value-membership_id={member.membership.id}
                 data-confirm="Suspend this member? They're signed out and blocked until reactivated — and directory sync may reactivate them if your IdP still lists them."
@@ -2133,9 +2133,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               </.button>
               <.button
                 :if={Accounts.Membership.disabled?(member.membership) and member.identity.scim_active}
-                variant="ghost"
-                tone="success"
-                size="sm"
+                variant={:ghost}
+                tone={:brand}
+                size={:sm}
                 phx-click="reinstate_member"
                 phx-value-membership_id={member.membership.id}
               >

@@ -233,8 +233,8 @@ defmodule EmisarWeb.BillingLive do
         <.subscription_banner status={@summary.subscription_status}>
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
             <.button
-              variant="secondary"
-              size="sm"
+              variant={:secondary}
+              size={:sm}
               class="shrink-0"
               phx-click="manage_billing"
               phx-disable-with="Opening portal…"
@@ -311,7 +311,7 @@ defmodule EmisarWeb.BillingLive do
                 @current_account.paddle_customer_id &&
                   Billing.subject_can_manage_billing?(@current_subject)
               }
-              variant="secondary"
+              variant={:secondary}
               phx-click="manage_billing"
               phx-disable-with="Opening portal…"
               icon="hero-credit-card"
@@ -352,7 +352,7 @@ defmodule EmisarWeb.BillingLive do
           Your plan and billing are handled with our team, not self-serve. Contact support to
           change your plan, ask about an invoice, or cancel — we'll take care of it.
           <:action :if={Billing.subject_can_manage_billing?(@current_subject)}>
-            <.button variant="secondary" size="md" href={support_mailto(@current_account)}>
+            <.button variant={:secondary} size={:md} href={support_mailto(@current_account)}>
               Contact support
             </.button>
           </:action>
@@ -402,7 +402,7 @@ defmodule EmisarWeb.BillingLive do
                       You're here
                     </span>
                   <% plan.key == "enterprise" -> %>
-                    <.button variant="secondary" size="md" class="w-full" phx-click="contact_sales">
+                    <.button variant={:secondary} size={:md} class="w-full" phx-click="contact_sales">
                       Contact sales
                     </.button>
                   <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
@@ -418,7 +418,7 @@ defmodule EmisarWeb.BillingLive do
                     </span>
                   <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
                     <.button
-                      size="md"
+                      size={:md}
                       class="w-full"
                       phx-click="upgrade"
                       phx-value-plan={plan.key}
@@ -432,8 +432,8 @@ defmodule EmisarWeb.BillingLive do
                          changes + cancellations live in the Paddle customer portal, so
                          route there instead of mislabeling it "Upgrade to Free". --%>
                     <.button
-                      variant="secondary"
-                      size="md"
+                      variant={:secondary}
+                      size={:md}
                       class="w-full"
                       phx-click="manage_billing"
                       phx-disable-with="Opening portal…"

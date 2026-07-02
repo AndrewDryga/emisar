@@ -304,8 +304,8 @@ defmodule EmisarWeb.RunnerDetailLive do
                            it without relying on color alone (a11y) — not real `disabled`,
                            which drops focus and hides the explanation. --%>
                       <.button
-                        size="sm"
-                        variant="secondary"
+                        size={:sm}
+                        variant={:secondary}
                         aria-disabled="true"
                         icon="hero-lock-closed"
                         title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
@@ -318,8 +318,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                         navigate={
                           ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
                         }
-                        variant="success"
-                        size="sm"
+                        size={:sm}
                         class="shrink-0"
                       >
                         Run
@@ -329,8 +328,8 @@ defmodule EmisarWeb.RunnerDetailLive do
                            signal-slash icon carry "can't run" without relying on the
                            dimmed color alone (a11y). --%>
                       <.button
-                        size="sm"
-                        variant="secondary"
+                        size={:sm}
+                        variant={:secondary}
                         aria-disabled="true"
                         icon="hero-signal-slash"
                         title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}

@@ -72,15 +72,20 @@ defmodule EmisarWeb.SCIM.UserController do
     end
   end
 
-  # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. Slice 2a honors the
-  # common `active` replace; any other op is an honest SCIM error, never a
-  # silent no-op.
+  # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. Honors the `active`
+  # replace (lifecycle) and the `displayName` replace (the IdP owns a synced
+  # user's name); any other op is an honest SCIM error, never a silent no-op.
   def update(conn, %{"id" => external_id, "Operations" => operations})
       when is_list(operations) do
-    case active_from_operations(operations) do
-      {:ok, active} -> apply_active(conn, external_id, active)
-      :no_active_op -> unsupported_patch(conn)
-      :error -> bad_request(conn, "invalidValue", "Unparseable PATCH `active` value.")
+    case {name_from_operations(operations), active_from_operations(operations)} do
+      {_name_op, :error} ->
+        bad_request(conn, "invalidValue", "Unparseable PATCH `active` value.")
+
+      {:no_name_op, :no_active_op} ->
+        unsupported_patch(conn)
+
+      {name_op, active_op} ->
+        apply_operations(conn, external_id, name_op, active_op)
     end
   end
 
@@ -90,12 +95,50 @@ defmodule EmisarWeb.SCIM.UserController do
   def update(conn, _params),
     do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
-  # PUT /scim/v2/Users/:id — full replace. Slice 2a acts on the `active` flag
-  # (the lifecycle signal); other attributes are immutable post-provision here.
+  # PUT /scim/v2/Users/:id — full replace. Acts on the IdP-owned attributes:
+  # `displayName` (the synced profile name) and the `active` lifecycle flag;
+  # everything else (email, externalId) stays immutable post-provision here.
   def replace(conn, %{"id" => external_id} = params) do
+    attrs = Resource.parse_user(params)
+
     case Resource.parse_active(Map.get(params, "active"), nil) do
-      nil -> bad_request(conn, "invalidValue", "PUT requires a boolean `active`.")
-      active -> apply_active(conn, external_id, active)
+      nil ->
+        bad_request(conn, "invalidValue", "PUT requires a boolean `active`.")
+
+      active ->
+        apply_operations(conn, external_id, name_op(attrs.full_name), {:ok, active})
+    end
+  end
+
+  defp name_op(nil), do: :no_name_op
+  defp name_op(full_name), do: {:ok, full_name}
+
+  # Apply the (optional) rename first, then the (optional) active flip — a
+  # rename failure (e.g. :not_found) must not half-apply the lifecycle change.
+  defp apply_operations(conn, external_id, name_op, active_op) do
+    case apply_rename(conn, external_id, name_op) do
+      :ok -> apply_operations_active(conn, external_id, active_op)
+      {:error, reason} -> render_error(conn, reason)
+    end
+  end
+
+  defp apply_rename(_conn, _external_id, :no_name_op), do: :ok
+
+  defp apply_rename(conn, external_id, {:ok, full_name}) do
+    case SSO.scim_rename_user(conn.assigns.scim_provider, external_id, full_name) do
+      {:ok, _identity} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp apply_operations_active(conn, external_id, {:ok, active}),
+    do: apply_active(conn, external_id, active)
+
+  # A name-only PATCH — render the (renamed) current resource state.
+  defp apply_operations_active(conn, external_id, :no_active_op) do
+    case SSO.scim_fetch_user(conn.assigns.scim_provider, external_id) do
+      {:ok, identity} -> render_user(conn, :ok, identity)
+      {:error, :not_found} -> not_found(conn, external_id)
     end
   end
 
@@ -177,6 +220,39 @@ defmodule EmisarWeb.SCIM.UserController do
       active -> {:ok, active}
     end
   end
+
+  # Find the operation that replaces `displayName` — same op/path/pathless
+  # handling as `active_from_operations/1`. A non-string or empty value is
+  # not a rename (the IdP sent nothing usable), never an error.
+  defp name_from_operations(operations) do
+    Enum.reduce_while(operations, :no_name_op, fn op, acc ->
+      case operation_name(op) do
+        :skip -> {:cont, acc}
+        {:ok, full_name} -> {:halt, {:ok, full_name}}
+      end
+    end)
+  end
+
+  defp operation_name(%{} = op) do
+    if replace_or_add?(Map.get(op, "op")) do
+      name_from_op(Map.get(op, "path"), Map.get(op, "value"))
+    else
+      :skip
+    end
+  end
+
+  defp operation_name(_op), do: :skip
+
+  defp name_from_op(path, value) when is_binary(path) do
+    if String.downcase(path) == "displayname" and is_binary(value) and value != "",
+      do: {:ok, value},
+      else: :skip
+  end
+
+  defp name_from_op(nil, %{"displayName" => value}) when is_binary(value) and value != "",
+    do: {:ok, value}
+
+  defp name_from_op(_path, _value), do: :skip
 
   # -- filter parsing (RFC 7644 §3.4.2.2, the `attr eq "value"` subset) --
 
