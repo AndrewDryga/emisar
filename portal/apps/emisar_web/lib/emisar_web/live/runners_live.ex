@@ -182,7 +182,9 @@ defmodule EmisarWeb.RunnersLive do
              header(s), so it isn't duplicated above and below the table. --%>
           <.summary_band>
             <.summary_stat tone={:brand} value={@fleet.online} label="Online" />
-            <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
+            <%!-- Amber, not rose: offline = needs attention, not failed —
+                 the ONE tone the fact wears everywhere. --%>
+            <.summary_stat tone={:amber} value={@fleet.offline} label="Offline" />
             <.summary_stat
               :if={@fleet.pending > 0}
               tone={:amber}
@@ -231,11 +233,6 @@ defmodule EmisarWeb.RunnersLive do
                   navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
                   class="flex items-center gap-4 transition hover:opacity-90"
                 >
-                  <%!-- Connection dot: green/pulsing when live, amber
-                     when known-but-disconnected, zinc when never
-                     seen. Clearer than reading a status badge first. --%>
-                  <.connection_dot status={state} />
-
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">{runner.name}</span>
@@ -254,14 +251,21 @@ defmodule EmisarWeb.RunnersLive do
                       </.chip>
                     </div>
                     <.meta_line class="mt-0.5 text-xs text-zinc-500">
-                      <:seg>{runner.hostname || runner.external_id || "no host"}</:seg>
+                      <%!-- When name == hostname the title already says it —
+                           don't restate the identifier one line down. --%>
+                      <:seg :if={(runner.hostname || runner.external_id || "no host") != runner.name}>
+                        {runner.hostname || runner.external_id || "no host"}
+                      </:seg>
                       <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
                     </.meta_line>
                   </div>
 
                   <div class="flex items-center gap-4 text-right">
-                    <div class="hidden text-xs tabular-nums text-zinc-400 sm:block">
-                      {runner.action_load} active
+                    <%!-- Zero is the default, not a signal — muted em-dash;
+                         "N active runs" only when something is running. --%>
+                    <div class="hidden w-20 text-xs tabular-nums text-zinc-400 sm:block">
+                      <span :if={runner.action_load > 0}>{runner.action_load} active runs</span>
+                      <span :if={runner.action_load == 0} class="text-zinc-600">—</span>
                     </div>
                     <.status_badge status={state} class="shrink-0" />
                   </div>
@@ -286,26 +290,6 @@ defmodule EmisarWeb.RunnersLive do
       {^group, n} -> n
       _ -> nil
     end)
-  end
-
-  attr :status, :string, required: true
-
-  defp connection_dot(%{status: "connected"} = assigns) do
-    ~H"""
-    <.status_dot tone={:brand} ping size={:md} title="Connected" />
-    """
-  end
-
-  defp connection_dot(%{status: "disabled"} = assigns) do
-    ~H"""
-    <.status_dot size={:lg} title="Disabled" />
-    """
-  end
-
-  defp connection_dot(assigns) do
-    ~H"""
-    <.status_dot size={:lg} title="Disconnected" />
-    """
   end
 
   # "last heartbeat 3m ago" / "just connected — waiting for first

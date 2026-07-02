@@ -2150,7 +2150,9 @@ defmodule EmisarWeb.CoreComponents do
   defp status_classes("sent"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp status_classes("draft"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("pending"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
-  defp status_classes("disconnected"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
+  # Offline is a CAUTION (needs attention), not a failure — amber, one tone
+  # for the fact everywhere (summary strip, row badge, dashboard hint).
+  defp status_classes("offline"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp status_classes("pending_approval"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   # A runner refusal (bad signature / pack-hash mismatch) — amber, so it reads as
   # a security block to look at, not lost in the rose "it ran and failed" pile.
@@ -2182,6 +2184,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec(s) when s in ~w[running sent], do: {:brand, true}
   defp status_dot_spec("pending_approval"), do: {:amber, true}
   defp status_dot_spec("refused"), do: {:amber, false}
+  defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
 
   defp status_dot_spec(s)
@@ -2200,11 +2203,12 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   A runner's `Runners.connection_state/1` atom → the display status string that
   `<.status_badge>` understands (`:online` → "connected",
-  `:offline` → "disconnected"). One place so the runners list + detail pages
-  can't drift on the connection vocabulary.
+  `:offline` → "offline"). One place so the runners list + detail pages
+  can't drift on the connection vocabulary — and ONE word for the offline
+  fact console-wide (the MCP wire keeps its own stable "disconnected").
   """
   def connection_status(:online), do: "connected"
-  def connection_status(:offline), do: "disconnected"
+  def connection_status(:offline), do: "offline"
   def connection_status(:disabled), do: "disabled"
   def connection_status(:pending), do: "pending"
 

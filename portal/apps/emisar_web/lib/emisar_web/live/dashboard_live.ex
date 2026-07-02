@@ -66,6 +66,8 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_mfa, team_mfa(account, subject))
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
+    |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
+    |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
   end
 
   # Team-MFA tile data, or :unavailable when the read fails — so the tile shows
@@ -128,6 +130,8 @@ defmodule EmisarWeb.DashboardLive do
         team_mfa={@team_mfa}
         pending_packs_count={@pending_packs_count}
         current_account={@current_account}
+        can_view_runners?={@can_view_runners?}
+        can_view_runs?={@can_view_runs?}
       />
     </.dashboard_shell>
     """
@@ -220,10 +224,15 @@ defmodule EmisarWeb.DashboardLive do
   attr :team_mfa, :any, required: true
   attr :pending_packs_count, :integer, default: 0
   attr :current_account, :map, required: true
+  attr :can_view_runners?, :boolean, default: true
+  attr :can_view_runs?, :boolean, default: true
 
   defp live_dashboard(assigns) do
     ~H"""
+    <%!-- The checklist's cards are runner/agent setup — meaningless (and
+         dead links) for a role with no runner visibility. --%>
     <.onboarding_checklist
+      :if={@can_view_runners?}
       runners_total={@runners_total}
       has_llm_connected?={@has_llm_connected?}
       has_runs?={@recent_runs != []}
@@ -299,17 +308,20 @@ defmodule EmisarWeb.DashboardLive do
          they'd fix it. --%>
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <.runners_stat
+        :if={@can_view_runners?}
         connected={@runners_connected}
         total={@runners_total}
         current_account={@current_account}
       />
-      <.runs_stat stats={@run_stats} current_account={@current_account} />
+      <%!-- A denied stats read (a role with no view_runs) assigns nil —
+           hide the tile rather than render zeros that read as "no runs". --%>
+      <.runs_stat :if={@run_stats} stats={@run_stats} current_account={@current_account} />
       <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
     </div>
 
     <%!-- Recent runs — full width, no parallel "activity" mirror at
          the bottom (that just duplicated the audit page). --%>
-    <.panel variant={:split} title="Recent runs" class="mt-8">
+    <.panel :if={@can_view_runs?} variant={:split} title="Recent runs" class="mt-8">
       <:actions>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
@@ -385,11 +397,13 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_hint(0, _total), do: "All runners offline"
 
   defp runners_hint(connected, total) when connected < total,
-    do: "#{total - connected} disconnected"
+    do: "#{total - connected} offline"
 
   defp runners_hint(_connected, _total), do: "All connected"
 
-  defp runners_tone(0, total) when total > 0, do: :rose
+  # Offline wears amber everywhere — one fact, one tone, one word (the loud
+  # all-offline BANNER carries the escalation, not this tile hint).
+  defp runners_tone(0, total) when total > 0, do: :amber
   defp runners_tone(connected, total) when connected < total, do: :amber
   defp runners_tone(_connected, _total), do: :neutral
 

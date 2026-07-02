@@ -305,8 +305,6 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    # Word-anchored: the offline badge text is "disconnected", which
-    # contains "connected" as a bare substring.
     connected_badge = ~r/>\s*connected\s*</
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
