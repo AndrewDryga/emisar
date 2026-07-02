@@ -1488,7 +1488,11 @@ defmodule EmisarWeb.CoreComponents do
           </:action>
         </.callout>
 
-        <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 backdrop-blur sm:px-6">
+        <%!-- min-h (not h): the title WRAPS on a phone instead of ellipsizing —
+             a truncated machine id ("api-iad-…") is useless on an audit-grade
+             surface, so the bar grows to fit and break-words splits an unbroken
+             id token only when it must. --%>
+        <header class="sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 py-2.5 backdrop-blur sm:px-6">
           <%!-- Mobile hamburger (hidden on lg) --%>
           <button
             type="button"
@@ -1501,7 +1505,7 @@ defmodule EmisarWeb.CoreComponents do
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
-          <h1 class="min-w-0 flex-1 truncate font-display text-xl font-bold tracking-[-0.015em] sm:text-2xl">
+          <h1 class="min-w-0 flex-1 break-words font-display text-xl font-bold leading-tight tracking-[-0.015em] sm:text-2xl">
             {render_slot(@title)}
           </h1>
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
@@ -3334,29 +3338,48 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The title block for a title-less detail page (run, approval, runner, audit,
-  runbook editor) — a `<.back_link>` breadcrumb to the parent list followed by
-  the entity heading. Goes in the `<.dashboard_shell>` `:title` slot, so every
-  detail page opens with the same "where am I / what is this" shape and one
-  place owns the breadcrumb + heading spacing. The heading markup is the default
-  slot, so each page keeps its own (mono id, status dot, version suffix, …).
+  SSO connection, runbook editor) — a `<.back_link>` breadcrumb to the parent
+  list followed by the entity heading. Goes in the `<.dashboard_shell>`
+  `:title` slot, so every detail page opens with the same "where am I / what
+  is this" shape and one place owns the breadcrumb + heading grammar.
+
+  Most detail pages are titled by an identifier, so `title` + `mono` render it
+  in the ONE mono heading face (a step below the shell's display size — mono
+  at display weight reads bulky), and `:meta` carries trailing de-emphasized
+  context (version · status, the target host). Never prefix the title with its
+  type word ("Approval · …") — the breadcrumb already says where you are. A
+  heading that needs custom anatomy (the audit event's outcome dot + dual
+  title) uses the default slot instead of `title`.
 
   The horizontal `<.meta_strip>` stays a sibling in the page body — it lives in
   a different region (the scrolling `<main>`, not the sticky title bar), so it
   can't share this DOM node.
 
       <:title>
-        <.detail_header back="Runners" navigate={~p"/app/\#{@current_account}/runners"}>
-          {@runner.name}
-        </.detail_header>
+        <.detail_header
+          back="Runners"
+          navigate={~p"/app/\#{@current_account}/runners"}
+          title={@runner.name}
+          mono
+        />
       </:title>
   """
   attr :navigate, :string, required: true
   attr :back, :string, required: true, doc: "the parent list's breadcrumb label"
-  slot :inner_block, required: true
+  attr :title, :string, default: nil, doc: "the entity heading; nil → the default slot carries it"
+  attr :mono, :boolean, default: false, doc: "render `title` in the mono machine-id face"
+  slot :meta, doc: "trailing de-emphasized context (version · status, on host)"
+  slot :inner_block
 
   def detail_header(assigns) do
     ~H"""
-    <.back_link navigate={@navigate}>{@back}</.back_link>{render_slot(@inner_block)}
+    <.back_link navigate={@navigate}>{@back}</.back_link><span
+      :if={@title}
+      class={@mono && "font-mono text-lg tracking-tight sm:text-xl"}
+    >{@title}</span>{render_slot(@inner_block)}<span
+      :if={@meta != []}
+      class="ml-2 text-sm font-normal text-zinc-500"
+    >{render_slot(@meta)}</span>
     """
   end
 

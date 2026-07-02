@@ -472,9 +472,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
       width={:detail}
     >
       <:title>
-        <.detail_header back="Approvals" navigate={~p"/app/#{@current_account}/approvals"}>
-          Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
-        </.detail_header>
+        <%!-- No "Approval ·" prefix — the breadcrumb already says where you are;
+             the action id IS the entity. --%>
+        <.detail_header
+          back="Approvals"
+          navigate={~p"/app/#{@current_account}/approvals"}
+          title={@request.context["action_id"] || "—"}
+          mono
+        />
       </:title>
       <:actions>
         <%!-- The decision trail for this request (requested / approved / denied /

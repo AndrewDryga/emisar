@@ -42,6 +42,44 @@ defmodule EmisarWeb.Components.DetailHeaderTest do
       assert html =~ ~s(<span class="font-mono">my-slug</span>)
     end
 
+    test "title + mono render the machine-id heading face" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.detail_header back="Runners" navigate="/app/runners" title="api-iad-3" mono />
+        """)
+
+      assert html =~ "api-iad-3"
+      assert html =~ "font-mono text-lg tracking-tight sm:text-xl"
+    end
+
+    test "a plain title renders without the mono face" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.detail_header back="Single sign-on" navigate="/app/sso" title="Acme Okta" />
+        """)
+
+      assert html =~ "Acme Okta"
+      refute html =~ "font-mono"
+    end
+
+    test "meta renders as the trailing de-emphasized context" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.detail_header back="Runs" navigate="/app/runs" title="nginx_reload" mono>
+          <:meta>on api-iad-3</:meta>
+        </CoreComponents.detail_header>
+        """)
+
+      assert html =~ "on api-iad-3"
+      assert html =~ "ml-2 text-sm font-normal text-zinc-500"
+    end
+
     test "escapes interpolated heading text (no raw HTML injection)" do
       assigns = %{evil: "<script>alert(1)</script>"}
 

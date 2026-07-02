@@ -180,9 +180,14 @@ defmodule EmisarWeb.RunnerDetailLive do
       width={:detail}
     >
       <:title>
-        <.detail_header back="Runners" navigate={~p"/app/#{@current_account}/runners"}>
-          {@runner.name}
-        </.detail_header>
+        <%!-- The runner's name is a hostname-ish machine id — mono, like every
+             identifier-titled detail page. --%>
+        <.detail_header
+          back="Runners"
+          navigate={~p"/app/#{@current_account}/runners"}
+          title={@runner.name}
+          mono
+        />
       </:title>
       <:actions>
         <%!-- This runner's slice of the audit trail (events whose subject is it):

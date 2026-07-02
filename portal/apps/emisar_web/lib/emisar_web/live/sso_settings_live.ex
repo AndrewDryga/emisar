@@ -921,7 +921,21 @@ defmodule EmisarWeb.SSOSettingsLive do
       section={:sso}
       width={:settings}
     >
-      <:title>Single sign-on</:title>
+      <:title>
+        <%!-- The detail view titles itself with the connection, like every
+             other detail page (detail_header family); the list keeps the
+             section name. --%>
+        <%= case {@live_action, @providers} do %>
+          <% {:show, [provider | _]} -> %>
+            <.detail_header
+              back="Single sign-on"
+              navigate={~p"/app/#{@current_account}/settings/sso"}
+              title={provider.name}
+            />
+          <% _ -> %>
+            Single sign-on
+        <% end %>
+      </:title>
       <:actions :if={@can_configure? and @live_action == :index}>
         <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size={:md} icon="hero-plus">
           Add connection
@@ -1157,21 +1171,16 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
              group→role). @providers holds exactly the one handle_params loaded. --%>
+        <%!-- Back crumb + entity name live in the shell header (detail_header),
+             like every other detail page. --%>
         <div :if={@live_action == :show} class="space-y-6">
-          <.link
-            navigate={~p"/app/#{@current_account}/settings/sso"}
-            class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
-          >
-            <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
-          </.link>
-
           <div :for={provider <- @providers} class="space-y-5">
             <%!-- Connection island — identity + the config readout. Editing is
-                 its own page (/edit), so this card is a clean read view. --%>
+                 its own page (/edit), so this card is a clean read view. The
+                 shell title already carries the name; this row is the status. --%>
             <.card padding="p-5">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 class="truncate text-lg font-semibold text-zinc-100">{provider.name}</h2>
                   <.chip>{kind_label(provider.kind)}</.chip>
                   <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
                   <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>

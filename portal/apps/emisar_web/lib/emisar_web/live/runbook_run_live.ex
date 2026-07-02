@@ -614,9 +614,9 @@ defmodule EmisarWeb.RunbookRunLive do
       <:title>
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
           Run {@runbook.title}
-          <span class="ml-2 font-mono text-sm font-normal text-zinc-500">
-            v{@runbook.version} · {@runbook.status}
-          </span>
+          <:meta>
+            <span class="font-mono">v{@runbook.version} · {@runbook.status}</span>
+          </:meta>
         </.detail_header>
       </:title>
 

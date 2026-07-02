@@ -114,11 +114,13 @@ defmodule EmisarWeb.RunDetailLive do
       width={:detail}
     >
       <:title>
-        <.detail_header back="Runs" navigate={~p"/app/#{@current_account}/runs"}>
-          <span class="font-mono text-base">{@run.action_id}</span>
-          <span :if={@run.runner} class="ml-2 text-sm font-normal text-zinc-400">
-            on {runner_label(@run.runner)}
-          </span>
+        <.detail_header
+          back="Runs"
+          navigate={~p"/app/#{@current_account}/runs"}
+          title={@run.action_id}
+          mono
+        >
+          <:meta :if={@run.runner}>on {runner_label(@run.runner)}</:meta>
         </.detail_header>
       </:title>
       <:actions>
