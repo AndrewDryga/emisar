@@ -329,6 +329,33 @@ defmodule Emisar.Users do
   end
 
   @doc """
+  Internal — SSO directory sync: replace the user's display name with the
+  IdP-sent one (SCIM owns a synced user's profile). No-op `{:ok, user}` when
+  the name already matches — no write, no audit. The caller supplies `:audit`.
+  Returns `{:ok, user} | {:error, :not_found | %Ecto.Changeset{}}`.
+  """
+  def sync_user_full_name(user_id, full_name, opts) when is_binary(full_name) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &sync_full_name_changeset(&1, full_name),
+      audit: Keyword.fetch!(opts, :audit)
+    )
+    |> case do
+      {:error, {:noop, %User{} = user}} -> {:ok, user}
+      other -> other
+    end
+  end
+
+  # An already-matching name rides fetch_and_update's abort channel as
+  # `{:noop, user}` so the idempotent re-sync commits nothing — no UPDATE row,
+  # no audit event.
+  defp sync_full_name_changeset(%User{full_name: full_name} = user, full_name), do: {:noop, user}
+
+  defp sync_full_name_changeset(%User{} = user, full_name),
+    do: User.Changeset.profile(user, %{full_name: full_name})
+
+  @doc """
   Internal — Accounts team admin: clear the member's MFA enrollment
   (secret + enrolled-at + recovery digests, replay stamp) under the row
   lock, so a member locked out of both their authenticator and recovery

@@ -92,6 +92,7 @@ defmodule Emisar.Audit.Event.Query do
     {"action_run.pending_approval", "Run awaiting approval"},
     {"user.provisioned_via_sso", "User provisioned (SSO JIT)"},
     {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+    {"user.renamed_via_scim", "User renamed (SCIM)"},
     {"membership.deprovisioned_via_scim", "Member deprovisioned (SCIM)"},
     {"membership.reprovisioned_via_scim", "Member reprovisioned (SCIM)"},
     {"membership.role_synced_via_scim", "Member role synced (SCIM)"},
@@ -243,6 +244,7 @@ defmodule Emisar.Audit.Event.Query do
      [
        {"user.provisioned_via_sso", "User provisioned (SSO)"},
        {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+       {"user.renamed_via_scim", "User renamed (SCIM)"},
        {"membership.deprovisioned_via_scim", "Member deprovisioned"},
        {"membership.reprovisioned_via_scim", "Member reprovisioned"},
        {"membership.role_synced_via_scim", "Role synced"},

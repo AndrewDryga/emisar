@@ -4,7 +4,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Fixtures
   alias Emisar.Mail
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{IdentityProvider, UserIdentity}
   alias Emisar.Users
   alias Emisar.Users.User
 
@@ -1614,6 +1614,35 @@ defmodule Emisar.AccountsTest do
       assert Accounts.sync_suspend_membership(other, provider) == {:error, :not_found}
       assert is_nil(Repo.reload!(other).disabled_at)
     end
+
+    test "never takes ownership of a manual break-glass suspension (no-op, provenance stays manual)",
+         %{account: account, provider: provider} do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      suspended = Fixtures.Memberships.suspend_membership(member)
+
+      assert {:ok, %Membership{} = returned} =
+               Accounts.sync_suspend_membership(suspended, provider)
+
+      assert Membership.disabled?(returned)
+      refute returned.directory_suspended
+      refute Repo.reload!(member).directory_suspended
+      # No write committed — so no deprovision audit row either.
+      assert Repo.all(Emisar.Audit.Event) == []
+    end
+
+    test "is idempotent — re-deactivating an already directory-suspended member is a no-op", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+
+      assert {:ok, %Membership{} = returned} =
+               Accounts.sync_suspend_membership(suspended, provider)
+
+      assert Membership.disabled?(returned)
+      assert returned.directory_suspended
+    end
   end
 
   describe "sync_reinstate_membership/2" do
@@ -1642,6 +1671,31 @@ defmodule Emisar.AccountsTest do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
       assert Accounts.sync_reinstate_membership(other, provider) == {:error, :not_found}
+    end
+
+    test "a manually-suspended member stays suspended — the IdP can't lift a local break-glass hold",
+         %{account: account, provider: provider} do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      suspended = Fixtures.Memberships.suspend_membership(member)
+
+      assert {:ok, %Membership{} = returned} =
+               Accounts.sync_reinstate_membership(suspended, provider)
+
+      assert Membership.disabled?(returned)
+      assert Membership.disabled?(Repo.reload!(member))
+    end
+
+    test "is idempotent — reactivating a not-suspended member is a no-op", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      assert {:ok, %Membership{} = returned} =
+               Accounts.sync_reinstate_membership(member, provider)
+
+      refute Membership.disabled?(returned)
+      refute Membership.disabled?(Repo.reload!(member))
     end
   end
 
@@ -1849,6 +1903,36 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "update_user_as_admin/3" do
+    test "a directory-synced member's profile is refused — the IdP owns the name" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      target = Fixtures.Users.create_user(full_name: "Synced Name")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: target.id,
+          role: "operator"
+        )
+
+      provider = scim_enable_provider(provider_fixture(account))
+      scim_identity_fixture(account, provider, target)
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      assert Accounts.update_user_as_admin(membership, %{"full_name" => "Renamed"}, subject) ==
+               {:error, :directory_managed_profile}
+
+      assert Repo.reload!(target).full_name == "Synced Name"
+    end
+
     test "an owner renames a member's profile" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -2923,6 +3007,33 @@ defmodule Emisar.AccountsTest do
 
     {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
     provider
+  end
+
+  # Flip a provider into live directory sync (scim_enabled) the fixture way —
+  # the profile/role locks key off this flag.
+  defp scim_enable_provider(provider) do
+    prefix = "emsp_#{System.unique_integer([:positive])}"
+    changeset = IdentityProvider.Changeset.scim_token(provider, prefix, "digest", true)
+    {:ok, provider} = Repo.update(changeset)
+    provider
+  end
+
+  # A SCIM-provisioned identity binding `user` into the provider's directory,
+  # mirroring the sync write path's attrs.
+  defp scim_identity_fixture(account, provider, user) do
+    external_id = "okta|#{System.unique_integer([:positive])}"
+
+    attrs = %{
+      provider_identifier: external_id,
+      scim_external_id: external_id,
+      created_by: :provider,
+      provisioned_via: :scim,
+      scim_active: true
+    }
+
+    changeset = UserIdentity.Changeset.create(account.id, provider.id, user.id, attrs)
+    {:ok, identity} = Repo.insert(changeset)
+    identity
   end
 
   defp enroll_mfa(user) do

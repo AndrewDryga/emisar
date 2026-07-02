@@ -27,6 +27,15 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
 
+  # Identities whose (live) provider currently runs directory sync — the
+  # "directory-managed" boundary the synced role chip and the profile-name
+  # lock share. Disabling SCIM on the provider unmatches automatically.
+  def scim_managed(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> where([provider: p], p.scim_enabled == true)
+  end
+
   def by_user_ids(queryable, user_ids),
     do: where(queryable, [identities: i], i.user_id in ^user_ids)
 

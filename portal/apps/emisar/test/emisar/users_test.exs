@@ -548,6 +548,36 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "sync_user_full_name/3" do
+    test "replaces the user's display name under the row lock" do
+      user = Fixtures.Users.create_user(full_name: "Old Name")
+
+      assert {:ok, %User{full_name: "Synced Name"}} =
+               Users.sync_user_full_name(user.id, "Synced Name",
+                 audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
+               )
+
+      assert Repo.reload!(user).full_name == "Synced Name"
+    end
+
+    test "an already-matching name is a no-op — no write, no audit row" do
+      user = Fixtures.Users.create_user(full_name: "Same Name")
+
+      assert {:ok, %User{full_name: "Same Name"}} =
+               Users.sync_user_full_name(user.id, "Same Name",
+                 audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
+               )
+
+      assert Repo.all(Emisar.Audit.Event) == []
+    end
+
+    test "an unknown user is :not_found" do
+      assert Users.sync_user_full_name(Ecto.UUID.generate(), "Anyone",
+               audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
+             ) == {:error, :not_found}
+    end
+  end
+
   describe "reset_user_mfa/2" do
     test "clears every MFA field so the member re-enrolls a fresh factor" do
       {_owner, account, _subject} = Fixtures.Subjects.owner_subject()

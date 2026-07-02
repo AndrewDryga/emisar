@@ -938,7 +938,9 @@ defmodule Emisar.Accounts do
   Mirrors `suspend_membership/2`'s mechanics exactly — `disabled_at` under
   the row lock, then kill sessions + revoke API keys + broadcast — and the
   **last-active-owner guard still fires**: a directory deprovision can never
-  lock out the account's last owner (§9 N5). Returns
+  lock out the account's last owner (§9 N5). An already-suspended member is a
+  no-op `{:ok, membership}` — in particular a MANUAL suspension keeps manual
+  provenance, so the IdP's later reactivate cannot lift it. Returns
   `{:ok, membership} | {:error, :last_owner | :not_found}`.
   """
   def sync_suspend_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
@@ -948,8 +950,12 @@ defmodule Emisar.Accounts do
       with: fn loaded_membership ->
         # Guards judge the locked row: it must live in the provider's account
         # (the directory-sync authz boundary), and a deprovision can never lock
-        # out the account's last owner.
+        # out the account's last owner. An ALREADY-suspended row is a no-op —
+        # crucially, the directory never takes ownership of a MANUAL break-glass
+        # suspend (that would let its later reactivate lift a hold an operator
+        # placed on purpose).
         with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
+             :ok <- ensure_not_suspended(loaded_membership),
              :ok <- ensure_not_last_active_owner(loaded_membership) do
           Membership.Changeset.sync_suspend(loaded_membership)
         else
@@ -963,12 +969,26 @@ defmodule Emisar.Accounts do
         &revoke_membership_api_keys/1
       ]
     )
+    |> noop_as_ok()
   end
+
+  # `{:noop, row}` rides fetch_and_update's abort channel (any non-changeset
+  # `:with` return becomes `{:error, value}`) so an idempotent sync transition
+  # commits nothing — no UPDATE, no audit row, no after_commit side effects —
+  # yet still answers `{:ok, membership}` to the SCIM caller.
+  defp noop_as_ok({:error, {:noop, %Membership{} = membership}}), do: {:ok, membership}
+  defp noop_as_ok(other), do: other
+
+  defp ensure_not_suspended(%Membership{disabled_at: nil}), do: :ok
+  defp ensure_not_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
 
   @doc """
   Internal — directory sync: reinstate a member the IdP re-provisioned
   (SCIM `active:true`). No `%Subject{}` — see `sync_suspend_membership/2`.
-  Clears `disabled_at` under the row lock + broadcasts. Returns
+  Clears `disabled_at` under the row lock + broadcasts — but ONLY a
+  `directory_suspended` row: a manually-suspended member is a no-op
+  `{:ok, membership}` that stays suspended (the local break-glass hold wins;
+  an operator lifts it via `reinstate_membership/2`). Returns
   `{:ok, membership} | {:error, :not_found}`.
   """
   def sync_reinstate_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
@@ -976,16 +996,25 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
       with: fn loaded_membership ->
-        # The locked row must live in the provider's account before we write.
-        case ensure_membership_in_provider_account(loaded_membership, provider) do
-          :ok -> Membership.Changeset.reinstate(loaded_membership)
+        # The locked row must live in the provider's account before we write —
+        # and the directory only lifts suspensions IT owns (`directory_suspended`).
+        # A MANUAL suspension is a break-glass hold: the IdP re-activating the
+        # user must not reinstate them (no-op; the operator lifts it locally).
+        with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
+             :ok <- ensure_directory_suspended(loaded_membership) do
+          Membership.Changeset.reinstate(loaded_membership)
+        else
           {:error, reason} -> reason
         end
       end,
       audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider),
       after_commit: &broadcast_membership_reinstated/1
     )
+    |> noop_as_ok()
   end
+
+  defp ensure_directory_suspended(%Membership{directory_suspended: true}), do: :ok
+  defp ensure_directory_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
 
   @doc """
   Internal — directory sync: set a member's role from their mapped IdP groups
@@ -1129,6 +1158,10 @@ defmodule Emisar.Accounts do
   caller must be owner/admin, can't edit self via this path (use
   Profile), admins can't edit owners.
 
+  A directory-synced member (a live identity under a SCIM-enabled provider)
+  is refused with `{:error, :directory_managed_profile}` — the IdP owns their
+  profile and the next sync would overwrite the edit anyway.
+
   Audit-logged as `user.updated_by_admin` so the change is traceable.
   """
   def update_user_as_admin(%Membership{} = membership, attrs, %Subject{} = subject)
@@ -1143,6 +1176,18 @@ defmodule Emisar.Accounts do
       # transaction so the hierarchy is judged on the CURRENT role.
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
+      |> Multi.run(:profile_ownership, fn _repo, %{target: loaded_membership} ->
+        # A directory-synced member's profile is the IdP's (same scim_enabled
+        # boundary as the role lock) — an edit here would just fight the sync.
+        if SSO.user_profile_directory_managed?(
+             loaded_membership.account_id,
+             loaded_membership.user_id
+           ) do
+          {:error, :directory_managed_profile}
+        else
+          {:ok, :editable}
+        end
+      end)
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.update_user_profile_as_admin(loaded_membership.user_id, attrs,
           audit: &Audit.Events.user_updated_by_admin(subject, loaded_membership, &1)

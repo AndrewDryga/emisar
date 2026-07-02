@@ -51,6 +51,24 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — Accounts' admin profile edit: true when the user's profile is
+  directory-owned in this account — they hold a live identity under a
+  SCIM-enabled provider (the same boundary the synced-role lock uses, so
+  disabling directory sync unlocks both together). Already-authorized callers
+  only; scoped by the explicit account_id.
+  """
+  def user_profile_directory_managed?(account_id, user_id)
+      when is_binary(account_id) and is_binary(user_id) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(account_id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.scim_managed()
+
+    Repo.exists?(queryable)
+  end
+
+  @doc """
   The users provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
   SSO first-login, or approved link), each preloaded with the user, most-recent
   first. Powers the connection page's "Synced users" list. Requires `manage_sso`;
@@ -746,6 +764,23 @@ defmodule Emisar.SSO do
 
   defp sync_membership_transition(membership, provider, :reactivate),
     do: Accounts.sync_reinstate_membership(membership, provider)
+
+  @doc """
+  Internal — SCIM rename (PUT full replace / PATCH `displayName`): the IdP owns
+  a synced user's display name, so the sent name replaces `full_name`. No-op
+  when it already matches (no write, no audit). Returns
+  `{:ok, %UserIdentity{}} | {:error, :not_found | %Ecto.Changeset{}}`.
+  """
+  def scim_rename_user(%IdentityProvider{} = provider, external_id, full_name)
+      when is_binary(full_name) do
+    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
+         {:ok, _user} <-
+           Users.sync_user_full_name(identity.user_id, full_name,
+             audit: &Audit.Events.user_renamed_via_scim(&1, provider)
+           ) do
+      {:ok, identity}
+    end
+  end
 
   @doc "Internal — SCIM read: the identity for `(provider, externalId)` (the IdP probes before create)."
   def scim_fetch_user(%IdentityProvider{} = provider, external_id),

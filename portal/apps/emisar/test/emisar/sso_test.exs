@@ -1428,6 +1428,80 @@ defmodule Emisar.SSOTest do
       %{provider: provider} = scim_provider()
       assert {:error, :not_found} = SSO.scim_reactivate_user(provider, "okta|nobody")
     end
+
+    test "a manual break-glass suspension survives an IdP deactivate→reactivate cycle" do
+      %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
+      attrs = scim_attrs(%{external_id: "okta|held", email: "held@acme.test"})
+
+      {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|held")
+      assert {:ok, %{membership: returned}} = SSO.scim_reactivate_user(provider, "okta|held")
+
+      # The IdP never owned the suspension, so its reactivate can't lift it —
+      # the member stays out until an operator reinstates locally.
+      assert returned.disabled_at
+      refute returned.directory_suspended
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+    end
+  end
+
+  # -- scim_rename_user/3 (provider-scoped) ----------------------------
+
+  describe "scim_rename_user/3" do
+    test "replaces the synced user's display name, audited to the directory" do
+      %{provider: provider} = scim_provider()
+      attrs = scim_attrs(%{external_id: "okta|rename", full_name: "Old Name"})
+      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+
+      assert {:ok, %UserIdentity{} = returned} =
+               SSO.scim_rename_user(provider, "okta|rename", "New Name")
+
+      assert returned.id == identity.id
+      assert Repo.reload!(user).full_name == "New Name"
+
+      assert event =
+               Enum.find(
+                 Repo.all(Emisar.Audit.Event),
+                 &(&1.event_type == "user.renamed_via_scim")
+               )
+
+      assert event.actor_kind == "directory_sync"
+      assert event.payload["full_name"] == "New Name"
+    end
+
+    test "an unchanged name is a no-op — no audit row" do
+      %{provider: provider} = scim_provider()
+      attrs = scim_attrs(%{external_id: "okta|same", full_name: "Keep Name"})
+      {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+
+      assert {:ok, %UserIdentity{}} = SSO.scim_rename_user(provider, "okta|same", "Keep Name")
+
+      assert Repo.reload!(user).full_name == "Keep Name"
+
+      refute Enum.any?(
+               Repo.all(Emisar.Audit.Event),
+               &(&1.event_type == "user.renamed_via_scim")
+             )
+    end
+
+    test "an unknown externalId is :not_found" do
+      %{provider: provider} = scim_provider()
+      assert SSO.scim_rename_user(provider, "okta|nobody", "Anyone") == {:error, :not_found}
+    end
+
+    test "is provider-scoped — provider B can't rename provider A's user" do
+      %{provider: provider_a} = scim_provider()
+      %{provider: provider_b} = scim_provider()
+      attrs = scim_attrs(%{external_id: "okta|scoped", full_name: "A Name"})
+      {:ok, %{user: user}} = SSO.scim_provision_user(provider_a, attrs)
+
+      assert SSO.scim_rename_user(provider_b, "okta|scoped", "Hijack") == {:error, :not_found}
+      assert Repo.reload!(user).full_name == "A Name"
+    end
   end
 
   # -- scim_fetch_user/2 (provider-scoped) -----------------------------

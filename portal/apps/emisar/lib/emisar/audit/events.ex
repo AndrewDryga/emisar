@@ -854,6 +854,23 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "A user's display name replaced by an inbound SCIM update (PUT / PATCH `displayName`)."
+  def user_renamed_via_scim(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
+    Audit.changeset(provider.account_id, "user.renamed_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      subject_kind: "user",
+      subject_id: user.id,
+      subject_label: user.email || user.full_name,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        full_name: user.full_name
+      }
+    )
+  end
+
   @doc "A membership suspended by an inbound SCIM deprovision (`active:false`/DELETE)."
   def membership_deprovisioned_via_scim(
         %Accounts.Membership{} = membership,
