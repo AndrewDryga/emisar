@@ -264,7 +264,10 @@ defmodule Emisar.Billing do
                Emisar.Billing.PaddleClient.create_checkout_session(%{
                  customer: customer_id,
                  price_id: price_id,
-                 quantity: current_count(account, :runners)
+                 # Per-runner pricing floors at ONE seat: a zero-runner
+                 # account (fresh signup) must still be able to buy, and
+                 # Paddle rejects quantity 0.
+                 quantity: max(current_count(account, :runners), 1)
                }) do
           {:ok, url}
         end

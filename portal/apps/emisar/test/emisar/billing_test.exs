@@ -1876,6 +1876,15 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert_received {:create_checkout_session, %{quantity: 5, price_id: "pri_team_01"}}
   end
 
+  test "a zero-runner account checks out at quantity 1 — Paddle rejects 0" do
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    account = %{account | paddle_customer_id: "ctm_seat_floor_01"}
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
+
+    assert_received {:create_checkout_session, %{quantity: 1}}
+  end
+
   test "the checkout session carries no URL overrides — the default payment link is the page" do
     # Paddle mints data.checkout.url from the account's default payment link
     # (our /checkout Paddle.js page) + ?_ptxn=. A per-transaction checkout.url
