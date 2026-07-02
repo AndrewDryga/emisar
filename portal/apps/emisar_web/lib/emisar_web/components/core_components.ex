@@ -1550,9 +1550,7 @@ defmodule EmisarWeb.CoreComponents do
                 type="submit"
                 class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
               >
-                <span class="grid h-4 w-4 shrink-0 place-items-center rounded-sm bg-zinc-800 text-[10px] font-semibold uppercase text-zinc-400">
-                  {String.first(account.name)}
-                </span>
+                <.avatar name={account.name} shape={:square} size={:xs} />
                 <span class="truncate">{account.name}</span>
               </button>
             </form>
@@ -1746,9 +1744,7 @@ defmodule EmisarWeb.CoreComponents do
           class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-zinc-900"
           aria-label="Open profile settings"
         >
-          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold uppercase">
-            {String.first(@current_user.full_name || @current_user.email)}
-          </span>
+          <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
           <div class="min-w-0 flex-1">
             <div class="truncate font-medium">{@current_user.full_name || @current_user.email}</div>
             <div class="truncate text-xs text-zinc-500">{@current_user.email}</div>
@@ -2005,6 +2001,42 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_bg(:brand), do: "bg-brand-400"
   defp status_dot_bg(:amber), do: "bg-amber-400"
   defp status_dot_bg(:rose), do: "bg-rose-400"
+
+  @doc """
+  Initial-letter avatar — the ONE identity disc (console-ux §1): a person or
+  workspace rendered as the first letter of its name. `:circle` for people
+  (the shell user block, the team roster), `:square` for workspaces (the
+  account switcher rows).
+
+      <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
+      <.avatar name={account.name} shape={:square} size={:xs} />
+  """
+  attr :name, :string, required: true
+  attr :size, :atom, default: :md, values: [:xs, :sm, :md]
+  attr :shape, :atom, default: :circle, values: [:circle, :square]
+  attr :class, :string, default: nil
+
+  def avatar(assigns) do
+    ~H"""
+    <span class={[
+      "grid shrink-0 place-items-center bg-zinc-800 font-semibold uppercase",
+      avatar_size(@size),
+      avatar_shape(@shape),
+      @class
+    ]}>
+      {String.first(@name || "?")}
+    </span>
+    """
+  end
+
+  # :sm carries no text color on purpose — the shell user block inherits its
+  # link's foreground so the avatar dims/brightens with the hover state.
+  defp avatar_size(:xs), do: "h-4 w-4 text-[10px] text-zinc-400"
+  defp avatar_size(:sm), do: "h-8 w-8 text-xs"
+  defp avatar_size(:md), do: "h-10 w-10 text-sm text-zinc-300"
+
+  defp avatar_shape(:circle), do: "rounded-full"
+  defp avatar_shape(:square), do: "rounded-sm"
 
   @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
   attr :status, :any, required: true
@@ -2309,6 +2341,91 @@ defmodule EmisarWeb.CoreComponents do
 
   defp disclosure_body_class(:sm), do: "p-3"
   defp disclosure_body_class(:md), do: "px-4 pb-4 pt-3"
+
+  @doc """
+  The ONE radio choice-card group — a deliberate pick between a few options,
+  each a full-card `<label>` (optional meaning-icon disc, title, one-line
+  rationale) wrapping an sr-only radio. Selection is NEUTRAL by design
+  (console-ux: a chosen risky option must never wear the safe brand hue);
+  the check icon marks the current pick. Values compare as strings.
+
+      <.choice_cards name="invite[role]" value={@form[:role].value}>
+        <:card :for={role <- @roles} value={role} title={String.capitalize(role)}>
+          {role_description(role)}
+        </:card>
+      </.choice_cards>
+  """
+  attr :name, :string, required: true
+  attr :value, :any, required: true, doc: "the currently selected value; compared as strings"
+  attr :disabled, :boolean, default: false
+  attr :columns, :integer, default: 1, values: [1, 2]
+  attr :class, :string, default: nil
+
+  slot :card, required: true do
+    attr :value, :string, required: true
+    attr :icon, :string
+    attr :title, :string, required: true
+  end
+
+  def choice_cards(assigns) do
+    ~H"""
+    <div class={[choice_cards_grid(@columns), @class]}>
+      <label
+        :for={card <- @card}
+        class={choice_card_class(to_string(@value) == card.value, @disabled)}
+      >
+        <input
+          type="radio"
+          name={@name}
+          value={card.value}
+          checked={to_string(@value) == card.value}
+          disabled={@disabled}
+          class="sr-only"
+        />
+        <span :if={card[:icon]} class={choice_card_icon_class(to_string(@value) == card.value)}>
+          <.icon name={card.icon} class="h-4 w-4" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-1.5">
+            <span class="text-sm font-medium text-zinc-100">{card.title}</span>
+            <.icon
+              :if={to_string(@value) == card.value}
+              name="hero-check-circle-solid"
+              class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
+            />
+          </span>
+          <span class="mt-0.5 block text-xs leading-relaxed text-zinc-500">
+            {render_slot(card)}
+          </span>
+        </span>
+      </label>
+    </div>
+    """
+  end
+
+  defp choice_cards_grid(1), do: "grid grid-cols-1 gap-2"
+  defp choice_cards_grid(2), do: "grid grid-cols-1 gap-2 sm:grid-cols-2"
+
+  # Neutral-bright when selected — never a semantic safe/warn hue on a
+  # selection affordance. focus-within lifts the ring for keyboard users
+  # (the radio itself is sr-only).
+  defp choice_card_class(selected?, disabled?) do
+    [
+      "flex items-start gap-3 rounded-lg p-3 ring-1 transition",
+      "focus-within:ring-2 focus-within:ring-brand-500/50",
+      if(selected?,
+        do: "bg-white/[0.04] ring-white/25",
+        else: "bg-black/20 ring-zinc-800 hover:ring-zinc-700"
+      ),
+      if(disabled?, do: "cursor-not-allowed opacity-70", else: "cursor-pointer")
+    ]
+    |> Enum.join(" ")
+  end
+
+  defp choice_card_icon_class(selected?) do
+    "grid h-8 w-8 shrink-0 place-items-center rounded-lg " <>
+      if(selected?, do: "bg-zinc-700 text-zinc-100", else: "bg-zinc-800/80 text-zinc-500")
+  end
 
   @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional

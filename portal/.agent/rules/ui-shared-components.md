@@ -18,6 +18,8 @@ its Tailwind. The canonical surfaces:
 | Index lead line | `<.page_intro>` (under the shell `:title`) | a hand-rolled `<header>` + `<p>` intro |
 | Detail breadcrumb + heading | `<.detail_header back= navigate=>` in the `:title` slot | a bespoke back-link + `<h1>` |
 | Auth footer switch-line | `<.auth_footer_link navigate=\|href=>` (`:lead` slot) | a per-page `<p class="mt-… text-center">` + link |
+| Initial-letter identity disc | `<.avatar name= size={:xs\|:sm\|:md} shape={:circle\|:square}>` — `:circle` for people (shell user, team roster), `:square` for workspaces (account switcher) | a `grid … place-items-center rounded-full bg-zinc-800 … uppercase` span + `String.first` |
+| Radio choice-card group | `<.choice_cards name= value= columns=>` + `:card value= icon= title=` slots — sr-only radio, NEUTRAL selection ring + check (a chosen risky option never wears the safe hue) | a hand-rolled `<label>` + radio card list, or per-page selected-class helpers |
 
 **The stat trio** — three count/number components that look alike and get confused.
 Pick by *where it lives*:

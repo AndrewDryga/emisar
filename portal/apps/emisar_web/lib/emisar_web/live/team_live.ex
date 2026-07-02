@@ -756,33 +756,20 @@ defmodule EmisarWeb.TeamLive do
               <p class="mt-0.5 text-xs text-zinc-500">
                 What this person can do once they join — you can change it later.
               </p>
-              <div class="mt-2.5 space-y-2">
-                <label
+              <.choice_cards
+                name="invite[role]"
+                value={@form[:role].value}
+                class="mt-2.5"
+              >
+                <:card
                   :for={role <- @roles}
                   :if={role_description(role)}
-                  class={[
-                    "block cursor-pointer rounded-lg border bg-black/30 p-4 transition",
-                    if(to_string(@form[:role].value) == role,
-                      do: "border-brand-500/50 ring-1 ring-brand-500/20",
-                      else: "border-zinc-800 hover:border-zinc-700"
-                    )
-                  ]}
+                  value={role}
+                  title={String.capitalize(role)}
                 >
-                  <span class="flex items-center gap-2.5">
-                    <input
-                      type="radio"
-                      name="invite[role]"
-                      value={role}
-                      checked={to_string(@form[:role].value) == role}
-                      class="h-4 w-4 border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0"
-                    />
-                    <span class="text-sm font-semibold text-zinc-100">{String.capitalize(role)}</span>
-                  </span>
-                  <p class="mt-1.5 pl-[26px] text-sm leading-relaxed text-zinc-400">
-                    {role_description(role)}
-                  </p>
-                </label>
-              </div>
+                  {role_description(role)}
+                </:card>
+              </.choice_cards>
             </fieldset>
 
             <:actions>
@@ -957,13 +944,10 @@ defmodule EmisarWeb.TeamLive do
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div class="flex min-w-0 flex-1 items-start gap-4">
-                  <%!-- Avatar: initial in a colored disc — same shape as
-                       the sidebar avatar, so the visual rhymes. --%>
-                  <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-800 text-sm font-semibold uppercase text-zinc-300">
-                    {String.first(
-                      (membership.user && (membership.user.full_name || membership.user.email)) || "?"
-                    )}
-                  </span>
+                  <.avatar name={
+                    (membership.user && (membership.user.full_name || membership.user.email)) ||
+                      "?"
+                  } />
 
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">

@@ -434,28 +434,6 @@ defmodule EmisarWeb.PoliciesLive do
     if approval_count(min_approvals) == 1, do: "operator", else: "distinct operators"
   end
 
-  # The "who can approve" option card: recessed + quiet by default, a neutral-bright
-  # ring + surface lift when selected — color-neutral so the risky self-approval
-  # choice never reads as emerald "safe" (that semantic lives only in the verdict).
-  # focus-within lifts the ring when the (sr-only) radio inside takes keyboard focus.
-  defp approval_option_class(selected?, can_manage?) do
-    [
-      "flex items-start gap-3 rounded-lg p-3 ring-1 transition",
-      "focus-within:ring-2 focus-within:ring-brand-500/50",
-      if(selected?,
-        do: "bg-white/[0.04] ring-white/25",
-        else: "bg-black/20 ring-zinc-800 hover:ring-zinc-700"
-      ),
-      if(can_manage?, do: "cursor-pointer", else: "cursor-not-allowed opacity-70")
-    ]
-    |> Enum.join(" ")
-  end
-
-  defp approval_icon_class(selected?) do
-    "grid h-8 w-8 shrink-0 place-items-center rounded-lg " <>
-      if(selected?, do: "bg-zinc-700 text-zinc-100", else: "bg-zinc-800/80 text-zinc-500")
-  end
-
   defp weakening_sentence([one]), do: one
   defp weakening_sentence(many), do: Enum.join(many, " and ")
 
@@ -948,60 +926,20 @@ defmodule EmisarWeb.PoliciesLive do
         <div class="mt-3 space-y-4 rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/5">
           <div>
             <.label variant={:eyebrow}>Who can approve</.label>
-            <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label class={approval_option_class(!@approval["allow_self_approval"], @can_manage)}>
-                <input
-                  type="radio"
-                  name="policy[approval][allow_self_approval]"
-                  value="false"
-                  checked={!@approval["allow_self_approval"]}
-                  disabled={!@can_manage}
-                  class="sr-only"
-                />
-                <span class={approval_icon_class(!@approval["allow_self_approval"])}>
-                  <.icon name="hero-user-group" class="h-4 w-4" />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center gap-1.5">
-                    <span class="text-sm font-medium text-zinc-100">A different operator</span>
-                    <.icon
-                      :if={!@approval["allow_self_approval"]}
-                      name="hero-check-circle-solid"
-                      class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
-                    />
-                  </span>
-                  <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
-                    No signing off on your own request.
-                  </span>
-                </span>
-              </label>
-              <label class={approval_option_class(@approval["allow_self_approval"], @can_manage)}>
-                <input
-                  type="radio"
-                  name="policy[approval][allow_self_approval]"
-                  value="true"
-                  checked={@approval["allow_self_approval"]}
-                  disabled={!@can_manage}
-                  class="sr-only"
-                />
-                <span class={approval_icon_class(@approval["allow_self_approval"])}>
-                  <.icon name="hero-user" class="h-4 w-4" />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center gap-1.5">
-                    <span class="text-sm font-medium text-zinc-100">Anyone, incl. requester</span>
-                    <.icon
-                      :if={@approval["allow_self_approval"]}
-                      name="hero-check-circle-solid"
-                      class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
-                    />
-                  </span>
-                  <span class="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
-                    The requester's own approval can count.
-                  </span>
-                </span>
-              </label>
-            </div>
+            <.choice_cards
+              name="policy[approval][allow_self_approval]"
+              value={@approval["allow_self_approval"]}
+              disabled={!@can_manage}
+              columns={2}
+              class="mt-2"
+            >
+              <:card value="false" icon="hero-user-group" title="A different operator">
+                No signing off on your own request.
+              </:card>
+              <:card value="true" icon="hero-user" title="Anyone, incl. requester">
+                The requester's own approval can count.
+              </:card>
+            </.choice_cards>
           </div>
 
           <%!-- Count, hairline-divided from the who-choice but in the same surface —
