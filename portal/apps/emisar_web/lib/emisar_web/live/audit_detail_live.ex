@@ -192,17 +192,13 @@ defmodule EmisarWeb.AuditDetailLive do
       |> assign(:changed, overrides["changed"] || [])
 
     ~H"""
-    <.card
+    <.panel
       :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}
-      class="mt-6 overflow-hidden"
-      padding=""
+      variant={:split}
+      title="Changes"
+      title_variant={:eyebrow}
+      class="mt-6"
     >
-      <header class="border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Changes
-        </h3>
-      </header>
-
       <div class="space-y-4 p-4">
         <%= if @defaults_diff != %{} do %>
           <div>
@@ -229,7 +225,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
         <%= if @added != [] do %>
           <div>
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-brand-300">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Added overrides ({length(@added)})
             </p>
             <ul class="space-y-1 text-xs">
@@ -247,7 +243,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
         <%= if @removed != [] do %>
           <div>
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-rose-300">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Removed overrides ({length(@removed)})
             </p>
             <ul class="space-y-1 text-xs">
@@ -262,7 +258,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
         <%= if @changed != [] do %>
           <div>
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Modified overrides ({length(@changed)})
             </p>
             <ul class="space-y-1 text-xs">
@@ -280,7 +276,7 @@ defmodule EmisarWeb.AuditDetailLive do
           </div>
         <% end %>
       </div>
-    </.card>
+    </.panel>
     """
   end
 
@@ -307,7 +303,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
     <.card class="flex-1" padding="p-4">
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
       <p class="mt-1 text-sm text-zinc-500">— (not recorded)</p>
     </.card>
     """
@@ -316,7 +312,7 @@ defmodule EmisarWeb.AuditDetailLive do
   defp entity_card(assigns) do
     ~H"""
     <.card class="min-w-0 flex-1" padding="p-4">
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
       <div class="mt-1 text-sm">
         <EmisarWeb.AuditLive.ref
           kind={@kind}

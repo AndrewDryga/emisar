@@ -295,12 +295,15 @@ defmodule EmisarWeb.RunDetailLive do
       <%!-- Operator's reason, full width. The policy decision renders
            as an inline strip below (only when it carries signal), not a
            side panel that would just echo the status chip. --%>
-      <.card :if={@run.reason && @run.reason != ""} class="mt-4" padding="p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Reason
-        </h3>
-        <p class="mt-2 text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
-      </.card>
+      <.panel
+        :if={@run.reason && @run.reason != ""}
+        title="Reason"
+        title_variant={:eyebrow}
+        padding="p-4"
+        class="mt-4"
+      >
+        <p class="text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
+      </.panel>
 
       <%!-- Policy decision strip — single horizontal line. Hidden for
            `allow` (the boring default the run wouldn't exist without).
