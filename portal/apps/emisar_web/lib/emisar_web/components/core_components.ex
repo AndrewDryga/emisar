@@ -2394,11 +2394,19 @@ defmodule EmisarWeb.CoreComponents do
         <span class="min-w-0 flex-1">
           <span class="flex items-center gap-1.5">
             <span class="text-sm font-medium text-zinc-100">{card.title}</span>
+            <%!-- Every card shows a pick affordance: the quiet radio ring says
+                 "choose one" before any hover; the check marks the current
+                 pick. Both stay NEUTRAL (selection never wears a hue). --%>
             <.icon
               :if={to_string(@value) == card.value}
               name="hero-check-circle-solid"
               class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
             />
+            <span
+              :if={to_string(@value) != card.value}
+              class="ml-auto h-4 w-4 shrink-0 rounded-full border border-zinc-700"
+            >
+            </span>
           </span>
           <span class="mt-0.5 block text-xs leading-relaxed text-zinc-500">
             {render_slot(card)}
@@ -2613,7 +2621,8 @@ defmodule EmisarWeb.CoreComponents do
         class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[0.92em] text-zinc-300"
       >
         {segment}
-      </code><span :if={rem(idx, 2) == 0}>{segment}</span>
+      </code>
+      <span :if={rem(idx, 2) == 0}>{segment}</span>
     <% end %>
     """
   end

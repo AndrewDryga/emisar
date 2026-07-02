@@ -401,10 +401,10 @@ defmodule EmisarWeb.TeamLive do
     do: "Full control of the workspace, including billing and adding or removing other owners."
 
   defp role_description("admin"),
-    do: "Manages members, runners, and policies, and approves runs. Billing is view-only."
+    do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
 
   defp role_description("operator"),
-    do: "Dispatches runs and approves actions. No team, policy, or billing management."
+    do: "Dispatches actions and approves them. No team, policy, or billing management."
 
   defp role_description("viewer") do
     "Read-only across runs, runners, approvals, and audit — can't dispatch or change anything."
@@ -734,8 +734,8 @@ defmodule EmisarWeb.TeamLive do
 
         <.panel :if={can_manage?(assigns) and is_nil(@invited_email)} title="Invite a member">
           <:subtitle>
-            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They sign in
-            with a magic link (or SSO) — no password to set — and land straight in this workspace.
+            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They'll sign in
+            with a magic link or SSO — no password — and land in this workspace.
           </:subtitle>
 
           <.simple_form

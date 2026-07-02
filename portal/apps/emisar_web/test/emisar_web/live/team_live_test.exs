@@ -30,7 +30,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # Each assignable role is explained, not just named — assigning one is a
       # privilege grant, so the picker itself carries the description.
       assert html =~ "Read-only across runs"
-      assert html =~ "Dispatches runs and approves actions"
+      assert html =~ "Dispatches actions and approves them"
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
