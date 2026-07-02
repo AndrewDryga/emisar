@@ -93,61 +93,6 @@ function formatAbsolute(dt, sameYear, short = false) {
 // marketing bundle; see copy.js for why it's a delegated listener.
 setupCopyToClipboardDelegation()
 
-// Phoenix hook kept for back-compat with the MFA recovery codes panel
-// which uses `phx-hook="CopyToClipboard"` and the older
-// `data-clipboard-*` attribute names. New code should prefer the
-// delegated `data-copy` pattern (copy.js) so it works on marketing pages
-// too. Body is identical to the delegated path.
-const CopyToClipboard = {
-  mounted() {
-    this.handler = async (e) => {
-      e.preventDefault()
-      const text = this.resolveText()
-      if (text == null || text === "") return
-      if (await this.copy(text)) this.flashCopied()
-    }
-    this.el.addEventListener("click", this.handler)
-  },
-  destroyed() {
-    if (this.handler) this.el.removeEventListener("click", this.handler)
-  },
-  resolveText() {
-    if (this.el.dataset.clipboardText != null) {
-      return this.el.dataset.clipboardText
-    }
-    const sel = this.el.dataset.clipboardTarget
-    if (!sel) return null
-    const target = document.querySelector(sel)
-    return target ? target.innerText.trim() : null
-  },
-  async copy(text) {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-        return true
-      }
-    } catch (_e) {}
-    const ta = document.createElement("textarea")
-    ta.value = text
-    ta.setAttribute("readonly", "")
-    ta.style.position = "fixed"
-    ta.style.top = "-1000px"
-    document.body.appendChild(ta)
-    ta.select()
-    let ok = false
-    try { ok = document.execCommand("copy") } catch (_e) {}
-    document.body.removeChild(ta)
-    return ok
-  },
-  flashCopied() {
-    const original = this.el.innerText
-    const restore = this.el.dataset.clipboardRestore || original
-    this.el.innerText = this.el.dataset.clipboardCopied || "Copied"
-    if (this._timer) clearTimeout(this._timer)
-    this._timer = setTimeout(() => { this.el.innerText = restore }, 1500)
-  }
-}
-
 // Live expiry countdown for a held approval. Ticks "Expires in MM:SS" (or "Hh MMm"
 // when far out), shifting tone amber→rose as it nears zero. At zero it shows
 // "Expired" and pushes `data-lapsed-event` so the server re-renders the terminal
@@ -395,7 +340,7 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, CopyToClipboard, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
+  hooks: { LocalTime, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
 })
 
 // Show progress bar on live navigation and form submits

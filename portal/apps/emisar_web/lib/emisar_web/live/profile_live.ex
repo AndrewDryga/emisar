@@ -521,66 +521,16 @@ defmodule EmisarWeb.ProfileLive do
               <%!-- One-shot reveal — codes are only shown right after
                    enable / regenerate. The card forces an explicit
                    "I saved them" before the user can close. --%>
-              <div class="rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4">
-                <h3 class="text-sm font-semibold text-amber-100">Save your recovery codes</h3>
-                <p class="mt-1 text-xs text-amber-200/90">
-                  Each code works once if you can't reach your authenticator. Store them in a
-                  password manager — we can't show them again.
-                </p>
-
-                <%!-- Single-column list of full-width, monospace, high-
-                     contrast cells. Each cell is itself a copy-to-
-                     clipboard button so a user can grab one code without
-                     selecting text. The hidden <code id> below holds the
-                     newline-joined block for the "Copy all" button. --%>
-                <ul class="mt-3 space-y-1.5">
-                  <li :for={code <- @mfa_recovery_codes}>
-                    <button
-                      type="button"
-                      id={"mfa-code-#{code}"}
-                      phx-hook="CopyToClipboard"
-                      data-clipboard-text={code}
-                      data-clipboard-copied="Copied!"
-                      data-clipboard-restore={code}
-                      class="block w-full select-all rounded-md border border-amber-500/40 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-amber-50 hover:border-amber-400 hover:bg-black/80"
-                      title="Click to copy this code"
-                    >
-                      {code}
-                    </button>
-                  </li>
-                </ul>
-
-                <code
-                  id="mfa-recovery-codes-blob"
-                  class="hidden"
-                >
-                  {Enum.join(@mfa_recovery_codes, "\n")}
-                </code>
-
-                <div class="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    id="copy-recovery-codes"
-                    phx-hook="CopyToClipboard"
-                    data-clipboard-target="#mfa-recovery-codes-blob"
-                    data-clipboard-copied="Copied!"
-                    data-clipboard-restore="Copy all"
-                    class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400"
-                  >
-                    Copy all
-                  </button>
-                  <%!-- A real file beats the volatile clipboard for a credential
-                       the user must keep — matches the enforced setup path. --%>
-                  <a
-                    href={
-                      "data:text/plain;charset=utf-8," <>
-                        URI.encode(Enum.join(@mfa_recovery_codes, "\n"))
-                    }
-                    download="emisar-recovery-codes.txt"
-                    class="rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
-                  >
-                    Download .txt
-                  </a>
+              <.secret_reveal
+                id="mfa-recovery-codes"
+                variant={:card}
+                title="Save your recovery codes"
+                codes={@mfa_recovery_codes}
+                download_name="emisar-recovery-codes.txt"
+              >
+                Each code works once if you can't reach your authenticator. Store them in a
+                password manager — we can't show them again.
+                <:actions>
                   <.button
                     variant="secondary"
                     size="sm"
@@ -590,8 +540,8 @@ defmodule EmisarWeb.ProfileLive do
                   >
                     I've saved them
                   </.button>
-                </div>
-              </div>
+                </:actions>
+              </.secret_reveal>
             <% @mfa_enabled? -> %>
               <p class="text-sm text-zinc-300">
                 You're protected by a second factor. Disabling means a leaked sign-in link is

@@ -1761,41 +1761,17 @@ defmodule EmisarWeb.SSOSettingsLive do
 
         <%!-- The one-time token reveal — only for the provider whose token was
              just minted. Dismissing it (or any reload) drops it for good. --%>
-        <div :if={@revealed_token} class="rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <p class="text-xs font-semibold text-amber-100">
-                Copy this SCIM token now — it's shown only once.
-              </p>
-              <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800">
-                <code
-                  id={"scim-token-#{@provider.id}"}
-                  class="flex-1 break-all font-mono text-xs text-zinc-100"
-                >
-                  {@revealed_token}
-                </code>
-                <.copy_button
-                  target={"#scim-token-#{@provider.id}"}
-                  class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
-                >
-                  Copy
-                </.copy_button>
-              </div>
-              <p class="mt-2 text-xs text-amber-100/70">
-                Didn't copy it? Use <span class="font-semibold">Rotate token</span>
-                above to mint a fresh one — the old token stops working.
-              </p>
-            </div>
-            <button
-              type="button"
-              phx-click="dismiss_scim_token"
-              class="rounded-lg p-1 text-amber-200/80 hover:bg-amber-500/10 hover:text-amber-100"
-              aria-label="Dismiss"
-            >
-              <.icon name="hero-x-mark" class="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+        <.secret_reveal
+          :if={@revealed_token}
+          id={"scim-token-#{@provider.id}"}
+          variant={:card}
+          title="Copy this SCIM token now — it's shown only once."
+          secret={@revealed_token}
+          on_dismiss="dismiss_scim_token"
+        >
+          If you lose it, <span class="font-semibold">Rotate token</span>
+          above mints a fresh one — the old token stops working.
+        </.secret_reveal>
 
         <%!-- IdP-side SCIM setup — a light disclosure (no heavy box); auto-opens
              right after the token's minted (mid-setup). Hidden once the directory has

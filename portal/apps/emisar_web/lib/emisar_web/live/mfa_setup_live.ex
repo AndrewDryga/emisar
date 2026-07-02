@@ -73,36 +73,16 @@ defmodule EmisarWeb.MfaSetupLive do
       <%= cond do %>
         <% @mfa_recovery_codes -> %>
           <div class="space-y-4">
-            <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-              <h3 class="text-sm font-semibold text-amber-100">Save your recovery codes</h3>
-              <p class="mt-1 text-xs text-amber-200/80">
-                Each code signs you in once if you lose your authenticator. They are only
-                shown now.
-              </p>
-              <ul class="mt-3 grid grid-cols-2 gap-1 font-mono text-xs text-amber-100">
-                <li :for={code <- @mfa_recovery_codes}>{code}</li>
-              </ul>
-            </div>
-
-            <textarea id="mfa-recovery-codes-blob" class="hidden" readonly aria-hidden="true">{Enum.join(@mfa_recovery_codes, "\n")}</textarea>
-
-            <div class="flex flex-wrap items-center gap-3">
-              <.copy_button
-                target="#mfa-recovery-codes-blob"
-                class="bg-zinc-800 px-3 py-1.5 text-zinc-100 hover:bg-zinc-700 font-medium"
-              >
-                Copy codes
-              </.copy_button>
-              <%!-- A real file beats the volatile clipboard for a credential
-                   the operator must keep — clipboards get overwritten. --%>
-              <a
-                href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@mfa_recovery_codes, "\n"))}
-                download="emisar-recovery-codes.txt"
-                class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700"
-              >
-                Download .txt
-              </a>
-            </div>
+            <.secret_reveal
+              id="mfa-recovery-codes"
+              variant={:card}
+              title="Save your recovery codes"
+              codes={@mfa_recovery_codes}
+              download_name="emisar-recovery-codes.txt"
+            >
+              Each code signs you in once if you lose your authenticator. They are only
+              shown now.
+            </.secret_reveal>
 
             <%!-- Gate Continue behind an explicit acknowledgement: an
                  MFA-required member who skips saving these and later loses

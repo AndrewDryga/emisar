@@ -382,7 +382,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Codes are shown exactly once — the panel goes away on dismiss
       # (the enable flash still mentions them, so check the element).
-      assert has_element?(lv, "#mfa-recovery-codes-blob")
+      assert has_element?(lv, "#mfa-recovery-codes")
 
       # The voluntary reveal offers a file download too (matching the enforced
       # setup path) — a clipboard is too volatile for a lockout credential.
@@ -391,7 +391,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Once saved, the MFA-on view surfaces how many codes remain (a fresh 10,
       # so no low-count nudge).
       html = render_click(lv, "dismiss_recovery_codes", %{})
-      refute has_element?(lv, "#mfa-recovery-codes-blob")
+      refute has_element?(lv, "#mfa-recovery-codes")
       assert html =~ "10 recovery codes remaining"
       refute html =~ "Regenerate for a fresh set"
     end
@@ -503,10 +503,10 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # Regenerate to reveal a fresh one-shot set, then dismiss it — the blob
-      # element is gone and a fresh mount never re-renders the plaintext codes.
+      # Regenerate to reveal a fresh one-shot set, then dismiss it — the reveal
+      # is gone and a fresh mount never re-renders the plaintext codes.
       shown = render_click(lv, "regenerate_recovery_codes", %{})
-      assert has_element?(lv, "#mfa-recovery-codes-blob")
+      assert has_element?(lv, "#mfa-recovery-codes")
 
       # Codes are lowercase base32 (Crypto.mfa_recovery_code/0) — pull one out of
       # the reveal to prove it's gone after dismissal.
@@ -514,11 +514,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert is_binary(a_code)
 
       dismissed = render_click(lv, "dismiss_recovery_codes", %{})
-      refute has_element?(lv, "#mfa-recovery-codes-blob")
+      refute has_element?(lv, "#mfa-recovery-codes")
       refute dismissed =~ a_code
 
       {:ok, _lv2, remounted} = live(conn, ~p"/app/#{account}/settings/profile")
-      refute remounted =~ "mfa-recovery-codes-blob"
+      refute remounted =~ "mfa-recovery-codes"
       refute remounted =~ a_code
     end
 
