@@ -315,7 +315,12 @@ defmodule EmisarWeb.DashboardLive do
       />
       <%!-- A denied stats read (a role with no view_runs) assigns nil —
            hide the tile rather than render zeros that read as "no runs". --%>
-      <.runs_stat :if={@run_stats} stats={@run_stats} current_account={@current_account} />
+      <.runs_stat
+        :if={@run_stats}
+        stats={@run_stats}
+        has_runs?={@recent_runs != []}
+        current_account={@current_account}
+      />
       <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
     </div>
 
@@ -355,7 +360,7 @@ defmodule EmisarWeb.DashboardLive do
       <% else %>
         <ul class="divide-y divide-zinc-900">
           <li :for={run <- @recent_runs}>
-            <.run_row run={run} show_runner current_account={@current_account} />
+            <.run_row run={run} show_runner show_source current_account={@current_account} />
           </li>
         </ul>
       <% end %>
@@ -393,11 +398,13 @@ defmodule EmisarWeb.DashboardLive do
   # carry that into the template and flags `<`/`>` there as a struct
   # comparison. Guard clauses use term ordering (no such warning) and read
   # more clearly. Clause order preserves the original cond priority.
+  # Actionable hints carry the same trailing arrow the 2FA tile uses —
+  # one affordance for "this deep-links to the fix".
   defp runners_hint(_connected, 0), do: "No runners yet"
-  defp runners_hint(0, _total), do: "All runners offline"
+  defp runners_hint(0, _total), do: "All runners offline →"
 
   defp runners_hint(connected, total) when connected < total,
-    do: "#{total - connected} offline"
+    do: "#{total - connected} offline →"
 
   defp runners_hint(_connected, _total), do: "All connected"
 
@@ -408,6 +415,7 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_tone(_connected, _total), do: :neutral
 
   attr :stats, :map, required: true
+  attr :has_runs?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp runs_stat(assigns) do
@@ -416,7 +424,7 @@ defmodule EmisarWeb.DashboardLive do
       <.stat
         label={"Runs (last #{@stats.window_hours}h)"}
         value={@stats.total}
-        hint={runs_hint(@stats)}
+        hint={runs_hint(@stats, @has_runs?)}
         hint_tone={
           cond do
             @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 -> :rose
@@ -432,11 +440,13 @@ defmodule EmisarWeb.DashboardLive do
   # Honest one-line outcome summary. "All succeeded" means EVERY run in the
   # window is `:success` (not just a 100% success rate while runs are still
   # pending or ended denied/cancelled); otherwise spell out each non-success
-  # bucket so nothing hides.
-  defp runs_hint(%{total: 0}), do: "Nothing dispatched yet"
-  defp runs_hint(%{success: n, total: n}), do: "All succeeded"
+  # bucket so nothing hides. A zero WINDOW is not a zero HISTORY — "Nothing
+  # dispatched yet" next to a digest full of yesterday's runs is a lie.
+  defp runs_hint(%{total: 0} = stats, true), do: "None in the last #{stats.window_hours}h"
+  defp runs_hint(%{total: 0}, false), do: "Nothing dispatched yet"
+  defp runs_hint(%{success: n, total: n}, _has_runs?), do: "All succeeded"
 
-  defp runs_hint(stats) do
+  defp runs_hint(stats, _has_runs?) do
     [
       if(stats.success_rate, do: "#{stats.success_rate}% success"),
       if(stats.failed > 0, do: "#{stats.failed} failed"),

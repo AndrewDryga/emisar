@@ -1890,9 +1890,12 @@ defmodule EmisarWeb.CoreComponents do
   relative time, and the run's status badge — linking to the run. Used by the
   "recent runs" lists. Pass `show_runner` where the target isn't already implied
   by the surrounding page (the dashboard); omit it on a runner's own page.
+  `show_source` adds the human-vs-LLM origin badge — the product's thesis in
+  one glyph — where the digest doesn't have a Source column.
   """
   attr :run, :map, required: true
   attr :show_runner, :boolean, default: false
+  attr :show_source, :boolean, default: false
   attr :current_account, :map, required: true
 
   def run_row(assigns) do
@@ -1908,6 +1911,13 @@ defmodule EmisarWeb.CoreComponents do
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
         </div>
       </div>
+      <span :if={@show_source} class="hidden shrink-0 sm:block">
+        <.source_badge
+          source={@run.source}
+          label={TimeHelpers.run_actor(@run)}
+          class="max-w-[10rem] text-xs"
+        />
+      </span>
       <.status_badge status={@run.status} class="shrink-0" />
     </.link>
     """
