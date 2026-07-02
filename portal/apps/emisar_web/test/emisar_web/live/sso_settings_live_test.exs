@@ -102,7 +102,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Enabled"
     end
 
-    test "creates a connection through the form, then returns to the list", %{
+    test "creates a connection through the form, then lands on its detail", %{
       conn: conn,
       account: account
     } do
@@ -121,16 +121,44 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       })
       |> render_submit()
 
-      # Adding is its own view; a successful create navigates back to the list.
-      assert_redirect(lv, ~p"/app/#{account}/settings/sso")
+      created =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.ordered_by_name()
+        |> Repo.all()
+        |> Enum.find(&(&1.name == "Work Okta"))
 
-      assert IdentityProvider.Query.not_deleted()
-             |> IdentityProvider.Query.ordered_by_name()
-             |> Repo.all()
-             |> Enum.any?(&(&1.name == "Work Okta"))
+      assert created
+      # A successful create lands on the new connection's detail, where the
+      # next-steps (test a sign-in, enable directory sync) live.
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{created.id}")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{created.id}")
       assert html =~ "Work Okta"
+    end
+
+    test "picking a fixed-issuer provider prefills its issuer", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      html =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "google_workspace", "issuer" => ""}})
+        |> render_change()
+
+      # Google's issuer is always the same value — the field fills it in rather
+      # than making the operator hunt for it.
+      assert html =~ ~s(value="https://accounts.google.com")
+    end
+
+    test "the default-role picker is radio cards with per-role descriptions", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      assert html =~ ~s(name="provider[default_role]")
+      assert html =~ ~s(type="radio")
+      # A role's shared description renders on its card (viewer, here).
+      assert html =~ "Read-only across runs"
     end
 
     test "the edit page renders the form without leaking the stored secret", %{
@@ -263,13 +291,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       })
       |> render_submit()
 
-      assert_redirect(lv, ~p"/app/#{account}/settings/sso")
-
       provider =
         IdentityProvider.Query.not_deleted()
         |> IdentityProvider.Query.ordered_by_name()
         |> Repo.all()
         |> Enum.find(&(&1.name == "Defaults Okta"))
+
+      assert provider
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The schema's documented defaults: stable identifier is `sub`, the
       # provider satisfies the account MFA gate, and it's created DISABLED so it

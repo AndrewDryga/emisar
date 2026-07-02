@@ -396,27 +396,6 @@ defmodule EmisarWeb.TeamLive do
   # role CAN do and where it stops, so the grant is a deliberate choice. Kept in
   # sync with the authorizers: owner manages billing + adds owners; admin manages
   # members/runners/policies and approves runs but only *views* billing;
-  # billing_manager is the orthogonal finance seat (billing only); operator
-  # dispatches + approves but manages nothing; viewer is read-only.
-  defp role_description("owner"),
-    do: "Full control of the workspace, including billing and adding or removing other owners."
-
-  defp role_description("admin"),
-    do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
-
-  defp role_description("billing_manager") do
-    "Manages the subscription, payment method, and invoices — no team, runners, or actions."
-  end
-
-  defp role_description("operator"),
-    do: "Dispatches actions and approves them. No team, policy, or billing management."
-
-  defp role_description("viewer") do
-    "Read-only across runs, runners, approvals, and audit — can't dispatch or change anything."
-  end
-
-  defp role_description(_), do: nil
-
   defp do_invite(socket, email, role) do
     account = socket.assigns.current_account
     inviter = socket.assigns.current_user
@@ -773,11 +752,11 @@ defmodule EmisarWeb.TeamLive do
               >
                 <:card
                   :for={role <- @roles}
-                  :if={role_description(role)}
+                  :if={Emisar.Auth.Role.description(role)}
                   value={role}
                   title={Emisar.Auth.Role.label(role)}
                 >
-                  {role_description(role)}
+                  {Emisar.Auth.Role.description(role)}
                 </:card>
               </.choice_cards>
             </fieldset>

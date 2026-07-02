@@ -29,6 +29,31 @@ defmodule Emisar.Auth.Role do
   def label(role) when is_binary(role), do: String.capitalize(role)
 
   @doc """
+  One-line description of what a role can do — the shared copy behind every
+  role picker (team invite, SSO default role, group→role mapping). Accepts an
+  atom or string; an unknown role has no description (`nil`).
+  """
+  def description(role) when is_atom(role), do: role |> Atom.to_string() |> description()
+
+  def description("owner"),
+    do: "Full control of the workspace, including billing and adding or removing other owners."
+
+  def description("admin"),
+    do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
+
+  def description("billing_manager"),
+    do: "Manages the subscription, payment method, and invoices — no team, runners, or actions."
+
+  def description("operator"),
+    do: "Dispatches actions and approves them. No team, policy, or billing management."
+
+  def description("viewer") do
+    "Read-only across runs, runners, approvals, and audit — can't dispatch or change anything."
+  end
+
+  def description(_), do: nil
+
+  @doc """
   Coerce a role name (atom or string) into a known role atom. Returns
   `{:ok, role}` or `:error`. Safe on untrusted input — it compares
   against the known set and never creates atoms.

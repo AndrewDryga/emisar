@@ -287,6 +287,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate", %{"provider" => params}, socket) do
+    params = prefill_fixed_issuer(params)
+
     changeset =
       SSO.change_provider(%SSO.IdentityProvider{}, params) |> Map.put(:action, :validate)
 
@@ -476,12 +478,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp do_create(socket, params) do
     case SSO.configure_provider(strip_blank_secret(params), socket.assigns.current_subject) do
       {:ok, provider} ->
-        # Adding is its own view; return to the connection list (a fresh mount
-        # there reloads the providers, so no explicit reload here).
+        # Land on the new connection's detail, not the overview — it's where the
+        # next steps live (test a sign-in, enable directory sync, map groups).
         {:noreply,
          socket
-         |> put_flash(:info, "Single sign-on connection \"#{provider.name}\" added.")
-         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")}
+         |> put_flash(:info, "Connection \"#{provider.name}\" added — finish setup below.")
+         |> push_navigate(
+           to: ~p"/app/#{socket.assigns.current_account}/settings/sso/#{provider.id}"
+         )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -1393,6 +1397,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   # rest of the console — never one giant card. Shared by both actions; the outer
   # <.simple_form> spaces the islands and renders the submit footer.
   defp provider_fields(assigns) do
+    assigns = assign(assigns, :kind, form_kind(assigns.form, assigns.kind_options))
+
     ~H"""
     <div class="space-y-5">
       <.panel title="Provider">
@@ -1419,7 +1425,12 @@ defmodule EmisarWeb.SSOSettingsLive do
               Set when the connection was created. Add a new connection to use a different provider.
             </p>
           </div>
-          <.input field={@form[:name]} type="text" label="Display name" placeholder="Acme Okta" />
+          <.input
+            field={@form[:name]}
+            type="text"
+            label="Display name"
+            placeholder={name_placeholder(@kind)}
+          />
         </div>
       </.panel>
 
@@ -1440,7 +1451,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               field={@form[:issuer]}
               type="url"
               label="Issuer URL"
-              placeholder="https://acme.okta.com"
+              placeholder={issuer_hint(@kind)}
               class="font-mono"
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
@@ -1455,6 +1466,22 @@ defmodule EmisarWeb.SSOSettingsLive do
             placeholder={if @editing?, do: "Leave blank to keep current", else: nil}
             autocomplete="off"
           />
+          <%!-- Which claim identifies the user is an OIDC-connection concern, so it
+               lives here beside the issuer/client — not down in provisioning. --%>
+          <div class="sm:col-span-2">
+            <.input
+              field={@form[:identifier_claim]}
+              type="select"
+              label="Identifier claim"
+              options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              The stable, provider-issued claim that identifies a user — restricted to immutable
+              subject identifiers (a mutable claim like email would allow account takeover). Leave
+              as <code>sub</code>
+              unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
+            </p>
+          </div>
         </div>
       </.panel>
 
@@ -1475,25 +1502,25 @@ defmodule EmisarWeb.SSOSettingsLive do
               they land at the default role below.
             </p>
           </div>
-          <.input
-            field={@form[:default_role]}
-            type="select"
-            label="Default role for new users"
-            options={@role_options}
-          />
-          <div>
-            <.input
-              field={@form[:identifier_claim]}
-              type="select"
-              label="Identifier claim"
-              options={[{"sub — OIDC standard", "sub"}, {"oid — Microsoft Entra", "oid"}]}
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              The stable, provider-issued claim that identifies a user — restricted to immutable
-              subject identifiers (a mutable claim like email would allow account takeover). Leave
-              as <code>sub</code>
-              unless your provider (e.g. Microsoft Entra) requires <code>oid</code>.
-            </p>
+          <div class="sm:col-span-2">
+            <.label>Default role for new users</.label>
+            <%!-- Radio cards, not a bare select — the role a new member lands at is
+                 a privilege choice, so each option shows what it grants (matches the
+                 team-invite picker). --%>
+            <.choice_cards
+              name="provider[default_role]"
+              value={@form[:default_role].value}
+              columns={2}
+              class="mt-2"
+            >
+              <:card
+                :for={{label, value} <- @role_options}
+                value={value}
+                title={label}
+              >
+                {Emisar.Auth.Role.description(value)}
+              </:card>
+            </.choice_cards>
           </div>
           <div class="sm:col-span-2">
             <.input
@@ -1521,9 +1548,23 @@ defmodule EmisarWeb.SSOSettingsLive do
               type="checkbox"
               label="Sign-in through this provider satisfies the account's 2FA requirement"
             />
-            <p class="mt-1 text-[11px] leading-relaxed text-amber-300/80">
-              Only enable if this provider enforces MFA itself — otherwise members who sign in
-              through it bypass your 2FA requirement.
+            <%!-- The caption tracks the box: OFF (the default) it's a calm fact
+                 about what turning it on means; ON it's the amber consequence,
+                 because that's the state that can actually weaken 2FA. A warning
+                 shown at the safe default would just argue with itself. --%>
+            <p
+              :if={not checkbox_on?(@form[:satisfies_mfa])}
+              class="mt-1 text-[11px] leading-relaxed text-zinc-500"
+            >
+              Turn on only if this provider enforces MFA itself — then a sign-in here counts as
+              the account's second factor.
+            </p>
+            <p
+              :if={checkbox_on?(@form[:satisfies_mfa])}
+              class="mt-1 text-[11px] leading-relaxed text-amber-300/80"
+            >
+              This provider must enforce MFA itself — otherwise members who sign in through it
+              bypass your 2FA requirement.
             </p>
           </div>
           <.input
@@ -1567,7 +1608,9 @@ defmodule EmisarWeb.SSOSettingsLive do
           into the fields below.
         </:step>
       </.steps>
-      <p class="mt-3 text-xs leading-relaxed text-zinc-500">
+      <%!-- Only providers whose OAuth app exposes a DPoP toggle get this note —
+           Google and JumpCloud have no such setting, so it would only confuse. --%>
+      <p :if={dpop_relevant?(@kind)} class="mt-3 text-xs leading-relaxed text-zinc-500">
         Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
         reads the ID token only and never presents the access token to an API, so DPoP adds no
         security here and turning it on would break the token request.
@@ -1605,6 +1648,44 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp issuer_hint("jumpcloud"), do: "https://oauth.id.jumpcloud.com/"
   defp issuer_hint("keycloak"), do: "https://YOUR-HOST/realms/YOUR-REALM"
   defp issuer_hint(_), do: "your provider's OIDC issuer URL (the discovery base)"
+
+  # The display-name placeholder — a plausible name for the picked provider, so
+  # the example never contradicts the selected kind (no "Acme Okta" under Google).
+  defp name_placeholder("google_workspace"), do: "Acme Google Workspace"
+  defp name_placeholder("okta"), do: "Acme Okta"
+  defp name_placeholder("jumpcloud"), do: "Acme JumpCloud"
+  defp name_placeholder("keycloak"), do: "Acme Keycloak"
+  defp name_placeholder(_), do: "Company SSO"
+
+  # The "leave DPoP off" note applies only where the OAuth app exposes a DPoP
+  # toggle (Okta, Keycloak, a generic OIDC app) — Google and JumpCloud don't.
+  defp dpop_relevant?("google_workspace"), do: false
+  defp dpop_relevant?("jumpcloud"), do: false
+  defp dpop_relevant?(_), do: true
+
+  # Whether a form checkbox field currently reads as on (params post "true";
+  # the loaded struct carries a boolean).
+  defp checkbox_on?(field), do: field.value in [true, "true"]
+
+  # Google Workspace and JumpCloud have a single, fixed OIDC issuer — prefill it
+  # when that provider is picked and the operator hasn't typed one, so they don't
+  # hunt for a value that's always the same. Switching to a non-fixed provider
+  # clears an issuer we'd prefilled (never one they typed).
+  defp prefill_fixed_issuer(%{"kind" => kind} = params) do
+    fixed = %{
+      "google_workspace" => "https://accounts.google.com",
+      "jumpcloud" => "https://oauth.id.jumpcloud.com/"
+    }
+
+    current = Map.get(params, "issuer", "")
+
+    case Map.get(fixed, kind) do
+      nil -> if current in Map.values(fixed), do: Map.put(params, "issuer", ""), else: params
+      issuer -> if current in ["", nil], do: Map.put(params, "issuer", issuer), else: params
+    end
+  end
+
+  defp prefill_fixed_issuer(params), do: params
 
   # Where to FIND the issuer — it's an org/realm-level value, not on the app
   # page, which is the usual point of confusion.
