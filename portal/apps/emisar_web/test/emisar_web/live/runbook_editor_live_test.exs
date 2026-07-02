@@ -107,7 +107,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # The target picker is a <select multiple> listing the account's groups,
       # not a free-text input.
       assert html =~ ~s(name="selector_values[]")
-      assert html =~ "multiple"
+      assert html =~ ~s(type="checkbox")
       assert html =~ "edge-eu"
       assert html =~ "edge-us"
 
@@ -151,8 +151,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # current kind selected; selector_values (the multi-select <.select>)
       # marks the picked group selected and leaves the unpicked one alone.
       assert html =~ ~r/<option(?=[^>]*\bvalue="group")(?=[^>]*\bselected)[^>]*>/
-      assert html =~ ~r/<option(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bselected)[^>]*>/
-      refute html =~ ~r/<option(?=[^>]*\bvalue="edge-us")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/<input(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bchecked)[^>]*>/
+      refute html =~ ~r/<input(?=[^>]*\bvalue="edge-us")(?=[^>]*\bchecked)[^>]*>/
     end
 
     test "a step with no target selected is flagged inline, not only at publish", %{
@@ -1061,7 +1061,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           "selector_values" => ["edge-eu"]
         })
 
-      refute html =~ ~r/<option(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bselected)[^>]*>/
+      refute html =~ ~r/<input(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bchecked)[^>]*>/
     end
 
     test "an empty multi-select posts nothing and defaults values to []", %{
@@ -1141,7 +1141,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           "selector_values" => ["ghost-group"]
         })
 
-      assert html =~ ~r/<option(?=[^>]*\bvalue="ghost-group")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/<input(?=[^>]*\bvalue="ghost-group")(?=[^>]*\bchecked)[^>]*>/
 
       render_click(lv, "save", %{})
       assert_redirect(lv, ~p"/app/#{account}/runbooks")

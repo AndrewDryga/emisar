@@ -662,7 +662,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               |> Enum.map(fn {label, value} ->
                 %{value: value, label: label, disabled: false, selected: value in selected}
               end) %>
-            <.multi_select
+            <.checkbox_list
               id={"step-#{@index}-selector-values"}
               name="selector_values[]"
               options={options}

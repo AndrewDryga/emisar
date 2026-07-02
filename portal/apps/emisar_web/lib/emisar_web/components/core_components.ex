@@ -804,59 +804,49 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  A multi-`<select>` (Cmd/Ctrl-click to add) — wraps `<.select multiple>` so the
-  markup stays in one place, and owns the two things every call site otherwise
-  duplicates: the `size` heuristic (clamp the visible rows to the option count,
-  3–6, so the box is neither a one-line scroll nor a wall) and the one standard
-  "pick multiple" hint, so the copy can't drift (it had: "⌘/Ctrl-click or
-  Shift+↑/↓" one place, "Cmd/Ctrl-click to select multiple." another).
+  Flat multi-pick as a visible checkbox list in a bordered scroll box —
+  the replacement for a native `<select multiple>` (OS-white selection
+  highlight, an unteachable ⌘-click contract, hostile on touch). Same
+  form semantics: checked values POST under `name`. Composes the shared
+  `<.checkbox>` row; `RunnerScope.runner_scope_select` is this shape's
+  nested group/runner sibling.
 
-  Same per-option contract as `<.select>`: option maps `%{value:, label:,
-  disabled:, selected:}`, rendered escaped through HEEx (IL-16). Pass `hint?:
-  false` to suppress the hint where space is tight; `size` to override the
-  clamp.
-
-      <.multi_select name="groups[]" options={@group_options} />
+      <.checkbox_list name="selector_values[]" options={@options} />
   """
   attr :id, :any, default: nil
-  attr :name, :any, required: true
-  attr :label, :string, default: nil
-  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
-  attr :hint?, :boolean, default: true
-  attr :size, :integer, default: nil, doc: "overrides the row-count clamp"
-  attr :errors, :list, default: []
+  attr :name, :any, required: true, doc: ~s(checkbox field name — use the "field[]" form)
 
   attr :options, :list,
     required: true,
     doc: "option maps: %{value:, label:, disabled:, selected:}"
 
-  attr :rest, :global, include: ~w(disabled form)
+  attr :class, :any, default: nil
 
-  def multi_select(assigns) do
-    # `assign_new` won't override the `nil` the attr default already set, so
-    # fall back explicitly when no `size` was passed.
-    assigns = assign(assigns, :size, assigns.size || multi_select_size(assigns.options))
-
+  def checkbox_list(assigns) do
     ~H"""
-    <.select
+    <div
       id={@id}
-      name={@name}
-      label={@label}
-      label_variant={@label_variant}
-      multiple
-      size={@size}
-      options={@options}
-      errors={@errors}
-      {@rest}
-    />
-    <p :if={@hint?} class="mt-1 text-[10px] text-zinc-500">⌘/Ctrl-click to select multiple.</p>
+      class={[
+        "max-h-44 divide-y divide-zinc-900 overflow-y-auto overscroll-contain rounded-lg border border-zinc-800 bg-zinc-950/40",
+        @class
+      ]}
+    >
+      <.checkbox
+        :for={opt <- @options}
+        name={@name}
+        value={opt.value}
+        checked={opt.selected}
+        disabled={opt.disabled}
+        class={"flex items-center gap-2.5 px-3 py-2 text-xs #{checkbox_row_state(opt.disabled)}"}
+      >
+        <span class="min-w-0 flex-1 truncate text-zinc-200">{opt.label}</span>
+      </.checkbox>
+    </div>
     """
   end
 
-  # Show enough rows to scan without scrolling, but cap it so a long fleet
-  # doesn't grow the box into a wall; floor at 3 so a one-option list still
-  # reads as a multi-select.
-  defp multi_select_size(options), do: options |> length() |> max(3) |> min(6)
+  defp checkbox_row_state(true), do: "cursor-not-allowed opacity-50"
+  defp checkbox_row_state(false), do: "cursor-pointer hover:bg-zinc-900/60"
 
   @doc """
   Renders a form label. `:default` is the standard `text-sm` form label;
