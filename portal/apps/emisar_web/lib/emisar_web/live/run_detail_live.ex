@@ -335,39 +335,34 @@ defmodule EmisarWeb.RunDetailLive do
            groups all the input context (reason, policy, args) above
            the result, so the operator doesn't have to scroll past a
            tall output panel to recall what was actually invoked. --%>
-      <.card :if={@run.args && @run.args != %{}} class="mt-6 overflow-hidden" padding="">
-        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Arguments</h3>
-          <span :if={@run.args_sha256} class="font-mono text-[11px] text-zinc-500">
-            sha256:{String.slice(@run.args_sha256, 0, 16)}…
-          </span>
-        </header>
-        <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-      </.card>
+      <.code_panel
+        :if={@run.args && @run.args != %{}}
+        label="Arguments"
+        annotation={@run.args_sha256 && "sha256:#{String.slice(@run.args_sha256, 0, 16)}…"}
+        max_h="max-h-64"
+        code={format_json(@run.args)}
+        class="mt-6"
+      />
 
       <%!-- The exact shell command the runner ran. Sensitive arg values
            are redacted runner-side (shown as [REDACTED]) — this is the
            audit-grade record of what actually executed. --%>
-      <.card
+      <.code_panel
         :if={@run.executed_command && @run.executed_command != ""}
-        class="mt-6 overflow-hidden"
-        padding=""
-      >
-        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Executed command
-          </h3>
-          <span class="text-[11px] text-zinc-600">secrets redacted</span>
-        </header>
-        <pre class="overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-200">{@run.executed_command}</pre>
-      </.card>
+        label="Executed command"
+        annotation="secrets redacted"
+        code={@run.executed_command}
+        class="mt-6"
+      />
 
       <%!-- Output stream — the main event. Full width, large, dark
            terminal-style background. Stderr lines render in rose so
            a failure jumps out. Hidden entirely for statuses where
            the panel would just be blank (cancelled, denied, anything
            still awaiting approval) — saves the operator from staring
-           at an empty terminal. --%>
+           at an empty terminal. The one sanctioned hand-rolled code
+           surface (console-ux §1): it streams chunk spans into the
+           <pre>, which `<.code_panel>`'s static `code` attr can't. --%>
       <.card
         :if={show_output?(@run, @output_present?)}
         class="mt-6 overflow-hidden"

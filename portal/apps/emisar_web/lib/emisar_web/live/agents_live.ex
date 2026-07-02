@@ -1017,18 +1017,13 @@ defmodule EmisarWeb.AgentsLive do
                 again. If you lose it, create another key.
               </.callout>
 
-              <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-                <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-                  <p class="font-mono text-[11px] text-zinc-500">API key (bearer token)</p>
-                  <.copy_button id="copy-custom-secret" target="#custom-secret">
-                    Copy key
-                  </.copy_button>
-                </div>
-                <pre
-                  id="custom-secret"
-                  class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
-                ><%= @quick_secret %></pre>
-              </div>
+              <.code_panel
+                id="custom-secret"
+                label="API key (bearer token)"
+                copy
+                copy_label="Copy key"
+                code={@quick_secret}
+              />
             <% end %>
 
             <.custom_key_panel
@@ -1081,21 +1076,15 @@ defmodule EmisarWeb.AgentsLive do
                 Paste this into {client_label(@selected_client)}
               </h3>
               <p class="mt-1 text-[11px] text-zinc-500 font-mono">{@config.location}</p>
-              <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-                <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-                  <p class="font-mono text-[11px] text-zinc-500">snippet (contains your API key)</p>
-                  <.copy_button
-                    id={"copy-#{@selected_client}"}
-                    target={"#snippet-#{@selected_client}"}
-                  >
-                    Copy snippet
-                  </.copy_button>
-                </div>
-                <pre
-                  id={"snippet-#{@selected_client}"}
-                  class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
-                ><%= @config.body %></pre>
-              </div>
+              <.code_panel
+                id={"snippet-#{@selected_client}"}
+                label="Snippet"
+                annotation="contains your API key"
+                copy
+                copy_label="Copy snippet"
+                code={@config.body}
+                class="mt-2"
+              />
               <p class="mt-2 text-xs text-zinc-500">
                 Restart {client_label(@selected_client)} after pasting.
                 <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
@@ -1157,22 +1146,13 @@ defmodule EmisarWeb.AgentsLive do
           one-time, per machine
         </span>
       </h3>
-      <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
-          <p class="font-mono text-[10px] text-zinc-500">macOS / Linux</p>
-          <.copy_button
-            id="copy-install-mcp"
-            target="#install-mcp-cmd"
-            class="px-2 py-0.5 text-[11px]"
-          >
-            Copy
-          </.copy_button>
-        </div>
-        <pre
-          id="install-mcp-cmd"
-          class="overflow-x-auto p-3 font-mono text-xs leading-5 text-zinc-200"
-        >curl -sSL https://emisar.dev/install-mcp.sh | sudo bash</pre>
-      </div>
+      <.code_panel
+        id="install-mcp-cmd"
+        label="macOS / Linux"
+        copy
+        code="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+        class="mt-2"
+      />
       <p class="mt-2 text-[11px] text-zinc-500">
         Inspects the bridge first?
         <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
@@ -1216,20 +1196,14 @@ defmodule EmisarWeb.AgentsLive do
       <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
         <.auto_permit_why client_label={@client_label} />
         <p class="mt-3 text-[11px] text-zinc-500 font-mono">{@auto_permit.location}</p>
-        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-          <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-            <p class="font-mono text-[11px] text-zinc-500">
-              {@client_label}'s setting — not an emisar config
-            </p>
-            <.copy_button id={"copy-permit-#{@client_id}"} target={"#permit-#{@client_id}"}>
-              Copy
-            </.copy_button>
-          </div>
-          <pre
-            id={"permit-#{@client_id}"}
-            class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
-          ><%= @auto_permit.body %></pre>
-        </div>
+        <.code_panel
+          id={"permit-#{@client_id}"}
+          label={"#{@client_label}'s setting"}
+          annotation="not an emisar config"
+          copy
+          code={@auto_permit.body}
+          class="mt-2"
+        />
       </div>
     </details>
     """

@@ -160,30 +160,17 @@ defmodule EmisarWeb.AuditDetailLive do
       />
 
       <%!-- Payload — primary content on the page. Wide and tall,
-           terminal-style for the JSON. --%>
-      <.card class="mt-6 overflow-hidden" padding="">
-        <header class="flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payload</h3>
-          <span
-            class="ml-3 min-w-0 flex-1 truncate text-right font-mono text-[11px] text-zinc-500"
-            title={@event.id}
-          >
-            event:{@event.id}
-          </span>
-          <%!-- Copy the rendered JSON (innerText, not a duplicated data attr) so
-               an operator can paste a payload into a ticket/grep. --%>
-          <.copy_button
-            target="#audit-payload-json"
-            class="shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
-          >
-            Copy
-          </.copy_button>
-        </header>
-        <pre
-          id="audit-payload-json"
-          class="max-h-[60vh] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300"
-        >{pretty_payload(@event.payload)}</pre>
-      </.card>
+           terminal-style for the JSON; copy grabs the rendered JSON
+           (innerText) so an operator can paste it into a ticket/grep. --%>
+      <.code_panel
+        id="audit-payload-json"
+        label="Payload"
+        annotation={"event:#{@event.id}"}
+        copy
+        max_h="max-h-[60vh]"
+        code={pretty_payload(@event.payload)}
+        class="mt-6"
+      />
     </.dashboard_shell>
     """
   end

@@ -574,30 +574,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
                pack is provably the runner's (pinned hash, or advertised version),
                so the template is the one the runner holds; otherwise the raw
                Arguments card below carries the detail. Sensitive args are masked. --%>
-          <.card :if={@executed_command} class="overflow-hidden" padding="">
-            <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Command
-              </h3>
-              <span class="text-[11px] text-zinc-500">what the runner will execute</span>
-            </header>
-            <pre class="overflow-x-auto bg-black/40 p-4 font-mono text-xs leading-relaxed text-zinc-200"><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
-          </.card>
+          <.code_panel
+            :if={@executed_command}
+            label="Command"
+            annotation="what the runner will execute"
+            prompt
+            code={@executed_command}
+          />
 
           <%!-- Arguments sit right after the command (the "what will run" pair),
                before Reason + the approval gate (the "why"). The raw args also
                carry the detail when the command couldn't be resolved above. --%>
-          <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
-            <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Arguments
-              </h3>
-              <span :if={@request.context["args_sha256"]} class="font-mono text-[11px] text-zinc-500">
-                sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
-              </span>
-            </header>
-            <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-          </.card>
+          <.code_panel
+            :if={@run && @run.args && @run.args != %{}}
+            label="Arguments"
+            annotation={
+              @request.context["args_sha256"] &&
+                "sha256:#{String.slice(@request.context["args_sha256"], 0, 16)}…"
+            }
+            max_h="max-h-64"
+            code={format_json(@run.args)}
+          />
 
           <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">

@@ -2170,6 +2170,68 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The ONE framed code surface — an eyebrow-labeled header (optional
+  `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
+  Every static code/JSON/argv/snippet block composes this (console-ux §1).
+  The code rides the `code` ATTR, not a slot, so the formatter can never leak
+  indentation into the whitespace-significant `<pre>`. The run-output
+  terminal (streamed spans) is the sanctioned hand-rolled exception.
+
+      <.code_panel
+        id="run-args"
+        label="Arguments"
+        annotation={"sha256:" <> sha}
+        max_h="max-h-64"
+        code={format_json(@run.args)}
+      />
+      <.code_panel label="Command" annotation="what the runner will execute" prompt code={@argv} />
+  """
+  attr :code, :string, required: true
+  attr :label, :string, required: true
+  attr :id, :string, default: nil, doc: "pre id — required with `copy`"
+  attr :annotation, :string, default: nil, doc: "right-side header meta"
+  attr :copy, :boolean, default: false, doc: "copy button targeting the pre by `id`"
+  attr :copy_label, :string, default: "Copy"
+  attr :prompt, :boolean, default: false, doc: ~S(render a select-none "$ " shell prompt)
+  attr :max_h, :string, default: nil, doc: ~S(scroll clamp on the pre, e.g. "max-h-64")
+  attr :class, :string, default: nil
+  attr :rest, :global
+  slot :badge, doc: "header extras next to the label (e.g. a streaming pill)"
+
+  def code_panel(assigns) do
+    ~H"""
+    <.card class={"overflow-hidden #{@class}"} padding="" {@rest}>
+      <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
+        <div class="flex min-w-0 items-center gap-2">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</h3>
+          {render_slot(@badge)}
+        </div>
+        <div class="flex min-w-0 shrink-0 items-center gap-2">
+          <span
+            :if={@annotation}
+            class="truncate font-mono text-[11px] text-zinc-500"
+            title={@annotation}
+          >
+            {@annotation}
+          </span>
+          <.copy_button
+            :if={@copy}
+            target={"##{@id}"}
+            class="shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
+          >
+            {@copy_label}
+          </.copy_button>
+        </div>
+      </header>
+      <pre
+        id={@id}
+        class={["overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300", @max_h]}
+      ><span :if={@prompt} class="select-none text-zinc-600">$ </span>{@code}</pre>
+    </.card>
+    """
+  end
+
+  @doc """
   A card whose body collapses behind a clickable header. Built on `<details>`,
   so it's keyboard-accessible and toggles with no JS; the `CollapsibleSection`
   hook then persists the open/closed choice per `id` in `localStorage`, so it

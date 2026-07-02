@@ -1,0 +1,83 @@
+defmodule EmisarWeb.Components.CodePanelTest do
+  @moduledoc """
+  Renders `EmisarWeb.CoreComponents.code_panel/1` — the ONE framed code
+  surface (console-ux §1). Asserts the header contract (label, annotation,
+  copy), the `$` prompt, the scroll clamp, and that the code renders escaped
+  (IL-16: argv/JSON/snippets carry attacker-influenceable text).
+  """
+  use ExUnit.Case, async: true
+  import Phoenix.Component
+  import Phoenix.LiveViewTest
+  alias EmisarWeb.CoreComponents
+
+  describe "code_panel/1" do
+    test "renders the eyebrow label over the mono pre" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H|<CoreComponents.code_panel label="Arguments" code="{}" />|)
+
+      assert html =~ "Arguments"
+      assert html =~ "uppercase tracking-wider"
+      assert html =~ "<pre"
+      assert html =~ "font-mono"
+    end
+
+    test "annotation renders as right-side header meta" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel label="Arguments" annotation="sha256:abc…" code="{}" />|
+        )
+
+      assert html =~ "sha256:abc…"
+    end
+
+    test "copy renders a copy button targeting the pre id" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel id="snippet-x" label="Snippet" copy copy_label="Copy snippet" code="a" />|
+        )
+
+      assert html =~ ~s(data-copy="#snippet-x")
+      assert html =~ "Copy snippet"
+    end
+
+    test "prompt renders the select-none shell prefix" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel label="Command" prompt code="systemctl restart nginx" />|
+        )
+
+      assert html =~ "select-none"
+      assert html =~ "$ "
+      assert html =~ "systemctl restart nginx"
+    end
+
+    test "max_h clamps the pre" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel label="Payload" max_h="max-h-64" code="{}" />|
+        )
+
+      assert html =~ "max-h-64"
+    end
+
+    test "the code is HTML-escaped — argv/snippets are attacker-influenceable (IL-16)" do
+      assigns = %{evil: "<script>alert(1)</script>"}
+
+      html =
+        rendered_to_string(~H|<CoreComponents.code_panel label="Payload" code={@evil} />|)
+
+      refute html =~ "<script>alert(1)</script>"
+      assert html =~ "&lt;script&gt;"
+    end
+  end
+end
