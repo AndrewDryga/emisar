@@ -296,23 +296,19 @@ defmodule EmisarWeb.RunnersLive do
 
   defp connection_dot(%{status: "connected"} = assigns) do
     ~H"""
-    <span class="relative grid h-3 w-3 flex-none place-items-center" title="Connected">
-      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500/40">
-      </span>
-      <span class="relative h-2 w-2 rounded-full bg-brand-400"></span>
-    </span>
+    <.status_dot tone={:brand} ping size={:md} title="Connected" />
     """
   end
 
   defp connection_dot(%{status: "disabled"} = assigns) do
     ~H"""
-    <span class="h-2.5 w-2.5 flex-none rounded-full bg-zinc-700" title="Disabled"></span>
+    <.status_dot size={:lg} title="Disabled" />
     """
   end
 
   defp connection_dot(assigns) do
     ~H"""
-    <span class="h-2.5 w-2.5 flex-none rounded-full bg-zinc-600" title="Disconnected"></span>
+    <.status_dot size={:lg} title="Disconnected" />
     """
   end
 

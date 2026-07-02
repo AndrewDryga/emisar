@@ -1901,8 +1901,7 @@ defmodule EmisarWeb.CoreComponents do
   def summary_stat(assigns) do
     ~H"""
     <div class="flex items-center gap-1.5">
-      <span class={["h-1.5 w-1.5 shrink-0 rounded-full", summary_dot_class(@tone)]} aria-hidden="true">
-      </span>
+      <.status_dot tone={@tone} />
       <span class="tabular-nums text-zinc-100">{@value}</span>
       <span class="text-zinc-400">{@label}</span>
       <%!-- Secondary qualifier (e.g. "last 5 min") — hidden on mobile so the
@@ -1912,19 +1911,82 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # The status colour lives on the dot, not the number — the count itself reads
-  # neutral so the strip stays a quiet at-a-glance band.
-  defp summary_dot_class(:brand), do: "bg-brand-400"
-  defp summary_dot_class(:amber), do: "bg-amber-400"
-  defp summary_dot_class(:rose), do: "bg-rose-400"
-  defp summary_dot_class(:neutral), do: "bg-zinc-600"
+  @doc """
+  The ONE status dot — the colored circle every live-state indicator composes
+  (console-ux §1): summary-band stats, the status badge, connection dots,
+  audit outcome dots, SCIM sync health, wait-room pings. Tones are the house
+  hue atoms; `pulse` is the gentle in-progress fade (a running run), `ping`
+  the radiating "live/waiting" ring (a connected runner, a wait-room). Extra
+  attributes (e.g. `title`) ride `@rest`.
+
+      <.status_dot tone={:brand} />
+      <.status_dot tone={:brand} ping size={:md} title="Connected" />
+      <.status_dot tone={:amber} pulse />
+  """
+  attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
+  attr :pulse, :boolean, default: false
+  attr :ping, :boolean, default: false
+  attr :size, :atom, default: :sm, values: [:sm, :md, :lg]
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def status_dot(%{ping: true} = assigns) do
+    ~H"""
+    <span
+      class={["relative flex shrink-0", status_dot_size(@size), @class]}
+      aria-hidden="true"
+      {@rest}
+    >
+      <span class={[
+        "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+        status_dot_bg(@tone)
+      ]}>
+      </span>
+      <span class={["relative inline-flex rounded-full", status_dot_size(@size), status_dot_bg(@tone)]}>
+      </span>
+    </span>
+    """
+  end
+
+  def status_dot(assigns) do
+    ~H"""
+    <span
+      class={[
+        "inline-block shrink-0 rounded-full",
+        status_dot_size(@size),
+        status_dot_bg(@tone),
+        @pulse && "animate-pulse",
+        @class
+      ]}
+      aria-hidden="true"
+      {@rest}
+    >
+    </span>
+    """
+  end
+
+  defp status_dot_size(:sm), do: "h-1.5 w-1.5"
+  defp status_dot_size(:md), do: "h-2 w-2"
+  defp status_dot_size(:lg), do: "h-2.5 w-2.5"
+
+  defp status_dot_bg(:neutral), do: "bg-zinc-600"
+  defp status_dot_bg(:brand), do: "bg-brand-400"
+  defp status_dot_bg(:amber), do: "bg-amber-400"
+  defp status_dot_bg(:rose), do: "bg-rose-400"
 
   @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
   attr :status, :any, required: true
   attr :class, :string, default: ""
 
   def status_badge(assigns) do
-    assigns = assign(assigns, :status, to_string(assigns.status))
+    status = to_string(assigns.status)
+    {dot_tone, dot_pulse?} = status_dot_spec(status)
+
+    assigns =
+      assigns
+      |> assign(:status, status)
+      |> assign(:dot_tone, dot_tone)
+      |> assign(:dot_pulse?, dot_pulse?)
 
     ~H"""
     <span class={[
@@ -1932,7 +1994,7 @@ defmodule EmisarWeb.CoreComponents do
       status_classes(@status),
       @class
     ]}>
-      <span class={["h-1.5 w-1.5 rounded-full", status_dot(@status)]} />
+      <.status_dot tone={@dot_tone} pulse={@dot_pulse?} />
       {format_status(@status)}
     </span>
     """
@@ -1995,35 +2057,20 @@ defmodule EmisarWeb.CoreComponents do
 
   defp status_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
-  defp status_dot("success"), do: "bg-brand-400"
-  defp status_dot("connected"), do: "bg-brand-400"
-  defp status_dot("approved"), do: "bg-brand-400"
-  defp status_dot("published"), do: "bg-brand-400"
-  # In-flight runs pulse so they read as "still happening", not done — the one
-  # cue that separates sent/running from a static "success" dot (same hue).
-  defp status_dot("running"), do: "bg-brand-400 animate-pulse"
-  defp status_dot("sent"), do: "bg-brand-400 animate-pulse"
-  defp status_dot("draft"), do: "bg-zinc-500"
-  defp status_dot("pending"), do: "bg-zinc-500"
-  defp status_dot("disconnected"), do: "bg-zinc-600"
-  defp status_dot("pending_approval"), do: "bg-amber-400 animate-pulse"
-  defp status_dot("refused"), do: "bg-amber-400"
-  defp status_dot("denied"), do: "bg-rose-400"
-  defp status_dot("expired"), do: "bg-zinc-600"
-  defp status_dot("planned"), do: "bg-zinc-600"
+  # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
+  # read as "still happening", not done — the one cue that separates
+  # sent/running (and a held pending_approval) from a static same-hue dot.
+  defp status_dot_spec(s) when s in ~w[success connected approved published], do: {:brand, false}
+  defp status_dot_spec(s) when s in ~w[running sent], do: {:brand, true}
+  defp status_dot_spec("pending_approval"), do: {:amber, true}
+  defp status_dot_spec("refused"), do: {:amber, false}
+  defp status_dot_spec("denied"), do: {:rose, false}
 
-  defp status_dot(s)
-       when s in [
-              "failed",
-              "error",
-              "validation_failed",
-              "unknown_action",
-              "timed_out",
-              "dispatch_failed"
-            ],
-       do: "bg-rose-400"
+  defp status_dot_spec(s)
+       when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed],
+       do: {:rose, false}
 
-  defp status_dot(_), do: "bg-zinc-500"
+  defp status_dot_spec(_), do: {:neutral, false}
 
   defp format_status("pending_approval"), do: "awaiting approval"
   defp format_status("validation_failed"), do: "validation failed"

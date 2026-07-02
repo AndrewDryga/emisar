@@ -390,11 +390,7 @@ defmodule EmisarWeb.AuditLive do
         </:col>
         <:col :let={event} label="Event" class="w-full">
           <div class="flex items-start gap-2">
-            <span
-              class={["mt-1.5 h-2 w-2 flex-none rounded-full", tone_dot(event.event_type)]}
-              aria-hidden="true"
-            >
-            </span>
+            <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1.5" />
             <div class="min-w-0">
               <div class={["text-sm", event_title_class(event.event_type)]}>
                 {format_event_type(event.event_type)}
@@ -641,14 +637,18 @@ defmodule EmisarWeb.AuditLive do
   defp kindless_label("scheduler"), do: "Scheduler"
   defp kindless_label("runbook"), do: "Runbook"
 
-  # Colour for the leading outcome dot in the Event column — failures rose,
-  # denials/removals amber, routine events a muted neutral. Keyed off
-  # `Audit.Event.Query.outcome/1` so the dot + the "Outcome" filter never disagree.
-  defp tone_dot(event_type) do
+  @doc """
+  Outcome → house tone for the audit event's `<.status_dot>` — failures `:rose`,
+  denials/removals `:amber`, routine events `:neutral`. Keyed off
+  `Audit.Event.Query.outcome/1` so the dot + the "Outcome" filter never
+  disagree. Public because the detail page's title dot must match the list
+  (same sharing mechanism as `ref/1`).
+  """
+  def outcome_tone(event_type) do
     case Audit.Event.Query.outcome(event_type) do
-      :danger -> "bg-rose-400"
-      :warn -> "bg-amber-400"
-      :neutral -> "bg-zinc-700"
+      :danger -> :rose
+      :warn -> :amber
+      :neutral -> :neutral
     end
   end
 

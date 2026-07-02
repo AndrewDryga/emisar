@@ -67,7 +67,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
       assert html =~ "bg-rose-400"
       assert html =~ "bg-amber-400"
-      assert html =~ "bg-zinc-700"
+      assert html =~ "bg-zinc-600"
     end
 
     test "label updates reflect on next load (no stale snapshot)", %{conn: conn} do

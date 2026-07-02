@@ -508,11 +508,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.meta_field label="Runner">
           <%= if @run && @run.runner do %>
             <span class="inline-flex min-w-0 items-center gap-1.5">
-              <span
-                class={[
-                  "h-1.5 w-1.5 flex-none rounded-full",
-                  if(@runner_connection == :online, do: "bg-brand-400", else: "bg-zinc-600")
-                ]}
+              <.status_dot
+                tone={if(@runner_connection == :online, do: :brand, else: :neutral)}
                 title={if(@runner_connection == :online, do: "Online", else: "Offline")}
               />
               <.link

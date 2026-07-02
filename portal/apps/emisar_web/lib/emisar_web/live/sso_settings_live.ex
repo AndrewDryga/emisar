@@ -1733,10 +1733,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              syncs yet" right after enabling is expected (the IdP hasn't
              connected). Green once we've seen a sync, amber while we're waiting. --%>
         <div class="flex items-center gap-2.5 rounded-lg bg-zinc-950/50 px-3 py-2.5 ring-1 ring-white/5">
-          <span class={[
-            "h-2 w-2 shrink-0 rounded-full",
-            if(@provider.scim_last_seen_at, do: "bg-brand-400", else: "bg-amber-400")
-          ]} />
+          <.status_dot tone={if(@provider.scim_last_seen_at, do: :brand, else: :amber)} size={:md} />
           <p class="text-sm text-zinc-300">
             <span :if={@provider.scim_last_seen_at}>
               Last sync <.local_time value={@provider.scim_last_seen_at} mode={:relative} />

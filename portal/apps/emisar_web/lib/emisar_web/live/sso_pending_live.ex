@@ -47,11 +47,7 @@ defmodule EmisarWeb.SSOPendingLive do
     <.auth_layout title="Access pending">
       <div :if={@status == :pending} class="space-y-6">
         <div class="flex items-center gap-3 rounded-lg bg-zinc-900/50 p-4 ring-1 ring-white/5">
-          <span class="relative flex h-2.5 w-2.5 shrink-0">
-            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400/70">
-            </span>
-            <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-400"></span>
-          </span>
+          <.status_dot tone={:brand} ping size={:lg} />
           <p class="text-sm text-zinc-300">
             Waiting for an administrator at
             <span class="font-medium text-zinc-100">{@request.account.name}</span>

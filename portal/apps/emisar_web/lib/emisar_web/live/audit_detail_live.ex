@@ -66,14 +66,11 @@ defmodule EmisarWeb.AuditDetailLive do
     >
       <:title>
         <.detail_header back="Audit log" navigate={~p"/app/#{@current_account}/audit"}>
-          <span
-            class={[
-              "mr-2 inline-block h-2 w-2 rounded-full align-middle",
-              tone_dot(@event.event_type)
-            ]}
-            aria-hidden="true"
-          >
-          </span>
+          <.status_dot
+            tone={EmisarWeb.AuditLive.outcome_tone(@event.event_type)}
+            size={:md}
+            class="mr-2 align-middle"
+          />
           <span class="font-semibold">{format_event_type(@event.event_type)}</span>
           <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
         </.detail_header>
@@ -194,17 +191,6 @@ defmodule EmisarWeb.AuditDetailLive do
   defp pretty_payload(nil), do: "{}"
   defp pretty_payload(map) when is_map(map), do: Jason.encode!(map, pretty: true)
   defp pretty_payload(other), do: inspect(other)
-
-  # Outcome dot in the title, matching the audit list — failures rose,
-  # denials/removals amber, routine neutral. `Audit.Event.Query.outcome/1`
-  # owns the classification (shared with the list + the "Outcome" filter).
-  defp tone_dot(event_type) do
-    case Audit.Event.Query.outcome(event_type) do
-      :danger -> "bg-rose-400"
-      :warn -> "bg-amber-400"
-      :neutral -> "bg-zinc-700"
-    end
-  end
 
   # -- policy.updated diff renderer ---------------------------------
 

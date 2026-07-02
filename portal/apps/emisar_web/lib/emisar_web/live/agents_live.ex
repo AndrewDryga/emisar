@@ -877,8 +877,9 @@ defmodule EmisarWeb.AgentsLive do
   attr :key, :map, required: true
 
   # A sanctioned hand-rolled pill (not `<.chip>`): the :active state shows a live
-  # animate-ping dot the shared chip can't express. Colors mirror `status_class/1`
-  # so it still reads as part of the status palette.
+  # ping the shared chip can't express — the dot itself is the shared
+  # `<.status_dot>`. Colors mirror `status_class/1` so it still reads as part
+  # of the status palette.
   defp client_status_pill(assigns) do
     status = client_status(assigns.key)
     assigns = assign(assigns, status: status)
@@ -888,11 +889,7 @@ defmodule EmisarWeb.AgentsLive do
       "inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",
       status_class(@status)
     ]}>
-      <span :if={@status == :active} class="relative inline-flex h-1.5 w-1.5">
-        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75">
-        </span>
-        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-400"></span>
-      </span>
+      <.status_dot :if={@status == :active} tone={:brand} ping />
       {status_label(@status)}
     </span>
     """
