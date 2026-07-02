@@ -557,4 +557,10 @@ defmodule Emisar.Audit do
         |> Map.new()
     end
   end
+
+  # -- Authorization ----------------------------------------------------
+
+  @doc "True when the subject may view the audit trail (the console nav + section gate)."
+  def subject_can_view_audit?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
 end

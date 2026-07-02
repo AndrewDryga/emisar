@@ -1356,6 +1356,23 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "subject_can_view_packs?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Catalog.subject_can_view_packs?(viewer_subject)
+      refute Catalog.subject_can_view_packs?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_manage_packs?/1" do
     test "is true for an owner and an admin (manage_catalog holders)" do
       {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()

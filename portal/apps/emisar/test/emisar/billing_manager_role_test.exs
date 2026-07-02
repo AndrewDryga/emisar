@@ -6,10 +6,8 @@ defmodule Emisar.BillingManagerRoleTest do
   (granting it requires `manage_billing`, which only owners hold).
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Approvals, Audit, Billing, Catalog, Policies}
+  alias Emisar.{Accounts, Approvals, Audit, Billing, Catalog, Fixtures, Policies}
   alias Emisar.{Runbooks, Runners, Runs, SSO}
-  alias Emisar.Accounts.Membership
-  alias Emisar.Fixtures
 
   setup do
     account = Fixtures.Accounts.create_account()
@@ -90,7 +88,7 @@ defmodule Emisar.BillingManagerRoleTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
       owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      assert {:ok, %Membership{role: :billing_manager}} =
+      assert {:ok, %Accounts.Membership{role: :billing_manager}} =
                Accounts.update_membership_role(member, "billing_manager", owner_subject)
     end
 

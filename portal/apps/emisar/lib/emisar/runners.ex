@@ -1066,6 +1066,10 @@ defmodule Emisar.Runners do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "True when the subject may view the runner fleet (the console nav + section gate)."
+  def subject_can_view_runners?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runners_permission())
+
   @doc "Whether `subject` may manage runners (admin+)."
   def subject_can_manage_runners?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runners_permission())

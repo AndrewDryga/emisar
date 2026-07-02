@@ -554,6 +554,10 @@ defmodule Emisar.ApiKeys do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "True when the subject may view the LLM agent keys (the console nav + section gate)."
+  def subject_can_view_api_keys?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_api_keys_permission())
+
   @doc "Whether `subject` may manage MCP API keys (admin+)."
   def subject_can_manage_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())

@@ -494,6 +494,10 @@ defmodule Emisar.Runbooks do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "True when the subject may view runbooks (the console nav + section gate)."
+  def subject_can_view_runbooks?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runbooks_permission())
+
   @doc "Whether `subject` may manage runbooks (admin+)."
   def subject_can_manage_runbooks?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())

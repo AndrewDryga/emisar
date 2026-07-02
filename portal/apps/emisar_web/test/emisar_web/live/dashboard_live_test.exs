@@ -334,4 +334,33 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/packs"}']")
     end
   end
+
+  describe "a billing_manager's console" do
+    test "the dashboard renders and the nav offers only what the role can open", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      member = Emisar.Fixtures.Users.create_user() |> Emisar.Fixtures.Users.confirm_user()
+
+      Emisar.Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "billing_manager"
+      )
+
+      conn = log_in_user(Phoenix.ConnTest.build_conn(), member)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      # Billing + Team stay reachable (billing is the seat's job; the roster
+      # view is every member's floor).
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/billing"}']")
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/team"}']")
+
+      # The sections the role holds no view permission for are gone.
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/policies"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/audit"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']")
+    end
+  end
 end

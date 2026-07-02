@@ -754,6 +754,10 @@ defmodule Emisar.Catalog do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "True when the subject may view the pack catalog (the console nav + section gate)."
+  def subject_can_view_packs?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_catalog_permission())
+
   @doc "Whether `subject` may manage packs (admin+)."
   def subject_can_manage_packs?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_catalog_permission())

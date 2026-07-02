@@ -1672,6 +1672,23 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "subject_can_view_runners?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Runners.subject_can_view_runners?(viewer_subject)
+      refute Runners.subject_can_view_runners?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_manage_runners?/1" do
     test "true for an owner, false for a viewer" do
       {account, _user, owner} = account_with_owner_subject()

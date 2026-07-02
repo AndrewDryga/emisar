@@ -505,6 +505,23 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "subject_can_view_policies?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Policies.subject_can_view_policies?(viewer_subject)
+      refute Policies.subject_can_view_policies?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_manage_policies?/1" do
     test "is true for owner + admin (they hold manage_policies)" do
       {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()

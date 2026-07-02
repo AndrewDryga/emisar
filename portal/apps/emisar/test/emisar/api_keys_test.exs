@@ -909,6 +909,23 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "subject_can_view_api_keys?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert ApiKeys.subject_can_view_api_keys?(viewer_subject)
+      refute ApiKeys.subject_can_view_api_keys?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_manage_api_keys?/1" do
     test "is true for an owner and an admin (they hold manage_api_keys)" do
       {_owner, account, owner_subject} = owner_subject_pair()

@@ -1544,6 +1544,10 @@ defmodule Emisar.Runs do
 
   # -- Authorization ----------------------------------------------------
 
+  @doc "True when the subject may view runs (the console nav + section gate)."
+  def subject_can_view_runs?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runs_permission())
+
   @doc "Whether `subject` may dispatch action runs (operator+)."
   def subject_can_dispatch_run?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.dispatch_run_permission())

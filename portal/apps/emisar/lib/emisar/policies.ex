@@ -324,6 +324,10 @@ defmodule Emisar.Policies do
 
   # -- Authorization --------------------------------------------------
 
+  @doc "True when the subject may view the policy (the console nav + section gate)."
+  def subject_can_view_policies?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_policies_permission())
+
   @doc "Whether `subject` may manage policies (admin+)."
   def subject_can_manage_policies?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_policies_permission())

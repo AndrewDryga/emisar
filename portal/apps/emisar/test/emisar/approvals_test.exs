@@ -2624,6 +2624,23 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "subject_can_view_approvals?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Approvals.subject_can_view_approvals?(viewer_subject)
+      refute Approvals.subject_can_view_approvals?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_decide_approval?/1" do
     test "operator may decide; viewer may not — matches the decide_approval gate" do
       {_user, account, _owner} = Fixtures.Subjects.owner_subject()

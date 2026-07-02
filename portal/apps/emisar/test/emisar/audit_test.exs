@@ -1617,4 +1617,21 @@ defmodule Emisar.AuditTest do
     |> List.flatten()
     |> Enum.uniq()
   end
+
+  describe "subject_can_view_audit?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Audit.subject_can_view_audit?(viewer_subject)
+      refute Audit.subject_can_view_audit?(billing_manager_subject)
+    end
+  end
 end

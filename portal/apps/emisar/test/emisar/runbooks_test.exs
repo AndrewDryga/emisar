@@ -1499,6 +1499,23 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "subject_can_view_runbooks?/1" do
+    test "true for a viewer, false for a billing_manager (the nav gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Runbooks.subject_can_view_runbooks?(viewer_subject)
+      refute Runbooks.subject_can_view_runbooks?(billing_manager_subject)
+    end
+  end
+
   describe "subject_can_manage_runbooks?/1" do
     setup do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()

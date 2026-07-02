@@ -1048,6 +1048,10 @@ defmodule Emisar.Approvals do
 
   # -- Authorization --------------------------------------------------
 
+  @doc "True when the subject may view approval requests (the console nav + section gate)."
+  def subject_can_view_approvals?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_approvals_permission())
+
   @doc "Whether `subject` may decide (approve/deny) approval requests (operator+)."
   def subject_can_decide_approval?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.decide_approval_permission())
