@@ -544,7 +544,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </span>
         </.meta_field>
         <.meta_field label="When">
-          <.local_time value={@request.requested_at} class="text-zinc-200" />
+          <.local_time
+            value={@request.requested_at}
+            mode={:forensic}
+            class="tabular-nums text-zinc-200"
+          />
         </.meta_field>
         <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
              request reads no differently than the single-approver flow. --%>
@@ -643,7 +647,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   {user_label(decision.decider, decision.decider_id)}
                 </span>
                 <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
-                <.local_time value={decision.decided_at} class="text-xs text-zinc-500" />
+                <.local_time
+                  value={decision.decided_at}
+                  mode={:forensic}
+                  class="text-xs tabular-nums text-zinc-500"
+                />
               </li>
             </ul>
           </.panel>
@@ -690,7 +698,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <.panel title="Decision history">
                 <dl class="space-y-4 text-sm">
                   <.kv label="Status"><.status_badge status={@request.status} /></.kv>
-                  <.kv label="Decided"><.local_time value={@request.decided_at} /></.kv>
+                  <.kv label="Decided">
+                    <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
+                  </.kv>
                   <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
                   <.kv :if={@request.decision_reason && @request.decision_reason != ""} label="Reason">
                     <span class="text-xs text-zinc-300">{@request.decision_reason}</span>

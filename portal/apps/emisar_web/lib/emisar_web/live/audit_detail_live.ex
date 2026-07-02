@@ -82,7 +82,7 @@ defmodule EmisarWeb.AuditDetailLive do
            describe the actor that did this, not the event in general. --%>
       <.meta_strip cols={3}>
         <.meta_field label="When">
-          <.local_time value={@event.occurred_at} class="text-zinc-200" />
+          <.local_time value={@event.occurred_at} mode={:forensic} class="tabular-nums text-zinc-200" />
         </.meta_field>
         <.meta_field label="IP address">
           <span class="font-mono text-xs text-zinc-300">{@event.ip_address || "—"}</span>
