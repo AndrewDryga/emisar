@@ -3,13 +3,17 @@ defmodule EmisarWeb.UserSessionController do
   Session controller for the passwordless sign-in flows: the split-code
   magic-link request (`magic_link_start`), the email-link verifier
   (`magic_link_confirm`), the typed-code sign-in completion (`magic_link_complete`
-  — the code itself is verified in `MagicLinkLive`), and sign-out. MFA is enforced
-  post-login by `UserAuth`'s `:ensure_mfa_compliant` gate.
+  — the code itself is verified in `MagicLinkLive`), and sign-out. A user with a
+  second factor enrolled is diverted to the MFA challenge (`MfaChallengeLive`)
+  after the magic link verifies and only reaches a full session via `mfa_complete`.
+  Account-wide MFA *enrollment* is still enforced post-login by `UserAuth`'s
+  `:ensure_mfa_compliant` gate.
   """
 
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Mailers, Users}
-  alias EmisarWeb.{MagicLinkHandoff, RecentAccounts, RequestContext, ReturnTo, Throttle, UserAuth}
+  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff, RecentAccounts, RequestContext}
+  alias EmisarWeb.{ReturnTo, Throttle, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
@@ -104,14 +108,7 @@ defmodule EmisarWeb.UserSessionController do
          {:ok, cookie_token_id, _nonce, _flag} <- read_magic_cookie(conn),
          true <- cookie_token_id == token_id,
          {:ok, user} <- Users.fetch_user_by_id(user_id) do
-      Users.record_sign_in(user, "magic_link", RequestContext.from_conn(conn))
-
-      conn
-      |> delete_resp_cookie(@magic_cookie)
-      |> complete_branded_sign_in(
-        user,
-        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
-      )
+      complete_magic_sign_in(conn, user, registered?, RequestContext.from_conn(conn))
     else
       _ ->
         conn
@@ -125,6 +122,37 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   def magic_link_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
+
+  @doc """
+  Completes an MFA sign-in challenge (the second factor `MfaChallengeLive` just
+  verified). Requires BOTH the signed handoff (proof the LiveView ran the
+  verification) AND a matching `:mfa_pending_user_id` session marker (the browser
+  that passed factor one) — a handoff alone can't manufacture a session. On
+  success, establishes the full session with `mfa: true`; otherwise restarts.
+  """
+  def mfa_complete(conn, %{"handoff" => handoff}) do
+    with {:ok, user_id} <- MfaChallengeHandoff.verify(handoff),
+         ^user_id <- get_session(conn, :mfa_pending_user_id),
+         {:ok, user} <- Users.fetch_user_by_id(user_id) do
+      registered? = get_session(conn, :mfa_pending_registered?) || false
+      Users.record_sign_in(user, "magic_link", RequestContext.from_conn(conn))
+
+      conn
+      |> clear_mfa_pending()
+      |> complete_branded_sign_in(
+        user,
+        &UserAuth.log_in_user(&1, user, :magic_link, true, %{}, registered?: registered?)
+      )
+    else
+      _ ->
+        conn
+        |> clear_mfa_pending()
+        |> put_flash(:error, "That sign-in couldn't be completed. Start again below.")
+        |> redirect(to: ~p"/sign_in/magic")
+    end
+  end
+
+  def mfa_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
 
   @doc "Link path — the email link carries `token_id` + the secret; the nonce is the cookie's."
   def magic_link_confirm(conn, %{"token_id" => token_id, "secret" => secret} = params),
@@ -150,15 +178,9 @@ defmodule EmisarWeb.UserSessionController do
 
     with {:ok, _cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
          {:ok, user} <- Auth.verify_magic_link(link_token_id, secret, nonce, context) do
-      Users.record_sign_in(user, "magic_link", context)
-
       conn
-      |> delete_resp_cookie(@magic_cookie)
       |> prep.()
-      |> complete_branded_sign_in(
-        user,
-        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
-      )
+      |> complete_magic_sign_in(user, registered?, context)
     else
       _ ->
         conn
@@ -219,6 +241,40 @@ defmodule EmisarWeb.UserSessionController do
   # alike (the deliberate no-leak property), so the denial flash never names the
   # team — naming it would confirm a tenant exists on the slug-probing path.
   @branded_denied_message "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
+
+  # After the magic link verifies factor one (email), branch on MFA enrollment:
+  # a user with no second factor is signed straight in; an `mfa_enabled_at` user
+  # is NOT — we stash a partial-auth marker (which grants no access: it mints no
+  # `:user_token`, so `require_authenticated_user` blocks every /app route) and
+  # send them to the challenge. `record_sign_in` moves to `mfa_complete` — a
+  # sign-in is only complete once both factors pass.
+  defp complete_magic_sign_in(conn, user, registered?, context) do
+    conn = delete_resp_cookie(conn, @magic_cookie)
+
+    if mfa_required_at_sign_in?(user) do
+      conn
+      |> put_session(:mfa_pending_user_id, user.id)
+      |> put_session(:mfa_pending_registered?, registered?)
+      |> redirect(to: ~p"/sign_in/mfa")
+    else
+      Users.record_sign_in(user, "magic_link", context)
+
+      complete_branded_sign_in(
+        conn,
+        user,
+        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
+      )
+    end
+  end
+
+  defp mfa_required_at_sign_in?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
+  defp mfa_required_at_sign_in?(%Users.User{}), do: false
+
+  defp clear_mfa_pending(conn) do
+    conn
+    |> delete_session(:mfa_pending_user_id)
+    |> delete_session(:mfa_pending_registered?)
+  end
 
   defp complete_branded_sign_in(conn, user, log_in) do
     case branded_return_membership(conn, user) do

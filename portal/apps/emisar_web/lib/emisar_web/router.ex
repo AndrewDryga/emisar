@@ -127,6 +127,12 @@ defmodule EmisarWeb.Router do
       live "/sign_in", UserSignInLive
       live "/sign_in/magic", MagicLinkLive
 
+      # Second-factor challenge for an mfa_enabled user after the magic link
+      # verifies factor one. Reads the partial-auth `:mfa_pending_user_id` from
+      # the session; a NON-pending (fully authed) visitor is bounced to the app
+      # by this pipeline, a never-pending one back to /sign_in/magic on mount.
+      live "/sign_in/mfa", MfaChallengeLive
+
       # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + magic link.
       live "/app/:account_id_or_slug/sign_in", AccountSignInLive
 
@@ -145,6 +151,11 @@ defmodule EmisarWeb.Router do
     post "/sign_in/magic/start", UserSessionController, :magic_link_start
     get "/sign_in/magic/complete", UserSessionController, :magic_link_complete
     get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
+
+    # MFA challenge completion — MfaChallengeLive verifies the TOTP/recovery code,
+    # then redirects here with a signed handoff that (with the matching pending
+    # session) establishes the full mfa:true session the LiveView can't set itself.
+    get "/sign_in/mfa/complete", UserSessionController, :mfa_complete
 
     # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
     get "/sign_in/sso", SSOSignInController, :new

@@ -2,7 +2,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Audit.Event
   alias Emisar.{Auth, Repo, Users}
-  alias EmisarWeb.MagicLinkHandoff
+  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
 
   describe "split-code magic link" do
     # Drive the real request, then pull token_id + the 6-char secret out of the
@@ -201,6 +201,128 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Wait a few minutes"
+    end
+  end
+
+  describe "MFA sign-in challenge" do
+    defp enrolled_mfa_user do
+      user = Fixtures.Users.create_user() |> Fixtures.Users.confirm_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      secret = Auth.generate_mfa_secret()
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
+      %{user: user, account: account}
+    end
+
+    test "an mfa-enrolled user lands on the challenge, not a full session (email link)", %{
+      conn: conn
+    } do
+      %{user: user} = enrolled_mfa_user()
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      # No session token minted → not authenticated → no /app access. Only the
+      # non-granting pending marker is set.
+      refute get_session(conn, :user_token)
+      assert get_session(conn, :mfa_pending_user_id) == user.id
+      assert redirected_to(conn) == ~p"/sign_in/mfa"
+    end
+
+    test "the typed-code completion also diverts an mfa user to the challenge", %{conn: conn} do
+      %{user: user} = enrolled_mfa_user()
+      {conn, token_id, _secret} = request_magic_link(conn, user.email)
+      handoff = MagicLinkHandoff.sign(user.id, false, token_id)
+
+      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/sign_in/mfa"
+    end
+
+    test "a user without mfa still signs straight in (the branch doesn't over-fire)", %{
+      conn: conn
+    } do
+      user = Fixtures.Users.create_user()
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(conn, :user_token)
+      refute get_session(conn, :mfa_pending_user_id)
+    end
+
+    test "mfa_complete with a valid handoff + matching pending session signs in with mfa:true", %{
+      conn: conn
+    } do
+      %{user: user} = enrolled_mfa_user()
+      handoff = MfaChallengeHandoff.sign(user.id)
+
+      conn =
+        conn
+        |> init_test_session(%{mfa_pending_user_id: user.id, mfa_pending_registered?: false})
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      assert token = get_session(conn, :user_token)
+      assert {:ok, signed_in, session_token} = Auth.fetch_user_and_token_by_session_token(token)
+      assert signed_in.id == user.id
+      # The second factor is stamped onto the token so it reaches every audit row.
+      assert session_token.mfa == true
+      refute get_session(conn, :mfa_pending_user_id)
+    end
+
+    test "mfa_complete with a handoff but NO pending session is refused (the bypass)", %{
+      conn: conn
+    } do
+      %{user: user} = enrolled_mfa_user()
+      handoff = MfaChallengeHandoff.sign(user.id)
+
+      conn = get(init_test_session(conn, %{}), ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/sign_in/magic"
+    end
+
+    test "mfa_complete refuses a handoff that doesn't match the pending user", %{conn: conn} do
+      %{user: user} = enrolled_mfa_user()
+      other_handoff = MfaChallengeHandoff.sign(Ecto.UUID.generate())
+
+      conn =
+        conn
+        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: other_handoff]}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/sign_in/magic"
+    end
+
+    test "mfa_complete refuses a forged/garbage handoff", %{conn: conn} do
+      %{user: user} = enrolled_mfa_user()
+
+      conn =
+        conn
+        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: "not-a-real-token"]}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/sign_in/magic"
+    end
+
+    test "a partial (mfa-pending) session cannot reach an app route", %{conn: conn} do
+      %{user: user, account: account} = enrolled_mfa_user()
+
+      conn =
+        conn
+        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> get(~p"/app/#{account}")
+
+      assert redirected_to(conn) =~ "/sign_in"
     end
   end
 
