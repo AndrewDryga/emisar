@@ -433,6 +433,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Acme Okta"
       # The per-connection delete dialog is detail-only (never on the overview list).
       assert has_element?(lv, "#delete-provider-#{shown.id}")
+      # Delete lives in a bottom danger zone that opens the typed dialog — not a
+      # ghost button beside Edit up top.
+      assert html =~ "Delete this connection"
       # A single-connection view — the other connection isn't on this page.
       refute html =~ "Globex Google"
     end

@@ -1185,31 +1185,24 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
                   <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                 </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <.button
-                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
-                    variant={:secondary}
-                    size={:sm}
-                  >
-                    Edit
-                  </.button>
-                  <.button
-                    variant={:ghost}
-                    tone={:rose}
-                    size={:sm}
-                    type="button"
-                    phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
-                  >
-                    Delete
-                  </.button>
-                </div>
+                <%!-- Delete lives in a danger zone at the bottom, not up here beside
+                     a routine Edit — a destructive action shouldn't sit one slip
+                     away from the safe one. --%>
+                <.button
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
+                  variant={:secondary}
+                  size={:sm}
+                  class="shrink-0"
+                >
+                  Edit
+                </.button>
               </div>
 
               <div class="mt-5 space-y-4 border-t border-zinc-800/70 pt-4">
                 <.meta_field label="Issuer" wrap>
                   <span class="font-mono text-zinc-300">{provider.issuer}</span>
                 </.meta_field>
-                <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                <div class="grid grid-cols-2 gap-x-6 gap-y-4">
                   <.meta_field label="New users">
                     <span class="text-zinc-300">{provisioner_label(provider.provisioner)}</span>
                   </.meta_field>
@@ -1278,6 +1271,21 @@ defmodule EmisarWeb.SSOSettingsLive do
                 >talk to us</a>.
               </p>
             </.card>
+
+            <%!-- Danger zone at the bottom — the destructive action lives apart
+                 from the routine config above and still runs the typed confirm. --%>
+            <.confirm_zone
+              title="Delete this connection"
+              phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
+              type="button"
+            >
+              <:body>
+                Removes the connection and stops new sign-ins through it. Members who sign in only
+                through it lose access until it's re-added; existing sessions aren't ended. This
+                can't be undone.
+              </:body>
+              Delete connection
+            </.confirm_zone>
 
             <.confirm_dialog
               id={"delete-provider-#{provider.id}"}
@@ -1717,25 +1725,27 @@ defmodule EmisarWeb.SSOSettingsLive do
       </.section_header>
 
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        Your IdP provisions new members and — critically — offboards removed ones automatically:
-        drop someone from your directory and they're suspended here.
+        Your IdP provisions members and offboards removed ones automatically.
         <.doc_link href="/docs/sso">Directory sync docs</.doc_link>
       </p>
 
       <div :if={@provider.scim_enabled} class="mt-4 space-y-4">
-        <%!-- Health signal — has the IdP's connector actually reached us? "No
-             syncs yet" right after enabling is expected (the IdP hasn't
-             connected). Green once we've seen a sync, amber while we're waiting. --%>
-        <div class="flex items-center gap-2.5 rounded-lg bg-zinc-950/50 px-3 py-2.5 ring-1 ring-white/5">
-          <.status_dot tone={if(@provider.scim_last_seen_at, do: :brand, else: :amber)} size={:md} />
-          <p class="text-sm text-zinc-300">
-            <span :if={@provider.scim_last_seen_at}>
-              Last sync <.local_time value={@provider.scim_last_seen_at} mode={:relative} />
-            </span>
-            <span :if={is_nil(@provider.scim_last_seen_at)} class="text-zinc-400">
-              No syncs yet — waiting for your IdP to connect.
-            </span>
-          </p>
+        <%!-- A healthy sync is a quiet freshness line — no boxed "all good"
+             (silence is the confirmation). The waiting state is the one that
+             earns a boxed amber note: it's telling you to go connect the IdP. --%>
+        <p
+          :if={@provider.scim_last_seen_at}
+          class="flex items-center gap-2 text-sm text-zinc-400"
+        >
+          <.status_dot tone={:brand} size={:sm} /> Last sync
+          <.local_time value={@provider.scim_last_seen_at} mode={:relative} />
+        </p>
+        <div
+          :if={is_nil(@provider.scim_last_seen_at)}
+          class="flex items-center gap-2.5 rounded-lg bg-amber-500/5 px-3 py-2.5 ring-1 ring-amber-500/20"
+        >
+          <.status_dot tone={:amber} size={:md} />
+          <p class="text-sm text-zinc-400">No syncs yet — waiting for your IdP to connect.</p>
         </div>
 
         <div>
@@ -1861,7 +1871,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-2">
-              <.chip tone={:brand}>{role_label(mapping.role)}</.chip>
+              <.chip>{role_label(mapping.role)}</.chip>
               <.button
                 :if={@editing_mapping_id != mapping.id}
                 variant={:ghost}
@@ -2026,7 +2036,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <span class="text-xs tabular-nums text-zinc-400">
               {members_label(group.member_count)}
             </span>
-            <.chip :if={group.mapping} tone={:brand}>{role_label(group.mapping.role)}</.chip>
+            <.chip :if={group.mapping}>{role_label(group.mapping.role)}</.chip>
             <span :if={!group.mapping} class="text-xs text-zinc-500">No role mapping</span>
           </div>
         </li>
@@ -2129,10 +2139,11 @@ defmodule EmisarWeb.SSOSettingsLive do
                   )}
                 </select>
               </form>
+              <%!-- Suspend is reversible (Reactivate undoes it), so it stays a
+                   neutral ghost — rose is reserved for the irreversible Delete. --%>
               <.button
                 :if={not Accounts.Membership.disabled?(member.membership)}
                 variant={:ghost}
-                tone={:rose}
                 size={:sm}
                 phx-click="suspend_member"
                 phx-value-membership_id={member.membership.id}
