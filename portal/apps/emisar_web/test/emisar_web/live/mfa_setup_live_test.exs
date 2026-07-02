@@ -43,10 +43,9 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     secret = Base.decode32!(encoded, padding: false)
     otp = NimbleTOTP.verification_code(secret)
 
-    html =
-      lv
-      |> form("#mfa_form", mfa: %{otp: otp})
-      |> render_submit()
+    # code_input's hidden field is client-owned, so render_submit can't set
+    # it — drive the submit event directly (same as the profile MFA tests).
+    html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => otp}})
 
     assert html =~ "Save your recovery codes"
     # The codes are downloadable as a file, not just copyable.
@@ -74,10 +73,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   test "a wrong code stays on the step with a flash", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
 
-    html =
-      lv
-      |> form("#mfa_form", mfa: %{otp: "000000"})
-      |> render_submit()
+    html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
     assert html =~ "didn&#39;t match"
   end

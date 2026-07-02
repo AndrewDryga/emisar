@@ -103,44 +103,11 @@ defmodule EmisarWeb.MfaSetupLive do
             </.button>
           </div>
         <% @mfa_uri -> %>
-          <div class="space-y-4">
-            <div class="flex flex-col items-center gap-2">
-              <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
-                {raw(@mfa_qr_svg)}
-              </div>
-              <p class="text-[11px] text-zinc-500">Scan with your authenticator</p>
-            </div>
-
-            <.disclosure>
-              <:summary>Can't scan? Use a setup URI</:summary>
-              <div class="flex items-center gap-2">
-                <code id="mfa-uri" class="flex-1 break-all font-mono text-[11px] text-zinc-200">
-                  {@mfa_uri}
-                </code>
-                <.copy_button
-                  target="#mfa-uri"
-                  class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
-                >
-                  Copy
-                </.copy_button>
-              </div>
-            </.disclosure>
-
-            <.simple_form for={@mfa_form} id="mfa_form" phx-submit="confirm_mfa">
-              <.input
-                field={@mfa_form[:otp]}
-                type="text"
-                label="6-digit code"
-                placeholder="123 456"
-                autocomplete="one-time-code"
-                inputmode="numeric"
-                required
-              />
-              <:actions>
-                <.button phx-disable-with="Verifying...">Confirm and continue</.button>
-              </:actions>
-            </.simple_form>
-          </div>
+          <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form}>
+            <:actions>
+              <.button phx-disable-with="Verifying...">Confirm and continue</.button>
+            </:actions>
+          </.mfa_enrollment>
         <% true -> %>
           <p class="text-sm text-zinc-500">Preparing your setup code…</p>
       <% end %>

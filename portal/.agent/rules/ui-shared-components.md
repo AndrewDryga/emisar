@@ -21,6 +21,7 @@ its Tailwind. The canonical surfaces:
 | Initial-letter identity disc | `<.avatar name= size={:xs\|:sm\|:md} shape={:circle\|:square}>` — `:circle` for people (shell user, team roster), `:square` for workspaces (account switcher) | a `grid … place-items-center rounded-full bg-zinc-800 … uppercase` span + `String.first` |
 | Radio choice-card group | `<.choice_cards name= value= columns=>` + `:card value= icon= title=` slots — sr-only radio, NEUTRAL selection ring + check (a chosen risky option never wears the safe hue) | a hand-rolled `<label>` + radio card list, or per-page selected-class helpers |
 | Reveal-once credential | `<.secret_reveal secret=\|codes= variant={:banner\|:card} download_name= on_dismiss=>` (`:install_command`, `:actions` for "I've saved them"; per-code cells + Copy all ride `data-copy-text`) | an amber `bg-amber-500/10 ring-amber-500/30` box with its own copy wiring, or a hidden blob element for Copy all |
+| TOTP enrollment block | `<.mfa_enrollment qr_svg= uri= form= variant={:stacked\|:split}>` (`:instructions`, `:actions`; owns the QR wrapper + can't-scan disclosure + the `code_input` confirm form) | a hand-rolled white QR box + URI disclosure, or a plain text input for the OTP |
 
 **The stat trio** — three count/number components that look alike and get confused.
 Pick by *where it lives*:

@@ -542,46 +542,18 @@ defmodule EmisarWeb.ProfileLive do
                 </.button>
               </div>
             <% @mfa_uri -> %>
-              <div class="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]">
-                <div class="flex flex-col items-center gap-2">
-                  <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
-                    {raw(@mfa_qr_svg)}
-                  </div>
-                  <p class="text-[11px] text-zinc-500">Scan with your authenticator</p>
-                </div>
-                <div class="space-y-3">
-                  <p class="text-sm text-zinc-300">
-                    Scan with Google Authenticator, 1Password, Authy, or similar — then enter
-                    the 6-digit code to confirm.
-                  </p>
-                  <.disclosure>
-                    <:summary>Can't scan? Use a setup URI</:summary>
-                    <div class="flex items-center gap-2">
-                      <code
-                        id="mfa-uri"
-                        class="flex-1 break-all font-mono text-[11px] text-zinc-200"
-                      >
-                        {@mfa_uri}
-                      </code>
-                      <.copy_button
-                        target="#mfa-uri"
-                        class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
-                      >
-                        Copy
-                      </.copy_button>
-                    </div>
-                  </.disclosure>
-                  <.simple_form for={@mfa_form} id="mfa_form" phx-submit="confirm_mfa">
-                    <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" />
-                    <:actions>
-                      <.button phx-disable-with="Verifying...">Confirm and enable</.button>
-                      <.button variant="ghost" type="button" phx-click="cancel_mfa">
-                        Cancel
-                      </.button>
-                    </:actions>
-                  </.simple_form>
-                </div>
-              </div>
+              <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
+                <:instructions>
+                  Scan with Google Authenticator, 1Password, Authy, or similar — then enter
+                  the 6-digit code to confirm.
+                </:instructions>
+                <:actions>
+                  <.button phx-disable-with="Verifying...">Confirm and enable</.button>
+                  <.button variant="ghost" type="button" phx-click="cancel_mfa">
+                    Cancel
+                  </.button>
+                </:actions>
+              </.mfa_enrollment>
             <% true -> %>
               <p class="text-sm text-zinc-300">
                 Generate a TOTP secret, scan it with your authenticator app, then confirm with a

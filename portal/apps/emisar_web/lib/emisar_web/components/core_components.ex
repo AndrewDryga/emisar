@@ -3565,6 +3565,74 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  TOTP enrollment block — the white QR wrapper, the "Can't scan?" setup-URI
+  disclosure, and ONE `code_input` confirm form (`#mfa_form`, submits
+  `confirm_mfa` as `mfa[otp]`). Shared by the profile page's voluntary
+  setup (`variant={:split}` — QR beside the guidance) and the enforced-MFA
+  interstitial (`:stacked` — centered in the narrow auth card). The page
+  passes its own submit/cancel buttons via `:actions`.
+
+      <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
+        <:instructions>Scan with your authenticator, then confirm.</:instructions>
+        <:actions>
+          <.button phx-disable-with="Verifying...">Confirm and enable</.button>
+        </:actions>
+      </.mfa_enrollment>
+  """
+  attr :qr_svg, :string, required: true, doc: "server-generated SVG (MfaQr) — never user input"
+  attr :uri, :string, required: true, doc: "the otpauth:// provisioning URI"
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :variant, :atom, default: :stacked, values: [:stacked, :split]
+  slot :instructions
+  slot :actions, required: true
+
+  def mfa_enrollment(assigns) do
+    ~H"""
+    <div class={mfa_enrollment_wrapper(@variant)}>
+      <div class="flex flex-col items-center gap-2">
+        <%!-- raw/1 is safe here: the SVG comes from MfaQr rendering OUR
+             provisioning URI server-side, never from user input (IL-16). --%>
+        <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
+          {Phoenix.HTML.raw(@qr_svg)}
+        </div>
+        <p class="text-[11px] text-zinc-500">Scan with your authenticator</p>
+      </div>
+
+      <div class="space-y-3">
+        <p :if={@instructions != []} class="text-sm text-zinc-300">
+          {render_slot(@instructions)}
+        </p>
+
+        <.disclosure>
+          <:summary>Can't scan? Use a setup URI</:summary>
+          <div class="flex items-center gap-2">
+            <code id="mfa-uri" class="flex-1 break-all font-mono text-[11px] text-zinc-200">
+              {@uri}
+            </code>
+            <.copy_button
+              target="#mfa-uri"
+              class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
+            >
+              Copy
+            </.copy_button>
+          </div>
+        </.disclosure>
+
+        <.simple_form for={@form} id="mfa_form" phx-submit="confirm_mfa">
+          <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" />
+          <:actions>
+            {render_slot(@actions)}
+          </:actions>
+        </.simple_form>
+      </div>
+    </div>
+    """
+  end
+
+  defp mfa_enrollment_wrapper(:stacked), do: "space-y-4"
+  defp mfa_enrollment_wrapper(:split), do: "grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]"
+
+  @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.
   `:boxed`/`:bare` expect `icon` + `title`; `:hint` is the compact dashed
   body-first placeholder ("No overrides. …") with an optional small title
