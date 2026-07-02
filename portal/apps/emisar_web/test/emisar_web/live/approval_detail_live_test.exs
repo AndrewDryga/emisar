@@ -289,7 +289,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Denied."
   end
 
-  test "denying captures the reason in the decision history", %{conn: conn} do
+  test "a denied request leads with the verdict callout, no live decide panel", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -300,9 +300,30 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='deny']", %{"reason" => "duplicate of an earlier run"})
       |> render_submit()
 
-    assert html =~ "Denied."
+    # The outcome LEADS the page (verdict callout carries the note); the live
+    # decide panel is gone once the request is settled.
+    assert html =~ "Denied"
     assert html =~ "duplicate of an earlier run"
+    refute html =~ "Approve and send"
     assert Repo.reload!(request).decision_reason == "duplicate of an earlier run"
+  end
+
+  test "an expired request leads with the auto-denied verdict, no decide panel", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    request
+    |> Ecto.Changeset.change(
+      status: :expired,
+      expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)
+    )
+    |> Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Expired"
+    assert html =~ "auto-denied"
+    refute html =~ "Approve and send"
   end
 
   test "a decision that lost a race to expiry re-fetches and flips the panel", %{conn: conn} do

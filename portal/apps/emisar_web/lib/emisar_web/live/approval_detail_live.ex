@@ -565,7 +565,48 @@ defmodule EmisarWeb.ApprovalDetailLive do
              expiry is moot. --%>
       </.meta_strip>
 
-      <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+      <% verdict = verdict_status(@request) %>
+
+      <%!-- Lead with the verdict. A decided request buried its outcome in a
+           right-rail panel below the fold on mobile; now the outcome — colored
+           to the decision, with decider + time + note — is the first thing under
+           the meta strip. Rendered for every non-pending state (a lapsed-but-not-
+           yet-swept request reads as expired). --%>
+      <.callout
+        :if={verdict != :pending}
+        tone={verdict_tone(verdict)}
+        icon={verdict_icon(verdict)}
+        title={verdict_title(verdict)}
+        class="mt-4"
+      >
+        <%= case verdict do %>
+          <% :expired -> %>
+            <p class="leading-relaxed">
+              This request expired before anyone decided, so it was auto-denied — the action will
+              not run. The requester can re-issue it if it's still needed.
+            </p>
+          <% :cancelled -> %>
+            <p class="leading-relaxed">
+              This request was withdrawn before a decision, so the action did not run.
+            </p>
+          <% _ -> %>
+            <p :if={@request.decided_at} class="leading-relaxed">
+              by {user_label(@decided_by, @request.decided_by_id)} ·
+              <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
+            </p>
+            <p
+              :if={@request.decision_reason && @request.decision_reason != ""}
+              class="mt-1.5 text-sm leading-relaxed opacity-90"
+            >
+              “{@request.decision_reason}”
+            </p>
+        <% end %>
+      </.callout>
+
+      <div class={[
+        "mt-6 grid grid-cols-1 gap-6",
+        verdict == :pending && "lg:grid-cols-[1fr_320px]"
+      ]}>
         <%!-- Left: context — what-it-does, command, args, reason, approval gate, link to run --%>
         <div class="space-y-4">
           <%!-- Plain-English effect from the pack manifest, so a non-expert
@@ -619,11 +660,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <p class="text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
           </.panel>
 
+          <%!-- Amber is an ACTIVE caution — it earns the eye only while the
+               decision is still live. Once decided, the same fact is history:
+               it stays for the auditor, quiet and past-tense. --%>
           <.callout
             :if={@run && @run.policy_reason}
-            tone={:amber}
+            tone={if verdict == :pending, do: :amber, else: :neutral}
             icon="hero-shield-exclamation"
-            title="Why approval is required"
+            title={
+              if verdict == :pending,
+                do: "Why approval is required",
+                else: "Why approval was required"
+            }
           >
             <p class="leading-relaxed">{@run.policy_reason}</p>
             <div :if={@run.matched_rules && @run.matched_rules != []} class="mt-2 text-xs opacity-80">
@@ -671,48 +719,24 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </div>
         </div>
 
-        <%!-- Right: decision panel — sticky on desktop so it stays in
-             reach when scanning a long args/reason. --%>
-        <aside class="lg:sticky lg:top-6 lg:self-start">
-          <%= cond do %>
-            <% @request.status == :pending and request_expired?(@request) -> %>
-              <%!-- Pending-but-lapsed (the expiry sweeper hasn't run yet): a decide
-                   would fail :expired, so don't offer a live Approve — state the
-                   terminal outcome instead. --%>
-              <.panel title="Expired">
-                <p class="text-sm leading-relaxed text-zinc-400">
-                  This request expired before anyone decided, so it was auto-denied — the action
-                  will not run. The requester can re-issue it if it's still needed.
-                </p>
-              </.panel>
-            <% @request.status == :pending -> %>
-              <.decision_panel
-                can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
-                grant_duration={@grant_duration}
-                grant_duration_options={@grant_duration_options}
-                runner_state={@runner_connection}
-                self_blocked?={@self_blocked?}
-                already_decided?={@already_decided?}
-                approved_count={@approved_count}
-                min_approvals={@request.min_approvals}
-                expires_at={@request.expires_at}
-                request_id={@request.id}
-                current_account={@current_account}
-              />
-            <% true -> %>
-              <.panel title="Decision history">
-                <dl class="space-y-4 text-sm">
-                  <.kv label="Status"><.status_badge status={@request.status} /></.kv>
-                  <.kv label="Decided">
-                    <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
-                  </.kv>
-                  <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
-                  <.kv :if={@request.decision_reason && @request.decision_reason != ""} label="Reason">
-                    <span class="text-xs text-zinc-300">{@request.decision_reason}</span>
-                  </.kv>
-                </dl>
-              </.panel>
-          <% end %>
+        <%!-- Right: the decision panel, only while the request is genuinely live
+             (sticky on desktop so it stays in reach past a long args/reason). A
+             decided or lapsed request has no rail — its outcome leads the page in
+             the verdict callout above, so the column goes full-width. --%>
+        <aside :if={verdict == :pending} class="lg:sticky lg:top-6 lg:self-start">
+          <.decision_panel
+            can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
+            grant_duration={@grant_duration}
+            grant_duration_options={@grant_duration_options}
+            runner_state={@runner_connection}
+            self_blocked?={@self_blocked?}
+            already_decided?={@already_decided?}
+            approved_count={@approved_count}
+            min_approvals={@request.min_approvals}
+            expires_at={@request.expires_at}
+            request_id={@request.id}
+            current_account={@current_account}
+          />
         </aside>
       </div>
     </.dashboard_shell>
@@ -926,6 +950,32 @@ defmodule EmisarWeb.ApprovalDetailLive do
     </.panel>
     """
   end
+
+  # The overall verdict the page leads with. A still-pending request that has
+  # lapsed past its expiry reads as :expired — the sweeper just hasn't
+  # auto-denied it yet, so a live Approve would fail and the outcome is settled.
+  defp verdict_status(%{status: :pending} = request) do
+    if request_expired?(request), do: :expired, else: :pending
+  end
+
+  defp verdict_status(%{status: status}), do: status
+
+  # Verdict presentation, keyed on the normalized status (never :pending — the
+  # callout only renders once verdict_status != :pending).
+  defp verdict_tone(:approved), do: :brand
+  defp verdict_tone(:denied), do: :rose
+  defp verdict_tone(:expired), do: :rose
+  defp verdict_tone(:cancelled), do: :neutral
+
+  defp verdict_title(:approved), do: "Approved"
+  defp verdict_title(:denied), do: "Denied"
+  defp verdict_title(:expired), do: "Expired — auto-denied"
+  defp verdict_title(:cancelled), do: "Cancelled"
+
+  defp verdict_icon(:approved), do: "hero-check-circle"
+  defp verdict_icon(:denied), do: "hero-x-circle"
+  defp verdict_icon(:expired), do: "hero-clock"
+  defp verdict_icon(:cancelled), do: "hero-no-symbol"
 
   # Decision-list rendering helpers (the enum loads as an atom).
   defp decision_icon(:approve), do: "hero-check-circle"
