@@ -374,11 +374,17 @@ defmodule EmisarWeb.ProfileLive do
     >
       <:title>Profile</:title>
 
-      <%!-- Settings page pattern: max-width content, section per
-           concern, label/description on the left, form on the right.
-           No boxed cards — quieter visual rhythm than a 2-up grid. --%>
-      <div class="divide-y divide-zinc-900">
-        <.settings_section title="Display name" hint="How you appear to other members.">
+      <.page_intro>
+        Your identity and sign-in security — the same across every workspace you belong to.
+        <.doc_link href="/security">Security overview</.doc_link>
+      </.page_intro>
+
+      <%!-- Sibling panel islands per concern — the console's ONE settings
+           archetype (console-ux §3 bans the label-left divider table this
+           page used to be). --%>
+      <div class="mt-6 space-y-6">
+        <.panel title="Display name">
+          <:subtitle>How you appear to other members.</:subtitle>
           <.simple_form
             for={@profile_form}
             id="profile_form"
@@ -388,19 +394,20 @@ defmodule EmisarWeb.ProfileLive do
             <.input
               field={@profile_form[:full_name]}
               type="text"
-              label="Full name"
+              label="Display name"
               placeholder="Ada Lovelace"
             />
             <:actions>
               <.button variant={:secondary} phx-disable-with="Saving...">Save</.button>
             </:actions>
           </.simple_form>
-        </.settings_section>
+        </.panel>
 
-        <.settings_section
-          title="Email"
-          hint="Used to sign in. A change is confirmed with a second step before it takes effect."
-        >
+        <.panel title="Email">
+          <:subtitle>
+            Used to sign in — every future sign-in link goes to it, so a change is
+            confirmed with a second step.
+          </:subtitle>
           <%= case @email_step do %>
             <% :idle -> %>
               <.simple_form
@@ -416,10 +423,6 @@ defmodule EmisarWeb.ProfileLive do
                   autocomplete="email"
                   required
                 />
-                <p class="text-xs text-amber-200/70">
-                  Your email controls every future sign-in link, so we'll ask you to confirm a
-                  change before it takes effect.
-                </p>
                 <:actions>
                   <.button variant={:secondary} phx-disable-with="Checking...">Update email</.button>
                 </:actions>
@@ -433,11 +436,11 @@ defmodule EmisarWeb.ProfileLive do
                 <p class="text-sm text-zinc-300">
                   Confirm changing your email to <span class="font-medium text-zinc-100">{@pending_new_email}</span>.
                 </p>
-                <p :if={step == :code} class="text-xs text-amber-200/70">
+                <p :if={step == :code} class="text-xs text-zinc-400">
                   We emailed a 6-digit code to your current address ({@current_user.email}). Entering
                   it proves it's really you — an open session alone can't change your email.
                 </p>
-                <p :if={step == :totp} class="text-xs text-amber-200/70">
+                <p :if={step == :totp} class="text-xs text-zinc-400">
                   Enter the code from your authenticator app — your second factor confirms the change.
                 </p>
                 <.code_input
@@ -468,16 +471,16 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
           <% end %>
-        </.settings_section>
+        </.panel>
 
-        <.settings_section
-          title="Two-factor authentication"
-          hint="Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in."
-        >
-          <:meta>
+        <.panel title="Two-factor authentication">
+          <:subtitle>
+            Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
+          </:subtitle>
+          <:badge>
             <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
             <.chip :if={not @mfa_enabled?}>Off</.chip>
-          </:meta>
+          </:badge>
 
           <%= cond do %>
             <% @mfa_recovery_codes -> %>
@@ -566,17 +569,16 @@ defmodule EmisarWeb.ProfileLive do
                 Set up 2FA
               </.button>
           <% end %>
-        </.settings_section>
+        </.panel>
 
-        <.settings_section
-          title="Active sessions"
-          hint="Each row is one signed-in browser or device. Sign out of any you don't recognize — your current device stays signed in."
-        >
-          <%!-- The account-wide sign-out sits ABOVE the list (in the content
-               column), not in the title's meta slot — its long label collided
-               with the heading in the narrow left column. --%>
-          <div :if={length(@sessions) > 1} class="mb-3 flex justify-end">
+        <.panel title="Active sessions">
+          <:subtitle>
+            Each row is one signed-in browser or device. Sign out of any you don't
+            recognize — your current device stays signed in.
+          </:subtitle>
+          <:actions>
             <.button
+              :if={length(@sessions) > 1}
               variant={:secondary}
               tone={:rose}
               size={:sm}
@@ -585,7 +587,7 @@ defmodule EmisarWeb.ProfileLive do
             >
               Sign out everywhere else
             </.button>
-          </div>
+          </:actions>
 
           <ul class="max-h-96 divide-y divide-zinc-800 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/30 text-sm">
             <.list_row
@@ -630,35 +632,9 @@ defmodule EmisarWeb.ProfileLive do
               No active sessions.
             </li>
           </ul>
-        </.settings_section>
+        </.panel>
       </div>
     </.dashboard_shell>
-    """
-  end
-
-  # Section wrapper: title + hint on the left, content on the right
-  # (single-column on mobile, 1:2 split on sm+). Subtle top divider
-  # comes from the parent's `divide-y`; first section's top is the
-  # page top.
-  attr :title, :string, required: true
-  attr :hint, :string, default: nil
-  slot :inner_block, required: true
-  slot :meta
-
-  defp settings_section(assigns) do
-    ~H"""
-    <section class="grid grid-cols-1 gap-6 py-10 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-12">
-      <div>
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-            {@title}
-          </h2>
-          <div :for={m <- @meta}>{render_slot(m)}</div>
-        </div>
-        <p :if={@hint} class="mt-2 text-sm leading-relaxed text-zinc-500">{@hint}</p>
-      </div>
-      <div>{render_slot(@inner_block)}</div>
-    </section>
     """
   end
 
