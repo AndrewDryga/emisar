@@ -469,12 +469,9 @@ defmodule EmisarWeb.DashboardLive do
       No actions can be dispatched until a runner reconnects. Check the runner
       host's logs or the systemd/launchd unit.
       <:action>
-        <.link
-          navigate={~p"/app/#{@current_account}/runners"}
-          class="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
-        >
+        <.button variant="danger" size="sm" navigate={~p"/app/#{@current_account}/runners"}>
           View runners →
-        </.link>
+        </.button>
       </:action>
     </.offline_notice>
     """

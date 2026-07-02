@@ -722,14 +722,16 @@ defmodule EmisarWeb.RunbookEditorLive do
             <% end %>
           </p>
         </div>
-        <button
+        <.button
           type="button"
+          variant="ghost"
+          tone="success"
+          size="sm"
           phx-click="add_arg"
           phx-value-index={@index}
-          class="text-[11px] font-medium text-brand-300 hover:text-brand-200"
         >
           + Add
-        </button>
+        </.button>
       </div>
       <p :if={@args == []} class="mt-1 text-[11px] text-zinc-500">
         No args.

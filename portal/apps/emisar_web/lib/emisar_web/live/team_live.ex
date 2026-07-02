@@ -1251,13 +1251,15 @@ defmodule EmisarWeb.TeamLive do
     <%= cond do %>
       <% @membership.user_id == @current_user_id -> %>
         <div class="flex shrink-0 items-center gap-2">
-          <button
+          <.button
             :if={@membership.user && is_nil(@membership.user.confirmed_at)}
+            variant="ghost"
+            tone="success"
+            size="sm"
             phx-click="resend_confirmation"
-            class="rounded px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/10"
           >
             Resend confirmation
-          </button>
+          </.button>
           <span class="text-xs text-zinc-500">you</span>
         </div>
       <% not @can_manage? -> %>

@@ -232,13 +232,15 @@ defmodule EmisarWeb.BillingLive do
       <div :if={not @loading? and not is_nil(@summary)} class="space-y-6">
         <.subscription_banner status={@summary.subscription_status}>
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
-            <button
+            <.button
+              variant="secondary"
+              size="sm"
+              class="shrink-0"
               phx-click="manage_billing"
               phx-disable-with="Opening portal…"
-              class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
             >
               Manage billing
-            </button>
+            </.button>
           </:cta>
         </.subscription_banner>
         <%!-- Current-plan strip across the top. Plan name + price on

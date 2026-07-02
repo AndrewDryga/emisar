@@ -115,16 +115,17 @@ defmodule EmisarWeb.MagicLinkLive do
         >
           <input type="hidden" name="user[email]" value={@email} />
           <input type="hidden" name="return_to" value={@return_to} />
-          <button
+          <.button
             id="resend-code"
             type="submit"
+            variant="secondary"
+            class="w-full"
             phx-hook="ResendCooldown"
             data-seconds="30"
             data-label="Resend code"
-            class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-zinc-500 disabled:hover:text-zinc-500"
           >
             Resend code
-          </button>
+          </.button>
         </.form>
 
         <.auth_footer_link navigate={~p"/sign_in/magic"}>
