@@ -153,7 +153,7 @@ defmodule Emisar.Runners.Runner.Query do
       },
       %Filter{
         name: :name,
-        title: "Name contains",
+        title: "Name",
         type: :string,
         fun: fn queryable, name ->
           {queryable, dynamic([runners: r], ilike(r.name, ^Like.contains(name)))}

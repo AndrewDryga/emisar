@@ -22,7 +22,8 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Runners}
-  alias EmisarWeb.{LiveTable, Permissions, RunnerScope, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, RunnerScope, UrlHelpers}
+  alias Phoenix.LiveView.JS
 
   @active_threshold_secs 5 * 60
   @idle_threshold_secs 24 * 60 * 60
@@ -68,6 +69,9 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:selected_client, nil)
      |> assign(:action_scope_text, "")
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+     |> ConfirmDialog.init()
+     |> assign(:revoke_target, nil)
+     |> assign(:connect_open?, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
@@ -120,6 +124,7 @@ defmodule EmisarWeb.AgentsLive do
              socket
              |> assign(:selected_client, id)
              |> assign(:quick_secret, raw)
+             |> assign(:connect_open?, true)
              |> reload()}
 
           {:error, _} ->
@@ -164,6 +169,22 @@ defmodule EmisarWeb.AgentsLive do
       &do_create(&1, params, all["action_scope"])
     )
   end
+
+  # Sets the typed-confirm target; the dialog's Confirm fires "revoke",
+  # which stays the server-authz gate (IL-15).
+  def handle_event("open_revoke", %{"id" => id}, socket) do
+    target = Enum.find(socket.assigns.api_keys, &(&1.id == id))
+    {:noreply, socket |> ConfirmDialog.reset() |> assign(:revoke_target, target)}
+  end
+
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
+
+  def handle_event("toggle_connect", _params, socket),
+    do: {:noreply, assign(socket, :connect_open?, not socket.assigns.connect_open?)}
 
   def handle_event("revoke", %{"id" => id}, socket) do
     Permissions.gated(
@@ -249,6 +270,9 @@ defmodule EmisarWeb.AgentsLive do
        socket
        |> assign(:selected_client, "custom")
        |> assign(:quick_secret, raw)
+       # The reveal renders inside the connect panel — force it open or a
+       # collapsed panel would hide the one-time secret.
+       |> assign(:connect_open?, true)
        |> put_flash(
          :info,
          "Key rotated. Copy the new key below and update your agent — the old key keeps " <>
@@ -264,6 +288,15 @@ defmodule EmisarWeb.AgentsLive do
   # Refresh-in-place (tick / mutation): re-runs with current URL params
   # so the operator doesn't jump back to page 1 on revoke or every 5 s.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  # Only the FIRST load picks the resting state — later reloads (tick,
+  # broadcasts, mutations) must not fight the operator's toggle.
+  defp assign_new_connect_open(socket, keys) do
+    case socket.assigns[:connect_open?] do
+      nil -> assign(socket, :connect_open?, active_keys(keys) == [])
+      _ -> socket
+    end
+  end
 
   # Fill the static Owner filter's options with the account's real key creators
   # (the filter's SQL still comes from the Query module's `fun`).
@@ -302,6 +335,11 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:dormant_count, count_status(keys, :dormant))
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
+        # First load decides the connect panel's resting state: open for a
+        # fresh account (connecting IS the job), collapsed once agents exist
+        # (the returning operator's job is the list). Server-owned — the 5s
+        # status tick re-renders would strip a browser-only <details>.
+        |> assign_new_connect_open(keys)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -481,14 +519,10 @@ defmodule EmisarWeb.AgentsLive do
   # The MCP client a key reported at `initialize` (clientInfo): prefer the
   # human-readable "title" over the machine "name", with "version" appended
   # when present. nil until a client has connected.
+  # Name only — the client VERSION is detail material, not row meta.
   defp reported_client(%ApiKeys.ApiKey{last_client_info: %{} = info}) do
     label = info["title"] || info["name"]
-
-    cond do
-      not (is_binary(label) and label != "") -> nil
-      is_binary(info["version"]) and info["version"] != "" -> "#{label} #{info["version"]}"
-      true -> label
-    end
+    if is_binary(label) and label != "", do: label
   end
 
   defp reported_client(_), do: nil
@@ -739,17 +773,42 @@ defmodule EmisarWeb.AgentsLive do
         </:trailing>
       </.summary_band>
 
-      <%!-- Connect-a-client guide (always visible, pre-filled key) --%>
-      <.connect_panel
-        configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
-        selected_client={@selected_client}
-        quick_secret={@quick_secret}
-        form={@form}
-        action_scope_text={@action_scope_text}
-        runners={@runners}
-        selected_runner_ids={@selected_runner_ids}
-        selected_runner_groups={@selected_runner_groups}
-      />
+      <%!-- Connect-a-client guide. Open when connecting is the job (no
+           agents yet, or mid-flow); collapsed to this header once agents
+           exist, so the returning operator's list isn't below the fold. --%>
+      <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <button
+          type="button"
+          phx-click="toggle_connect"
+          class="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-zinc-900/40"
+        >
+          <div>
+            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+              Connect an agent
+            </h2>
+            <p class="mt-0.5 text-xs text-zinc-500">
+              Pick how your agent connects — we only mint a key once you choose, named after
+              the client, setup pre-filled. Keeps the audit trail and the agents list clean.
+            </p>
+          </div>
+          <.icon
+            name="hero-chevron-down"
+            class={"h-4 w-4 shrink-0 text-zinc-500 transition#{if @connect_open?, do: " rotate-180"}"}
+          />
+        </button>
+
+        <.connect_panel
+          :if={@connect_open?}
+          configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
+          selected_client={@selected_client}
+          quick_secret={@quick_secret}
+          form={@form}
+          action_scope_text={@action_scope_text}
+          runners={@runners}
+          selected_runner_ids={@selected_runner_ids}
+          selected_runner_groups={@selected_runner_groups}
+        />
+      </div>
 
       <%!-- Connected agents list — single-column rows matching the
            AuthKeys / Grants visual language. --%>
@@ -797,7 +856,6 @@ defmodule EmisarWeb.AgentsLive do
                       <.local_time value={key.expires_at} mode={:relative} />
                     </span>
                   </:seg>
-                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
                 </.meta_line>
 
                 <%!-- Row 3: the MCP client this key reported at `initialize`
@@ -834,6 +892,8 @@ defmodule EmisarWeb.AgentsLive do
                 >
                   Rotate
                 </.button>
+                <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
+                     as runner keys (one ladder for one action class). --%>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
@@ -841,9 +901,10 @@ defmodule EmisarWeb.AgentsLive do
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
-                  phx-click="revoke"
-                  phx-value-id={key.id}
-                  data-confirm="Revoke this API key? The connected client will get 401s on its next call."
+                  phx-click={
+                    JS.push("open_revoke", value: %{id: key.id})
+                    |> show_confirm_dialog("revoke-agent-key")
+                  }
                 >
                   Revoke
                 </.button>
@@ -873,6 +934,30 @@ defmodule EmisarWeb.AgentsLive do
           </:empty>
         </LiveTable.live_table>
       </section>
+
+      <%!-- One page-level typed-confirm dialog; open_revoke fills
+           @revoke_target. With no target the token is blank, so Confirm
+           stays disabled; "revoke" stays the server gate (IL-15). --%>
+      <.confirm_dialog
+        id="revoke-agent-key"
+        title="Revoke this agent key"
+        confirm_label="Revoke key"
+        confirm_token={(@revoke_target && @revoke_target.name) || ""}
+        typed={@typed}
+        on_confirm={
+          JS.push("revoke", value: %{id: @revoke_target && @revoke_target.id})
+          |> hide_confirm_dialog("revoke-agent-key")
+        }
+      >
+        <:body>
+          Permanently revokes
+          <span class="font-mono font-medium text-rose-100">
+            {(@revoke_target && @revoke_target.name) || ""}
+          </span>
+          — the connected client gets 401s on its next call. This can't be undone;
+          connect the client again to mint a fresh key.
+        </:body>
+      </.confirm_dialog>
     </.dashboard_shell>
     """
   end
@@ -935,30 +1020,16 @@ defmodule EmisarWeb.AgentsLive do
     assigns = assign(assigns, :config, config)
 
     ~H"""
-    <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30">
-      <%!-- Header. The whole rest of the panel responds to which client
-           the operator picks, so put the picker FIRST. Anything that
-           depends on the choice (install / snippet / URL+token / scope
-           note) renders below, only after a client is chosen. --%>
-      <div class="border-b border-zinc-900 px-6 py-4">
-        <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-          Connect an agent
-        </h2>
-        <p class="mt-0.5 text-xs text-zinc-500">
-          Pick how your agent connects. We mint a fresh API key named after the
-          client and pre-fill the exact setup it needs.
-        </p>
-      </div>
-
+    <div class="border-t border-zinc-900">
       <%!-- Client picker, grouped into two transport families.
            Cloud row first because that's the no-install path most
            new users want; Local row below for IDE / desktop clients
            that go through the stdio bridge. --%>
       <div class="border-b border-zinc-900 px-6 py-4">
         <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          Cloud LLMs
+          Cloud
           <span class="ml-1 normal-case tracking-normal text-zinc-600">
-            — no install, URL + token
+            — hosted LLMs: no install, URL + token
           </span>
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -1003,11 +1074,9 @@ defmodule EmisarWeb.AgentsLive do
            per-client setup, not a standalone step. --%>
       <%= cond do %>
         <% is_nil(@selected_client) -> %>
-          <div class="px-6 py-10">
-            <.empty_state variant={:hint} title="Pick a client above to get started.">
-              We won't mint a key until you do — keeps the audit trail and the agents list clean.
-            </.empty_state>
-          </div>
+          <%!-- Nothing picked → nothing rendered: the picker is the prompt;
+               480px of reserved dead space buried the agents list. --%>
+          <span></span>
         <% @selected_client == "custom" -> %>
           <div class="space-y-5 px-6 py-5">
             <%= if @quick_secret do %>

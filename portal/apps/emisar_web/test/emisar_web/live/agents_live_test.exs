@@ -14,7 +14,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       assert html =~ "LLM agents"
-      assert html =~ "Pick a client above to get started"
+      assert html =~ "Connect an agent"
 
       # All client tiles are rendered.
       assert html =~ "Claude.ai"
@@ -30,14 +30,14 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
-    # before any client is picked the connect
-    # body is the "Pick a client above" empty state (no mint, no snippet).
-    test "no client picked → 'Pick a client above' empty connect body", %{conn: conn} do
+    # Before any client is picked, the panel is just the picker — no mint,
+    # no snippet, no reserved dead space below the tabs.
+    test "no client picked → picker only, nothing minted", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
-      assert html =~ "Pick a client above to get started"
-      assert html =~ "won&#39;t mint a key until you do"
+      assert html =~ "Connect an agent"
+      assert html =~ "we only mint a key once you choose"
       assert Repo.all(ApiKey) == []
     end
 
@@ -47,7 +47,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       # Part b — the list filter bar (always rendered).
-      assert html =~ "Name contains"
+      assert html =~ "Name"
       assert html =~ "Status"
 
       # Part a — the capability copy appears once the operator opens the
@@ -271,7 +271,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The reported client shows even though the key is named generically —
       # it's the actual client. The human "title" is preferred over the
       # machine "name", with the version appended.
-      assert html =~ "Claude Code 1.2.3"
+      assert html =~ "Claude Code"
+      # The client VERSION is detail material, not row meta.
+      refute html =~ "Claude Code 1.2.3"
       refute html =~ "claude-code 1.2.3"
     end
 

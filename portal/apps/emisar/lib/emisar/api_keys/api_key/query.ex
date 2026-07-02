@@ -117,7 +117,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     do: [
       %Filter{
         name: :name,
-        title: "Name contains",
+        title: "Name",
         type: :string,
         fun: fn queryable, name ->
           {queryable, dynamic([api_keys: k], ilike(k.name, ^Like.contains(name)))}
