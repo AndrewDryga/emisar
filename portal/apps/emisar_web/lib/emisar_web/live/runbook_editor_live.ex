@@ -342,6 +342,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp maybe_autoderive_step_id(step, _previous), do: step
 
+  defp placeholder_step_id?(""), do: true
   defp placeholder_step_id?(id), do: Regex.match?(~r/^step\d+$/, id)
 
   defp slug_from_action(action_id) do
@@ -355,7 +356,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp example_action_step,
     do: %{
-      "id" => "step#{System.unique_integer([:positive])}",
+      "id" => "",
       "type" => "action",
       "action_id" => "",
       "selector_kind" => "group",
@@ -493,6 +494,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 total={length(@steps)}
                 args_by_action={@args_by_action}
                 risk={@risk_by_action[step["action_id"]]}
+                catalog_actions={@catalog_actions}
                 groups={@groups}
                 runners={@runners}
               />
@@ -506,7 +508,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.panel>
 
         <aside class="space-y-4">
-          <.panel title="Metadata">
+          <.panel title="Details">
             <form phx-change="meta_change" class="space-y-4">
               <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
                    form posts top-level keys that `meta_change` reads directly;
@@ -580,6 +582,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   attr :total, :integer, required: true
   attr :args_by_action, :map, required: true
   attr :risk, :any, default: nil
+  attr :catalog_actions, :list, required: true
   attr :groups, :list, required: true
   attr :runners, :list, required: true
 
@@ -624,38 +627,52 @@ defmodule EmisarWeb.RunbookEditorLive do
              auto-derive from the chosen action below, instead of asking
              the operator to invent a name before they know what they
              named. --%>
-        <div>
-          <div class="flex items-center justify-between gap-2">
-            <.label variant={:eyebrow}>
-              Action
-            </.label>
-            <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <.label variant={:eyebrow}>
+                Action
+              </.label>
+              <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
+            </div>
+            <.input
+              name="action_id"
+              value={@step["action_id"]}
+              list="catalog-actions"
+              placeholder="linux.uptime"
+              size={:compact}
+              class="font-mono text-xs"
+            />
+            <%!-- A typo'd/unknown action previously failed SILENTLY (the risk
+                 pill just never appeared) until dispatch refused the runbook. --%>
+            <p
+              :if={
+                @step["action_id"] not in [nil, ""] and
+                  @step["action_id"] not in @catalog_actions
+              }
+              class="mt-1 text-[11px] text-amber-400/80"
+            >
+              Not in your catalog — no runner advertises this action.
+            </p>
           </div>
-          <.input
-            name="action_id"
-            value={@step["action_id"]}
-            list="catalog-actions"
-            placeholder="linux.uptime"
-            size={:compact}
-            class="font-mono text-xs"
-          />
-        </div>
 
-        <div>
-          <.label variant={:eyebrow} for={"step-#{@index}-id"}>
-            Step ID
-            <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
-              — referenced by other steps; auto-derived from Action
-            </span>
-          </.label>
-          <.input
-            id={"step-#{@index}-id"}
-            name="step_id"
-            value={@step["id"]}
-            placeholder="step1"
-            size={:compact}
-            class="font-mono text-xs"
-          />
+          <div>
+            <.label
+              variant={:eyebrow}
+              for={"step-#{@index}-id"}
+              title="Referenced by other steps; auto-derives from Action"
+            >
+              Step ID
+            </.label>
+            <.input
+              id={"step-#{@index}-id"}
+              name="step_id"
+              value={@step["id"]}
+              placeholder="auto from action"
+              size={:compact}
+              class="font-mono text-xs"
+            />
+          </div>
         </div>
 
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -664,7 +681,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               id={"step-#{@index}-selector-kind"}
               name="selector_kind"
               type="select"
-              label="Runner by"
+              label="Run on"
               label_variant={:eyebrow}
               size={:compact}
               value={@step["selector_kind"]}
@@ -753,9 +770,6 @@ defmodule EmisarWeb.RunbookEditorLive do
           Add
         </.button>
       </div>
-      <p :if={@args == []} class="mt-1 text-[11px] text-zinc-500">
-        No args.
-      </p>
       <div :if={@args != []} class="mt-2 space-y-1.5">
         <%= for {arg, j} <- Enum.with_index(@args) do %>
           <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5">

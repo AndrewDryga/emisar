@@ -877,11 +877,12 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :for, :string, default: nil
   attr :variant, :atom, default: :default, values: [:default, :eyebrow]
+  attr :rest, :global, doc: "extra attributes (e.g. title for a tooltip hint)"
   slot :inner_block, required: true
 
   def label(assigns) do
     ~H"""
-    <label for={@for} class={label_variant(@variant)}>
+    <label for={@for} class={label_variant(@variant)} {@rest}>
       {render_slot(@inner_block)}
     </label>
     """

@@ -602,31 +602,42 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       %{conn: conn, account: account, lv: lv}
     end
 
-    test "add appends a BLANK card with an auto-derivable placeholder id", %{lv: lv} do
+    test "add appends a BLANK card with an auto-derivable empty id", %{lv: lv} do
       before_count = count_step_cards(render(lv))
       html = render_click(lv, "add_action_step", %{})
       assert count_step_cards(html) == before_count + 1
 
       # The newly appended card is empty: no action, no selected target, no args.
       assert html =~ ~s(name="action_id" value="" )
-      # The "No args." resting line proves the new card carries an empty arg list.
-      assert html =~ "No args."
 
-      # Its id is the `step<digits>` placeholder example_action_step/0 emits, so
-      # RBK-015's auto-derive treats it as not-yet-customized.
+      # Fresh ids are EMPTY ("auto from action" placeholder), not machine
+      # junk — RBK-015's auto-derive treats blank as not-yet-customized.
+      assert html =~ ~s(placeholder="auto from action")
       assert [_ | _] = step_id_values(html)
-      assert Enum.all?(step_id_values(html), &(&1 =~ ~r/^step\d+$/))
+      assert Enum.all?(step_id_values(html), &(&1 == ""))
     end
 
-    test "two added steps never collide on id", %{lv: lv} do
+    test "distinct actions derive distinct ids on two added steps", %{lv: lv} do
       render_click(lv, "add_action_step", %{})
       html = render_click(lv, "add_action_step", %{})
+      assert count_step_cards(html) == 3
 
-      ids = step_id_values(html)
-      # The seeded step + two added → three placeholder ids, all distinct
-      # (each from a fresh System.unique_integer([:positive])).
-      assert length(ids) == 3
-      assert ids == Enum.uniq(ids)
+      render_change(lv, "step_change", %{
+        "index" => "1",
+        "action_id" => "linux.uptime",
+        "step_id" => ""
+      })
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "2",
+          "action_id" => "linux.disk_usage",
+          "step_id" => ""
+        })
+
+      derived = html |> step_id_values() |> Enum.reject(&(&1 == ""))
+      assert length(derived) == 2
+      assert derived == Enum.uniq(derived)
     end
 
     test "a blank added step saves as a draft (completeness deferred to publish)", %{
@@ -955,9 +966,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           "selector_values" => []
         })
 
-      # The Args section still renders (label + the "No args." resting line), but
-      # the per-action suggestion hint is absent — there's nothing to suggest.
-      assert html =~ "No args."
+      # The empty arg list renders no resting narration (the Add button says
+      # it all), and the per-action suggestion hint is absent too.
+      refute html =~ "No args."
       refute html =~ "Known for"
     end
 
