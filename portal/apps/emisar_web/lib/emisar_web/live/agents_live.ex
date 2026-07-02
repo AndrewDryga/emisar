@@ -1186,53 +1186,47 @@ defmodule EmisarWeb.AgentsLive do
 
   defp auto_permit_block(%{auto_permit: %{body: _}} = assigns) do
     ~H"""
-    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+    <.disclosure size={:md}>
+      <:summary>
         <span class="font-medium">
           Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
         </span>
-        <span class="text-xs text-zinc-500">click to expand</span>
-      </summary>
-      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
-        <.auto_permit_why client_label={@client_label} />
-        <p class="mt-3 text-[11px] text-zinc-500 font-mono">{@auto_permit.location}</p>
-        <.code_panel
-          id={"permit-#{@client_id}"}
-          label={"#{@client_label}'s setting"}
-          annotation="not an emisar config"
-          copy
-          code={@auto_permit.body}
-          class="mt-2"
-        />
-      </div>
-    </details>
+      </:summary>
+      <.auto_permit_why client_label={@client_label} />
+      <p class="mt-3 text-[11px] text-zinc-500 font-mono">{@auto_permit.location}</p>
+      <.code_panel
+        id={"permit-#{@client_id}"}
+        label={"#{@client_label}'s setting"}
+        annotation="not an emisar config"
+        copy
+        code={@auto_permit.body}
+        class="mt-2"
+      />
+    </.disclosure>
     """
   end
 
   defp auto_permit_block(%{auto_permit: %{pointer: _}} = assigns) do
     ~H"""
-    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+    <.disclosure size={:md}>
+      <:summary>
         <span class="font-medium">
           Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
         </span>
-        <span class="text-xs text-zinc-500">click to expand</span>
-      </summary>
-      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
-        <.auto_permit_why client_label={@client_label} />
-        <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
-        <p class="mt-2 text-[11px] text-zinc-500">
-          <.link
-            href={@auto_permit.doc_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-brand-400 hover:text-brand-300"
-          >
-            {@client_label} MCP docs →
-          </.link>
-        </p>
-      </div>
-    </details>
+      </:summary>
+      <.auto_permit_why client_label={@client_label} />
+      <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
+      <p class="mt-2 text-[11px] text-zinc-500">
+        <.link
+          href={@auto_permit.doc_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-brand-400 hover:text-brand-300"
+        >
+          {@client_label} MCP docs →
+        </.link>
+      </p>
+    </.disclosure>
     """
   end
 
@@ -1274,49 +1268,34 @@ defmodule EmisarWeb.AgentsLive do
 
     ~H"""
     <div>
-      <details
-        class="rounded-lg border border-zinc-800 bg-zinc-950/40"
-        {if(@scoped?, do: %{open: ""}, else: %{})}
-      >
-        <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-medium">Key scope</span>
-            <%= cond do %>
-              <% @scoped? -> %>
-                <span class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[11px] font-medium text-brand-300">
-                  <.icon name="hero-shield-check" class="h-3 w-3" />
-                  {scope_summary(@selected_runner_ids, @selected_runner_groups)}
-                </span>
-              <% @runner_count == 0 -> %>
-                <span class="text-[11px] text-zinc-500">no runners connected yet</span>
-              <% true -> %>
-                <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                  <.icon name="hero-globe-alt" class="h-3 w-3" />
-                  Reaches all {@runner_count} {if @runner_count ==
-                                                    1,
-                                                  do: "runner",
-                                                  else: "runners"}
-                </span>
-            <% end %>
-          </div>
-          <span class="text-xs text-zinc-500">
-            click to {if @scoped?, do: "edit", else: "narrow"}
-          </span>
-        </summary>
-        <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
-          <p class="text-xs text-zinc-500">
-            Tick groups or specific runners to scope the next key mint. Re-picking your
-            client re-mints with the current scope.
-          </p>
-          <div class="mt-3">
-            <.scope_picker
-              runners={@runners}
-              selected_runner_ids={@selected_runner_ids}
-              selected_runner_groups={@selected_runner_groups}
-            />
-          </div>
+      <.disclosure size={:md} open={@scoped?}>
+        <:summary>
+          <span class="font-medium">Key scope</span>
+          <%= cond do %>
+            <% @scoped? -> %>
+              <.chip tone={:brand} icon="hero-shield-check">
+                {scope_summary(@selected_runner_ids, @selected_runner_groups)}
+              </.chip>
+            <% @runner_count == 0 -> %>
+              <span class="text-[11px] text-zinc-500">no runners connected yet</span>
+            <% true -> %>
+              <.chip tone={:amber} icon="hero-globe-alt">
+                Reaches all {@runner_count} {if @runner_count == 1, do: "runner", else: "runners"}
+              </.chip>
+          <% end %>
+        </:summary>
+        <p class="text-xs text-zinc-500">
+          Tick groups or specific runners to scope the next key mint. Re-picking your
+          client re-mints with the current scope.
+        </p>
+        <div class="mt-3">
+          <.scope_picker
+            runners={@runners}
+            selected_runner_ids={@selected_runner_ids}
+            selected_runner_groups={@selected_runner_groups}
+          />
         </div>
-      </details>
+      </.disclosure>
       <p class="mt-2 flex items-start gap-1.5 px-1 text-[11px] text-zinc-500">
         <.icon name="hero-clock" class="mt-0.5 h-3 w-3 flex-none" />
         <span>

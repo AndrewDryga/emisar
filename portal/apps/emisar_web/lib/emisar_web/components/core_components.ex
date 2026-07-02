@@ -2217,6 +2217,68 @@ defmodule EmisarWeb.CoreComponents do
     do: "text-xs font-semibold uppercase tracking-wider text-zinc-400"
 
   @doc """
+  The ONE `<details>` disclosure — a bordered box whose summary row toggles a
+  bordered body, with the chevron affordance (console-ux §6: advanced or
+  optional content collapses behind this). `:sm` is the quiet inline helper
+  ("Can't scan? Use a setup URI"); `:md` the prominent option block.
+
+  LiveView strips browser-set open state on re-render (console-ux §7.6) —
+  when the content must stay open across re-renders, own the state
+  server-side and pass `open`.
+
+      <.disclosure>
+        <:summary>Can't scan? Use a setup URI</:summary>
+        …
+      </.disclosure>
+
+      <.disclosure size={:md} open={@scoped?}>
+        <:summary><span class="font-medium">Key scope</span> <.chip>…</.chip></:summary>
+        …
+      </.disclosure>
+  """
+  attr :id, :string, default: nil
+  attr :open, :boolean, default: false
+  attr :size, :atom, default: :sm, values: [:sm, :md]
+  attr :class, :string, default: nil
+  attr :rest, :global
+  slot :summary, required: true
+  slot :inner_block, required: true
+
+  def disclosure(assigns) do
+    ~H"""
+    <details
+      id={@id}
+      open={@open}
+      class={["group/disc rounded-lg border border-zinc-800 bg-zinc-950/40", @class]}
+      {@rest}
+    >
+      <summary class={[
+        "flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden",
+        disclosure_summary_class(@size)
+      ]}>
+        <span class="flex min-w-0 flex-wrap items-center gap-2">{render_slot(@summary)}</span>
+        <.icon
+          name="hero-chevron-down"
+          class="h-4 w-4 shrink-0 text-zinc-500 transition group-open/disc:rotate-180"
+        />
+      </summary>
+      <div class={["border-t border-zinc-900", disclosure_body_class(@size)]}>
+        {render_slot(@inner_block)}
+      </div>
+    </details>
+    """
+  end
+
+  defp disclosure_summary_class(:sm),
+    do: "px-3 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200"
+
+  defp disclosure_summary_class(:md),
+    do: "px-4 py-3 text-sm font-medium text-zinc-200 hover:bg-zinc-900/40"
+
+  defp disclosure_body_class(:sm), do: "p-3"
+  defp disclosure_body_class(:md), do: "px-4 pb-4 pt-3"
+
+  @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (console-ux §1).

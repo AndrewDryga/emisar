@@ -641,11 +641,9 @@ defmodule EmisarWeb.ProfileLive do
                     Scan with Google Authenticator, 1Password, Authy, or similar — then enter
                     the 6-digit code to confirm.
                   </p>
-                  <details class="rounded-lg border border-zinc-800 bg-zinc-950/40">
-                    <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200">
-                      Can't scan? Use a setup URI
-                    </summary>
-                    <div class="flex items-center gap-2 border-t border-zinc-800 p-3">
+                  <.disclosure>
+                    <:summary>Can't scan? Use a setup URI</:summary>
+                    <div class="flex items-center gap-2">
                       <code
                         id="mfa-uri"
                         class="flex-1 break-all font-mono text-[11px] text-zinc-200"
@@ -659,7 +657,7 @@ defmodule EmisarWeb.ProfileLive do
                         Copy
                       </.copy_button>
                     </div>
-                  </details>
+                  </.disclosure>
                   <.simple_form for={@mfa_form} id="mfa_form" phx-submit="confirm_mfa">
                     <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" />
                     <:actions>

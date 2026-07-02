@@ -807,18 +807,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
               class="min-h-0 resize-none"
             />
 
-            <details class="group rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-              <summary class="flex cursor-pointer items-center justify-between text-xs text-zinc-300 hover:text-zinc-100">
-                <span class="flex items-center gap-2">
-                  <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
-                  Allow the LLM to reuse this approval
-                </span>
-                <.icon
-                  name="hero-chevron-down"
-                  class="h-4 w-4 text-zinc-500 transition group-open:rotate-180"
-                />
-              </summary>
-              <div class="mt-3 space-y-3">
+            <.disclosure>
+              <:summary>
+                <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
+                Allow the LLM to reuse this approval
+              </:summary>
+              <div class="space-y-3">
                 <div>
                   <.input
                     name="duration"
@@ -876,7 +870,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   </p>
                 </div>
               </div>
-            </details>
+            </.disclosure>
 
             <.button
               variant="success"
