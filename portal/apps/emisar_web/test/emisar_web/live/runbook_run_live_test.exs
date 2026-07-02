@@ -267,7 +267,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       {:ok, lv, idle} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       # Idle: the dispatch form is shown, and a first Start doesn't nag with a confirm.
-      assert idle =~ "Start runbook"
+      assert idle =~ "Run runbook"
       refute idle =~ "start a new one and replace it"
 
       # Once dispatched, a run is in progress → the form is hidden so a stray
@@ -275,7 +275,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       # (It returns as the re-run form — with the replace-confirm — once runs settle.)
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
       assert html =~ "Runbook is running"
-      refute html =~ "Start runbook"
+      refute html =~ "Run runbook"
     end
 
     test "the plan surfaces each step's action risk before dispatch", %{

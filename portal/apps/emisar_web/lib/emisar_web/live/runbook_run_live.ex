@@ -613,7 +613,10 @@ defmodule EmisarWeb.RunbookRunLive do
     >
       <:title>
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
-          Run <span class="font-mono text-base">{@runbook.title}</span>
+          Run {@runbook.title}
+          <span class="ml-2 font-mono text-sm font-normal text-zinc-500">
+            v{@runbook.version} · {@runbook.status}
+          </span>
         </.detail_header>
       </:title>
 
@@ -621,22 +624,14 @@ defmodule EmisarWeb.RunbookRunLive do
         <%!-- How-it-works strip — short paragraph, replaces the
              stranded `-mt-4` lead-in that fought the page padding. --%>
         <p class="text-sm leading-relaxed text-zinc-400">
-          Steps dispatch in parallel waves of five, each against the runner — or group — it
-          targets. A failed run stops the waves behind it; results stream in below as they
-          arrive.
+          Steps dispatch in parallel waves, each against the runner — or group — it
+          targets. A failed run stops the waves behind it.
         </p>
 
         <%!-- Dead/pre-connect render: the plan + active-run state load on
              connect, so show a neutral placeholder rather than the empty plan
              and dispatch form (which would flash, then flip to the live run). --%>
-        <.card
-          :if={not @loaded?}
-          class="text-center text-sm text-zinc-500"
-          padding="px-5 py-10"
-        >
-          <.icon name="hero-arrow-path" class="mr-2 inline h-4 w-4 animate-spin text-zinc-500" />
-          Loading…
-        </.card>
+        <.loading_state :if={not @loaded?} />
 
         <%!-- One table, not two. Idle: the plan (numbered steps). Once
              dispatched: the live runs replace those rows in place, while
@@ -661,7 +656,7 @@ defmodule EmisarWeb.RunbookRunLive do
           </:badge>
           <:annotation>
             {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-            <span :if={!@execution && @blast_radius.total} class="text-brand-300/70">
+            <span :if={!@execution && @blast_radius.total} class="text-zinc-400">
               → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
                 @blast_radius.waves,
                 "wave"
@@ -799,7 +794,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 {step["description"]}
               </p>
               <% count = @blast_radius.counts[idx] %>
-              <p :if={target} class="mt-0.5 truncate text-xs text-brand-300/70">
+              <p :if={target} class="mt-0.5 truncate text-xs text-zinc-400">
                 → {target}<span :if={count}>
                   · {count} {if count == 1, do: "runner", else: "runners"}</span>
               </p>
@@ -830,7 +825,7 @@ defmodule EmisarWeb.RunbookRunLive do
              form once a run settles. Hidden while a run is IN PROGRESS so a
              stray submit can't double-dispatch mid-run (a "running" note takes
              its place); it returns when every run finishes or the run halts. --%>
-        <.panel :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} title="Dispatch">
+        <.panel :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} title="Run">
           <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
               <%!-- Non-FormField field: `reason` posts a top-level key and its
@@ -847,27 +842,26 @@ defmodule EmisarWeb.RunbookRunLive do
                 required
                 placeholder="Why are you running this runbook now?"
               />
-              <p class="mt-1 text-xs text-zinc-500">Logged in audit + propagated to every step.</p>
+              <p class="mt-1 text-xs text-zinc-500">Logged in audit and propagated to every step.</p>
             </div>
 
             <%!-- Re-dispatching resets the execution stream above, so confirm
                  while one's already showing — otherwise a stray click wipes the
                  run an operator is watching. --%>
             <.button
-              class="w-full"
               phx-disable-with="Starting..."
               data-confirm={
                 @execution && "A run is already showing above — start a new one and replace it?"
               }
             >
-              Start runbook
+              Run runbook
             </.button>
           </form>
         </.panel>
 
         <%!-- Stands in for the dispatch form while a run is in progress, so the
              form's absence reads as intentional rather than missing. --%>
-        <.panel :if={@loaded? and run_in_progress?(@execution, @run_statuses)} title="Dispatch">
+        <.panel :if={@loaded? and run_in_progress?(@execution, @run_statuses)} title="Run">
           <p class="flex items-center gap-2 text-sm text-zinc-400">
             <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-brand-400" />
             Runbook is running — you can start another run once it finishes.
