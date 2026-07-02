@@ -116,12 +116,10 @@ defmodule EmisarWeb.RunnerInstallLive do
       section={:runners}
       width={:form}
     >
-      <:title>Connect a runner</:title>
-      <:actions>
-        <.button variant={:secondary} size={:md} navigate={~p"/app/#{@current_account}/runners"}>
-          ← Back to runners
-        </.button>
-      </:actions>
+      <:title>
+        <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
+        Connect a runner
+      </:title>
 
       <.install_wizard
         install_command={@install_command}

@@ -166,7 +166,10 @@ defmodule EmisarWeb.CoreComponents do
     <.form :let={f} for={@for} as={@as} {@rest}>
       <div class="space-y-5">
         {render_slot(@inner_block, f)}
-        <div :for={action <- @actions} class="flex items-center justify-between gap-6 pt-2">
+        <%!-- Grouped, not justify-between: a primary + its quiet cancel stay
+             associated (console-ux — one create-flow footer). A single
+             w-full button still spans naturally. --%>
+        <div :for={action <- @actions} class="flex items-center gap-3 pt-2">
           {render_slot(action, f)}
         </div>
       </div>

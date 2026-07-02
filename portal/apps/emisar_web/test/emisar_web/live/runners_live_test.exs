@@ -248,7 +248,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
-      assert html =~ "Install a runner"
+      assert html =~ "Connect a runner"
       assert html =~ "Connect a runner"
       assert html =~ "curl -sSL"
       assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"

@@ -164,6 +164,17 @@ one of them is wrong.
 10. **Secrets reveal once, through `secret_reveal`** (or its recovery-codes variant) —
     one shape for "copy this now, it won't be shown again", never a bespoke amber box.
 
+### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
+
+- **A form's footer groups its buttons** — primary + quiet cancel side by side
+  (`simple_form`'s actions row is `flex gap-3`, never `justify-between`): a pair flung
+  to opposite edges loses its association and puts Cancel where the primary
+  conventionally sits. A single full-width button (auth pages) still spans naturally.
+- **ONE back affordance: `<.back_link>` in the shell `:title`, above the page's job.**
+  Never a boxed "← Back to X" button in `:actions`, never an in-body ghost arrow link.
+  The shell title is the page's JOB ("Invite a member", "Connect a runner"), not the
+  parent section's name; a panel below it never re-titles the page with a near-synonym.
+
 ## 8. The kit is the contract
 
 - The shared kit lives in `core_components.ex` (+ `EmisarWeb.LiveTable`,
