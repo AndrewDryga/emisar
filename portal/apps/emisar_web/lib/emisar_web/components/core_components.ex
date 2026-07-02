@@ -3594,17 +3594,14 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-brand-950/40 to-zinc-950/60 p-8 sm:p-10">
+    <div class="rounded-2xl border border-zinc-900 bg-zinc-950/40 p-8 sm:p-10">
       <header class="flex items-center gap-3">
         <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/20 text-brand-300 ring-1 ring-brand-500/40">
           <.icon name="hero-rocket-launch" class="h-5 w-5" />
         </span>
-        <div>
-          <h2 class="text-xl font-semibold text-zinc-50">Connect a runner</h2>
-          <p class="text-sm text-zinc-400">
-            Two minutes. Pick a Linux or macOS host, paste the one-liner.
-          </p>
-        </div>
+        <p class="text-base text-zinc-200">
+          Two minutes: pick a Linux or macOS host, paste the one-liner.
+        </p>
       </header>
 
       <%= cond do %>
@@ -3612,10 +3609,13 @@ defmodule EmisarWeb.CoreComponents do
           <div class="mt-8 space-y-6">
             <div>
               <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Run on any Linux or macOS host
+                Run this on the host
               </div>
+              <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads as
+                   corruption in the very command we're asking the operator to
+                   trust — scroll on narrow screens; Copy is the real path. --%>
               <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                <pre class="flex-1 whitespace-pre-wrap break-all text-zinc-300">{@install_command}</pre>
+                <pre class="flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
                 <%!-- Copy the literal string, not the rendered element's
                        innerText: the leading space (HISTCONTROL=ignorespace)
                        is significant and the selector path would strip it. --%>
@@ -3643,37 +3643,59 @@ defmodule EmisarWeb.CoreComponents do
                   host, never into a chat or ticket.
                 </p>
               </div>
-              <p class="mt-2 text-xs leading-5 text-zinc-500">
-                The leading space keeps the key out of your shell history. It's a plain shell
-                script — <.link
-                  href="/install.sh"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="font-semibold text-brand-400 hover:text-brand-300"
-                >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
-                dedicated <code class="font-mono text-zinc-400">emisar</code>
-                user (not root) under a systemd unit, and only dials out — nothing listens on the host.
-                Prefer to verify before you run?
-                <.link
-                  href={~p"/trust" <> "#release-integrity"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="font-semibold text-brand-400 hover:text-brand-300"
-                >
-                  Check the release's provenance + checksum →
-                </.link>
-              </p>
+              <div class="mt-2 text-xs leading-5 text-zinc-500">
+                <p>
+                  The leading space keeps the key out of your shell history. It's a plain shell
+                  script —
+                  <.link
+                    href="/install.sh"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-semibold text-brand-400 hover:text-brand-300"
+                  >
+                    read it first →
+                  </.link>
+                </p>
+                <ul class="mt-2 space-y-1">
+                  <li class="flex items-start gap-2">
+                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <span>Verifies the download's SHA-256 before running anything</span>
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <span>
+                      Runs the runner as a dedicated
+                      <code class="font-mono text-zinc-400">emisar</code>
+                      user (not root) under a systemd unit
+                    </span>
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <span>Only dials out — nothing listens on the host</span>
+                  </li>
+                </ul>
+                <p class="mt-2">
+                  Prefer to verify before you run?
+                  <.link
+                    href={~p"/trust" <> "#release-integrity"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-semibold text-brand-400 hover:text-brand-300"
+                  >
+                    Check the release's provenance + checksum →
+                  </.link>
+                </p>
+              </div>
             </div>
 
             <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
               <div class="flex items-center gap-3">
-                <span class="relative flex h-3 w-3">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500/50">
-                  </span>
-                  <span class="relative inline-flex h-3 w-3 rounded-full bg-brand-400"></span>
-                </span>
+                <%!-- Amber: this is a PENDING state — brand-green would read
+                     "connected" before anything has connected. --%>
+                <.status_dot tone={:amber} size={:md} ping />
                 <div class="text-sm text-zinc-300">
-                  Waiting for a runner to connect. This page will refresh automatically.
+                  Waiting for a runner to connect — this page advances on its own.
+                  You can leave; the runner will appear in Runners either way.
                 </div>
               </div>
 
@@ -3701,15 +3723,6 @@ defmodule EmisarWeb.CoreComponents do
                   </:step>
                 </.steps>
               </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
-                Image-bake, cloud-init, manual install.
-              </.link_card>
-              <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
-                Browse linux-core, cassandra, showcase. Install snippets included.
-              </.link_card>
             </div>
           </div>
         <% @install_command == :mint_failed -> %>

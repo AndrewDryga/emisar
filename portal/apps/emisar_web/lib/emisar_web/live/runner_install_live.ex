@@ -48,7 +48,7 @@ defmodule EmisarWeb.RunnerInstallLive do
 
     {:ok,
      socket
-     |> assign(:page_title, "Install a runner")
+     |> assign(:page_title, "Connect a runner")
      |> assign(:show_troubleshooting?, false)}
   end
 
@@ -116,7 +116,7 @@ defmodule EmisarWeb.RunnerInstallLive do
       section={:runners}
       width={:form}
     >
-      <:title>Install a runner</:title>
+      <:title>Connect a runner</:title>
       <:actions>
         <.button variant={:secondary} size={:md} navigate={~p"/app/#{@current_account}/runners"}>
           ← Back to runners
@@ -129,6 +129,17 @@ defmodule EmisarWeb.RunnerInstallLive do
         show_troubleshooting={@show_troubleshooting?}
         on_failure_path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
       />
+
+      <%!-- Follow-up resources, not part of the guided step — siblings
+           below the wizard, outside its surface. --%>
+      <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
+          Image-bake, cloud-init, manual install.
+        </.link_card>
+        <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
+          Browse linux-core, cassandra, showcase. Install snippets included.
+        </.link_card>
+      </div>
     </.dashboard_shell>
     """
   end
