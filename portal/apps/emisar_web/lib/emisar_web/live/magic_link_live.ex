@@ -127,15 +127,10 @@ defmodule EmisarWeb.MagicLinkLive do
           </button>
         </.form>
 
-        <p class="mt-6 text-center text-sm text-zinc-400">
-          Wrong address?
-          <.link
-            navigate={~p"/sign_in/magic"}
-            class="font-medium text-brand-400 hover:text-brand-300"
-          >
-            Use a different email
-          </.link>
-        </p>
+        <.auth_footer_link navigate={~p"/sign_in/magic"}>
+          <:lead>Wrong address?</:lead>
+          Use a different email
+        </.auth_footer_link>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
           We'll email you a one-time link and a 6-character code. They expire in 15 minutes.

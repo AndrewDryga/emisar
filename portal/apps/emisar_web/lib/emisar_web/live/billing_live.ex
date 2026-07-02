@@ -269,18 +269,15 @@ defmodule EmisarWeb.BillingLive do
                    on a paid plan so the operator knows "next charge
                    on …". --%>
               <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span
+                <.chip
                   :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
-                  class="rounded bg-amber-500/15 px-2 py-0.5 font-medium text-amber-200 ring-1 ring-amber-500/30"
+                  tone={:amber}
                 >
                   Cancels on <.local_time value={@summary.current_period_end} class="inline" />
-                </span>
-                <span
-                  :if={@summary.trial_end}
-                  class="rounded bg-brand-500/15 px-2 py-0.5 font-medium text-brand-200 ring-1 ring-brand-500/30"
-                >
+                </.chip>
+                <.chip :if={@summary.trial_end} tone={:brand}>
                   Trial ends <.local_time value={@summary.trial_end} class="inline" />
-                </span>
+                </.chip>
                 <span
                   :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
                   class="text-zinc-500"

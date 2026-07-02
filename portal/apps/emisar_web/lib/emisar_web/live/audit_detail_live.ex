@@ -141,13 +141,10 @@ defmodule EmisarWeb.AuditDetailLive do
         <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Summary
         </span>
-        <span
-          :for={pair <- AuditSummary.summary_pairs(@event)}
-          class="inline-flex items-center gap-1 rounded-md bg-zinc-900/80 px-2 py-0.5 text-xs ring-1 ring-zinc-800"
-        >
+        <.chip :for={pair <- AuditSummary.summary_pairs(@event)}>
           <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
           <span class="text-zinc-200">{elem(pair, 1)}</span>
-        </span>
+        </.chip>
       </.card>
 
       <%!-- Policy-update diff — special-case rendering for the one

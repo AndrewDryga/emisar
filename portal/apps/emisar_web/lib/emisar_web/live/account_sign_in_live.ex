@@ -51,14 +51,9 @@ defmodule EmisarWeb.AccountSignInLive do
         </:actions>
       </.simple_form>
 
-      <p class="mt-8 text-center text-sm">
-        <.link
-          navigate={~p"/sign_in/sso"}
-          class="font-medium text-brand-400 hover:text-brand-300"
-        >
-          Sign in to a different team
-        </.link>
-      </p>
+      <.auth_footer_link navigate={~p"/sign_in/sso"}>
+        Sign in to a different team
+      </.auth_footer_link>
     </.auth_layout>
     """
   end

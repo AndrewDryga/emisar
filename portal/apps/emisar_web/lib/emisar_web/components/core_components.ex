@@ -1249,6 +1249,38 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The auth pages' footer switch-line — one muted centered paragraph with a
+  brand link ("New to emisar? Create an account"). One shape for the whole
+  auth family (console-ux §3; the hand-rolled copies drifted mt-6/mt-8 and
+  dropped classes). The lead-in rides the `:lead` slot, the link label is the
+  default slot, and exactly one of `navigate`/`href` picks the link mode.
+
+      <.auth_footer_link href={~p"/sign_up"}>
+        <:lead>New to emisar?</:lead>
+        Create an account
+      </.auth_footer_link>
+  """
+  attr :navigate, :string, default: nil
+  attr :href, :string, default: nil
+  slot :lead, doc: "the muted lead-in text before the link"
+  slot :inner_block, required: true
+
+  def auth_footer_link(assigns) do
+    ~H"""
+    <p class="mt-6 text-center text-sm text-zinc-400">
+      {render_slot(@lead)}
+      <.link
+        navigate={@navigate}
+        href={@href}
+        class="font-medium text-brand-400 hover:text-brand-300"
+      >
+        {render_slot(@inner_block)}
+      </.link>
+    </p>
+    """
+  end
+
+  @doc """
   A horizontal rule with a centered label ("or") — separates the primary
   sign-in method from the alternatives so the auth pages read as one path with
   fallbacks, not a wall of equal options. The label background matches the

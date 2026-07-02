@@ -30,12 +30,10 @@ defmodule EmisarWeb.UserSignInLive do
         Sign in with SSO
       </.button>
 
-      <p class="mt-8 text-center text-sm text-zinc-400">
-        New to emisar?
-        <.link href={~p"/sign_up"} class="font-medium text-brand-400 hover:text-brand-300">
-          Create an account
-        </.link>
-      </p>
+      <.auth_footer_link href={~p"/sign_up"}>
+        <:lead>New to emisar?</:lead>
+        Create an account
+      </.auth_footer_link>
     </.auth_layout>
     """
   end

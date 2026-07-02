@@ -56,12 +56,10 @@ defmodule EmisarWeb.UserSignUpLive do
         </:actions>
       </.simple_form>
 
-      <p class="mt-6 text-center text-sm text-zinc-400">
-        Already have an account?
-        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
-          Sign in
-        </.link>
-      </p>
+      <.auth_footer_link href={~p"/sign_in"}>
+        <:lead>Already have an account?</:lead>
+        Sign in
+      </.auth_footer_link>
     </.auth_layout>
     """
   end

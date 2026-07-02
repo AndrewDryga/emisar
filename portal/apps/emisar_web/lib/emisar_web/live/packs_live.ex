@@ -433,9 +433,7 @@ defmodule EmisarWeb.PacksLive do
             <li :for={v <- pack.versions} class="flex flex-col gap-3 px-5 py-3">
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <div class="flex min-w-0 items-center gap-3">
-                  <span class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-200">
-                    v{v.version}
-                  </span>
+                  <.chip mono>v{v.version}</.chip>
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
@@ -485,12 +483,9 @@ defmodule EmisarWeb.PacksLive do
                 >
                   <span class="font-semibold">{length(@advertising[v.id])}</span>
                   runner(s) advertise this — trusting unblocks dispatch on:
-                  <span
-                    :for={r <- @advertising[v.id]}
-                    class="ml-1 inline-block rounded bg-amber-900/40 px-1.5 py-0.5 font-mono text-amber-200"
-                  >
+                  <.chip :for={r <- @advertising[v.id]} tone={:amber} mono class="ml-1">
                     {r.name}<span class="text-amber-400/70"> · {r.group}</span>
-                  </span>
+                  </.chip>
                 </div>
                 <%!-- What CHANGED since this hash was last trusted — diffed
                      against the action set snapshotted at that Trust
