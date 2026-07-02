@@ -840,8 +840,8 @@ defmodule EmisarWeb.AgentsLive do
               </:chips>
               <:meta>
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
-                <.meta_line mono class="text-[11px]">
-                  <:seg>{key.key_prefix}…</:seg>
+                <.meta_line class="text-[11px]">
+                  <:seg mono>{key.key_prefix}…</:seg>
                   <:seg>{format_key_scope(key, @runners)}</:seg>
                   <:seg>
                     last call{" "}<.local_time

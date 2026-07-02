@@ -836,7 +836,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 type="textarea"
                 name="reason"
                 value={@reason}
-                label="Reason (required)"
+                label="Reason"
                 errors={List.wrap(@errors[:reason])}
                 rows="2"
                 required

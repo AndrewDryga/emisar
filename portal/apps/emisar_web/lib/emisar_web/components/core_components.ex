@@ -2668,23 +2668,31 @@ defmodule EmisarWeb.CoreComponents do
   fights HEEx newline-trimming with `{" "}` hacks or the non-idempotent
   trailing `{expr} ·` the formatter loops on.
 
-      <.meta_line mono class="text-[11px]">
-        <:seg>{key.key_prefix}…</:seg>
+      <.meta_line class="text-[11px]">
+        <:seg mono>{key.key_prefix}…</:seg>
         <:seg>last used{" "}<.local_time value={key.last_used_at} mode={:relative} /></:seg>
         <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
       </.meta_line>
   """
-  attr :mono, :boolean, default: false
   attr :class, :any, default: nil
-  slot :seg, required: true
+
+  slot :seg, required: true do
+    attr :mono, :boolean,
+      doc: "render THIS segment mono — identifiers only, never a timestamp/email"
+  end
 
   def meta_line(assigns) do
     ~H"""
     <%!-- Mobile wraps to two lines (security meta like "last used" must
          never silently truncate away); sm+ restores the single-line
-         truncate. Mirrors list_row's :meta wrapper. --%>
-    <div class={["line-clamp-2 sm:line-clamp-none sm:truncate", @mono && "font-mono", @class]}>
-      <span :for={{seg, idx} <- Enum.with_index(@seg)}>
+         truncate. Mirrors list_row's :meta wrapper. Mono is PER SEGMENT — the
+         id segment carries it, but a prose segment (a timestamp, an email)
+         stays in the reading face; the line as a whole is never mono. --%>
+    <div class={["line-clamp-2 sm:line-clamp-none sm:truncate", @class]}>
+      <span
+        :for={{seg, idx} <- Enum.with_index(@seg)}
+        class={seg[:mono] && "font-mono"}
+      >
         {if idx > 0, do: " · "}{render_slot(seg)}
       </span>
     </div>
@@ -2735,7 +2743,14 @@ defmodule EmisarWeb.CoreComponents do
       "flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2.5 ring-1 ring-zinc-800",
       @class
     ]}>
-      <code id={@id} class="flex-1 break-all font-mono text-xs text-zinc-300">{@value}</code>
+      <%!-- A URL is a single line — it scrolls horizontally rather than wrapping
+           to a ragged block (this row is "one-line code value" by contract). --%>
+      <code
+        id={@id}
+        class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-zinc-300"
+      >
+        {@value}
+      </code>
       <.copy_button target={"##{@id}"}>Copy</.copy_button>
     </div>
     """

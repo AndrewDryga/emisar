@@ -380,8 +380,8 @@ defmodule EmisarWeb.AuthKeysLive do
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>
-                <.meta_line mono class="text-[11px]">
-                  <:seg>{key.key_prefix}…</:seg>
+                <.meta_line class="text-[11px]">
+                  <:seg mono>{key.key_prefix}…</:seg>
                   <:seg>{key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"}</:seg>
                   <:seg>
                     last used{" "}<.local_time

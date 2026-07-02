@@ -1129,7 +1129,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   class="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-zinc-900/40"
                 >
                   <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                    <.icon name="hero-key" class="h-4 w-4" />
+                    <.icon name="hero-identification" class="h-4 w-4" />
                   </span>
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
@@ -1153,7 +1153,11 @@ defmodule EmisarWeb.SSOSettingsLive do
             </ul>
           </.card>
 
-          <.empty_state :if={@loaded? and @providers == []} icon="hero-key" title="No connections yet">
+          <.empty_state
+            :if={@loaded? and @providers == []}
+            icon="hero-identification"
+            title="No connections yet"
+          >
             Connect your identity provider to let your team sign in through it. You'll need an
             OAuth/OIDC app at your provider with its client ID and secret.
             <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>

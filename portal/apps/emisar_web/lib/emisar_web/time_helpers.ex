@@ -36,13 +36,18 @@ defmodule EmisarWeb.TimeHelpers do
   def relative_time(%NaiveDateTime{} = ndt, opts),
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> relative_time(opts)
 
+  # Beyond a week it's an absolute date; within the year "Jul 2", older than a
+  # year "Jul 2, 2024" — a bare "Jul 2" from a previous year reads as this one.
+  @one_year_seconds 31_536_000
+
   defp past_label(diff, datetime) do
     cond do
       diff < 60 -> "#{diff}s ago"
       diff < 3_600 -> "#{div(diff, 60)}m ago"
       diff < 86_400 -> "#{div(diff, 3_600)}h ago"
       diff < 604_800 -> "#{div(diff, 86_400)}d ago"
-      true -> Calendar.strftime(datetime, "%b %-d")
+      diff < @one_year_seconds -> Calendar.strftime(datetime, "%b %-d")
+      true -> Calendar.strftime(datetime, "%b %-d, %Y")
     end
   end
 
@@ -52,7 +57,8 @@ defmodule EmisarWeb.TimeHelpers do
       diff < 3_600 -> "in #{div(diff, 60)}m"
       diff < 86_400 -> "in #{div(diff, 3_600)}h"
       diff < 604_800 -> "in #{div(diff, 86_400)}d"
-      true -> Calendar.strftime(datetime, "%b %-d")
+      diff < @one_year_seconds -> Calendar.strftime(datetime, "%b %-d")
+      true -> Calendar.strftime(datetime, "%b %-d, %Y")
     end
   end
 

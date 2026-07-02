@@ -12,8 +12,8 @@ defmodule EmisarWeb.Components.MetaLineTest do
 
   defp render_line(assigns) do
     rendered_to_string(~H"""
-    <CoreComponents.meta_line mono class="text-[11px]">
-      <:seg>emk_abc…</:seg>
+    <CoreComponents.meta_line class="text-[11px]">
+      <:seg mono>emk_abc…</:seg>
       <:seg :if={@show_uses}>3 uses</:seg>
       <:seg>last used never</:seg>
     </CoreComponents.meta_line>
@@ -28,11 +28,14 @@ defmodule EmisarWeb.Components.MetaLineTest do
   end
 
   describe "meta_line/1" do
-    test "joins visible segments with middots" do
+    test "joins visible segments with middots; mono is per-segment" do
       html = render_line(%{show_uses: true})
 
       assert visible_text(html) == "emk_abc… · 3 uses · last used never"
-      assert html =~ "font-mono"
+      # The id segment carries mono; the LINE wrapper never does — a timestamp
+      # or email segment must render in the reading face, not mono.
+      assert html =~ ~r{class="font-mono">\s*emk_abc…}
+      refute html =~ "sm:truncate font-mono"
       assert html =~ "text-[11px]"
     end
 
@@ -56,6 +59,9 @@ defmodule EmisarWeb.Components.MetaLineTest do
       assert html =~ ~s(data-copy="#sign-in-link")
       assert html =~ "https://emisar.dev/a/acme"
       assert html =~ "bg-zinc-950/80"
+      # A URL is one line that scrolls, not a break-all block that wraps.
+      assert html =~ "whitespace-nowrap"
+      refute html =~ "break-all"
     end
   end
 end

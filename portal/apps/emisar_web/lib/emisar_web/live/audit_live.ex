@@ -553,8 +553,8 @@ defmodule EmisarWeb.AuditLive do
                 <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>
-                <.meta_line mono class="text-[11px]">
-                  <:seg>{key.key_prefix}…</:seg>
+                <.meta_line class="text-[11px]">
+                  <:seg mono>{key.key_prefix}…</:seg>
                   <:seg>
                     last used{" "}<.local_time
                       value={key.last_used_at}
