@@ -2742,6 +2742,47 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  An inline machine identifier with the ONE copy affordance — a hostname, IP,
+  request/event id, external id. Renders the value mono beside a compact
+  clipboard button that copies the literal value (CSP-safe, via the delegated
+  `[data-copy-text]` listener). Every inline mono id uses this instead of a bare
+  `<span class="font-mono">` plus a bespoke `copy_button`, so copy looks and
+  behaves the same everywhere. The value never free-space-truncates — a machine
+  id you can't read in full is useless — it wraps (`break-all`); tune size/color
+  through `class`.
+
+      <.copyable_id value={@runner.hostname} />
+      <.copyable_id value={@event.request_id} class="text-xs text-zinc-400" />
+  """
+  attr :value, :string, required: true
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def copyable_id(assigns) do
+    ~H"""
+    <span
+      class={["group/copy inline-flex min-w-0 max-w-full items-center gap-1 font-mono", @class]}
+      {@rest}
+    >
+      <span class="min-w-0 break-all">{@value}</span>
+      <%!-- Always-visible dim clipboard (not hover-reveal — touch has no hover);
+           brightens on hover/focus. The value stays a selectable span, so a
+           manual select-copy still works alongside the one-click button. --%>
+      <button
+        type="button"
+        data-copy-text={@value}
+        data-copy-label-copied="✓"
+        aria-label="Copy"
+        title="Copy"
+        class="shrink-0 rounded p-0.5 text-zinc-600 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+      >
+        <.icon name="hero-clipboard-document" class="h-3.5 w-3.5" />
+      </button>
+    </span>
+    """
+  end
+
+  @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (console-ux §1).

@@ -68,10 +68,15 @@ export function setupCopyToClipboardDelegation() {
   }
 
   function flashCopied(btn) {
-    const original = btn.innerText
-    btn.innerText = btn.dataset.copyLabelCopied || "Copied"
+    // Save/restore innerHTML, not innerText: a button whose content is an
+    // icon (an inline <.copyable_id> clipboard, or the "＋ icon + label"
+    // copy buttons) has empty innerText, so the innerText round-trip would
+    // wipe the icon permanently after the first copy. textContent for the
+    // flash keeps the label a plain string (no markup injection).
+    const original = btn.innerHTML
+    btn.textContent = btn.dataset.copyLabelCopied || "Copied"
     if (btn._copyTimer) clearTimeout(btn._copyTimer)
-    btn._copyTimer = setTimeout(() => { btn.innerText = original }, 1500)
+    btn._copyTimer = setTimeout(() => { btn.innerHTML = original }, 1500)
   }
 
   document.addEventListener("click", async (e) => {

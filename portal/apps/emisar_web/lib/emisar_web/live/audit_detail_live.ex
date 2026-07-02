@@ -80,15 +80,31 @@ defmodule EmisarWeb.AuditDetailLive do
       <%!-- Meta strip — when it occurred, where from, request id. The MCP
            session + client info moved onto the Actor card below: they
            describe the actor that did this, not the event in general. --%>
-      <.meta_strip cols={3}>
+      <.meta_strip cols={4}>
         <.meta_field label="When">
           <.local_time value={@event.occurred_at} mode={:forensic} class="tabular-nums text-zinc-200" />
         </.meta_field>
+        <%!-- The event's own id — its permalink identity. It used to hide in the
+             payload panel's annotation; here it's a first-class, copyable field
+             an incident responder can paste into a ticket. --%>
+        <.meta_field label="Event ID">
+          <.copyable_id value={@event.id} class="text-xs text-zinc-300" />
+        </.meta_field>
         <.meta_field label="IP address">
-          <span class="font-mono text-xs text-zinc-300">{@event.ip_address || "—"}</span>
+          <.copyable_id
+            :if={@event.ip_address}
+            value={@event.ip_address}
+            class="text-xs text-zinc-300"
+          />
+          <span :if={!@event.ip_address} class="text-zinc-500">—</span>
         </.meta_field>
         <.meta_field label="Request ID">
-          <span class="font-mono text-xs text-zinc-400">{@event.request_id || "—"}</span>
+          <.copyable_id
+            :if={@event.request_id}
+            value={@event.request_id}
+            class="text-xs text-zinc-400"
+          />
+          <span :if={!@event.request_id} class="text-zinc-500">—</span>
         </.meta_field>
       </.meta_strip>
 
@@ -159,11 +175,13 @@ defmodule EmisarWeb.AuditDetailLive do
       <%!-- Payload — primary content on the page. Wide and tall,
            terminal-style for the JSON; copy grabs the rendered JSON
            (innerText) so an operator can paste it into a ticket/grep. --%>
+      <%!-- Event id moved up to a meta field; the payload panel just labels its
+           copy for what it grabs — the rendered JSON, ready to paste. --%>
       <.code_panel
         id="audit-payload-json"
         label="Payload"
-        annotation={"event:#{@event.id}"}
         copy
+        copy_label="Copy JSON"
         max_h="max-h-[60vh]"
         code={pretty_payload(@event.payload)}
         class="mt-6"
@@ -322,10 +340,10 @@ defmodule EmisarWeb.AuditDetailLive do
           current_account={@current_account}
         />
       </div>
-      <p :if={@id} class="mt-1 text-[10px] text-zinc-500">
+      <div :if={@id} class="mt-1 flex items-center gap-1.5 text-[10px] text-zinc-500">
         <span class="font-semibold uppercase tracking-wider">id</span>
-        <span class="break-all font-mono">{@id}</span>
-      </p>
+        <.copyable_id value={@id} class="text-[10px] text-zinc-400" />
+      </div>
       <%!-- Runner line — which host an action_run executed on. A property
            of the subject (the run), with a link to the runner. No icon —
            just `runner: name (group) version`. --%>

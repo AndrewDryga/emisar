@@ -212,7 +212,8 @@ defmodule EmisarWeb.RunnerDetailLive do
           <.status_badge status={connection_status(Runners.connection_state(@runner))} />
         </.meta_field>
         <.meta_field label="Hostname">
-          <span class="truncate text-zinc-200">{@runner.hostname || "—"}</span>
+          <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
+          <span :if={!@runner.hostname} class="text-zinc-500">—</span>
         </.meta_field>
         <.meta_field label="Version">
           <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>

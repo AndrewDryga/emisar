@@ -214,6 +214,23 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert length(String.split(html, "— (not recorded)")) == 3
   end
 
+  test "the event id is a first-class copyable meta field; payload copy says Copy JSON",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, event} = Audit.log(account.id, "audit.bare_event", [])
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    # The event id leads as a scannable, copyable identity — no longer buried in
+    # the payload panel's annotation.
+    assert html =~ "Event ID"
+    assert html =~ ~s(data-copy-text="#{event.id}")
+    refute html =~ "event:#{event.id}"
+    # The payload copy names what it grabs.
+    assert html =~ "Copy JSON"
+  end
+
   # payload rendering covers the edges: a nil payload shows
   # `{}`, a non-map payload is inspected, and a map is pretty JSON. Drive all
   # three through the live page (the <pre id="audit-payload-json"> is the target).
