@@ -2510,6 +2510,55 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The ONE numbered-steps list — a circle-numbered row per step, for any
+  "do these in order" sequence (SSO setup guides, agent connect steps,
+  install troubleshooting checks, the runbook plan). Numbers derive from
+  slot order. `variant={:guide}` is the compact text-xs instructional
+  list; `:plan` is the full-width divide-y data rows the runbook plan
+  uses inside an unpadded card.
+
+      <.steps class="mt-3">
+        <:step>Create an OAuth web app in your IdP.</:step>
+        <:step>Register the redirect URI below.</:step>
+      </.steps>
+  """
+  attr :variant, :atom, default: :guide, values: [:guide, :plan]
+  attr :class, :string, default: nil
+  slot :step, required: true
+
+  def steps(assigns) do
+    ~H"""
+    <ol class={[steps_list_class(@variant), @class]}>
+      <li :for={{step, idx} <- Enum.with_index(@step)} class={steps_row_class(@variant)}>
+        <span class={steps_circle_class(@variant)}>
+          {idx + 1}
+        </span>
+        <div class={steps_content_class(@variant)}>
+          {render_slot(step)}
+        </div>
+      </li>
+    </ol>
+    """
+  end
+
+  defp steps_list_class(:guide), do: "space-y-2.5 text-xs leading-relaxed text-zinc-400"
+  defp steps_list_class(:plan), do: "divide-y divide-zinc-900"
+
+  defp steps_row_class(:guide), do: "flex items-start gap-2.5"
+  defp steps_row_class(:plan), do: "flex items-start gap-3 px-5 py-3"
+
+  defp steps_circle_class(:guide) do
+    "grid h-5 w-5 shrink-0 place-items-center rounded-full bg-zinc-800 text-[10px] font-semibold text-zinc-300"
+  end
+
+  defp steps_circle_class(:plan) do
+    "grid h-6 w-6 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300"
+  end
+
+  defp steps_content_class(:guide), do: "min-w-0 flex-1 pt-0.5"
+  defp steps_content_class(:plan), do: "min-w-0 flex-1 text-sm"
+
+  @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
   Every static code/JSON/argv/snippet block composes this (console-ux §1).
@@ -3521,19 +3570,19 @@ defmodule EmisarWeb.CoreComponents do
                 class="mt-3 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-400"
               >
                 <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
-                <ul class="mt-1.5 space-y-1.5">
-                  <li>
-                    · it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                <.steps class="mt-1.5">
+                  <:step>
+                    it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
                     over outbound HTTPS (nothing needs to listen on it);
-                  </li>
-                  <li>
-                    · you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                  </:step>
+                  <:step>
+                    you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
                     and the key wasn't truncated on paste;
-                  </li>
-                  <li>
-                    · it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                  </li>
-                </ul>
+                  </:step>
+                  <:step>
+                    it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                  </:step>
+                </.steps>
               </div>
             </div>
 

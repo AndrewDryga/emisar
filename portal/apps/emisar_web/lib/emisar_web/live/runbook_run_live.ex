@@ -763,59 +763,51 @@ defmodule EmisarWeb.RunbookRunLive do
           </.callout>
 
           <%!-- Plan steps, shown until the first dispatch. --%>
-          <ol :if={!@execution && @steps != []} class="divide-y divide-zinc-900">
-            <li
-              :for={{step, idx} <- Enum.with_index(@steps)}
-              class="flex items-start gap-3 px-5 py-3"
-            >
-              <span class="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
-                {idx + 1}
-              </span>
-              <div class="min-w-0 flex-1 text-sm">
-                <% target = step_target_label(step, @runners) %>
-                <div class="flex items-center gap-2">
-                  <span class="truncate font-mono text-zinc-200">
-                    {step["action"] || step["action_id"] || "—"}
-                  </span>
-                  <.risk_pill
-                    :if={step_risk(@action_risk, step)}
-                    risk={step_risk(@action_risk, step)}
-                    class="flex-none"
-                  />
-                  <%!-- What this step's policy will decide at dispatch, so a
-                       mid-run pause (or a refusal) isn't a surprise. "Pauses for
-                       approval" is the POLICY stance — a standing grant could let
-                       it run without pausing, so the tooltip avoids a false
-                       promise. A `:deny` step would FAIL on dispatch; flag it too. --%>
-                  <span
-                    :if={step_decision(@step_decisions, idx) == :require_approval}
-                    class="flex-none"
-                    title="Per policy, this step queues for human approval before it runs. A standing grant may let it run without pausing."
-                  >
-                    <.chip upcase tone={:amber}>Pauses for approval</.chip>
-                  </span>
-                  <span
-                    :if={step_decision(@step_decisions, idx) == :deny}
-                    class="flex-none"
-                    title="Policy denies this step — dispatch will refuse it. Edit the policy or the runbook's targets."
-                  >
-                    <.chip upcase tone={:rose}>Blocked by policy</.chip>
-                  </span>
-                </div>
-                <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
-                  {step["description"]}
-                </p>
-                <% count = @blast_radius.counts[idx] %>
-                <p :if={target} class="mt-0.5 truncate text-xs text-brand-300/70">
-                  → {target}<span :if={count}>
-                    · {count} {if count == 1, do: "runner", else: "runners"}</span>
-                </p>
-                <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
-                  → no target set
-                </p>
+          <.steps :if={!@execution && @steps != []} variant={:plan}>
+            <:step :for={{step, idx} <- Enum.with_index(@steps)}>
+              <% target = step_target_label(step, @runners) %>
+              <div class="flex items-center gap-2">
+                <span class="truncate font-mono text-zinc-200">
+                  {step["action"] || step["action_id"] || "—"}
+                </span>
+                <.risk_pill
+                  :if={step_risk(@action_risk, step)}
+                  risk={step_risk(@action_risk, step)}
+                  class="flex-none"
+                />
+                <%!-- What this step's policy will decide at dispatch, so a
+                     mid-run pause (or a refusal) isn't a surprise. "Pauses for
+                     approval" is the POLICY stance — a standing grant could let
+                     it run without pausing, so the tooltip avoids a false
+                     promise. A `:deny` step would FAIL on dispatch; flag it too. --%>
+                <span
+                  :if={step_decision(@step_decisions, idx) == :require_approval}
+                  class="flex-none"
+                  title="Per policy, this step queues for human approval before it runs. A standing grant may let it run without pausing."
+                >
+                  <.chip upcase tone={:amber}>Pauses for approval</.chip>
+                </span>
+                <span
+                  :if={step_decision(@step_decisions, idx) == :deny}
+                  class="flex-none"
+                  title="Policy denies this step — dispatch will refuse it. Edit the policy or the runbook's targets."
+                >
+                  <.chip upcase tone={:rose}>Blocked by policy</.chip>
+                </span>
               </div>
-            </li>
-          </ol>
+              <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
+                {step["description"]}
+              </p>
+              <% count = @blast_radius.counts[idx] %>
+              <p :if={target} class="mt-0.5 truncate text-xs text-brand-300/70">
+                → {target}<span :if={count}>
+                  · {count} {if count == 1, do: "runner", else: "runners"}</span>
+              </p>
+              <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
+                → no target set
+              </p>
+            </:step>
+          </.steps>
 
           <%!-- Nothing to run — nudge to the editor instead of dispatching
                an empty runbook. --%>

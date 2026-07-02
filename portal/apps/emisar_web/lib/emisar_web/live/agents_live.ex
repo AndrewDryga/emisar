@@ -1341,9 +1341,9 @@ defmodule EmisarWeb.AgentsLive do
         <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Steps for {@client_label}
         </p>
-        <ol class="mt-2 list-decimal space-y-1 pl-5 text-xs text-zinc-300">
-          <li :for={step <- @steps}>{step}</li>
-        </ol>
+        <.steps class="mt-2">
+          <:step :for={step <- @steps}>{step}</:step>
+        </.steps>
       </div>
 
       <p class="text-xs text-zinc-500">

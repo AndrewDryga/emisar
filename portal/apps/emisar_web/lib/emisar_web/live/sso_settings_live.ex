@@ -1536,13 +1536,11 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <div class="rounded-lg bg-zinc-900/50 p-4 ring-1 ring-white/5">
       <p class="text-sm font-medium text-zinc-200">Setting up {setup_kind_label(@kind)}</p>
-      <ol class="mt-3 space-y-3 text-xs leading-relaxed text-zinc-400">
-        <li>
-          <span class="font-semibold text-zinc-300">1.</span>
+      <.steps class="mt-3">
+        <:step>
           Create an OAuth / OIDC <span class="text-zinc-300">web app</span> {oidc_app_hint(@kind)}.
-        </li>
-        <li>
-          <span class="font-semibold text-zinc-300">2.</span>
+        </:step>
+        <:step>
           Register this <span class="text-zinc-300">redirect URI</span>
           on the app:
           <div class="mt-1.5 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
@@ -1551,20 +1549,18 @@ defmodule EmisarWeb.SSOSettingsLive do
             </code>
             <.copy_button target={"#sso-callback-#{@id}"}>Copy</.copy_button>
           </div>
-        </li>
-        <li>
-          <span class="font-semibold text-zinc-300">3.</span>
+        </:step>
+        <:step>
           Set the <span class="text-zinc-300">Issuer URL</span>
           below to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
           <span class="text-zinc-500">{issuer_where_hint(@kind)}</span>
-        </li>
-        <li>
-          <span class="font-semibold text-zinc-300">4.</span>
+        </:step>
+        <:step>
           Paste the app's <span class="text-zinc-300">Client ID</span>
           and <span class="text-zinc-300">Client secret</span>
           into the fields below.
-        </li>
-      </ol>
+        </:step>
+      </.steps>
       <p class="mt-3 text-xs leading-relaxed text-zinc-500">
         Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
         reads the ID token only and never presents the access token to an API, so DPoP adds no
@@ -1788,13 +1784,11 @@ defmodule EmisarWeb.SSOSettingsLive do
               class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-90"
             /> Point your IdP at this connection
           </summary>
-          <ol class="mt-3 space-y-2.5 pl-5 text-xs leading-relaxed text-zinc-400">
-            <li>
-              <span class="font-semibold text-zinc-300">1.</span>
+          <.steps class="mt-3 pl-5">
+            <:step>
               Enable SCIM provisioning {scim_location_hint(@provider.kind)}.
-            </li>
-            <li>
-              <span class="font-semibold text-zinc-300">2.</span>
+            </:step>
+            <:step>
               Set the <span class="text-zinc-300">base URL</span>
               above as the connector's SCIM endpoint and paste the
               <span class="text-zinc-300">bearer token</span>
@@ -1802,15 +1796,14 @@ defmodule EmisarWeb.SSOSettingsLive do
               field (rotate above if you didn't copy it) — it's sent in the
               <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
               header.
-            </li>
-            <li>
-              <span class="font-semibold text-zinc-300">3.</span>
+            </:step>
+            <:step>
               Map the SCIM <span class="text-zinc-300">externalId</span>
               to the same value your OIDC
               <code class="rounded bg-zinc-900 px-1 py-0.5">{@provider.identifier_claim}</code>
               claim carries — so a member's SSO login and their synced record are one identity.
-            </li>
-          </ol>
+            </:step>
+          </.steps>
           <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-500">
             The SCIM app is a second Okta integration, separate from your sign-in app — its own
             SSO doesn't need to be functional. Okta defaults both the OIDC
