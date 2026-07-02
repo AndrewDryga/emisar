@@ -80,6 +80,58 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "Claude Code"
   end
 
+  test "the runner 'View all runs' pivot (runner_id) scopes runs to that runner + shows a clearable chip",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, runner_a} =
+      Runner.Changeset.register(%{
+        account_id: account.id,
+        name: "web-iad-1",
+        external_id: Ecto.UUID.generate(),
+        group: "default",
+        hostname: "10.0.5.12"
+      })
+      |> Repo.insert()
+
+    {:ok, runner_b} =
+      Runner.Changeset.register(%{
+        account_id: account.id,
+        name: "db-iad-1",
+        external_id: Ecto.UUID.generate(),
+        group: "default",
+        hostname: "10.0.5.13"
+      })
+      |> Repo.insert()
+
+    {:ok, _} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner_a.id,
+        action_id: "ci.deploy_canary",
+        source: "operator",
+        args: %{}
+      })
+
+    {:ok, _} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner_b.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?#{[runner_id: runner_a.id]}")
+
+    # Scoped to runner_a's run; runner_b's is excluded.
+    assert html =~ "ci.deploy_canary"
+    refute html =~ "linux.uptime"
+    # The clearable "Runner: <name>" pivot chip resolves the runner's name.
+    assert html =~ "Runner:"
+    assert html =~ "web-iad-1"
+  end
+
   test "redirects anonymous users", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/runs")
   end

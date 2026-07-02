@@ -229,6 +229,28 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.meta_field label="Active runs">
           <span class="text-zinc-200">{@runner.action_load}</span>
         </.meta_field>
+        <%!-- Labels + last-disconnect reason fold into the strip on their own
+             full-width row (a hairline sets them off) rather than a second
+             bordered band below — one calmer meta block. Labels show when set;
+             the disconnect reason only while the runner is actually down (else
+             it's stale noise from the last drop). --%>
+        <div
+          :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
+          class="col-span-full flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/60 pt-3"
+        >
+          <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Labels
+            </span>
+            <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
+          </div>
+          <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
+            <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+            <span class="text-xs">
+              Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
+            </span>
+          </div>
+        </div>
       </.meta_strip>
 
       <%!-- A signature-enforcing runner has locked the portal out: it verifies
@@ -251,35 +273,35 @@ defmodule EmisarWeb.RunnerDetailLive do
         on the host.
       </.callout>
 
-      <%!-- Labels + last-disconnect reason. Both are written to the DB
-           and previously invisible. Labels show only when set;
-           disconnect reason shows only when the runner is actually
-           disconnected (otherwise it's just historical noise from the
-           last drop). --%>
-      <.card
-        :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
-        class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
-        padding="px-4 py-2.5"
-      >
-        <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Labels</span>
-          <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
-        </div>
-        <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
-          <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
-          <span class="text-xs">
-            Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
-          </span>
-        </div>
-      </.card>
-
       <.loading_state :if={@loading?} />
 
+      <%!-- On desktop the catalog takes the wide column (lg:order-1) and recent
+           runs sit alongside as a freshness check (lg:order-2). On a phone the
+           order flips by DOM: after the meta block, "is this thing healthy?" is
+           answered by recent runs FIRST, then the long catalog. --%>
       <div :if={not @loading?} class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <%!-- Recent runs in a sidebar — operator scanning a runner is
-             usually trying to figure out "is this thing healthy?" so
-             the catalog gets the wide column, recent runs sit
-             alongside as a freshness check. --%>
+        <.panel variant={:split} title="Recent runs" class="lg:order-2">
+          <:actions :if={@recent_runs != []}>
+            <.link
+              navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
+              class="text-xs font-medium text-brand-400 hover:text-brand-300"
+            >
+              View all →
+            </.link>
+          </:actions>
+          <%= if @recent_runs == [] do %>
+            <div class="px-5 py-10 text-center text-sm text-zinc-500">
+              Nothing dispatched yet.
+            </div>
+          <% else %>
+            <ul class="divide-y divide-zinc-900">
+              <li :for={run <- @recent_runs}>
+                <.run_row run={run} current_account={@current_account} />
+              </li>
+            </ul>
+          <% end %>
+        </.panel>
+
         <.panel variant={:split} title="Advertised actions" class="lg:col-span-2 lg:order-1">
           <:badge><.count_badge count={@actions_metadata.count} tone={:neutral} /></:badge>
 
@@ -362,20 +384,6 @@ defmodule EmisarWeb.RunnerDetailLive do
                 filter_params={@filter_params}
               />
             </div>
-          <% end %>
-        </.panel>
-
-        <.panel variant={:split} title="Recent runs" class="lg:order-2">
-          <%= if @recent_runs == [] do %>
-            <div class="px-5 py-10 text-center text-sm text-zinc-500">
-              Nothing dispatched yet.
-            </div>
-          <% else %>
-            <ul class="divide-y divide-zinc-900">
-              <li :for={run <- @recent_runs}>
-                <.run_row run={run} current_account={@current_account} />
-              </li>
-            </ul>
           <% end %>
         </.panel>
       </div>

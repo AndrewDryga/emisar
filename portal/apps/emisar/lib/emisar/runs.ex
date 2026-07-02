@@ -32,9 +32,13 @@ defmodule Emisar.Runs do
       # empty for an api_key). Threaded as an opt, not a visible filter, so it stays
       # a pivot and never renders a UUID text input in the bar.
       {api_key_id, opts} = Keyword.pop(opts, :api_key_id)
+      # "View all runs" from a runner detail pivots here the same way — scoped to
+      # that runner, a clearable chip rather than a visible UUID filter.
+      {runner_id, opts} = Keyword.pop(opts, :runner_id)
 
       ActionRun.Query.all()
       |> filter_runs_by_api_key_id(api_key_id)
+      |> maybe_by_runner_id(runner_id)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)

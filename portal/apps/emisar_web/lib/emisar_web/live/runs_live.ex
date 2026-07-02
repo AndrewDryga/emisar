@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunsLive do
   status changes flow in without a full reload.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Runs}
+  alias Emisar.{ApiKeys, Runners, Runs}
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
@@ -39,17 +39,24 @@ defmodule EmisarWeb.RunsLive do
   defp load_runs(socket, params) do
     filters = Runs.ActionRun.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
-    # Agent "View activity" pivot — scope to one api key, shown as a clearable
-    # chip (not a visible filter). Resolve the key's name for the chip.
+    # Two pivots scope the feed to one entity, shown as a clearable chip (not a
+    # visible filter): "View activity" from an agent key, "View all runs" from a
+    # runner detail. Resolve each entity's name for its chip.
     api_key_id = params["api_key_id"]
+    runner_id = params["runner_id"]
+    subject = socket.assigns.current_subject
 
     socket =
       socket
       |> assign(:api_key_id, api_key_id)
-      |> assign(:agent_label, agent_label_for(api_key_id, socket.assigns.current_subject))
+      |> assign(:agent_label, agent_label_for(api_key_id, subject))
+      |> assign(:runner_label, runner_label_for(runner_id, subject))
 
     run_opts =
-      opts |> Keyword.put(:preload, [:runner, :api_key]) |> Keyword.put(:api_key_id, api_key_id)
+      opts
+      |> Keyword.put(:preload, [:runner, :api_key])
+      |> Keyword.put(:api_key_id, api_key_id)
+      |> Keyword.put(:runner_id, runner_id)
 
     case Runs.list_runs(socket.assigns.current_subject, run_opts) do
       {:ok, runs, meta} ->
@@ -86,6 +93,15 @@ defmodule EmisarWeb.RunsLive do
     end
   end
 
+  defp runner_label_for(nil, _subject), do: nil
+
+  defp runner_label_for(runner_id, subject) do
+    case Runners.fetch_runner_by_id(runner_id, subject) do
+      {:ok, runner} -> runner.name
+      _ -> nil
+    end
+  end
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -108,12 +124,19 @@ defmodule EmisarWeb.RunsLive do
         output, and audit record. <.doc_link href="/docs/quickstart">Quickstart</.doc_link>
       </.page_intro>
 
-      <%!-- "View activity" from an agent key pivots here scoped to that key —
-           the clearable chip says which agent and gets back to the full feed. --%>
+      <%!-- "View activity" from an agent key / "View all runs" from a runner both
+           pivot here scoped to that entity — the clearable chip says which one
+           and gets back to the full feed. --%>
       <.pivot_chip
         :if={@agent_label}
         label="Agent"
         value={@agent_label}
+        clear_to={~p"/app/#{@current_account}/runs"}
+      />
+      <.pivot_chip
+        :if={@runner_label}
+        label="Runner"
+        value={@runner_label}
         clear_to={~p"/app/#{@current_account}/runs"}
       />
 
