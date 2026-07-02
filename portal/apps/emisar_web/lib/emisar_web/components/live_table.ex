@@ -317,6 +317,14 @@ defmodule EmisarWeb.LiveTable do
   attr :disabled, :boolean, default: false
 
   defp filter_form(assigns) do
+    {advanced, primary} = Enum.split_with(assigns.filters, & &1.advanced)
+
+    assigns =
+      assigns
+      |> assign(:primary_filters, primary)
+      |> assign(:advanced_filters, advanced)
+      |> assign(:advanced_open?, has_active_filters?(assigns.params, advanced))
+
     ~H"""
     <form
       id={@id}
@@ -326,11 +334,26 @@ defmodule EmisarWeb.LiveTable do
       aria-disabled={@disabled}
     >
       <.filter_input
-        :for={filter <- @filters}
+        :for={filter <- @primary_filters}
         filter={filter}
         value={filter_value(@params, to_string(filter.name), filter)}
         disabled={@disabled}
       />
+      <%!-- Niche filters fold behind a disclosure so the bar stays one calm
+           row. display:contents keeps the revealed inputs in the SAME
+           flex-wrap flow; `open` is server-derived (an active advanced
+           filter must never hide), so re-renders can't strand one. --%>
+      <details :if={@advanced_filters != []} class="contents" open={@advanced_open?}>
+        <summary class="inline-flex h-[34px] cursor-pointer list-none items-center gap-1 rounded-lg border border-zinc-800 px-2.5 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&::-webkit-details-marker]:hidden">
+          More filters
+        </summary>
+        <.filter_input
+          :for={filter <- @advanced_filters}
+          filter={filter}
+          value={filter_value(@params, to_string(filter.name), filter)}
+          disabled={@disabled}
+        />
+      </details>
       <.link
         :if={has_active_filters?(@params, @filters)}
         patch={@path}

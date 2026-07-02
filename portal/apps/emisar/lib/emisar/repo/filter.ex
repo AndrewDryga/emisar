@@ -49,10 +49,13 @@ defmodule Emisar.Repo.Filter do
           type: type(),
           values: values() | Range.t() | nil,
           fun: fun(),
-          default: term() | nil
+          default: term() | nil,
+          advanced: boolean()
         }
 
-  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil, default: nil
+  # `advanced: true` marks a niche filter the UI folds behind a "More
+  # filters" disclosure (LiveTable) — filtering semantics are identical.
+  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil, default: nil, advanced: false
 
   @doc """
   Apply the supplied filter list to the queryable. Returns

@@ -334,6 +334,9 @@ defmodule Emisar.Audit.Event.Query do
   def actor_filter(options) do
     %Filter{
       name: :actor_id,
+      # Rides the advanced tier with its :actor_kind trigger, so the
+      # dependent picker renders beside it inside "More filters".
+      advanced: true,
       title: "Actor",
       type: {:list, :string},
       values: options,
@@ -363,6 +366,8 @@ defmodule Emisar.Audit.Event.Query do
   def subject_filter(options) do
     %Filter{
       name: :subject_id,
+      # Same tier as its :subject_kind trigger.
+      advanced: true,
       title: "Subject",
       type: {:list, :string},
       values: options,
@@ -482,6 +487,7 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :actor_kind,
+        advanced: true,
         title: "Actor type",
         type: {:list, :string},
         values: [
@@ -496,6 +502,7 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :subject_kind,
+        advanced: true,
         title: "Subject",
         type: {:list, :string},
         values: [
@@ -519,6 +526,7 @@ defmodule Emisar.Audit.Event.Query do
       # a user session produces (nil for API-key / runner actors).
       %Filter{
         name: :auth_method,
+        advanced: true,
         title: "Sign-in method",
         type: {:list, :string},
         values: [
@@ -534,6 +542,7 @@ defmodule Emisar.Audit.Event.Query do
       # usable; wildcards are escaped to match literally.
       %Filter{
         name: :request_id,
+        advanced: true,
         title: "Request ID",
         type: :string,
         fun: fn queryable, term ->

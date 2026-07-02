@@ -46,7 +46,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "runner.connected"
       assert html =~ "10.0.5.12"
       assert html =~ "db-prod-01"
-      assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
+      assert html =~ ~r/text-zinc-600[^>]*>\s*self\s*</
       # Subject/IP columns collapse below lg so the table fits a phone.
       assert html =~ "hidden lg:table-cell"
     end

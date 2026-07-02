@@ -70,6 +70,17 @@ defmodule EmisarWeb.TimeHelpers do
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> absolute_time(opts)
 
   @doc """
+  Second-precision timestamp for forensic surfaces (the audit trail, decision
+  records) — `"2026-07-02 04:44:12 UTC"`. The server fallback is UTC; the
+  LocalTime hook re-renders it in the viewer's zone with the same shape.
+  """
+  def forensic_time(%DateTime{} = datetime),
+    do: Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
+
+  def forensic_time(%NaiveDateTime{} = ndt),
+    do: ndt |> DateTime.from_naive!("Etc/UTC") |> forensic_time()
+
+  @doc """
   Formats a duration given in milliseconds: `"1.3s"`, `"312ms"`, `"4m"`.
   Useful for run.duration_ms.
   """
@@ -133,7 +144,7 @@ defmodule EmisarWeb.TimeHelpers do
   Tolerates `nil` by rendering `placeholder` (default `"—"`).
   """
   attr :value, :any, required: true
-  attr :mode, :atom, default: :absolute, values: [:absolute, :relative]
+  attr :mode, :atom, default: :absolute, values: [:absolute, :relative, :forensic]
   attr :placeholder, :string, default: "—"
   attr :class, :string, default: nil
 
@@ -152,6 +163,7 @@ defmodule EmisarWeb.TimeHelpers do
         case assigns.mode do
           :relative -> relative_time(datetime)
           :absolute -> absolute_time(datetime)
+          :forensic -> forensic_time(datetime)
         end
       )
 

@@ -45,13 +45,15 @@ const LocalTime = {
 
     if (mode === "relative") {
       this.el.textContent = formatRelative(dt, now, sameYear)
+    } else if (mode === "forensic") {
+      this.el.textContent = formatForensic(dt)
     } else {
       this.el.textContent = formatAbsolute(dt, sameYear)
     }
 
     // Tooltip carries the full absolute local time on hover for the
-    // relative form, and the ISO source for the absolute form — so
-    // operators can always recover the exact value.
+    // relative form, and the ISO source for the absolute/forensic forms —
+    // so operators can always recover the exact value.
     const tooltip = mode === "relative"
       ? formatAbsolute(dt, sameYear)
       : iso
@@ -87,6 +89,15 @@ function formatAbsolute(dt, sameYear, short = false) {
       ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
       : { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
   return dt.toLocaleString(undefined, opts)
+}
+
+// Second-precision local timestamp for forensic surfaces (the audit trail):
+// "2026-07-02 04:44:12" — fixed-width digits so a column of them aligns,
+// seconds because eight events in one minute must still order visibly.
+function formatForensic(dt) {
+  const p = (n, w = 2) => String(n).padStart(w, "0")
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())} ` +
+    `${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`
 }
 
 // CSP-safe Copy buttons (`data-copy` / `data-copy-text`). Shared with the

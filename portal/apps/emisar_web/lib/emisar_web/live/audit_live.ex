@@ -352,17 +352,18 @@ defmodule EmisarWeb.AuditLive do
         >
           {label}
         </button>
-        <span class="mx-1 h-4 w-px bg-zinc-800" aria-hidden="true"></span>
         <%!-- One-click "only the events that went wrong" — denials, removals, and
              failures (the danger+warn outcomes) — so the rows an operator hunts for
              surface out of a wall of routine sign-ins, without hand-building the
-             Outcome filter. Toggles the filter the bar already exposes. --%>
+             Outcome filter. Toggles the filter the bar already exposes.
+             Right-aligned: it's a severity pivot, not a range — it must not
+             read as part of the "Quick range" group. --%>
         <button
           type="button"
           phx-click="toggle_problems"
           aria-pressed={to_string(problems_only?(@filter_params))}
           class={[
-            "rounded-md px-2 py-1 font-medium ring-1 transition",
+            "ml-auto rounded-md px-2 py-1 font-medium ring-1 transition",
             if(problems_only?(@filter_params),
               do: "bg-rose-500/15 text-rose-200 ring-rose-500/40",
               else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
@@ -386,17 +387,28 @@ defmodule EmisarWeb.AuditLive do
         card_accent={&audit_card_accent(&1.event_type)}
         class="[&_td]:align-top"
       >
+        <%!-- Forensic precision: eight sign-ins in one minute must still
+             order visibly on a SIEM-grade trail. --%>
         <:col :let={event} label="When" class="whitespace-nowrap">
-          <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
+          <.local_time
+            value={event.occurred_at}
+            mode={:forensic}
+            class="text-xs tabular-nums text-zinc-400"
+          />
         </:col>
         <:col :let={event} label="Event" class="w-full">
           <div class="flex items-start gap-2">
             <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1.5" />
             <div class="min-w-0">
-              <div class={["text-sm", event_title_class(event.event_type)]}>
-                {format_event_type(event.event_type)}
+              <%!-- Machine type inlines after the title (it restates it —
+                   "User signed in" / user.signed_in) instead of doubling
+                   every row's height ×hundreds; SIEM correlation keeps it. --%>
+              <div class="min-w-0">
+                <span class={["text-sm", event_title_class(event.event_type)]}>
+                  {format_event_type(event.event_type)}
+                </span>
+                <span class="ml-1.5 font-mono text-[10px] text-zinc-500">{event.event_type}</span>
               </div>
-              <div class="font-mono text-[10px] text-zinc-400">{event.event_type}</div>
               <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
                 <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
                 <span class="text-zinc-300">{elem(pair, 1)}</span>
@@ -415,7 +427,16 @@ defmodule EmisarWeb.AuditLive do
           />
         </:col>
         <:col :let={event} label="Subject" class="hidden lg:table-cell">
+          <%!-- Sign-ins and runner connects act on themselves — a muted
+               "self" beats restating the actor byte-for-byte beside it. --%>
+          <span
+            :if={event.subject_kind == event.actor_kind and event.subject_id == event.actor_id}
+            class="text-xs text-zinc-600"
+          >
+            self
+          </span>
           <.ref
+            :if={event.subject_kind != event.actor_kind or event.subject_id != event.actor_id}
             kind={event.subject_kind}
             id={event.subject_id}
             label={event.subject_label}
