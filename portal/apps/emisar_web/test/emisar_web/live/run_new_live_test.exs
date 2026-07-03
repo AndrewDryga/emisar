@@ -725,7 +725,8 @@ defmodule EmisarWeb.RunNewLiveTest do
     html = lv |> form("#dispatch_form", %{"reason" => "just checking"}) |> render_change()
 
     # Survives + re-renders the form (the reason value round-trips).
-    assert html =~ "Reason (required"
+    assert html =~ "Reason"
+    assert html =~ "just checking"
   end
 
   # (IL-14) — the schemaless arg form is backed

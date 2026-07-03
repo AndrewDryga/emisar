@@ -356,15 +356,20 @@ defmodule EmisarWeb.RunNewLive do
           >
             <.arg_input :for={arg <- @args_schema} arg={arg} form={@form} />
 
-            <.input
-              name="reason"
-              value={@reason}
-              type="textarea"
-              label="Reason (required — logged in audit)"
-              rows="2"
-              required={true}
-              placeholder="Why are you running this action?"
-            />
+            <%!-- Mark-optional-only: Reason is required, so it carries no marker;
+                 the audit-transparency note moves to a hint below the field. --%>
+            <div>
+              <.input
+                name="reason"
+                value={@reason}
+                type="textarea"
+                label="Reason"
+                rows="2"
+                required={true}
+                placeholder="Why are you running this action?"
+              />
+              <p class="mt-1 text-xs text-zinc-500">Logged to the audit trail.</p>
+            </div>
 
             <:actions>
               <%!-- The last glance binds action + host: the button names the
@@ -416,6 +421,11 @@ defmodule EmisarWeb.RunNewLive do
   }
   defp input_type_for(type), do: Map.get(@input_type_for, type, {"text", nil})
 
+  # Mark-optional-only: a required arg shows its bare name, an optional one is
+  # tagged "(optional)" so the operator can tell what they may leave blank.
+  defp arg_label(%{"required" => true, "name" => name}), do: name
+  defp arg_label(%{"name" => name}), do: "#{name} (optional)"
+
   attr :arg, :map, required: true
   attr :form, :any, required: true
 
@@ -430,7 +440,7 @@ defmodule EmisarWeb.RunNewLive do
       <.input
         field={@form[@arg["name"]]}
         type={@input_type}
-        label={@arg["name"]}
+        label={arg_label(@arg)}
         required={@arg["required"]}
         placeholder={@arg["description"]}
       />

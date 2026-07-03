@@ -391,10 +391,13 @@ defmodule EmisarWeb.ProfileLive do
             phx-change="validate_profile"
             phx-submit="save_profile"
           >
+            <%!-- No field label — the panel title already says "Display name"
+                 (one voice on a single-field panel); aria-label keeps the
+                 accessible name. --%>
             <.input
               field={@profile_form[:full_name]}
               type="text"
-              label="Display name"
+              aria-label="Display name"
               placeholder="Ada Lovelace"
             />
             <:actions>
@@ -416,10 +419,12 @@ defmodule EmisarWeb.ProfileLive do
                 phx-change="validate_email"
                 phx-submit="save_email"
               >
+                <%!-- No field label — the panel title "Email" carries it (one
+                     voice on a single-field panel); aria-label for a11y. --%>
                 <.input
                   field={@email_form[:email]}
                   type="email"
-                  label="Email address"
+                  aria-label="Email address"
                   autocomplete="email"
                   required
                 />
