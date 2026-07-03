@@ -61,7 +61,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # (no runners, no agent keys, a team of one) reads its three next steps
       # off the same three cards that later carry live fleet state.
       assert html =~ "Put your first host online"
-      assert html =~ "Connect Claude Code or Cursor"
+      assert html =~ "Connect any MCP client"
       assert html =~ "Give everyone their own sign-in"
 
       # No auto-minted install key — the dashboard doesn't mint
@@ -91,7 +91,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Recent runs"
       # The agents pillar still shows its CTA — no API key was minted in
       # this test.
-      assert html =~ "Connect Claude Code or Cursor"
+      assert html =~ "Connect any MCP client"
       # A runner with nothing dispatched yet: the runs panel's zero state
       # deep-links the first runner's catalog as the dispatch nudge.
       assert html =~ "dispatch an action from its catalog"
@@ -191,7 +191,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/agents"}']",
-               "Connect Claude Code or Cursor"
+               "Connect any MCP client"
              )
 
       assert has_element?(

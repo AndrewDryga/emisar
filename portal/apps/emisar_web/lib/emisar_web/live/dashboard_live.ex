@@ -432,7 +432,7 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.pillar_cta
       label="LLM agents"
-      title="Connect Claude Code or Cursor"
+      title="Connect any MCP client"
       cta="Mint a scoped key"
       navigate={~p"/app/#{@current_account}/settings/agents"}
     />
@@ -670,7 +670,7 @@ defmodule EmisarWeb.DashboardLive do
   # Each line carries a DISTINCT payload — the fix for "LLM agents / Connect an
   # LLM agent / Connect an agent" saying one thing three times:
   #   label    = the noun (what is this?)          — "LLM agents"
-  #   headline = the outcome (what do I get?)      — "Connect Claude Code or Cursor"
+  #   headline = the outcome (what do I get?)      — "Connect any MCP client"
   #   action   = verb + mechanism (what's the cost?) — "Mint a scoped key →"
   # The headline never repeats the label's noun; the action names the effort in
   # the destination page's own words, so the promise is fulfilled verbatim.

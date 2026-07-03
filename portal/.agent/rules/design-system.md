@@ -368,7 +368,7 @@ genuinely missing (then it's shared, not one-off).
   the zero-state pillars): "LLM agents / Connect an LLM agent / Connect an
   agent →" — noun, verb+noun, verb+noun, one thing said three times. The fix is
   a payload contract per line: label = the noun (*what is this?*), headline =
-  the outcome (*what do I get?* — "Connect Claude Code or Cursor", "Put your
+  the outcome (*what do I get?* — "Connect any MCP client", "Put your
   first host online"), action = verb + mechanism (*what does it cost?* — "One
   curl command →", "Mint a scoped key →", "Send an invite →"). The effort hint
   is the onboarding reassurance, and it must reuse the destination page's own
