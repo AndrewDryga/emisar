@@ -1,6 +1,6 @@
 ---
 name: creative-director
-description: Orchestrate an agency-grade redesign of the emisar marketing website: positioning, creative territories, art direction, content architecture, visual system, implementation loop, and review. Use when redesigning or substantially changing marketing pages, landing pages, positioning, launch pages, or any public site work that must feel distinctive rather than template-generated.
+description: "Orchestrate an agency-grade redesign of the emisar marketing website: positioning, creative territories, art direction, content architecture, visual system, implementation loop, and review. Use when redesigning or substantially changing marketing pages, landing pages, positioning, launch pages, or any public site work that must feel distinctive rather than template-generated."
 ---
 
 # Creative Director

@@ -1,6 +1,6 @@
 ---
 name: make-interfaces-feel-better
-description: Micro-detail polish for emisar's rendered UI — the small craft that makes an interface feel finished: concentric border radius, optical alignment, shadows vs borders, interruptible/staggered motion, tabular numbers, text-wrap, image outlines, scale-on-press, hit areas, transition specificity. Use when building or reviewing a HEEx/Tailwind component or marketing page, polishing details, or when something "feels off", "feels generic", or you're asked to "make it feel better". The macro art-direction layer is `creative-director`/`design-review`; this is the detail layer under both.
+description: "Micro-detail polish for emisar's rendered UI — the small craft that makes an interface feel finished: concentric border radius, optical alignment, shadows vs borders, interruptible/staggered motion, tabular numbers, text-wrap, image outlines, scale-on-press, hit areas, transition specificity. Use when building or reviewing a HEEx/Tailwind component or marketing page, polishing details, or when something \"feels off\", \"feels generic\", or you're asked to \"make it feel better\". The macro art-direction layer is `creative-director`/`design-review`; this is the detail layer under both."
 ---
 
 # Make interfaces feel better
