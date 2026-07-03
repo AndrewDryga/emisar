@@ -231,7 +231,16 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
      ring-white/[0.12]` with a brighter inset.
   - **Row hovers are a LIGHT wash** — `hover:bg-white/[0.04]` — never a zinc
     fill (dark-on-dark vanishes on the island fill; this exact regression made
-    tables read "inert").
+    tables read "inert"). **The wash is the WHOLE affordance: a hovered
+    row/group/tile never *also* tints its child content** — no
+    `group-hover:text-*` on the row's text, and NEVER `group-hover:text-brand-*`
+    on a neutral figure (emerald is the SEMANTIC accent — pass/healthy — so
+    greening a stat on a pointer-over fires a false success signal; the
+    dashboard pillar did this and it was wrong). Make a clickable container
+    behave exactly like a table row: wash only. The separate, fine convention
+    is a **bare text link** — the anchor text itself, no bg-wash — adopting the
+    link colour on its OWN `hover:` (`text-zinc-200 hover:text-brand-300`, a run
+    id / runbook title); that's the link affordance, not container-hover bleed.
   - **Drop shadows stay banned on the console** (unreadable on black; the inset
     top-light IS the elevation) — the one exception is a floating layer
     (popover/menu/account-switcher), which must be OPAQUE (`bg-zinc-900`) +
