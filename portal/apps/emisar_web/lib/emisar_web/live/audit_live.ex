@@ -400,6 +400,7 @@ defmodule EmisarWeb.AuditLive do
               <.local_time
                 value={event.occurred_at}
                 mode={:relative}
+                styled_tooltip
                 class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-500 xl:ml-0 xl:text-right"
               />
             </.link>

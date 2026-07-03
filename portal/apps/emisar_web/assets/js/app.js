@@ -116,10 +116,19 @@ const LocalTime = {
     // time with its zone name — and the ISO source for absolute/forensic,
     // so operators can always recover the exact value.
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    // True UTC from the ISO instant — formatForensic renders LOCAL wall-clock
+    // fields, which made the tooltip show the same time twice.
+    const utc = dt.toISOString().replace("T", " ").slice(0, 19) + " UTC"
     const tooltip = mode === "relative"
-      ? `${formatForensic(dt)} · ${formatAbsolute(dt, false)} (${zone})`
+      ? `${utc} · ${formatAbsolute(dt, false)} (${zone})`
       : iso
-    this.el.setAttribute("title", tooltip)
+    // Styled-tooltip elements render the stamp as an instant CSS bubble fed
+    // by data-tooltip; the native title would double it after a 1s dwell.
+    if (this.el.hasAttribute("data-styled-tooltip")) {
+      this.el.setAttribute("data-tooltip", tooltip)
+    } else {
+      this.el.setAttribute("title", tooltip)
+    }
   }
 }
 

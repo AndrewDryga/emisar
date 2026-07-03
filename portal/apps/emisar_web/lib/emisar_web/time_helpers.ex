@@ -154,6 +154,11 @@ defmodule EmisarWeb.TimeHelpers do
   attr :placeholder, :string, default: "—"
   attr :class, :string, default: nil
 
+  attr :styled_tooltip, :boolean,
+    default: false,
+    doc:
+      "Show the hook's full-stamp tooltip as an INSTANT styled bubble (CSS ::after fed by data-tooltip) instead of the native title — which needs a ~1s still hover and reads as \"no tooltip\". Opt in where the exact stamp matters (the audit trail's relative times)."
+
   def local_time(%{value: nil} = assigns) do
     ~H"<span class={@class}>{@placeholder}</span>"
   end
@@ -180,11 +185,23 @@ defmodule EmisarWeb.TimeHelpers do
       phx-update="ignore"
       datetime={@iso}
       data-format={Atom.to_string(@mode)}
-      class={["tabular-nums", @class]}
+      data-styled-tooltip={@styled_tooltip}
+      class={["tabular-nums", @styled_tooltip && styled_tooltip_classes(), @class]}
     >
       {@fallback}
     </time>
     """
+  end
+
+  # The instant tooltip bubble: a pure-CSS ::after fed by attr(data-tooltip)
+  # (the LocalTime hook writes it), so it appears on hover with NO dwell delay
+  # and matches the float recipe (opaque zinc-900 + ring + heavy shadow).
+  defp styled_tooltip_classes do
+    "relative cursor-help after:pointer-events-none after:absolute after:bottom-full " <>
+      "after:right-0 after:z-20 after:mb-1.5 after:whitespace-nowrap after:rounded-md " <>
+      "after:bg-zinc-900 after:px-2.5 after:py-1.5 after:text-[11px] after:text-zinc-200 " <>
+      "after:opacity-0 after:shadow-xl after:shadow-black/60 after:ring-1 after:ring-white/10 " <>
+      "after:transition-opacity after:content-[attr(data-tooltip)] hover:after:opacity-100"
   end
 
   defp to_datetime(%DateTime{} = datetime), do: datetime
