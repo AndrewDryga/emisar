@@ -2183,8 +2183,10 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.chip :if={not member.identity.scim_active}>Deactivated in IdP</.chip>
               <.chip>{provisioned_via_label(member.identity.provisioned_via)}</.chip>
             </div>
-            <div class="mt-0.5 truncate text-xs text-zinc-500">
-              <span class="font-mono">{synced_external_id(member.identity)}</span>
+            <%!-- No truncate: a long directory id (a UUID `sub`) wraps so its
+                 "· last synced" tail stays visible rather than clipping to "last s…". --%>
+            <div class="mt-0.5 text-xs text-zinc-500">
+              <span class="break-all font-mono">{synced_external_id(member.identity)}</span>
               <span :if={member.identity.last_seen_at}>
                 · last synced <.local_time value={member.identity.last_seen_at} mode={:relative} />
               </span>

@@ -87,7 +87,10 @@ defmodule EmisarWeb.AuditDetailLive do
         <%!-- The event's own id — its permalink identity. It used to hide in the
              payload panel's annotation; here it's a first-class, copyable field
              an incident responder can paste into a ticket. --%>
-        <.meta_field label="Event ID">
+        <%!-- wrap: the event id is a UUID you copy off a forensic page — it takes
+             the full row and wraps so it never clips (and its copy button never
+             shears off the cell edge). --%>
+        <.meta_field label="Event ID" wrap>
           <.copyable_id value={@event.id} class="text-xs text-zinc-300" />
         </.meta_field>
         <.meta_field label="IP address">

@@ -763,8 +763,11 @@ defmodule EmisarWeb.RunbookRunLive do
           <.steps :if={!@execution && @steps != []} variant={:plan}>
             <:step :for={{step, idx} <- Enum.with_index(@steps)}>
               <% target = step_target_label(step, @runners) %>
-              <div class="flex items-center gap-2">
-                <span class="truncate font-mono text-zinc-200">
+              <%!-- flex-wrap so the action id (the step's identity) reads in full
+                   on a phone — the risk pill + policy chips wrap below it rather
+                   than holding the line and clipping the id to "…upst…". --%>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="break-all font-mono text-zinc-200">
                   {step["action"] || step["action_id"] || "—"}
                 </span>
                 <.risk_pill
