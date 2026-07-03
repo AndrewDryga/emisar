@@ -8,7 +8,7 @@ defmodule EmisarWeb.AuditLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Audit}
-  alias EmisarWeb.{AuditSummary, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{AuditSummary, LiveTable}
 
   def mount(params, _session, socket) do
     # Audit log is the canonical "what just happened" surface — any
@@ -17,16 +17,11 @@ defmodule EmisarWeb.AuditLive do
     # enough to make the list fully live without per-domain plumbing.
     if connected?(socket) do
       Audit.subscribe_account_audit(socket.assigns.current_account.id)
-      # Live SIEM-token list too — minting/revoking on this page flows
-      # via api_key.* broadcasts.
-      ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
     {:ok,
      socket
      |> assign(:page_title, "Audit log")
-     |> assign(:export_secret, nil)
-     |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
      # The facet panel is collapsed by default — the trail leads the page. It
      # opens on MOUNT when the URL already carries an active facet (a shared
      # filtered link must never hide its controls); after that the flag is
@@ -35,8 +30,7 @@ defmodule EmisarWeb.AuditLive do
      |> assign(
        :filters_open?,
        LiveTable.has_active_filters?(params, Audit.Event.Query.filters())
-     )
-     |> assign_export_keys()}
+     )}
   end
 
   def handle_params(params, _uri, socket) do
@@ -46,60 +40,10 @@ defmodule EmisarWeb.AuditLive do
   def handle_info({:audit_event, _event}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
-  def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
-    do: {:noreply, assign_export_keys(socket)}
-
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("toggle_filters", _params, socket),
     do: {:noreply, update(socket, :filters_open?, &(!&1))}
-
-  def handle_event("revoke_export_key", %{"id" => id}, socket) do
-    Permissions.gated(
-      socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn s ->
-        case ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject) do
-          {:ok, key} ->
-            {:ok, _} = ApiKeys.revoke_api_key(key, s.assigns.current_subject)
-            {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
-
-          {:error, _} ->
-            {:noreply, s}
-        end
-      end
-    )
-  end
-
-  def handle_event("create_export_key", _params, socket) do
-    # Audit-export keys are admin-only AND distinct from MCP keys:
-    # they carry `audit:read` (not `actions:*`), expose `/api/audit`,
-    # and live on the audit page rather than the agents page so the
-    # SIEM-export use case isn't mixed in with the LLM-bridge one.
-    Permissions.gated(
-      socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn s ->
-        attrs = %{
-          name: "Audit export — #{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")}",
-          description: "Read-only token for shipping audit events to a SIEM.",
-          kind: :audit_export,
-          scopes: ["audit:read"]
-        }
-
-        case ApiKeys.create_key(attrs, s.assigns.current_subject) do
-          {:ok, raw, _key} ->
-            {:noreply, s |> assign(:export_secret, raw) |> assign_export_keys()}
-
-          {:error, _} ->
-            {:noreply, put_flash(s, :error, "Could not mint the export key.")}
-        end
-      end
-    )
-  end
-
-  def handle_event("dismiss_export_secret", _params, socket),
-    do: {:noreply, assign(socket, :export_secret, nil)}
 
   def handle_event("filter", params, socket) do
     # The filter form doesn't carry actor_id when the "by actor" picker is
@@ -157,16 +101,6 @@ defmodule EmisarWeb.AuditLive do
 
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
-  end
-
-  defp assign_export_keys(socket) do
-    case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
-           page_size: 50,
-           preload: [:created_by]
-         ) do
-      {:ok, keys, _meta} -> assign(socket, :export_keys, keys)
-      _ -> assign(socket, :export_keys, [])
-    end
   end
 
   # Quick relative-range presets for the audit date filter — re-adds the buttons
@@ -331,6 +265,15 @@ defmodule EmisarWeb.AuditLive do
         The append-only record of every action, approval, and access change in this account —
         exportable to your SIEM for independent, long-term retention.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+        <%!-- Streaming CONFIG is an admin task, not part of reading the trail —
+             it lives on its own page instead of stranded below the rows. --%>
+        <.link
+          :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
+          navigate={~p"/app/#{@current_account}/audit/export"}
+          class="group inline-flex items-center gap-1 whitespace-nowrap font-medium text-brand-400 hover:text-brand-300"
+        >
+          Stream to SIEM <.cta_arrow class="h-3 w-3" />
+        </.link>
       </.page_intro>
 
       <%!-- Pivot chips — "what did this ACTOR do" (a row click or a person/agent's
@@ -505,102 +448,6 @@ defmodule EmisarWeb.AuditLive do
           <% end %>
         </:empty>
       </LiveTable.live_table>
-
-      <%!-- SIEM-export panel rendered AFTER the table so the audit log
-           itself leads the page. Admin-only `audit:read` tokens live
-           here, not on the LLM agents page (which is for MCP connections).
-           Lists existing tokens with revoke + the mint affordance. --%>
-      <.panel
-        :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
-        id="siem-export"
-        variant={:split}
-        title="SIEM export"
-        class="mt-8"
-      >
-        <:subtitle>
-          Stream audit events as NDJSON to your SIEM. Mint an
-          <code class="font-mono text-zinc-300">audit:read</code>
-          token below, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
-        </:subtitle>
-        <:actions>
-          <.button
-            :if={is_nil(@export_secret)}
-            variant={:secondary}
-            size={:md}
-            class="shrink-0"
-            type="button"
-            icon="hero-key"
-            phx-click="create_export_key"
-          >
-            Mint export token
-          </.button>
-        </:actions>
-
-        <%!-- One-shot reveal. The raw secret only ever exists in the
-             socket assigns — refreshing the page hides it for good,
-             same one-time-use pattern as the agents page snippets. --%>
-        <%!-- The minted token, shown once via the shared <.secret_reveal>
-             — the single reviewed shown-once surface (same as agents +
-             install), not a third hand-rolled copy. Lives only in socket
-             assigns; a refresh hides it for good. --%>
-        <.secret_reveal
-          :if={@export_secret}
-          title="Copy this token now — we won't show it again"
-          secret={@export_secret}
-          on_dismiss="dismiss_export_secret"
-        >
-          A read-only <span class="font-mono">audit:read</span>
-          token for shipping audit
-          events to a SIEM.
-          <:install_command label="Use with">
-            curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
-          </:install_command>
-        </.secret_reveal>
-
-        <%!-- Existing export tokens — listed with revoke. The agents
-             page filters these out so SIEM-export tokens live here
-             exclusively. --%>
-        <div :if={@export_keys != []} class="border-t border-zinc-900">
-          <ul class="divide-y divide-zinc-800/70">
-            <.list_row :for={key <- @export_keys} icon="hero-document-text">
-              <:title>
-                <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
-              </:title>
-              <:chips>
-                <.chip tone={:neutral} mono>audit:read</.chip>
-                <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
-              </:chips>
-              <:meta>
-                <.meta_line class="text-[11px]">
-                  <:seg mono>{key.key_prefix}…</:seg>
-                  <:seg>
-                    last used{" "}<.local_time
-                      value={key.last_used_at}
-                      mode={:relative}
-                      placeholder="never"
-                    />
-                  </:seg>
-                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
-                </.meta_line>
-              </:meta>
-              <:actions>
-                <.button
-                  :if={is_nil(key.revoked_at)}
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  class="shrink-0"
-                  phx-click="revoke_export_key"
-                  phx-value-id={key.id}
-                  data-confirm="Revoke this export token? Any active SIEM collector using it will start receiving 401s."
-                >
-                  Revoke
-                </.button>
-              </:actions>
-            </.list_row>
-          </ul>
-        </div>
-      </.panel>
     </.dashboard_shell>
     """
   end

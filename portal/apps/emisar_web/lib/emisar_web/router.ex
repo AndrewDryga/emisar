@@ -248,6 +248,8 @@ defmodule EmisarWeb.Router do
         live "/packs", PacksLive, :index
 
         live "/audit", AuditLive, :index
+        # Before /audit/:id so "export" isn't captured as an event id.
+        live "/audit/export", AuditExportLive, :index
         live "/audit/:id", AuditDetailLive, :show
 
         live "/settings/runners/auth-keys", AuthKeysLive, :index
