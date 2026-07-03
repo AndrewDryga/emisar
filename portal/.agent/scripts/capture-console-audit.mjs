@@ -27,7 +27,14 @@ const OUT = process.env.OUT_DIR
   : resolve(import.meta.dirname, "../design/screenshots");
 mkdirSync(OUT, { recursive: true });
 
-const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
+// DESKTOP_WIDTH overrides the desktop viewport — useful for checking whether a
+// page's content width caps correctly on a wide monitor (a `:table` 7xl cap only
+// shows above ~1536px; below it the content already fits the column).
+const DESKTOP = {
+  width: Number(process.env.DESKTOP_WIDTH) || 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+};
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 1 };
 
 // Signed-out pages (shot before login).
