@@ -920,7 +920,10 @@ defmodule EmisarWeb.TeamLive do
                   } />
 
                   <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
+                    <%!-- flex-wrap: the member's name is their identity — on a
+                         phone the status chips wrap to the next line instead of
+                         crushing the name to "Theo A…". --%>
+                    <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">
                         {(membership.user && (membership.user.full_name || membership.user.email)) ||
                           "(unknown)"}

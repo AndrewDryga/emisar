@@ -234,7 +234,11 @@ defmodule EmisarWeb.RunnersLive do
                   class="flex items-center gap-4 transition hover:opacity-90"
                 >
                   <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
+                    <%!-- flex-wrap: the runner's name is its identity (often name
+                         == hostname, so it's the only copy of it) — on a phone the
+                         version + signed-only chip wrap below instead of crushing
+                         it to "signed…". --%>
+                    <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">{runner.name}</span>
                       <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
                         v{runner.runner_version}
