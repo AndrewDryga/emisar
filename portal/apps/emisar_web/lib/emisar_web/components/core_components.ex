@@ -381,7 +381,7 @@ defmodule EmisarWeb.CoreComponents do
         {render_slot(@trigger)}
       </summary>
       <div class={[
-        "absolute rounded-lg border border-zinc-800 bg-zinc-950",
+        "absolute rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
         dropdown_align(@align),
         @panel_class
       ]}>
@@ -1266,7 +1266,7 @@ defmodule EmisarWeb.CoreComponents do
         </div>
 
         <div class="flex justify-center">
-          <footer class="mt-10 w-full max-w-md border-t border-zinc-900 pt-6">
+          <footer class="mt-10 w-full max-w-md border-t border-white/[0.06] pt-6">
             <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
               <.link href={~p"/trust"} class="transition-colors hover:text-zinc-300">Trust</.link>
               <.link href={~p"/privacy"} class="transition-colors hover:text-zinc-300">Privacy</.link>
@@ -1603,7 +1603,7 @@ defmodule EmisarWeb.CoreComponents do
         <% end %>
       </ul>
 
-      <div class="border-t border-zinc-900 p-1">
+      <div class="border-t border-white/[0.06] p-1">
         <.link
           navigate={~p"/onboarding"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
@@ -1820,7 +1820,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_user(assigns) do
     ~H"""
-    <div class="border-t border-zinc-900 p-4 text-sm">
+    <div class="border-t border-white/[0.06] p-4 text-sm">
       <div class="flex items-center gap-3">
         <.link
           navigate={~p"/app/#{@current_account}/settings/profile"}
@@ -2460,10 +2460,10 @@ defmodule EmisarWeb.CoreComponents do
         <span class="flex min-w-0 flex-wrap items-center gap-2">{render_slot(@summary)}</span>
         <.icon
           name="hero-chevron-down"
-          class="h-4 w-4 shrink-0 text-zinc-500 transition group-open/disc:rotate-180"
+          class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open/disc:rotate-180"
         />
       </summary>
-      <div class={["border-t border-zinc-900", disclosure_body_class(@size)]}>
+      <div class={["border-t border-white/[0.06]", disclosure_body_class(@size)]}>
         {render_slot(@inner_block)}
       </div>
     </details>
@@ -2914,7 +2914,10 @@ defmodule EmisarWeb.CoreComponents do
       </header>
       <pre
         id={@id}
-        class={["overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300", @max_h]}
+        class={[
+          "overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
+          @max_h
+        ]}
       ><span :if={@prompt} class="select-none text-zinc-600">$ </span>{@code}</pre>
     </.card>
     """
@@ -2967,7 +2970,7 @@ defmodule EmisarWeb.CoreComponents do
             />
           </div>
         </summary>
-        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+        <div class="border-t border-white/[0.06] px-5 pb-5 pt-4">
           {render_slot(@inner_block)}
         </div>
       </details>
@@ -5099,7 +5102,7 @@ defmodule EmisarWeb.CoreComponents do
       |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
 
     ~H"""
-    <footer class="border-t border-zinc-900 bg-zinc-950">
+    <footer class="border-t border-white/[0.06] bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
         <%!-- Product-updates capture — the considered buyer's low-commitment
              path. A server-rendered POST: marketing has no LiveView, so the
@@ -5338,7 +5341,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
 
-        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-900 pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+        <div class="mt-12 flex flex-col gap-2 border-t border-white/[0.06] pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {Date.utc_today().year} <a
               href="https://dryga.com"

@@ -790,7 +790,7 @@ defmodule EmisarWeb.TeamLive do
              (which already carries the consequences) — the page shows posture,
              not persuasion. --%>
         <.panel title="Security" padding="">
-          <ul class="divide-y divide-zinc-900">
+          <ul class="divide-y divide-white/[0.06]">
             <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>

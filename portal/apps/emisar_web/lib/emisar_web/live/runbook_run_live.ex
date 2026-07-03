@@ -689,7 +689,7 @@ defmodule EmisarWeb.RunbookRunLive do
             :if={@execution}
             id="execution-runs"
             phx-update="stream"
-            class="divide-y divide-zinc-900"
+            class="divide-y divide-white/[0.06]"
           >
             <li
               :for={{dom_id, row} <- @streams.execution_runs}

@@ -26,7 +26,8 @@ defmodule EmisarWeb.Components.DisclosureTest do
       assert html =~ "the uri"
       assert html =~ "hero-chevron-down"
       assert html =~ "group-open/disc:rotate-180"
-      assert html =~ "border-t border-zinc-900"
+      # The body divider is line-as-light inside the lit island surface.
+      assert html =~ "border-t border-white/[0.06]"
       refute html =~ ~s( open)
     end
 

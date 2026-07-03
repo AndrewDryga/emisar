@@ -326,8 +326,13 @@ defmodule EmisarWeb.RunnersLive do
                     <%!-- Zero is the default, not a signal — muted em-dash;
                          "N active runs" only when something is running. --%>
                     <div class="hidden w-20 text-xs tabular-nums text-zinc-400 sm:block">
-                      <span :if={runner.action_load > 0}>{runner.action_load} active runs</span>
-                      <span :if={runner.action_load == 0} class="text-zinc-600">—</span>
+                      <%!-- Blank at zero, not an em-dash: with every runner idle this column
+                           rendered a stack of dashes that read as a BUG, not data (the
+                           muted-dash rule is for an occasionally-empty cell, not a
+                           usually-empty column). The w-20 slot keeps pills aligned. --%>
+                      <span :if={runner.action_load > 0} class="tabular-nums">
+                        {runner.action_load} active runs
+                      </span>
                     </div>
                     <.status_badge status={state} class="shrink-0" />
                   </div>

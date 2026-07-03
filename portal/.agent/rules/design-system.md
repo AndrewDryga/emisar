@@ -211,10 +211,33 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
   `rounded-lg`. A child's radius is never larger than its parent's.
 - **Section rhythm (marketing):** `py-24 sm:py-32` between sections; content in
   `mx-auto max-w-7xl px-6 lg:px-8`; prose columns `max-w-2xl/3xl`.
-- **Elevation = light, not just a box.** Default panels are a hairline border +
-  faint fill (`border border-zinc-900 bg-zinc-950/60`). Signature marketing
-  surfaces use `.surface-glass` (top sheen + inner highlight + deep soft
-  shadow). The console stays on the hairline-border tier — no glass by default.
+- **Elevation = light, not just a box.** Marketing's signature surfaces use
+  `.surface-glass` (top sheen + inner highlight + deep soft shadow).
+- **Console elevation — "ISLANDS ON BLACK" (shipped 2026-07-03; the P1–P5
+  typography pass alone read as "the same" — this is what made the redesign
+  VISIBLE).** Three planes, no gray hairline borders on surfaces:
+  1. **GROUND** — the work canvas is TRUE BLACK (`<main>` `bg-black` + the faint
+     brand top wash); the zinc-950 sidebar/topbar read as separate chrome.
+  2. **ISLAND** — every card/panel/table/meta-strip/wizard/pillar lifts onto
+     `bg-zinc-900/60 ring-1 ring-white/[0.07]
+     shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]` (edge-as-LIGHT + a 1px
+     inset top highlight). ONE recipe on `<.card>`; LiveTable wrappers and the
+     one-off surfaces follow it. In-island hairlines/dividers are
+     `border-white/[0.06]` / `divide-white/[0.06]`; recessed in-island bands
+     (group headers, output-terminal headers) sit on `bg-black/30`.
+  3. **RECESSED / RAISED** — code + terminals recess into `bg-black/30..80`
+     insets (+ `ring-white/[0.06]`) INSIDE the lit islands; the ONE anchor per
+     page (the approval Command) raises to `bg-zinc-900/[0.85]
+     ring-white/[0.12]` with a brighter inset.
+  - **Row hovers are a LIGHT wash** — `hover:bg-white/[0.04]` — never a zinc
+    fill (dark-on-dark vanishes on the island fill; this exact regression made
+    tables read "inert").
+  - **Drop shadows stay banned on the console** (unreadable on black; the inset
+    top-light IS the elevation) — the one exception is a floating layer
+    (popover/menu/account-switcher), which must be OPAQUE (`bg-zinc-900`) +
+    `ring-white/10` + `shadow-xl shadow-black/60` so content never ghosts
+    through. Interactive control chrome (inputs, icon buttons, dashed add-rows)
+    deliberately KEEPS gray borders — border = control, ring-light = surface.
 - **Icons:** Heroicons via `<.icon name="hero-…" />` (outline 24 default; `-solid`,
   `-mini` 20, `-micro` 16). Sizes `h-4 w-4` (inline), `h-5`, `h-6` (feature).
 

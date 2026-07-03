@@ -326,7 +326,7 @@ defmodule EmisarWeb.DashboardLive do
           <% end %>
         </.empty_state>
       <% else %>
-        <ul class="divide-y divide-zinc-900">
+        <ul class="divide-y divide-white/[0.06]">
           <li :for={run <- @recent_runs}>
             <.run_row run={run} show_runner show_source current_account={@current_account} />
           </li>

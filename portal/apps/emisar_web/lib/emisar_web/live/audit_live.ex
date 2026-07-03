@@ -412,7 +412,7 @@ defmodule EmisarWeb.AuditLive do
                 <span class={["text-sm", event_title_class(event.event_type)]}>
                   {format_event_type(event.event_type)}
                 </span>
-                <span class="ml-1.5 font-mono text-[10px] text-zinc-500">{event.event_type}</span>
+                <span class="ml-1.5 font-mono text-[10px] text-zinc-400">{event.event_type}</span>
               </div>
               <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
                 <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
@@ -548,7 +548,7 @@ defmodule EmisarWeb.AuditLive do
              page filters these out so SIEM-export tokens live here
              exclusively. --%>
         <div :if={@export_keys != []} class="border-t border-zinc-900">
-          <ul class="divide-y divide-zinc-900">
+          <ul class="divide-y divide-white/[0.06]">
             <.list_row :for={key <- @export_keys} icon="hero-document-text">
               <:title>
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>

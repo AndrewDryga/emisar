@@ -646,7 +646,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </p>
             <pre
               :if={@executed_command}
-              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-sm leading-relaxed text-zinc-50"
+              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
             ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
             <pre
               :if={is_nil(@executed_command) && @run && @run.args != %{}}
@@ -714,7 +714,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             title="Decisions"
           >
             <:annotation>{@approved_count} of {@request.min_approvals} approvals</:annotation>
-            <ul class="divide-y divide-zinc-900">
+            <ul class="divide-y divide-white/[0.06]">
               <li :for={decision <- @decisions} class="flex items-center gap-3 px-4 py-2 text-sm">
                 <.icon
                   name={decision_icon(decision.decision)}

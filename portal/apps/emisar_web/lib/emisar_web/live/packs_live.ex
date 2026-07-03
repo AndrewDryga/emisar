@@ -471,7 +471,7 @@ defmodule EmisarWeb.PacksLive do
             </div>
           </header>
 
-          <ul class="divide-y divide-zinc-900">
+          <ul class="divide-y divide-white/[0.06]">
             <li :for={v <- pack.versions} class="flex flex-col gap-3 px-5 py-3">
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <div class="flex min-w-0 items-center gap-3">

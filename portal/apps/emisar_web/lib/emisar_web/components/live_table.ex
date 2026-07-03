@@ -200,13 +200,13 @@ defmodule EmisarWeb.LiveTable do
       <%= if Enum.empty?(@rows) do %>
         <div
           id={"#{@id}-empty"}
-          class="rounded-lg bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 text-center text-sm text-zinc-400"
+          class="rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 text-center text-sm text-zinc-400"
         >
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
         <div class={[
-          "overflow-x-auto rounded-lg border border-zinc-800",
+          "overflow-x-auto rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
           @responsive && "hidden sm:block"
         ]}>
           <table id={@id} class={["w-full text-sm text-left", @class]}>
@@ -220,7 +220,7 @@ defmodule EmisarWeb.LiveTable do
                 </th>
               </tr>
             </thead>
-            <tbody id={"#{@id}-rows"} class="divide-y divide-zinc-800/80 text-zinc-200">
+            <tbody id={"#{@id}-rows"} class="divide-y divide-white/[0.06] text-zinc-200">
               <tr
                 :for={row <- @rows}
                 id={@row_id && @row_id.(row)}
@@ -245,7 +245,7 @@ defmodule EmisarWeb.LiveTable do
         <ul
           :if={@responsive}
           id={"#{@id}-cards"}
-          class="divide-y divide-zinc-800 overflow-hidden rounded-lg border border-zinc-800 sm:hidden"
+          class="divide-y divide-white/[0.06] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
         >
           <li
             :for={row <- @rows}
@@ -584,21 +584,21 @@ defmodule EmisarWeb.LiveTable do
     >
       <div>
         <%= if @metadata.count != nil do %>
-          {@metadata.count} total
+          <span class="tabular-nums">{@metadata.count}</span> total
         <% end %>
       </div>
       <div class="flex gap-2">
         <.link
           :if={@metadata.previous_page_cursor}
           patch={page_link(@path, @filter_params, @prefix, before: @metadata.previous_page_cursor)}
-          class="rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900"
+          class="rounded-lg border border-zinc-800 px-3 py-1.5 hover:bg-white/[0.04]"
         >
           ← Prev
         </.link>
         <.link
           :if={@metadata.next_page_cursor}
           patch={page_link(@path, @filter_params, @prefix, after: @metadata.next_page_cursor)}
-          class="rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900"
+          class="rounded-lg border border-zinc-800 px-3 py-1.5 hover:bg-white/[0.04]"
         >
           Next →
         </.link>
