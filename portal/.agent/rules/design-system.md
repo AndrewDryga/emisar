@@ -338,6 +338,19 @@ genuinely missing (then it's shared, not one-off).
 - **States are part of the component, not a later pass:** every list/panel/form
   ships empty, loading, error, and (where relevant) offline states. The
   `/ux-designer` hat will ask for them.
+- **Verify EVERY surface at three data volumes — new / partial / power — with
+  RENDERED pixels, not just the happy one.** A design that only looks right full
+  of data is half-built. For each page screenshot: a **new account** (zero of
+  everything — the empty/onboarding state), a **partially-set-up** account
+  (some entities, some zero — the state that most often breaks), and a **power**
+  account (lots of rows — density, wrapping, truncation). The **mixed/partial**
+  state is where designs fail hardest: a row of peers where some are populated
+  and some empty must stay ONE coherent shape — never a short naked item
+  stranded beside a tall card (the dashboard pillars shipped this bug; the fix
+  was an onboarding-mode card row that graduates to naked stats once full). And
+  a table's **empty state is mandatory**, not optional — check it every time.
+  The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
+  partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
 - **Forms:** `to_form/2` + CoreComponents inputs; show changeset errors inline
   (rose); the context exposes `change_*` builders, the LiveView owns
   `to_form`/`phx-change`/validate.

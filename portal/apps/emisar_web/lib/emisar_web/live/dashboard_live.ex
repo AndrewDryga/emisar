@@ -198,6 +198,13 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_view_agents?, :boolean, default: true
 
   defp live_dashboard(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :onboarding?,
+        pillars_onboarding?(assigns.runners_total, assigns.agents, assigns.team_mfa)
+      )
+
     ~H"""
     <.subscription_banner status={@billing.subscription_status}>
       <:cta :if={@can_manage_billing}>
@@ -233,10 +240,20 @@ defmodule EmisarWeb.DashboardLive do
         :if={@can_view_runners?}
         connected={@runners_connected}
         total={@runners_total}
+        onboarding?={@onboarding?}
         current_account={@current_account}
       />
-      <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
-      <.team_pillar team_mfa={@team_mfa} current_account={@current_account} />
+      <.agents_pillar
+        :if={@can_view_agents?}
+        agents={@agents}
+        onboarding?={@onboarding?}
+        current_account={@current_account}
+      />
+      <.team_pillar
+        team_mfa={@team_mfa}
+        onboarding?={@onboarding?}
+        current_account={@current_account}
+      />
     </div>
 
     <%!-- The escape hatch, only when it's live: a run held on a human decision
@@ -371,8 +388,22 @@ defmodule EmisarWeb.DashboardLive do
   # stale. Posture tone lives on the TILE; status text speaks up only for
   # amber/rose (healthy stays quiet — silence is the confirmation).
 
+  # Onboarding mode: while ANY pillar is still at zero, the band is a setup
+  # checklist and every pillar renders as an equal-height CARD (brand CTA for a
+  # step still to do, neutral stat-card for one already done) so the row reads
+  # as one coherent grid — never a short naked stat stranded beside a tall CTA.
+  # Once all three are live, the cards give way to the calm naked stats: the
+  # operating dashboard.
+  defp pillars_onboarding?(runners_total, agents, team_mfa) do
+    runners_total == 0 or agents.total == 0 or team_solo?(team_mfa)
+  end
+
+  defp team_solo?(%{total: total}), do: total <= 1
+  defp team_solo?(_team_mfa), do: false
+
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
+  attr :onboarding?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp runners_pillar(%{total: 0} = assigns) do
@@ -395,6 +426,9 @@ defmodule EmisarWeb.DashboardLive do
       tone={runners_tone(@connected, @total)}
       status_tone={runners_status_tone(@connected, @total)}
       navigate={~p"/app/#{@current_account}/runners"}
+      variant={pillar_variant(@onboarding?)}
+      icon="hero-cpu-chip"
+      action="View runners"
     >
       <:value>
         {@connected}<span class="text-2xl text-zinc-500"> / {@total} online</span>
@@ -426,6 +460,7 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_status_tone(_connected, _total), do: :neutral
 
   attr :agents, :map, required: true
+  attr :onboarding?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp agents_pillar(%{agents: %{total: 0}} = assigns) do
@@ -447,6 +482,9 @@ defmodule EmisarWeb.DashboardLive do
       label="LLM agents"
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/settings/agents"}
+      variant={pillar_variant(@onboarding?)}
+      icon="hero-sparkles"
+      action="Manage agents"
     >
       <:value>
         {@agents.total}<span class="text-2xl text-zinc-500">
@@ -549,6 +587,7 @@ defmodule EmisarWeb.DashboardLive do
   # the team IS this pillar's zero state.
 
   attr :team_mfa, :any, required: true
+  attr :onboarding?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp team_pillar(%{team_mfa: :unavailable} = assigns) do
@@ -557,6 +596,9 @@ defmodule EmisarWeb.DashboardLive do
       label="Team"
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
+      variant={pillar_variant(@onboarding?)}
+      icon="hero-user-group"
+      action="Manage team"
     >
       <:value>—</:value>
       <:status>Couldn't load team data</:status>
@@ -593,6 +635,9 @@ defmodule EmisarWeb.DashboardLive do
       tone={team_tile_tone(@posture)}
       status_tone={team_status_tone(@posture)}
       navigate={~p"/app/#{@current_account}/settings/team"}
+      variant={pillar_variant(@onboarding?)}
+      icon="hero-user-group"
+      action="Manage team"
     >
       <:value>
         {@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span>
@@ -619,12 +664,62 @@ defmodule EmisarWeb.DashboardLive do
 
   # -- The pillar card shape --------------------------------------------
 
+  # A catch-all (not a `false` clause) keeps this total: the template type
+  # checker can't carry the :boolean attr type in, so a two-boolean-clause fn
+  # would warn "may not match" (same quirk the int pillars note above). Lives
+  # OUTSIDE the attr/slot block below — a def there would steal the pillar
+  # component's attrs (they attach to the next function definition).
+  defp pillar_variant(true), do: :card
+  defp pillar_variant(_onboarding?), do: :naked
+
   attr :label, :string, required: true
   attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
+  attr :variant, :atom, default: :naked, values: [:naked, :card]
+  attr :icon, :string, default: nil
+  attr :action, :string, default: nil
   slot :value, required: true
   slot :status, required: true
+
+  # ONBOARDING variant: the same neutral island card as a CTA sibling, so a done
+  # pillar and a to-do CTA line up at equal height in one coherent row (a short
+  # naked stat stranded beside a tall CTA is the break this fixes). NEUTRAL, not
+  # brand — emerald stays the to-do CTAs' accent, so the eye reads "these steps
+  # remain" at a glance; a done pillar is calm. The bottom action + mt-auto is
+  # the height-filler that squares the row.
+  defp pillar(%{variant: :card} = assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class="group flex flex-col rounded-xl bg-zinc-900/60 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] transition-colors hover:bg-zinc-900/80 hover:ring-white/10"
+    >
+      <div class="flex items-center gap-2.5">
+        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/5 text-zinc-300 ring-1 ring-white/10">
+          <.icon name={@icon} class="h-4 w-4" />
+        </span>
+        <span class="text-sm font-medium text-zinc-300">{@label}</span>
+      </div>
+      <div class="mt-4 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums">
+        {render_slot(@value)}
+      </div>
+      <div class={[
+        "mt-2.5 flex items-center gap-1.5 text-[13px]",
+        pillar_status_class(@status_tone)
+      ]}>
+        <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
+        {render_slot(@status)}
+      </div>
+      <div class="mt-auto flex items-center gap-1 pt-4 text-xs font-medium text-zinc-400 transition-colors group-hover:text-zinc-200">
+        {@action}
+        <.icon
+          name="hero-arrow-right"
+          class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+        />
+      </div>
+    </.link>
+    """
+  end
 
   defp pillar(assigns) do
     ~H"""
