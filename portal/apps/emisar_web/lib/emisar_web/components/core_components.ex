@@ -1505,7 +1505,7 @@ defmodule EmisarWeb.CoreComponents do
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
-          <h1 class="min-w-0 flex-1 break-words font-display text-xl font-bold leading-tight tracking-[-0.015em] sm:text-2xl">
+          <h1 class="min-w-0 flex-1 break-words font-display text-2xl font-bold leading-tight tracking-[-0.02em]">
             {render_slot(@title)}
           </h1>
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
@@ -2368,7 +2368,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp panel_title_class(:default),
-    do: "font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100"
+    do: "font-display text-base font-semibold tracking-[-0.012em] text-zinc-100"
 
   defp panel_title_class(:eyebrow),
     do: "text-xs font-semibold uppercase tracking-wider text-zinc-400"
@@ -2902,7 +2902,7 @@ defmodule EmisarWeb.CoreComponents do
              once open so it meets the body cleanly), and the chevron brightens +
              flips for state. The summary slot rides just left of the chevron. --%>
         <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-5 py-4 transition-colors hover:bg-zinc-800/40 group-open/sect:rounded-b-none [&::-webkit-details-marker]:hidden">
-          <h2 class="min-w-0 flex-1 truncate font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+          <h2 class="min-w-0 flex-1 truncate font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             {@title}
           </h2>
           <div class="flex shrink-0 items-center gap-2.5">
@@ -3075,10 +3075,10 @@ defmodule EmisarWeb.CoreComponents do
 
   def section_header(assigns) do
     ~H"""
-    <header class={["mb-3 flex flex-wrap items-end justify-between gap-3", @class]}>
+    <header class={["mb-4 flex flex-wrap items-end justify-between gap-3", @class]}>
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
+          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             {@title}
           </h2>
           <.count_badge count={@count} tone={@count_tone} />

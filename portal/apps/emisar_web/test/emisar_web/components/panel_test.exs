@@ -62,7 +62,7 @@ defmodule EmisarWeb.Components.PanelTest do
         """)
 
       assert html =~
-               ~s(class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100")
+               ~s(class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100")
 
       assert html =~ "Security"
       assert html =~ "When enforced"
