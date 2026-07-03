@@ -632,24 +632,30 @@ defmodule EmisarWeb.DashboardLive do
          is the design: label row, a big display figure, a one-line posture.
          Containment is reserved for the CTA state (an invitation earns a box);
          a healthy stat doesn't. --%>
-    <div class="flex flex-col">
-      <%!-- No create link up here — the band is pure posture (label · figure ·
-           status). The figure links to the pillar's page, which owns the real
-           Add/Connect/Invite action; a third shortcut was noise. --%>
-      <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
-      <.link navigate={@navigate} class="group mt-3 block">
-        <div class="font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
-          {render_slot(@value)}
-        </div>
-        <div class={[
-          "mt-2.5 flex items-center gap-1.5 text-[13px]",
-          pillar_status_class(@status_tone)
-        ]}>
-          <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
-          {render_slot(@status)}
-        </div>
-      </.link>
-    </div>
+    <%!-- The WHOLE group is one link with the house light-wash hover (the
+         same affordance as every row) — the digit-tint alone was too subtle
+         on black, and the label wasn't even clickable. -m/p keeps the resting
+         layout identical while the wash breathes past the text. No create
+         link up here — the band is pure posture; the pillar's page owns the
+         real Add/Connect/Invite action. --%>
+    <.link
+      navigate={@navigate}
+      class="group -m-3 flex flex-col rounded-lg p-3 transition-colors hover:bg-white/[0.04]"
+    >
+      <span class="truncate text-sm font-medium text-zinc-400 transition-colors group-hover:text-zinc-300">
+        {@label}
+      </span>
+      <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
+        {render_slot(@value)}
+      </div>
+      <div class={[
+        "mt-2.5 flex items-center gap-1.5 text-[13px]",
+        pillar_status_class(@status_tone)
+      ]}>
+        <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
+        {render_slot(@status)}
+      </div>
+    </.link>
     """
   end
 
