@@ -52,16 +52,17 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Verify your email"
     end
 
-    test "fresh accounts see the onboarding wizard with both checklist cards",
+    test "a fresh account's three pillars render as the onboarding CTAs",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
-      # Two onboarding cards — runner + LLM — sit at the top of the
-      # dashboard as a wizard checklist. The runner card links to
-      # /app/runners/install where the actual install command lives.
-      assert html =~ "Connect a runner"
-      assert html =~ "Connect an agent"
+      # The onboarding checklist IS the pillars' zero states — a fresh account
+      # (no runners, no agent keys, a team of one) reads its three next steps
+      # off the same three cards that later carry live fleet state.
+      assert html =~ "Install your first runner"
+      assert html =~ "Connect an LLM agent"
+      assert html =~ "Invite your team"
 
       # No auto-minted install key — the dashboard doesn't mint
       # anymore. The runners/install page mints when the operator
@@ -83,15 +84,17 @@ defmodule EmisarWeb.DashboardLiveTest do
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Runners online"
+      # The runners pillar graduates from the install CTA to live state
+      # (one registered runner, not connected in a test).
+      assert html =~ "/ 1 online"
+      refute html =~ "Install your first runner"
       assert html =~ "Recent runs"
-      # The runner-onboarding card disappears once a runner exists.
-      refute html =~ "Connect a runner"
-      # LLM onboarding card still shows — no API key was minted in
+      # The agents pillar still shows its CTA — no API key was minted in
       # this test.
-      assert html =~ "Connect an agent"
-      # A runner with nothing dispatched yet gets the dispatch nudge.
-      assert html =~ "Dispatch your first action"
+      assert html =~ "Connect an LLM agent"
+      # A runner with nothing dispatched yet: the runs panel's zero state
+      # deep-links the first runner's catalog as the dispatch nudge.
+      assert html =~ "dispatch an action from its catalog"
     end
 
     test "the dispatch nudge appears with a runner-but-no-runs and clears after the first run",
@@ -100,7 +103,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Dispatch your first action"
+      assert html =~ "dispatch an action from its catalog"
       # Deep-linked to the runner's own catalog, not the runners list.
       assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
 
@@ -115,7 +118,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         })
 
       {:ok, _lv2, html2} = live(conn, ~p"/app/#{account}")
-      refute html2 =~ "Dispatch your first action"
+      refute html2 =~ "dispatch an action from its catalog"
     end
 
     # every sub-read on the dashboard flows through
@@ -164,42 +167,46 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     # the dashboard is a read-only triage screen: its
-    # quick-action cards (onboarding checklist + the three stat tiles) are plain
-    # `<.link navigate>`s to real routes, not server-driven actions. A fresh
-    # account renders the two onboarding cards linking to install + agents; the
-    # LV defines no mutating `handle_event`, so there's nothing to abuse.
-    test "quick-action cards are plain navigation links to real routes (read-only)",
+    # pillar cards are plain `<.link navigate>`s to real routes, not
+    # server-driven actions. A fresh account renders the three onboarding CTAs
+    # linking to install + agents + team invite; the LV defines no mutating
+    # `handle_event`, so there's nothing to abuse.
+    test "pillar cards are plain navigation links to real routes (read-only)",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      # The onboarding cards link straight to the install wizard and the agents
-      # page — real routes, reached by navigation, not a phx-click handler.
+      # The zero-state pillar CTAs link straight to the install wizard, the
+      # agents page, and the team invite — real routes, reached by navigation,
+      # not a phx-click handler.
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",
-               "Connect a runner"
+               "Install your first runner"
              )
 
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/agents"}']",
-               "Connect an agent"
+               "Connect an LLM agent"
              )
 
-      # The three stat tiles are themselves links to their list pages (not
-      # buttons): runners, runs, team.
-      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']")
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/team/invite"}']",
+               "Invite your team"
+             )
+
+      # The runs panel's "View all" is a plain link to the runs list.
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")
-      assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/team"}']")
     end
 
     test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Connect a runner"
+      assert html =~ "Install your first runner"
 
       # A runner registers elsewhere; the dashboard hears the account
       # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
@@ -208,15 +215,15 @@ defmodule EmisarWeb.DashboardLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       send(lv.pid, {:runner_updated, runner})
       send(lv.pid, :reload_dashboard)
-      refute render(lv) =~ "Connect a runner"
+      refute render(lv) =~ "Install your first runner"
 
       send(lv.pid, %{event: "presence_diff"})
       send(lv.pid, :reload_dashboard)
-      assert render(lv) =~ "Runners online"
+      assert render(lv) =~ "/ 1 online"
 
       # Unrelated message shapes are ignored, never a crash.
       send(lv.pid, :stray_message)
-      assert render(lv) =~ "Runners online"
+      assert render(lv) =~ "/ 1 online"
     end
   end
 

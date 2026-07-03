@@ -58,16 +58,40 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:first_runner_id, first_runner_id(runners))
     |> assign(
       :recent_runs,
-      list_or_empty(Runs.list_recent_runs(subject, limit: 6, preload: [:runner]))
+      list_or_empty(Runs.list_recent_runs(subject, limit: 8, preload: [:runner]))
     )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
-    |> assign(:has_llm_connected?, api_keys != [])
+    |> assign(:agents, agents_summary(api_keys))
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_mfa, team_mfa(account, subject))
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
+    |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
+  end
+
+  # The LLM-agents pillar's live facts, from the same MCP-key list the agents
+  # page shows (revoked + auto-unused already excluded). "Active today" is a
+  # key whose last call landed inside 24h — the "is an agent actually using
+  # this?" signal; the newest call overall carries the idle case.
+  defp agents_summary(api_keys) do
+    now = DateTime.utc_now()
+
+    last_call_at =
+      api_keys
+      |> Enum.map(& &1.last_used_at)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.max(DateTime, fn -> nil end)
+
+    %{
+      total: length(api_keys),
+      active_today:
+        Enum.count(api_keys, fn key ->
+          key.last_used_at && DateTime.diff(now, key.last_used_at, :hour) < 24
+        end),
+      last_call_at: last_call_at
+    }
   end
 
   # Team-MFA tile data, or :unavailable when the read fails — so the tile shows
@@ -124,7 +148,7 @@ defmodule EmisarWeb.DashboardLive do
         recent_runs={@recent_runs}
         first_runner_id={@first_runner_id}
         run_stats={@run_stats}
-        has_llm_connected?={@has_llm_connected?}
+        agents={@agents}
         billing={@billing}
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
         team_mfa={@team_mfa}
@@ -132,85 +156,26 @@ defmodule EmisarWeb.DashboardLive do
         current_account={@current_account}
         can_view_runners?={@can_view_runners?}
         can_view_runs?={@can_view_runs?}
+        can_view_agents?={@can_view_agents?}
       />
     </.dashboard_shell>
     """
   end
 
-  # Onboarding checklist. Each card disappears the moment its step is
-  # done: "connect a runner" once the first registers, "dispatch your
-  # first action" once any run exists, "connect an LLM" once the first
-  # API key is minted. The block hides only when the account both has a
-  # run on the board and an LLM connected — so a fresh account always
-  # sees its next step at the top instead of "0 runners, 0 runs". The
-  # connect-runner and dispatch cards are mutually exclusive (one needs
-  # zero runners, the other needs at least one), so at most two show.
-
-  attr :runners_total, :integer, required: true
-  attr :has_llm_connected?, :boolean, required: true
-  attr :has_runs?, :boolean, required: true
-  attr :first_runner_id, :string, default: nil
-  attr :current_account, :map, required: true
-
-  defp onboarding_checklist(assigns) do
-    ~H"""
-    <div
-      :if={not @has_llm_connected? or not @has_runs?}
-      class="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-2"
-    >
-      <.onboarding_card
-        :if={@runners_total == 0}
-        href={~p"/app/#{@current_account}/runners/install"}
-        icon="hero-cpu-chip"
-        title="Connect a runner"
-        body="Install the agent on a server you want to operate — one curl one-liner. The dashboard tracks the rest from heartbeat onwards."
-      />
-      <.onboarding_card
-        :if={@runners_total > 0 and not @has_runs?}
-        href={~p"/app/#{@current_account}/runners/#{@first_runner_id}"}
-        icon="hero-rocket-launch"
-        title="Dispatch your first action"
-        body="Open your runner, pick an action from its catalog, and run it. Policy decides allow, approve, or deny — and every run lands in the audit trail."
-      />
-      <.onboarding_card
-        :if={not @has_llm_connected?}
-        href={~p"/app/#{@current_account}/settings/agents"}
-        icon="hero-bolt"
-        title="Connect an agent"
-        body="Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and drop a prefilled snippet you can paste straight in. Optional: each client's setup has a step to stop its per-tool prompts — safe, since emisar still gates every action server-side."
-      />
-    </div>
-    """
-  end
-
-  attr :href, :string, required: true
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-  attr :body, :string, required: true
-
-  defp onboarding_card(assigns) do
-    ~H"""
-    <.link
-      navigate={@href}
-      class="flex items-center gap-3 rounded-xl border border-brand-900/40 bg-brand-950/20 p-4 transition hover:border-brand-700/60 hover:bg-brand-950/40"
-    >
-      <.icon name={@icon} class="h-5 w-5 flex-none text-brand-400" />
-      <div class="flex-1">
-        <div class="text-sm font-semibold text-zinc-100">{@title}</div>
-        <p class="mt-0.5 text-xs text-zinc-400">{@body}</p>
-      </div>
-      <.icon name="hero-arrow-right" class="h-4 w-4 flex-none text-brand-400" />
-    </.link>
-    """
-  end
-
-  # The "active" dashboard once at least one runner exists.
+  # The dashboard is the product's three pillars — Runners, LLM agents, Team
+  # (the three main jobs: connect hosts, connect agents, onboard people) — then
+  # the escape hatch when it fires, then activity:
   #
-  # Layout follows triage hierarchy:
   #   1. Banners (plan-at-limit, all-runners-offline) — only when bad
-  #   2. Stats row — three numbers, never four
-  #   3. Pending approvals (amber) — full width, only when something waits.
-  #   4. Recent runs — last 6, single column, full width
+  #   2. The three pillar cards — ALWAYS. Each carries live state for the
+  #      operator who has it set up, and becomes the guided create/onboard CTA
+  #      at zero. The onboarding checklist IS the pillars' zero states — a new
+  #      account reads its three next steps off the same surface a veteran
+  #      reads fleet posture from, and cards graduate one by one as steps land.
+  #   3. Pending approvals (amber) — only when a decision actually waits.
+  #      Approvals is the escape hatch, not the centerpiece: most actions are
+  #      read-only and never gate, so this surface earns space only when live.
+  #   4. Recent runs — the activity proof, with the 24h digest in its header.
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :pending_approvals, :list, required: true
@@ -218,7 +183,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :recent_runs, :list, required: true
   attr :first_runner_id, :string, default: nil
   attr :run_stats, :map, required: true
-  attr :has_llm_connected?, :boolean, required: true
+  attr :agents, :map, required: true
   attr :billing, :map, required: true
   attr :can_manage_billing, :boolean, default: false
   attr :team_mfa, :any, required: true
@@ -226,20 +191,10 @@ defmodule EmisarWeb.DashboardLive do
   attr :current_account, :map, required: true
   attr :can_view_runners?, :boolean, default: true
   attr :can_view_runs?, :boolean, default: true
+  attr :can_view_agents?, :boolean, default: true
 
   defp live_dashboard(assigns) do
     ~H"""
-    <%!-- The checklist's cards are runner/agent setup — meaningless (and
-         dead links) for a role with no runner visibility. --%>
-    <.onboarding_checklist
-      :if={@can_view_runners?}
-      runners_total={@runners_total}
-      has_llm_connected?={@has_llm_connected?}
-      has_runs?={@recent_runs != []}
-      first_runner_id={@first_runner_id}
-      current_account={@current_account}
-    />
-
     <.subscription_banner status={@billing.subscription_status}>
       <:cta :if={@can_manage_billing}>
         <.button
@@ -266,12 +221,24 @@ defmodule EmisarWeb.DashboardLive do
       current_account={@current_account}
     />
 
-    <%!-- Pending approvals lead the board — a run held on a human
-         decision is an agent blocked right now, the one thing here that
-         actively gates an LLM. The gate operator sees what needs them
-         before the situational stats. Shown only when there's something
-         to act on; otherwise the stats lead as usual. --%>
-    <div :if={@pending_approvals != []} class="mb-6">
+    <%!-- The three pillars. Grid order = the onboarding order (host → agent →
+         people); a pillar the role can't act on is dropped rather than rendered
+         as a dead CTA. --%>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <.runners_pillar
+        :if={@can_view_runners?}
+        connected={@runners_connected}
+        total={@runners_total}
+        current_account={@current_account}
+      />
+      <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
+      <.team_pillar team_mfa={@team_mfa} current_account={@current_account} />
+    </div>
+
+    <%!-- The escape hatch, only when it's live: a run held on a human decision
+         is an agent blocked right now. Zero pending renders nothing — silence
+         is the confirmation. --%>
+    <div :if={@pending_approvals != []} class="mt-6">
       <.attention_panel
         icon="hero-hand-raised"
         title="Awaiting your approval"
@@ -301,32 +268,19 @@ defmodule EmisarWeb.DashboardLive do
       </.attention_panel>
     </div>
 
-    <%!-- Three tiles, never four. Plan info used to live in the third
-         slot but billing is rarely operational. Team-MFA posture is —
-         it tells the operator at a glance "is the people-attack
-         surface tight?" and links straight to the team page where
-         they'd fix it. --%>
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <.runners_stat
-        :if={@can_view_runners?}
-        connected={@runners_connected}
-        total={@runners_total}
-        current_account={@current_account}
-      />
-      <%!-- A denied stats read (a role with no view_runs) assigns nil —
-           hide the tile rather than render zeros that read as "no runs". --%>
-      <.runs_stat
-        :if={@run_stats}
-        stats={@run_stats}
-        has_runs?={@recent_runs != []}
-        current_account={@current_account}
-      />
-      <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
-    </div>
-
-    <%!-- Recent runs — full width, no parallel "activity" mirror at
-         the bottom (that just duplicated the audit page). --%>
+    <%!-- Recent runs — the activity proof, full width, with the 24h digest as
+         the header's quiet annotation (a zero window is a non-event, not a
+         hero number). No parallel "activity" mirror; that's the audit page. --%>
     <.panel :if={@can_view_runs?} variant={:split} title="Recent runs" class="mt-8">
+      <:annotation :if={@run_stats && @run_stats.total > 0}>
+        <span class="tabular-nums">{@run_stats.total} in the last {@run_stats.window_hours}h</span>
+        <span :if={@run_stats.success_rate} class="tabular-nums">
+          · {@run_stats.success_rate}% success
+        </span>
+        <span :if={@run_stats.failed > 0} class="tabular-nums text-amber-300">
+          · {@run_stats.failed} failed
+        </span>
+      </:annotation>
       <:actions>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
@@ -337,25 +291,37 @@ defmodule EmisarWeb.DashboardLive do
       </:actions>
 
       <%= if @recent_runs == [] do %>
-        <%!-- Brand-new-account state. Cover both shapes: no runners
-             registered yet (point to install) AND have-runners-but-
-             no-runs-yet (point to a runner detail or runbook). --%>
+        <%!-- The "dispatch your first action" step lives HERE — it's the runs
+             surface's own zero state. Two shapes: a connected fleet points at
+             the first runner's catalog; no fleet points back at the pillars. --%>
         <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet." class="px-5 py-10">
-          Register a
-          <.link
-            navigate={~p"/app/#{@current_account}/runners"}
-            class="text-brand-400 hover:text-brand-300"
-          >
-            runner
-          </.link>
-          and dispatch an action from its detail page, or kick off a <.link
-            navigate={~p"/app/#{@current_account}/runbooks"}
-            class="text-brand-400 hover:text-brand-300"
-          >runbook</.link>.
-          LLM-driven runs (via the <.link
-            navigate={~p"/app/#{@current_account}/settings/agents"}
-            class="text-brand-400 hover:text-brand-300"
-          >MCP API</.link>) land here too.
+          <%= if @first_runner_id do %>
+            Open
+            <.link
+              navigate={~p"/app/#{@current_account}/runners/#{@first_runner_id}"}
+              class="text-brand-400 hover:text-brand-300"
+            >
+              your runner
+            </.link>
+            and dispatch an action from its catalog — or ask a connected
+            <.link
+              navigate={~p"/app/#{@current_account}/settings/agents"}
+              class="text-brand-400 hover:text-brand-300"
+            >
+              agent
+            </.link>
+            to. Every run lands here, gated and audited.
+          <% else %>
+            Install a
+            <.link
+              navigate={~p"/app/#{@current_account}/runners/install"}
+              class="text-brand-400 hover:text-brand-300"
+            >
+              runner
+            </.link>
+            first — actions dispatch to your own hosts, and every run lands here,
+            gated and audited.
+          <% end %>
         </.empty_state>
       <% else %>
         <ul class="divide-y divide-zinc-900">
@@ -375,87 +341,109 @@ defmodule EmisarWeb.DashboardLive do
   defp list_or_empty({:ok, list}) when is_list(list), do: list
   defp list_or_empty(_), do: []
 
-  # -- Stat tiles ------------------------------------------------------
+  # -- The three pillars ------------------------------------------------
+  #
+  # One card shape, two states. LIVE: an icon tile wearing the pillar's
+  # semantic posture, the big tabular fact, a one-line status, and the
+  # pillar's create action quiet in the corner. ZERO: the same card becomes
+  # the guided CTA (brand-tinted, whole card is the link) — so onboarding is
+  # the dashboard's natural empty state, not a separate wizard that goes
+  # stale. Posture tone lives on the TILE; status text speaks up only for
+  # amber/rose (healthy stays quiet — silence is the confirmation).
 
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
   attr :current_account, :map, required: true
 
-  defp runners_stat(assigns) do
+  defp runners_pillar(%{total: 0} = assigns) do
     ~H"""
-    <.link navigate={~p"/app/#{@current_account}/runners"} class="block">
-      <.stat
-        label="Runners online"
-        value={"#{@connected} / #{@total}"}
-        hint={runners_hint(@connected, @total)}
-        hint_tone={runners_tone(@connected, @total)}
-      />
-    </.link>
+    <.pillar_cta
+      icon="hero-cpu-chip"
+      label="Runners"
+      title="Install your first runner"
+      body="One curl one-liner on any Linux or macOS host — it dials out, registers, and shows up here."
+      cta="Open the install wizard"
+      navigate={~p"/app/#{@current_account}/runners/install"}
+    />
+    """
+  end
+
+  defp runners_pillar(assigns) do
+    ~H"""
+    <.pillar
+      icon="hero-cpu-chip"
+      label="Runners"
+      tone={runners_tone(@connected, @total)}
+      navigate={~p"/app/#{@current_account}/runners"}
+      action_label="Add runner"
+      action_navigate={~p"/app/#{@current_account}/runners/install"}
+    >
+      <:value>
+        {@connected}<span class="text-xl text-zinc-500"> / {@total} online</span>
+      </:value>
+      <:status>{runners_status(@connected, @total)}</:status>
+    </.pillar>
     """
   end
 
   # connected/total are :integer attrs, but Elixir 1.20's type checker won't
   # carry that into the template and flags `<`/`>` there as a struct
   # comparison. Guard clauses use term ordering (no such warning) and read
-  # more clearly. Clause order preserves the original cond priority.
-  # Actionable hints carry the same trailing arrow the 2FA tile uses —
-  # one affordance for "this deep-links to the fix".
-  defp runners_hint(_connected, 0), do: "No runners yet"
-  defp runners_hint(0, _total), do: "All runners offline →"
+  # more clearly. Offline wears amber everywhere — one fact, one tone (the
+  # loud all-offline BANNER carries the escalation, not this pillar).
+  defp runners_status(0, _total), do: "All runners offline →"
 
-  defp runners_hint(connected, total) when connected < total,
+  defp runners_status(connected, total) when connected < total,
     do: "#{total - connected} offline →"
 
-  defp runners_hint(_connected, _total), do: "All connected"
+  defp runners_status(_connected, _total), do: "All connected"
 
-  # Offline wears amber everywhere — one fact, one tone, one word (the loud
-  # all-offline BANNER carries the escalation, not this tile hint).
   defp runners_tone(0, total) when total > 0, do: :amber
   defp runners_tone(connected, total) when connected < total, do: :amber
-  defp runners_tone(_connected, _total), do: :neutral
+  defp runners_tone(_connected, _total), do: :brand
 
-  attr :stats, :map, required: true
-  attr :has_runs?, :boolean, required: true
+  attr :agents, :map, required: true
   attr :current_account, :map, required: true
 
-  defp runs_stat(assigns) do
+  defp agents_pillar(%{agents: %{total: 0}} = assigns) do
     ~H"""
-    <.link navigate={~p"/app/#{@current_account}/runs"} class="block">
-      <.stat
-        label={"Runs (last #{@stats.window_hours}h)"}
-        value={@stats.total}
-        hint={runs_hint(@stats, @has_runs?)}
-        hint_tone={
-          cond do
-            @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 -> :rose
-            @stats.failed > 0 -> :amber
-            true -> :neutral
-          end
-        }
-      />
-    </.link>
+    <.pillar_cta
+      icon="hero-sparkles"
+      label="LLM agents"
+      title="Connect an LLM agent"
+      body="Pick Claude Code, Cursor, or any MCP client — we mint a scoped key and a paste-ready snippet."
+      cta="Connect an agent"
+      navigate={~p"/app/#{@current_account}/settings/agents"}
+    />
     """
   end
 
-  # Honest one-line outcome summary. "All succeeded" means EVERY run in the
-  # window is `:success` (not just a 100% success rate while runs are still
-  # pending or ended denied/cancelled); otherwise spell out each non-success
-  # bucket so nothing hides. A zero WINDOW is not a zero HISTORY — "Nothing
-  # dispatched yet" next to a digest full of yesterday's runs is a lie.
-  defp runs_hint(%{total: 0} = stats, true), do: "None in the last #{stats.window_hours}h"
-  defp runs_hint(%{total: 0}, false), do: "Nothing dispatched yet"
-  defp runs_hint(%{success: n, total: n}, _has_runs?), do: "All succeeded"
-
-  defp runs_hint(stats, _has_runs?) do
-    [
-      if(stats.success_rate, do: "#{stats.success_rate}% success"),
-      if(stats.failed > 0, do: "#{stats.failed} failed"),
-      if(stats.in_progress > 0, do: "#{stats.in_progress} running"),
-      if(stats.denied > 0, do: "#{stats.denied} denied"),
-      if(stats.cancelled > 0, do: "#{stats.cancelled} cancelled")
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" · ")
+  defp agents_pillar(assigns) do
+    ~H"""
+    <.pillar
+      icon="hero-sparkles"
+      label="LLM agents"
+      tone={if @agents.active_today > 0, do: :brand, else: :neutral}
+      navigate={~p"/app/#{@current_account}/settings/agents"}
+      action_label="Connect"
+      action_navigate={~p"/app/#{@current_account}/settings/agents"}
+    >
+      <:value>
+        {@agents.total}<span class="text-xl text-zinc-500">
+          {if @agents.total == 1, do: " agent", else: " agents"}</span>
+      </:value>
+      <:status>
+        <%= cond do %>
+          <% @agents.active_today > 0 -> %>
+            {@agents.active_today} active today
+          <% @agents.last_call_at -> %>
+            last call{" "}<.local_time value={@agents.last_call_at} mode={:relative} />
+          <% true -> %>
+            No calls yet
+        <% end %>
+      </:status>
+    </.pillar>
+    """
   end
 
   # -- Attention panel ------------------------------------------------
@@ -528,10 +516,8 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # -- Team-security stat (replaces the old plan tile) ---------------
-  #
-  # The third tile reports "how locked-down is your team", not "what
-  # plan are you on". Three tones:
+  # The Team pillar reports "who's in, and is the people-attack surface
+  # tight?" — member count as the fact, 2FA posture as the status:
   #
   #   * rose  — account enforces MFA AND someone hasn't enrolled.
   #             They literally can't sign in until they fix it.
@@ -539,24 +525,42 @@ defmodule EmisarWeb.DashboardLive do
   #             enrolled. Soft nudge.
   #   * brand — every member is enrolled. Quiet "you're good".
   #
-  # Always links to the team page where the operator can chase the
-  # missing enrollments.
+  # A solo account (just you) renders the invite CTA instead — onboarding
+  # the team IS this pillar's zero state.
 
   attr :team_mfa, :any, required: true
   attr :current_account, :map, required: true
 
-  defp team_security_stat(%{team_mfa: :unavailable} = assigns) do
+  defp team_pillar(%{team_mfa: :unavailable} = assigns) do
     ~H"""
-    <.link navigate={~p"/app/#{@current_account}/settings/team"} class="block">
-      <.stat label="Team 2FA" value={:unavailable} hint="Couldn't load team data" />
-    </.link>
+    <.pillar
+      icon="hero-user-group"
+      label="Team"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/settings/team"}
+    >
+      <:value>—</:value>
+      <:status>Couldn't load team data</:status>
+    </.pillar>
     """
   end
 
-  defp team_security_stat(assigns) do
+  defp team_pillar(%{team_mfa: %{total: total}} = assigns) when total <= 1 do
+    ~H"""
+    <.pillar_cta
+      icon="hero-user-group"
+      label="Team"
+      title="Invite your team"
+      body="Teammates get their own sign-in, role, and audit trail — no shared credentials."
+      cta="Invite a teammate"
+      navigate={~p"/app/#{@current_account}/settings/team/invite"}
+    />
+    """
+  end
+
+  defp team_pillar(assigns) do
     tone =
       cond do
-        assigns.team_mfa.total == 0 -> :neutral
         assigns.team_mfa.missing == 0 -> :brand
         assigns.team_mfa.required? -> :rose
         true -> :amber
@@ -565,31 +569,118 @@ defmodule EmisarWeb.DashboardLive do
     assigns = assign(assigns, :tone, tone)
 
     ~H"""
-    <.link navigate={~p"/app/#{@current_account}/settings/team"} class="block">
-      <.stat
-        label={stat_label(@tone, @team_mfa)}
-        value={"#{@team_mfa.enrolled} / #{@team_mfa.total}"}
-        hint={stat_hint(@tone, @team_mfa)}
-        hint_tone={@tone}
-      />
-    </.link>
+    <.pillar
+      icon="hero-user-group"
+      label="Team"
+      tone={@tone}
+      navigate={~p"/app/#{@current_account}/settings/team"}
+      action_label="Invite"
+      action_navigate={~p"/app/#{@current_account}/settings/team/invite"}
+    >
+      <:value>
+        {@team_mfa.total}<span class="text-xl text-zinc-500"> members</span>
+      </:value>
+      <:status>{team_status(@tone, @team_mfa)}</:status>
+    </.pillar>
     """
   end
 
-  defp stat_label(_, _), do: "Team 2FA"
+  defp team_status(:brand, m), do: "All #{m.total} have 2FA"
+  defp team_status(:rose, m), do: "#{m.missing} can't sign in until enrolled →"
 
-  defp stat_hint(:brand, m),
-    do: "All #{m.total} members enrolled."
+  defp team_status(:amber, m),
+    do: "#{m.missing} without 2FA →"
 
-  defp stat_hint(:rose, m),
-    do: "#{m.missing} can't sign in until enrolled →"
+  # -- The pillar card shape --------------------------------------------
 
-  defp stat_hint(:amber, m) do
-    "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :tone, :atom, required: true, values: [:brand, :amber, :rose, :neutral]
+  attr :navigate, :string, required: true
+  attr :action_label, :string, default: nil
+  attr :action_navigate, :string, default: nil
+  slot :value, required: true
+  slot :status, required: true
+
+  defp pillar(assigns) do
+    ~H"""
+    <div class="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/30 p-5">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class={[
+            "grid h-8 w-8 shrink-0 place-items-center rounded-lg ring-1",
+            pillar_tile(@tone)
+          ]}>
+            <.icon name={@icon} class="h-4 w-4" />
+          </span>
+          <span class="truncate text-sm font-medium text-zinc-300">{@label}</span>
+        </div>
+        <.link
+          :if={@action_label}
+          navigate={@action_navigate}
+          class="shrink-0 text-xs font-medium text-zinc-500 transition-colors hover:text-brand-300"
+        >
+          {@action_label}
+        </.link>
+      </div>
+      <.link navigate={@navigate} class="group mt-5 block">
+        <div class="font-display text-3xl font-semibold leading-none tracking-[-0.02em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
+          {render_slot(@value)}
+        </div>
+        <div class={["mt-2 flex items-center gap-1.5 text-xs", pillar_status_class(@tone)]}>
+          {render_slot(@status)}
+        </div>
+      </.link>
+    </div>
+    """
   end
 
-  defp stat_hint(:neutral, _),
-    do: "No members yet."
+  # Posture tone lives on the icon tile; the status line colors up only when
+  # something needs attention — a healthy pillar stays quiet (no green shout).
+  defp pillar_tile(:brand), do: "bg-brand-500/10 text-brand-400 ring-brand-500/30"
+  defp pillar_tile(:amber), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
+  defp pillar_tile(:rose), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
+  defp pillar_tile(:neutral), do: "bg-zinc-800/80 text-zinc-400 ring-white/10"
+
+  defp pillar_status_class(:amber), do: "text-amber-300"
+  defp pillar_status_class(:rose), do: "text-rose-300"
+  defp pillar_status_class(_tone), do: "text-zinc-500"
+
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :title, :string, required: true
+  attr :body, :string, required: true
+  attr :cta, :string, required: true
+  attr :navigate, :string, required: true
+
+  # The pillar's ZERO state — the same card silhouette, brand-tinted, the
+  # whole card one link to the create/onboard flow. Three of these on a fresh
+  # account ARE the onboarding checklist; they graduate to live pillars one by
+  # one as the steps complete.
+  defp pillar_cta(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class="group flex flex-col rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 transition-colors hover:border-brand-700/60 hover:bg-brand-950/30"
+    >
+      <div class="flex items-center gap-2.5">
+        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-500/10 text-brand-400 ring-1 ring-brand-500/30">
+          <.icon name={@icon} class="h-4 w-4" />
+        </span>
+        <span class="text-sm font-medium text-zinc-300">{@label}</span>
+      </div>
+      <div class="mt-4 text-sm font-semibold text-zinc-50">{@title}</div>
+      <p class="mt-1 text-xs leading-relaxed text-zinc-400">{@body}</p>
+      <div class="mt-auto flex items-center gap-1 pt-3 text-xs font-medium text-brand-400 transition-colors group-hover:text-brand-300">
+        {@cta}
+        <.icon
+          name="hero-arrow-right"
+          class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+        />
+      </div>
+    </.link>
+    """
+  end
 
   attr :billing, :map, required: true
   attr :current_account, :map, required: true
