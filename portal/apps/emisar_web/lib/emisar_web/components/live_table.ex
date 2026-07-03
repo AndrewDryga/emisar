@@ -179,13 +179,14 @@ defmodule EmisarWeb.LiveTable do
           <% end %>
         </ul>
 
-        <%!-- Footer keeps the rows' px-5 inset; no top padding, so the "N total" /
-             prev-next sits tight under the list (the wrapper's space-y is the gap). --%>
+        <%!-- Footer matches the rows' inset: the ISLAND default pads px-5 like
+             its rows; a custom (canvas) wrapper's rows sit at x=0, so the pager
+             does too — its rails then align with the columns above. --%>
         <div
           :if={
             @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0
           }
-          class="px-5 pb-1"
+          class={[is_nil(@wrapper_class) && "px-5", "pb-1"]}
         >
           <.paginator
             id={@id}
@@ -735,7 +736,7 @@ defmodule EmisarWeb.LiveTable do
     <nav
       :if={@metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0}
       id={"#{@id}-pager"}
-      class="grid grid-cols-3 items-center text-xs text-zinc-400"
+      class="flex items-center justify-between text-xs text-zinc-400"
     >
       <div>
         <%= if @metadata.count != nil do %>
@@ -745,9 +746,9 @@ defmodule EmisarWeb.LiveTable do
           total
         <% end %>
       </div>
-      <%!-- Prev/Next hold the CENTER of the page column — not the far right
-           corner, a long reach from the list they page. --%>
-      <div class="flex justify-center gap-2">
+      <%!-- Count hugs the list's LEFT rail, Prev/Next its RIGHT — the pager
+           lines up with the columns above it. --%>
+      <div class="flex gap-2">
         <.link
           :if={@metadata.previous_page_cursor}
           patch={page_link(@path, @filter_params, @prefix, before: @metadata.previous_page_cursor)}
@@ -763,7 +764,6 @@ defmodule EmisarWeb.LiveTable do
           Next →
         </.link>
       </div>
-      <div />
     </nav>
     """
   end
