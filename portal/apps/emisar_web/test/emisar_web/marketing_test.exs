@@ -597,13 +597,17 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "See all releases on GitHub"
     end
 
-    test "the marketing footer shows the app version and the co:op attribution",
+    test "the marketing footer shows the app version, a render timestamp, and the co:op attribution",
          %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
 
       # The footer reads the running app's version (single source: portal/VERSION,
       # bumped by /release), so assert the shape, not a pinned number.
-      assert html =~ ~r/v\d+\.\d+\.\d+\s+—\s+built with/u
+      assert html =~ ~r/v\d+\.\d+\.\d+/u
+      # A per-request render timestamp (forensic_time shape) — behind a CDN it
+      # freezes at cache time, so a stale edge copy is visible in the footer.
+      assert html =~ ~r/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/u
+      assert html =~ "built with"
       assert html =~ ~s(href="https://coop.dryga.com/")
       assert html =~ "co:op"
     end

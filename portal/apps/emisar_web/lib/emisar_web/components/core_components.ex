@@ -5031,7 +5031,15 @@ defmodule EmisarWeb.CoreComponents do
   Footer for marketing pages. Same on every page.
   """
   def marketing_footer(assigns) do
-    assigns = assign(assigns, :app_version, app_version())
+    # Render timestamp is stamped per request (server-rendered marketing has no
+    # LiveView caching) — behind a CDN/edge it freezes at cache time, so if it
+    # trails the real clock the footer is being served from a stale cache. Pairs
+    # with the build version as a two-part freshness signal (which build · when
+    # rendered).
+    assigns =
+      assigns
+      |> assign(:app_version, app_version())
+      |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
 
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
@@ -5273,7 +5281,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
 
-        <div class="mt-12 flex items-center justify-between border-t border-zinc-900 pt-8 text-xs text-zinc-500">
+        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-900 pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {Date.utc_today().year} <a
               href="https://dryga.com"
@@ -5283,7 +5291,14 @@ defmodule EmisarWeb.CoreComponents do
             >Andrii Dryga</a>. All rights reserved.
           </span>
           <span>
-            v{@app_version} — built with
+            v{@app_version}
+            <span
+              class="text-zinc-600"
+              title="Server-render time (UTC). If it trails the real clock, a CDN/edge is serving this page from cache."
+            >
+              · {@rendered_at}
+            </span>
+            — built with
             <a
               href="https://coop.dryga.com/"
               target="_blank"
