@@ -76,7 +76,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
       >
         <input type="hidden" name="user[email]" value={@membership.user.email} />
 
-        <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm">
+        <div class="rounded-lg bg-zinc-900/60 p-4 text-sm ring-1 ring-white/[0.07]">
           <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Joining as</div>
           <div class="mt-1 font-mono text-zinc-200">{@membership.user.email}</div>
         </div>

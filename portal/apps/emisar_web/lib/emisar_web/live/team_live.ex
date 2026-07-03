@@ -1067,7 +1067,7 @@ defmodule EmisarWeb.TeamLive do
                    on table column; just normal flow. --%>
               <div
                 :if={@editing_id == membership.id and @edit_form}
-                class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.06]"
               >
                 <.simple_form
                   for={@edit_form}
@@ -1096,7 +1096,7 @@ defmodule EmisarWeb.TeamLive do
                    (already covered). Empty selection = "all runners" default. --%>
               <div
                 :if={@scope_editing_id == membership.id}
-                class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.06]"
               >
                 <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
                   <input type="hidden" name="membership_id" value={membership.id} />

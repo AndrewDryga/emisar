@@ -610,7 +610,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp step_card(assigns) do
     ~H"""
-    <div class="rounded-lg border border-zinc-800 bg-black/30 p-4">
+    <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.06]">
       <div class="flex items-center justify-between gap-3">
         <span class="font-mono text-xs text-zinc-500">Step #{@index + 1}</span>
         <div class="flex items-center gap-1">

@@ -457,7 +457,7 @@ defmodule EmisarWeb.PacksLive do
         <li
           :for={{dom_id, pack} <- @streams.packs}
           id={dom_id}
-          class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
+          class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
         >
           <header class="flex items-center justify-between gap-4 border-b border-zinc-900 px-5 py-3">
             <div class="flex items-center gap-2">
@@ -658,7 +658,7 @@ defmodule EmisarWeb.PacksLive do
               <details
                 :if={v.trust_state == :trusted}
                 open={MapSet.member?(@open_versions, v.id)}
-                class="group rounded border border-zinc-800 bg-zinc-950/40"
+                class="group rounded bg-black/30 ring-1 ring-white/[0.06]"
               >
                 <summary
                   phx-click="inspect_pack"

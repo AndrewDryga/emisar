@@ -814,7 +814,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       <p
         :if={@min_approvals > 1}
-        class="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-300"
+        class="rounded-lg bg-black/30 px-3 py-2 text-xs text-zinc-300 ring-1 ring-white/[0.06]"
       >
         This action needs <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
         — {@approved_count} so far.
@@ -827,11 +827,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       <%= cond do %>
         <% not @can_decide? -> %>
-          <p class="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-xs text-zinc-400">
+          <p class="mt-4 rounded-lg bg-black/30 p-4 text-xs text-zinc-400 ring-1 ring-white/[0.06]">
             Viewers can't decide approvals.
           </p>
         <% @already_decided? -> %>
-          <p class="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-xs text-zinc-400">
+          <p class="mt-4 rounded-lg bg-black/30 p-4 text-xs text-zinc-400 ring-1 ring-white/[0.06]">
             You've already recorded your decision on this request. Waiting on the remaining approvers.
           </p>
         <% true -> %>
@@ -841,7 +841,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                their own request. --%>
           <div
             :if={@self_blocked?}
-            class="mt-4 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-300"
+            class="mt-4 flex items-start gap-2 rounded-lg bg-black/30 p-3 text-xs text-zinc-300 ring-1 ring-white/[0.06]"
           >
             <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-zinc-400" />
             <span>You can't approve your own request — a different operator must approve it.</span>

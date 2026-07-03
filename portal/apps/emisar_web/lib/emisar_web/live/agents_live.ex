@@ -776,7 +776,7 @@ defmodule EmisarWeb.AgentsLive do
       <%!-- Connect-a-client guide. Open when connecting is the job (no
            agents yet, or mid-flow); collapsed to this header once agents
            exist, so the returning operator's list isn't below the fold. --%>
-      <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30">
+      <div class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]">
         <button
           type="button"
           phx-click="toggle_connect"
@@ -1387,7 +1387,7 @@ defmodule EmisarWeb.AgentsLive do
       <%!-- The two values cloud LLMs need. Bearer header is rendered
            in full (operator just minted it) so they can copy the whole
            "Authorization: Bearer emk-..." string verbatim. --%>
-      <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+      <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.06]">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
           <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
           <.copy_button
@@ -1409,7 +1409,7 @@ defmodule EmisarWeb.AgentsLive do
            list because the menu paths differ (Claude.ai uses "Custom
            connectors", ChatGPT uses "Connectors" under different
            settings). --%>
-      <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+      <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.06]">
         <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Steps for {@client_label}
         </p>
