@@ -375,8 +375,8 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.pillar_cta
       label="Runners"
-      title="Install your first runner"
-      cta="Open the install wizard"
+      title="Put your first host online"
+      cta="One curl command"
       navigate={~p"/app/#{@current_account}/runners/install"}
     />
     """
@@ -432,8 +432,8 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.pillar_cta
       label="LLM agents"
-      title="Connect an LLM agent"
-      cta="Connect an agent"
+      title="Connect Claude Code or Cursor"
+      cta="Mint a scoped key"
       navigate={~p"/app/#{@current_account}/settings/agents"}
     />
     """
@@ -548,8 +548,8 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.pillar_cta
       label="Team"
-      title="Invite your team"
-      cta="Invite a teammate"
+      title="Give everyone their own sign-in"
+      cta="Send an invite"
       navigate={~p"/app/#{@current_account}/settings/team/invite"}
     />
     """
@@ -664,9 +664,16 @@ defmodule EmisarWeb.DashboardLive do
   # The pillar's ZERO state — the SAME naked shape as a live stat (label ·
   # headline · sub-line, whole group one link, the house hover wash), so a fresh
   # or half-set-up account reads as the same design, not a card grid grafted
-  # onto the naked stats. The stat's big figure becomes the invitation; its
-  # toned posture becomes the brand action line. No box, no icon — emerald lives
-  # only on the action line, the one bit of energy a to-do step earns.
+  # onto the naked stats. No box, no icon — emerald lives only on the action
+  # line, the one bit of energy a to-do step earns.
+  #
+  # Each line carries a DISTINCT payload — the fix for "LLM agents / Connect an
+  # LLM agent / Connect an agent" saying one thing three times:
+  #   label    = the noun (what is this?)          — "LLM agents"
+  #   headline = the outcome (what do I get?)      — "Connect Claude Code or Cursor"
+  #   action   = verb + mechanism (what's the cost?) — "Mint a scoped key →"
+  # The headline never repeats the label's noun; the action names the effort in
+  # the destination page's own words, so the promise is fulfilled verbatim.
   defp pillar_cta(assigns) do
     ~H"""
     <.link
@@ -674,10 +681,11 @@ defmodule EmisarWeb.DashboardLive do
       class="group -m-3 flex flex-col rounded-lg p-3 transition hover:bg-white/[0.04]"
     >
       <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
-      <%!-- The invitation sits in a figure-height (h-9) box, bottom-aligned, so
-           its baseline meets the big stat figure's baseline in a mixed row —
-           the smaller headline no longer floats above the numbers beside it. --%>
-      <div class="mt-3 flex h-9 items-end font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
+      <%!-- The invitation sits in a figure-height (min-h 2.25rem) box, bottom-
+           aligned, so its baseline meets the big stat figure's baseline in a
+           mixed row; min- (not fixed h-9) lets a wrapped headline grow down on
+           narrow columns instead of spilling up into the label. --%>
+      <div class="mt-3 flex min-h-[2.25rem] items-end font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
         {@title}
       </div>
       <div class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">

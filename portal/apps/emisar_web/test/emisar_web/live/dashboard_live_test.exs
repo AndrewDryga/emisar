@@ -60,9 +60,9 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The onboarding checklist IS the pillars' zero states — a fresh account
       # (no runners, no agent keys, a team of one) reads its three next steps
       # off the same three cards that later carry live fleet state.
-      assert html =~ "Install your first runner"
-      assert html =~ "Connect an LLM agent"
-      assert html =~ "Invite your team"
+      assert html =~ "Put your first host online"
+      assert html =~ "Connect Claude Code or Cursor"
+      assert html =~ "Give everyone their own sign-in"
 
       # No auto-minted install key — the dashboard doesn't mint
       # anymore. The runners/install page mints when the operator
@@ -87,11 +87,11 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The runners pillar graduates from the install CTA to live state
       # (one registered runner, not connected in a test).
       assert html =~ "/ 1 online"
-      refute html =~ "Install your first runner"
+      refute html =~ "Put your first host online"
       assert html =~ "Recent runs"
       # The agents pillar still shows its CTA — no API key was minted in
       # this test.
-      assert html =~ "Connect an LLM agent"
+      assert html =~ "Connect Claude Code or Cursor"
       # A runner with nothing dispatched yet: the runs panel's zero state
       # deep-links the first runner's catalog as the dispatch nudge.
       assert html =~ "dispatch an action from its catalog"
@@ -185,19 +185,19 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",
-               "Install your first runner"
+               "Put your first host online"
              )
 
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/agents"}']",
-               "Connect an LLM agent"
+               "Connect Claude Code or Cursor"
              )
 
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/team/invite"}']",
-               "Invite your team"
+               "Give everyone their own sign-in"
              )
 
       # The runs panel's "View all" is a plain link to the runs list.
@@ -208,7 +208,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Install your first runner"
+      assert html =~ "Put your first host online"
 
       # A runner registers elsewhere; the dashboard hears the account
       # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
@@ -217,7 +217,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       send(lv.pid, {:runner_updated, runner})
       send(lv.pid, :reload_dashboard)
-      refute render(lv) =~ "Install your first runner"
+      refute render(lv) =~ "Put your first host online"
 
       send(lv.pid, %{event: "presence_diff"})
       send(lv.pid, :reload_dashboard)

@@ -363,6 +363,17 @@ genuinely missing (then it's shared, not one-off).
   a table's **empty state is mandatory**, not optional — check it every time.
   The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
   partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
+- **Each line of a stacked shape carries a DISTINCT payload — never restate the
+  label in the headline or the headline in the action.** The smell (shipped on
+  the zero-state pillars): "LLM agents / Connect an LLM agent / Connect an
+  agent →" — noun, verb+noun, verb+noun, one thing said three times. The fix is
+  a payload contract per line: label = the noun (*what is this?*), headline =
+  the outcome (*what do I get?* — "Connect Claude Code or Cursor", "Put your
+  first host online"), action = verb + mechanism (*what does it cost?* — "One
+  curl command →", "Mint a scoped key →", "Send an invite →"). The effort hint
+  is the onboarding reassurance, and it must reuse the destination page's own
+  words so the promise is fulfilled verbatim on click. Sweep target: any
+  empty-state/CTA whose action text ≈ its title.
 - **One signal per fact — an inline status carrying full severity REPLACES a
   separate banner, it doesn't stack under one.** Severity rides the inline
   status itself: a soft nudge is amber, a HARD STOP (nothing works — all runners
