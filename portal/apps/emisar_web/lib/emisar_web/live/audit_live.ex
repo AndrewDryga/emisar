@@ -413,6 +413,15 @@ defmodule EmisarWeb.AuditLive do
         </button>
       </div>
 
+      <%!-- The trail itself: one line per event, DAY-grouped, directly on the
+           canvas — no table chrome. Each row is dot (outcome) + the event's
+           human label (its ONE identity — the machine code lives on the
+           detail page) + a quiet who/what/where meta fragment, with a
+           UTC-forensic clock on the right edge. The whole page reads on one
+           clock: group headers carry the UTC date, rows the UTC time, and the
+           full stamp rides each row's title attribute — matching the UTC
+           filter bounds (the old per-row local_time hook silently disagreed
+           with them). --%>
       <LiveTable.live_table
         id="audit-events"
         path={~p"/app/#{@current_account}/audit"}
@@ -423,73 +432,40 @@ defmodule EmisarWeb.AuditLive do
         filter_layout={:stacked}
         filter_visibility={:collapsible}
         filters_open={@filters_open?}
-        row_id={fn event -> "event-#{event.id}" end}
-        row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
-        responsive
-        card_accent={&audit_card_accent(&1.event_type)}
-        class="[&_td]:align-top"
+        layout={:cards}
+        wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+        group_by={&DateTime.to_date(&1.occurred_at)}
       >
-        <%!-- Forensic precision: eight sign-ins in one minute must still
-             order visibly on a SIEM-grade trail. --%>
-        <:col :let={event} label="When" class="whitespace-nowrap">
-          <.local_time
-            value={event.occurred_at}
-            mode={:forensic}
-            class="text-xs tabular-nums text-zinc-400"
-          />
-        </:col>
-        <:col :let={event} label="Event" class="w-full">
-          <div class="flex items-start gap-2">
-            <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1.5" />
-            <div class="min-w-0">
-              <%!-- Machine type inlines after the title (it restates it —
-                   "User signed in" / user.signed_in) instead of doubling
-                   every row's height ×hundreds; SIEM correlation keeps it. --%>
-              <div class="min-w-0">
-                <span class={["text-sm", event_title_class(event.event_type)]}>
+        <:group_header :let={date}>
+          <li class="pb-1.5 pt-5 first:pt-3">
+            <span class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              <span class="tabular-nums">{Date.to_iso8601(date)}</span>
+              · {Calendar.strftime(date, "%A")} · UTC
+            </span>
+          </li>
+        </:group_header>
+        <:item :let={event}>
+          <li id={"event-#{event.id}"}>
+            <.link
+              navigate={~p"/app/#{@current_account}/audit/#{event.id}"}
+              class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04]"
+            >
+              <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1" />
+              <div class="min-w-0 flex-1">
+                <div class={["text-sm leading-5", event_title_class(event.event_type)]}>
                   {format_event_type(event.event_type)}
-                </span>
-                <span class="ml-1.5 font-mono text-[10px] text-zinc-400">{event.event_type}</span>
+                </div>
+                <div class="truncate text-xs text-zinc-500">{event_meta(event, @refs)}</div>
               </div>
-              <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
-                <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
-                <span class="text-zinc-300">{elem(pair, 1)}</span>
-              </.event_summary>
-            </div>
-          </div>
-        </:col>
-        <:col :let={event} label="Actor">
-          <.ref
-            kind={event.actor_kind}
-            id={event.actor_id}
-            label={event.actor_label}
-            refs={@refs}
-            current_account={@current_account}
-            audit_link?={true}
-          />
-        </:col>
-        <:col :let={event} label="Subject" class="hidden lg:table-cell">
-          <%!-- Sign-ins and runner connects act on themselves — a muted
-               "self" beats restating the actor byte-for-byte beside it. --%>
-          <span
-            :if={event.subject_kind == event.actor_kind and event.subject_id == event.actor_id}
-            class="text-xs text-zinc-600"
-          >
-            self
-          </span>
-          <.ref
-            :if={event.subject_kind != event.actor_kind or event.subject_id != event.actor_id}
-            kind={event.subject_kind}
-            id={event.subject_id}
-            label={event.subject_label}
-            refs={@refs}
-            current_account={@current_account}
-          />
-        </:col>
-        <%!-- card={false}: an IP earns no phone space — it's on the detail page. --%>
-        <:col :let={event} label="IP" card={false} class="w-32 whitespace-nowrap hidden lg:table-cell">
-          <span class="font-mono text-xs tabular-nums text-zinc-400">{event.ip_address || "—"}</span>
-        </:col>
+              <span
+                class="shrink-0 font-mono text-xs leading-5 tabular-nums text-zinc-500"
+                title={forensic_time(event.occurred_at)}
+              >
+                {Calendar.strftime(event.occurred_at, "%H:%M:%S")}
+              </span>
+            </.link>
+          </li>
+        </:item>
         <:empty>
           <%!-- Filter-active stays a one-liner so it doesn't dominate
                when the operator is just over-filtering. Empty-account
@@ -629,26 +605,39 @@ defmodule EmisarWeb.AuditLive do
     """
   end
 
-  # Inline chip strip used by the list + detail to summarize the
-  # "interesting bit" of an event's payload — role from→to, count of
-  # sessions revoked, MFA-failed reason, etc. Each pair is rendered
-  # inside its own pill via the inner_block. Hidden when the event
-  # has no notable summary (most action_run.* terminal states have
-  # already-meaningful labels).
-  attr :pairs, :list, default: []
-  slot :inner_block, required: true
+  # One quiet meta STRING per event — the accountable identity by name (the
+  # kind prefix + the generic ACTOR/SUBJECT/IP columns died with the grid),
+  # then "→ subject" only when the event acted ON something other than its
+  # actor (a sign-in acts on itself; a role change acts on a teammate), then
+  # the payload's notable pairs, then the source IP. Plain text on purpose:
+  # the row's one link is the row itself (→ the event detail).
+  defp event_meta(event, refs) do
+    subject_part =
+      if event.subject_kind == event.actor_kind and event.subject_id == event.actor_id,
+        do: nil,
+        else: subject_text(event, refs)
 
-  def event_summary(assigns) do
-    ~H"""
-    <%!-- Inline muted key:value, not chip pills — the pills stacked under every
-         row added visual weight and cramped the densest, most-scanned table. --%>
-    <div :if={@pairs != []} class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
-      <span :for={pair <- @pairs} class="inline-flex items-center gap-1">
-        {render_slot(@inner_block, pair)}
-      </span>
-    </div>
-    """
+    pairs = for {k, v} <- AuditSummary.summary_pairs(event), do: "#{k}: #{v}"
+
+    ([party_text(event.actor_kind, event.actor_id, event.actor_label, refs), subject_part] ++
+       pairs ++ [event.ip_address])
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
   end
+
+  defp subject_text(event, refs) do
+    case party_text(event.subject_kind, event.subject_id, event.subject_label, refs) do
+      nil -> nil
+      text -> "→ " <> text
+    end
+  end
+
+  defp party_text(nil, _id, _label, _refs), do: nil
+
+  defp party_text(kind, nil, _label, _refs) when kind in ["system", "scheduler", "runbook"],
+    do: kindless_label(kind)
+
+  defp party_text(kind, id, label, refs), do: resolve_label(refs, kind, id, label)
 
   # -- Reference rendering (shared with AuditDetailLive) ---------------
 
@@ -715,16 +704,6 @@ defmodule EmisarWeb.AuditLive do
     case Audit.Event.Query.outcome(event_type) do
       :danger -> :rose
       :warn -> :amber
-      :neutral -> :neutral
-    end
-  end
-
-  # Mobile-card spine — outcome mapped onto the verdict atoms LiveTable's
-  # card_accent speaks, so problem rows pop in a long phone scroll.
-  defp audit_card_accent(event_type) do
-    case Audit.Event.Query.outcome(event_type) do
-      :danger -> :deny
-      :warn -> :pending
       :neutral -> :neutral
     end
   end

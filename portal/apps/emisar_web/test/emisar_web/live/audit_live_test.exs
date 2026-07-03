@@ -14,7 +14,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/audit")
     end
 
-    test "renders rows with IP + a link into the subject's detail page", %{conn: conn} do
+    test "renders rows as one-line events — label, meta with IP, detail link", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       # Make a runner so we have a real subject to look up.
@@ -43,12 +43,22 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
-      assert html =~ "runner.connected"
+      # ONE identity per row — the human label; the machine code lives on the
+      # detail page. The meta fragment carries the actor by name + the IP; a
+      # self-event (subject == actor) repeats no subject.
+      assert html =~ "Runner connected"
+      refute html =~ "runner.connected</span>"
       assert html =~ "10.0.5.12"
       assert html =~ "db-prod-01"
-      assert html =~ ~r/text-zinc-600[^>]*>\s*self\s*</
-      # Subject/IP columns collapse below lg so the table fits a phone.
-      assert html =~ "hidden lg:table-cell"
+      refute html =~ "db-prod-01 · → db-prod-01"
+      # The whole row is the one link — into the EVENT detail.
+      event =
+        Repo.all(Emisar.Audit.Event) |> Enum.find(&(&1.event_type == "runner.connected"))
+
+      assert html =~ ~p"/app/#{account}/audit/#{event.id}"
+      # The day-group header stamps the UTC date once per day.
+      assert html =~ Date.to_iso8601(DateTime.to_date(event.occurred_at))
+      assert html =~ "· UTC"
     end
 
     test "rows carry an outcome dot — rose for failures, amber for denials, neutral for routine",
@@ -101,7 +111,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "renamed-prod"
     end
 
-    test "the actor links into a filtered audit view, and the date filters render in the bar",
+    test "rows name the actor, and the date filters render in the facet panel",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_id = Ecto.UUID.generate()
@@ -115,9 +125,9 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
 
-      # The actor value links to "what did this identity do", not its
-      # resource page.
-      assert html =~ ~p"/app/#{account}/audit?actor_id=#{actor_id}"
+      # The list's rows link only to the event detail (the per-cell actor
+      # pivot moved to the detail page); the actor's NAME rides the meta line.
+      assert html =~ "alice@example.com"
       # The facet panel is collapsed by default (the trail leads); the
       # toolbar toggle reveals it.
       refute html =~ ~s(name="from")
