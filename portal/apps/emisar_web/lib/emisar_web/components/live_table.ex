@@ -317,51 +317,31 @@ defmodule EmisarWeb.LiveTable do
   attr :disabled, :boolean, default: false
 
   defp filter_form(assigns) do
-    {advanced, primary} = Enum.split_with(assigns.filters, & &1.advanced)
-
-    assigns =
-      assigns
-      |> assign(:primary_filters, primary)
-      |> assign(:advanced_filters, advanced)
-      |> assign(:advanced_open?, has_active_filters?(assigns.params, advanced))
-
     ~H"""
     <form
       id={@id}
       phx-change="filter"
       phx-submit="filter"
-      class={["flex flex-wrap items-end gap-3", @disabled && "opacity-50"]}
+      class={["space-y-3", @disabled && "opacity-50"]}
       aria-disabled={@disabled}
     >
-      <.filter_input
-        :for={filter <- @primary_filters}
-        filter={filter}
-        value={filter_value(@params, to_string(filter.name), filter)}
-        disabled={@disabled}
-      />
-      <%!-- Niche filters fold behind a disclosure so the bar stays one calm
-           row. display:contents keeps the revealed inputs in the SAME
-           flex-wrap flow; `open` is server-derived (an active advanced
-           filter must never hide), so re-renders can't strand one. --%>
-      <details :if={@advanced_filters != []} class="contents" open={@advanced_open?}>
-        <summary class="inline-flex h-[34px] cursor-pointer list-none items-center gap-1 rounded-lg border border-zinc-800 px-2.5 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&::-webkit-details-marker]:hidden">
-          More filters
-        </summary>
+      <%!-- Every filter is visible, laid out in one tidy grid — each control
+           fills its cell so they align in neat columns (no ragged flex-wrap,
+           no "more filters" disclosure hiding half of them). --%>
+      <div class="grid max-w-5xl grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
         <.filter_input
-          :for={filter <- @advanced_filters}
+          :for={filter <- @filters}
           filter={filter}
           value={filter_value(@params, to_string(filter.name), filter)}
           disabled={@disabled}
         />
-      </details>
+      </div>
       <.link
         :if={has_active_filters?(@params, @filters)}
         patch={@path}
-        title="Clear filters"
-        aria-label="Clear filters"
-        class="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-lg leading-none text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+        class="inline-flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-zinc-200"
       >
-        &times;
+        <span aria-hidden="true" class="text-base leading-none">&times;</span> Clear filters
       </.link>
     </form>
     """
@@ -385,7 +365,7 @@ defmodule EmisarWeb.LiveTable do
         name={"#{@filter.name}"}
         disabled={@disabled}
         class={[
-          "rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed",
+          "w-full rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed",
           filter_control_class(@active?)
         ]}
       >
@@ -412,10 +392,10 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class="flex flex-col text-xs font-medium text-zinc-400">
+    <label class="flex w-full flex-col text-xs font-medium text-zinc-400">
       <span class="mb-1 invisible">{@filter.title}</span>
       <span class={[
-        "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
+        "flex h-[34px] w-full items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
         filter_control_class(@active?),
         if(@active?, do: "text-brand-300", else: "text-zinc-300")
       ]}>
@@ -449,7 +429,7 @@ defmodule EmisarWeb.LiveTable do
         phx-debounce="blur"
         disabled={@disabled}
         class={[
-          "rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
+          "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
           filter_control_class(@active?)
         ]}
       />
@@ -470,7 +450,7 @@ defmodule EmisarWeb.LiveTable do
         phx-debounce="300"
         disabled={@disabled}
         class={[
-          "rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed",
+          "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed",
           filter_control_class(@active?)
         ]}
       />
@@ -512,8 +492,8 @@ defmodule EmisarWeb.LiveTable do
 
   # An active filter's label and control switch from muted zinc to the brand
   # accent (a tinted border + faint ring) so enabled filters stand out.
-  defp filter_label_class(true), do: "flex flex-col text-xs font-medium text-brand-300"
-  defp filter_label_class(false), do: "flex flex-col text-xs font-medium text-zinc-400"
+  defp filter_label_class(true), do: "flex w-full flex-col text-xs font-medium text-brand-300"
+  defp filter_label_class(false), do: "flex w-full flex-col text-xs font-medium text-zinc-400"
 
   defp filter_control_class(true), do: "border-brand-500/60 ring-1 ring-brand-500/25"
   defp filter_control_class(false), do: "border-zinc-700"

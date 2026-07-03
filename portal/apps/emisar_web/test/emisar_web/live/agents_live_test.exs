@@ -61,13 +61,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
 
       # Default view (status=live) is the baseline, not an operator-applied filter,
-      # so it doesn't raise the clear-filters ×.
+      # so it doesn't raise the clear-filters link.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/agents")
-      refute has_element?(lv, "[aria-label='Clear filters']")
+      refute has_element?(lv, "a", "Clear filters")
 
-      # Moving Status off its default (or picking "All") surfaces the × to clear back.
+      # Moving Status off its default (or picking "All") surfaces the clear link.
       {:ok, filtered, _html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
-      assert has_element?(filtered, "[aria-label='Clear filters']")
+      assert has_element?(filtered, "a", "Clear filters")
     end
 
     test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",

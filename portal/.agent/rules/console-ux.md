@@ -90,6 +90,14 @@ Structural rules that ride along:
   header — three colored eyebrows in one island read as three competing accents.
 - **Detail meta leads.** A detail page opens with `meta_strip`, Status field first;
   em-dash (muted, own span) for absent values.
+- **Filters are all visible, in one tidy grid — never hidden behind a "More filters"
+  disclosure.** A list's filter bar shows every filter at once, laid out in a responsive
+  grid (`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`, controls `w-full`) so they align
+  in neat columns instead of a ragged flex-wrap. Folding "niche" filters behind a
+  disclosure hides what the operator is looking for and (with `display:contents` on a
+  `<details>`) renders as a broken floating layout. The clear affordance is a labeled
+  "× Clear filters" link that shows only when a non-default filter is active (default ≠
+  active). LiveTable owns this; no per-page filter layout.
 - **Settings never embed in operational pages** without a PM decision — the current three
   (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
   until that pass; do not add a fourth.
