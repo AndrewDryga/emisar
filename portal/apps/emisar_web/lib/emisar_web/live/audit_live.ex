@@ -301,7 +301,7 @@ defmodule EmisarWeb.AuditLive do
       <%!-- Quick relative-range presets — set the unified bar's From to
            (now − window); the date filter below consumes it. Re-adds the
            presets the date-unification dropped, without a second bar. --%>
-      <div class="mb-4 flex w-max items-center gap-1.5 text-xs">
+      <div class="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
         <span class="text-zinc-500">Quick range:</span>
         <button
           :for={{label, window} <- audit_presets()}
@@ -459,24 +459,31 @@ defmodule EmisarWeb.AuditLive do
   # the payload's notable pairs, then the source IP. Plain text on purpose:
   # the row's one link is the row itself (→ the event detail).
   defp event_meta(event, refs) do
-    subject_part =
-      if event.subject_kind == event.actor_kind and event.subject_id == event.actor_id,
-        do: nil,
-        else: subject_text(event, refs)
+    # Actor and its subject bind into ONE "who → what" segment (a middot
+    # between them read as two unrelated facts); the arrow appears only when
+    # the event acted on something other than its actor.
+    who =
+      [
+        party_text(event.actor_kind, event.actor_id, event.actor_label, refs),
+        subject_text(event, refs)
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" → ")
 
-    pairs = for {k, v} <- AuditSummary.summary_pairs(event), do: "#{k}: #{v}"
+    # "via magic_link" reads as prose; every other pair stays forensic "k: v".
+    pairs =
+      for {k, v} <- AuditSummary.summary_pairs(event),
+          do: if(k == "via", do: "via #{v}", else: "#{k}: #{v}")
 
-    ([party_text(event.actor_kind, event.actor_id, event.actor_label, refs), subject_part] ++
-       pairs ++ [event.ip_address])
+    ([blank_to_nil(who)] ++ pairs ++ [event.ip_address])
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")
   end
 
   defp subject_text(event, refs) do
-    case party_text(event.subject_kind, event.subject_id, event.subject_label, refs) do
-      nil -> nil
-      text -> "→ " <> text
-    end
+    if event.subject_kind == event.actor_kind and event.subject_id == event.actor_id,
+      do: nil,
+      else: party_text(event.subject_kind, event.subject_id, event.subject_label, refs)
   end
 
   defp party_text(nil, _id, _label, _refs), do: nil
