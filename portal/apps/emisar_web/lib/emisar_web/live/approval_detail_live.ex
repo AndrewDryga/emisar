@@ -714,7 +714,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             title="Decisions"
           >
             <:annotation>{@approved_count} of {@request.min_approvals} approvals</:annotation>
-            <ul class="divide-y divide-white/[0.08]">
+            <ul class="divide-y divide-zinc-800">
               <li :for={decision <- @decisions} class="flex items-center gap-3 px-4 py-2 text-sm">
                 <.icon
                   name={decision_icon(decision.decision)}

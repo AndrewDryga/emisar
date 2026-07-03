@@ -296,7 +296,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               Nothing dispatched yet.
             </div>
           <% else %>
-            <ul class="divide-y divide-white/[0.08]">
+            <ul class="divide-y divide-zinc-800">
               <li :for={run <- @recent_runs}>
                 <.run_row run={run} current_account={@current_account} />
               </li>
@@ -312,7 +312,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               This runner hasn't reported a catalog yet. Check the runner logs on the host.
             </.empty_state>
           <% else %>
-            <ul class="divide-y divide-white/[0.08]">
+            <ul class="divide-y divide-zinc-800">
               <.list_row :for={action <- @actions}>
                 <:title>
                   <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>

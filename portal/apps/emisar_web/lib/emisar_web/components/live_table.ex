@@ -215,7 +215,7 @@ defmodule EmisarWeb.LiveTable do
         ]}>
           <table id={@id} class={["w-full text-sm text-left", @class]}>
             <thead class="text-xs uppercase tracking-wider text-zinc-500">
-              <tr class="border-b border-white/[0.12]">
+              <tr class="border-b border-zinc-700">
                 <th :for={col <- @col} class={["px-3 py-2.5 font-medium", col[:class]]}>
                   {col.label}
                 </th>
@@ -224,7 +224,7 @@ defmodule EmisarWeb.LiveTable do
                 </th>
               </tr>
             </thead>
-            <tbody id={"#{@id}-rows"} class="divide-y divide-white/[0.08] text-zinc-200">
+            <tbody id={"#{@id}-rows"} class="divide-y divide-zinc-800 text-zinc-200">
               <tr
                 :for={row <- @rows}
                 id={@row_id && @row_id.(row)}
@@ -249,7 +249,7 @@ defmodule EmisarWeb.LiveTable do
         <ul
           :if={@responsive}
           id={"#{@id}-cards"}
-          class="divide-y divide-white/[0.08] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
+          class="divide-y divide-zinc-800 overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
         >
           <li
             :for={row <- @rows}
@@ -302,11 +302,11 @@ defmodule EmisarWeb.LiveTable do
   defp card_spine_class(_), do: "border-l-transparent"
 
   defp default_cards_wrapper_class(:visible) do
-    "divide-y divide-white/[0.08] rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
+    "divide-y divide-zinc-800 rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
 
   defp default_cards_wrapper_class(_) do
-    "divide-y divide-white/[0.08] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
+    "divide-y divide-zinc-800 overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
 
   # When `:group_by` is set, walk the rows preserving order and bucket

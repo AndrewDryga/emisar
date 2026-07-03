@@ -548,7 +548,7 @@ defmodule EmisarWeb.AuditLive do
              page filters these out so SIEM-export tokens live here
              exclusively. --%>
         <div :if={@export_keys != []} class="border-t border-zinc-900">
-          <ul class="divide-y divide-white/[0.08]">
+          <ul class="divide-y divide-zinc-800">
             <.list_row :for={key <- @export_keys} icon="hero-document-text">
               <:title>
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
