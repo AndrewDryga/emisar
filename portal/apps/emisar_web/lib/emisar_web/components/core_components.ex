@@ -1959,22 +1959,25 @@ defmodule EmisarWeb.CoreComponents do
         <div class="break-words font-mono text-sm text-zinc-200 sm:truncate">
           <.dotted_mono value={@run.action_id} />
         </div>
+        <%!-- The actor rides the meta line ("… · 3d ago · by ⚡ Claude Code"),
+             not a mid-row column — the digest row is content left, status
+             right, nothing floating between. Inline also keeps the
+             security-salient who-ran-it visible on a phone, where the old
+             column was hidden. --%>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
+          <span :if={@show_source}>
+            · by
+            <.source_badge
+              source={@run.source}
+              label={TimeHelpers.run_actor(@run)}
+              class="max-w-[14rem] align-bottom text-xs"
+            />
+          </span>
         </div>
       </div>
-      <%!-- Fixed LEFT-aligned columns, like the runs table: every source starts
-           at the same x and every status dot lines up vertically down the list.
-           Right-packing them jammed the source's ragged edge into the status
-           and nothing aligned row-to-row. --%>
-      <span :if={@show_source} class="hidden w-44 shrink-0 sm:flex">
-        <.source_badge
-          source={@run.source}
-          label={TimeHelpers.run_actor(@run)}
-          class="max-w-full text-xs"
-        />
-      </span>
+      <%!-- Fixed left-aligned status column — every dot lines up vertically. --%>
       <span class="w-24 shrink-0 sm:w-28">
         <.status_badge status={@run.status} />
       </span>
