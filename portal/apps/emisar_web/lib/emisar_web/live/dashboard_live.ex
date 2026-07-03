@@ -226,7 +226,7 @@ defmodule EmisarWeb.DashboardLive do
     <%!-- The three pillars. Grid order = the onboarding order (host → agent →
          people); a pillar the role can't act on is dropped rather than rendered
          as a dead CTA. --%>
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="grid grid-cols-1 gap-8 pt-2 sm:grid-cols-3 sm:gap-10">
       <.runners_pillar
         :if={@can_view_runners?}
         connected={@runners_connected}
@@ -273,24 +273,34 @@ defmodule EmisarWeb.DashboardLive do
     <%!-- Recent runs — the activity proof, full width, with the 24h digest as
          the header's quiet annotation (a zero window is a non-event, not a
          hero number). No parallel "activity" mirror; that's the audit page. --%>
-    <.panel :if={@can_view_runs?} variant={:split} title="Recent runs" class="mt-8">
-      <:annotation :if={@run_stats && @run_stats.total > 0}>
-        <span class="tabular-nums">{@run_stats.total} in the last {@run_stats.window_hours}h</span>
-        <span :if={@run_stats.success_rate} class="tabular-nums">
-          · {@run_stats.success_rate}% success
-        </span>
-        <span :if={@run_stats.failed > 0} class="tabular-nums text-amber-300">
-          · {@run_stats.failed} failed
-        </span>
-      </:annotation>
-      <:actions>
+    <%!-- Recent runs sits DIRECTLY on the canvas — a section title, a quiet
+         digest, and borderless rows under a single hairline. The activity feed
+         is content, not a framed widget. --%>
+    <section :if={@can_view_runs?} class="pt-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        <div class="flex min-w-0 flex-wrap items-baseline gap-3">
+          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+            Recent runs
+          </h2>
+          <span :if={@run_stats && @run_stats.total > 0} class="text-xs text-zinc-500">
+            <span class="tabular-nums">
+              {@run_stats.total} in the last {@run_stats.window_hours}h
+            </span>
+            <span :if={@run_stats.success_rate} class="tabular-nums">
+              · {@run_stats.success_rate}% success
+            </span>
+            <span :if={@run_stats.failed > 0} class="tabular-nums text-amber-300">
+              · {@run_stats.failed} failed
+            </span>
+          </span>
+        </div>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
         </.link>
-      </:actions>
+      </div>
 
       <%= if @recent_runs == [] do %>
         <%!-- The "dispatch your first action" step lives HERE — it's the runs
@@ -326,13 +336,19 @@ defmodule EmisarWeb.DashboardLive do
           <% end %>
         </.empty_state>
       <% else %>
-        <ul class="divide-y divide-white/[0.06]">
+        <ul class="mt-3 divide-y divide-white/[0.06] border-t border-white/[0.06]">
           <li :for={run <- @recent_runs}>
-            <.run_row run={run} show_runner show_source current_account={@current_account} />
+            <.run_row
+              run={run}
+              show_runner
+              show_source
+              padding="-mx-2 px-2 py-3.5"
+              current_account={@current_account}
+            />
           </li>
         </ul>
       <% end %>
-    </.panel>
+    </section>
     """
   end
 
@@ -373,7 +389,6 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_pillar(assigns) do
     ~H"""
     <.pillar
-      icon="hero-cpu-chip"
       label="Runners"
       tone={runners_tone(@connected, @total)}
       status_tone={runners_status_tone(@connected, @total)}
@@ -382,7 +397,7 @@ defmodule EmisarWeb.DashboardLive do
       action_navigate={~p"/app/#{@current_account}/runners/install"}
     >
       <:value>
-        {@connected}<span class="text-xl text-zinc-500"> / {@total} online</span>
+        {@connected}<span class="text-2xl text-zinc-500"> / {@total} online</span>
       </:value>
       <:status>{runners_status(@connected, @total)}</:status>
     </.pillar>
@@ -429,7 +444,6 @@ defmodule EmisarWeb.DashboardLive do
   defp agents_pillar(assigns) do
     ~H"""
     <.pillar
-      icon="hero-sparkles"
       label="LLM agents"
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/settings/agents"}
@@ -437,7 +451,7 @@ defmodule EmisarWeb.DashboardLive do
       action_navigate={~p"/app/#{@current_account}/settings/agents"}
     >
       <:value>
-        {@agents.total}<span class="text-xl text-zinc-500">
+        {@agents.total}<span class="text-2xl text-zinc-500">
           {if @agents.total == 1, do: " agent", else: " agents"}</span>
       </:value>
       <:status>
@@ -542,7 +556,6 @@ defmodule EmisarWeb.DashboardLive do
   defp team_pillar(%{team_mfa: :unavailable} = assigns) do
     ~H"""
     <.pillar
-      icon="hero-user-group"
       label="Team"
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
@@ -578,7 +591,6 @@ defmodule EmisarWeb.DashboardLive do
 
     ~H"""
     <.pillar
-      icon="hero-user-group"
       label="Team"
       tone={team_tile_tone(@posture)}
       status_tone={team_status_tone(@posture)}
@@ -587,7 +599,7 @@ defmodule EmisarWeb.DashboardLive do
       action_navigate={~p"/app/#{@current_account}/settings/team/invite"}
     >
       <:value>
-        {@team_mfa.total}<span class="text-xl text-zinc-500"> members</span>
+        {@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span>
       </:value>
       <:status>{team_status(@posture, @team_mfa)}</:status>
     </.pillar>
@@ -611,7 +623,6 @@ defmodule EmisarWeb.DashboardLive do
 
   # -- The pillar card shape --------------------------------------------
 
-  attr :icon, :string, required: true
   attr :label, :string, required: true
   attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
@@ -623,17 +634,13 @@ defmodule EmisarWeb.DashboardLive do
 
   defp pillar(assigns) do
     ~H"""
-    <div class="flex flex-col rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-5">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-2.5">
-          <span class={[
-            "grid h-8 w-8 shrink-0 place-items-center rounded-lg ring-1",
-            pillar_tile(@tone)
-          ]}>
-            <.icon name={@icon} class="h-4 w-4" />
-          </span>
-          <span class="truncate text-sm font-medium text-zinc-300">{@label}</span>
-        </div>
+    <%!-- A LIVE pillar is naked typography on the canvas — no box. The number
+         is the design: label row, a big display figure, a one-line posture.
+         Containment is reserved for the CTA state (an invitation earns a box);
+         a healthy stat doesn't. --%>
+    <div class="flex flex-col">
+      <div class="flex items-baseline justify-between gap-3">
+        <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
         <%!-- -m/p padding extends the hit area to ~40px without growing the
              visible text — these are the product's three main actions and on a
              phone a bare 12px text link is an unhittable target. --%>
@@ -645,11 +652,15 @@ defmodule EmisarWeb.DashboardLive do
           {@action_label}
         </.link>
       </div>
-      <.link navigate={@navigate} class="group mt-5 block">
-        <div class="font-display text-3xl font-semibold leading-none tracking-[-0.02em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
+      <.link navigate={@navigate} class="group mt-3 block">
+        <div class="font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
           {render_slot(@value)}
         </div>
-        <div class={["mt-2 flex items-center gap-1.5 text-xs", pillar_status_class(@status_tone)]}>
+        <div class={[
+          "mt-2.5 flex items-center gap-1.5 text-[13px]",
+          pillar_status_class(@status_tone)
+        ]}>
+          <.status_dot :if={@tone == :brand} tone={:brand} />
           {render_slot(@status)}
         </div>
       </.link>
@@ -657,14 +668,9 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # The tile wears the pillar's overall posture (brand healthy / rose lockout /
-  # neutral otherwise); the STATUS LINE alone carries amber, so attention tint
-  # never stacks into an alarm wall — a healthy pillar stays quiet (no green
-  # shout).
-  defp pillar_tile(:brand), do: "bg-brand-500/10 text-brand-400 ring-brand-500/30"
-  defp pillar_tile(:rose), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
-  defp pillar_tile(:neutral), do: "bg-zinc-800/80 text-zinc-400 ring-white/10"
-
+  # The pillar's overall posture drives the quiet brand dot (healthy only);
+  # the STATUS LINE alone carries amber/rose text, so attention tint never
+  # stacks into an alarm wall — a healthy pillar stays quiet (no green shout).
   defp pillar_status_class(:amber), do: "text-amber-300"
   defp pillar_status_class(:rose), do: "text-rose-300"
   defp pillar_status_class(:neutral), do: "text-zinc-500"

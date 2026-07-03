@@ -1443,7 +1443,9 @@ defmodule EmisarWeb.CoreComponents do
         </aside>
       </div>
 
-      <div class="flex min-w-0 flex-1 flex-col">
+      <%!-- The whole work column (floating title + canvas) is one black plane;
+           the zinc-950 sidebar reads as separate chrome beside it. --%>
+      <div class="flex min-w-0 flex-1 flex-col bg-black">
         <%!-- Portal-wide nudge: a signed-in user whose email isn't
              confirmed yet. Shown on every page until they verify; the
              "Resend" button is handled by the global `:email_confirmation`
@@ -1492,30 +1494,38 @@ defmodule EmisarWeb.CoreComponents do
              a truncated machine id ("api-iad-…") is useless on an audit-grade
              surface, so the bar grows to fit and break-words splits an unbroken
              id token only when it must. --%>
-        <header class="sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 py-2.5 backdrop-blur sm:px-6">
-          <%!-- Mobile hamburger (hidden on lg) --%>
-          <button
-            type="button"
-            aria-label="Open menu"
-            class="-ml-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
-            phx-click={
-              JS.show(to: "#mobile-nav", display: "block")
-              |> JS.add_class("overflow-hidden", to: "body")
-            }
-          >
-            <.icon name="hero-bars-3" class="h-5 w-5" />
-          </button>
-          <h1 class="min-w-0 flex-1 break-words font-display text-2xl font-bold leading-tight tracking-[-0.02em]">
-            {render_slot(@title)}
-          </h1>
-          <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
+        <%!-- The title floats ON the canvas — no bar, no border, no blur. A
+             gray sticky strip with a lone word was pure admin-template chrome;
+             the page title is the first line of the content, set large, and the
+             page begins. --%>
+        <header class="px-4 pb-2 pt-7 sm:px-8 sm:pt-9">
+          <div class={["mx-auto flex w-full items-start gap-3", shell_width(@width)]}>
+            <%!-- Mobile hamburger (hidden on lg) --%>
+            <button
+              type="button"
+              aria-label="Open menu"
+              class="-ml-1.5 mt-1 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
+              phx-click={
+                JS.show(to: "#mobile-nav", display: "block")
+                |> JS.add_class("overflow-hidden", to: "body")
+              }
+            >
+              <.icon name="hero-bars-3" class="h-5 w-5" />
+            </button>
+            <h1 class="min-w-0 flex-1 break-words font-display text-[28px] font-bold leading-tight tracking-[-0.03em] text-zinc-50">
+              {render_slot(@title)}
+            </h1>
+            <div class="flex shrink-0 items-center gap-2 pt-1.5 sm:gap-3">
+              {render_slot(@actions)}
+            </div>
+          </div>
         </header>
 
-        <%!-- The work canvas is TRUE BLACK so islands (cards/panels/tables on the
-             zinc-900 step + white-edge ring) visibly lift off it — three planes
-             (ground < island < recessed code), not one flat zinc sheet. The
-             faint brand wash reads richer on black. --%>
-        <main class="flex-1 overflow-x-hidden bg-black bg-gradient-to-b from-brand-950/25 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
+        <%!-- The work canvas is clean flat BLACK. Most content sits DIRECTLY on
+             it — typography and space carry the structure; a contained surface
+             (island) is reserved for things where the box MEANS something (a
+             code artifact, a form, an attention panel). --%>
+        <main class="flex-1 overflow-x-hidden bg-black px-4 pb-10 pt-2 sm:px-8">
           <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
             {render_slot(@inner_block)}
           </div>
@@ -1928,11 +1938,18 @@ defmodule EmisarWeb.CoreComponents do
   attr :show_source, :boolean, default: false
   attr :current_account, :map, required: true
 
+  attr :padding, :string,
+    default: "px-5 py-3",
+    doc: "row inset — a canvas-naked list passes a flush variant"
+
   def run_row(assigns) do
     ~H"""
     <.link
       navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-      class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-white/[0.04]"
+      class={[
+        "flex items-center justify-between gap-3 rounded-md transition hover:bg-white/[0.04]",
+        @padding
+      ]}
     >
       <div class="min-w-0">
         <%!-- The action id is the run's identity — on a phone it wraps to show
