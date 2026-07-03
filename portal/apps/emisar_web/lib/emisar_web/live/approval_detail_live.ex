@@ -636,15 +636,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   else: "what the runner will receive"}
               </span>
             </header>
+            <%!-- Caption one step of gray BELOW the command — the brightest thing
+                 in the artifact must be the thing the runner will execute. --%>
             <p
               :if={@action_description}
-              class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-300"
+              class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-400"
             >
               {@action_description}
             </p>
             <pre
               :if={@executed_command}
-              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-[13px] leading-relaxed text-zinc-100"
+              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-sm leading-relaxed text-zinc-50"
             ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
             <pre
               :if={is_nil(@executed_command) && @run && @run.args != %{}}

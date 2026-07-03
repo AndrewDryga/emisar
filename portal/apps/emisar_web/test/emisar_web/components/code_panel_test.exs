@@ -11,14 +11,16 @@ defmodule EmisarWeb.Components.CodePanelTest do
   alias EmisarWeb.CoreComponents
 
   describe "code_panel/1" do
-    test "renders the eyebrow label over the mono pre" do
+    test "renders the section-title label over the mono pre" do
       assigns = %{}
 
       html =
         rendered_to_string(~H|<CoreComponents.code_panel label="Arguments" code="{}" />|)
 
       assert html =~ "Arguments"
-      assert html =~ "uppercase tracking-wider"
+      # The label is the 16px section-title tier, not a field-key eyebrow —
+      # a code artifact's header follows the same grammar as sibling panels.
+      assert html =~ "font-display text-base font-semibold"
       assert html =~ "<pre"
       assert html =~ "font-mono"
     end

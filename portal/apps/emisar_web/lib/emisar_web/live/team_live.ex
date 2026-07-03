@@ -783,109 +783,100 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <div :if={@live_action == :index and not @loading?} class="space-y-6">
-        <%!-- Security card — account-wide MFA toggle (owner-only) +
-             at-a-glance per-member MFA status. Lives at the top because
-             this is the highest-leverage account setting on the page;
-             everything below is per-member admin. --%>
-        <.panel title="Two-factor authentication">
-          <:subtitle>
-            When enforced, members without 2FA are funneled to their profile to set it up
-            before they can use the rest of the app. You can't enable this until you've
-            enrolled yourself — prevents lock-outs.
-          </:subtitle>
-          <:actions>
-            <%= cond do %>
-              <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <.switch
-                  on={@current_account.settings.require_mfa}
-                  on_label="Stop enforcing 2FA"
-                  off_label="Enforce 2FA"
-                  phx-click="toggle_require_mfa"
-                  aria-label="Enforce 2FA account-wide"
-                  data-confirm={
-                    if @current_account.settings.require_mfa,
-                      do: "Stop enforcing 2FA account-wide?",
-                      else:
-                        "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be required to set it up before they can use the account again."
-                  }
-                />
-              <% true -> %>
-                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
-            <% end %>
-          </:actions>
+        <%!-- Security posture — one panel, one slim row per control (2FA + SSO):
+             title · live fact · control on the right. The page's object is
+             PEOPLE; two tall explainer cards pushed the first member below the
+             fold, so the explainer prose lives in each toggle's confirm dialog
+             (which already carries the consequences) — the page shows posture,
+             not persuasion. --%>
+        <.panel title="Security" padding="">
+          <ul class="divide-y divide-zinc-900">
+            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
+                <%!-- When require_mfa is on, the un-enrolled count gets a loud
+                     amber chip so the owner sees follow-up at a glance. --%>
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span class="tabular-nums text-zinc-400">
+                    {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
+                  </span>
+                  <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
+                    <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
+                      {n} without 2FA
+                    </.chip>
+                  <% else %>
+                    <.chip tone={:brand}>All enrolled</.chip>
+                  <% end %>
+                  <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
+                </div>
+              </div>
+              <%= cond do %>
+                <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                  <.switch
+                    on={@current_account.settings.require_mfa}
+                    on_label="Stop enforcing 2FA"
+                    off_label="Enforce 2FA"
+                    phx-click="toggle_require_mfa"
+                    aria-label="Enforce 2FA account-wide"
+                    data-confirm={
+                      if @current_account.settings.require_mfa,
+                        do: "Stop enforcing 2FA account-wide?",
+                        else:
+                          "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be funneled to set it up before they can use the account again. You can't enable this until you've enrolled yourself."
+                    }
+                  />
+                <% true -> %>
+                  <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
+              <% end %>
+            </li>
 
-          <%!-- Member status row — shows who's enrolled / not. When
-               require_mfa is on, the un-enrolled count gets a loud
-               amber chip so the owner sees follow-up at a glance. --%>
-          <div class="flex flex-wrap items-center gap-2 text-xs">
-            <span class="text-zinc-400">
-              2FA enrolled: <strong class="text-zinc-100">{@mfa_stats.enrolled}</strong>
-              of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
-            </span>
-            <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
-              <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
-                {n} without 2FA
-              </.chip>
-            <% else %>
-              <.chip tone={:brand}>All members enrolled</.chip>
-            <% end %>
-            <%= if @current_account.settings.require_mfa do %>
-              <.chip tone={:brand}>Enforced</.chip>
-            <% end %>
-          </div>
-        </.panel>
-
-        <%!-- SSO-enforcement card — owner-only. Can't be turned on without an
-             enabled SSO connection (that would lock everyone out), so it links
-             to set one up first. --%>
-        <.panel title="Single sign-on">
-          <:subtitle>
-            When required, members sign in through this account's identity provider —
-            magic-link sign-ins are bounced to SSO. Needs an SSO connection.
-          </:subtitle>
-          <:actions>
-            <%= cond do %>
-              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
-              <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
-                <.link
-                  navigate={~p"/app/#{@current_account}/settings/sso"}
-                  class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
-                >
-                  Set up SSO first →
-                </.link>
-              <% true -> %>
-                <.switch
-                  on={@current_account.settings.require_sso}
-                  on_label="Stop requiring SSO"
-                  off_label="Require SSO"
-                  phx-click="toggle_require_sso"
-                  aria-label="Require single sign-on account-wide"
-                  data-confirm={
-                    if @current_account.settings.require_sso do
-                      "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
-                    else
-                      "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
-                    end
-                  }
-                />
-            <% end %>
-          </:actions>
-
-          <%!-- Current state — always shown so the card is never a header over
-               empty space (the 2FA panel always has its enrollment row). Brand
-               "Required" when enforced; otherwise the enabled-provider count, or
-               "Not configured" when there are none. --%>
-          <div class="flex flex-wrap items-center gap-2 text-xs">
-            <%= cond do %>
-              <% @current_account.settings.require_sso -> %>
-                <.chip tone={:brand}>Required</.chip>
-              <% @enabled_sso_provider_count > 0 -> %>
-                <.chip>{sso_provider_label(@enabled_sso_provider_count)}</.chip>
-              <% true -> %>
-                <.chip>Not configured</.chip>
-            <% end %>
-          </div>
+            <%!-- SSO can't be required without an enabled connection (that would
+                 lock everyone out), so the control becomes the set-up link. --%>
+            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-zinc-100">Single sign-on</div>
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <%= cond do %>
+                    <% @current_account.settings.require_sso -> %>
+                      <span class="text-zinc-400">
+                        Members sign in through your identity provider
+                      </span>
+                      <.chip tone={:brand}>Required</.chip>
+                    <% @enabled_sso_provider_count > 0 -> %>
+                      <.chip>{sso_provider_label(@enabled_sso_provider_count)}</.chip>
+                    <% true -> %>
+                      <.chip>Not configured</.chip>
+                  <% end %>
+                </div>
+              </div>
+              <%= cond do %>
+                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                  <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
+                <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
+                  <.link
+                    navigate={~p"/app/#{@current_account}/settings/sso"}
+                    class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
+                  >
+                    Set up SSO first →
+                  </.link>
+                <% true -> %>
+                  <.switch
+                    on={@current_account.settings.require_sso}
+                    on_label="Stop requiring SSO"
+                    off_label="Require SSO"
+                    phx-click="toggle_require_sso"
+                    aria-label="Require single sign-on account-wide"
+                    data-confirm={
+                      if @current_account.settings.require_sso do
+                        "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
+                      else
+                        "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
+                      end
+                    }
+                  />
+              <% end %>
+            </li>
+          </ul>
         </.panel>
 
         <%!-- Member list — uses LiveTable :cards with overflow={:visible}

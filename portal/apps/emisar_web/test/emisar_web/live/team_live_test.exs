@@ -921,7 +921,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
       # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
-      assert html =~ "2FA enrolled:"
+      assert html =~ "1 of 2 enrolled"
       assert html =~ "1 without 2FA"
     end
   end

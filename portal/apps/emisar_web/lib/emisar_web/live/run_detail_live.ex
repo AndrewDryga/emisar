@@ -208,8 +208,12 @@ defmodule EmisarWeb.RunDetailLive do
           </span>
           <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
         </.meta_field>
-        <.meta_field label="Started">
-          <.local_time value={@run.inserted_at} class="text-zinc-200" />
+        <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
+             sibling detail pages describing the same event in two datetime
+             dialects read as two authors. wrap: the machine value takes the full
+             row on a phone rather than clipping. --%>
+        <.meta_field label="Started" wrap>
+          <.local_time value={@run.inserted_at} mode={:forensic} class="tabular-nums text-zinc-200" />
         </.meta_field>
       </.meta_strip>
 
@@ -292,37 +296,49 @@ defmodule EmisarWeb.RunDetailLive do
         It's marked errored if the runner doesn't return before the dispatch timeout.
       </.offline_notice>
 
-      <%!-- Operator's reason, full width. The policy decision renders
-           as an inline strip below (only when it carries signal), not a
-           side panel that would just echo the status chip. --%>
-      <.panel :if={@run.reason && @run.reason != ""} title="Reason" padding="p-4" class="mt-4">
-        <p class="text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
-      </.panel>
-
-      <%!-- Policy decision — same eyebrow-panel anatomy as Reason. The verdict
-           is told ONCE by the run's status badge above; this panel carries the
-           WHY (the policy reason as prose) plus the matched-rules/version audit
-           trail, not a chip that restates the outcome word. Hidden for `allow`
-           (the boring default the run wouldn't exist without). --%>
-      <.panel :if={show_policy?(@run)} title="Policy" padding="p-4" class="mt-4">
-        <p
-          :if={@run.policy_reason && @run.policy_reason != ""}
-          class="text-sm leading-relaxed text-zinc-200"
-        >
-          {@run.policy_reason}
-        </p>
-        <div
-          :if={matched_rules_label(@run.matched_rules) != "—" or is_integer(@run.policy_version)}
-          class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
-        >
-          <span :if={matched_rules_label(@run.matched_rules) != "—"}>
-            Matched
-            <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
-          </span>
-          <span :if={is_integer(@run.policy_version)}>
-            Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
-          </span>
-        </div>
+      <%!-- ONE why-cluster — who asked and what policy said, together (same
+           decision-record shape as the approval detail), not a Reason card and
+           a Policy card competing at equal weight. The verdict is told ONCE by
+           the status badge above; this carries the WHY plus the matched-rules/
+           version audit trail. Policy hidden for `allow` (the boring default
+           the run wouldn't exist without). --%>
+      <.panel
+        :if={@run.reason not in [nil, ""] or show_policy?(@run)}
+        title="Why"
+        padding="p-5"
+        class="mt-4"
+      >
+        <dl class="space-y-4">
+          <div :if={@run.reason && @run.reason != ""}>
+            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Requester
+            </dt>
+            <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
+          </div>
+          <div :if={show_policy?(@run)}>
+            <dt class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
+            </dt>
+            <dd
+              :if={@run.policy_reason && @run.policy_reason != ""}
+              class="mt-1 text-sm leading-relaxed text-zinc-200"
+            >
+              {@run.policy_reason}
+            </dd>
+            <dd
+              :if={matched_rules_label(@run.matched_rules) != "—" or is_integer(@run.policy_version)}
+              class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
+            >
+              <span :if={matched_rules_label(@run.matched_rules) != "—"}>
+                Matched
+                <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
+              </span>
+              <span :if={is_integer(@run.policy_version)}>
+                Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
+              </span>
+            </dd>
+          </div>
+        </dl>
       </.panel>
 
       <%!-- Arguments before output. Operators read the page top→down:

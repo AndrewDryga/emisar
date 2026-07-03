@@ -58,7 +58,9 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:first_runner_id, first_runner_id(runners))
     |> assign(
       :recent_runs,
-      list_or_empty(Runs.list_recent_runs(subject, limit: 8, preload: [:runner]))
+      # :api_key so the source badge names the actual agent ("Claude Code -
+      # on-call"), same as the runs page — not the generic "MCP / LLM".
+      list_or_empty(Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :api_key]))
     )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
@@ -374,6 +376,7 @@ defmodule EmisarWeb.DashboardLive do
       icon="hero-cpu-chip"
       label="Runners"
       tone={runners_tone(@connected, @total)}
+      status_tone={runners_status_tone(@connected, @total)}
       navigate={~p"/app/#{@current_account}/runners"}
       action_label="Add runner"
       action_navigate={~p"/app/#{@current_account}/runners/install"}
@@ -398,9 +401,14 @@ defmodule EmisarWeb.DashboardLive do
 
   defp runners_status(_connected, _total), do: "All connected"
 
-  defp runners_tone(0, total) when total > 0, do: :amber
-  defp runners_tone(connected, total) when connected < total, do: :amber
+  # Tiles wear brand (healthy) or neutral — never amber: two amber tiles at
+  # once read as an alarm wall and spend amber's attention value. The STATUS
+  # LINE carries the amber; a rose tile is reserved for a hard lockout (Team).
+  defp runners_tone(connected, total) when connected < total, do: :neutral
   defp runners_tone(_connected, _total), do: :brand
+
+  defp runners_status_tone(connected, total) when connected < total, do: :amber
+  defp runners_status_tone(_connected, _total), do: :neutral
 
   attr :agents, :map, required: true
   attr :current_account, :map, required: true
@@ -559,20 +567,21 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   defp team_pillar(assigns) do
-    tone =
+    posture =
       cond do
-        assigns.team_mfa.missing == 0 -> :brand
-        assigns.team_mfa.required? -> :rose
-        true -> :amber
+        assigns.team_mfa.missing == 0 -> :enrolled
+        assigns.team_mfa.required? -> :lockout
+        true -> :nudge
       end
 
-    assigns = assign(assigns, :tone, tone)
+    assigns = assign(assigns, :posture, posture)
 
     ~H"""
     <.pillar
       icon="hero-user-group"
       label="Team"
-      tone={@tone}
+      tone={team_tile_tone(@posture)}
+      status_tone={team_status_tone(@posture)}
       navigate={~p"/app/#{@current_account}/settings/team"}
       action_label="Invite"
       action_navigate={~p"/app/#{@current_account}/settings/team/invite"}
@@ -580,22 +589,32 @@ defmodule EmisarWeb.DashboardLive do
       <:value>
         {@team_mfa.total}<span class="text-xl text-zinc-500"> members</span>
       </:value>
-      <:status>{team_status(@tone, @team_mfa)}</:status>
+      <:status>{team_status(@posture, @team_mfa)}</:status>
     </.pillar>
     """
   end
 
-  defp team_status(:brand, m), do: "All #{m.total} have 2FA"
-  defp team_status(:rose, m), do: "#{m.missing} can't sign in until enrolled →"
+  # Enrolled = quiet brand; a hard lockout (MFA required and someone can't sign
+  # in) earns the rose alarm on tile AND line; the optional-MFA nudge keeps the
+  # tile neutral and lets the status line alone carry the amber.
+  defp team_tile_tone(:enrolled), do: :brand
+  defp team_tile_tone(:lockout), do: :rose
+  defp team_tile_tone(:nudge), do: :neutral
 
-  defp team_status(:amber, m),
-    do: "#{m.missing} without 2FA →"
+  defp team_status_tone(:enrolled), do: :neutral
+  defp team_status_tone(:lockout), do: :rose
+  defp team_status_tone(:nudge), do: :amber
+
+  defp team_status(:enrolled, m), do: "All #{m.total} have 2FA"
+  defp team_status(:lockout, m), do: "#{m.missing} can't sign in until enrolled →"
+  defp team_status(:nudge, m), do: "#{m.missing} without 2FA →"
 
   # -- The pillar card shape --------------------------------------------
 
   attr :icon, :string, required: true
   attr :label, :string, required: true
-  attr :tone, :atom, required: true, values: [:brand, :amber, :rose, :neutral]
+  attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
+  attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
   attr :action_label, :string, default: nil
   attr :action_navigate, :string, default: nil
@@ -615,10 +634,13 @@ defmodule EmisarWeb.DashboardLive do
           </span>
           <span class="truncate text-sm font-medium text-zinc-300">{@label}</span>
         </div>
+        <%!-- -m/p padding extends the hit area to ~40px without growing the
+             visible text — these are the product's three main actions and on a
+             phone a bare 12px text link is an unhittable target. --%>
         <.link
           :if={@action_label}
           navigate={@action_navigate}
-          class="shrink-0 text-xs font-medium text-zinc-500 transition-colors hover:text-brand-300"
+          class="-m-2.5 shrink-0 p-2.5 text-xs font-medium text-zinc-500 transition-colors hover:text-brand-300"
         >
           {@action_label}
         </.link>
@@ -627,7 +649,7 @@ defmodule EmisarWeb.DashboardLive do
         <div class="font-display text-3xl font-semibold leading-none tracking-[-0.02em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
           {render_slot(@value)}
         </div>
-        <div class={["mt-2 flex items-center gap-1.5 text-xs", pillar_status_class(@tone)]}>
+        <div class={["mt-2 flex items-center gap-1.5 text-xs", pillar_status_class(@status_tone)]}>
           {render_slot(@status)}
         </div>
       </.link>
@@ -635,16 +657,17 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # Posture tone lives on the icon tile; the status line colors up only when
-  # something needs attention — a healthy pillar stays quiet (no green shout).
+  # The tile wears the pillar's overall posture (brand healthy / rose lockout /
+  # neutral otherwise); the STATUS LINE alone carries amber, so attention tint
+  # never stacks into an alarm wall — a healthy pillar stays quiet (no green
+  # shout).
   defp pillar_tile(:brand), do: "bg-brand-500/10 text-brand-400 ring-brand-500/30"
-  defp pillar_tile(:amber), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp pillar_tile(:rose), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp pillar_tile(:neutral), do: "bg-zinc-800/80 text-zinc-400 ring-white/10"
 
   defp pillar_status_class(:amber), do: "text-amber-300"
   defp pillar_status_class(:rose), do: "text-rose-300"
-  defp pillar_status_class(_tone), do: "text-zinc-500"
+  defp pillar_status_class(:neutral), do: "text-zinc-500"
 
   attr :icon, :string, required: true
   attr :label, :string, required: true

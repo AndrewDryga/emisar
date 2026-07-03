@@ -1639,7 +1639,11 @@ defmodule EmisarWeb.CoreComponents do
       )
 
     ~H"""
-    <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
+    <%!-- pt-2/pb-4 + the tightened group air below keep the WHOLE nav (18 links,
+         5 groups) under ~730px, so at common laptop heights (≥860px with the
+         brand + user blocks) nothing sits half-clipped at the scroll fold —
+         "Support" cut in half read as a rendering defect on every screenshot. --%>
+    <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2 text-sm">
       <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
         Dashboard
       </.nav_link>
@@ -1799,7 +1803,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp nav_group(assigns) do
     ~H"""
-    <div class="pt-3 pb-1 first:pt-0">
+    <div class="pb-1 pt-2.5 first:pt-0">
       <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
         {@label}
       </p>
@@ -1967,9 +1971,12 @@ defmodule EmisarWeb.CoreComponents do
     assigns = assign(assigns, :segments, String.split(assigns.value, "."))
 
     ~H"""
-    <span :for={{segment, index} <- Enum.with_index(@segments)}>
-      <span :if={index > 0}>.<wbr /></span>{segment}
-    </span>
+    <%!-- phx-no-format: any formatter-introduced whitespace inside the repeated
+         span renders as a visible gap in the id ("caddy .reload_config"). --%>
+    <span
+      :for={{segment, index} <- Enum.with_index(@segments)}
+      phx-no-format
+    ><span :if={index > 0}>.<wbr /></span>{segment}</span>
     """
   end
 
@@ -2863,7 +2870,12 @@ defmodule EmisarWeb.CoreComponents do
            label or pushing Copy off-viewport on a phone. --%>
       <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
         <div class="flex shrink-0 items-center gap-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</h3>
+          <%!-- The label is a section TITLE (the 16px tier), not a field-key
+               eyebrow — a code artifact's header follows the same grammar as
+               every sibling panel on the page. --%>
+          <h3 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+            {@label}
+          </h3>
           {render_slot(@badge)}
         </div>
         <div class="flex min-w-0 items-center gap-2">
