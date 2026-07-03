@@ -141,7 +141,7 @@ defmodule EmisarWeb.LiveTable do
       <%= if Enum.empty?(@rows) do %>
         <div
           id={"#{@id}-empty"}
-          class="rounded-xl border border-zinc-800 bg-zinc-900/30 px-5 py-10 text-center text-sm text-zinc-500"
+          class="rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-5 py-10 text-center text-sm text-zinc-500"
         >
           {render_slot(@empty) || "Nothing to show."}
         </div>
@@ -200,7 +200,7 @@ defmodule EmisarWeb.LiveTable do
       <%= if Enum.empty?(@rows) do %>
         <div
           id={"#{@id}-empty"}
-          class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-8 text-center text-sm text-zinc-400"
+          class="rounded-lg bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 text-center text-sm text-zinc-400"
         >
           {render_slot(@empty) || "Nothing to show."}
         </div>
@@ -297,11 +297,12 @@ defmodule EmisarWeb.LiveTable do
   defp card_spine_class(:pass), do: "border-l-brand-500/40"
   defp card_spine_class(_), do: "border-l-transparent"
 
-  defp default_cards_wrapper_class(:visible),
-    do: "divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/30"
+  defp default_cards_wrapper_class(:visible) do
+    "divide-y divide-white/[0.06] rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
+  end
 
   defp default_cards_wrapper_class(_) do
-    "divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/30"
+    "divide-y divide-white/[0.06] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
 
   # When `:group_by` is set, walk the rows preserving order and bucket

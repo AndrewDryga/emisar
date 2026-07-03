@@ -28,7 +28,10 @@ defmodule EmisarWeb.Components.CopyableIdTest do
 
       html = rendered_to_string(~H|<CoreComponents.copyable_id value="10.0.5.12" />|)
 
-      assert html =~ "break-all"
+      # break-words + dotted_mono <wbr>s: wraps after a dot/dash segment, never
+      # sheared mid-token the way break-all did — and never truncated.
+      assert html =~ "break-words"
+      assert html =~ "<wbr"
       refute html =~ "truncate"
     end
 

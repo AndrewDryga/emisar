@@ -827,7 +827,7 @@ defmodule EmisarWeb.CoreComponents do
     <div
       id={@id}
       class={[
-        "max-h-44 divide-y divide-zinc-900 overflow-y-auto overscroll-contain rounded-lg border border-zinc-800 bg-zinc-950/40",
+        "max-h-44 divide-y divide-white/[0.06] overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
         @class
       ]}
     >
@@ -1511,7 +1511,11 @@ defmodule EmisarWeb.CoreComponents do
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
         </header>
 
-        <main class="flex-1 overflow-x-hidden bg-gradient-to-b from-brand-950/20 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
+        <%!-- The work canvas is TRUE BLACK so islands (cards/panels/tables on the
+             zinc-900 step + white-edge ring) visibly lift off it — three planes
+             (ground < island < recessed code), not one flat zinc sheet. The
+             faint brand wash reads richer on black. --%>
+        <main class="flex-1 overflow-x-hidden bg-black bg-gradient-to-b from-brand-950/25 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
           <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
             {render_slot(@inner_block)}
           </div>
@@ -1968,7 +1972,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :value, :string, required: true
 
   def dotted_mono(assigns) do
-    assigns = assign(assigns, :segments, String.split(assigns.value, "."))
+    # Each segment keeps its trailing separator (dot or dash — action ids,
+    # hostnames, UUIDs), so a <wbr> BEFORE the next segment breaks the line
+    # cleanly after the separator ("api-iad-02.northstar." / "example"), never
+    # mid-token ("norths / tar").
+    assigns = assign(assigns, :segments, Regex.split(~r/(?<=[.-])/, assigns.value))
 
     ~H"""
     <%!-- phx-no-format: any formatter-introduced whitespace inside the repeated
@@ -1976,7 +1984,7 @@ defmodule EmisarWeb.CoreComponents do
     <span
       :for={{segment, index} <- Enum.with_index(@segments)}
       phx-no-format
-    ><span :if={index > 0}>.<wbr /></span>{segment}</span>
+    ><wbr :if={index > 0} />{segment}</span>
     """
   end
 
@@ -2031,7 +2039,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def summary_band(assigns) do
     ~H"""
-    <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-2.5 text-xs sm:gap-x-6 sm:px-5 sm:py-3">
+    <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-4 py-2.5 text-xs sm:gap-x-6 sm:px-5 sm:py-3">
       {render_slot(@inner_block)}
       <div :if={@trailing != []} class="ml-auto text-zinc-500">{render_slot(@trailing)}</div>
     </div>
@@ -2298,9 +2306,13 @@ defmodule EmisarWeb.CoreComponents do
 
   def card(assigns) do
     ~H"""
+    <%!-- The ISLAND surface: a zinc-900 step lifted off the black ground by a
+         low-opacity white ring (edge-as-light, not a gray line) and a 1px inset
+         top highlight. Elevation comes from the surface step — never a drop
+         shadow, which can't read on black. --%>
     <div
       class={[
-        "rounded-xl border border-zinc-800 bg-zinc-900/30",
+        "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
         @padding,
         @class
       ]}
@@ -2353,7 +2365,7 @@ defmodule EmisarWeb.CoreComponents do
   def panel(%{variant: :split} = assigns) do
     ~H"""
     <.card padding="" class={"overflow-hidden #{@class}"} {@rest}>
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-900 px-5 py-3">
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
         <div class="min-w-0">
           <div class="flex min-w-0 items-center gap-2">
             <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
@@ -2438,7 +2450,7 @@ defmodule EmisarWeb.CoreComponents do
     <details
       id={@id}
       open={@open}
-      class={["group/disc rounded-lg border border-zinc-800 bg-zinc-950/40", @class]}
+      class={["group/disc rounded-lg bg-zinc-900/40 ring-1 ring-white/[0.06]", @class]}
       {@rest}
     >
       <summary class={[
@@ -2599,8 +2611,9 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp link_card_class,
-    do: "rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+  defp link_card_class do
+    "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-4 transition hover:bg-zinc-900/80"
+  end
 
   @doc """
   The ONE enforcement toggle — a two-state `role="switch"` action button:
@@ -2814,7 +2827,11 @@ defmodule EmisarWeb.CoreComponents do
       class={["group/copy inline-flex min-w-0 max-w-full items-center gap-1 font-mono", @class]}
       {@rest}
     >
-      <span class="min-w-0 break-all">{@value}</span>
+      <%!-- dotted_mono + break-words: a hostname/UUID wraps AFTER a dot or dash
+           ("api-iad-02.northstar." / "example"), never sheared mid-token
+           ("norths / tar") the way break-all did; the copy button carries the
+           literal value, so the <wbr>s never pollute a copy. --%>
+      <span class="min-w-0 break-words"><.dotted_mono value={@value} /></span>
       <%!-- Always-visible dim clipboard (not hover-reveal — touch has no hover);
            brightens on hover/focus. The value stays a selectable span, so a
            manual select-copy still works alongside the one-click button. --%>
@@ -2868,7 +2885,7 @@ defmodule EmisarWeb.CoreComponents do
            annotation cluster is the one that shrinks — its truncate ellipsizes
            a long value (a sha256, an event id) instead of colliding with the
            label or pushing Copy off-viewport on a phone. --%>
-      <header class="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-2">
+      <header class="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2">
         <div class="flex shrink-0 items-center gap-2">
           <%!-- The label is a section TITLE (the 16px tier), not a field-key
                eyebrow — a code artifact's header follows the same grammar as
@@ -3253,7 +3270,7 @@ defmodule EmisarWeb.CoreComponents do
 
     ~H"""
     <div class={[
-      "grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm sm:grid-cols-3",
+      "grid grid-cols-2 gap-3 rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-4 text-sm sm:grid-cols-3",
       @lg_cols,
       @class
     ]}>
@@ -3800,7 +3817,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <div class="rounded-2xl border border-zinc-900 bg-zinc-950/40 p-8 sm:p-10">
+    <div class="rounded-2xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 sm:p-10">
       <header class="flex items-center gap-3">
         <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/20 text-brand-300 ring-1 ring-brand-500/40">
           <.icon name="hero-rocket-launch" class="h-5 w-5" />
@@ -3894,7 +3911,7 @@ defmodule EmisarWeb.CoreComponents do
               </div>
             </div>
 
-            <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+            <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.06]">
               <div class="flex items-center gap-3">
                 <%!-- Amber: this is a PENDING state — brand-green would read
                      "connected" before anything has connected. --%>
@@ -3940,7 +3957,7 @@ defmodule EmisarWeb.CoreComponents do
             and create one manually, or refresh this page to try again.
           </div>
         <% true -> %>
-          <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+          <div class="mt-8 flex items-center gap-3 rounded-lg bg-black/30 p-4 text-sm text-zinc-400 ring-1 ring-white/[0.06]">
             <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
             Generating your install command…
           </div>
@@ -4440,10 +4457,13 @@ defmodule EmisarWeb.CoreComponents do
   # Neutral surface with an amber border + key-icon title as the "ephemeral,
   # copy it now" accent — not a full amber wash, which read as a heavy amber
   # block of nested dark boxes (esp. inside a neutral panel like SIEM export).
-  defp secret_reveal_box(:banner),
-    do: "mb-6 rounded-xl border border-amber-500/40 bg-zinc-950/60 p-6"
+  defp secret_reveal_box(:banner) do
+    "mb-6 rounded-xl bg-zinc-900/60 p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
+  end
 
-  defp secret_reveal_box(:card), do: "rounded-xl border border-amber-500/40 bg-zinc-950/60 p-4"
+  defp secret_reveal_box(:card) do
+    "rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
+  end
 
   # -- Marketing chrome ------------------------------------------------
 

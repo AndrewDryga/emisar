@@ -21,9 +21,14 @@ defmodule EmisarWeb.Components.PanelTest do
   describe "card/1" do
     test "renders the canonical surface with the default p-5 density" do
       html = render_card(%{})
-      assert html =~ "rounded-xl border border-zinc-800 bg-zinc-900/30"
-      # Console card is the flat hairline tier — no marketing glass lift.
-      refute html =~ "shadow"
+      # The ISLAND surface: a zinc-900 step lifted off the black ground by a
+      # low-opacity white ring + inset top highlight (no gray hairline border).
+      assert html =~ "rounded-xl bg-zinc-900/60"
+      assert html =~ "ring-white/[0.07]"
+      # Elevation comes from the surface step + a 1px INSET top highlight —
+      # never a drop shadow (unreadable on the black ground) or marketing glass.
+      assert html =~ "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]"
+      refute html =~ "shadow-lg"
       assert html =~ "p-5"
       assert html =~ "body"
     end
@@ -45,7 +50,7 @@ defmodule EmisarWeb.Components.PanelTest do
         <CoreComponents.panel title="Default policy">rules</CoreComponents.panel>
         """)
 
-      assert html =~ "bg-zinc-900/30"
+      assert html =~ "bg-zinc-900/60"
       assert html =~ "rules"
     end
 
@@ -106,7 +111,8 @@ defmodule EmisarWeb.Components.PanelTest do
         </CoreComponents.panel>
         """)
 
-      assert html =~ "border-b border-zinc-900 px-5 py-3"
+      # The header hairline is line-as-light inside the lit island.
+      assert html =~ "border-b border-white/[0.06] px-5 py-3"
       assert html =~ "overflow-hidden"
       assert html =~ "View all"
       refute html =~ ~s(class="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5")

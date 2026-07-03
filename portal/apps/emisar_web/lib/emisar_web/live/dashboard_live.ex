@@ -467,7 +467,7 @@ defmodule EmisarWeb.DashboardLive do
   # on the dashboard). The slot content carries its own matching amber tone.
   defp attention_panel(assigns) do
     ~H"""
-    <section class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-5">
+    <section class="rounded-xl bg-amber-500/[0.06] p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-amber-500/30">
       <header class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <.icon name={@icon} class="h-4 w-4 text-amber-300" />
@@ -623,7 +623,7 @@ defmodule EmisarWeb.DashboardLive do
 
   defp pillar(assigns) do
     ~H"""
-    <div class="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/30 p-5">
+    <div class="flex flex-col rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-5">
       <div class="flex items-center justify-between gap-3">
         <div class="flex min-w-0 items-center gap-2.5">
           <span class={[
@@ -684,7 +684,7 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.link
       navigate={@navigate}
-      class="group flex flex-col rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 transition-colors hover:border-brand-700/60 hover:bg-brand-950/30"
+      class="group flex flex-col rounded-xl bg-brand-950/30 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-brand-500/25 transition-colors hover:bg-brand-950/40 hover:ring-brand-500/40"
     >
       <div class="flex items-center gap-2.5">
         <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-500/10 text-brand-400 ring-1 ring-brand-500/30">

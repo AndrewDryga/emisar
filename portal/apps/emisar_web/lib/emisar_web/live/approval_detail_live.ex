@@ -624,7 +624,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                place. Sensitive args are masked. --%>
           <section
             :if={@executed_command || @action_description || (@run && @run.args != %{})}
-            class="overflow-hidden rounded-xl bg-zinc-900/60 ring-1 ring-white/10"
+            class="overflow-hidden rounded-xl bg-zinc-900/[0.85] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.12]"
           >
             <header class="flex items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
               <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
