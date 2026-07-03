@@ -1969,8 +1969,11 @@ defmodule EmisarWeb.CoreComponents do
           <span :if={@show_source && run_attribution(@run)}>· {run_attribution(@run)}</span>
         </div>
       </div>
-      <%!-- Fixed left-aligned status column — every dot lines up vertically. --%>
-      <span class="w-24 shrink-0 sm:w-28">
+      <%!-- Status hugs the right edge — flush with "View all" and the content
+           column. A fixed-width column left it floating ~40px in from the edge,
+           reading unanchored; a single trailing status reads cleanest against
+           the edge. --%>
+      <span class="shrink-0">
         <.status_badge status={@run.status} />
       </span>
     </.link>
