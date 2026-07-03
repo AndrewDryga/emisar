@@ -4298,9 +4298,12 @@ defmodule EmisarWeb.CoreComponents do
     <div id={@id} class={secret_reveal_box(@variant)}>
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
-          <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
-          <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
-          <p class="mt-1 text-xs text-amber-200/80">{render_slot(@inner_block)}</p>
+          <div class="flex items-center gap-2">
+            <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
+            <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
+            <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
+          </div>
+          <p class="mt-1 text-xs text-zinc-400">{render_slot(@inner_block)}</p>
 
           <%!-- Same copy pattern as the dashboard install reveal:
                grab text from the visible `<pre>` instead of
@@ -4309,7 +4312,7 @@ defmodule EmisarWeb.CoreComponents do
                visible click feedback. --%>
           <div
             :if={@secret}
-            class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800"
+            class="mt-4 flex items-center gap-2 rounded-lg bg-black/60 p-3 ring-1 ring-zinc-800"
           >
             <pre
               id={"#{@id}-secret"}
@@ -4317,7 +4320,7 @@ defmodule EmisarWeb.CoreComponents do
             >{@secret}</pre>
             <.copy_button
               target={"##{@id}-secret"}
-              class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
+              class="bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
             >
               Copy
             </.copy_button>
@@ -4333,7 +4336,7 @@ defmodule EmisarWeb.CoreComponents do
                 data-copy-text={code}
                 data-copy-label-copied="Copied!"
                 title="Click to copy this code"
-                class="block w-full select-all rounded-md border border-amber-500/40 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-amber-50 hover:border-amber-400 hover:bg-black/80"
+                class="block w-full select-all rounded-md border border-zinc-700 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-zinc-100 hover:border-zinc-600 hover:bg-black/80"
               >
                 {code}
               </button>
@@ -4342,17 +4345,17 @@ defmodule EmisarWeb.CoreComponents do
 
           <%= for {cmd, idx} <- Enum.with_index(@install_command) do %>
             <div class="mt-4">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-amber-200/80">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 {cmd[:label] || "Install on a host"}
               </h3>
-              <div class="mt-2 flex items-start gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
+              <div class="mt-2 flex items-start gap-2 rounded-lg bg-black/60 p-3 ring-1 ring-zinc-800">
                 <pre
                   id={"#{@id}-install-#{idx}"}
                   class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300"
                 >{render_slot(cmd)}</pre>
                 <.copy_button
                   target={"##{@id}-install-#{idx}"}
-                  class="shrink-0 self-start bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
+                  class="shrink-0 self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
                 >
                   Copy
                 </.copy_button>
@@ -4366,7 +4369,7 @@ defmodule EmisarWeb.CoreComponents do
               type="button"
               data-copy-text={Enum.join(@codes, "\n")}
               data-copy-label-copied="Copied!"
-              class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400"
+              class="rounded-lg bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-200 hover:bg-brand-500/30"
             >
               Copy all
             </button>
@@ -4376,7 +4379,7 @@ defmodule EmisarWeb.CoreComponents do
               :if={@codes && @download_name}
               href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}
               download={@download_name}
-              class="rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
+              class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-700"
             >
               Download .txt
             </a>
@@ -4387,7 +4390,7 @@ defmodule EmisarWeb.CoreComponents do
         <button
           :if={@on_dismiss}
           phx-click={@on_dismiss}
-          class="rounded-lg p-1 text-amber-200/80 hover:bg-amber-500/10 hover:text-amber-100"
+          class="rounded-lg p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
           aria-label="Dismiss"
         >
           <.icon name="hero-x-mark" class="h-5 w-5" />
@@ -4397,10 +4400,13 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  # Neutral surface with an amber border + key-icon title as the "ephemeral,
+  # copy it now" accent — not a full amber wash, which read as a heavy amber
+  # block of nested dark boxes (esp. inside a neutral panel like SIEM export).
   defp secret_reveal_box(:banner),
-    do: "mb-6 rounded-xl bg-amber-500/10 p-6 ring-1 ring-amber-500/30"
+    do: "mb-6 rounded-xl border border-amber-500/40 bg-zinc-950/60 p-6"
 
-  defp secret_reveal_box(:card), do: "rounded-xl bg-amber-500/10 p-4 ring-1 ring-amber-500/30"
+  defp secret_reveal_box(:card), do: "rounded-xl border border-amber-500/40 bg-zinc-950/60 p-4"
 
   # -- Marketing chrome ------------------------------------------------
 
