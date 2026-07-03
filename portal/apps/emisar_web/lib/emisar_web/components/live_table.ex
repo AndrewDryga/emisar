@@ -37,6 +37,7 @@ defmodule EmisarWeb.LiveTable do
   use Phoenix.Component
   use EmisarWeb, :verified_routes
   alias Emisar.Repo.Filter
+  alias EmisarWeb.CoreComponents
 
   attr :id, :string, required: true
   attr :path, :any, required: true, doc: "verified route the form/page links navigate to"
@@ -187,6 +188,7 @@ defmodule EmisarWeb.LiveTable do
             metadata={@metadata}
             filter_params={@filter_params}
             prefix={@prefix}
+            page_count={length(@rows)}
           />
         </div>
       <% end %>
@@ -296,6 +298,7 @@ defmodule EmisarWeb.LiveTable do
           metadata={@metadata}
           filter_params={@filter_params}
           prefix={@prefix}
+          page_count={length(@rows)}
         />
       <% end %>
     </div>
@@ -394,6 +397,99 @@ defmodule EmisarWeb.LiveTable do
   attr :filter, :any, required: true
   attr :value, :any, default: nil
   attr :disabled, :boolean, default: false
+
+  # Searchable combobox for a large {:list, _} filter (`%Filter{search: true}` —
+  # the audit Type picker's ~90 grouped options). Server renders the full option
+  # list once; the Combobox hook does client-side open/close + type-to-filter +
+  # selection (writing the hidden input and firing the form's phx-change).
+  # `phx-update="ignore"` + a VALUE-KEYED id make the state model work: unrelated
+  # live re-renders (a busy audit stream) leave an open panel + typed query
+  # untouched, while an actual value change (selection, Clear filters) renders a
+  # fresh node under a new id — server-rendered label, active tint, closed panel.
+  defp filter_input(%{filter: %Filter{search: true}} = assigns) do
+    assigns =
+      assigns
+      |> assign(:selected, assigns.value |> List.wrap() |> List.first())
+      |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:active?, filter_active?(assigns.filter, assigns.value))
+
+    ~H"""
+    <div
+      id={"filter-#{@filter.name}-#{@selected || "all"}"}
+      phx-hook="Combobox"
+      phx-update="ignore"
+      class="relative"
+    >
+      <label class={filter_label_class(@active?)}>
+        <span class="mb-1">{@filter.title}</span>
+        <input type="hidden" name={@filter.name} value={@selected} data-combobox-value />
+        <button
+          type="button"
+          data-combobox-trigger
+          disabled={@disabled}
+          class={[
+            "flex w-full items-center justify-between gap-2 rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-2 text-left text-xs disabled:cursor-not-allowed",
+            if(@selected, do: "text-zinc-200", else: "text-zinc-400"),
+            filter_control_class(@active?)
+          ]}
+        >
+          <span class="truncate">{combobox_selected_label(@groups, @selected)}</span>
+          <CoreComponents.icon name="hero-chevron-down" class="h-3 w-3 shrink-0 text-zinc-500" />
+        </button>
+      </label>
+      <div
+        data-combobox-panel
+        hidden
+        class="absolute z-20 mt-1 w-full min-w-[18rem] overflow-hidden rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
+      >
+        <input
+          type="text"
+          data-combobox-search
+          placeholder="Search…"
+          autocomplete="off"
+          class="w-full border-0 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-800 focus:ring-0"
+        />
+        <ul class="max-h-72 overflow-y-auto py-1 text-xs">
+          <li>
+            <button
+              type="button"
+              data-combobox-option
+              data-value=""
+              data-search="all"
+              class={combobox_option_class()}
+            >
+              All
+            </button>
+          </li>
+          <%= for {group_label, [{group_value, group_option_label} | options]} <- @groups do %>
+            <li>
+              <button
+                type="button"
+                data-combobox-option
+                data-value={group_value}
+                data-search={String.downcase("#{group_label} #{group_option_label}")}
+                class={[combobox_option_class(), "font-medium text-zinc-200"]}
+              >
+                {group_option_label}
+              </button>
+            </li>
+            <li :for={{value, label} <- options}>
+              <button
+                type="button"
+                data-combobox-option
+                data-value={value}
+                data-search={String.downcase("#{group_label} #{label} #{value}")}
+                class={[combobox_option_class(), "pl-6 text-zinc-300"]}
+              >
+                {label}
+              </button>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+    """
+  end
 
   defp filter_input(%{filter: %Filter{type: {:list, _}}} = assigns) do
     assigns =
@@ -502,6 +598,24 @@ defmodule EmisarWeb.LiveTable do
     """
   end
 
+  defp combobox_option_class do
+    "block w-full truncate px-3 py-1.5 text-left transition hover:bg-white/[0.06] data-[hidden]:hidden"
+  end
+
+  # The trigger's face: the selected value's label (searching group headers and
+  # their children), or "All" when nothing is picked.
+  defp combobox_selected_label(_groups, nil), do: "All"
+
+  defp combobox_selected_label(groups, selected) do
+    groups
+    |> Enum.flat_map(fn {_group, options} -> options end)
+    |> List.keyfind(selected, 0)
+    |> case do
+      {_value, label} -> label
+      nil -> selected
+    end
+  end
+
   # Filter.values may be either a flat list of `{value, label}` OR a
   # list of `{group_label, [{value, label}, …]}` for grouped renders
   # (audit event types are grouped by domain prefix). Normalize to
@@ -607,19 +721,28 @@ defmodule EmisarWeb.LiveTable do
   attr :filter_params, :map, default: %{}
   attr :prefix, :string, default: ""
 
+  attr :page_count, :integer,
+    default: nil,
+    doc: "rows on THIS page — renders the count as \"50 / 608 total\""
+
   def paginator(assigns) do
     ~H"""
     <nav
       :if={@metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0}
       id={"#{@id}-pager"}
-      class="flex items-center justify-between text-xs text-zinc-400"
+      class="grid grid-cols-3 items-center text-xs text-zinc-400"
     >
       <div>
         <%= if @metadata.count != nil do %>
-          <span class="tabular-nums">{@metadata.count}</span> total
+          <span class="tabular-nums">
+            <span :if={@page_count}>{@page_count} / </span>{@metadata.count}
+          </span>
+          total
         <% end %>
       </div>
-      <div class="flex gap-2">
+      <%!-- Prev/Next hold the CENTER of the page column — not the far right
+           corner, a long reach from the list they page. --%>
+      <div class="flex justify-center gap-2">
         <.link
           :if={@metadata.previous_page_cursor}
           patch={page_link(@path, @filter_params, @prefix, before: @metadata.previous_page_cursor)}
@@ -635,6 +758,7 @@ defmodule EmisarWeb.LiveTable do
           Next →
         </.link>
       </div>
+      <div />
     </nav>
     """
   end

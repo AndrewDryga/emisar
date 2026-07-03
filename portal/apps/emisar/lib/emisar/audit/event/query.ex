@@ -267,25 +267,18 @@ defmodule Emisar.Audit.Event.Query do
 
   def grouped_event_type_values, do: @grouped_event_types
 
-  # Groups that log too few events to be worth listing per-type — the Type
-  # dropdown collapses them to a single "<Group> — all events" line instead of an
-  # optgroup + sub-events (an operator would only ever want the whole class).
-  @collapsed_type_groups ["Account", "Policy", "Billing"]
-
   @doc """
-  The Type filter's grouped options. A rich group is an `<optgroup>` with a
-  leading, selectable "All <group> events" entry (a `group:<label>` sentinel) plus
-  its sub-events. A sparse group (`@collapsed_type_groups`) collapses to a single
-  flat "<Group> — all events" line — no sub-events. `expand_event_type_groups/1`
-  resolves the sentinel back to the group's types at query time.
+  The Type filter's grouped options, uniform across every group: the CATEGORY
+  itself is the selectable header — a `group:<label>` sentinel rendered as
+  "<Group> — all events" — followed by its per-event entries.
+  `expand_event_type_groups/1` resolves the sentinel back to the group's types
+  at query time. Rendered by the searchable filter combobox, never a native
+  `<select>` (whose optgroup labels can't be picked — the reason the old
+  duplicate "All <group> events" child rows existed).
   """
   def event_type_filter_options do
     Enum.map(@grouped_event_types, fn {label, options} ->
-      if label in @collapsed_type_groups do
-        {nil, [{"group:" <> label, label <> " — all events"}]}
-      else
-        {label, [{"group:" <> label, "All " <> label <> " events"} | options]}
-      end
+      {label, [{"group:" <> label, label <> " — all events"} | options]}
     end)
   end
 
@@ -496,6 +489,7 @@ defmodule Emisar.Audit.Event.Query do
         title: "Type",
         type: {:list, :string},
         span: :half,
+        search: true,
         values: event_type_filter_options(),
         valid_values: event_type_valid_values(),
         fun: fn queryable, types ->
@@ -504,7 +498,7 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :outcome,
-        title: "Outcome",
+        title: "Severity",
         type: {:list, :string},
         span: :half,
         values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],

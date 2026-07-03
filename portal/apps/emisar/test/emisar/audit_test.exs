@@ -629,10 +629,10 @@ defmodule Emisar.AuditTest do
       assert Enum.map(one, & &1.event_type) == ["approval.approved"]
     end
 
-    test "each event-type group exposes a selectable 'All <group> events' option" do
+    test "each event-type group leads with its selectable '<Group> — all events' header" do
       options = Audit.Event.Query.event_type_filter_options()
 
-      assert {"Runner", [{"group:Runner", "All Runner events"} | _]} =
+      assert {"Runner", [{"group:Runner", "Runner — all events"} | _]} =
                Enum.find(options, fn {label, _} -> label == "Runner" end)
     end
 

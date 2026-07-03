@@ -73,7 +73,8 @@ defmodule Emisar.Repo.Filter do
             valid_values: nil,
             fun: nil,
             default: nil,
-            span: :half
+            span: :half,
+            search: false
 
   @doc """
   Apply the supplied filter list to the queryable. Returns

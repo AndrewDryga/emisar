@@ -207,8 +207,6 @@ defmodule EmisarWeb.AuditLive do
         |> assign(:events, events)
         |> assign(:metadata, meta)
         |> assign(:refs, Audit.resolve_references(events))
-        |> assign(:actor_label, actor_label_for(actor_id, events))
-        |> assign(:subject_label, subject_label_for(subject_id, events))
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -219,8 +217,6 @@ defmodule EmisarWeb.AuditLive do
         |> assign(:events, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:refs, %{})
-        |> assign(:actor_label, actor_id)
-        |> assign(:subject_label, subject_id)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -231,18 +227,6 @@ defmodule EmisarWeb.AuditLive do
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
-
-  defp actor_label_for(nil, _events), do: nil
-
-  defp actor_label_for(actor_id, events) do
-    Enum.find_value(events, actor_id, fn e -> e.actor_id == actor_id && e.actor_label end)
-  end
-
-  defp subject_label_for(nil, _events), do: nil
-
-  defp subject_label_for(subject_id, events) do
-    Enum.find_value(events, subject_id, fn e -> e.subject_id == subject_id && e.subject_label end)
-  end
 
   def render(assigns) do
     ~H"""
@@ -260,49 +244,30 @@ defmodule EmisarWeb.AuditLive do
       width={:full}
     >
       <:title>Audit log</:title>
+      <%!-- Sub-feature side door — streaming config is its own page; its entry
+           rides the TITLE row (the pattern for a page's secondary surface),
+           not the intro prose and never below the rows. --%>
+      <:actions :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}>
+        <.button
+          variant={:secondary}
+          size={:sm}
+          navigate={~p"/app/#{@current_account}/audit/export"}
+        >
+          Stream to SIEM
+        </.button>
+      </:actions>
 
       <.page_intro>
         The append-only record of every action, approval, and access change in this account —
         exportable to your SIEM for independent, long-term retention.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
-        <%!-- Streaming CONFIG is an admin task, not part of reading the trail —
-             it lives on its own page instead of stranded below the rows. --%>
-        <.link
-          :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
-          navigate={~p"/app/#{@current_account}/audit/export"}
-          class="group inline-flex items-center gap-1 whitespace-nowrap font-medium text-brand-400 hover:text-brand-300"
-        >
-          Stream to SIEM <.cta_arrow class="h-3 w-3" />
-        </.link>
       </.page_intro>
-
-      <%!-- Pivot chips — "what did this ACTOR do" (a row click or a person/agent's
-           "View activity") and "everything about this SUBJECT" (a runner/run/approval
-           "View activity"). Each shows what's pinned + clears in one click. Without
-           the subject chip, a "View activity" link from a runner filtered the rows
-           but showed no control — it read as "the filter doesn't exist". --%>
-      <.pivot_chip
-        :if={@actor_id}
-        label="Actor"
-        value={@actor_label}
-        clear_to={
-          ~p"/app/#{@current_account}/audit?#{Map.drop(@filter_params, ["actor_id", "actor_kind"])}"
-        }
-      />
-      <.pivot_chip
-        :if={@subject_id}
-        label="Subject"
-        value={@subject_label}
-        clear_to={
-          ~p"/app/#{@current_account}/audit?#{Map.drop(@filter_params, ["subject_id", "subject_kind"])}"
-        }
-      />
 
       <%!-- Quick relative-range presets — set the unified bar's From to
            (now − window); the date filter below consumes it. Re-adds the
            presets the date-unification dropped, without a second bar. --%>
       <div class="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="text-zinc-500">Quick range:</span>
+        <span class="text-zinc-500">Quick filters:</span>
         <button
           :for={{label, window} <- audit_presets()}
           type="button"
@@ -313,17 +278,15 @@ defmodule EmisarWeb.AuditLive do
           {label}
         </button>
         <%!-- One-click "only the events that went wrong" — denials, removals, and
-             failures (the danger+warn outcomes) — so the rows an operator hunts for
-             surface out of a wall of routine sign-ins, without hand-building the
-             Outcome filter. Toggles the filter the bar already exposes.
-             Right-aligned: it's a severity pivot, not a range — it must not
-             read as part of the "Quick range" group. --%>
+             failures (the danger+warn severities) — so the rows an operator hunts
+             for surface out of a wall of routine sign-ins, without hand-building
+             the Severity filter. Toggles the filter the panel already exposes. --%>
         <button
           type="button"
           phx-click="toggle_problems"
           aria-pressed={to_string(problems_only?(@filter_params))}
           class={[
-            "ml-auto rounded-md px-2 py-1 font-medium ring-1 transition",
+            "rounded-md px-2 py-1 font-medium ring-1 transition",
             if(problems_only?(@filter_params),
               do: "bg-rose-500/15 text-rose-200 ring-rose-500/40",
               else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
@@ -348,7 +311,6 @@ defmodule EmisarWeb.AuditLive do
             )
           ]}
         >
-          <.icon name="hero-funnel" class="h-3 w-3" />
           Filters<span
             :if={@active_facet_count > 0}
             class="tabular-nums"
@@ -389,23 +351,43 @@ defmodule EmisarWeb.AuditLive do
         </:group_header>
         <:item :let={event}>
           <li id={"event-#{event.id}"}>
+            <%!-- One row, two densities. Below xl: the folded who→what·pairs·ip
+                 meta line. From xl: the forensic COLUMNS a reviewer scans down —
+                 Actor (who did it), Target (what it acted on), Source IP (from
+                 where) — with the payload pairs staying under the event label.
+                 Time is relative for humans; the hook's tooltip carries the
+                 absolute stamp with timezone for the record. --%>
             <.link
               navigate={~p"/app/#{@current_account}/audit/#{event.id}"}
-              class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04]"
+              class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04] xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:items-center xl:gap-4"
             >
-              <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1" />
-              <div class="min-w-0 flex-1">
-                <div class={["text-sm leading-5", event_title_class(event.event_type)]}>
-                  {format_event_type(event.event_type)}
+              <div class="flex min-w-0 flex-1 items-start gap-3 xl:flex-auto">
+                <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1" />
+                <div class="min-w-0 flex-1">
+                  <div class={["text-sm leading-5", event_title_class(event.event_type)]}>
+                    {format_event_type(event.event_type)}
+                  </div>
+                  <div class="truncate text-xs text-zinc-500 xl:hidden">
+                    {event_meta(event, @refs)}
+                  </div>
+                  <div
+                    :if={pairs_text(event) != ""}
+                    class="hidden truncate text-xs text-zinc-500 xl:block"
+                  >
+                    {pairs_text(event)}
+                  </div>
                 </div>
-                <div class="truncate text-xs text-zinc-500">{event_meta(event, @refs)}</div>
               </div>
-              <span
-                class="shrink-0 font-mono text-xs leading-5 tabular-nums text-zinc-500"
-                title={forensic_time(event.occurred_at)}
-              >
-                {Calendar.strftime(event.occurred_at, "%H:%M:%S")}
-              </span>
+              <.audit_cell value={
+                party_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
+              } />
+              <.audit_cell value={subject_text(event, @refs)} />
+              <.audit_cell value={event.ip_address} mono />
+              <.local_time
+                value={event.occurred_at}
+                mode={:relative}
+                class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-500 xl:ml-0 xl:text-right"
+              />
             </.link>
           </li>
         </:item>
@@ -452,6 +434,26 @@ defmodule EmisarWeb.AuditLive do
     """
   end
 
+  attr :value, :string, default: nil
+  attr :mono, :boolean, default: false
+
+  # An xl+ forensic column cell (Actor / Target / Source IP). An empty cell
+  # renders the muted em-dash on its own span — never the value's styling.
+  defp audit_cell(assigns) do
+    ~H"""
+    <div class="hidden min-w-0 xl:block">
+      <span
+        :if={@value}
+        class={["block truncate text-xs text-zinc-400", @mono && "font-mono tabular-nums"]}
+        title={@value}
+      >
+        {@value}
+      </span>
+      <span :if={!@value} class="text-xs text-zinc-600">—</span>
+    </div>
+    """
+  end
+
   # One quiet meta STRING per event — the accountable identity by name (the
   # kind prefix + the generic ACTOR/SUBJECT/IP columns died with the grid),
   # then "→ subject" only when the event acted ON something other than its
@@ -470,14 +472,15 @@ defmodule EmisarWeb.AuditLive do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" → ")
 
-    # "via magic_link" reads as prose; every other pair stays forensic "k: v".
-    pairs =
-      for {k, v} <- AuditSummary.summary_pairs(event),
-          do: if(k == "via", do: "via #{v}", else: "#{k}: #{v}")
-
-    ([blank_to_nil(who)] ++ pairs ++ [event.ip_address])
+    [blank_to_nil(who), blank_to_nil(pairs_text(event)), event.ip_address]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")
+  end
+
+  # "via magic_link" reads as prose; every other pair stays forensic "k: v".
+  defp pairs_text(event) do
+    AuditSummary.summary_pairs(event)
+    |> Enum.map_join(" · ", fn {k, v} -> if(k == "via", do: "via #{v}", else: "#{k}: #{v}") end)
   end
 
   defp subject_text(event, refs) do
@@ -595,8 +598,12 @@ defmodule EmisarWeb.AuditLive do
   defp any_filter_active?(params, filters),
     do: blank_to_nil(params["actor_id"]) != nil or LiveTable.has_active_filters?(params, filters)
 
-  defp ref_href(%{audit_link?: true, id: id, current_account: account}) when not is_nil(id),
-    do: ~p"/app/#{account}/audit?actor_id=#{id}"
+  # The pivot carries the KIND too: the facet panel's dynamic Actor picker only
+  # exists under a kind, and it (highlighted + counted, panel auto-opened) is
+  # the pivot's ONE visible control now — the old dismissable chip died.
+  defp ref_href(%{audit_link?: true, kind: kind, id: id, current_account: account})
+       when not is_nil(id),
+       do: ~p"/app/#{account}/audit?#{[actor_kind: kind, actor_id: id]}"
 
   defp ref_href(%{kind: kind, id: id, current_account: account}), do: ref_path(account, kind, id)
 

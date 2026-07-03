@@ -29,6 +29,66 @@ import {setupCopyToClipboardDelegation} from "./copy.js"
 // `data-format`:
 //   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
 //   - "relative" → "3m ago" / "Jul 14"
+
+// Searchable filter combobox (LiveTable `%Filter{search: true}`). The server
+// renders the full option list; this hook is pure client behavior — open/close,
+// type-to-filter over data-search, and selection (write the hidden input, fire
+// the form's change). The root is phx-update="ignore" with a VALUE-KEYED id:
+// unrelated live re-renders leave an open panel + query alone, and an actual
+// value change replaces the whole node with a fresh server render.
+const Combobox = {
+  mounted() {
+    this.trigger = this.el.querySelector("[data-combobox-trigger]")
+    this.panel = this.el.querySelector("[data-combobox-panel]")
+    this.search = this.el.querySelector("[data-combobox-search]")
+    this.hidden = this.el.querySelector("[data-combobox-value]")
+    this.options = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
+
+    this.trigger.addEventListener("click", () => this.toggle())
+    this.search.addEventListener("input", () => this.filter())
+    this.search.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault()
+        const first = this.options.find((o) => !o.parentElement.hidden)
+        if (first) this.select(first)
+      }
+      if (e.key === "Escape") this.close()
+    })
+    this.options.forEach((o) => o.addEventListener("click", () => this.select(o)))
+    this.onDocClick = (e) => { if (!this.el.contains(e.target)) this.close() }
+    document.addEventListener("click", this.onDocClick)
+  },
+
+  destroyed() { document.removeEventListener("click", this.onDocClick) },
+
+  toggle() { this.panel.hidden ? this.open() : this.close() },
+
+  open() {
+    this.panel.hidden = false
+    this.search.value = ""
+    this.filter()
+    this.search.focus()
+  },
+
+  close() { this.panel.hidden = true },
+
+  filter() {
+    const q = this.search.value.trim().toLowerCase()
+    this.options.forEach((o) => {
+      const hit = q === "" || (o.dataset.search || "").includes(q)
+      o.parentElement.hidden = !hit
+    })
+  },
+
+  select(option) {
+    this.hidden.value = option.dataset.value
+    this.close()
+    // Bubbling input event → the surrounding filter form's phx-change fires;
+    // the URL patch then re-renders this node (new value ⇒ new id).
+    this.hidden.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+}
+
 const LocalTime = {
   mounted() { this.format() },
   updated() { this.format() },
@@ -51,11 +111,13 @@ const LocalTime = {
       this.el.textContent = formatAbsolute(dt, sameYear)
     }
 
-    // Tooltip carries the full absolute local time on hover for the
-    // relative form, and the ISO source for the absolute/forensic forms —
+    // Tooltip carries the full absolute stamp on hover for the relative
+    // form — UTC first (the forensic reference) plus the viewer's local
+    // time with its zone name — and the ISO source for absolute/forensic,
     // so operators can always recover the exact value.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
     const tooltip = mode === "relative"
-      ? formatAbsolute(dt, sameYear)
+      ? `${formatForensic(dt)} · ${formatAbsolute(dt, false)} (${zone})`
       : iso
     this.el.setAttribute("title", tooltip)
   }
@@ -351,7 +413,7 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
+  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
 })
 
 // Show progress bar on live navigation and form submits

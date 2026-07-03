@@ -169,8 +169,10 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _lv, html} =
         live(conn, ~p"/app/#{account}/audit?#{[actor_kind: "user", actor_id: actor_id]}")
 
-      # The pivot resolves: the actor chip shows + rows scope to that actor.
-      assert html =~ "Actor:"
+      # The pivot's control is the facet panel now (the dismissable chip died):
+      # a kind facet in the URL auto-opens it, the Actor picker renders with
+      # the pivoted id, and rows scope to that actor.
+      assert html =~ ~s(name="actor_id")
       assert html =~ "admin@example.com"
       refute html =~ "unrelated-human"
     end
@@ -280,7 +282,19 @@ defmodule EmisarWeb.AuditLiveTest do
     test "a subject 'View activity' pivot filters to that subject and shows a clearable chip",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      runner_id = Ecto.UUID.generate()
+
+      # A REAL runner row — the panel's Subject picker lists only live-resolvable
+      # subjects, so a synthetic UUID would surface no picker.
+      {:ok, runner} =
+        Runner.Changeset.register(%{
+          account_id: account.id,
+          name: "pinned-runner",
+          external_id: Ecto.UUID.generate(),
+          group: "default"
+        })
+        |> Repo.insert()
+
+      runner_id = runner.id
 
       {:ok, _} =
         Audit.log(account.id, "runner.connected",
@@ -299,11 +313,10 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _lv, html} =
         live(conn, ~p"/app/#{account}/audit?#{[subject_kind: "runner", subject_id: runner_id]}")
 
-      # The pivot is visible as a clearable chip (it was invisible before — the
-      # link filtered rows but surfaced no control)...
-      assert html =~ "Subject:"
+      # The pivot surfaces as the auto-opened facet panel's Subject picker
+      # (highlighted + counted), and the rows scope to that subject.
+      assert html =~ ~s(name="subject_id")
       assert html =~ "pinned-runner"
-      # ...and the rows are actually scoped to that subject.
       refute html =~ "unrelated-actor"
     end
 
@@ -326,7 +339,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "still-here"
     end
 
-    test "filtering by actor_id narrows the list and shows a clearable chip", %{conn: conn} do
+    test "filtering by a bare actor_id (no kind) still narrows the list", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
       actor_b = Ecto.UUID.generate()
@@ -347,7 +360,6 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
-      assert html =~ "Actor:"
       assert html =~ "alice"
       # bob's event is filtered out entirely.
       refute html =~ "bob"
@@ -606,7 +618,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # the actor chip's clear (✕) link drops `actor_id` from
     # the params, restoring the full feed (the previously-filtered-out rows
     # return). The clear link patches to the URL without actor_id.
-    test "clearing the actor chip restores the full feed", %{conn: conn} do
+    test "clearing the filters drops an actor pivot and restores the full feed", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
 
@@ -620,15 +632,18 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} =
         Audit.log(account.id, "policy.updated", actor_kind: "user", actor_label: "bob")
 
-      # Land filtered to alice — bob is out, and the clear link is present.
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
-      assert html =~ "Actor:"
-      refute html =~ "bob"
+      # Land filtered to alice (kind + id — the pivot-link shape): bob's event
+      # row is out. (Asserted by its LABEL — the string "bob" itself hides in
+      # the Type combobox's data-combobox-* markup.)
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/audit?#{[actor_kind: "user", actor_id: actor_a]}")
 
-      # Click the chip's clear (✕) — actor_id drops, the full feed returns.
-      html = lv |> element(~s(a[aria-label="Clear actor filter"])) |> render_click()
-      refute html =~ "Actor:"
-      assert html =~ "bob"
+      refute html =~ "Policy updated"
+
+      # Clear filters — the pivot drops with the facets, the full feed returns.
+      html = lv |> element("a", "Clear filters") |> render_click()
+      assert html =~ "Policy updated"
+      refute html =~ ~s(name="actor_id")
     end
 
     # an active click-to-filter `actor_id` (which rides the
@@ -668,17 +683,15 @@ defmodule EmisarWeb.AuditLiveTest do
     # a chip for an actor that isn't in the loaded rows (its
     # id filters to zero events) falls back to showing the RAW id, never a crash
     # or a blank chip: actor_label_for/2 returns the id when no event matches.
-    test "a stale actor chip falls back to the raw id", %{conn: conn} do
+    test "a stale actor_id filters to the empty state, not a crash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
 
       stale = Ecto.UUID.generate()
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{stale}")
 
-      # The chip renders with the raw id (no loaded event carries a label for it).
-      assert html =~ "Actor:"
-      assert html =~ stale
       assert html =~ "No events match these filters."
+      refute html =~ "real"
     end
 
     # a quick-range preset only touches from/to; an
