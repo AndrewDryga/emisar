@@ -51,6 +51,16 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:inline` flows the filters in one wrapping row of compact controls (a few filters, no dynamically-added ones — most pages); `:stacked` lays them in a two-column grid where each filter's `span` picks its row/cell (the audit panel, whose Actor/Subject kind pickers pair with a revealed value dropdown)"
 
+  attr :filter_visibility, :atom,
+    default: :always,
+    values: [:always, :collapsible],
+    doc:
+      "`:collapsible` renders the filter form only while `filters_open` — for a page whose facet set is large enough to wall off the data (audit). The host LiveView owns the toggle control + the open flag as SERVER state (LiveView strips a native `<details open>` on re-render), typically opening it on mount when the URL already carries an active facet so a shared filtered link never hides its controls."
+
+  attr :filters_open, :boolean,
+    default: false,
+    doc: "`:collapsible` only — whether the filter form is currently shown"
+
   attr :prefix, :string,
     default: "",
     doc:
@@ -129,7 +139,7 @@ defmodule EmisarWeb.LiveTable do
     ~H"""
     <div class="space-y-4">
       <.filter_form
-        :if={@filters != []}
+        :if={@filters != [] and filters_visible?(@filter_visibility, @filters_open)}
         id={"#{@id}-filter"}
         path={@path}
         filters={@filters}
@@ -188,7 +198,7 @@ defmodule EmisarWeb.LiveTable do
     ~H"""
     <div class="space-y-4">
       <.filter_form
-        :if={@filters != []}
+        :if={@filters != [] and filters_visible?(@filter_visibility, @filters_open)}
         id={"#{@id}-filter"}
         path={@path}
         filters={@filters}
@@ -308,6 +318,11 @@ defmodule EmisarWeb.LiveTable do
   defp default_cards_wrapper_class(_) do
     "divide-y divide-zinc-800/70 overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
+
+  # `:always` pages render the form unconditionally; a `:collapsible` page
+  # renders it only while its host says so — the data leads, the facets wait.
+  defp filters_visible?(:always, _open?), do: true
+  defp filters_visible?(:collapsible, open?), do: open?
 
   # When `:group_by` is set, walk the rows preserving order and bucket
   # them by label — returns `[{label, [row, …]}, …]`. Without group_by
@@ -550,6 +565,19 @@ defmodule EmisarWeb.LiveTable do
   def has_active_filters?(params, filters) do
     filters
     |> Enum.any?(fn f ->
+      v = filter_value(params, to_string(f.name), f)
+      blank_or_nil(v) != blank_or_nil(f.default)
+    end)
+  end
+
+  @doc """
+  How many of `filters` are active (non-default) in `params`. A `:collapsible`
+  page's toggle control renders this so a closed panel still communicates that
+  facets are narrowing the list ("Filters · 2") — nothing is ever silently
+  hidden.
+  """
+  def count_active_filters(params, filters) do
+    Enum.count(filters, fn f ->
       v = filter_value(params, to_string(f.name), f)
       blank_or_nil(v) != blank_or_nil(f.default)
     end)

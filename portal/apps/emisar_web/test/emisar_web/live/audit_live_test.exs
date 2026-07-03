@@ -113,11 +113,15 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "alice@example.com"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       # The actor value links to "what did this identity do", not its
       # resource page.
       assert html =~ ~p"/app/#{account}/audit?actor_id=#{actor_id}"
+      # The facet panel is collapsed by default (the trail leads); the
+      # toolbar toggle reveals it.
+      refute html =~ ~s(name="from")
+      html = lv |> element("button[phx-click='toggle_filters']") |> render_click()
       # From/To are real %Filter{} inputs in the unified LiveTable bar now —
       # not a separate hand-rolled date form.
       assert html =~ "From (UTC)"
@@ -635,8 +639,11 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
-      # Change an unrelated filter (Outcome — always visible) — actor_id must
+      # actor_id is a pivot (chip), not a facet — the panel starts closed.
+      # Open it, then change an unrelated filter (Outcome) — actor_id must
       # ride along.
+      lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
       lv
       |> form("#audit-events-filter", %{outcome: "danger"})
       |> render_change()

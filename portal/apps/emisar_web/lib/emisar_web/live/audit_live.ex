@@ -10,7 +10,7 @@ defmodule EmisarWeb.AuditLive do
   alias Emisar.{ApiKeys, Audit}
   alias EmisarWeb.{AuditSummary, LiveTable, Permissions, UrlHelpers}
 
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     # Audit log is the canonical "what just happened" surface — any
     # mutation that commits an `Audit.Event` row in the same multi gets
     # auto-broadcast by `Repo.commit_multi`, so subscribing here is
@@ -27,6 +27,15 @@ defmodule EmisarWeb.AuditLive do
      |> assign(:page_title, "Audit log")
      |> assign(:export_secret, nil)
      |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
+     # The facet panel is collapsed by default — the trail leads the page. It
+     # opens on MOUNT when the URL already carries an active facet (a shared
+     # filtered link must never hide its controls); after that the flag is
+     # purely operator-toggled, so applying/clearing filters doesn't snap the
+     # panel around.
+     |> assign(
+       :filters_open?,
+       LiveTable.has_active_filters?(params, Audit.Event.Query.filters())
+     )
      |> assign_export_keys()}
   end
 
@@ -41,6 +50,9 @@ defmodule EmisarWeb.AuditLive do
     do: {:noreply, assign_export_keys(socket)}
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  def handle_event("toggle_filters", _params, socket),
+    do: {:noreply, update(socket, :filters_open?, &(!&1))}
 
   def handle_event("revoke_export_key", %{"id" => id}, socket) do
     Permissions.gated(
@@ -246,6 +258,7 @@ defmodule EmisarWeb.AuditLive do
       socket
       |> assign(:filters, filters)
       |> assign(:filter_params, params)
+      |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
       |> assign(:actor_id, actor_id)
       |> assign(:subject_id, subject_id)
 
@@ -376,6 +389,28 @@ defmodule EmisarWeb.AuditLive do
         >
           Problems only
         </button>
+        <%!-- The facet panel toggle. The active-facet count rides the label
+             ("Filters · 2") so a CLOSED panel still says filters are narrowing
+             the list — collapsing controls must never hide the fact that the
+             trail is filtered. Brand tint = the active-filter convention. --%>
+        <button
+          type="button"
+          phx-click="toggle_filters"
+          aria-expanded={to_string(@filters_open?)}
+          class={[
+            "inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium ring-1 transition",
+            if(@active_facet_count > 0 or @filters_open?,
+              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
+              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+            )
+          ]}
+        >
+          <.icon name="hero-funnel" class="h-3 w-3" />
+          Filters<span
+            :if={@active_facet_count > 0}
+            class="tabular-nums"
+          >· {@active_facet_count}</span>
+        </button>
       </div>
 
       <LiveTable.live_table
@@ -386,6 +421,8 @@ defmodule EmisarWeb.AuditLive do
         filter_params={@filter_params}
         filters={@filters}
         filter_layout={:stacked}
+        filter_visibility={:collapsible}
+        filters_open={@filters_open?}
         row_id={fn event -> "event-#{event.id}" end}
         row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
         responsive
