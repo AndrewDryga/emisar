@@ -1964,16 +1964,20 @@ defmodule EmisarWeb.CoreComponents do
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
         </div>
       </div>
-      <%!-- Fixed right-aligned slot: the source used to float mid-row between
-           the action id and the status, reading as unanchored. --%>
-      <span :if={@show_source} class="hidden w-48 shrink-0 justify-end sm:flex">
+      <%!-- Fixed LEFT-aligned columns, like the runs table: every source starts
+           at the same x and every status dot lines up vertically down the list.
+           Right-packing them jammed the source's ragged edge into the status
+           and nothing aligned row-to-row. --%>
+      <span :if={@show_source} class="hidden w-44 shrink-0 sm:flex">
         <.source_badge
           source={@run.source}
           label={TimeHelpers.run_actor(@run)}
           class="max-w-full text-xs"
         />
       </span>
-      <.status_badge status={@run.status} class="shrink-0" />
+      <span class="w-24 shrink-0 sm:w-28">
+        <.status_badge status={@run.status} />
+      </span>
     </.link>
     """
   end
