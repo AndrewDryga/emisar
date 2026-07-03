@@ -374,6 +374,22 @@ genuinely missing (then it's shared, not one-off).
   is the onboarding reassurance, and it must reuse the destination page's own
   words so the promise is fulfilled verbatim on click. Sweep target: any
   empty-state/CTA whose action text ≈ its title.
+- **A page's sub-feature side door rides the TITLE row** — a quiet secondary
+  `<.button size={:sm}>` in `dashboard_shell`'s `<:actions>` slot, right of the
+  H1 (audit's "Stream to SIEM" → `/audit/export`). Never in the intro prose,
+  never below the content it configures.
+- **Nav active state = the house wash + a brand-tinted icon** — `bg-white/[0.06]
+  text-zinc-50` with the icon `text-brand-400`; NEVER a filled green pill
+  (green-as-selection dilutes "emerald = passed the gate"). The sidebar sits on
+  the SAME bg-black plane as the canvas, divided by the one zinc-800/70
+  hairline; every sidebar hover is the white/[0.04] wash.
+- **A huge {:list} filter is a searchable combobox** (`%Filter{search: true}`),
+  its categories THEMSELVES selectable ("<Group> — all events" `group:`
+  sentinels — a native select's optgroup labels can't be picked, which is what
+  bred duplicate "All X events" child rows). State model for client widgets on
+  live pages: `phx-update="ignore"` + a VALUE-KEYED id — unrelated re-renders
+  can't close an open panel mid-interaction; a real value change replaces the
+  node with a fresh server render.
 - **One signal per fact — an inline status carrying full severity REPLACES a
   separate banner, it doesn't stack under one.** Severity rides the inline
   status itself: a soft nudge is amber, a HARD STOP (nothing works — all runners
