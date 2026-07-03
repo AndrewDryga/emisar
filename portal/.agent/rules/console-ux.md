@@ -62,7 +62,7 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 | Archetype | Width | Skeleton (top → bottom) | Reference |
 |---|---|---|---|
-| **List** | `:full` (ops) / `:table` (settings-ish) | shell title + `:actions` primary CTA · `page_intro` + `doc_link` · optional `summary_band` · optional `pivot_chip`s · ONE LiveTable (filters from `Query.filters/0`) · 4-state empty slot (§4) | RunsLive |
+| **List** | `:full` for a DENSE columnar table (many `<:col>`s — Runs, Audit); `:table` for a CARD/grouped list or panel list (`<:item>` rows, sibling panels — Runners, Approvals, Packs, Agents) so single-value rows don't stretch thin | shell title + `:actions` primary CTA · `page_intro` + `doc_link` · optional `summary_band` · optional `pivot_chip`s · ONE LiveTable (filters from `Query.filters/0`) · 4-state empty slot (§4) | RunsLive |
 | **Detail** | `:detail` | `detail_header` (back · entity title · `:actions`) · `meta_strip` leads, Status first · conditional callout stack · sibling content cards · danger zones last | RunDetail |
 | **Editor** | `:detail` | `detail_header` + Cancel in header · the editing surface · Save/primary action in ONE place (the surface's footer row) · inline errors · no silent data loss on navigate | RunbookEditor (shape, not details) |
 | **Create flow** | `:form` | own `/new` route · single `panel` form · privilege choices as `choice_cards` · **in-page success step** (do-again / back-to-list) — never flash-and-redirect | Team invite |

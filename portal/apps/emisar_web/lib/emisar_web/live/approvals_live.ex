@@ -306,7 +306,7 @@ defmodule EmisarWeb.ApprovalsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
-      width={:full}
+      width={:table}
     >
       <:title>Approvals</:title>
 
