@@ -1966,7 +1966,7 @@ defmodule EmisarWeb.CoreComponents do
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
-          <span :if={@show_source}>· {run_attribution(@run)}</span>
+          <span :if={@show_source && run_attribution(@run)}>· {run_attribution(@run)}</span>
         </div>
       </div>
       <%!-- Fixed left-aligned status column — every dot lines up vertically. --%>
@@ -1977,30 +1977,42 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # "by <who> via <channel>" — who is the accountable human (the requesting
-  # user; for an MCP run, the key's owner), channel is how it arrived. A run
-  # with no recorded human (legacy rows, the runbook engine) says only the
-  # channel. Unloaded assocs (%Ecto.Association.NotLoaded{} has no :email/:name
-  # key) fall through the same clauses as nil.
+  # "by <who>" (+ " via <agent>" for MCP) — who is the accountable HUMAN by
+  # NAME (email fallback): the requesting user, or an MCP run's key owner.
+  # "via portal" is the default channel and says nothing, so it's dropped;
+  # the MCP agent name IS the signal (human vs agent origin) and stays. A run
+  # with no recorded human (legacy rows, the runbook engine) shows only its
+  # channel; nil hides the segment entirely. Unloaded assocs
+  # (%Ecto.Association.NotLoaded{} has no :email/:full_name key) fall through
+  # the same clauses as nil.
   defp run_attribution(run) do
-    case attribution_who(run) do
-      nil -> "via #{attribution_channel(run)}"
-      who -> "by #{who} via #{attribution_channel(run)}"
+    case {attribution_who(run), attribution_channel(run)} do
+      {nil, nil} -> nil
+      {who, nil} -> "by #{who}"
+      {nil, channel} -> "via #{channel}"
+      {who, channel} -> "by #{who} via #{channel}"
     end
   end
 
-  defp attribution_who(%{requested_by: %{email: email}}), do: email
-  defp attribution_who(%{api_key: %{created_by: %{email: email}}}), do: email
+  # Match on :email presence, not a bare %{} — %Ecto.Association.NotLoaded{}
+  # is a struct (so a map) and would match %{}, swallowing the api_key fallback.
+  defp attribution_who(%{requested_by: %{email: _} = user}), do: user_display_name(user)
+
+  defp attribution_who(%{api_key: %{created_by: %{email: _} = user}}),
+    do: user_display_name(user)
+
   defp attribution_who(_run), do: nil
+
+  defp user_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
+  defp user_display_name(%{email: email}), do: email
 
   defp attribution_channel(%{source: :mcp, api_key: %{name: name}}) when is_binary(name),
     do: name
 
   defp attribution_channel(%{source: :mcp}), do: "LLM agent"
-  defp attribution_channel(%{source: :operator}), do: "portal"
   defp attribution_channel(%{source: :runbook}), do: "runbook"
   defp attribution_channel(%{source: :scheduled}), do: "schedule"
-  defp attribution_channel(_run), do: "portal"
+  defp attribution_channel(_run), do: nil
 
   @doc """
   A dotted mono identifier (an action id, an event type) rendered with a
