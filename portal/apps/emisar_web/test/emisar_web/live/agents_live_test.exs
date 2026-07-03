@@ -65,9 +65,16 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/agents")
       refute has_element?(lv, "a", "Clear filters")
 
-      # Moving Status off its default (or picking "All") surfaces the clear link.
+      # Moving Status off its default surfaces the clear link.
       {:ok, filtered, _html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
       assert has_element?(filtered, "a", "Clear filters")
+
+      # Picking "All" (a blank value) is ALSO a deviation from the default
+      # "live", so it reads active — the control gets the brand accent and the
+      # clear link appears. (Blank ≠ inactive when the default isn't blank.)
+      {:ok, all, all_html} = live(conn, "/app/#{account.slug}/settings/agents?status=")
+      assert has_element?(all, "a", "Clear filters")
+      assert all_html =~ "border-brand-500/60"
     end
 
     test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",

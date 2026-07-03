@@ -479,8 +479,15 @@ defmodule EmisarWeb.LiveTable do
   defp filter_active?(%Filter{type: :boolean, default: default}, value),
     do: value == "true" and value != default
 
+  # Active = the value DIFFERS from the filter's default. Blanks (nil / "" / [])
+  # all read as "no value", so a filter with no default is inactive when blank —
+  # but a filter whose default is non-blank (status="live") is ACTIVE when moved
+  # to a blank value ("All"), because that's still a deviation from its baseline.
   defp filter_active?(%Filter{default: default}, value),
-    do: value not in [nil, "", []] and value != default
+    do: blank_or_nil(value) != blank_or_nil(default)
+
+  defp blank_or_nil(value) when value in [nil, "", []], do: nil
+  defp blank_or_nil(value), do: value
 
   # The value a filter is operating at: its URL param when present (even a blank
   # "All"), otherwise the filter's configured `default`. Absent → default; an
@@ -515,7 +522,7 @@ defmodule EmisarWeb.LiveTable do
     filters
     |> Enum.any?(fn f ->
       v = filter_value(params, to_string(f.name), f)
-      v not in [nil, ""] and v != f.default
+      blank_or_nil(v) != blank_or_nil(f.default)
     end)
   end
 

@@ -186,9 +186,12 @@ defmodule EmisarWeb.LiveTableTest do
       assert LiveTable.has_active_filters?(%{"status" => "revoked"}, filters)
     end
 
-    test "picking \"All\" (blank) over a default is NOT active" do
+    test "picking \"All\" (blank) over a non-blank default IS active" do
+      # "All" (a blank value) still DEVIATES from the default "live", so it reads
+      # active — it raises the clear-× and highlights the control, so the operator
+      # can see they've widened past the default and get back to it.
       filters = [%{list_filter(:status) | default: "live"}]
-      refute LiveTable.has_active_filters?(%{"status" => ""}, filters)
+      assert LiveTable.has_active_filters?(%{"status" => ""}, filters)
     end
 
     test "a plain (default-less) filter is active only with a value" do
