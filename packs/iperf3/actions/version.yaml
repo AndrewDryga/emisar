@@ -1,0 +1,26 @@
+schema_version: 1
+id: iperf3.version
+title: iperf3 version + build info
+kind: exec
+risk: medium
+description: >
+  Show the installed iperf3 version and build info (cJSON / OpenSSL).
+  Read-only local check with no network — use it to confirm the runner
+  actually has iperf3 before dispatching a throughput test.
+side_effects:
+  - Runs `iperf3 --version` locally.
+  - Read-only; no network traffic.
+args: []
+execution:
+  command:
+    binary: iperf3
+    argv:
+      - "--version"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+examples:
+  - title: Show iperf3 version
+    args: {}

@@ -1,0 +1,77 @@
+schema_version: 1
+id: iperf3.udp
+title: iperf3 UDP jitter + loss test
+kind: exec
+risk: medium
+description: >
+  Measure UDP throughput, jitter, and packet loss to a target host
+  running an iperf3 server (`iperf3 -s`). Sends a UDP stream at the target
+  `bitrate` and reports jitter (ms) and lost-packet percentage as JSON.
+  Use to check a path for loss or jitter (VoIP, video, real-time links)
+  or to probe how much a link drops at a given rate. Set reverse=true to
+  test the download direction (server → runner). The target MUST already
+  be running an iperf3 server; generates sustained UDP traffic for
+  `duration` seconds.
+side_effects:
+  - Sends a UDP stream to the target's iperf3 server (default port 5201) at the target bitrate.
+  - Generates sustained UDP traffic for the test duration — can congest a shared link.
+  - Read-only on both hosts; no state is changed.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target host (hostname, IPv4, or IPv6) running an iperf3 server.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+  - name: bitrate
+    type: string
+    required: true
+    description: >
+      Target UDP bitrate in bits/sec, optional K/M/G suffix (e.g. "50M").
+      This is the rate the sender aims for; the report shows how much of
+      it arrived.
+    validation:
+      pattern: "^[1-9][0-9]{0,6}[KMGkmg]?$"
+  - name: port
+    type: integer
+    required: false
+    default: 5201
+    description: iperf3 server port.
+    validation:
+      min: 1
+      max: 65535
+  - name: duration
+    type: integer
+    required: false
+    default: 10
+    description: Test duration in seconds.
+    validation:
+      min: 1
+      max: 30
+  - name: reverse
+    type: boolean
+    required: false
+    default: false
+    description: Reverse mode — the server sends and the runner receives (measures the download direction).
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - 'set -- iperf3 -c "$HOST" -p "$PORT" -u -b "$BITRATE" -t "$DURATION" --connect-timeout 5000 -J; [ "$REVERSE" = "true" ] && set -- "$@" -R; exec "$@"'
+  env:
+    HOST: "{{ args.host }}"
+    PORT: "{{ args.port }}"
+    BITRATE: "{{ args.bitrate }}"
+    DURATION: "{{ args.duration }}"
+    REVERSE: "{{ args.reverse }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: 10s UDP test at 50 Mbit to 10.0.0.5
+    args:
+      host: "10.0.0.5"
+      bitrate: "50M"

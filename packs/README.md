@@ -1,6 +1,6 @@
 # Emisar example packs
 
-78 packs / 1,217 actions covering Linux ops, web/proxy, databases,
+79 packs / 1,244 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-78 packs, 1,217 actions, sorted by id. **Risk** is the pack's ceiling —
+79 packs, 1,244 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -102,6 +102,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `github-cli` | 19 | high | GH_TOKEN (opt) |
 | `grafana` | 10 | low | GRAFANA_* |
 | `haproxy` | 12 | high | HAPROXY_SOCK |
+| `iperf3` | 4 | medium | local-host |
 | `iscsi` | 4 | low | local-host |
 | `java-jvm` | 16 | critical | local-host |
 | `kafka` | 20 | critical | KAFKA_BOOTSTRAP |

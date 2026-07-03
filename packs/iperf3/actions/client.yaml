@@ -1,0 +1,92 @@
+schema_version: 1
+id: iperf3.client
+title: iperf3 TCP throughput test
+kind: exec
+risk: medium
+description: >
+  Measure TCP throughput to a target host running an iperf3 server
+  (`iperf3 -s`). Reports bits/sec, retransmits, and per-stream detail as
+  JSON. Use to answer "what is the real bandwidth between these two
+  hosts?" — e.g. diagnosing slow replication, backups, or a suspect link.
+  Set reverse=true to measure the download direction (server → runner).
+  The target MUST already be running an iperf3 server; the test generates
+  sustained traffic for `duration` seconds and can saturate a shared
+  link, so cap it with `bitrate` and keep `duration` short on production
+  paths.
+side_effects:
+  - Opens a TCP control + data connection to the target's iperf3 server (default port 5201).
+  - Generates sustained traffic at up to line rate (unless `bitrate` caps it) for the test duration — can saturate a shared link.
+  - Read-only on both hosts; no state is changed.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target host (hostname, IPv4, or IPv6) running an iperf3 server.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+  - name: port
+    type: integer
+    required: false
+    default: 5201
+    description: iperf3 server port.
+    validation:
+      min: 1
+      max: 65535
+  - name: duration
+    type: integer
+    required: false
+    default: 10
+    description: Test duration in seconds.
+    validation:
+      min: 1
+      max: 30
+  - name: parallel
+    type: integer
+    required: false
+    default: 1
+    description: Number of parallel TCP streams.
+    validation:
+      min: 1
+      max: 16
+  - name: bitrate
+    type: string
+    required: false
+    default: "0"
+    description: >
+      Target bitrate cap in bits/sec, optional K/M/G suffix (e.g. "500M").
+      "0" means unlimited (measure true capacity).
+    validation:
+      pattern: "^[0-9]{1,7}[KMGkmg]?$"
+  - name: reverse
+    type: boolean
+    required: false
+    default: false
+    description: Reverse mode — the server sends and the runner receives (measures the download direction).
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - 'set -- iperf3 -c "$HOST" -p "$PORT" -t "$DURATION" -P "$PARALLEL" -b "$BITRATE" --connect-timeout 5000 -J; [ "$REVERSE" = "true" ] && set -- "$@" -R; exec "$@"'
+  env:
+    HOST: "{{ args.host }}"
+    PORT: "{{ args.port }}"
+    DURATION: "{{ args.duration }}"
+    PARALLEL: "{{ args.parallel }}"
+    BITRATE: "{{ args.bitrate }}"
+    REVERSE: "{{ args.reverse }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: 10s TCP test to 10.0.0.5
+    args:
+      host: "10.0.0.5"
+  - title: Download direction, 4 streams, capped at 500 Mbit
+    args:
+      host: "10.0.0.5"
+      reverse: true
+      parallel: 4
+      bitrate: "500M"

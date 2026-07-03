@@ -1,0 +1,39 @@
+schema_version: 1
+
+id: iperf3
+name: iperf3 network throughput
+version: 0.1.0
+description: >
+  Active network throughput measurement with iperf3 — TCP bandwidth and
+  UDP jitter / packet loss — between two nodes in the fleet. Run the
+  one-shot server on one runner, then probe it with the client from
+  another. Use to answer "what is the real bandwidth (or loss) between
+  these two hosts?"
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - iperf3
+
+setup:
+  summary: >
+    Needs no host-side credentials — just iperf3 on PATH and a network
+    path between the two runners. Start iperf3.server on one node, then
+    run iperf3.client / iperf3.udp on another node pointed at it. The
+    server is one-shot: it serves a single test and exits, so nothing is
+    left listening.
+  notes:
+    - "Run iperf3.server on the target first (it listens for up to idle_timeout seconds); one server handles both TCP and UDP clients. Dispatch it async (wait=false), then run the client within that window."
+    - "If no server is listening, the client's control connection is refused and the test fails fast."
+    - "Throughput tests generate sustained traffic at up to line rate for the test duration — keep `duration` short and cap it with `bitrate` on shared or production paths."
+    - "Every iperf3 action is medium-risk (policy-gated): the server opens a transient inbound port and the client/udp probes push sustained, link-saturating traffic. iperf3 changes no host state — it only moves test traffic — but that network blast radius is why the whole pack is gated."
+  verify: iperf3.version
+
+actions:
+  - actions/version.yaml
+  - actions/server.yaml
+  - actions/client.yaml
+  - actions/udp.yaml
