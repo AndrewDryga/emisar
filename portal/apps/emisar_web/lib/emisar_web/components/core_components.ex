@@ -1382,7 +1382,10 @@ defmodule EmisarWeb.CoreComponents do
            it to the viewport so the bottom user-block (and sign-out
            icon) stays reachable on tall pages instead of being pushed
            off-screen by content height. --%>
-      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/80 lg:sticky lg:top-0 lg:flex lg:h-screen">
+      <%!-- The sidebar sits on the SAME black plane as the work canvas — one
+           surface, a single landed hairline between nav and work (the old
+           zinc-950 panel read as separate admin chrome beside the canvas). --%>
+      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-800/70 bg-black lg:sticky lg:top-0 lg:flex lg:h-screen">
         <.shell_brand
           current_account={@current_account}
           switchable_accounts={@switchable_accounts || [@current_account]}
@@ -1415,8 +1418,8 @@ defmodule EmisarWeb.CoreComponents do
           phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
         >
         </div>
-        <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div class="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
+        <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-800/70 bg-black shadow-2xl">
+          <div class="flex items-center justify-between border-b border-zinc-800/70 px-4 py-3">
             <.shell_brand
               current_account={@current_account}
               switchable_accounts={@switchable_accounts || [@current_account]}
@@ -1443,8 +1446,7 @@ defmodule EmisarWeb.CoreComponents do
         </aside>
       </div>
 
-      <%!-- The whole work column (floating title + canvas) is one black plane;
-           the zinc-950 sidebar reads as separate chrome beside it. --%>
+      <%!-- The whole console — sidebar AND work column — is one black plane. --%>
       <div class="flex min-w-0 flex-1 flex-col bg-black">
         <%!-- Portal-wide nudge: a signed-in user whose email isn't
              confirmed yet. Shown on every page until they verify; the
@@ -1560,7 +1562,7 @@ defmodule EmisarWeb.CoreComponents do
 
     ~H"""
     <.dropdown
-      class="border-b border-zinc-900"
+      class="border-b border-zinc-800/70"
       align={:stretch}
       summary_class="flex h-16 items-center gap-3 px-2 transition hover:bg-white/[0.04] lg:px-6"
       panel_class="z-30 mt-1 overflow-hidden shadow-2xl"
@@ -1804,9 +1806,9 @@ defmodule EmisarWeb.CoreComponents do
       href={@href}
       target="_blank"
       rel="noopener noreferrer"
-      class="flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
+      class="flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
     >
-      <.icon name={@icon} class="h-4 w-4" />
+      <.icon name={@icon} class="h-4 w-4 text-zinc-500" />
       <span class="flex-1">{render_slot(@inner_block)}</span>
       <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-600" />
     </.link>
@@ -1818,7 +1820,7 @@ defmodule EmisarWeb.CoreComponents do
   defp nav_group(assigns) do
     ~H"""
     <div class="pb-1 pt-2.5 first:pt-0">
-      <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+      <p class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
         {@label}
       </p>
     </div>
@@ -1835,7 +1837,7 @@ defmodule EmisarWeb.CoreComponents do
         <.link
           navigate={~p"/app/#{@current_account}/settings/profile"}
           phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
-          class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-zinc-900"
+          class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-white/[0.04]"
           aria-label="Open profile settings"
         >
           <.avatar name={@current_user.full_name || @current_user.email} size={:sm} />
@@ -1881,16 +1883,23 @@ defmodule EmisarWeb.CoreComponents do
 
   def nav_link(assigns) do
     ~H"""
+    <%!-- Active = the house light wash + bright text, with the ICON carrying
+         the one quiet brand signal — the old filled green pill (fill + ring)
+         was the last admin-template artifact in the shell, and green-as-
+         selection diluted "emerald = passed the gate". --%>
     <.link
       navigate={@to}
       phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
       class={[
         "flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
-        @active && "bg-brand-500/15 font-medium text-white ring-1 ring-inset ring-brand-500/25",
-        !@active && "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+        @active && "bg-white/[0.06] font-medium text-zinc-50",
+        !@active && "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
       ]}
     >
-      <.icon name={@icon} class="h-4 w-4" />
+      <.icon
+        name={@icon}
+        class={"h-4 w-4 #{if @active, do: "text-brand-400", else: "text-zinc-500"}"}
+      />
       <span class="flex-1">{render_slot(@inner_block)}</span>
       <span
         :if={badge_visible?(@badge)}
