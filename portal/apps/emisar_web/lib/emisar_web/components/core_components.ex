@@ -1927,7 +1927,10 @@ defmodule EmisarWeb.CoreComponents do
       class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-zinc-900/40"
     >
       <div class="min-w-0">
-        <div class="truncate font-mono text-sm text-zinc-200">{@run.action_id}</div>
+        <%!-- The action id is the run's identity — on a phone it wraps to show
+             in full rather than clipping mid-token; the wider desktop row still
+             truncates to keep the list scannable. --%>
+        <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">{@run.action_id}</div>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />

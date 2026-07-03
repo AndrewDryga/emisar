@@ -206,9 +206,12 @@ defmodule EmisarWeb.RunsLive do
           />
         </:col>
         <:col :let={run} label="Action">
+          <%!-- The action id is the row's headline — on a phone it wraps to show
+               in full (break-all) rather than clipping mid-token to "…"; the
+               desktop table cell still truncates to its column width. --%>
           <.link
             navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
-            class="block max-w-[44vw] truncate font-mono text-sm hover:text-brand-300 sm:max-w-none"
+            class="block break-all font-mono text-sm hover:text-brand-300 sm:truncate"
           >
             {run.action_id}
           </.link>

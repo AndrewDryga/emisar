@@ -286,7 +286,7 @@ defmodule EmisarWeb.DashboardLive do
               class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
             >
               <div class="min-w-0">
-                <div class="truncate font-mono text-amber-100">
+                <div class="break-all font-mono text-amber-100 sm:truncate">
                   {request.context["action_id"] || "—"}
                 </div>
                 <div class="truncate text-xs text-amber-200/60">

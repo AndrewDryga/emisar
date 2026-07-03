@@ -699,8 +699,10 @@ defmodule EmisarWeb.RunbookRunLive do
               <div class="flex items-center gap-3">
                 <.status_badge status={row.status} />
                 <div class="min-w-0 flex-1">
-                  <span class="truncate font-mono text-zinc-200">{row.action_id}</span>
-                  <span class="ml-2 truncate text-xs text-zinc-500">
+                  <%!-- The action id names what dispatches — it wraps to show in
+                       full on a phone, never clips to "…upstr…". --%>
+                  <span class="break-all font-mono text-zinc-200">{row.action_id}</span>
+                  <span class="ml-2 text-xs text-zinc-500">
                     on {row.runner_name}
                   </span>
                   <span
