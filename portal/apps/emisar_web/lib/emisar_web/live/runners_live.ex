@@ -2,13 +2,20 @@ defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
+  alias EmisarWeb.RunnerInstall
+  alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
 
     if connected?(socket), do: Runners.subscribe_connections(account_id)
 
-    {:ok, assign(socket, :page_title, "Runners")}
+    {:ok,
+     socket
+     |> assign(:page_title, "Runners")
+     |> assign(:install_command, nil)
+     |> assign(:base_url, nil)
+     |> assign(:show_troubleshooting?, false)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -16,6 +23,13 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, reload(socket)}
+
+  # The empty-state wizard's grace period elapsed with no runner — reveal its
+  # troubleshooting checklist (a runner joining first re-runs load/2, which drops
+  # show_wizard? and shows the list, pre-empting this).
+  def handle_info(:reveal_troubleshooting, socket),
+    do: {:noreply, assign(socket, :show_troubleshooting?, true)}
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   # PubSub-driven refresh — re-run the current page/filter.
@@ -51,9 +65,16 @@ defmodule EmisarWeb.RunnersLive do
             _ -> []
           end
 
+        # An empty fleet on the live socket IS the wizard — mint the one-liner and
+        # render the installer inline, so a first-time operator connects a host
+        # without a detour to /runners/install (the LLM-agents page does the same).
+        show_wizard? = runners == [] and meta.count == 0 and connected?(socket)
+
         socket
+        |> maybe_mint_install(show_wizard?)
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
+        |> assign(:show_wizard?, show_wizard?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, groups)
@@ -68,6 +89,7 @@ defmodule EmisarWeb.RunnersLive do
         socket
         |> assign(:runners, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:show_wizard?, false)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, [])
@@ -80,6 +102,25 @@ defmodule EmisarWeb.RunnersLive do
         load(socket, %{})
     end
   end
+
+  # Mint the install one-liner the first time an empty fleet renders on the live
+  # socket. Mint ONCE — a presence reload re-runs load/2, and re-minting each pass
+  # would burn a key per tick; reuse the command already in assigns.
+  defp maybe_mint_install(socket, true) do
+    if socket.assigns.install_command do
+      socket
+    else
+      base = UrlHelpers.derive_base_url(socket)
+      # Only the command + base are used here — unlike the dedicated page, this
+      # wizard needs no key id: any runner joining re-runs load/2 and shows the
+      # list, so there's no per-key join to match.
+      {command, _key_id} = RunnerInstall.mint_command(socket.assigns.current_subject, base)
+      Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
+      assign(socket, base_url: base, install_command: command)
+    end
+  end
+
+  defp maybe_mint_install(socket, false), do: socket
 
   defp load_fleet_health(subject) do
     case Runners.list_all_runners_for_account(subject) do
@@ -112,16 +153,18 @@ defmodule EmisarWeb.RunnersLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={:table}
+      width={if @show_wizard?, do: :form, else: :table}
     >
       <:title>Runners</:title>
-      <:actions>
+      <%!-- The wizard IS the add flow, so the button (→ the same wizard) is
+           redundant while an empty fleet shows it inline. --%>
+      <:actions :if={not @show_wizard?}>
         <.button navigate={~p"/app/#{@current_account}/runners/install"} size={:md} icon="hero-plus">
           Add a runner
         </.button>
       </:actions>
 
-      <.page_intro>
+      <.page_intro :if={not @show_wizard?}>
         Live connection state for every host in your fleet — a runner must be connected before you
         can dispatch an action to it. <.doc_link href="/docs/runners">Runner docs</.doc_link>
       </.page_intro>
@@ -136,12 +179,27 @@ defmodule EmisarWeb.RunnersLive do
             This is a load error, not an empty fleet — a host may well be connected. Refresh the
             page; if it persists, your access to this account may have changed.
           </.empty_state>
-        <% @runners == [] && @metadata.count == 0 && connected?(@socket) -> %>
-          <.empty_state icon="hero-cpu-chip" title="No runners yet">
-            A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
-            runner key and gives you a one-liner to paste on a Linux or macOS box.
-            <:cta navigate={~p"/app/#{@current_account}/runners/install"}>Open install wizard</:cta>
-          </.empty_state>
+        <% @show_wizard? -> %>
+          <%!-- No runners yet → the empty state IS the installer. A runner is the
+               emisar binary on one of your hosts; paste the one-liner to connect
+               the first. --%>
+          <.install_wizard
+            install_command={@install_command}
+            base_url={@base_url}
+            show_troubleshooting={@show_troubleshooting?}
+            on_failure_path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
+          />
+
+          <%!-- Follow-up resources, siblings below the wizard — same as the
+               dedicated install page. --%>
+          <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
+              Image-bake, cloud-init, manual install.
+            </.link_card>
+            <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
+              Browse linux-core, cassandra, showcase. Install snippets included.
+            </.link_card>
+          </div>
         <% @runners == [] && @metadata.count == 0 -> %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>

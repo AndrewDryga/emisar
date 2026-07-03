@@ -16,27 +16,23 @@ defmodule EmisarWeb.RunnerInstallLive do
     they land on the page that proves it worked. A different runner joining
     the account's presence (a reconnect, another host) is NOT this install
     and must not redirect — the join is matched on `bootstrap_auth_key_id`.
-  - Same install command shape + same links as the empty-state on the
-    dashboard, kept in sync via shared helpers.
+  - Same install command + links as the runners-list empty-state wizard
+    (an empty fleet drops straight into it), kept in sync via the shared
+    `EmisarWeb.RunnerInstall` helper.
   """
   use EmisarWeb, :live_view
   alias Emisar.Runners
+  alias EmisarWeb.RunnerInstall
   alias EmisarWeb.UrlHelpers
-
-  # A runner usually joins within seconds of running the one-liner. If none
-  # has after this grace period, reveal a troubleshooting checklist — the
-  # likely funnel failure (wrong/truncated key, :443 firewalled, non-systemd
-  # host) is otherwise invisible behind a "waiting" pulse that never ends.
-  @troubleshoot_after_ms 35_000
 
   def mount(_params, _session, socket) do
     socket =
       if connected?(socket) do
         Runners.subscribe_connections(socket.assigns.current_account.id)
-        Process.send_after(self(), :reveal_troubleshooting, @troubleshoot_after_ms)
+        Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
 
         base = UrlHelpers.derive_base_url(socket)
-        {command, key_id} = mint_install_command(socket, base)
+        {command, key_id} = RunnerInstall.mint_command(socket.assigns.current_subject, base)
 
         socket
         |> assign(:base_url, base)
@@ -82,24 +78,6 @@ defmodule EmisarWeb.RunnerInstallLive do
     do: {:noreply, assign(socket, :show_troubleshooting?, true)}
 
   def handle_info(_, socket), do: {:noreply, socket}
-
-  # Returns `{command, key_id}` — the key id lets the presence-join handler
-  # redirect ONLY for the runner that registers with this exact key. On mint
-  # failure, `{:mint_failed, nil}` (a nil key id can never match a join).
-  defp mint_install_command(socket, base) do
-    case Runners.mint_install_key(socket.assigns.current_subject) do
-      {:ok, raw, key} ->
-        # Leading space keeps the key out of shell history under
-        # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
-        command =
-          " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
-
-        {command, key.id}
-
-      {:error, _} ->
-        {:mint_failed, nil}
-    end
-  end
 
   def render(assigns) do
     ~H"""

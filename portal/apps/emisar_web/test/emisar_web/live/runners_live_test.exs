@@ -6,22 +6,29 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/runners")
     end
 
-    test "shows the empty state when no runners are registered", %{conn: conn} do
+    test "an empty fleet drops straight into the inline install wizard", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
-      assert html =~ "No runners yet"
-      assert html =~ "Open install wizard"
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      # No runners yet → the empty state IS the installer, one-liner pre-minted,
+      # so a first-time operator connects a host with no detour to a separate page.
+      assert html =~ "Run this on the host"
+      assert html =~ "curl -sSL"
+      assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
+      # The redundant "Add a runner" header button is dropped while the wizard shows.
+      refute has_element?(lv, "a", "Add a runner")
     end
 
-    test "the dead/pre-connect empty render shows a loading placeholder, not the pitch",
+    test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       # A plain GET is the disconnected render — connected?/1 is false, so the
-      # onboarding pitch is deferred behind a loading placeholder.
+      # installer (and the live credential it mints) is deferred behind a loading
+      # placeholder; nothing is minted until the socket confirms an empty fleet.
       html = conn |> get(~p"/app/#{account}/runners") |> html_response(200)
       assert html =~ "Loading"
-      refute html =~ "No runners yet"
+      refute html =~ "curl -sSL"
     end
 
     test "lists runners grouped by their `group` field", %{conn: conn} do
