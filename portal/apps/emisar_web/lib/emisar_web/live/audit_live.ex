@@ -248,9 +248,11 @@ defmodule EmisarWeb.AuditLive do
            rides the TITLE row (the pattern for a page's secondary surface),
            not the intro prose and never below the rows. --%>
       <:actions :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}>
+        <%!-- :md, not :sm — a control on the 28px title row needs the full-size
+             button to hold its own beside the H1. --%>
         <.button
           variant={:secondary}
-          size={:sm}
+          size={:md}
           navigate={~p"/app/#{@current_account}/audit/export"}
         >
           Stream to SIEM
