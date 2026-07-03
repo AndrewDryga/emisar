@@ -48,11 +48,29 @@ defmodule Emisar.Repo.Filter do
           title: String.t() | nil,
           type: type(),
           values: values() | Range.t() | nil,
+          valid_values: values() | nil,
           fun: fun(),
-          default: term() | nil
+          default: term() | nil,
+          span: :half | :full
         }
 
-  defstruct name: nil, title: nil, type: nil, values: nil, fun: nil, default: nil
+  # `span` is the filter's width in the LiveTable filter grid (two columns):
+  # `:half` (the default) shares a row, `:full` takes its own row — so a page
+  # with many filters can pair the compact ones and give the rest a line each.
+  #
+  # `valid_values` is the set the value is VALIDATED against, when it's broader
+  # than what the dropdown DISPLAYS (`values`). The audit Type filter collapses
+  # sparse groups to a "<Group> — all events" line, but a specific event type
+  # (e.g. from a programmatic caller) is still a legal value — `valid_values`
+  # carries the full set so it isn't rejected. nil → validate against `values`.
+  defstruct name: nil,
+            title: nil,
+            type: nil,
+            values: nil,
+            valid_values: nil,
+            fun: nil,
+            default: nil,
+            span: :half
 
   @doc """
   Apply the supplied filter list to the queryable. Returns
@@ -138,7 +156,11 @@ defmodule Emisar.Repo.Filter do
   end
 
   @doc false
-  def validate_value(%__MODULE__{type: type, values: values}, value) do
+  def validate_value(%__MODULE__{type: type} = filter, value) do
+    # Validate against `valid_values` when set (the full legal set), else the
+    # displayed `values` — they differ only when the dropdown collapses options.
+    values = filter.valid_values || filter.values
+
     cond do
       not value_type_valid?(type, value) ->
         {:error, {:invalid_type, type: type, value: value}}

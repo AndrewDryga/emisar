@@ -325,10 +325,10 @@ defmodule EmisarWeb.LiveTable do
       class={["space-y-3", @disabled && "opacity-50"]}
       aria-disabled={@disabled}
     >
-      <%!-- Every filter is visible, laid out in one tidy grid — each control
-           fills its cell so they align in neat columns (no ragged flex-wrap,
-           no "more filters" disclosure hiding half of them). --%>
-      <div class="grid max-w-5xl grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+      <%!-- Every filter is visible, stacked in a two-column grid: a `:half`
+           filter shares a row (the compact ones pair up), a `:full` one takes
+           its own line. No ragged flex-wrap, no "more filters" disclosure. --%>
+      <div class="grid max-w-xl grid-cols-2 gap-x-4 gap-y-3">
         <.filter_input
           :for={filter <- @filters}
           filter={filter}
@@ -359,7 +359,7 @@ defmodule EmisarWeb.LiveTable do
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={filter_label_class(@active?)}>
+    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
       <span class="mb-1">{@filter.title}</span>
       <select
         name={"#{@filter.name}"}
@@ -392,7 +392,10 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class="flex w-full flex-col text-xs font-medium text-zinc-400">
+    <label class={[
+      "flex w-full flex-col text-xs font-medium text-zinc-400",
+      filter_span_class(@filter)
+    ]}>
       <span class="mb-1 invisible">{@filter.title}</span>
       <span class={[
         "flex h-[34px] w-full items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
@@ -417,7 +420,7 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={filter_label_class(@active?)}>
+    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
       <span class="mb-1">{@filter.title}</span>
       <%!-- Apply on blur, not per spinner tick: a datetime-local emits an
            event for every field edit, and a half-typed value parses to nil
@@ -441,7 +444,7 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={filter_label_class(@active?)}>
+    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
       <span class="mb-1">{@filter.title}</span>
       <input
         type="text"
@@ -494,6 +497,10 @@ defmodule EmisarWeb.LiveTable do
   # accent (a tinted border + faint ring) so enabled filters stand out.
   defp filter_label_class(true), do: "flex w-full flex-col text-xs font-medium text-brand-300"
   defp filter_label_class(false), do: "flex w-full flex-col text-xs font-medium text-zinc-400"
+
+  # A `:full` filter spans both grid columns (its own row); `:half` stays one.
+  defp filter_span_class(%Filter{span: :full}), do: "col-span-2"
+  defp filter_span_class(_), do: nil
 
   defp filter_control_class(true), do: "border-brand-500/60 ring-1 ring-brand-500/25"
   defp filter_control_class(false), do: "border-zinc-700"

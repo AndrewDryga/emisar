@@ -182,7 +182,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.magic_link_issued", "Magic link issued"},
        {"user.email_confirmed", "Email confirmed"}
      ]},
-    {"Account security",
+    {"User security",
      [
        {"user.email_change_requested", "Email change requested"},
        {"user.email_changed", "Email changed"},
@@ -267,17 +267,39 @@ defmodule Emisar.Audit.Event.Query do
 
   def grouped_event_type_values, do: @grouped_event_types
 
+  # Groups that log too few events to be worth listing per-type — the Type
+  # dropdown collapses them to a single "<Group> — all events" line instead of an
+  # optgroup + sub-events (an operator would only ever want the whole class).
+  @collapsed_type_groups ["Account", "Policy", "Billing"]
+
   @doc """
-  The Type filter's grouped options — each group gets a leading, selectable
-  "All <group> events" entry (a `group:<label>` sentinel) so an operator can scope
-  the log to a whole class ("all runner events") in one click, not just one type.
-  `expand_event_type_groups/1` resolves the sentinel back to the group's types at
-  query time.
+  The Type filter's grouped options. A rich group is an `<optgroup>` with a
+  leading, selectable "All <group> events" entry (a `group:<label>` sentinel) plus
+  its sub-events. A sparse group (`@collapsed_type_groups`) collapses to a single
+  flat "<Group> — all events" line — no sub-events. `expand_event_type_groups/1`
+  resolves the sentinel back to the group's types at query time.
   """
   def event_type_filter_options do
     Enum.map(@grouped_event_types, fn {label, options} ->
-      {label, [{"group:" <> label, "All " <> label <> " events"} | options]}
+      if label in @collapsed_type_groups do
+        {nil, [{"group:" <> label, label <> " — all events"}]}
+      else
+        {label, [{"group:" <> label, "All " <> label <> " events"} | options]}
+      end
     end)
+  end
+
+  # The full legal set for the Type filter — every specific event type plus
+  # every `group:<label>` sentinel — used for VALIDATION (the collapsed dropdown
+  # hides sparse groups' sub-types, but a specific type is still a legal filter
+  # value from a programmatic caller / the outcome filter's expansion).
+  def event_type_valid_values do
+    sentinels = for {label, _} <- @grouped_event_types, do: {"group:" <> label, label}
+
+    types =
+      for {_label, options} <- @grouped_event_types, {value, label} <- options, do: {value, label}
+
+    sentinels ++ types
   end
 
   # Resolve a Type-filter selection: a `group:<label>` sentinel expands to every
@@ -336,6 +358,7 @@ defmodule Emisar.Audit.Event.Query do
       name: :actor_id,
       title: "Actor",
       type: {:list, :string},
+      span: :full,
       values: options,
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.actor_id in ^ids)} end
     }
@@ -365,6 +388,7 @@ defmodule Emisar.Audit.Event.Query do
       name: :subject_id,
       title: "Subject",
       type: {:list, :string},
+      span: :full,
       values: options,
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.subject_id in ^ids)} end
     }
@@ -443,29 +467,34 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
-      # Order = the bar's left-to-right flow: WHEN (date range), WHAT (type +
-      # outcome), WHO (actor + subject), HOW (sign-in), then the niche TRACE
-      # (request id) + the noise toggle last — common filters lead, niche trail.
-      # Date range — backed by the same %Filter{} mechanism as the rest, so the
-      # bar's clear (×) wipes them too. Inclusive bounds (a "From 10:00" pick
-      # includes 10:00:00); the LiveTable datetime input parses the UTC value.
+      # `span` lays the filters out as a stacked panel (LiveTable's two-column
+      # grid): a Date row (From/To), a Type/Outcome row, then Request ID,
+      # Sign-in method, Actor type, and Subject each on their own line. Request
+      # ID + Sign-in method are CONDITIONAL — the audit LiveView drops them for
+      # event types that never carry a request context / a sign-in (see
+      # applicable_filters/2), so they show only when they can actually match.
+      # Inclusive date bounds (a "From 10:00" pick includes 10:00:00).
       %Filter{
         name: :from,
         title: "From (UTC)",
         type: :datetime,
+        span: :half,
         fun: fn queryable, ts -> {queryable, dynamic([events: e], e.occurred_at >= ^ts)} end
       },
       %Filter{
         name: :to,
         title: "To (UTC)",
         type: :datetime,
+        span: :half,
         fun: fn queryable, ts -> {queryable, dynamic([events: e], e.occurred_at <= ^ts)} end
       },
       %Filter{
         name: :event_type,
         title: "Type",
         type: {:list, :string},
+        span: :half,
         values: event_type_filter_options(),
+        valid_values: event_type_valid_values(),
         fun: fn queryable, types ->
           {queryable, dynamic([events: e], e.event_type in ^expand_event_type_groups(types))}
         end
@@ -474,16 +503,48 @@ defmodule Emisar.Audit.Event.Query do
         name: :outcome,
         title: "Outcome",
         type: {:list, :string},
+        span: :half,
         values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],
         fun: fn queryable, outcomes ->
           types = event_types_for_outcomes(outcomes)
           {queryable, dynamic([events: e], e.event_type in ^types)}
         end
       },
+      # Request-id trace: paste the leading part of a request_id to pull every
+      # event tied to it. Anchored LIKE keeps the account/request_id prefix index
+      # usable; wildcards are escaped to match literally. Conditional — only
+      # request-scoped event types carry a request_id.
+      %Filter{
+        name: :request_id,
+        title: "Request ID",
+        type: :string,
+        span: :full,
+        fun: fn queryable, term ->
+          {queryable, dynamic([events: e], like(e.request_id, ^Like.prefix(term)))}
+        end
+      },
+      # Sign-in method (provenance). Lets a security buyer answer "show me every
+      # action taken via SSO last week" — `auth_method` is stamped only on events
+      # a user session produces, so it's conditional on a sign-in / user-security
+      # Type being selected.
+      %Filter{
+        name: :auth_method,
+        title: "Sign-in method",
+        type: {:list, :string},
+        span: :full,
+        values: [
+          {"magic_link", "Magic link"},
+          {"sso", "SSO"}
+        ],
+        fun: fn queryable, methods ->
+          {queryable, dynamic([events: e], e.auth_method in ^methods)}
+        end
+      },
       %Filter{
         name: :actor_kind,
         title: "Actor type",
         type: {:list, :string},
+        span: :full,
         values: [
           {"user", "User"},
           {"api_key", "API key"},
@@ -498,6 +559,7 @@ defmodule Emisar.Audit.Event.Query do
         name: :subject_kind,
         title: "Subject",
         type: {:list, :string},
+        span: :full,
         values: [
           {"user", "User"},
           {"account", "Account"},
@@ -513,34 +575,52 @@ defmodule Emisar.Audit.Event.Query do
         fun: fn queryable, kinds ->
           {queryable, dynamic([events: e], e.subject_kind in ^kinds)}
         end
-      },
-      # Sign-in method (provenance). Lets a security buyer answer "show me every
-      # action taken via SSO last week" — `auth_method` is stamped on every event
-      # a user session produces (nil for API-key / runner actors).
-      %Filter{
-        name: :auth_method,
-        title: "Sign-in method",
-        type: {:list, :string},
-        values: [
-          {"magic_link", "Magic link"},
-          {"sso", "SSO"}
-        ],
-        fun: fn queryable, methods ->
-          {queryable, dynamic([events: e], e.auth_method in ^methods)}
-        end
-      },
-      # Request-id trace: paste the leading part of a request_id to pull every
-      # event tied to it. Anchored LIKE keeps the account/request_id prefix index
-      # usable; wildcards are escaped to match literally.
-      %Filter{
-        name: :request_id,
-        title: "Request ID",
-        type: :string,
-        fun: fn queryable, term ->
-          {queryable, dynamic([events: e], like(e.request_id, ^Like.prefix(term)))}
-        end
       }
     ]
+
+  # The conditional filters (%Filter{} names) that a Type selection supports.
+  # Request ID applies unless every selected group is a system/engine origin
+  # with no request context; Sign-in method applies only to user-session
+  # groups. No Type selected → neither (they'd never match across all types),
+  # so the audit LiveView hides them until a relevant Type narrows the log.
+  # Request ID rides any request-scoped event; Sign-in method is stamped on any
+  # event a USER SESSION produces (not just sign-ins — a policy edit or team
+  # change made in a session carries it too), so both apply broadly and are
+  # defined by the groups that DON'T carry them: system/engine origins have no
+  # request context, and API-key / system actors never sign in.
+  @conditional_filter_names [:request_id, :auth_method]
+  @no_request_id_groups ["Runner", "Pack trust", "Run", "Billing"]
+  @no_auth_method_groups ["Runner", "Pack trust", "Run", "Billing", "API key"]
+
+  @doc """
+  Drops the conditional filters (Request ID, Sign-in method) that can't match
+  the selected event `Type`, so the audit filter panel only shows filters that
+  do something. `type_param` is the raw `event_type` filter value (a list, a
+  string, or nil). With no Type selected, both conditional filters are dropped.
+  """
+  def applicable_filters(filters, type_param) do
+    applicable = conditional_filters_for_types(List.wrap(type_param))
+    Enum.reject(filters, &(&1.name in @conditional_filter_names and &1.name not in applicable))
+  end
+
+  defp conditional_filters_for_types([]), do: []
+
+  defp conditional_filters_for_types(types) do
+    groups = types |> Enum.flat_map(&groups_of_type/1) |> Enum.uniq()
+    request = if Enum.all?(groups, &(&1 in @no_request_id_groups)), do: [], else: [:request_id]
+    auth = if Enum.all?(groups, &(&1 in @no_auth_method_groups)), do: [], else: [:auth_method]
+    request ++ auth
+  end
+
+  # The group label(s) a Type selection belongs to: a `group:<label>` sentinel
+  # names its group directly; a specific event type is looked up in the taxonomy.
+  defp groups_of_type("group:" <> label), do: [label]
+
+  defp groups_of_type(type) do
+    for {label, options} <- @grouped_event_types,
+        Enum.any?(options, fn {value, _} -> value == type end),
+        do: label
+  end
 
   # The known event types whose suffix outcome (outcome/1) is one of `outcomes`
   # — the "Outcome" filter resolves to these, so a danger/warn pick narrows to

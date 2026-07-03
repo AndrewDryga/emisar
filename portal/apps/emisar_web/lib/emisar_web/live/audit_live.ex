@@ -214,7 +214,11 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp load(socket, params) do
-    base_filters = Audit.Event.Query.filters()
+    # Request ID + Sign-in method only apply to some event types — drop them
+    # when the selected Type can't carry them (or none is set), so the filter
+    # panel shows only filters that can actually narrow the log.
+    base_filters =
+      Audit.Event.Query.applicable_filters(Audit.Event.Query.filters(), params["event_type"])
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.

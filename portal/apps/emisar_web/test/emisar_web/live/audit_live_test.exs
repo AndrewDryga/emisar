@@ -126,9 +126,11 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~s(name="to")
       assert html =~ ~s(type="datetime-local")
       refute html =~ "Apply dates"
-      # The request-id trace filter is wired in (type filtering is the Type dropdown).
-      assert html =~ "Request ID"
-      assert html =~ ~s(name="request_id")
+      # Request ID + Sign-in method are CONDITIONAL — with no Type selected they
+      # never match all event types, so the panel hides them until a Type that
+      # carries them is picked.
+      refute html =~ ~s(name="request_id")
+      refute html =~ ~s(name="auth_method")
     end
 
     test "an actor pivot (actor_kind + actor_id) filters the feed and shows a clearable chip",
@@ -348,13 +350,17 @@ defmodule EmisarWeb.AuditLiveTest do
         )
 
       {:ok, _} =
-        Audit.log(account.id, "policy.updated",
+        Audit.log(account.id, "user.invited",
           actor_kind: "user",
           actor_label: "via-password",
           auth_method: "password"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?auth_method=sso")
+      # Sign-in method is conditional: a Type that carries it must be selected
+      # first (user.invited is a user-session event, so both rows share it) —
+      # then auth_method is what narrows to the sso session.
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/audit?event_type=user.invited&auth_method=sso")
 
       assert html =~ "via-sso"
       # the password-session event is filtered out.
@@ -629,16 +635,17 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
-      # Change an unrelated filter (sign-in method) — actor_id must ride along.
+      # Change an unrelated filter (Outcome — always visible) — actor_id must
+      # ride along.
       lv
-      |> form("#audit-events-filter", %{auth_method: "sso"})
+      |> form("#audit-events-filter", %{outcome: "danger"})
       |> render_change()
 
       to = assert_patch(lv)
       %{query: query} = URI.parse(to)
       params = URI.decode_query(query)
       assert params["actor_id"] == actor_a
-      assert params["auth_method"] == "sso"
+      assert params["outcome"] == "danger"
     end
 
     # a chip for an actor that isn't in the loaded rows (its
