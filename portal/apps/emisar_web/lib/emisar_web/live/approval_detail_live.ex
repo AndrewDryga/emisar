@@ -489,9 +489,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[subject_kind: "approval_request", subject_id: @request.id]}"
           }
-          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View activity →
+          View activity <.cta_arrow class="h-3 w-3" />
         </.link>
       </:actions>
       <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
@@ -736,9 +736,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <div :if={@run}>
             <.link
               navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-              class="inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
+              class="group inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
             >
-              View run details <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+              View run details <.cta_arrow />
             </.link>
           </div>
         </div>

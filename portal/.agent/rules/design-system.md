@@ -292,6 +292,13 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
 shape.** Never hand-roll a card / chip / banner / button / empty-state / page
 width / stat. Grep `core_components.ex` first; extend the primitive if it's
 genuinely missing (then it's shared, not one-off).
+- **The forward-CTA "→" is `<.cta_arrow>`, never a hand-rolled
+  `<.icon name="hero-arrow-right">` or a literal "→" in text.** It's the ONE
+  animated arrow — slides right on the enclosing `group`'s hover, inherits the
+  line's colour — so every call-to-action reads identically; the parent link
+  carries `class="group"`. (Only for FORWARD navigation: an external link keeps
+  its up-right/`top-right-on-square` icon, and a "changed X→Y" / "flows-to"
+  glyph is not a CTA and doesn't animate.)
 
 ### Brand / gate
 `brand`, `gate_mark`.

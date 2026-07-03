@@ -250,7 +250,7 @@ defmodule EmisarWeb.DashboardLive do
           <li :for={request <- Enum.take(@pending_approvals, 5)}>
             <.link
               navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-              class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
+              class="group flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
             >
               <div class="min-w-0">
                 <div class="break-all font-mono text-amber-100 sm:truncate">
@@ -261,7 +261,7 @@ defmodule EmisarWeb.DashboardLive do
                   <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
                 </div>
               </div>
-              <.icon name="hero-arrow-right" class="h-4 w-4 shrink-0 text-amber-300/70" />
+              <.cta_arrow class="h-4 w-4 text-amber-300/70" />
             </.link>
           </li>
         </ul>
@@ -294,9 +294,9 @@ defmodule EmisarWeb.DashboardLive do
         </div>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
-          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
+          View all <.cta_arrow class="ml-0.5 h-3 w-3" />
         </.link>
       </div>
 
@@ -401,12 +401,14 @@ defmodule EmisarWeb.DashboardLive do
   # connected/total are :integer attrs, but Elixir 1.20's type checker won't
   # carry that into the template and flags `<`/`>` there as a struct
   # comparison. Guard clauses use term ordering (no such warning) and read
-  # more clearly. Offline wears amber everywhere — one fact, one tone (the
-  # loud all-offline BANNER carries the escalation, not this pillar).
-  defp runners_status(0, _total), do: "All runners offline →"
+  # more clearly. A partial outage is an amber nudge, ALL offline a rose hard
+  # stop — the posture line IS the whole offline alarm now (no banner). No " →"
+  # in the string: the pillar appends the animated <.cta_arrow> for any attention
+  # status.
+  defp runners_status(0, _total), do: "All runners offline"
 
   defp runners_status(connected, total) when connected < total,
-    do: "#{total - connected} offline →"
+    do: "#{total - connected} offline"
 
   defp runners_status(_connected, _total), do: "All connected"
 
@@ -484,8 +486,11 @@ defmodule EmisarWeb.DashboardLive do
             <.count_badge count={@count} tone={:amber} class="ml-1" />
           </h3>
         </div>
-        <.link navigate={@href} class="text-xs font-medium text-amber-200 hover:text-amber-100">
-          {@cta} →
+        <.link
+          navigate={@href}
+          class="group flex items-center gap-1 text-xs font-medium text-amber-200 hover:text-amber-100"
+        >
+          {@cta} <.cta_arrow class="h-3 w-3" />
         </.link>
       </header>
       <div class="mt-3">{render_slot(@inner_block)}</div>
@@ -587,8 +592,8 @@ defmodule EmisarWeb.DashboardLive do
   defp team_status_tone(:nudge), do: :amber
 
   defp team_status(:enrolled, m), do: "All #{m.total} have 2FA"
-  defp team_status(:lockout, m), do: "#{m.missing} can't sign in until enrolled →"
-  defp team_status(:nudge, m), do: "#{m.missing} without 2FA →"
+  defp team_status(:lockout, m), do: "#{m.missing} can't sign in until enrolled"
+  defp team_status(:nudge, m), do: "#{m.missing} without 2FA"
 
   # -- The pillar card shape --------------------------------------------
 
@@ -629,6 +634,10 @@ defmodule EmisarWeb.DashboardLive do
       ]}>
         <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
         {render_slot(@status)}
+        <%!-- An attention status (amber/rose) is a "go look" — the animated
+             arrow (inherits the line's tone) nudges on the pillar hover; a
+             healthy/neutral line has nowhere urgent to go, so no arrow. --%>
+        <.cta_arrow :if={@status_tone != :neutral} class="h-3.5 w-3.5" />
       </div>
     </.link>
     """
@@ -665,15 +674,15 @@ defmodule EmisarWeb.DashboardLive do
       class="group -m-3 flex flex-col rounded-lg p-3 transition hover:bg-white/[0.04]"
     >
       <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
-      <div class="mt-3 font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
+      <%!-- The invitation sits in a figure-height (h-9) box, bottom-aligned, so
+           its baseline meets the big stat figure's baseline in a mixed row —
+           the smaller headline no longer floats above the numbers beside it. --%>
+      <div class="mt-3 flex h-9 items-end font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
         {@title}
       </div>
       <div class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
         {@cta}
-        <.icon
-          name="hero-arrow-right"
-          class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-        />
+        <.cta_arrow />
       </div>
     </.link>
     """

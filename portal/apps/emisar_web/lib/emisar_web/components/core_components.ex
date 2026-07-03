@@ -2649,7 +2649,7 @@ defmodule EmisarWeb.CoreComponents do
     <.link navigate={@navigate} class={link_card_class()}>
       <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
         <.icon name={@icon} class="h-4 w-4 text-brand-400" /> {@title}
-        <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+        <.cta_arrow class="ml-auto h-3.5 w-3.5 text-zinc-600" />
       </div>
       <p class="mt-1 text-xs text-zinc-500">{render_slot(@inner_block)}</p>
     </.link>
@@ -2657,7 +2657,29 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp link_card_class do
-    "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-4 transition hover:bg-zinc-900/80"
+    "group rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-4 transition hover:bg-zinc-900/80"
+  end
+
+  @doc """
+  The trailing "→" of a forward CTA (link or button), sliding right when its
+  enclosing `group` is hovered — ONE animated-arrow shape so every
+  call-to-action reads the same. **The parent link/button MUST carry
+  `class="group"`.** Inherits the current text colour (so it takes on the link's
+  tone); `class` overrides the size, default `h-3.5 w-3.5`.
+
+      <.link navigate={~p"/x"} class="group … text-brand-400">
+        Connect an agent <.cta_arrow />
+      </.link>
+  """
+  attr :class, :string, default: "h-3.5 w-3.5"
+
+  def cta_arrow(assigns) do
+    ~H"""
+    <.icon
+      name="hero-arrow-right"
+      class={"shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 #{@class}"}
+    />
+    """
   end
 
   @doc """
