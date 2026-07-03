@@ -385,6 +385,7 @@ defmodule EmisarWeb.AuditLive do
         metadata={@metadata}
         filter_params={@filter_params}
         filters={@filters}
+        filter_layout={:stacked}
         row_id={fn event -> "event-#{event.id}" end}
         row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
         responsive

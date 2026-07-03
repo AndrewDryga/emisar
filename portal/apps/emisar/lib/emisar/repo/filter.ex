@@ -51,12 +51,15 @@ defmodule Emisar.Repo.Filter do
           valid_values: values() | nil,
           fun: fun(),
           default: term() | nil,
-          span: :half | :full
+          span: :half | :row_start | :full
         }
 
-  # `span` is the filter's width in the LiveTable filter grid (two columns):
-  # `:half` (the default) shares a row, `:full` takes its own row — so a page
-  # with many filters can pair the compact ones and give the rest a line each.
+  # `span` places the filter in the LiveTable `:stacked` filter grid (two
+  # columns; ignored by the default `:inline` layout): `:half` (the default)
+  # flows into the next cell, `:full` takes its own row, and `:row_start` is a
+  # half-width control forced to column 1 so it BEGINS a row — used for a picker
+  # whose dependent control (a dynamically-revealed value dropdown) should pair
+  # in the cell beside it, e.g. the audit Actor/Subject kind pickers.
   #
   # `valid_values` is the set the value is VALIDATED against, when it's broader
   # than what the dropdown DISPLAYS (`values`). The audit Type filter collapses

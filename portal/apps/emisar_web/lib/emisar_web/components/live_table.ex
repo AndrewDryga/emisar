@@ -45,6 +45,12 @@ defmodule EmisarWeb.LiveTable do
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
   attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's Query module"
 
+  attr :filter_layout, :atom,
+    default: :inline,
+    values: [:inline, :stacked],
+    doc:
+      "`:inline` flows the filters in one wrapping row of compact controls (a few filters, no dynamically-added ones — most pages); `:stacked` lays them in a two-column grid where each filter's `span` picks its row/cell (the audit panel, whose Actor/Subject kind pickers pair with a revealed value dropdown)"
+
   attr :prefix, :string,
     default: "",
     doc:
@@ -128,6 +134,7 @@ defmodule EmisarWeb.LiveTable do
         path={@path}
         filters={@filters}
         params={@filter_params}
+        layout={@filter_layout}
         disabled={filters_inert?(@rows, @filter_params, @filters)}
       />
 
@@ -186,6 +193,7 @@ defmodule EmisarWeb.LiveTable do
         path={@path}
         filters={@filters}
         params={@filter_params}
+        layout={@filter_layout}
         disabled={filters_inert?(@rows, @filter_params, @filters)}
       />
 
@@ -314,6 +322,7 @@ defmodule EmisarWeb.LiveTable do
   attr :path, :any, required: true
   attr :filters, :list, required: true
   attr :params, :map, required: true
+  attr :layout, :atom, default: :inline
   attr :disabled, :boolean, default: false
 
   defp filter_form(assigns) do
@@ -325,16 +334,18 @@ defmodule EmisarWeb.LiveTable do
       class={["space-y-3", @disabled && "opacity-50"]}
       aria-disabled={@disabled}
     >
-      <%!-- Every filter is visible, stacked in a two-column grid: a `:half`
-           filter shares a row (the compact ones pair up), a `:full` one takes
-           its own line. No ragged flex-wrap, no "more filters" disclosure. --%>
-      <div class="grid max-w-xl grid-cols-2 gap-x-4 gap-y-3">
-        <.filter_input
-          :for={filter <- @filters}
-          filter={filter}
-          value={filter_value(@params, to_string(filter.name), filter)}
-          disabled={@disabled}
-        />
+      <%!-- `:inline` — a few compact controls flow in one wrapping row. `:stacked`
+           — a two-column grid where each filter's `span` picks its row/cell, so a
+           kind picker can pair with a revealed value dropdown beside it. Every
+           filter is always visible either way (no "more filters" disclosure). --%>
+      <div class={filter_container_class(@layout)}>
+        <div :for={filter <- @filters} class={filter_item_class(@layout, filter)}>
+          <.filter_input
+            filter={filter}
+            value={filter_value(@params, to_string(filter.name), filter)}
+            disabled={@disabled}
+          />
+        </div>
       </div>
       <.link
         :if={has_active_filters?(@params, @filters)}
@@ -346,6 +357,14 @@ defmodule EmisarWeb.LiveTable do
     </form>
     """
   end
+
+  defp filter_container_class(:stacked), do: "grid max-w-xl grid-cols-2 gap-x-4 gap-y-3"
+  defp filter_container_class(:inline), do: "flex flex-wrap items-end gap-3"
+
+  # Inline gives every filter the same compact width so a handful of controls sit
+  # in one tidy row; stacked defers to the filter's `span` for its grid cell.
+  defp filter_item_class(:inline, _filter), do: "w-full sm:w-48"
+  defp filter_item_class(:stacked, filter), do: filter_span_class(filter)
 
   attr :filter, :any, required: true
   attr :value, :any, default: nil
@@ -359,7 +378,7 @@ defmodule EmisarWeb.LiveTable do
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <select
         name={"#{@filter.name}"}
@@ -392,10 +411,7 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={[
-      "flex w-full flex-col text-xs font-medium text-zinc-400",
-      filter_span_class(@filter)
-    ]}>
+    <label class="flex w-full flex-col text-xs font-medium text-zinc-400">
       <span class="mb-1 invisible">{@filter.title}</span>
       <span class={[
         "flex h-[34px] w-full items-center gap-2 rounded-lg border bg-zinc-950 px-3 text-xs",
@@ -420,7 +436,7 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <%!-- Apply on blur, not per spinner tick: a datetime-local emits an
            event for every field edit, and a half-typed value parses to nil
@@ -444,7 +460,7 @@ defmodule EmisarWeb.LiveTable do
     assigns = assign(assigns, :active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
-    <label class={[filter_label_class(@active?), filter_span_class(@filter)]}>
+    <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <input
         type="text"
@@ -505,8 +521,11 @@ defmodule EmisarWeb.LiveTable do
   defp filter_label_class(true), do: "flex w-full flex-col text-xs font-medium text-brand-300"
   defp filter_label_class(false), do: "flex w-full flex-col text-xs font-medium text-zinc-400"
 
-  # A `:full` filter spans both grid columns (its own row); `:half` stays one.
+  # Stacked-grid placement: `:full` spans both columns (its own row); `:row_start`
+  # is forced to column 1 so it begins a new row (its paired value picker then
+  # fills the cell beside it); `:half` (default) just flows into the next cell.
   defp filter_span_class(%Filter{span: :full}), do: "col-span-2"
+  defp filter_span_class(%Filter{span: :row_start}), do: "col-start-1"
   defp filter_span_class(_), do: nil
 
   defp filter_control_class(true), do: "border-brand-500/60 ring-1 ring-brand-500/25"

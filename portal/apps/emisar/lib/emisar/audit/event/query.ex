@@ -358,7 +358,9 @@ defmodule Emisar.Audit.Event.Query do
       name: :actor_id,
       title: "Actor",
       type: {:list, :string},
-      span: :full,
+      # Half-width so it pairs in the cell beside the Actor-kind picker (a
+      # :row_start) it's revealed by, not stacked full-width below it.
+      span: :half,
       values: options,
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.actor_id in ^ids)} end
     }
@@ -388,7 +390,8 @@ defmodule Emisar.Audit.Event.Query do
       name: :subject_id,
       title: "Subject",
       type: {:list, :string},
-      span: :full,
+      # Half-width — pairs beside the Subject-kind picker that reveals it.
+      span: :half,
       values: options,
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.subject_id in ^ids)} end
     }
@@ -518,7 +521,7 @@ defmodule Emisar.Audit.Event.Query do
         name: :request_id,
         title: "Request ID",
         type: :string,
-        span: :full,
+        span: :half,
         fun: fn queryable, term ->
           {queryable, dynamic([events: e], like(e.request_id, ^Like.prefix(term)))}
         end
@@ -531,7 +534,7 @@ defmodule Emisar.Audit.Event.Query do
         name: :auth_method,
         title: "Sign-in method",
         type: {:list, :string},
-        span: :full,
+        span: :half,
         values: [
           {"magic_link", "Magic link"},
           {"sso", "SSO"}
@@ -544,7 +547,9 @@ defmodule Emisar.Audit.Event.Query do
         name: :actor_kind,
         title: "Actor type",
         type: {:list, :string},
-        span: :full,
+        # :row_start — begins its row so the revealed Actor value picker pairs
+        # in the cell beside it (see actor_filter/1).
+        span: :row_start,
         values: [
           {"user", "User"},
           {"api_key", "API key"},
@@ -557,9 +562,11 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :subject_kind,
-        title: "Subject",
+        title: "Subject type",
         type: {:list, :string},
-        span: :full,
+        # :row_start — mirrors Actor type; the revealed Subject value picker pairs
+        # in the cell beside it.
+        span: :row_start,
         values: [
           {"user", "User"},
           {"account", "Account"},
