@@ -356,6 +356,15 @@ genuinely missing (then it's shared, not one-off).
   a table's **empty state is mandatory**, not optional — check it every time.
   The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
   partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
+- **One signal per fact — an inline status carrying full severity REPLACES a
+  separate banner, it doesn't stack under one.** Severity rides the inline
+  status itself: a soft nudge is amber, a HARD STOP (nothing works — all runners
+  offline, at-limit lockout) escalates the same line to ROSE (dot + text). Once
+  that inline line is rose, a full-width banner repeating the same fact is
+  redundant noise — drop the banner; the rose line + its link IS the alarm, and
+  troubleshooting detail belongs on the destination page, not a dashboard
+  callout. (Sibling of "a callout earns space only when actionable / never a
+  green all-good box" — don't duplicate a signal you're already showing.)
 - **Forms:** `to_form/2` + CoreComponents inputs; show changeset errors inline
   (rose); the context exposes `change_*` builders, the LiveView owns
   `to_form`/`phx-change`/validate.

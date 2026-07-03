@@ -215,10 +215,6 @@ defmodule EmisarWeb.DashboardLive do
       billing={@billing}
       current_account={@current_account}
     />
-    <.runners_offline_banner
-      :if={@runners_total > 0 and @runners_connected == 0}
-      current_account={@current_account}
-    />
     <.packs_pending_banner
       :if={@pending_packs_count > 0}
       count={@pending_packs_count}
@@ -420,6 +416,10 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_tone(connected, total) when connected < total, do: :neutral
   defp runners_tone(_connected, _total), do: :brand
 
+  # ALL offline is a hard stop — nothing can dispatch — so the posture line goes
+  # ROSE, not the amber a partial outage (some runners still up) gets. That rose
+  # line IS the dashboard's whole offline alarm; no separate banner stacks on it.
+  defp runners_status_tone(0, _total), do: :rose
   defp runners_status_tone(connected, total) when connected < total, do: :amber
   defp runners_status_tone(_connected, _total), do: :neutral
 
@@ -490,27 +490,6 @@ defmodule EmisarWeb.DashboardLive do
       </header>
       <div class="mt-3">{render_slot(@inner_block)}</div>
     </section>
-    """
-  end
-
-  attr :current_account, :map, required: true
-
-  defp runners_offline_banner(assigns) do
-    ~H"""
-    <.offline_notice severity={:critical} title="All runners offline" class="mb-4">
-      No actions can be dispatched until a runner reconnects. Check the runner
-      host's logs or the systemd/launchd unit.
-      <:action>
-        <.button
-          variant={:secondary}
-          tone={:rose}
-          size={:sm}
-          navigate={~p"/app/#{@current_account}/runners"}
-        >
-          View runners →
-        </.button>
-      </:action>
-    </.offline_notice>
     """
   end
 
