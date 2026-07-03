@@ -610,77 +610,97 @@ defmodule EmisarWeb.ApprovalDetailLive do
         "mt-6 grid grid-cols-1 gap-6",
         verdict == :pending && "lg:grid-cols-[1fr_320px]"
       ]}>
-        <%!-- Left: context — what-it-does, command, args, reason, approval gate, link to run --%>
+        <%!-- Left: the decision record — the artifact (what will run), the raw
+             args one click away, ONE why-cluster, then the vote trail. --%>
         <div class="space-y-4">
-          <%!-- Plain-English effect from the pack manifest, so a non-expert
-               approver knows what they're signing off on — not just the
-               action id + raw args. --%>
+          <%!-- THE ARTIFACT — the single most decision-relevant fact on the page,
+               one altitude above every supporting panel (surface step + white
+               ring, not another identical hairline box): the plain-English effect
+               from the pack manifest as its caption, then the exact command the
+               runner will execute — the run's arguments resolved into the
+               action's template. The command shows only when our compiled pack is
+               provably the runner's (pinned hash, or advertised version);
+               otherwise the raw arguments ARE the artifact and render in its
+               place. Sensitive args are masked. --%>
+          <section
+            :if={@executed_command || @action_description || (@run && @run.args != %{})}
+            class="overflow-hidden rounded-xl bg-zinc-900/60 ring-1 ring-white/10"
+          >
+            <header class="flex items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
+              <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+                {if @executed_command, do: "Command", else: "Arguments"}
+              </h2>
+              <span class="text-xs text-zinc-500">
+                {if @executed_command,
+                  do: "what the runner will execute",
+                  else: "what the runner will receive"}
+              </span>
+            </header>
+            <p
+              :if={@action_description}
+              class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-300"
+            >
+              {@action_description}
+            </p>
+            <pre
+              :if={@executed_command}
+              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-[13px] leading-relaxed text-zinc-100"
+            ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
+            <pre
+              :if={is_nil(@executed_command) && @run && @run.args != %{}}
+              class="max-h-64 overflow-auto bg-black/50 px-5 py-4 font-mono text-xs leading-relaxed text-zinc-300"
+            >{format_json(@run.args)}</pre>
+          </section>
+
+          <%!-- The raw args stay one click away once the command carries the
+               detail — redundant with the resolved template, but the approver
+               verifying the exact payload (against its logged sha) needs them. --%>
+          <.disclosure
+            :if={@executed_command && @run && @run.args != %{}}
+            id={"approval-args-#{@request.id}"}
+          >
+            <:summary>
+              Raw arguments
+              <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-500">
+                sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
+              </span>
+            </:summary>
+            <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@run.args)}</pre>
+          </.disclosure>
+
+          <%!-- ONE why-cluster: who asked for it and what gated it, together —
+               not a Reason card and a policy callout competing at equal weight.
+               The policy key wears amber only while the decision is live; once
+               decided the same fact is history and goes quiet. --%>
           <.panel
-            :if={@action_description}
-            title="What this does"
-            title_variant={:eyebrow}
-            padding="p-4"
+            :if={(@request.reason && @request.reason != "") || (@run && @run.policy_reason)}
+            title="Why"
+            padding="p-5"
           >
-            <p class="text-sm leading-relaxed text-zinc-200">{@action_description}</p>
+            <dl class="space-y-4">
+              <div :if={@request.reason && @request.reason != ""}>
+                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  Requester
+                </dt>
+                <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
+              </div>
+              <div :if={@run && @run.policy_reason}>
+                <dt class={[
+                  "flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider",
+                  if(verdict == :pending, do: "text-amber-300", else: "text-zinc-500")
+                ]}>
+                  <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
+                </dt>
+                <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.policy_reason}</dd>
+                <dd
+                  :if={@run.matched_rules && @run.matched_rules != []}
+                  class="mt-1.5 text-xs text-zinc-500"
+                >
+                  Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
+                </dd>
+              </div>
+            </dl>
           </.panel>
-
-          <%!-- The exact command the runner will execute, the run's arguments
-               resolved into the action's template. Only shown when our compiled
-               pack is provably the runner's (pinned hash, or advertised version),
-               so the template is the one the runner holds; otherwise the raw
-               Arguments card below carries the detail. Sensitive args are masked. --%>
-          <.code_panel
-            :if={@executed_command}
-            label="Command"
-            annotation="what the runner will execute"
-            prompt
-            code={@executed_command}
-          />
-
-          <%!-- Arguments sit right after the command (the "what will run" pair),
-               before Reason + the approval gate (the "why"). The raw args also
-               carry the detail when the command couldn't be resolved above. --%>
-          <.code_panel
-            :if={@run && @run.args && @run.args != %{}}
-            label="Arguments"
-            annotation={
-              @request.context["args_sha256"] &&
-                "sha256:#{String.slice(@request.context["args_sha256"], 0, 16)}…"
-            }
-            max_h="max-h-64"
-            code={format_json(@run.args)}
-          />
-
-          <.panel
-            :if={@request.reason && @request.reason != ""}
-            title="Reason"
-            title_variant={:eyebrow}
-            padding="p-4"
-          >
-            <%!-- No whitespace-pre-wrap: it preserved the template's own leading
-                 indentation and pushed the reason right of every other section
-                 body. The reason is prose, so normal flow (flush-left) is correct. --%>
-            <p class="text-sm leading-relaxed text-zinc-200">{@request.reason}</p>
-          </.panel>
-
-          <%!-- Amber is an ACTIVE caution — it earns the eye only while the
-               decision is still live. Once decided, the same fact is history:
-               it stays for the auditor, quiet and past-tense. --%>
-          <.callout
-            :if={@run && @run.policy_reason}
-            tone={if verdict == :pending, do: :amber, else: :neutral}
-            icon="hero-shield-exclamation"
-            title={
-              if verdict == :pending,
-                do: "Why approval is required",
-                else: "Why approval was required"
-            }
-          >
-            <p class="leading-relaxed">{@run.policy_reason}</p>
-            <div :if={@run.matched_rules && @run.matched_rules != []} class="mt-2 text-xs opacity-80">
-              Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
-            </div>
-          </.callout>
 
           <%!-- Who has voted so far — surfaced for any multi-approver gate so
                an approver sees who's already signed off (and that a deny
@@ -690,7 +710,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
             :if={@decisions != [] and @request.min_approvals > 1}
             variant={:split}
             title="Decisions"
-            title_variant={:eyebrow}
           >
             <:annotation>{@approved_count} of {@request.min_approvals} approvals</:annotation>
             <ul class="divide-y divide-zinc-900">
