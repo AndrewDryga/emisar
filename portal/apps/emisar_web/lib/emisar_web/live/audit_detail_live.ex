@@ -79,7 +79,9 @@ defmodule EmisarWeb.AuditDetailLive do
            session + client info moved onto the Actor card below: they
            describe the actor that did this, not the event in general. --%>
       <.meta_strip cols={4}>
-        <.meta_field label="When">
+        <%!-- wrap: forensic precision must survive a phone — the timestamp takes
+             the full row and wraps rather than clipping (it isn't copy-backed). --%>
+        <.meta_field label="When" wrap>
           <.local_time value={@event.occurred_at} mode={:forensic} class="tabular-nums text-zinc-200" />
         </.meta_field>
         <%!-- The event's own id — its permalink identity. It used to hide in the

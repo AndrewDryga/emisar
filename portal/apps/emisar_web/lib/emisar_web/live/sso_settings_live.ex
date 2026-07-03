@@ -1223,7 +1223,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <.meta_field :if={provider.allowed_email_domain} label="Email domain">
                     <span class="text-zinc-300">@{provider.allowed_email_domain}</span>
                   </.meta_field>
-                  <.meta_field label="2FA requirement">
+                  <.meta_field label="2FA requirement" wrap>
                     <span :if={provider.satisfies_mfa} class="text-zinc-300">
                       Satisfied by this provider
                     </span>

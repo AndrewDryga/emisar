@@ -211,7 +211,9 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.meta_field label="Status">
           <.status_badge status={connection_status(Runners.connection_state(@runner))} />
         </.meta_field>
-        <.meta_field label="Hostname">
+        <%!-- wrap: a hostname is a machine value that must read in full — on a
+             phone it takes the row and wraps, keeping its copy button on-screen. --%>
+        <.meta_field label="Hostname" wrap>
           <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
           <span :if={!@runner.hostname} class="text-zinc-500">—</span>
         </.meta_field>

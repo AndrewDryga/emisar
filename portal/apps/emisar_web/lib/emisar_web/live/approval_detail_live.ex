@@ -548,7 +548,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.chip>
           </span>
         </.meta_field>
-        <.meta_field label="When">
+        <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes
+             the full row and wraps rather than clipping to "…" (and never leaves
+             the adjacent half-cell empty while truncating). --%>
+        <.meta_field label="When" wrap>
           <.local_time
             value={@request.requested_at}
             mode={:forensic}
