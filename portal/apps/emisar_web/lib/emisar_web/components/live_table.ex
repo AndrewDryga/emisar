@@ -205,22 +205,26 @@ defmodule EmisarWeb.LiveTable do
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
+        <%!-- The dense table sits DIRECTLY on the canvas — terminal-calm, no
+             frame. Readability comes from structure, not a box: a quiet
+             uppercase header over a stronger rule, then thin-but-VISIBLE row
+             separators (white/[0.08] — 0.06 was below the legibility line). --%>
         <div class={[
-          "overflow-x-auto rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
+          "overflow-x-auto",
           @responsive && "hidden sm:block"
         ]}>
           <table id={@id} class={["w-full text-sm text-left", @class]}>
-            <thead class="bg-zinc-900/50 text-xs uppercase tracking-wider text-zinc-400">
-              <tr>
-                <th :for={col <- @col} class={["px-3 py-2 font-medium", col[:class]]}>
+            <thead class="text-xs uppercase tracking-wider text-zinc-500">
+              <tr class="border-b border-white/[0.12]">
+                <th :for={col <- @col} class={["px-3 py-2.5 font-medium", col[:class]]}>
                   {col.label}
                 </th>
-                <th :if={@action != []} class="px-3 py-2 text-right font-medium">
+                <th :if={@action != []} class="px-3 py-2.5 text-right font-medium">
                   <span class="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
-            <tbody id={"#{@id}-rows"} class="divide-y divide-white/[0.06] text-zinc-200">
+            <tbody id={"#{@id}-rows"} class="divide-y divide-white/[0.08] text-zinc-200">
               <tr
                 :for={row <- @rows}
                 id={@row_id && @row_id.(row)}
@@ -245,7 +249,7 @@ defmodule EmisarWeb.LiveTable do
         <ul
           :if={@responsive}
           id={"#{@id}-cards"}
-          class="divide-y divide-white/[0.06] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
+          class="divide-y divide-white/[0.08] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
         >
           <li
             :for={row <- @rows}
@@ -298,11 +302,11 @@ defmodule EmisarWeb.LiveTable do
   defp card_spine_class(_), do: "border-l-transparent"
 
   defp default_cards_wrapper_class(:visible) do
-    "divide-y divide-white/[0.06] rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
+    "divide-y divide-white/[0.08] rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
 
   defp default_cards_wrapper_class(_) do
-    "divide-y divide-white/[0.06] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
+    "divide-y divide-white/[0.08] overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
   end
 
   # When `:group_by` is set, walk the rows preserving order and bucket

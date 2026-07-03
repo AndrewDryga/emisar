@@ -790,7 +790,7 @@ defmodule EmisarWeb.TeamLive do
              (which already carries the consequences) — the page shows posture,
              not persuasion. --%>
         <.panel title="Security" padding="">
-          <ul class="divide-y divide-white/[0.06]">
+          <ul class="divide-y divide-white/[0.08]">
             <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
@@ -1067,7 +1067,7 @@ defmodule EmisarWeb.TeamLive do
                    on table column; just normal flow. --%>
               <div
                 :if={@editing_id == membership.id and @edit_form}
-                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.06]"
+                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"
               >
                 <.simple_form
                   for={@edit_form}
@@ -1096,7 +1096,7 @@ defmodule EmisarWeb.TeamLive do
                    (already covered). Empty selection = "all runners" default. --%>
               <div
                 :if={@scope_editing_id == membership.id}
-                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.06]"
+                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"
               >
                 <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
                   <input type="hidden" name="membership_id" value={membership.id} />

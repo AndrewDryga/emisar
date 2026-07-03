@@ -336,7 +336,7 @@ defmodule EmisarWeb.DashboardLive do
           <% end %>
         </.empty_state>
       <% else %>
-        <ul class="mt-3 divide-y divide-white/[0.06] border-t border-white/[0.06]">
+        <ul class="mt-3 divide-y divide-white/[0.08] border-t border-white/[0.08]">
           <li :for={run <- @recent_runs}>
             <.run_row
               run={run}

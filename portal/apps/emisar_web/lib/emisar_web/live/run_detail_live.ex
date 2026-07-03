@@ -379,7 +379,7 @@ defmodule EmisarWeb.RunDetailLive do
         class="mt-6 overflow-hidden"
         padding=""
       >
-        <header class="flex items-center justify-between border-b border-white/[0.06] bg-black/30 px-4 py-2">
+        <header class="flex items-center justify-between border-b border-white/[0.08] bg-black/30 px-4 py-2">
           <div class="flex items-center gap-2">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
               Output

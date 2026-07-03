@@ -650,7 +650,7 @@ defmodule EmisarWeb.PoliciesLive do
 
         <p
           :if={not @can_manage?}
-          class="rounded-lg bg-zinc-900/40 px-4 py-2.5 text-xs text-zinc-400 ring-1 ring-white/[0.06]"
+          class="rounded-lg bg-zinc-900/40 px-4 py-2.5 text-xs text-zinc-400 ring-1 ring-white/[0.08]"
         >
           You can view the policy, but only owners and admins can change it.
         </p>
@@ -1051,7 +1051,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp override_card(assigns) do
     ~H"""
-    <div class="rounded-lg bg-black/30 p-3 ring-1 ring-white/[0.06]">
+    <div class="rounded-lg bg-black/30 p-3 ring-1 ring-white/[0.08]">
       <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
         <div class="sm:col-span-3">
           <.input

@@ -827,7 +827,7 @@ defmodule EmisarWeb.CoreComponents do
     <div
       id={@id}
       class={[
-        "max-h-44 divide-y divide-white/[0.06] overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
+        "max-h-44 divide-y divide-white/[0.08] overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
         @class
       ]}
     >
@@ -1266,7 +1266,7 @@ defmodule EmisarWeb.CoreComponents do
         </div>
 
         <div class="flex justify-center">
-          <footer class="mt-10 w-full max-w-md border-t border-white/[0.06] pt-6">
+          <footer class="mt-10 w-full max-w-md border-t border-white/[0.08] pt-6">
             <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
               <.link href={~p"/trust"} class="transition-colors hover:text-zinc-300">Trust</.link>
               <.link href={~p"/privacy"} class="transition-colors hover:text-zinc-300">Privacy</.link>
@@ -1613,7 +1613,7 @@ defmodule EmisarWeb.CoreComponents do
         <% end %>
       </ul>
 
-      <div class="border-t border-white/[0.06] p-1">
+      <div class="border-t border-white/[0.08] p-1">
         <.link
           navigate={~p"/onboarding"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
@@ -1830,7 +1830,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_user(assigns) do
     ~H"""
-    <div class="border-t border-white/[0.06] p-4 text-sm">
+    <div class="border-t border-white/[0.08] p-4 text-sm">
       <div class="flex items-center gap-3">
         <.link
           navigate={~p"/app/#{@current_account}/settings/profile"}
@@ -1964,11 +1964,13 @@ defmodule EmisarWeb.CoreComponents do
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
         </div>
       </div>
-      <span :if={@show_source} class="hidden shrink-0 sm:block">
+      <%!-- Fixed right-aligned slot: the source used to float mid-row between
+           the action id and the status, reading as unanchored. --%>
+      <span :if={@show_source} class="hidden w-48 shrink-0 justify-end sm:flex">
         <.source_badge
           source={@run.source}
           label={TimeHelpers.run_actor(@run)}
-          class="max-w-[10rem] text-xs"
+          class="max-w-full text-xs"
         />
       </span>
       <.status_badge status={@run.status} class="shrink-0" />
@@ -2184,7 +2186,7 @@ defmodule EmisarWeb.CoreComponents do
   defp avatar_shape(:circle), do: "rounded-full"
   defp avatar_shape(:square), do: "rounded-sm"
 
-  @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
+  @doc "Run/runner status — a tone dot + the plain word (no pill). String or Ecto.Enum atom."
   attr :status, :any, required: true
   attr :class, :string, default: ""
 
@@ -2199,15 +2201,37 @@ defmodule EmisarWeb.CoreComponents do
       |> assign(:dot_pulse?, dot_pulse?)
 
     ~H"""
+    <%!-- A dot + a toned WORD, not a filled capsule — the pill was the last
+         admin-template artifact in every list; terminal-calm statuses read as
+         text. The dot carries the semantics for color-blind scanning too. --%>
     <span class={[
-      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
-      status_classes(@status),
+      "inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium",
+      status_word_class(@status),
       @class
     ]}>
       <.status_dot tone={@dot_tone} pulse={@dot_pulse?} />
       {format_status(@status)}
     </span>
     """
+  end
+
+  # The word wears its outcome tone (readable-but-quiet 300-tier); routine
+  # neutral states stay muted. Offline is the one bucket exception: it's a
+  # CAUTION (needs attention), not neutral — amber, one tone for the fact
+  # everywhere (summary strip, row status, dashboard posture).
+  defp status_word_class("offline"), do: "text-amber-300"
+  # Planned (a runbook slot not yet dispatched) and expired recede a step
+  # below routine neutral — not-yet / no-longer states shouldn't compete.
+  defp status_word_class("planned"), do: "text-zinc-500"
+  defp status_word_class("expired"), do: "text-zinc-500"
+
+  defp status_word_class(status) do
+    case status_tone(status) do
+      :pass -> "text-brand-300"
+      :pending -> "text-amber-300"
+      :deny -> "text-rose-300"
+      :neutral -> "text-zinc-400"
+    end
   end
 
   @doc """
@@ -2233,41 +2257,6 @@ defmodule EmisarWeb.CoreComponents do
         :neutral
     end
   end
-
-  defp status_classes("success"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("connected"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("approved"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("published"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("running"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("sent"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_classes("draft"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
-  defp status_classes("pending"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
-  # Offline is a CAUTION (needs attention), not a failure — amber, one tone
-  # for the fact everywhere (summary strip, row badge, dashboard hint).
-  defp status_classes("offline"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
-  defp status_classes("pending_approval"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
-  # A runner refusal (bad signature / pack-hash mismatch) — amber, so it reads as
-  # a security block to look at, not lost in the rose "it ran and failed" pile.
-  defp status_classes("refused"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
-  defp status_classes("cancelled"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
-  defp status_classes("denied"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
-  defp status_classes("expired"), do: "bg-zinc-500/10 text-zinc-500 ring-zinc-500/30"
-  # Planned: a runbook work-list slot that hasn't dispatched its run yet —
-  # dimmer than `pending` so the not-yet-started rows recede.
-  defp status_classes("planned"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/20"
-
-  defp status_classes(s)
-       when s in [
-              "failed",
-              "error",
-              "validation_failed",
-              "unknown_action",
-              "timed_out",
-              "dispatch_failed"
-            ],
-       do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
-
-  defp status_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
   # read as "still happening", not done — the one cue that separates
@@ -2382,7 +2371,7 @@ defmodule EmisarWeb.CoreComponents do
   def panel(%{variant: :split} = assigns) do
     ~H"""
     <.card padding="" class={"overflow-hidden #{@class}"} {@rest}>
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-5 py-3">
         <div class="min-w-0">
           <div class="flex min-w-0 items-center gap-2">
             <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
@@ -2467,7 +2456,7 @@ defmodule EmisarWeb.CoreComponents do
     <details
       id={@id}
       open={@open}
-      class={["group/disc rounded-lg bg-zinc-900/40 ring-1 ring-white/[0.06]", @class]}
+      class={["group/disc rounded-lg bg-zinc-900/40 ring-1 ring-white/[0.08]", @class]}
       {@rest}
     >
       <summary class={[
@@ -2480,7 +2469,7 @@ defmodule EmisarWeb.CoreComponents do
           class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open/disc:rotate-180"
         />
       </summary>
-      <div class={["border-t border-white/[0.06]", disclosure_body_class(@size)]}>
+      <div class={["border-t border-white/[0.08]", disclosure_body_class(@size)]}>
         {render_slot(@inner_block)}
       </div>
     </details>
@@ -2902,7 +2891,7 @@ defmodule EmisarWeb.CoreComponents do
            annotation cluster is the one that shrinks — its truncate ellipsizes
            a long value (a sha256, an event id) instead of colliding with the
            label or pushing Copy off-viewport on a phone. --%>
-      <header class="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2">
+      <header class="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-2">
         <div class="flex shrink-0 items-center gap-2">
           <%!-- The label is a section TITLE (the 16px tier), not a field-key
                eyebrow — a code artifact's header follows the same grammar as
@@ -2987,7 +2976,7 @@ defmodule EmisarWeb.CoreComponents do
             />
           </div>
         </summary>
-        <div class="border-t border-white/[0.06] px-5 pb-5 pt-4">
+        <div class="border-t border-white/[0.08] px-5 pb-5 pt-4">
           {render_slot(@inner_block)}
         </div>
       </details>
@@ -3931,7 +3920,7 @@ defmodule EmisarWeb.CoreComponents do
               </div>
             </div>
 
-            <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.06]">
+            <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.08]">
               <div class="flex items-center gap-3">
                 <%!-- Amber: this is a PENDING state — brand-green would read
                      "connected" before anything has connected. --%>
@@ -3977,7 +3966,7 @@ defmodule EmisarWeb.CoreComponents do
             and create one manually, or refresh this page to try again.
           </div>
         <% true -> %>
-          <div class="mt-8 flex items-center gap-3 rounded-lg bg-black/30 p-4 text-sm text-zinc-400 ring-1 ring-white/[0.06]">
+          <div class="mt-8 flex items-center gap-3 rounded-lg bg-black/30 p-4 text-sm text-zinc-400 ring-1 ring-white/[0.08]">
             <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
             Generating your install command…
           </div>
@@ -5119,7 +5108,7 @@ defmodule EmisarWeb.CoreComponents do
       |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
 
     ~H"""
-    <footer class="border-t border-white/[0.06] bg-zinc-950">
+    <footer class="border-t border-white/[0.08] bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
         <%!-- Product-updates capture — the considered buyer's low-commitment
              path. A server-rendered POST: marketing has no LiveView, so the
@@ -5358,7 +5347,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
 
-        <div class="mt-12 flex flex-col gap-2 border-t border-white/[0.06] pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+        <div class="mt-12 flex flex-col gap-2 border-t border-white/[0.08] pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {Date.utc_today().year} <a
               href="https://dryga.com"

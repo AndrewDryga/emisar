@@ -33,14 +33,14 @@ defmodule EmisarWeb.RunnerScope do
 
       <div
         :if={@runners == []}
-        class="rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-500 ring-1 ring-white/[0.06]"
+        class="rounded-lg bg-black/30 px-3 py-4 text-xs text-zinc-500 ring-1 ring-white/[0.08]"
       >
         No runners registered yet.
       </div>
 
       <div
         :if={@runners != []}
-        class="max-h-72 divide-y divide-white/[0.06] overflow-y-auto overscroll-contain rounded-lg ring-1 ring-white/[0.06] bg-zinc-950/40"
+        class="max-h-72 divide-y divide-white/[0.08] overflow-y-auto overscroll-contain rounded-lg ring-1 ring-white/[0.08] bg-zinc-950/40"
       >
         <div :for={group <- @tree.groups}>
           <.checkbox
@@ -58,7 +58,7 @@ defmodule EmisarWeb.RunnerScope do
           <%!-- Runners nested under the group, along a hierarchy rail. When the
                group is picked they're disabled + tagged "via group" — the group
                already covers them, so an individual tick would be redundant. --%>
-          <div class="ml-[1.4rem] border-l border-white/[0.06]">
+          <div class="ml-[1.4rem] border-l border-white/[0.08]">
             <.checkbox
               :for={runner <- group.runners}
               name={@name}

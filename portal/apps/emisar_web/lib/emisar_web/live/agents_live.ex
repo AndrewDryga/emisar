@@ -1387,7 +1387,7 @@ defmodule EmisarWeb.AgentsLive do
       <%!-- The two values cloud LLMs need. Bearer header is rendered
            in full (operator just minted it) so they can copy the whole
            "Authorization: Bearer emk-..." string verbatim. --%>
-      <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.06]">
+      <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
           <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
           <.copy_button
@@ -1409,7 +1409,7 @@ defmodule EmisarWeb.AgentsLive do
            list because the menu paths differ (Claude.ai uses "Custom
            connectors", ChatGPT uses "Connectors" under different
            settings). --%>
-      <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.06]">
+      <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.08]">
         <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Steps for {@client_label}
         </p>
