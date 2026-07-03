@@ -345,9 +345,14 @@ genuinely missing (then it's shared, not one-off).
   (some entities, some zero — the state that most often breaks), and a **power**
   account (lots of rows — density, wrapping, truncation). The **mixed/partial**
   state is where designs fail hardest: a row of peers where some are populated
-  and some empty must stay ONE coherent shape — never a short naked item
-  stranded beside a tall card (the dashboard pillars shipped this bug; the fix
-  was an onboarding-mode card row that graduates to naked stats once full). And
+  and some empty must stay ONE coherent shape in the SAME visual language as the
+  full state — never a short naked item stranded beside a tall card, and never a
+  card zero-state beside naked stats (the dashboard pillars shipped BOTH bugs in
+  turn: first a naked-stat-vs-tall-CTA-card mismatch, then an "onboarding-mode
+  card grid" that fixed the row but read as a completely different design from
+  the naked power dashboard. The real fix: the zero state is the SAME naked
+  shape as a live stat — label · headline · action line — so empty, partial, and
+  full are one design). And
   a table's **empty state is mandatory**, not optional — check it every time.
   The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
   partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
