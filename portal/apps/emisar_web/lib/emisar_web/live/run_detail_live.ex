@@ -295,13 +295,7 @@ defmodule EmisarWeb.RunDetailLive do
       <%!-- Operator's reason, full width. The policy decision renders
            as an inline strip below (only when it carries signal), not a
            side panel that would just echo the status chip. --%>
-      <.panel
-        :if={@run.reason && @run.reason != ""}
-        title="Reason"
-        title_variant={:eyebrow}
-        padding="p-4"
-        class="mt-4"
-      >
+      <.panel :if={@run.reason && @run.reason != ""} title="Reason" padding="p-4" class="mt-4">
         <p class="text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
       </.panel>
 
@@ -310,13 +304,7 @@ defmodule EmisarWeb.RunDetailLive do
            WHY (the policy reason as prose) plus the matched-rules/version audit
            trail, not a chip that restates the outcome word. Hidden for `allow`
            (the boring default the run wouldn't exist without). --%>
-      <.panel
-        :if={show_policy?(@run)}
-        title="Policy"
-        title_variant={:eyebrow}
-        padding="p-4"
-        class="mt-4"
-      >
+      <.panel :if={show_policy?(@run)} title="Policy" padding="p-4" class="mt-4">
         <p
           :if={@run.policy_reason && @run.policy_reason != ""}
           class="text-sm leading-relaxed text-zinc-200"

@@ -1928,9 +1928,12 @@ defmodule EmisarWeb.CoreComponents do
     >
       <div class="min-w-0">
         <%!-- The action id is the run's identity — on a phone it wraps to show
-             in full rather than clipping mid-token; the wider desktop row still
-             truncates to keep the list scannable. --%>
-        <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">{@run.action_id}</div>
+             in full rather than clipping; the wider desktop row still truncates
+             to keep the list scannable. dotted_mono breaks at the id's dots,
+             never mid-token ("caddy.reverse_proxy_upstr/eams" read as broken). --%>
+        <div class="break-words font-mono text-sm text-zinc-200 sm:truncate">
+          <.dotted_mono value={@run.action_id} />
+        </div>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
@@ -1945,6 +1948,28 @@ defmodule EmisarWeb.CoreComponents do
       </span>
       <.status_badge status={@run.status} class="shrink-0" />
     </.link>
+    """
+  end
+
+  @doc """
+  A dotted mono identifier (an action id, an event type) rendered with a
+  `<wbr>` break opportunity after each dot, so a narrow screen wraps it at a
+  segment boundary — `caddy.` / `reverse_proxy_upstreams` — never sheared
+  mid-token the way `break-all` does. `<wbr>` adds nothing to copied text.
+  Pair with `break-words` on the container (the wbr points do the breaking;
+  break-words only backstops a single over-long segment).
+
+      <div class="break-words font-mono"><.dotted_mono value={run.action_id} /></div>
+  """
+  attr :value, :string, required: true
+
+  def dotted_mono(assigns) do
+    assigns = assign(assigns, :segments, String.split(assigns.value, "."))
+
+    ~H"""
+    <span :for={{segment, index} <- Enum.with_index(@segments)}>
+      <span :if={index > 0}>.<wbr /></span>{segment}
+    </span>
     """
   end
 

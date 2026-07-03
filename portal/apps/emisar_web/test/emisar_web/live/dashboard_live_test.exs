@@ -161,9 +161,11 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}")
 
       # A's run (recent-runs row) + A's pending approval (the lead panel) show…
-      assert html =~ "linux.alpha_dash"
+      # (segment match: run_row renders the id through dotted_mono, which puts
+      # a <wbr> after each dot, so the full dotted string never appears verbatim)
+      assert html =~ "alpha_dash"
       # …and nothing from B leaks onto A's board.
-      refute html =~ "linux.bravo_dash"
+      refute html =~ "bravo_dash"
     end
 
     # the dashboard is a read-only triage screen: its

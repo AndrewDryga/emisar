@@ -223,7 +223,6 @@ defmodule EmisarWeb.AuditDetailLive do
       :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}
       variant={:split}
       title="Changes"
-      title_variant={:eyebrow}
       class="mt-6"
     >
       <div class="space-y-4 p-4">
