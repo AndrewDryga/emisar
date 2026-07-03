@@ -1222,7 +1222,10 @@ defmodule EmisarWeb.TeamLive do
       class="inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
       title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider.name}"}
     >
-      <.icon name="hero-arrow-path" class="h-3 w-3 text-brand-400" />
+      <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
+           glyph stays neutral zinc (brand green is reserved for healthy/pass),
+           so a roster of synced members doesn't paint itself green. --%>
+      <.icon name="hero-arrow-path" class="h-3 w-3 text-zinc-400" />
       {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider.name}
     </.link>
     """
