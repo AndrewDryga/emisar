@@ -90,14 +90,22 @@ Structural rules that ride along:
   header — three colored eyebrows in one island read as three competing accents.
 - **Detail meta leads.** A detail page opens with `meta_strip`, Status field first;
   em-dash (muted, own span) for absent values.
-- **Filters are all visible, in one tidy grid — never hidden behind a "More filters"
-  disclosure.** A list's filter bar shows every filter at once, laid out in a responsive
-  grid (`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`, controls `w-full`) so they align
-  in neat columns instead of a ragged flex-wrap. Folding "niche" filters behind a
-  disclosure hides what the operator is looking for and (with `display:contents` on a
-  `<details>`) renders as a broken floating layout. The clear affordance is a labeled
-  "× Clear filters" link that shows only when a non-default filter is active (default ≠
-  active). LiveTable owns this; no per-page filter layout.
+- **Filters are all visible — never hidden behind a "More filters" disclosure — and
+  flow INLINE by default.** A list's filter bar shows every filter at once. The default
+  `filter_layout={:inline}` flows them in ONE wrapping row of equal-width compact
+  controls (`flex flex-wrap`, each `w-full sm:w-48`): don't newline a handful of filters
+  into a wide grid for no reason. Folding "niche" filters behind a disclosure hides what
+  the operator is looking for and (with `display:contents` on a `<details>`) renders as a
+  broken floating layout. The clear affordance is a labeled "× Clear filters" link shown
+  only when a non-default filter is active (default ≠ active). LiveTable owns this.
+  - **Opt into `filter_layout={:stacked}` ONLY when a filter dynamically reveals a
+    dependent control that must sit beside it** (the audit Actor/Subject kind pickers
+    reveal a value dropdown). Stacked is a two-column grid (`grid-cols-1 sm:grid-cols-2`)
+    driven by each `%Filter{}`'s `span`: `:half` flows, `:full` takes a row, and
+    `:row_start` is a half-width control forced to column 1 so its revealed value picker
+    pairs in the cell beside it. A kind picker's title is "<X> type" so it doesn't collide
+    with the "<X>" value picker next to it. Never make a filter double-width just to fill
+    space — that was the exact "don't make them double width" correction.
 - **Settings never embed in operational pages** without a PM decision — the current three
   (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
   until that pass; do not add a fourth.
