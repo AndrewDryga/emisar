@@ -341,6 +341,18 @@ defmodule EmisarWeb.AuditLive do
         wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
         group_by={&DateTime.to_date(&1.occurred_at)}
       >
+        <%!-- Column headers for the xl+ forensic grid — the SAME template as
+             the rows so labels sit over their values; below xl the columns
+             fold into the meta line and the header folds with them. --%>
+        <:list_header>
+          <li class="hidden py-2 xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:gap-4">
+            <span class={audit_column_header_class()}>Event</span>
+            <span class={audit_column_header_class()}>Actor</span>
+            <span class={audit_column_header_class()}>Target</span>
+            <span class={audit_column_header_class()}>Source IP</span>
+            <span class={[audit_column_header_class(), "text-right"]}>When</span>
+          </li>
+        </:list_header>
         <:group_header :let={date}>
           <li class="pb-1.5 pt-5 first:pt-3">
             <span class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
@@ -433,6 +445,9 @@ defmodule EmisarWeb.AuditLive do
     </.dashboard_shell>
     """
   end
+
+  defp audit_column_header_class,
+    do: "text-[11px] font-medium uppercase tracking-wider text-zinc-500"
 
   attr :value, :string, default: nil
   attr :mono, :boolean, default: false
