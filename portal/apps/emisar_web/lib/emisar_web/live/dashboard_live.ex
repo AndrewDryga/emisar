@@ -639,8 +639,9 @@ defmodule EmisarWeb.DashboardLive do
          Containment is reserved for the CTA state (an invitation earns a box);
          a healthy stat doesn't. --%>
     <div class="flex flex-col">
-      <div class="flex items-baseline justify-between gap-3">
+      <div class="flex items-baseline gap-3">
         <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
+        <span class="text-zinc-700">·</span>
         <%!-- -m/p padding extends the hit area to ~40px without growing the
              visible text — these are the product's three main actions and on a
              phone a bare 12px text link is an unhittable target. --%>
@@ -660,7 +661,7 @@ defmodule EmisarWeb.DashboardLive do
           "mt-2.5 flex items-center gap-1.5 text-[13px]",
           pillar_status_class(@status_tone)
         ]}>
-          <.status_dot :if={@tone == :brand} tone={:brand} />
+          <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
           {render_slot(@status)}
         </div>
       </.link>
@@ -674,6 +675,12 @@ defmodule EmisarWeb.DashboardLive do
   defp pillar_status_class(:amber), do: "text-amber-300"
   defp pillar_status_class(:rose), do: "text-rose-300"
   defp pillar_status_class(:neutral), do: "text-zinc-500"
+
+  # Every posture line leads with its tone dot — attention lines wear their
+  # amber/rose, a healthy pillar the quiet brand dot, an idle one neutral.
+  defp pillar_dot_tone(_tile, status) when status != :neutral, do: status
+  defp pillar_dot_tone(:brand, _status), do: :brand
+  defp pillar_dot_tone(_tile, _status), do: :neutral
 
   attr :icon, :string, required: true
   attr :label, :string, required: true
