@@ -560,7 +560,7 @@ defmodule EmisarWeb.ApprovalsLive do
               <li>
                 <.link
                   navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-                  class="flex items-center justify-between gap-3 px-5 py-3 text-sm transition hover:bg-zinc-900/40"
+                  class="flex items-center justify-between gap-3 px-5 py-3 text-sm transition hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">
                     <div class="truncate font-mono text-sm text-zinc-200">

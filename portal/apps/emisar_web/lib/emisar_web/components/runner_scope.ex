@@ -87,7 +87,7 @@ defmodule EmisarWeb.RunnerScope do
             name={@name}
             value={runner.value}
             checked={runner.selected}
-            class="flex cursor-pointer select-none items-center gap-3 py-2.5 pl-3 pr-3 text-sm transition hover:bg-zinc-900/40"
+            class="flex cursor-pointer select-none items-center gap-3 py-2.5 pl-3 pr-3 text-sm transition hover:bg-white/[0.04]"
           >
             <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
           </.checkbox>
@@ -141,13 +141,13 @@ defmodule EmisarWeb.RunnerScope do
     }
   end
 
-  @group_row "flex cursor-pointer select-none items-center gap-3 px-3 py-3 transition hover:bg-zinc-900/40"
+  @group_row "flex cursor-pointer select-none items-center gap-3 px-3 py-3 transition hover:bg-white/[0.04]"
   defp group_row_class(true), do: @group_row <> " bg-brand-500/[0.07]"
   defp group_row_class(false), do: @group_row
 
   @runner_row "flex select-none items-center gap-3 py-2.5 pl-3 pr-3 text-sm transition"
   defp runner_row_class(true), do: @runner_row <> " opacity-55"
-  defp runner_row_class(false), do: @runner_row <> " cursor-pointer hover:bg-zinc-900/40"
+  defp runner_row_class(false), do: @runner_row <> " cursor-pointer hover:bg-white/[0.04]"
 
   @doc """
   Parse the checked scope values back to `%{groups: [name], runner_ids: [id]}`,

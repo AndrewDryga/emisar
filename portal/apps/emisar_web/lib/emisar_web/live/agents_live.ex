@@ -780,7 +780,7 @@ defmodule EmisarWeb.AgentsLive do
         <button
           type="button"
           phx-click="toggle_connect"
-          class="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-zinc-900/40"
+          class="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-white/[0.04]"
         >
           <div>
             <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">

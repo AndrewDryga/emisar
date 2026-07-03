@@ -225,7 +225,7 @@ defmodule EmisarWeb.LiveTable do
                 :for={row <- @rows}
                 id={@row_id && @row_id.(row)}
                 phx-click={@row_click && @row_click.(row)}
-                class={["hover:bg-zinc-900/40", @row_click && "cursor-pointer"]}
+                class={["hover:bg-white/[0.04]", @row_click && "cursor-pointer"]}
               >
                 <td :for={col <- @col} class={["px-3 py-2 align-middle", col[:class]]}>
                   {render_slot(col, row)}
@@ -254,7 +254,7 @@ defmodule EmisarWeb.LiveTable do
             class={[
               "space-y-2 border-l-2 px-4 py-3.5",
               card_spine_class(@card_accent && @card_accent.(row)),
-              @row_click && "cursor-pointer hover:bg-zinc-900/40"
+              @row_click && "cursor-pointer hover:bg-white/[0.04]"
             ]}
           >
             <div

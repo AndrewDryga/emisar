@@ -862,7 +862,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type="button"
-      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900/40 hover:text-zinc-200"
+      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-white/[0.04] hover:text-zinc-200"
       {@rest}
     >
       <.icon name="hero-plus" class="h-4 w-4" />{@label}
@@ -1552,7 +1552,7 @@ defmodule EmisarWeb.CoreComponents do
     <.dropdown
       class="border-b border-zinc-900"
       align={:stretch}
-      summary_class="flex h-16 items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:px-6"
+      summary_class="flex h-16 items-center gap-3 px-2 transition hover:bg-white/[0.04] lg:px-6"
       panel_class="z-30 mt-1 overflow-hidden shadow-2xl"
     >
       <:trigger>
@@ -1932,7 +1932,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <.link
       navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-      class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-zinc-900/40"
+      class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-white/[0.04]"
     >
       <div class="min-w-0">
         <%!-- The action id is the run's identity — on a phone it wraps to show
@@ -2474,7 +2474,7 @@ defmodule EmisarWeb.CoreComponents do
     do: "px-3 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200"
 
   defp disclosure_summary_class(:md),
-    do: "px-4 py-3 text-sm font-medium text-zinc-200 hover:bg-zinc-900/40"
+    do: "px-4 py-3 text-sm font-medium text-zinc-200 hover:bg-white/[0.04]"
 
   defp disclosure_body_class(:sm), do: "p-3"
   defp disclosure_body_class(:md), do: "px-4 pb-4 pt-3"

@@ -1126,7 +1126,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <li :for={provider <- @providers}>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-zinc-900/40"
+                  class="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-white/[0.04]"
                 >
                   <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
                     <.icon name="hero-identification" class="h-4 w-4" />
