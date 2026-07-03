@@ -632,20 +632,22 @@ defmodule EmisarWeb.DashboardLive do
          is the design: label row, a big display figure, a one-line posture.
          Containment is reserved for the CTA state (an invitation earns a box);
          a healthy stat doesn't. --%>
-    <%!-- The WHOLE group is one link with the house light-wash hover (the
-         same affordance as every row) — the digit-tint alone was too subtle
-         on black, and the label wasn't even clickable. -m/p keeps the resting
-         layout identical while the wash breathes past the text. No create
-         link up here — the band is pure posture; the pillar's page owns the
-         real Add/Connect/Invite action. --%>
+    <%!-- The WHOLE group is one link, and its hover is the house wash
+         (bg-white/[0.04]) and NOTHING else — identical to a table row. No
+         brand tint on the figure: emerald is the SEMANTIC accent (pass /
+         healthy), not a hover decoration for a neutral stat, and the table
+         never tints content on hover either. -m/p keeps the resting layout
+         identical while the wash breathes past the text. No create link up
+         here — the band is pure posture; the pillar's page owns the real
+         Add/Connect/Invite action. --%>
     <.link
       navigate={@navigate}
-      class="group -m-3 flex flex-col rounded-lg p-3 transition-colors hover:bg-white/[0.04]"
+      class="group -m-3 flex flex-col rounded-lg p-3 transition hover:bg-white/[0.04]"
     >
-      <span class="truncate text-sm font-medium text-zinc-400 transition-colors group-hover:text-zinc-300">
+      <span class="truncate text-sm font-medium text-zinc-400">
         {@label}
       </span>
-      <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
+      <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums">
         {render_slot(@value)}
       </div>
       <div class={[
