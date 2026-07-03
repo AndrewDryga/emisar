@@ -358,7 +358,12 @@ defmodule EmisarWeb.LiveTable do
     """
   end
 
-  defp filter_container_class(:stacked), do: "grid max-w-xl grid-cols-2 gap-x-4 gap-y-3"
+  # One column on a phone (the paired kind/value pickers stack, and the datetime
+  # inputs get their full width) → two columns from `sm` up, where `span` pairs
+  # them. `col-span-2`/`col-start-1` are no-ops in the single-column grid.
+  defp filter_container_class(:stacked),
+    do: "grid max-w-xl grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2"
+
   defp filter_container_class(:inline), do: "flex flex-wrap items-end gap-3"
 
   # Inline gives every filter the same compact width so a handful of controls sit
