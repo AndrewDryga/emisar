@@ -268,7 +268,7 @@ defmodule EmisarWeb.AuditLive do
       <%!-- Quick relative-range presets — set the unified bar's From to
            (now − window); the date filter below consumes it. Re-adds the
            presets the date-unification dropped, without a second bar. --%>
-      <div class="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
+      <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
         <span class="text-zinc-500">Quick filters:</span>
         <button
           :for={{label, window} <- audit_presets()}
@@ -297,10 +297,14 @@ defmodule EmisarWeb.AuditLive do
         >
           Problems only
         </button>
-        <%!-- The facet panel toggle. The active-facet count rides the label
-             ("Filters · 2") so a CLOSED panel still says filters are narrowing
-             the list — collapsing controls must never hide the fact that the
-             trail is filtered. Brand tint = the active-filter convention. --%>
+      </div>
+
+      <%!-- The facet panel toggle sits on its OWN row, directly above where
+           the panel opens — the control touches what it reveals. The
+           active-facet count rides the label ("Filters · 2") so a CLOSED
+           panel still says filters are narrowing the list; brand tint = the
+           active-filter convention. --%>
+      <div class="mb-4 text-xs">
         <button
           type="button"
           phx-click="toggle_filters"
@@ -313,10 +317,7 @@ defmodule EmisarWeb.AuditLive do
             )
           ]}
         >
-          Filters<span
-            :if={@active_facet_count > 0}
-            class="tabular-nums"
-          >· {@active_facet_count}</span>
+          Filters<span :if={@active_facet_count > 0} class="tabular-nums">· {@active_facet_count}</span>
         </button>
       </div>
 
