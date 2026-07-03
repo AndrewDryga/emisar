@@ -112,7 +112,9 @@ defmodule EmisarWeb.Components.PanelTest do
         """)
 
       # The header hairline is line-as-light inside the lit island.
-      assert html =~ "border-b border-zinc-800 px-5 py-3"
+      # Middle-strength separator: solid zinc-800 read too heavy, 8%-white was
+      # invisible — /70 is the landed compromise.
+      assert html =~ "border-b border-zinc-800/70 px-5 py-3"
       assert html =~ "overflow-hidden"
       assert html =~ "View all"
       refute html =~ ~s(class="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5")

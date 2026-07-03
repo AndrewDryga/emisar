@@ -272,7 +272,7 @@ defmodule EmisarWeb.RunnersLive do
             group_by={fn runner -> runner.group || "(no group)" end}
           >
             <:group_header :let={group_label}>
-              <li class="border-b border-zinc-800 bg-black/30 px-5 py-2 flex items-baseline gap-2">
+              <li class="border-b border-zinc-800/70 bg-black/30 px-5 py-2 flex items-baseline gap-2">
                 <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   {group_label}
                 </h2>

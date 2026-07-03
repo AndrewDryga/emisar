@@ -1068,7 +1068,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             count_tone={:amber}
           />
           <.card padding="p-0">
-            <ul class="divide-y divide-zinc-800">
+            <ul class="divide-y divide-zinc-800/70">
               <li
                 :for={request <- @pending_requests}
                 class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
@@ -1122,7 +1122,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <.section_header title="Connections" count={length(@providers)} count_tone={:neutral} />
 
           <.card :if={@providers != []} padding="p-0">
-            <ul class="divide-y divide-zinc-800">
+            <ul class="divide-y divide-zinc-800/70">
               <li :for={provider <- @providers}>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}

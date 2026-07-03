@@ -594,7 +594,7 @@ defmodule EmisarWeb.ProfileLive do
             </.button>
           </:actions>
 
-          <ul class="max-h-96 divide-y divide-zinc-800 overflow-y-auto rounded-lg bg-zinc-900/60 text-sm ring-1 ring-white/[0.07]">
+          <ul class="max-h-96 divide-y divide-zinc-800/70 overflow-y-auto rounded-lg bg-zinc-900/60 text-sm ring-1 ring-white/[0.07]">
             <.list_row
               :for={session <- @sessions}
               icon={session_device_icon(session)}

@@ -1388,7 +1388,7 @@ defmodule EmisarWeb.AgentsLive do
            in full (operator just minted it) so they can copy the whole
            "Authorization: Bearer emk-..." string verbatim. --%>
       <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
-        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2.5">
           <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
           <.copy_button
             id={"copy-#{@client_id}-conn"}

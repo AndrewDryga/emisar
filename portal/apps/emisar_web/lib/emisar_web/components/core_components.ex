@@ -827,7 +827,7 @@ defmodule EmisarWeb.CoreComponents do
     <div
       id={@id}
       class={[
-        "max-h-44 divide-y divide-zinc-800 overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
+        "max-h-44 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
         @class
       ]}
     >
@@ -1266,7 +1266,7 @@ defmodule EmisarWeb.CoreComponents do
         </div>
 
         <div class="flex justify-center">
-          <footer class="mt-10 w-full max-w-md border-t border-zinc-800 pt-6">
+          <footer class="mt-10 w-full max-w-md border-t border-zinc-800/70 pt-6">
             <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
               <.link href={~p"/trust"} class="transition-colors hover:text-zinc-300">Trust</.link>
               <.link href={~p"/privacy"} class="transition-colors hover:text-zinc-300">Privacy</.link>
@@ -1333,7 +1333,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class={["relative my-6", @class]}>
       <div class="absolute inset-0 flex items-center" aria-hidden="true">
-        <div class="w-full border-t border-zinc-800"></div>
+        <div class="w-full border-t border-zinc-800/70"></div>
       </div>
       <div class="relative flex justify-center">
         <span class="bg-zinc-950 px-3 text-xs uppercase tracking-wider text-zinc-500">{@label}</span>
@@ -1613,7 +1613,7 @@ defmodule EmisarWeb.CoreComponents do
         <% end %>
       </ul>
 
-      <div class="border-t border-zinc-800 p-1">
+      <div class="border-t border-zinc-800/70 p-1">
         <.link
           navigate={~p"/onboarding"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
@@ -1830,7 +1830,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_user(assigns) do
     ~H"""
-    <div class="border-t border-zinc-800 p-4 text-sm">
+    <div class="border-t border-zinc-800/70 p-4 text-sm">
       <div class="flex items-center gap-3">
         <.link
           navigate={~p"/app/#{@current_account}/settings/profile"}
@@ -2371,7 +2371,7 @@ defmodule EmisarWeb.CoreComponents do
   def panel(%{variant: :split} = assigns) do
     ~H"""
     <.card padding="" class={"overflow-hidden #{@class}"} {@rest}>
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3">
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 px-5 py-3">
         <div class="min-w-0">
           <div class="flex min-w-0 items-center gap-2">
             <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
@@ -2469,7 +2469,7 @@ defmodule EmisarWeb.CoreComponents do
           class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open/disc:rotate-180"
         />
       </summary>
-      <div class={["border-t border-zinc-800", disclosure_body_class(@size)]}>
+      <div class={["border-t border-zinc-800/70", disclosure_body_class(@size)]}>
         {render_slot(@inner_block)}
       </div>
     </details>
@@ -2891,7 +2891,7 @@ defmodule EmisarWeb.CoreComponents do
            annotation cluster is the one that shrinks — its truncate ellipsizes
            a long value (a sha256, an event id) instead of colliding with the
            label or pushing Copy off-viewport on a phone. --%>
-      <header class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2">
+      <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
         <div class="flex shrink-0 items-center gap-2">
           <%!-- The label is a section TITLE (the 16px tier), not a field-key
                eyebrow — a code artifact's header follows the same grammar as
@@ -2976,7 +2976,7 @@ defmodule EmisarWeb.CoreComponents do
             />
           </div>
         </summary>
-        <div class="border-t border-zinc-800 px-5 pb-5 pt-4">
+        <div class="border-t border-zinc-800/70 px-5 pb-5 pt-4">
           {render_slot(@inner_block)}
         </div>
       </details>
@@ -3938,7 +3938,7 @@ defmodule EmisarWeb.CoreComponents do
                      Surface the same checks the quickstart doc carries. --%>
               <div
                 :if={@show_troubleshooting}
-                class="mt-3 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-400"
+                class="mt-3 border-t border-zinc-800/70 pt-3 text-xs leading-5 text-zinc-400"
               >
                 <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
                 <.steps class="mt-1.5">
@@ -5108,7 +5108,7 @@ defmodule EmisarWeb.CoreComponents do
       |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
 
     ~H"""
-    <footer class="border-t border-zinc-800 bg-zinc-950">
+    <footer class="border-t border-zinc-800/70 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
         <%!-- Product-updates capture — the considered buyer's low-commitment
              path. A server-rendered POST: marketing has no LiveView, so the
@@ -5347,7 +5347,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
 
-        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-800 pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+        <div class="mt-12 flex flex-col gap-2 border-t border-zinc-800/70 pt-8 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
           <span>
             © {Date.utc_today().year} <a
               href="https://dryga.com"

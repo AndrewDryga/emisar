@@ -336,7 +336,7 @@ defmodule EmisarWeb.DashboardLive do
           <% end %>
         </.empty_state>
       <% else %>
-        <ul class="mt-3 divide-y divide-zinc-800 border-t border-zinc-800">
+        <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
           <li :for={run <- @recent_runs}>
             <.run_row
               run={run}
@@ -393,8 +393,6 @@ defmodule EmisarWeb.DashboardLive do
       tone={runners_tone(@connected, @total)}
       status_tone={runners_status_tone(@connected, @total)}
       navigate={~p"/app/#{@current_account}/runners"}
-      action_label="Add runner"
-      action_navigate={~p"/app/#{@current_account}/runners/install"}
     >
       <:value>
         {@connected}<span class="text-2xl text-zinc-500"> / {@total} online</span>
@@ -447,8 +445,6 @@ defmodule EmisarWeb.DashboardLive do
       label="LLM agents"
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/settings/agents"}
-      action_label="Connect"
-      action_navigate={~p"/app/#{@current_account}/settings/agents"}
     >
       <:value>
         {@agents.total}<span class="text-2xl text-zinc-500">
@@ -595,8 +591,6 @@ defmodule EmisarWeb.DashboardLive do
       tone={team_tile_tone(@posture)}
       status_tone={team_status_tone(@posture)}
       navigate={~p"/app/#{@current_account}/settings/team"}
-      action_label="Invite"
-      action_navigate={~p"/app/#{@current_account}/settings/team/invite"}
     >
       <:value>
         {@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span>
@@ -627,8 +621,6 @@ defmodule EmisarWeb.DashboardLive do
   attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
-  attr :action_label, :string, default: nil
-  attr :action_navigate, :string, default: nil
   slot :value, required: true
   slot :status, required: true
 
@@ -639,20 +631,10 @@ defmodule EmisarWeb.DashboardLive do
          Containment is reserved for the CTA state (an invitation earns a box);
          a healthy stat doesn't. --%>
     <div class="flex flex-col">
-      <div class="flex items-baseline gap-3">
-        <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
-        <span class="text-zinc-700">·</span>
-        <%!-- -m/p padding extends the hit area to ~40px without growing the
-             visible text — these are the product's three main actions and on a
-             phone a bare 12px text link is an unhittable target. --%>
-        <.link
-          :if={@action_label}
-          navigate={@action_navigate}
-          class="-m-2.5 shrink-0 p-2.5 text-xs font-medium text-zinc-500 transition-colors hover:text-brand-300"
-        >
-          {@action_label}
-        </.link>
-      </div>
+      <%!-- No create link up here — the band is pure posture (label · figure ·
+           status). The figure links to the pillar's page, which owns the real
+           Add/Connect/Invite action; a third shortcut was noise. --%>
+      <span class="truncate text-sm font-medium text-zinc-400">{@label}</span>
       <.link navigate={@navigate} class="group mt-3 block">
         <div class="font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums transition-colors group-hover:text-brand-200">
           {render_slot(@value)}

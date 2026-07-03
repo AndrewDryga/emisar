@@ -790,7 +790,7 @@ defmodule EmisarWeb.TeamLive do
              (which already carries the consequences) — the page shows posture,
              not persuasion. --%>
         <.panel title="Security" padding="">
-          <ul class="divide-y divide-zinc-800">
+          <ul class="divide-y divide-zinc-800/70">
             <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
@@ -1345,7 +1345,7 @@ defmodule EmisarWeb.TeamLive do
           >
             End all sessions
           </.menu_item>
-          <div class="my-1 border-t border-zinc-800"></div>
+          <div class="my-1 border-t border-zinc-800/70"></div>
           <%!-- IRREVERSIBLE — typed-confirm modal instead of native
                data-confirm. The button only OPENS the dialog; `remove`
                still fires from Confirm and stays server-authz-gated. --%>
