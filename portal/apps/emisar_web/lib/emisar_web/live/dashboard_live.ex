@@ -60,7 +60,9 @@ defmodule EmisarWeb.DashboardLive do
       :recent_runs,
       # :api_key so the source badge names the actual agent ("Claude Code -
       # on-call"), same as the runs page — not the generic "MCP / LLM".
-      list_or_empty(Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :api_key]))
+      list_or_empty(
+        Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :api_key, :requested_by])
+      )
     )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)

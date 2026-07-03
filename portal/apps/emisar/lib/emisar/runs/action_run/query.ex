@@ -87,7 +87,11 @@ defmodule Emisar.Runs.ActionRun.Query do
     |> preload([runner: runner], runner: runner)
   end
 
-  @doc "Left-join + preload the run's (non-deleted) API key, idempotently."
+  @doc """
+  Left-join + preload the run's (non-deleted) API key, idempotently — with the
+  key's creator, so an MCP run can name its accountable human ("by
+  jordan@… via Claude Code").
+  """
   def with_preloaded_api_key(queryable) do
     queryable
     |> with_named_binding(:api_key, fn queryable, binding ->
@@ -100,7 +104,23 @@ defmodule Emisar.Runs.ActionRun.Query do
         as: ^binding
       )
     end)
-    |> preload([api_key: api_key], api_key: api_key)
+    |> preload([api_key: api_key], api_key: {api_key, :created_by})
+  end
+
+  @doc "Left-join + preload the run's (non-deleted) requesting user, idempotently."
+  def with_preloaded_requested_by(queryable) do
+    queryable
+    |> with_named_binding(:requested_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [runs: r],
+        requested_by in ^Emisar.Users.User.Query.not_deleted(),
+        on: r.requested_by_id == requested_by.id,
+        as: ^binding
+      )
+    end)
+    |> preload([requested_by: requested_by], requested_by: requested_by)
   end
 
   @doc """

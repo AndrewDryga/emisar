@@ -1959,22 +1959,14 @@ defmodule EmisarWeb.CoreComponents do
         <div class="break-words font-mono text-sm text-zinc-200 sm:truncate">
           <.dotted_mono value={@run.action_id} />
         </div>
-        <%!-- The actor rides the meta line ("… · 3d ago · by ⚡ Claude Code"),
-             not a mid-row column — the digest row is content left, status
-             right, nothing floating between. Inline also keeps the
-             security-salient who-ran-it visible on a phone, where the old
-             column was hidden. --%>
+        <%!-- Attribution rides the meta line — the accountable HUMAN plus the
+             channel: "by maya@… via portal", "by jordan@… via Claude Code -
+             on-call" (an MCP run's human is its key's owner). No icon, no
+             column — the digest row is content left, status right. --%>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
           <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
-          <span :if={@show_source}>
-            · by
-            <.source_badge
-              source={@run.source}
-              label={TimeHelpers.run_actor(@run)}
-              class="max-w-[14rem] align-bottom text-xs"
-            />
-          </span>
+          <span :if={@show_source}>· {run_attribution(@run)}</span>
         </div>
       </div>
       <%!-- Fixed left-aligned status column — every dot lines up vertically. --%>
@@ -1984,6 +1976,31 @@ defmodule EmisarWeb.CoreComponents do
     </.link>
     """
   end
+
+  # "by <who> via <channel>" — who is the accountable human (the requesting
+  # user; for an MCP run, the key's owner), channel is how it arrived. A run
+  # with no recorded human (legacy rows, the runbook engine) says only the
+  # channel. Unloaded assocs (%Ecto.Association.NotLoaded{} has no :email/:name
+  # key) fall through the same clauses as nil.
+  defp run_attribution(run) do
+    case attribution_who(run) do
+      nil -> "via #{attribution_channel(run)}"
+      who -> "by #{who} via #{attribution_channel(run)}"
+    end
+  end
+
+  defp attribution_who(%{requested_by: %{email: email}}), do: email
+  defp attribution_who(%{api_key: %{created_by: %{email: email}}}), do: email
+  defp attribution_who(_run), do: nil
+
+  defp attribution_channel(%{source: :mcp, api_key: %{name: name}}) when is_binary(name),
+    do: name
+
+  defp attribution_channel(%{source: :mcp}), do: "LLM agent"
+  defp attribution_channel(%{source: :operator}), do: "portal"
+  defp attribution_channel(%{source: :runbook}), do: "runbook"
+  defp attribution_channel(%{source: :scheduled}), do: "schedule"
+  defp attribution_channel(_run), do: "portal"
 
   @doc """
   A dotted mono identifier (an action id, an event type) rendered with a

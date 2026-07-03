@@ -220,6 +220,7 @@ defmodule Emisar.Runs do
     Enum.reduce(preloads, queryable, fn
       :runner, queryable -> ActionRun.Query.with_preloaded_runner(queryable)
       :api_key, queryable -> ActionRun.Query.with_preloaded_api_key(queryable)
+      :requested_by, queryable -> ActionRun.Query.with_preloaded_requested_by(queryable)
     end)
   end
 
