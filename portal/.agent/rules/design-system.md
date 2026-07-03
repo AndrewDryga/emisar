@@ -375,9 +375,10 @@ genuinely missing (then it's shared, not one-off).
   words so the promise is fulfilled verbatim on click. Sweep target: any
   empty-state/CTA whose action text ≈ its title.
 - **A page's sub-feature side door rides the TITLE row** — a quiet secondary
-  `<.button size={:sm}>` in `dashboard_shell`'s `<:actions>` slot, right of the
-  H1 (audit's "Stream to SIEM" → `/audit/export`). Never in the intro prose,
-  never below the content it configures.
+  `<.button size={:md}>` in `dashboard_shell`'s `<:actions>` slot, right of the
+  H1 (audit's "Stream to SIEM" → `/audit/export`). `:md`, not `:sm` — a control
+  beside a 28px H1 needs the full-size button to hold its own. Never in the
+  intro prose, never below the content it configures.
 - **Nav active state = the house wash + a brand-tinted icon** — `bg-white/[0.06]
   text-zinc-50` with the icon `text-brand-400`; NEVER a filled green pill
   (green-as-selection dilutes "emerald = passed the gate"). The sidebar sits on
