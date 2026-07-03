@@ -25,6 +25,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert after_count == before_count + 1
     end
 
+    test "a brand-new (unrunnable) runbook leads with Save draft, not Publish", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # The example step has no action and no target, so the runbook can't run —
+      # Save draft carries the primary brand fill and Publish is de-emphasized, so
+      # publishing an unrunnable runbook isn't the loud default (a footgun).
+      assert has_element?(lv, "button.bg-brand-500", "Save draft")
+      refute has_element?(lv, "button.bg-brand-500", "Publish")
+    end
+
     test "step-card fields associate their label with the control via for/id", %{
       conn: conn,
       account: account

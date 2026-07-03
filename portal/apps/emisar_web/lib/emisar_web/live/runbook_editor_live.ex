@@ -345,6 +345,14 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp placeholder_step_id?(""), do: true
   defp placeholder_step_id?(id), do: Regex.match?(~r/^step\d+$/, id)
 
+  # A runbook can publish only once it can actually run — at least one step, and
+  # every step carrying both an action and a target. Drives which footer action
+  # leads (Save draft until then), mirroring the per-step "No target set" hint.
+  defp publishable?(steps), do: steps != [] and Enum.all?(steps, &step_runnable?/1)
+
+  defp step_runnable?(step),
+    do: (step["action_id"] || "") != "" and (step["selector_values"] || []) != []
+
   defp slug_from_action(action_id) do
     action_id
     |> String.replace(~r/[^a-zA-Z0-9]+/, "_")
@@ -565,11 +573,25 @@ defmodule EmisarWeb.RunbookEditorLive do
            Title lives in the right column), so they sit below the grid —
            inside the Steps panel, mobile stacking rendered Publish above
            the very field it validates. --%>
+      <% ready_to_publish = publishable?(@steps) %>
+      <%!-- Save draft leads until every step can actually run (has an action AND
+           a target). Publishing an unrunnable runbook is a footgun on a
+           brand-new one, so it stays de-emphasized until it's ready. --%>
       <div class="mt-6 flex items-center gap-3 border-t border-zinc-900 pt-4">
-        <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
+        <.button
+          variant={if(ready_to_publish, do: :primary, else: :secondary)}
+          type="button"
+          phx-click="publish"
+          phx-disable-with="Publishing..."
+        >
           Publish
         </.button>
-        <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
+        <.button
+          variant={if(ready_to_publish, do: :secondary, else: :primary)}
+          type="button"
+          phx-click="save"
+          phx-disable-with="Saving..."
+        >
           Save draft
         </.button>
       </div>
