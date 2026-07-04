@@ -237,36 +237,47 @@ defmodule EmisarWeb.DashboardLive do
 
     <%!-- The escape hatch, only when it's live: a run held on a human decision
          is an agent blocked right now. Zero pending renders nothing — silence
-         is the confirmation. --%>
-    <div :if={@pending_approvals != []} class="mt-6">
-      <.attention_panel
-        icon="hero-hand-raised"
-        title="Awaiting your approval"
-        count={@pending_approvals_count}
-        href={~p"/app/#{@current_account}/approvals"}
-        cta="Review all"
-      >
-        <ul class="divide-y divide-amber-500/10">
-          <li :for={request <- Enum.take(@pending_approvals, 5)}>
-            <.link
-              navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-              class="group flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
-            >
-              <div class="min-w-0">
-                <div class="break-all font-mono text-amber-100 sm:truncate">
-                  {request.context["action_id"] || "—"}
-                </div>
-                <div class="truncate text-xs text-amber-200/60">
-                  <.local_time value={request.requested_at} mode={:relative} />
-                  <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
-                </div>
+         is the confirmation. Same content-on-canvas grammar as Recent runs —
+         amber stays on the STATUS (the dot, the waiting count), never a boxed
+         wash: approvals earn attention, not the centerpiece. --%>
+    <section :if={@pending_approvals != []} class="pt-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        <div class="flex min-w-0 flex-wrap items-baseline gap-3">
+          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+            Awaiting your approval
+          </h2>
+          <span class="text-xs tabular-nums text-amber-300">
+            {@pending_approvals_count} waiting on you
+          </span>
+        </div>
+        <.link
+          navigate={~p"/app/#{@current_account}/approvals"}
+          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
+        >
+          Review all <.cta_arrow class="ml-0.5 h-3 w-3" />
+        </.link>
+      </div>
+      <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+        <li :for={request <- Enum.take(@pending_approvals, 5)}>
+          <.link
+            navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
+            class="group -mx-2 flex items-center gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
+          >
+            <.status_dot tone={:amber} size={:md} />
+            <div class="min-w-0 flex-1">
+              <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">
+                {request.context["action_id"] || "—"}
               </div>
-              <.cta_arrow class="h-4 w-4 text-amber-300/70" />
-            </.link>
-          </li>
-        </ul>
-      </.attention_panel>
-    </div>
+              <div class="truncate text-xs text-zinc-500">
+                <.local_time value={request.requested_at} mode={:relative} />
+                <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
+              </div>
+            </div>
+            <.cta_arrow class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-brand-400" />
+          </.link>
+        </li>
+      </ul>
+    </section>
 
     <%!-- Recent runs — the activity proof, full width, with the 24h digest as
          the header's quiet annotation (a zero window is a non-event, not a
@@ -461,40 +472,6 @@ defmodule EmisarWeb.DashboardLive do
         <% end %>
       </:status>
     </.pillar>
-    """
-  end
-
-  # -- Attention panel ------------------------------------------------
-
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-  attr :count, :integer, required: true
-  attr :href, :string, required: true
-  attr :cta, :string, required: true
-  slot :inner_block, required: true
-
-  # Amber "needs a decision" panel (pending approvals — the only attention panel
-  # on the dashboard). The slot content carries its own matching amber tone.
-  defp attention_panel(assigns) do
-    ~H"""
-    <section class="rounded-xl bg-amber-500/[0.06] p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-amber-500/30">
-      <header class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <.icon name={@icon} class="h-4 w-4 text-amber-300" />
-          <h3 class="text-sm font-semibold text-amber-100">
-            {@title}
-            <.count_badge count={@count} tone={:amber} class="ml-1" />
-          </h3>
-        </div>
-        <.link
-          navigate={@href}
-          class="group flex items-center gap-1 text-xs font-medium text-amber-200 hover:text-amber-100"
-        >
-          {@cta} <.cta_arrow class="h-3 w-3" />
-        </.link>
-      </header>
-      <div class="mt-3">{render_slot(@inner_block)}</div>
-    </section>
     """
   end
 
