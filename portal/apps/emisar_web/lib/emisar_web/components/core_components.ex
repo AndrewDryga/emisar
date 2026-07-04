@@ -3787,212 +3787,223 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <%!-- CONTENT ON CANVAS — no outer grey box, and one section per job in the
-         operator's journey: the task (command + credential note), the trust
-         read (what the script does), the live wait line, then resources as
-         quiet hairline rows. The only contained surfaces are the ones a box
-         MEANS something for: the command artifact and the live-credential
-         warning (the calmed secret grammar — neutral surface, amber ring). --%>
+    <%!-- CONTENT ON CANVAS, task + rail: the DOING (command, credential note,
+         wait line) owns the left column; the READING (what the script does,
+         resources) is a right rail behind a vertical hairline at lg, stacking
+         below on mobile. ONE type ladder — section_header 16 / body 14 /
+         meta 12; never an uppercase eyebrow as a section title. The only
+         contained surfaces are the ones a box MEANS something for: the
+         command artifact and the live-credential warning (the calmed secret
+         grammar — neutral surface, amber ring). --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
       </p>
 
-      <%= cond do %>
-        <% is_binary(@install_command) -> %>
-          <div class="mt-8 space-y-10">
-            <section>
-              <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Run this on the host
-              </div>
-              <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads as
-                   corruption in the very command we're asking the operator to
-                   trust — scroll on narrow screens; Copy is the real path. --%>
-              <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                <pre class="flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
-                <%!-- Copy the literal string, not the rendered element's
-                       innerText: the leading space (HISTCONTROL=ignorespace)
-                       is significant and the selector path would strip it. --%>
-                <.copy_button
-                  text={@install_command}
-                  class="self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
-                >
-                  Copy
-                </.copy_button>
-              </div>
-              <%!-- Right where the odd first character raises the question. --%>
-              <p class="mt-2 text-xs text-zinc-600">
-                The leading space keeps the key out of your shell history.
-              </p>
-              <%!-- The one-liner embeds a single-use enrollment key shown
-                     only here — a root-capable credential. The marketing
-                     quickstart tells the trust story, but the operator has left
-                     that page; carry it onto the page they actually install
-                     from so they don't paste it into a chat/ticket or run an
-                     unknown root script blind. --%>
-              <div class="mt-4 rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40">
-                <div class="flex items-center gap-2 text-sm font-semibold text-amber-100">
-                  <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
-                  Live credential — won't be shown again
-                </div>
-                <p class="mt-1.5 text-xs leading-5 text-zinc-400">
-                  The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                  and carries a <span class="font-medium text-zinc-200">one-time</span>
-                  key: it enrolls exactly one host, then expires. Treat it like a password —
-                  paste it straight onto the host, never into a chat or ticket.
-                </p>
-              </div>
-              <%!-- The alternate path is routing, not warning — it lives
-                     outside the credential note, right after the one-time
-                     story it forks from. --%>
-              <p :if={@show_keys_link} class="mt-3 text-xs text-zinc-500">
-                Baking an image, or enrolling a whole fleet with cloud-init? Mint a
-                <span class="font-medium text-zinc-400">multi-use</span>
-                key under
-                <.link navigate={@keys_path} class="font-semibold text-brand-400 hover:text-brand-300">
-                  Runner keys →
-                </.link>
-              </p>
-            </section>
+      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-12">
+        <div>
+          <%= cond do %>
+            <% is_binary(@install_command) -> %>
+              <div class="space-y-8">
+                <section>
+                  <.section_header title="Run this on the host" />
+                  <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads
+                       as corruption in the very command we're asking the
+                       operator to trust — scroll on narrow screens; Copy is
+                       the real path. --%>
+                  <div class="flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
+                    <pre class="flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
+                    <%!-- Copy the literal string, not the rendered element's
+                           innerText: the leading space (HISTCONTROL=ignorespace)
+                           is significant and the selector path would strip it. --%>
+                    <.copy_button
+                      text={@install_command}
+                      class="self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
+                    >
+                      Copy
+                    </.copy_button>
+                  </div>
+                  <%!-- Right where the odd first character raises the question. --%>
+                  <p class="mt-2 text-xs text-zinc-600">
+                    The leading space keeps the key out of your shell history.
+                  </p>
+                  <%!-- The one-liner embeds a single-use enrollment key shown
+                         only here — a root-capable credential. The marketing
+                         quickstart tells the trust story, but the operator has
+                         left that page; carry it onto the page they actually
+                         install from so they don't paste it into a chat/ticket
+                         or run an unknown root script blind. --%>
+                  <div class="mt-5 rounded-xl bg-zinc-900/60 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40">
+                    <div class="flex items-center gap-2 text-sm font-semibold text-amber-100">
+                      <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
+                      Live credential — won't be shown again
+                    </div>
+                    <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+                      The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                      and carries a <span class="font-medium text-zinc-200">one-time</span>
+                      key: it enrolls exactly one host, then expires. Treat it like a password —
+                      paste it straight onto the host, never into a chat or ticket.
+                    </p>
+                  </div>
+                  <%!-- The alternate path is routing, not warning — it lives
+                         outside the credential note, right after the one-time
+                         story it forks from. --%>
+                  <p :if={@show_keys_link} class="mt-4 text-sm leading-relaxed text-zinc-500">
+                    Baking an image, or enrolling a whole fleet with cloud-init? Mint a
+                    <span class="font-medium text-zinc-400">multi-use</span>
+                    key under
+                    <.link
+                      navigate={@keys_path}
+                      class="font-medium text-brand-400 hover:text-brand-300"
+                    >
+                      Runner keys →
+                    </.link>
+                  </p>
+                </section>
 
-            <section>
-              <.section_header title="What the script does" />
-              <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
-                <%!-- mt-[3px]: optically centers the 14px check on the first
-                     text line (mt-0.5 sat visibly high). --%>
-                <li class="flex items-start gap-2.5">
-                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                  <span>Verifies the download's SHA-256 before running anything</span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                  <span>
-                    Runs the runner as a dedicated <code class="font-mono text-zinc-300">emisar</code>
-                    user (not root) under a systemd unit
-                  </span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                  <span>Only dials out — nothing listens on the host</span>
-                </li>
-              </ul>
-              <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1.5 text-xs font-medium">
-                <.link
-                  href="/install.sh"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-brand-400 hover:text-brand-300"
-                >
-                  It's a plain shell script — read it first →
-                </.link>
-                <.link
-                  href={~p"/trust" <> "#release-integrity"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-brand-400 hover:text-brand-300"
-                >
-                  Verify the release's provenance + checksum →
-                </.link>
-              </div>
-            </section>
+                <section class="border-t border-zinc-800/70 pt-6">
+                  <div class="flex items-center gap-3">
+                    <%!-- Amber: this is a PENDING state — brand-green would
+                         read "connected" before anything has connected. Naked
+                         on the canvas: a wait line, not a widget. --%>
+                    <.status_dot tone={:amber} size={:md} ping />
+                    <div class="text-sm text-zinc-300">
+                      Waiting for a runner to connect — this page advances on its own.
+                      You can leave; the runner will appear in Runners either way.
+                    </div>
+                  </div>
 
-            <section class="border-t border-zinc-800/70 pt-6">
-              <div class="flex items-center gap-3">
-                <%!-- Amber: this is a PENDING state — brand-green would read
-                     "connected" before anything has connected. Naked on the
-                     canvas: a wait line, not a widget. --%>
-                <.status_dot tone={:amber} size={:md} ping />
-                <div class="text-sm text-zinc-300">
-                  Waiting for a runner to connect — this page advances on its own.
-                  You can leave; the runner will appear in Runners either way.
-                </div>
+                  <%!-- After the grace period with no join (the install page's
+                         watchdog flips show_troubleshooting) the likely funnel
+                         failure is a wrong/truncated key, :443 firewalled, or a
+                         non-systemd host — none of which the pulse alone
+                         reveals. Surface the same checks the quickstart doc
+                         carries. --%>
+                  <div :if={@show_troubleshooting} class="mt-4 text-xs leading-5 text-zinc-400">
+                    <div class="text-sm font-semibold text-zinc-300">
+                      Not seeing it yet? Check the host:
+                    </div>
+                    <.steps class="mt-2">
+                      <:step>
+                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                        over outbound HTTPS (nothing needs to listen on it).
+                      </:step>
+                      <:step>
+                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                        and the key wasn't truncated on paste.
+                      </:step>
+                      <:step>
+                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                      </:step>
+                    </.steps>
+                  </div>
+                </section>
               </div>
+            <% @install_command == :mint_failed -> %>
+              <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
+                We couldn't mint a runner key just now. Open
+                <.link navigate={@keys_path} class="font-semibold underline">
+                  Runners → Runner keys
+                </.link>
+                and create one manually, or refresh this page to try again.
+              </div>
+            <% true -> %>
+              <div class="flex items-center gap-3 text-sm text-zinc-400">
+                <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
+                Generating your install command…
+              </div>
+          <% end %>
+        </div>
 
-              <%!-- After the grace period with no join (the install page's
-                     watchdog flips show_troubleshooting) the likely funnel
-                     failure is a wrong/truncated key, :443 firewalled, or a
-                     non-systemd host — none of which the pulse alone reveals.
-                     Surface the same checks the quickstart doc carries. --%>
-              <div
-                :if={@show_troubleshooting}
-                class="mt-4 text-xs leading-5 text-zinc-400"
+        <%!-- The reading rail — the script's trust facts + other ways in,
+             true for every wizard state (a failed mint still deserves the
+             manual-install door). Quiet rows on the canvas, never island
+             cards competing with the task. --%>
+        <aside class="mt-10 space-y-10 lg:mt-0 lg:border-l lg:border-zinc-800/70 lg:pl-12">
+          <section>
+            <.section_header title="What the script does" />
+            <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
+              <%!-- mt-[3px]: optically centers the 14px check on the first
+                   text line (mt-0.5 sat visibly high). --%>
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                <span>Verifies the download's SHA-256 before running anything</span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                <span>
+                  Runs the runner as a dedicated <code class="font-mono text-zinc-300">emisar</code>
+                  user (not root) under a systemd unit
+                </span>
+              </li>
+              <li class="flex items-start gap-2.5">
+                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                <span>Only dials out — nothing listens on the host</span>
+              </li>
+            </ul>
+            <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
+              <.link
+                href="/install.sh"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-brand-400 hover:text-brand-300"
               >
-                <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
-                <.steps class="mt-1.5">
-                  <:step>
-                    It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                    over outbound HTTPS (nothing needs to listen on it).
-                  </:step>
-                  <:step>
-                    You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                    and the key wasn't truncated on paste.
-                  </:step>
-                  <:step>
-                    It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                  </:step>
-                </.steps>
-              </div>
-            </section>
-          </div>
-        <% @install_command == :mint_failed -> %>
-          <div class="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
-            We couldn't mint a runner key just now. Open
-            <.link navigate={@keys_path} class="font-semibold underline">
-              Runners → Runner keys
-            </.link>
-            and create one manually, or refresh this page to try again.
-          </div>
-        <% true -> %>
-          <div class="mt-6 flex items-center gap-3 text-sm text-zinc-400">
-            <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
-            Generating your install command…
-          </div>
-      <% end %>
+                It's a plain shell script — read it first →
+              </.link>
+              <.link
+                href={~p"/trust" <> "#release-integrity"}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-brand-400 hover:text-brand-300"
+              >
+                Verify the release's provenance + checksum →
+              </.link>
+            </div>
+          </section>
 
-      <%!-- Other ways in — quiet rows on the canvas, never island cards
-           competing with the task above. Rendered for every wizard state
-           (a failed mint still deserves the manual-install door). --%>
-      <section class="mt-10">
-        <.section_header title="Resources" />
-        <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-          <li>
-            <.link
-              href="/docs/quickstart"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-zinc-100">Installation guide</div>
-                <div class="mt-0.5 text-xs text-zinc-500">
-                  Image-bake, cloud-init, manual install.
-                </div>
-              </div>
-              <.icon
-                name="hero-arrow-top-right-on-square"
-                class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
-              />
-            </.link>
-          </li>
-          <li>
-            <.link
-              navigate="/packs"
-              class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-zinc-100">Pack registry</div>
-                <div class="mt-0.5 text-xs text-zinc-500">
-                  Browse linux-core, cassandra, showcase. Install snippets included.
-                </div>
-              </div>
-              <.icon
-                name="hero-arrow-right"
-                class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
-              />
-            </.link>
-          </li>
-        </ul>
-      </section>
+          <section>
+            <.section_header title="Resources" />
+            <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+              <li>
+                <.link
+                  href="/docs/quickstart"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Installation guide</div>
+                    <div class="mt-0.5 text-xs text-zinc-500">
+                      Image-bake, cloud-init, manual install.
+                    </div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+                  />
+                </.link>
+              </li>
+              <li>
+                <.link
+                  navigate="/packs"
+                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-zinc-100">Pack registry</div>
+                    <div class="mt-0.5 text-xs text-zinc-500">
+                      Browse linux-core, cassandra, showcase. Install snippets included.
+                    </div>
+                  </div>
+                  <.icon
+                    name="hero-arrow-right"
+                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+                  />
+                </.link>
+              </li>
+            </ul>
+          </section>
+        </aside>
+      </div>
     </div>
     """
   end

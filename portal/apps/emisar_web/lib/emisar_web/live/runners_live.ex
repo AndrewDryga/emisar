@@ -153,7 +153,7 @@ defmodule EmisarWeb.RunnersLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={if @show_wizard?, do: :form, else: :table}
+      width={if @show_wizard?, do: :detail, else: :table}
     >
       <:title>Runners</:title>
       <%!-- The wizard IS the add flow, so the button (→ the same wizard) is
