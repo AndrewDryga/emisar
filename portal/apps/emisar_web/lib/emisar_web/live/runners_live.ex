@@ -170,13 +170,16 @@ defmodule EmisarWeb.RunnersLive do
         >
           Runner keys
         </.button>
+        <%!-- "Connect a runner" — the destination page's own title, the
+             dashboard onboarding step, and the parallel of "Connect an agent".
+             One verb for getting a host online, not a stray "Add". --%>
         <.button
           :if={Runners.subject_can_install_runners?(@current_subject)}
           navigate={~p"/app/#{@current_account}/runners/install"}
           size={:md}
           icon="hero-plus"
         >
-          Add a runner
+          Connect a runner
         </.button>
       </:actions>
 
@@ -284,7 +287,7 @@ defmodule EmisarWeb.RunnersLive do
             rows={sort_by_group(@runners)}
             metadata={@metadata}
             filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            wrapper_class="divide-y divide-zinc-800/70"
             group_by={fn runner -> runner.group || "(no group)" end}
           >
             <:group_header :let={group_label}>

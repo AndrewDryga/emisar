@@ -15,18 +15,18 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Run this on the host"
       assert html =~ "curl -sSL"
       assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
-      # The redundant "Add a runner" header button is dropped while the wizard shows.
-      refute has_element?(lv, "a", "Add a runner")
+      # The redundant "Connect a runner" header button is dropped while the wizard shows.
+      refute has_element?(lv, "a", "Connect a runner")
     end
 
-    test "the fleet's sub-features ride the title row — Runner keys next to Add a runner",
+    test "the fleet's sub-features ride the title row — Runner keys next to Connect a runner",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
-      assert html =~ "Add a runner"
+      assert html =~ "Connect a runner"
       assert html =~ ~p"/app/#{account}/runners/keys"
     end
 
@@ -134,8 +134,8 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     # a viewer holds `view_runners`, so the list page
-    # renders for them (it's not manage-gated). The "Add a runner" affordance is
-    # a plain link to the install wizard, present on the page header.
+    # renders for them (it's not manage-gated). The "Connect a runner" affordance
+    # is a plain link to the install wizard, present on the page header.
     test "a viewer can view the runners list; install affordances are issue-tier", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "viewable-runner")
@@ -153,12 +153,12 @@ defmodule EmisarWeb.RunnersLiveTest do
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "viewable-runner"
-      # "Add a runner" points at a mint the viewer can't perform — hidden
+      # "Connect a runner" points at a mint the viewer can't perform — hidden
       # (§4), like the Runner keys door.
       refute has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",
-               "Add a runner"
+               "Connect a runner"
              )
     end
 

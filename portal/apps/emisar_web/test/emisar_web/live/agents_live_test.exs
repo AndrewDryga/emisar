@@ -52,7 +52,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Connect an agent"
 
       # With a live key the index collapses to the list + a title-row CTA
-      # into the flow (the Runners "Add a runner" pattern).
+      # into the flow (the Runners "Connect a runner" pattern).
       subject = owner_subject(user, account)
 
       {:ok, _raw, _key} =
