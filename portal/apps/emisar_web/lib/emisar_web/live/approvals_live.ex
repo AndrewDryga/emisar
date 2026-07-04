@@ -431,7 +431,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 <:chips>
                   <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
                   <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
-                  <.chip :if={g.expires_at == nil} tone={:rose}>No expiry</.chip>
+                  <.chip :if={g.expires_at == nil} tone={:amber}>no expiry</.chip>
                 </:chips>
                 <:meta>
                   <div

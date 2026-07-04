@@ -75,7 +75,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
-      assert html =~ "Signed-only"
+      assert html =~ "signed-only"
       assert html =~ "hardened"
       assert html =~ "plain"
       # A mixed fleet (one unsigned) must NOT show the all-fleet notice.

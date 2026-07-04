@@ -484,7 +484,10 @@ defmodule EmisarWeb.ProfileLive do
           </:subtitle>
           <:badge>
             <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
-            <.chip :if={not @mfa_enabled?}>Off</.chip>
+            <span :if={not @mfa_enabled?} class="flex items-center gap-1.5 text-xs">
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="text-zinc-500">off</span>
+            </span>
           </:badge>
 
           <%= cond do %>

@@ -371,17 +371,17 @@ defmodule EmisarWeb.AuthKeysLive do
                 </span>
               </:title>
               <:chips>
-                <.chip :if={key.reusable}>Reusable</.chip>
+                <.chip :if={key.reusable}>reusable</.chip>
                 <%!-- A reusable key with no expiry is a standing fleet-enrollment secret —
                      flag it amber so a long-lived multi-host credential isn't read as routine. --%>
                 <.chip
                   :if={key.reusable and is_nil(key.expires_at) and is_nil(key.revoked_at)}
                   tone={:amber}
                 >
-                  No expiry
+                  no expiry
                 </.chip>
-                <.chip :if={not key.reusable}>Single-use</.chip>
-                <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
+                <.chip :if={not key.reusable}>single-use</.chip>
+                <.chip :if={key.revoked_at} tone={:rose}>revoked</.chip>
               </:chips>
               <:meta>
                 <.meta_line class="text-[11px]">

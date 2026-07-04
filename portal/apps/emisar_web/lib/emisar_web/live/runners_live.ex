@@ -322,7 +322,7 @@ defmodule EmisarWeb.RunnersLive do
                         icon="hero-shield-check"
                         title="Runs only signed dispatches — the portal can't dispatch to this runner"
                       >
-                        Signed-only
+                        signed-only
                       </.chip>
                     </div>
                     <.meta_line class="mt-0.5 text-xs text-zinc-500">

@@ -378,11 +378,11 @@ defmodule EmisarWeb.BillingLive do
                 <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
-                    <.chip upcase tone={:neutral}>Current</.chip>
+                    <.chip tone={:neutral}>current</.chip>
                   <% plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan) -> %>
                     <%!-- Upsell merch only reads as such BELOW the badged plan —
                          a customer already above it gets silence. --%>
-                    <.chip upcase>Most popular</.chip>
+                    <.chip>most popular</.chip>
                   <% true -> %>
                     <span></span>
                 <% end %>
