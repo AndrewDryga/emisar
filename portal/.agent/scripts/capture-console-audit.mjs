@@ -130,13 +130,16 @@ async function mailboxMessages() {
   return body.data ?? body;
 }
 
+// Mailbox messages carry no `id` — key on sent_at+subject for the seen-set.
+const mailId = (m) => `${m.sent_at}|${m.subject}`;
+
 // The magic-link URL from the newest mail to EMAIL that isn't in `seenIds`.
 async function pollMagicLink(seenIds) {
   for (let i = 0; i < 20; i++) {
     const messages = await mailboxMessages();
     const fresh = messages.find(
       (m) =>
-        !seenIds.has(m.id) &&
+        !seenIds.has(mailId(m)) &&
         JSON.stringify(m.to ?? "").includes(EMAIL) &&
         /sign_in\/magic\//.test(m.text_body ?? ""),
     );
@@ -165,7 +168,7 @@ try {
   }
 
   console.log("login via magic link:");
-  const seenIds = new Set((await mailboxMessages()).map((m) => m.id));
+  const seenIds = new Set((await mailboxMessages()).map(mailId));
   await page.goto(`${BASE}/sign_in`, { waitUntil: "networkidle2" });
   await page.type('input[type="email"]', EMAIL);
   await Promise.all([
