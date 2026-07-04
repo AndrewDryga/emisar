@@ -48,13 +48,15 @@ __pycache__/
 # under priv/static — a bare `docs/` would also swallow those).
 /docs/
 
-# .agent/ is local working state — only rules/ (the shared taste KB) and
-# scripts/ (maintained dev tooling) are committed. Tasks, backlog, ideas,
+# .agent/ is local working state — only rules/ (the shared taste KB), scripts/
+# (maintained dev tooling), and project.yaml (the committed per-project config:
+# monorepo members + serve ports) are committed. Tasks, backlog, ideas,
 # pending-decisions, log, archive all stay on the machine (no commit noise, no
 # cross-agent merge conflicts). See AGENTS.md.
 **/.agent/*
 !**/.agent/rules
 !**/.agent/scripts
+!.agent/project.yaml
 .expert/*.log
 .claude/.sweep-active
 
