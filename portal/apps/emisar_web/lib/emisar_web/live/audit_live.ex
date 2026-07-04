@@ -205,7 +205,6 @@ defmodule EmisarWeb.AuditLive do
       {:ok, events, meta} ->
         socket
         |> assign(:events, events)
-        |> assign(:first_event_date, first_event_date(events))
         |> assign(:metadata, meta)
         |> assign(:refs, Audit.resolve_references(events))
         |> assign(:load_error?, false)
@@ -216,7 +215,6 @@ defmodule EmisarWeb.AuditLive do
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:events, [])
-        |> assign(:first_event_date, nil)
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:refs, %{})
         |> assign(:load_error?, true)
@@ -343,31 +341,21 @@ defmodule EmisarWeb.AuditLive do
         filter_visibility={:collapsible}
         filters_open={@filters_open?}
         layout={:cards}
-        wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
-        group_by={&DateTime.to_date(&1.occurred_at)}
+        wrapper_class="divide-y divide-zinc-800/70"
       >
-        <:group_header :let={date}>
-          <%!-- The FIRST day on the page carries the column header row inside
-               its own li, under the date — so the labels TOUCH the first data
-               row (one hairline between them) instead of floating above the
-               date band. Same grid template as the rows; folds below xl. --%>
-          <li class="pb-1.5 pt-5 first:pt-3">
-            <span class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-              <span class="tabular-nums">{Date.to_iso8601(date)}</span>
-              · {Calendar.strftime(date, "%A")} · UTC
-            </span>
-            <div
-              :if={date == @first_event_date}
-              class="hidden pt-4 xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:gap-4"
-            >
-              <span class={audit_column_header_class()}>Event</span>
-              <span class={audit_column_header_class()}>Actor</span>
-              <span class={audit_column_header_class()}>Target</span>
-              <span class={audit_column_header_class()}>Source IP</span>
-              <span class={[audit_column_header_class(), "text-right"]}>When</span>
-            </div>
+        <%!-- The day bands died with the switch to relative times (the exact
+             stamp lives in each row's tooltip + the From/To bounds), so the
+             column header is simply the list's first row — nothing floats
+             above the table. Folds below xl with the columns. --%>
+        <:list_header>
+          <li class="hidden pb-2 xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:gap-4">
+            <span class={audit_column_header_class()}>Event</span>
+            <span class={audit_column_header_class()}>Actor</span>
+            <span class={audit_column_header_class()}>Target</span>
+            <span class={audit_column_header_class()}>Source IP</span>
+            <span class={[audit_column_header_class(), "text-right"]}>When</span>
           </li>
-        </:group_header>
+        </:list_header>
         <:item :let={event}>
           <li id={"event-#{event.id}"}>
             <%!-- One row, two densities. Below xl: the folded who→what·pairs·ip
@@ -453,9 +441,6 @@ defmodule EmisarWeb.AuditLive do
     </.dashboard_shell>
     """
   end
-
-  defp first_event_date([]), do: nil
-  defp first_event_date([event | _]), do: DateTime.to_date(event.occurred_at)
 
   defp audit_column_header_class,
     do: "text-[11px] font-medium uppercase tracking-wider text-zinc-500"

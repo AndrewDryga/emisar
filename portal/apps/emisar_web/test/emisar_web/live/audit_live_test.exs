@@ -56,9 +56,9 @@ defmodule EmisarWeb.AuditLiveTest do
         Repo.all(Emisar.Audit.Event) |> Enum.find(&(&1.event_type == "runner.connected"))
 
       assert html =~ ~p"/app/#{account}/audit/#{event.id}"
-      # The day-group header stamps the UTC date once per day.
-      assert html =~ Date.to_iso8601(DateTime.to_date(event.occurred_at))
-      assert html =~ "· UTC"
+      # No day bands (relative times carry recency; the exact stamp rides each
+      # row's tooltip) — the column header is the list's first row.
+      assert html =~ "Source IP"
     end
 
     test "rows carry an outcome dot — rose for failures, amber for denials, neutral for routine",

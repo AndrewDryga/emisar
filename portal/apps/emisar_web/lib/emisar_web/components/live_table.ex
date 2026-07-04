@@ -123,6 +123,10 @@ defmodule EmisarWeb.LiveTable do
   slot :group_header,
     doc: "`:cards` + `:group_by` only — receives the group label, renders the divider"
 
+  slot :list_header,
+    doc:
+      "`:cards` only — rendered ONCE as the list's first `<li>`: column headers for `:item` rows that lay out as a grid (the audit stream's xl+ forensic columns)"
+
   slot :empty
 
   slot :action,
@@ -158,6 +162,7 @@ defmodule EmisarWeb.LiveTable do
         </div>
       <% else %>
         <ul id={@id} class={[@resolved_wrapper_class, @class]}>
+          {render_slot(@list_header)}
           <%= for {group_label, rows} <- @grouped_rows do %>
             <%= if group_label != nil do %>
               <%= if @group_header != [] do %>
