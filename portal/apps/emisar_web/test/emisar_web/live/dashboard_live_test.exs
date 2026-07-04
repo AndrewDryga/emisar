@@ -103,7 +103,7 @@ defmodule EmisarWeb.DashboardLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
       refute html =~ "Get to your first gated run"
       # The runners pillar carries live state (one registered runner,
@@ -113,6 +113,57 @@ defmodule EmisarWeb.DashboardLiveTest do
       # Both connected, nothing dispatched yet: the runs zero state
       # deep-links the first runner's catalog as the dispatch nudge.
       assert html =~ "dispatch an action from its catalog"
+
+      # A solo account (just the owner) reports its honest member count and
+      # nudges an invite — never the premature "give everyone their own sign-in"
+      # SSO pitch, which waits for a team to exist.
+      assert html =~ "1<span class=\"text-2xl text-zinc-500\"> member</span>"
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/team/invite"}']",
+               "Invite team members"
+             )
+
+      refute html =~ "Give everyone their own sign-in"
+    end
+
+    test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # Both connections exist so the operational dashboard (not the checklist)
+      # renders its pillars.
+      {:ok, _runner} =
+        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      # A second member turns "solo" into a team.
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
+      assert html =~ "Give everyone their own sign-in"
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/sso"}']",
+               "Give everyone their own sign-in"
+             )
+
+      refute html =~ "Invite team members"
     end
 
     test "the dispatch nudge appears with connections-but-no-runs and clears after the first run",

@@ -715,17 +715,11 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # The Team pillar reports "who's in, and is the people-attack surface
-  # tight?" — member count as the fact, 2FA posture as the status:
-  #
-  #   * rose  — account enforces MFA AND someone hasn't enrolled.
-  #             They literally can't sign in until they fix it.
-  #   * amber — MFA is optional but at least one teammate hasn't
-  #             enrolled. Soft nudge.
-  #   * brand — every member is enrolled. Quiet "you're good".
-  #
-  # A solo account (just you) renders the invite CTA instead — onboarding
-  # the team IS this pillar's zero state.
+  # The Team pillar is the team-onboarding nudge, two states keyed on member
+  # count: a solo account (just the owner) reports its honest count and pitches
+  # inviting the team; once a team exists, it pitches SSO — federated sign-in for
+  # everyone. Per-member 2FA posture lives on the Team settings roster, where
+  # it's actionable, not as a dashboard stat.
 
   attr :team_mfa, :any, required: true
   attr :current_account, :map, required: true
@@ -743,56 +737,36 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
+  # Solo (just the owner): the honest member count, with inviting the team as the
+  # forward action. SSO is premature until there IS a team to federate, so it
+  # waits for the next state.
   defp team_pillar(%{team_mfa: %{total: total}} = assigns) when total <= 1 do
-    ~H"""
-    <.pillar_cta
-      label="Team"
-      title="Give everyone their own sign-in"
-      cta="Send an invite"
-      navigate={~p"/app/#{@current_account}/settings/team/invite"}
-    />
-    """
-  end
-
-  defp team_pillar(assigns) do
-    posture =
-      cond do
-        assigns.team_mfa.missing == 0 -> :enrolled
-        assigns.team_mfa.required? -> :lockout
-        true -> :nudge
-      end
-
-    assigns = assign(assigns, :posture, posture)
-
     ~H"""
     <.pillar
       label="Team"
-      tone={team_tile_tone(@posture)}
-      status_tone={team_status_tone(@posture)}
-      navigate={~p"/app/#{@current_account}/settings/team"}
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/settings/team/invite"}
     >
-      <:value>
-        {@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span>
-      </:value>
-      <:status>{team_status(@posture, @team_mfa)}</:status>
+      <:value>1<span class="text-2xl text-zinc-500"> member</span></:value>
+      <:action>Invite team members</:action>
     </.pillar>
     """
   end
 
-  # Enrolled = quiet brand; a hard lockout (MFA required and someone can't sign
-  # in) earns the rose alarm on tile AND line; the optional-MFA nudge keeps the
-  # tile neutral and lets the status line alone carry the amber.
-  defp team_tile_tone(:enrolled), do: :brand
-  defp team_tile_tone(:lockout), do: :rose
-  defp team_tile_tone(:nudge), do: :neutral
-
-  defp team_status_tone(:enrolled), do: :neutral
-  defp team_status_tone(:lockout), do: :rose
-  defp team_status_tone(:nudge), do: :amber
-
-  defp team_status(:enrolled, m), do: "All #{m.total} have 2FA"
-  defp team_status(:lockout, m), do: "#{m.missing} can't sign in until enrolled"
-  defp team_status(:nudge, m), do: "#{m.missing} without 2FA"
+  # A real team exists — the valuable next step is federated identity, so the
+  # pillar pitches SSO. Its settings page owns the plan/permission gate.
+  defp team_pillar(assigns) do
+    ~H"""
+    <.pillar
+      label="Team"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/settings/sso"}
+    >
+      <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:action>Give everyone their own sign-in</:action>
+    </.pillar>
+    """
+  end
 
   # -- The pillar card shape --------------------------------------------
 
@@ -801,7 +775,11 @@ defmodule EmisarWeb.DashboardLive do
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
   slot :value, required: true
-  slot :status, required: true
+  # A live pillar carries EITHER a posture line (`:status` — dot + fact, tinted
+  # by status_tone) OR a forward action (`:action` — a quiet brand link with the
+  # house arrow). Runners/LLM report posture; Team nudges an action.
+  slot :status
+  slot :action
 
   defp pillar(assigns) do
     ~H"""
@@ -827,16 +805,28 @@ defmodule EmisarWeb.DashboardLive do
       <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums">
         {render_slot(@value)}
       </div>
-      <div class={[
-        "mt-2.5 flex items-center gap-1.5 text-[13px]",
-        pillar_status_class(@status_tone)
-      ]}>
+      <div
+        :if={@status != []}
+        class={[
+          "mt-2.5 flex items-center gap-1.5 text-[13px]",
+          pillar_status_class(@status_tone)
+        ]}
+      >
         <.status_dot tone={pillar_dot_tone(@tone, @status_tone)} />
         {render_slot(@status)}
         <%!-- An attention status (amber/rose) is a "go look" — the animated
              arrow (inherits the line's tone) nudges on the pillar hover; a
              healthy/neutral line has nowhere urgent to go, so no arrow. --%>
         <.cta_arrow :if={@status_tone != :neutral} class="h-3.5 w-3.5" />
+      </div>
+      <%!-- The action line reads as the pillar_cta's affordance — quiet brand,
+           the house arrow — since the WHOLE pillar is the link to its target. --%>
+      <div
+        :if={@action != []}
+        class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
+      >
+        {render_slot(@action)}
+        <.cta_arrow />
       </div>
     </.link>
     """
