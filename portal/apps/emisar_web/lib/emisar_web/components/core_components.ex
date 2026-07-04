@@ -2089,55 +2089,8 @@ defmodule EmisarWeb.CoreComponents do
   defp source_icon(_operator), do: "hero-user"
 
   @doc """
-  The header summary band — a quiet, at-a-glance count strip wrapping several
-  `summary_stat/1`s in one bordered flex row at the top of a LIST page (the
-  Runners fleet health, the LLM-agents page). Not `<.stat>` (the dashboard's
-  big-number tile) nor `<.meta_strip>` (a detail page's under-title meta). The
-  optional `:trailing` slot right-aligns extra context (e.g. an "N keys total").
-  The band's chrome lives here so the pages that use it can't drift apart.
-
-      <.summary_band>
-        <.summary_stat tone={:brand} value={@fleet.online} label="Online" />
-        <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
-      </.summary_band>
-  """
-  slot :inner_block, required: true
-  slot :trailing
-
-  def summary_band(assigns) do
-    ~H"""
-    <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-4 py-2.5 text-xs sm:gap-x-6 sm:px-5 sm:py-3">
-      {render_slot(@inner_block)}
-      <div :if={@trailing != []} class="ml-auto text-zinc-500">{render_slot(@trailing)}</div>
-    </div>
-    """
-  end
-
-  @doc """
-  One stat in a `summary_band/1` — a coloured `value` + `label` (+ optional
-  `hint`). The band owns the row chrome; this owns the dot + count.
-  """
-  attr :tone, :atom, required: true, values: [:brand, :amber, :rose, :neutral]
-  attr :value, :integer, required: true
-  attr :label, :string, required: true
-  attr :hint, :string, default: nil
-
-  def summary_stat(assigns) do
-    ~H"""
-    <div class="flex items-center gap-1.5">
-      <.status_dot tone={@tone} />
-      <span class="tabular-nums text-zinc-100">{@value}</span>
-      <span class="text-zinc-400">{@label}</span>
-      <%!-- Secondary qualifier (e.g. "last 5 min") — hidden on mobile so the
-           band stays a single tight line instead of wrapping. --%>
-      <span :if={@hint} class="hidden text-zinc-600 sm:inline">({@hint})</span>
-    </div>
-    """
-  end
-
-  @doc """
   The ONE status dot — the colored circle every live-state indicator composes
-  (console-ux §1): summary-band stats, the status badge, connection dots,
+  (console-ux §1): posture-line stats, the status badge, connection dots,
   audit outcome dots, SCIM sync health, wait-room pings. Tones are the house
   hue atoms; `pulse` is the gentle in-progress fade (a running run), `ping`
   the radiating "live/waiting" ring (a connected runner, a wait-room). Extra
@@ -3323,7 +3276,7 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Horizontal meta strip wrapper — the bordered rounded box that holds
   `<.meta_field>` key-value cells under page titles on DETAIL pages (a run's
-  runner / risk / pack / time). Not `<.summary_band>` (a list page's count
+  runner / risk / pack / time). Not a list page's naked posture line (a count
   strip) nor `<.stat>` (the dashboard tile). Pass `cols` for an explicit column
   count at `lg+`; defaults to auto-fitting via `sm:grid-cols-3`.
 
@@ -3845,8 +3798,9 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc ~S"""
   Statistic **tile** — a big number in its own card, for the dashboard's metrics
-  grid. The widest of the stat trio: `<.summary_stat>` is the quiet count strip
-  atop a list page; `<.meta_field>` is the key-value strip under a detail title.
+  grid. The widest of the stat pair: a list page's health counts are a naked
+  posture line of `<.status_dot>` + count text (the runners/agents grammar);
+  `<.meta_field>` is the key-value strip under a detail title.
 
       <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />
   """

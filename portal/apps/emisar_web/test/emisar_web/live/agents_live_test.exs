@@ -331,9 +331,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
-      assert html =~ "Active</span>" or html =~ "Active\n"
-      assert html =~ "Idle"
-      assert html =~ "Never used"
+      # Status words are lowercase dot+word (one casing family console-wide).
+      assert html =~ "active</span>" or html =~ "active\n"
+      assert html =~ "idle"
+      assert html =~ "never used"
       # Stat counters: 1 active, 1 idle, 1 never_used
       assert html =~ "ActiveBot"
       assert html =~ "IdleBot"

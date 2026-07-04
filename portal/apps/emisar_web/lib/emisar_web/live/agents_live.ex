@@ -527,19 +527,14 @@ defmodule EmisarWeb.AgentsLive do
 
   defp reported_client(_), do: nil
 
-  defp status_label(:active), do: "Active"
-  defp status_label(:idle), do: "Idle"
-  defp status_label(:dormant), do: "Dormant"
-  defp status_label(:never_used), do: "Never used"
-  defp status_label(:revoked), do: "Revoked"
+  defp status_label(:active), do: "active"
+  defp status_label(:idle), do: "idle"
+  defp status_label(:dormant), do: "dormant"
+  defp status_label(:never_used), do: "never used"
+  defp status_label(:revoked), do: "revoked"
 
   # Maps to the colour palette `core_components.status_badge/1` uses
   # elsewhere — green for active, amber for idle/never, zinc for dormant.
-  defp status_class(:active), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
-  defp status_class(:idle), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
-  defp status_class(:dormant), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
-  defp status_class(:never_used), do: "bg-amber-500/10 text-amber-200 ring-amber-500/30"
-  defp status_class(:revoked), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
 
   # -- Client configs --------------------------------------------------
   #
@@ -759,19 +754,36 @@ defmodule EmisarWeb.AgentsLive do
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
-      <%!-- Quiet summary band (shared with Runners) so the connect-a-client
-           panel below can lead. --%>
-      <.summary_band>
-        <.summary_stat tone={:brand} value={@active_count} label="Active" hint="last 5 min" />
-        <.summary_stat tone={:amber} value={@idle_count} label="Idle" hint="last 24 h" />
-        <.summary_stat tone={:neutral} value={@dormant_count} label="Dormant" hint="24 h+" />
-        <.summary_stat tone={:neutral} value={@never_used_count} label="Never used" />
-        <:trailing>
-          {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1,
-            do: "key",
-            else: "keys"} total
-        </:trailing>
-      </.summary_band>
+      <%!-- NAKED posture line (the runners grammar): activity now leads, the
+           quiet states render only when they exist, and the key total lives in
+           the list's own pager — not repeated here. Thresholds ride the title
+           tooltips. --%>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+        <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
+          <.status_dot tone={:brand} size={:sm} ping={@active_count > 0} />
+          <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
+        </span>
+        <span
+          :if={@idle_count > 0}
+          class="flex items-center gap-1.5"
+          title="last call within 24 hours"
+        >
+          <.status_dot tone={:amber} size={:sm} />
+          <span class="tabular-nums text-amber-300">{@idle_count} idle</span>
+        </span>
+        <span
+          :if={@dormant_count > 0}
+          class="flex items-center gap-1.5"
+          title="no call for over 24 hours"
+        >
+          <.status_dot tone={:neutral} size={:sm} />
+          <span class="tabular-nums text-zinc-500">{@dormant_count} dormant</span>
+        </span>
+        <span :if={@never_used_count > 0} class="flex items-center gap-1.5">
+          <.status_dot tone={:neutral} size={:sm} />
+          <span class="tabular-nums text-zinc-500">{@never_used_count} never used</span>
+        </span>
+      </div>
 
       <%!-- Connect-a-client guide. Open when connecting is the job (no
            agents yet, or mid-flow); collapsed to this header once agents
@@ -827,9 +839,13 @@ defmodule EmisarWeb.AgentsLive do
           metadata={@metadata}
           filter_params={@filter_params}
           filters={@filters}
+          wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
         >
+          <%!-- Canvas rows; the per-family icon disc died with the island —
+               it carried no meaning, and the reported client is named in the
+               meta line. --%>
           <:item :let={key}>
-            <.list_row icon={agent_icon(key.name)}>
+            <.list_row padding="py-4">
               <%!-- Row 1: name + status pill --%>
               <:title>
                 <span class="truncate font-medium text-zinc-100">{key.name}</span>
@@ -964,41 +980,32 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :key, :map, required: true
 
-  # A sanctioned hand-rolled pill (not `<.chip>`): the :active state shows a live
-  # ping the shared chip can't express — the dot itself is the shared
-  # `<.status_dot>`. Colors mirror `status_class/1` so it still reads as part
-  # of the status palette.
+  # Sanctioned page-local status (composes the shared `<.status_dot>` + a toned
+  # word — the status_badge grammar): the words are the agents-specific activity
+  # ladder, and :active carries the live ping status_badge can't express.
   defp client_status_pill(assigns) do
     status = client_status(assigns.key)
     assigns = assign(assigns, status: status)
 
     ~H"""
     <span class={[
-      "inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",
-      status_class(@status)
+      "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium",
+      status_word_class(@status)
     ]}>
-      <.status_dot :if={@status == :active} tone={:brand} ping />
+      <.status_dot tone={status_dot_tone(@status)} size={:sm} ping={@status == :active} />
       {status_label(@status)}
     </span>
     """
   end
 
-  # Picks a hero icon that vaguely matches the client family — purely
-  # for visual differentiation in the list, doesn't carry meaning.
-  defp agent_icon(name) when is_binary(name) do
-    n = String.downcase(name)
+  defp status_dot_tone(:active), do: :brand
+  defp status_dot_tone(:idle), do: :amber
+  defp status_dot_tone(_), do: :neutral
 
-    cond do
-      String.contains?(n, "chatgpt") -> "hero-chat-bubble-left-ellipsis"
-      String.contains?(n, "claude") -> "hero-sparkles"
-      String.contains?(n, "cursor") -> "hero-cursor-arrow-rays"
-      String.contains?(n, "gemini") -> "hero-star"
-      String.contains?(n, "codex") -> "hero-code-bracket"
-      true -> "hero-cpu-chip"
-    end
-  end
-
-  defp agent_icon(_), do: "hero-cpu-chip"
+  defp status_word_class(:active), do: "text-brand-300"
+  defp status_word_class(:idle), do: "text-amber-300"
+  defp status_word_class(:revoked), do: "text-rose-300"
+  defp status_word_class(_), do: "text-zinc-500"
 
   attr :configs_for, :any, required: true
   attr :selected_client, :any, required: true
