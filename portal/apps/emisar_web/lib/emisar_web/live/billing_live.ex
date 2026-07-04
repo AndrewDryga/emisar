@@ -242,10 +242,10 @@ defmodule EmisarWeb.BillingLive do
             </.button>
           </:cta>
         </.subscription_banner>
-        <%!-- Current-plan strip across the top. Plan name + price on
-             the left, three usage bars on the right. Replaces a tall
-             narrow sidebar card that wasted the page real estate. --%>
-        <.card padding="p-6">
+        <%!-- Current-plan strip across the top — NAKED on the canvas (content,
+             not a framed widget): plan facts left, the money actions right,
+             usage meters below. --%>
+        <section>
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -336,7 +336,7 @@ defmodule EmisarWeb.BillingLive do
               pct={usage_pct(@member_count, @summary.member_limit)}
             />
           </div>
-        </.card>
+        </section>
 
         <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so plan
              + billing changes go through our team — a downgrade here would route
