@@ -316,9 +316,11 @@ defmodule EmisarWeb.AuditLive do
         aria-expanded={to_string(@filters_open?)}
         class="group -mx-2 mb-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-white/[0.04]"
       >
+        <%!-- w-3 + gap-2 = 20px to the label — the SAME x as the row labels
+             (8px dot + gap-3), so the fold sits on the table's rail. --%>
         <.icon
           name="hero-chevron-right"
-          class={"h-3.5 w-3.5 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-600 group-hover:text-zinc-400"}"}
+          class={"h-3 w-3 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-600 group-hover:text-zinc-400"}"}
         />
         <span class={[
           "font-medium",
