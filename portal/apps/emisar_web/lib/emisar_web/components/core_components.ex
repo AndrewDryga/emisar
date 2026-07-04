@@ -3375,6 +3375,9 @@ defmodule EmisarWeb.CoreComponents do
   attr :icon, :string, default: nil
   attr :icon_tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :class, :string, default: nil
+  # Island rows keep the px-5 gutter; a CONTENT-ON-CANVAS list passes its own
+  # (the run_row precedent) so rows align to the page rail instead.
+  attr :padding, :string, default: "px-5 py-4"
   slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
   slot :chips
@@ -3383,7 +3386,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def list_row(assigns) do
     ~H"""
-    <li class={["flex flex-wrap items-start gap-4 px-5 py-4 sm:flex-nowrap", @class]}>
+    <li class={["flex flex-wrap items-start gap-4 sm:flex-nowrap", @padding, @class]}>
       <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
       <span
         :if={@leading == [] && @icon}

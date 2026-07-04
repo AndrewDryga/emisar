@@ -329,48 +329,49 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@pending}
             metadata={@pending_metadata}
             filter_params={@filter_params}
-            wrapper_class="space-y-2"
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
+            <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
+                 pending dot, the expiry), the dashboard's approvals grammar. --%>
             <:item :let={request}>
               <li>
                 <.link
                   navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-                  class="block rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4 transition hover:border-amber-500/50 hover:bg-amber-500/[0.07]"
+                  class="group -mx-2 flex items-start gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
                 >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="truncate font-mono text-sm font-semibold text-amber-100">
-                          {request.context["action_id"] || "—"}
-                        </span>
-                        <.risk_pill
-                          :if={@risk_labels[request.id]}
-                          risk={@risk_labels[request.id]}
-                          class="flex-none"
-                        />
-                      </div>
-                      <div class="mt-0.5 truncate text-xs text-amber-200/70">
-                        on {runner_label(request, @runner_labels)} · requested by {user_label(
-                          request.requested_by_id,
-                          @user_labels
-                        )}
-                      </div>
+                  <.status_dot tone={:amber} size={:md} class="mt-1" />
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="truncate font-mono text-sm text-zinc-200">
+                        {request.context["action_id"] || "—"}
+                      </span>
+                      <.risk_pill
+                        :if={@risk_labels[request.id]}
+                        risk={@risk_labels[request.id]}
+                        class="flex-none"
+                      />
                     </div>
-                    <div class="shrink-0 text-right">
-                      <div class="text-xs text-amber-200/70">
-                        <.local_time value={request.requested_at} mode={:relative} />
-                      </div>
-                      <%!-- Held runs auto-cancel at expiry — surface it so an
-                           approver can triage by urgency, not just arrival. --%>
-                      <.approval_expiry expires_at={request.expires_at} class="mt-0.5 justify-end" />
+                    <div class="mt-0.5 truncate text-xs text-zinc-500">
+                      on {runner_label(request, @runner_labels)} · requested by {user_label(
+                        request.requested_by_id,
+                        @user_labels
+                      )}
                     </div>
+                    <p
+                      :if={request.reason && request.reason != ""}
+                      class="mt-1 text-sm italic text-zinc-400"
+                    >
+                      "{request.reason}"
+                    </p>
                   </div>
-                  <p
-                    :if={request.reason && request.reason != ""}
-                    class="mt-2 text-sm italic text-zinc-300"
-                  >
-                    "{request.reason}"
-                  </p>
+                  <div class="shrink-0 text-right">
+                    <div class="text-xs text-zinc-500">
+                      <.local_time value={request.requested_at} mode={:relative} />
+                    </div>
+                    <%!-- Held runs auto-cancel at expiry — surface it so an
+                         approver can triage by urgency, not just arrival. --%>
+                    <.approval_expiry expires_at={request.expires_at} class="mt-0.5 justify-end" />
+                  </div>
                 </.link>
               </li>
             </:item>
@@ -428,9 +429,12 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@grants}
             metadata={@grants_metadata}
             filter_params={@filter_params}
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
+            <%!-- Canvas rows; the per-row key icon died with the island — every
+                 row wearing the same glyph decorated nothing. --%>
             <:item :let={g}>
-              <.list_row icon="hero-key" class="py-3">
+              <.list_row padding="py-4">
                 <:title>
                   <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
                 </:title>
@@ -555,12 +559,13 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@decided}
             metadata={@decided_metadata}
             filter_params={@filter_params}
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
             <:item :let={request}>
               <li>
                 <.link
                   navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
-                  class="flex items-center justify-between gap-3 px-5 py-3 text-sm transition hover:bg-white/[0.04]"
+                  class="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-3 text-sm transition hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">
                     <div class="truncate font-mono text-sm text-zinc-200">

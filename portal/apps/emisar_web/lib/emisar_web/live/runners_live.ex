@@ -270,7 +270,7 @@ defmodule EmisarWeb.RunnersLive do
             rows={sort_by_group(@runners)}
             metadata={@metadata}
             filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70"
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
             group_by={fn runner -> runner.group || "(no group)" end}
           >
             <:group_header :let={group_label}>
