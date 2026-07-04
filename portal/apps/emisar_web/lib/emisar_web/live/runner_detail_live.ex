@@ -276,11 +276,17 @@ defmodule EmisarWeb.RunnerDetailLive do
       <.loading_state :if={@loading?} />
 
       <%!-- Advertised actions (the wide column) + recent runs (a freshness
-           check beside it) as CANVAS sections — section title + hairline rows,
-           no islands. On a phone recent runs comes FIRST in DOM ("is this
-           healthy?"), then the long catalog; lg flips the visual order. --%>
-      <div :if={not @loading?} class="mt-20 grid grid-cols-1 gap-x-12 gap-y-14 lg:grid-cols-3">
-        <section class="lg:order-2">
+           check beside it) as CANVAS sections. Recent runs is DOM-FIRST so a
+           phone answers "is it healthy?" before the long catalog; on desktop
+           EXPLICIT placement (col-start/row-start) pins both to row 1 so their
+           headers sit on the same line — `order`+col-span auto-placement drifted
+           them onto different rows. `items-start` keeps a short empty column
+           from stretching to the tall one. --%>
+      <div
+        :if={not @loading?}
+        class="mt-24 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
+      >
+        <section class="lg:col-start-3 lg:row-start-1">
           <.section_header title="Recent runs">
             <:actions :if={@recent_runs != []}>
               <.link
@@ -305,7 +311,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           <% end %>
         </section>
 
-        <section class="lg:order-1 lg:col-span-2">
+        <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
           <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
           <%= if @actions == [] do %>
@@ -405,7 +411,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            of these. --%>
       <section
         :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-20"
+        class="mt-24"
       >
         <.section_header title="Danger zone" />
         <div class="divide-y divide-zinc-800/70">
