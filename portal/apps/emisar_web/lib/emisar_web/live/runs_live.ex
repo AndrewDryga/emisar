@@ -14,7 +14,15 @@ defmodule EmisarWeb.RunsLive do
     if connected?(socket),
       do: Runs.subscribe_account_runs(socket.assigns.current_account.id)
 
-    {:ok, assign(socket, :page_title, "Runs")}
+    # For the zero state's copy fork only — a runner-less account is told to
+    # install a runner first, not to dispatch from pages that are also empty.
+    any_runners? =
+      connected?(socket) and Emisar.Runners.any_runners?(socket.assigns.current_subject)
+
+    {:ok,
+     socket
+     |> assign(:page_title, "Runs")
+     |> assign(:any_runners?, any_runners?)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -174,6 +182,21 @@ defmodule EmisarWeb.RunsLive do
                    pitch before the live socket confirms the list is really
                    empty — a populated account would otherwise flash it. --%>
               <.loading_state />
+            <% not @any_runners? -> %>
+              <%!-- Runner-less account: naming dispatch paths that don't exist
+                 yet contradicts the product's own guidance — the first job is
+                 a runner (the dashboard says the same). --%>
+              <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet.">
+                Install a
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners"}
+                  class="text-brand-400 hover:text-brand-300"
+                >
+                  runner
+                </.link>
+                first — actions dispatch to your own hosts, and every run lands
+                here, gated and audited.
+              </.empty_state>
             <% true -> %>
               <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet.">
                 Dispatch one from a

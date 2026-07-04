@@ -436,10 +436,19 @@ defmodule EmisarWeb.AuthKeysLive do
           </:item>
           <:empty>
             <.empty_state variant={:bare} icon="hero-key" title="No runner keys yet.">
-              Runner keys are the bearer secret a fresh runner uses to register
-              with cloud. Click
-              <.chip>New key</.chip>
-              above, then run the install command on the host.
+              A runner key is the bearer secret a fresh host enrolls with — mint a
+              reusable one for image bakes and cloud-init fleets. The install
+              wizard's one-time keys appear here too, revocable until used.
+              <.button
+                :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
+                phx-click={show_create()}
+                variant={:secondary}
+                size={:sm}
+                icon="hero-plus"
+                class="mt-4"
+              >
+                New runner key
+              </.button>
             </.empty_state>
           </:empty>
         </LiveTable.live_table>

@@ -43,7 +43,9 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     assert html =~ "No runner keys yet."
-    assert html =~ "bearer secret a fresh runner uses to register"
+    assert html =~ "bearer secret a fresh host enrolls with"
+    # The pitch carries a real CTA, not a narrated chrome reference.
+    assert html =~ "New runner key"
   end
 
   # a hand-edited page cursor makes the list read return
