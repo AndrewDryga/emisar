@@ -155,9 +155,11 @@ defmodule EmisarWeb.RunbooksLive do
             metadata={@metadata}
             filter_params={@filter_params}
             filters={@filters}
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
+            <%!-- Canvas rows; the per-row icon disc died with the island. --%>
             <:item :let={runbook}>
-              <.list_row icon="hero-book-open">
+              <.list_row padding="py-4">
                 <%!-- Row 1: title (link to editor) + status pill + version --%>
                 <:title>
                   <.link

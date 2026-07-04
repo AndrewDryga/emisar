@@ -894,9 +894,12 @@ defmodule EmisarWeb.TeamLive do
           metadata={@metadata}
           filter_params={@filter_params}
           overflow={:visible}
+          wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
         >
+          <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
+               avatar stays — it's the ONE identity disc, not decoration. --%>
           <:item :let={membership}>
-            <li class="px-5 py-4">
+            <li class="py-4">
               <%!-- On a phone the role/Actions controls stack BELOW the
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
