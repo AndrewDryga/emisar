@@ -275,7 +275,6 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_lifetime_flash(nil), do: "Grant-lifetime cap removed — grants can use any window."
   defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
 
-  defp grant_lifetime_label(nil), do: "No cap"
   defp grant_lifetime_label(3_600), do: "1 hour"
   defp grant_lifetime_label(86_400), do: "1 day"
   defp grant_lifetime_label(2_592_000), do: "30 days"
@@ -318,7 +317,7 @@ defmodule EmisarWeb.ApprovalsLive do
       <div class="space-y-6">
         <%!-- 1. PENDING --%>
         <section>
-          <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
+          <.section_header title="Pending" />
 
           <LiveTable.live_table
             layout={:cards}
@@ -408,16 +407,8 @@ defmodule EmisarWeb.ApprovalsLive do
 
         <%!-- 2. STANDING GRANTS --%>
         <section>
-          <.section_header
-            title="Standing grants"
-            count={@grants_metadata.count}
-            count_tone={:neutral}
-          >
-            <:actions>
-              <p class="ml-auto hidden text-xs text-zinc-400 sm:block">
-                Approvals that auto-allow follow-up calls for a bounded window.
-              </p>
-            </:actions>
+          <.section_header title="Standing grants">
+            <:subtitle>Approvals that auto-allow follow-up calls for a bounded window.</:subtitle>
           </.section_header>
 
           <LiveTable.live_table
@@ -507,15 +498,26 @@ defmodule EmisarWeb.ApprovalsLive do
             class="mt-5"
           >
             <:summary>
-              <.chip
+              <%!-- Status = dot + word; the explanation rides as quiet prose
+                   (a sentence-long amber pill shouted, and read as contradicting
+                   the per-grant "expires …" rows below — this is the ACCOUNT
+                   cap, not those grants). --%>
+              <span
                 :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
-                tone={:amber}
+                class="flex items-center gap-1.5 text-xs"
               >
-                No cap — grants never expire on their own
-              </.chip>
-              <.chip :if={@current_account.settings.max_grant_lifetime_seconds} tone={:neutral}>
+                <.status_dot tone={:amber} size={:sm} />
+                <span class="text-amber-300">no cap</span>
+                <span class="hidden text-zinc-500 sm:inline">
+                  — approved grants expire only as approved
+                </span>
+              </span>
+              <span
+                :if={@current_account.settings.max_grant_lifetime_seconds}
+                class="text-xs text-zinc-400"
+              >
                 {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
-              </.chip>
+              </span>
             </:summary>
 
             <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
@@ -544,11 +546,7 @@ defmodule EmisarWeb.ApprovalsLive do
 
         <%!-- 3. RECENT DECISIONS --%>
         <section>
-          <.section_header
-            title="Recent decisions"
-            count={@decided_metadata.count}
-            count_tone={:neutral}
-          />
+          <.section_header title="Recent decisions" />
 
           <LiveTable.live_table
             layout={:cards}

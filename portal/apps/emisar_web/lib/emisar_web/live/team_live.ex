@@ -899,7 +899,7 @@ defmodule EmisarWeb.TeamLive do
              rounded card boundary instead of being clipped. Inline edit
              and scope-edit forms render INSIDE the :item slot below the
              top-line content, keeping the natural flow per row. --%>
-        <.section_header title="Members" count={@metadata.count} />
+        <.section_header title="Members" />
 
         <LiveTable.live_table
           layout={:cards}

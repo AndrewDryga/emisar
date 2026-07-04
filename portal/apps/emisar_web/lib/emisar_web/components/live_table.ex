@@ -236,10 +236,13 @@ defmodule EmisarWeb.LiveTable do
           <table id={@id} class={["w-full text-sm text-left", @class]}>
             <thead class="text-xs uppercase tracking-wider text-zinc-500">
               <tr class="border-b border-zinc-700/80">
-                <th :for={col <- @col} class={["px-3 py-2.5 font-medium", col[:class]]}>
+                <th
+                  :for={col <- @col}
+                  class={["px-3 py-2.5 font-medium first:pl-0 last:pr-0", col[:class]]}
+                >
                   {col.label}
                 </th>
-                <th :if={@action != []} class="px-3 py-2.5 text-right font-medium">
+                <th :if={@action != []} class="px-3 py-2.5 text-right font-medium last:pr-0">
                   <span class="sr-only">Actions</span>
                 </th>
               </tr>
@@ -251,10 +254,13 @@ defmodule EmisarWeb.LiveTable do
                 phx-click={@row_click && @row_click.(row)}
                 class={["hover:bg-white/[0.04]", @row_click && "cursor-pointer"]}
               >
-                <td :for={col <- @col} class={["px-3 py-2 align-middle", col[:class]]}>
+                <td
+                  :for={col <- @col}
+                  class={["px-3 py-2 align-middle first:pl-0 last:pr-0", col[:class]]}
+                >
                   {render_slot(col, row)}
                 </td>
-                <td :if={@action != []} class="px-3 py-2 align-middle text-right">
+                <td :if={@action != []} class="px-3 py-2 align-middle text-right last:pr-0">
                   {render_slot(@action, row)}
                 </td>
               </tr>
