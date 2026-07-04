@@ -311,7 +311,7 @@ defmodule EmisarWeb.RunDetailLive do
         <dl class="space-y-4">
           <div :if={@run.reason && @run.reason != ""}>
             <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Requester
+              Reason
             </dt>
             <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
           </div>

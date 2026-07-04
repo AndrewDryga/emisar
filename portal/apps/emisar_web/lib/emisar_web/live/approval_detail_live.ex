@@ -670,10 +670,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@run.args)}</pre>
           </.disclosure>
 
-          <%!-- ONE why-cluster: who asked for it and what gated it, together —
+          <%!-- ONE why-cluster: the reason given and what gated it, together —
                not a Reason card and a policy callout competing at equal weight.
-               The policy key wears amber only while the decision is live; once
-               decided the same fact is history and goes quiet. --%>
+               Eyebrows stay zinc (R2) — urgency lives in the verdict panel. --%>
           <.panel
             :if={(@request.reason && @request.reason != "") || (@run && @run.policy_reason)}
             title="Why"
@@ -682,15 +681,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <dl class="space-y-4">
               <div :if={@request.reason && @request.reason != ""}>
                 <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Requester
+                  Reason
                 </dt>
                 <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
               </div>
               <div :if={@run && @run.policy_reason}>
-                <dt class={[
-                  "flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider",
-                  if(verdict == :pending, do: "text-amber-300", else: "text-zinc-500")
-                ]}>
+                <dt class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                   <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
                 </dt>
                 <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.policy_reason}</dd>
