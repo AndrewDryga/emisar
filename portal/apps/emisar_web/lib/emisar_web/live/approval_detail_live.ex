@@ -653,7 +653,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </p>
             <pre
               :if={@executed_command}
-              class="overflow-x-auto bg-black/50 px-5 py-4 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
+              class="overflow-x-auto bg-black/50 py-4 pl-5 pr-8 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
             ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
             <pre
               :if={is_nil(@executed_command) && @run && @run.args != %{}}

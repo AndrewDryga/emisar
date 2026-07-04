@@ -991,7 +991,9 @@ defmodule EmisarWeb.TeamLive do
                     <%!-- Both timestamps render through <.local_time> (viewer-local,
                        hoverable, live); {" "} guards the space the formatter would
                        otherwise let HEEx trim before each component tag. --%>
-                    <div class="truncate text-xs text-zinc-500">
+                    <%!-- Wraps below sm — single-line truncation ate the
+                         sign-in-recency tail on every long email. --%>
+                    <div class="text-xs text-zinc-500 sm:truncate">
                       {membership.user && membership.user.email} · joined{" "}<.local_time
                         value={membership.inserted_at}
                         mode={:relative}
