@@ -206,6 +206,21 @@ defmodule Emisar.Runs.ActionRun.Query do
           {"runbook", "Runbook"}
         ],
         fun: fn queryable, sources -> {queryable, dynamic([runs: r], r.source in ^sources)} end
+      },
+      # A searchable single-select of the account's runners. `values` is EMPTY
+      # here — the options are per-account (runner names), so the LiveView fills
+      # them in at render; this static def just declares the shape + SQL so a
+      # deep-link (`?runner_id=…` from a runner's "View all runs") applies and
+      # the control reads active with that runner selected.
+      %Filter{
+        name: :runner_id,
+        title: "Runner",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, runner_id ->
+          {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
+        end
       }
     ]
 end

@@ -80,7 +80,7 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "Claude Code"
   end
 
-  test "the runner 'View all runs' pivot (runner_id) scopes runs to that runner + shows a clearable chip",
+  test "a deep-linked runner_id scopes runs to that runner and reads active in the Runner filter",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -127,8 +127,10 @@ defmodule EmisarWeb.RunsLiveTest do
     # Scoped to runner_a's run; runner_b's is excluded.
     assert html =~ "ci.deploy_canary"
     refute html =~ "linux.uptime"
-    # The clearable "Runner: <name>" pivot chip resolves the runner's name.
-    assert html =~ "Runner:"
+    # No pivot chip — the Runner filter itself carries the selection: its hidden
+    # input holds runner_a's id, and the combobox label shows its name.
+    refute html =~ "Runner:"
+    assert html =~ ~s(name="runner_id" value="#{runner_a.id}")
     assert html =~ "web-iad-1"
   end
 

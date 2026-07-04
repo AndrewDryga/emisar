@@ -45,28 +45,26 @@ defmodule EmisarWeb.RunsLive do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp load_runs(socket, params) do
-    filters = Runs.ActionRun.Query.filters()
-    opts = LiveTable.params_to_opts(params, filters)
-    # Two pivots scope the feed to one entity, shown as a clearable chip (not a
-    # visible filter): "View activity" from an agent key, "View all runs" from a
-    # runner detail. Resolve each entity's name for its chip.
-    api_key_id = params["api_key_id"]
-    runner_id = params["runner_id"]
     subject = socket.assigns.current_subject
+    filters = Runs.ActionRun.Query.filters() |> put_runner_options(subject)
+    opts = LiveTable.params_to_opts(params, filters)
+    # The agent "View activity" pivot stays a clearable chip (not a visible
+    # filter): an api_key UUID has no readable option list to pick from. The
+    # runner pivot became a real, searchable Runner filter — it applies through
+    # `opts` (params_to_opts) and reads active in the bar, so no chip.
+    api_key_id = params["api_key_id"]
 
     socket =
       socket
       |> assign(:api_key_id, api_key_id)
       |> assign(:agent_label, agent_label_for(api_key_id, subject))
-      |> assign(:runner_label, runner_label_for(runner_id, subject))
 
     run_opts =
       opts
       |> Keyword.put(:preload, [:runner, :api_key])
       |> Keyword.put(:api_key_id, api_key_id)
-      |> Keyword.put(:runner_id, runner_id)
 
-    case Runs.list_runs(socket.assigns.current_subject, run_opts) do
+    case Runs.list_runs(subject, run_opts) do
       {:ok, runs, meta} ->
         socket
         |> assign(:runs, runs)
@@ -101,13 +99,20 @@ defmodule EmisarWeb.RunsLive do
     end
   end
 
-  defp runner_label_for(nil, _subject), do: nil
+  # The Runner filter's options are per-account, so inject the account's runners
+  # (id → name, sorted) into the static filter def — the searchable select needs
+  # them to render its choices and to resolve a deep-linked runner_id to a name.
+  defp put_runner_options(filters, subject) do
+    options =
+      case Runners.list_all_runners_for_account(subject) do
+        {:ok, runners} -> runners |> Enum.sort_by(& &1.name) |> Enum.map(&{&1.id, &1.name})
+        _ -> []
+      end
 
-  defp runner_label_for(runner_id, subject) do
-    case Runners.fetch_runner_by_id(runner_id, subject) do
-      {:ok, runner} -> runner.name
-      _ -> nil
-    end
+    Enum.map(filters, fn
+      %{name: :runner_id} = filter -> %{filter | values: options}
+      filter -> filter
+    end)
   end
 
   def render(assigns) do
@@ -132,19 +137,13 @@ defmodule EmisarWeb.RunsLive do
         output, and audit record. <.doc_link href="/docs/quickstart">Quickstart</.doc_link>
       </.page_intro>
 
-      <%!-- "View activity" from an agent key / "View all runs" from a runner both
-           pivot here scoped to that entity — the clearable chip says which one
-           and gets back to the full feed. --%>
+      <%!-- "View activity" from an agent key pivots here scoped to that key —
+           a clearable chip (an api_key UUID has no readable option list). The
+           runner pivot is now the searchable Runner filter in the bar. --%>
       <.pivot_chip
         :if={@agent_label}
         label="Agent"
         value={@agent_label}
-        clear_to={~p"/app/#{@current_account}/runs"}
-      />
-      <.pivot_chip
-        :if={@runner_label}
-        label="Runner"
-        value={@runner_label}
         clear_to={~p"/app/#{@current_account}/runs"}
       />
 
