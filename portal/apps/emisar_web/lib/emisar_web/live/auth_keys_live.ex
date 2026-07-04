@@ -34,7 +34,10 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    page_title =
+      if socket.assigns.live_action == :new, do: "Issue a runner key", else: "Runner keys"
+
+    {:noreply, socket |> assign(:page_title, page_title) |> load(params)}
   end
 
   def handle_info({:list_changed, :auth_key, _event_type, _id}, socket),
@@ -111,13 +114,13 @@ defmodule EmisarWeb.AuthKeysLive do
 
       case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
         {:ok, raw, key} ->
+          # The reveal IS the success step on the /new page — no flash, and no
+          # list reload (the list isn't shown here; :index remounts fresh).
           {:noreply,
            socket
-           |> put_flash(:info, "Runner key created. Copy it now — you won't see it again.")
            |> assign(:new_secret, raw)
            |> assign(:new_key, key)
-           |> assign_form(Runners.change_auth_key())
-           |> reload()}
+           |> assign_form(Runners.change_auth_key())}
 
         # Field errors (e.g. a DB constraint) render inline on the form.
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -226,81 +229,65 @@ defmodule EmisarWeb.AuthKeysLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={:table}
+      width={if @live_action == :new, do: :form, else: :table}
     >
       <:title>
-        <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link> Runner keys
+        <%= if @live_action == :new do %>
+          <.back_link navigate={~p"/app/#{@current_account}/runners/keys"}>Runner keys</.back_link>
+          Issue a runner key
+        <% else %>
+          <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link> Runner keys
+        <% end %>
       </:title>
-      <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
-        <.button phx-click={show_create()} size={:md} icon="hero-plus">
+      <:actions :if={
+        @live_action == :index and Runners.subject_can_manage_auth_keys?(@current_subject)
+      }>
+        <.button navigate={~p"/app/#{@current_account}/runners/keys/new"} size={:md} icon="hero-plus">
           New key
         </.button>
       </:actions>
 
-      <.page_intro>
-        Enrollment keys register new hosts as runners — a single-use key is spent on first
-        registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
-        <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
-      </.page_intro>
+      <%!-- ===== Issue a runner key — its own focused page (:new) =====
+           Pulled off the list so the form gets room to breathe on a canvas
+           page (not an island competing with the roster), with a real success
+           step (Issue another / Back to keys) instead of a vanishing flash. --%>
+      <div :if={@live_action == :new} class="mx-auto max-w-2xl space-y-5">
+        <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
-      <div class="space-y-6">
-        <%!-- Runner-cap warning: a key minted here is useless if the
-             runner that tries to use it bounces off a 402. --%>
-        <.callout
-          :if={@billing && Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
-          tone={runner_cap_tone(@billing)}
-          icon="hero-exclamation-triangle"
-          title={runner_cap_title(@billing)}
-        >
-          {@billing.runner_count} of {@billing.runner_limit} runners in use.
-          Issuing a key doesn't reserve a slot — the runner only counts after it registers.
-          <:action>
-            <.button
-              variant={:secondary}
-              size={:md}
-              navigate={~p"/app/#{@current_account}/settings/billing"}
-            >
-              See plans →
-            </.button>
-          </:action>
-        </.callout>
-
+        <%!-- Created: the secret is shown ONCE — the reveal IS the success
+             step, carrying the two next moves. --%>
         <.secret_reveal
           :if={@new_secret}
           title="Copy this runner key now — it will not be shown again."
           secret={@new_secret}
-          on_dismiss="dismiss_secret"
         >
           Treat it like a password. Anyone with this key can register a runner
           under <span class="font-semibold">{@current_account.name}</span>.
           <:install_command>
             curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
           </:install_command>
+          <:actions>
+            <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
+            <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
+              Back to runner keys
+            </.button>
+          </:actions>
         </.secret_reveal>
 
-        <%!-- Create panel — collapsed by default, opened by header
-             button. Avoids a permanent form panel competing with the
-             list when no key is being issued. --%>
-        <.panel
-          :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
-          id="create-panel"
-          class="hidden"
-          padding="p-6"
-          title="Issue a runner key"
-        >
-          <:subtitle>
+        <%!-- No panel title — the shell title already says "Issue a runner key"
+             (never a stacked near-synonym pair); the lead line carries intent. --%>
+        <.panel :if={is_nil(@new_secret)}>
+          <p class="mb-5 text-sm leading-relaxed text-zinc-400">
             Reusable keys suit stable fleets; single-use keys are right for autoscalers.
-          </:subtitle>
-          <:actions>
-            <.icon_button icon="hero-x-mark" label="Close" phx-click={hide_create()} />
-          </:actions>
+            <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
+          </p>
 
           <.simple_form
             for={@form}
             id="auth_key_form"
             phx-change="validate"
             phx-submit="create"
-            class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+            class="space-y-5"
           >
             <.input
               field={@form[:description]}
@@ -313,23 +300,17 @@ defmodule EmisarWeb.AuthKeysLive do
               type="datetime-local"
               label="Expires at (UTC, optional)"
             />
-            <div class="sm:col-span-2 flex items-center pb-2">
-              <.input
-                field={@form[:reusable]}
-                type="checkbox"
-                label="Reusable (many runners can register with this key)"
-              />
-            </div>
-            <%!-- Max-uses only applies when Reusable is checked — single-
-                 use keys self-cap at 1. Hiding it (vs disabling with a
-                 disclaimer) follows the same progressive-disclosure rule
-                 the agents wizard uses: don't ask irrelevant questions.
-                 The field reappears with its inline hint as soon as the
-                 reusable checkbox flips on. --%>
-            <div
-              :if={truthy?(@form[:reusable].value)}
-              class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4"
-            >
+            <.input
+              field={@form[:reusable]}
+              type="checkbox"
+              label="Reusable (many runners can register with this key)"
+            />
+            <%!-- Max-uses only applies when Reusable is checked — single-use
+                 keys self-cap at 1. Hiding it (vs disabling with a disclaimer)
+                 is the same progressive-disclosure rule the agents wizard uses:
+                 don't ask irrelevant questions. It reappears with its inline
+                 hint the moment the reusable checkbox flips on. --%>
+            <div :if={truthy?(@form[:reusable].value)} class="space-y-1.5">
               <.input
                 field={@form[:max_uses]}
                 type="number"
@@ -337,16 +318,31 @@ defmodule EmisarWeb.AuthKeysLive do
                 label="Max uses"
                 placeholder="unlimited"
               />
-              <p class="text-xs leading-relaxed text-zinc-500 sm:self-end sm:pb-2">
+              <p class="text-xs leading-relaxed text-zinc-500">
                 Caps how many runners can register before the key auto-revokes.
                 Leave blank for unlimited.
               </p>
             </div>
             <:actions>
-              <.button phx-disable-with="Creating...">Create key</.button>
+              <.button phx-disable-with="Creating…">Create key</.button>
+              <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:ghost}>
+                Cancel
+              </.button>
             </:actions>
           </.simple_form>
         </.panel>
+      </div>
+
+      <.page_intro :if={@live_action == :index}>
+        Enrollment keys register new hosts as runners — a single-use key is spent on first
+        registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
+        <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
+      </.page_intro>
+
+      <div :if={@live_action == :index} class="space-y-6">
+        <%!-- The same cap warning as the issue page — standing context while
+             managing keys, so "you're at cap" isn't a surprise at New key. --%>
+        <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
         <%!-- Key list — the LiveTable :cards shell renders the filter row, the
              bordered card list, and the count in its paginator footer, so this
@@ -441,7 +437,7 @@ defmodule EmisarWeb.AuthKeysLive do
               wizard's one-time keys appear here too, revocable until used.
               <.button
                 :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
-                phx-click={show_create()}
+                navigate={~p"/app/#{@current_account}/runners/keys/new"}
                 variant={:secondary}
                 size={:sm}
                 icon="hero-plus"
@@ -464,6 +460,35 @@ defmodule EmisarWeb.AuthKeysLive do
     """
   end
 
+  # Runner-cap warning: a key minted here is useless if the runner that tries
+  # to use it bounces off a 402. Shown on the issue page (the decision point)
+  # and the list (standing awareness) — renders nothing below the warning band.
+  attr :billing, :any, required: true
+  attr :current_account, :map, required: true
+
+  defp runner_cap_callout(assigns) do
+    ~H"""
+    <.callout
+      :if={@billing && Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
+      tone={runner_cap_tone(@billing)}
+      icon="hero-exclamation-triangle"
+      title={runner_cap_title(@billing)}
+    >
+      {@billing.runner_count} of {@billing.runner_limit} runners in use.
+      Issuing a key doesn't reserve a slot — the runner only counts after it registers.
+      <:action>
+        <.button
+          variant={:secondary}
+          size={:md}
+          navigate={~p"/app/#{@current_account}/settings/billing"}
+        >
+          See plans →
+        </.button>
+      </:action>
+    </.callout>
+    """
+  end
+
   defp runner_cap_tone(billing) do
     if Emisar.Billing.headroom(billing, :runners) == :at_limit, do: :rose, else: :amber
   end
@@ -474,19 +499,5 @@ defmodule EmisarWeb.AuthKeysLive do
     else
       "One runner slot left on the #{String.capitalize(billing.plan)} plan."
     end
-  end
-
-  defp show_create do
-    JS.show(
-      to: "#create-panel",
-      transition: {"transition-opacity ease-out duration-150", "opacity-0", "opacity-100"}
-    )
-  end
-
-  defp hide_create do
-    JS.hide(
-      to: "#create-panel",
-      transition: {"transition-opacity ease-in duration-100", "opacity-100", "opacity-0"}
-    )
   end
 end

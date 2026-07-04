@@ -69,7 +69,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     # Ticking Reusable reveals the max_uses input (progressive disclosure).
     html =
@@ -85,6 +85,9 @@ defmodule EmisarWeb.AuthKeysLiveTest do
       "auth_key" => %{"description" => "pool-key", "reusable" => "true", "max_uses" => "5"}
     })
     |> render_submit()
+
+    # The reveal is the success step; "Issue another" returns the form.
+    render_click(lv, "dismiss_secret", %{})
 
     # Single-use (reusable unchecked, no max_uses field shown) → max_uses nil.
     lv
@@ -103,7 +106,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     too_long = String.duplicate("x", 201)
 
@@ -118,39 +121,25 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute html =~ "Could not create key"
   end
 
-  test "create shows the secret once; dismiss hides it; revoke retires the key", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+  # The revoke happy path off the list: the typed-confirm dialog fires `revoke`
+  # once the prefix is typed, and the retired key drops out of the default
+  # (status=active) list.
+  test "revoke retires a key through the typed-confirm dialog", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    html =
-      lv
-      |> form("#auth_key_form", %{
-        "auth_key" => %{"description" => "bootstrap for prod image"}
-      })
-      |> render_submit()
+    {:ok, _raw, key} =
+      Runners.create_auth_key(%{description: "bootstrap for prod image"}, subject)
 
-    assert html =~ "Copy it now"
-
-    # The full raw secret is on the page exactly once, until dismissed —
-    # the list rows keep showing the short prefix, so refute the raw.
-    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
-
-    html = render_click(lv, "dismiss_secret", %{})
-    refute html =~ raw_secret
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ "bootstrap for prod image"
 
-    # Revoke it through the typed-confirm dialog. The dialog id is
-    # `revoke-key-<id>`; the token to type is the key prefix.
-    [key_id] = Regex.run(~r/revoke-key-([0-9a-f-]+)/, html, capture: :all_but_first)
-
-    [key_prefix] =
-      Regex.run(~r/Type <span[^>]*>([^<]+)<\/span> to confirm/, html, capture: :all_but_first)
-
-    dialog = "revoke-key-#{key_id}"
-
-    type_confirm_token(lv, dialog, key_prefix)
+    dialog = "revoke-key-#{key.id}"
+    type_confirm_token(lv, dialog, key.key_prefix)
     html = confirm_dialog(lv, dialog, "Revoke key")
+
     assert html =~ "Key revoked."
+    # The retired key drops out of the default active list.
     refute html =~ "bootstrap for prod image"
   end
 
@@ -160,7 +149,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # raw secret is never re-rendered after dismiss.
   test "a dismissed secret cannot be re-revealed", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     html =
       lv
@@ -168,7 +157,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
       |> render_submit()
 
     [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
-    # The reveal panel offers a dismiss; there is NO re-reveal control.
+    # The success step offers "Issue another" (dismiss); there is NO re-reveal.
     assert has_element?(lv, "[phx-click=\"dismiss_secret\"]")
 
     html = render_click(lv, "dismiss_secret", %{})
@@ -213,15 +202,18 @@ defmodule EmisarWeb.AuthKeysLiveTest do
       )
 
     # Manage-only page: a viewer is bounced at LOAD time with the honest
-    # why-not, never reaching the form to fail on submit.
+    # why-not, never reaching the form to fail on submit — on both the list
+    # and the issue page (the mount gate covers the whole LV).
     dest = ~p"/app/#{account}/runners"
+    viewer_conn = log_in_user(build_conn(), viewer)
 
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
-             build_conn()
-             |> log_in_user(viewer)
-             |> live(~p"/app/#{account}/runners/keys")
+             live(viewer_conn, ~p"/app/#{account}/runners/keys")
 
     assert flash["info"] == "Runner keys need an owner or admin role."
+
+    assert {:error, {:live_redirect, %{to: ^dest}}} =
+             live(viewer_conn, ~p"/app/#{account}/runners/keys/new")
   end
 
   test "a list_changed broadcast refreshes the key list", %{conn: conn} do
@@ -290,7 +282,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     lv
     |> form("#auth_key_form", %{
@@ -313,7 +305,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     html =
       lv
