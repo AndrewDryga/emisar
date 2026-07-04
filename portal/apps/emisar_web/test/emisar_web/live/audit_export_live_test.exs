@@ -169,7 +169,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert siem_card =~ ~s(phx-value-id="#{active.id}")
       # …the revoked key does NOT (no button keyed to it) but shows the chip.
       refute siem_card =~ ~s(phx-value-id="#{to_revoke.id}")
-      assert siem_card =~ "Revoked"
+      assert siem_card =~ "revoked"
     end
 
     # a key whose creating user has since been deleted still

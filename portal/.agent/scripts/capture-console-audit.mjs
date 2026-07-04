@@ -56,6 +56,7 @@ const CONSOLE_PAGES = {
   policies: "/policies",
   packs: "/packs",
   audit: "/audit",
+  "audit-export": "/audit/export",
   "runner-keys": "/runners/keys",
   agents: "/settings/agents",
   "agents-connect": "/settings/agents/connect",

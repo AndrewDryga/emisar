@@ -1361,9 +1361,9 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :width, :atom,
     default: :detail,
-    values: [:full, :table, :detail, :form, :settings],
+    values: [:table, :detail, :form, :settings],
     doc:
-      "content column width: :full (edge-to-edge — dense data tables: runs/audit), :table (7xl — card-lists/dashboard), :detail (6xl), :form (3xl), :settings (4xl)"
+      "content column width: :table (7xl — every operate/list page incl. dashboard/runs/audit), :detail (6xl), :form (3xl), :settings (4xl)"
 
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
@@ -1529,7 +1529,10 @@ defmodule EmisarWeb.CoreComponents do
   # is a no-go — too much data") for column density; card-lists + dashboard stay
   # capped so a single-column card doesn't stretch thin; reading/forms bounded for
   # line length. Literal classes so Tailwind's purge keeps them.
-  defp shell_width(:full), do: "max-w-none"
+  # ONE operating width: every top-level console page caps at 7xl (`:full`
+  # died — dashboard/runs/audit stretching edge-to-edge beside 7xl-capped
+  # peers made adjacent clicks feel like different products). The ladder:
+  # 7xl operate/list · 6xl detail · 4xl settings · 3xl focused flow.
   defp shell_width(:table), do: "max-w-7xl"
   defp shell_width(:detail), do: "max-w-6xl"
   defp shell_width(:form), do: "max-w-3xl"
@@ -2707,7 +2710,7 @@ defmodule EmisarWeb.CoreComponents do
     "grid h-6 w-6 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300"
   end
 
-  defp steps_content_class(:guide), do: "min-w-0 flex-1 pt-0.5"
+  defp steps_content_class(:guide), do: "min-w-0 flex-1"
   defp steps_content_class(:plan), do: "min-w-0 flex-1 text-sm"
 
   @doc """
@@ -3824,19 +3827,17 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <div class="rounded-2xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 sm:p-10">
-      <header class="flex items-center gap-3">
-        <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/20 text-brand-300 ring-1 ring-brand-500/40">
-          <.icon name="hero-rocket-launch" class="h-5 w-5" />
-        </span>
-        <p class="text-base text-zinc-200">
-          Two minutes: pick a Linux or macOS host, paste the one-liner.
-        </p>
-      </header>
+    <%!-- CONTENT ON CANVAS — no outer grey box. The only contained surfaces
+         are the ones a box MEANS something for: the command artifact and the
+         live-credential warning. --%>
+    <div>
+      <p class="text-sm leading-relaxed text-zinc-400">
+        Two minutes — pick a Linux or macOS host, paste the one-liner.
+      </p>
 
       <%= cond do %>
         <% is_binary(@install_command) -> %>
-          <div class="mt-8 space-y-6">
+          <div class="mt-6 space-y-6">
             <div>
               <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Run this on the host
@@ -3899,12 +3900,14 @@ defmodule EmisarWeb.CoreComponents do
                   </.link>
                 </p>
                 <ul class="mt-2 space-y-1">
+                  <%!-- mt-[3px]: optically centers the 14px check on the 20px
+                       first text line (mt-0.5 sat visibly high). --%>
                   <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
                     <span>Verifies the download's SHA-256 before running anything</span>
                   </li>
                   <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
                     <span>
                       Runs the runner as a dedicated
                       <code class="font-mono text-zinc-400">emisar</code>
@@ -3912,7 +3915,7 @@ defmodule EmisarWeb.CoreComponents do
                     </span>
                   </li>
                   <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-brand-400" />
+                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
                     <span>Only dials out — nothing listens on the host</span>
                   </li>
                 </ul>
@@ -3930,10 +3933,11 @@ defmodule EmisarWeb.CoreComponents do
               </div>
             </div>
 
-            <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.08]">
+            <div class="border-t border-zinc-800/70 pt-4">
               <div class="flex items-center gap-3">
                 <%!-- Amber: this is a PENDING state — brand-green would read
-                     "connected" before anything has connected. --%>
+                     "connected" before anything has connected. Naked on the
+                     canvas: a wait line, not a widget. --%>
                 <.status_dot tone={:amber} size={:md} ping />
                 <div class="text-sm text-zinc-300">
                   Waiting for a runner to connect — this page advances on its own.
@@ -3953,22 +3957,22 @@ defmodule EmisarWeb.CoreComponents do
                 <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
                 <.steps class="mt-1.5">
                   <:step>
-                    it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                    over outbound HTTPS (nothing needs to listen on it);
+                    It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                    over outbound HTTPS (nothing needs to listen on it).
                   </:step>
                   <:step>
-                    you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                    and the key wasn't truncated on paste;
+                    You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                    and the key wasn't truncated on paste.
                   </:step>
                   <:step>
-                    it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                    It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
                   </:step>
                 </.steps>
               </div>
             </div>
           </div>
         <% @install_command == :mint_failed -> %>
-          <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
+          <div class="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
             We couldn't mint a runner key just now. Open
             <.link navigate={@keys_path} class="font-semibold underline">
               Runners → Runner keys
@@ -3976,7 +3980,7 @@ defmodule EmisarWeb.CoreComponents do
             and create one manually, or refresh this page to try again.
           </div>
         <% true -> %>
-          <div class="mt-8 flex items-center gap-3 rounded-lg bg-black/30 p-4 text-sm text-zinc-400 ring-1 ring-white/[0.08]">
+          <div class="mt-6 flex items-center gap-3 text-sm text-zinc-400">
             <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
             Generating your install command…
           </div>

@@ -120,11 +120,11 @@ defmodule EmisarWeb.AuditExportLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
-      width={:settings}
+      width={:table}
     >
-      <:title>SIEM export</:title>
-
-      <.back_link navigate={~p"/app/#{@current_account}/audit"}>Audit log</.back_link>
+      <:title>
+        <.back_link navigate={~p"/app/#{@current_account}/audit"}>Audit log</.back_link> SIEM export
+      </:title>
 
       <.page_intro>
         Stream audit events as NDJSON to your SIEM for independent, long-term
@@ -133,23 +133,28 @@ defmodule EmisarWeb.AuditExportLive do
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
 
-      <.panel id="siem-export" variant={:split} title="Export tokens">
-        <:subtitle>
-          Read-only, admin-minted, revocable — separate from the LLM-agent keys.
-        </:subtitle>
-        <:actions>
-          <.button
-            :if={is_nil(@export_secret)}
-            variant={:secondary}
-            size={:md}
-            class="shrink-0"
-            type="button"
-            icon="hero-key"
-            phx-click="create_export_key"
-          >
-            Mint export token
-          </.button>
-        </:actions>
+      <%!-- CONTENT ON CANVAS (the keys-page grammar): a section header with
+           the mint action, hairline token rows below — the panel island died
+           with the old design. The one box left is the shown-once secret. --%>
+      <section id="siem-export">
+        <.section_header title="Export tokens">
+          <:subtitle>
+            Read-only, admin-minted, revocable — separate from the LLM-agent keys.
+          </:subtitle>
+          <:actions>
+            <.button
+              :if={is_nil(@export_secret)}
+              variant={:secondary}
+              size={:md}
+              class="shrink-0"
+              type="button"
+              icon="hero-key"
+              phx-click="create_export_key"
+            >
+              Mint export token
+            </.button>
+          </:actions>
+        </.section_header>
 
         <%!-- One-shot reveal via the shared <.secret_reveal> — the single
              reviewed shown-once surface (same as agents + install). The raw
@@ -171,15 +176,15 @@ defmodule EmisarWeb.AuditExportLive do
 
         <%!-- Existing export tokens — listed with revoke. The agents page
              filters these out so SIEM-export tokens live here exclusively. --%>
-        <div :if={@export_keys != []} class="border-t border-zinc-900">
-          <ul class="divide-y divide-zinc-800/70">
-            <.list_row :for={key <- @export_keys} icon="hero-document-text">
+        <div :if={@export_keys != []} class="mt-2">
+          <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+            <.list_row :for={key <- @export_keys} padding="py-4">
               <:title>
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
               </:title>
               <:chips>
                 <.chip tone={:neutral} mono>audit:read</.chip>
-                <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
+                <.chip :if={key.revoked_at} tone={:rose}>revoked</.chip>
               </:chips>
               <:meta>
                 <.meta_line class="text-[11px]">
@@ -211,7 +216,7 @@ defmodule EmisarWeb.AuditExportLive do
             </.list_row>
           </ul>
         </div>
-      </.panel>
+      </section>
     </.dashboard_shell>
     """
   end

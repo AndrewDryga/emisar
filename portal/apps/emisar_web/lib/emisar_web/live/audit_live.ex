@@ -276,7 +276,7 @@ defmodule EmisarWeb.AuditLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
-      width={:full}
+      width={:table}
     >
       <:title>Audit log</:title>
       <%!-- Sub-feature side door — streaming config is its own page; its entry

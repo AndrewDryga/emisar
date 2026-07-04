@@ -3,6 +3,41 @@
 @import "tailwindcss/utilities";
 
 /* ---------------------------------------------------------------------------
+   Slim, theme-matched scrollbars on code insets + scroll regions. The OS
+   default — a fat light-grey bar — read as a foreign widget inside the black
+   command insets ("Run this on the host") and every overflow table. Firefox
+   via scrollbar-{width,color}; WebKit via the pseudo-elements. Transparent
+   track so only the thumb shows, and only while there's overflow.
+   --------------------------------------------------------------------------- */
+pre,
+.overflow-x-auto,
+.overflow-y-auto,
+.overflow-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(63 63 70 / 0.9) transparent; /* zinc-700 on nothing */
+}
+pre::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+pre::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb {
+  background-color: rgb(63 63 70 / 0.9);
+  border-radius: 9999px;
+}
+pre::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
    Self-hosted Inter (variable). Previously loaded from rsms.me, which was the
    single worst render-blocker (a ~780ms third-party request on every page) and
    a privacy/reliability dependency. Vendored into priv/static/fonts and applied
