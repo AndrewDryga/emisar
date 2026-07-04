@@ -105,7 +105,7 @@ defmodule EmisarWeb.RunnerInstallLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={:detail}
+      width={:table}
     >
       <:title>
         <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>

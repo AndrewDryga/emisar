@@ -229,10 +229,11 @@ defmodule EmisarWeb.AuthKeysLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={if @live_action == :new, do: :form, else: :table}
+      width={:table}
     >
       <:title>
         <%= if @live_action == :new do %>
+          <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
           <.back_link navigate={~p"/app/#{@current_account}/runners/keys"}>Runner keys</.back_link>
           Issue a runner key
         <% else %>
@@ -248,46 +249,44 @@ defmodule EmisarWeb.AuthKeysLive do
       </:actions>
 
       <%!-- ===== Issue a runner key — its own focused page (:new) =====
-           CONTENT ON CANVAS — no island. The shell owns the :form column
-           width; the form sits directly on the page (the install-wizard
-           grammar), with a real success step (Issue another / Back to keys)
-           instead of a vanishing flash. --%>
-      <div :if={@live_action == :new} class="space-y-8">
-        <.runner_cap_callout billing={@billing} current_account={@current_account} />
+           CONTENT ON CANVAS, task + rail (the install-wizard grammar) at the
+           same 7xl column as the list it's reached from, so the header never
+           jumps: the form (or its success reveal) is the task on the left; the
+           "what is this" explainer fills the rail on the right. --%>
+      <div
+        :if={@live_action == :new}
+        class="lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-x-20"
+      >
+        <div class="space-y-8">
+          <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
-        <%!-- Created: the secret is shown ONCE — the reveal IS the success
-             step (a box IS earned here: it holds the secret + its copy
-             affordances), carrying the two next moves. --%>
-        <.secret_reveal
-          :if={@new_secret}
-          title="Copy this runner key now — it will not be shown again."
-          secret={@new_secret}
-        >
-          Treat it like a password. Anyone with this key can register a runner
-          under <span class="font-semibold">{@current_account.name}</span>.
-          <:install_command>
-            curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
-          </:install_command>
-          <:actions>
-            <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
-            <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
-              Back to runner keys
-            </.button>
-          </:actions>
-        </.secret_reveal>
-
-        <div :if={is_nil(@new_secret)}>
-          <p class="text-sm leading-relaxed text-zinc-400">
-            Reusable keys suit stable fleets; single-use keys are right for autoscalers.
-            <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
-          </p>
+          <%!-- Created: the secret is shown ONCE — the reveal IS the success
+               step (a box IS earned here: it holds the secret + its copy
+               affordances), carrying the two next moves. --%>
+          <.secret_reveal
+            :if={@new_secret}
+            title="Copy this runner key now — it will not be shown again."
+            secret={@new_secret}
+          >
+            Treat it like a password. Anyone with this key can register a runner
+            under <span class="font-semibold">{@current_account.name}</span>.
+            <:install_command>
+              curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
+            </:install_command>
+            <:actions>
+              <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
+              <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
+                Back to runner keys
+              </.button>
+            </:actions>
+          </.secret_reveal>
 
           <.simple_form
+            :if={is_nil(@new_secret)}
             for={@form}
             id="auth_key_form"
             phx-change="validate"
             phx-submit="create"
-            class="mt-6"
           >
             <.input
               field={@form[:description]}
@@ -331,6 +330,37 @@ defmodule EmisarWeb.AuthKeysLive do
             </:actions>
           </.simple_form>
         </div>
+
+        <%!-- The reading rail — what a runner key IS and how its lifecycle
+             works, so an operator issuing one understands the exchange and
+             the revoke semantics before they mint a root-capable secret. --%>
+        <aside class="mt-10 lg:mt-0">
+          <.section_header title="What a runner key is" />
+          <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
+            <p>
+              A bearer secret a fresh host presents to
+              <span class="font-medium text-zinc-300">enroll</span>
+              as a runner. The host runs the install command with it, registers, and trades it for
+              its own long-lived token — the key isn't used again for that host.
+            </p>
+            <p>
+              A <span class="font-medium text-zinc-300">single-use</span>
+              key is spent on the first registration — right for an autoscaler baking one host at a
+              time. A <span class="font-medium text-zinc-300">reusable</span>
+              key keeps enrolling hosts until it expires or hits its max-uses cap — right for a
+              stable fleet or an image bake.
+            </p>
+            <p>
+              <span class="font-medium text-zinc-300">Revoking is safe.</span>
+              It blocks new registrations with this key — a host presenting a revoked key gets a 401.
+              Runners already enrolled keep running under their own tokens; revoke never disconnects
+              or deletes them.
+            </p>
+            <p class="pt-1">
+              <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
+            </p>
+          </div>
+        </aside>
       </div>
 
       <.page_intro :if={@live_action == :index}>
