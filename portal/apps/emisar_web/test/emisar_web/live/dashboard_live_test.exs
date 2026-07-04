@@ -52,55 +52,80 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Verify your email"
     end
 
-    test "a fresh account's three pillars render as the onboarding CTAs",
+    test "a fresh account renders the setup checklist — ordered, one primary, team optional",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
-      # The onboarding checklist IS the pillars' zero states — a fresh account
-      # (no runners, no agent keys, a team of one) reads its three next steps
-      # off the same three cards that later carry live fleet state.
-      assert html =~ "Put your first host online"
-      assert html =~ "Connect any MCP client"
-      assert html =~ "Give everyone their own sign-in"
+      # The zero state is an ORDERED path to the first gated run: two
+      # required connections + one optional invite — not three equal pillars.
+      assert html =~ "Get to your first gated run"
+      assert html =~ "Connect a runner"
+      assert html =~ "Connect an LLM agent"
+      assert html =~ "Invite your team"
+      assert html =~ "optional"
+      # Step 1 is current — the page's ONE brand-filled action.
+      assert html =~ ~p"/app/#{account}/runners/install"
+      # The operational sections wait until setup resolves.
+      refute html =~ "Recent runs"
 
-      # No auto-minted install key — the dashboard doesn't mint
-      # anymore. The runners/install page mints when the operator
-      # navigates into it.
+      # No auto-minted install key — the checklist links to the install page,
+      # which mints when the operator navigates into it.
       assert Emisar.Repo.all(Emisar.Runners.AuthKey) == []
     end
 
-    test "renders the populated dashboard once a runner exists", %{conn: conn} do
+    test "a runner alone keeps the checklist — step 1 done, agent step current", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      {:ok, _agent} =
-        Emisar.Runners.create_runner(
-          %{
-            "name" => "runner-1",
-            "group" => "default"
-          },
+      {:ok, _runner} =
+        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "Get to your first gated run"
+      assert html =~ "1 of 2 done"
+      assert html =~ "1 runner connected"
+      assert html =~ ~p"/app/#{account}/settings/agents/connect"
+      refute html =~ "Recent runs"
+    end
+
+    test "renders the operational dashboard once both connections exist", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _runner} =
+        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
           subject
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
-      # The runners pillar graduates from the install CTA to live state
-      # (one registered runner, not connected in a test).
+
+      refute html =~ "Get to your first gated run"
+      # The runners pillar carries live state (one registered runner,
+      # not connected in a test) and the runs section returns.
       assert html =~ "/ 1 connected"
-      refute html =~ "Put your first host online"
       assert html =~ "Recent runs"
-      # The agents pillar still shows its CTA — no API key was minted in
-      # this test.
-      assert html =~ "Connect any MCP client"
-      # A runner with nothing dispatched yet: the runs panel's zero state
+      # Both connected, nothing dispatched yet: the runs zero state
       # deep-links the first runner's catalog as the dispatch nudge.
       assert html =~ "dispatch an action from its catalog"
     end
 
-    test "the dispatch nudge appears with a runner-but-no-runs and clears after the first run",
+    test "the dispatch nudge appears with connections-but-no-runs and clears after the first run",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "dispatch an action from its catalog"
@@ -168,64 +193,58 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "bravo_dash"
     end
 
-    # the dashboard is a read-only triage screen: its
-    # pillar cards are plain `<.link navigate>`s to real routes, not
-    # server-driven actions. A fresh account renders the three onboarding CTAs
-    # linking to install + agents + team invite; the LV defines no mutating
-    # `handle_event`, so there's nothing to abuse.
-    test "pillar cards are plain navigation links to real routes (read-only)",
+    # the dashboard is a read-only triage screen: the setup checklist's
+    # actions are plain `<.link navigate>`s to real routes, not server-driven
+    # actions; the LV defines no mutating `handle_event`, so there's nothing
+    # to abuse.
+    test "setup checklist actions are plain navigation links to real routes (read-only)",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      # The zero-state pillar CTAs link straight to the install wizard, the
-      # agents page, and the team invite — real routes, reached by navigation,
-      # not a phx-click handler.
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",
-               "Put your first host online"
+               "Connect a runner"
              )
 
       assert has_element?(
                lv,
-               "a[href='#{~p"/app/#{account}/settings/agents"}']",
-               "Connect any MCP client"
+               "a[href='#{~p"/app/#{account}/settings/agents/connect"}']",
+               "Connect an agent"
              )
 
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/team/invite"}']",
-               "Give everyone their own sign-in"
+               "Send an invite"
              )
-
-      # The runs panel's "View all" is a plain link to the runs list.
-      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")
     end
 
     test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Put your first host online"
+      assert html =~ "Get to your first gated run"
 
       # A runner registers elsewhere; the dashboard hears the account
       # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
       # rather than re-querying per message. The reload fires on the
       # :reload_dashboard timer — inject it directly to stand in for the timer.
+      # The checklist flips LIVE: step 1 reads done without a refresh.
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       send(lv.pid, {:runner_updated, runner})
       send(lv.pid, :reload_dashboard)
-      refute render(lv) =~ "Put your first host online"
+      assert render(lv) =~ "1 runner connected"
 
       send(lv.pid, %{event: "presence_diff"})
       send(lv.pid, :reload_dashboard)
-      assert render(lv) =~ "/ 1 connected"
+      assert render(lv) =~ "1 of 2 done"
 
       # Unrelated message shapes are ignored, never a crash.
       send(lv.pid, :stray_message)
-      assert render(lv) =~ "/ 1 connected"
+      assert render(lv) =~ "1 of 2 done"
     end
   end
 

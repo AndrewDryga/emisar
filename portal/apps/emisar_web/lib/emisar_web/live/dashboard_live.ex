@@ -73,6 +73,22 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
+    |> assign_setup_state(subject)
+  end
+
+  # First-run: until the account has BOTH connections (or has actually run
+  # something), the dashboard's job is onboarding — an ordered checklist to
+  # the first gated run — not posture over data that doesn't exist yet.
+  # Sequenced, not locked: any step stays clickable in any order.
+  defp assign_setup_state(socket, subject) do
+    %{runners_total: runners_total, agents: agents, recent_runs: recent_runs} = socket.assigns
+    show_setup? = recent_runs == [] and (runners_total == 0 or agents.total == 0)
+
+    socket
+    |> assign(:show_setup?, show_setup?)
+    |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
+    |> assign(:can_issue_agent_key?, ApiKeys.subject_can_issue_quick_key?(subject))
+    |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
   end
 
   # The LLM-agents pillar's live facts, from the same MCP-key list the agents
@@ -162,6 +178,10 @@ defmodule EmisarWeb.DashboardLive do
         can_view_runs?={@can_view_runs?}
         can_view_agents?={@can_view_agents?}
         approvals_decider?={Approvals.subject_can_decide_approval?(@current_subject)}
+        show_setup?={@show_setup?}
+        can_install_runners?={@can_install_runners?}
+        can_issue_agent_key?={@can_issue_agent_key?}
+        can_invite_members?={@can_invite_members?}
       />
     </.dashboard_shell>
     """
@@ -198,6 +218,10 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_view_runs?, :boolean, default: true
   attr :can_view_agents?, :boolean, default: true
   attr :approvals_decider?, :boolean, default: false
+  attr :show_setup?, :boolean, default: false
+  attr :can_install_runners?, :boolean, default: false
+  attr :can_issue_agent_key?, :boolean, default: false
+  attr :can_invite_members?, :boolean, default: false
 
   defp live_dashboard(assigns) do
     ~H"""
@@ -223,10 +247,26 @@ defmodule EmisarWeb.DashboardLive do
       current_account={@current_account}
     />
 
+    <%!-- FIRST-RUN: three equal side-by-side CTAs implied three parallel jobs,
+         but the product does nothing until a runner AND an agent are connected
+         — team is genuinely optional. The zero state is an ordered checklist
+         to the first gated run instead; it self-replaces with the pillars the
+         moment both connections exist (or anything has run). --%>
+    <.setup_checklist
+      :if={@show_setup?}
+      runners_total={@runners_total}
+      agents_total={@agents.total}
+      team_total={if is_map(@team_mfa), do: @team_mfa.total, else: 0}
+      current_account={@current_account}
+      can_install_runners?={@can_install_runners?}
+      can_issue_agent_key?={@can_issue_agent_key?}
+      can_invite_members?={@can_invite_members?}
+    />
+
     <%!-- The three pillars. Grid order = the onboarding order (host → agent →
          people); a pillar the role can't act on is dropped rather than rendered
          as a dead CTA. --%>
-    <div class="grid grid-cols-1 gap-8 pt-2 sm:grid-cols-3 sm:gap-10">
+    <div :if={not @show_setup?} class="grid grid-cols-1 gap-8 pt-2 sm:grid-cols-3 sm:gap-10">
       <.runners_pillar
         :if={@can_view_runners?}
         connected={@runners_connected}
@@ -287,7 +327,7 @@ defmodule EmisarWeb.DashboardLive do
     <%!-- Recent runs sits DIRECTLY on the canvas — a section title, a quiet
          digest, and borderless rows under a single hairline. The activity feed
          is content, not a framed widget. --%>
-    <section :if={@can_view_runs?} class="pt-6">
+    <section :if={@can_view_runs? and not @show_setup?} class="pt-6">
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <div class="flex min-w-0 flex-wrap items-baseline gap-3">
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
@@ -382,6 +422,183 @@ defmodule EmisarWeb.DashboardLive do
   # — healthy stays quiet). ZERO: the SAME naked shape, the fact slot becoming
   # a guided invitation over a brand action line. Onboarding IS the dashboard's
   # empty state, never a separate wizard that goes stale.
+
+  # -- First-run setup checklist ---------------------------------------
+
+  # The zero state's onboarding: an ORDERED path to the first gated run.
+  # Two required connections + one optional invite — sequenced by emphasis
+  # (the current step carries the page's one brand fill), never locked.
+  attr :runners_total, :integer, required: true
+  attr :agents_total, :integer, required: true
+  attr :team_total, :integer, required: true
+  attr :current_account, :map, required: true
+  attr :can_install_runners?, :boolean, default: false
+  attr :can_issue_agent_key?, :boolean, default: false
+  attr :can_invite_members?, :boolean, default: false
+
+  defp setup_checklist(assigns) do
+    runner_done? = assigns.runners_total > 0
+    agent_done? = assigns.agents_total > 0
+
+    assigns =
+      assigns
+      |> assign(:runner_done?, runner_done?)
+      |> assign(:agent_done?, agent_done?)
+      |> assign(:done_count, Enum.count([runner_done?, agent_done?], & &1))
+      |> assign(:current_step, if(runner_done?, do: 2, else: 1))
+
+    ~H"""
+    <section class="pt-2">
+      <div class="flex flex-wrap items-baseline gap-3">
+        <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+          Get to your first gated run
+        </h2>
+        <span :if={@done_count > 0} class="text-xs tabular-nums text-brand-300">
+          {@done_count} of 2 done
+        </span>
+      </div>
+      <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
+        Two steps, and any MCP client can run gated, audited actions on your own hosts.
+      </p>
+
+      <ol class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+        <.setup_step
+          number={1}
+          done={@runner_done?}
+          current={@current_step == 1}
+          title="Connect a runner"
+          done_text={"#{@runners_total} #{if @runners_total == 1, do: "runner", else: "runners"} connected"}
+          action_label="Connect a runner"
+          navigate={~p"/app/#{@current_account}/runners/install"}
+          done_navigate={~p"/app/#{@current_account}/runners"}
+          can_act?={@can_install_runners?}
+        >
+          The emisar agent on one of your hosts — one curl command, connected in
+          about two minutes.
+        </.setup_step>
+        <.setup_step
+          number={2}
+          done={@agent_done?}
+          current={@current_step == 2}
+          title="Connect an LLM agent"
+          done_text={"#{@agents_total} #{if @agents_total == 1, do: "agent", else: "agents"} connected"}
+          action_label="Connect an agent"
+          navigate={~p"/app/#{@current_account}/settings/agents/connect"}
+          done_navigate={~p"/app/#{@current_account}/settings/agents"}
+          can_act?={@can_issue_agent_key?}
+        >
+          Give Claude, Cursor, or any MCP client a scoped, revocable key.
+        </.setup_step>
+        <.setup_step
+          number={3}
+          optional
+          done={@team_total > 1}
+          done_text={"#{@team_total} members"}
+          title="Invite your team"
+          action_label="Send an invite"
+          navigate={~p"/app/#{@current_account}/settings/team/invite"}
+          done_navigate={~p"/app/#{@current_account}/settings/team"}
+          can_act?={@can_invite_members?}
+        >
+          Teammates dispatch and approve under their own audited identity.
+        </.setup_step>
+      </ol>
+
+      <p
+        :if={not (@can_install_runners? or @can_issue_agent_key? or @can_invite_members?)}
+        class="mt-4 text-xs text-zinc-500"
+      >
+        Setup needs an operator role or above — ask an owner or admin to connect the
+        first runner and agent.
+      </p>
+    </section>
+    """
+  end
+
+  attr :number, :integer, required: true
+  attr :done, :boolean, required: true
+  attr :current, :boolean, default: false
+  attr :optional, :boolean, default: false
+  attr :title, :string, required: true
+  attr :done_text, :string, required: true
+  attr :action_label, :string, required: true
+  attr :navigate, :string, required: true
+  attr :done_navigate, :string, required: true
+  attr :can_act?, :boolean, default: false
+  slot :inner_block, required: true
+
+  defp setup_step(assigns) do
+    ~H"""
+    <li class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:gap-5">
+      <%!-- Marker: brand check once done; the current step's number reads
+           brightest; later steps recede. --%>
+      <span
+        :if={@done}
+        class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/30"
+      >
+        <.icon name="hero-check" class="h-4 w-4" />
+      </span>
+      <span
+        :if={not @done}
+        class={[
+          "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ring-1",
+          if(@current,
+            do: "bg-zinc-800 text-zinc-100 ring-zinc-600",
+            else: "text-zinc-500 ring-zinc-800"
+          )
+        ]}
+      >
+        {@number}
+      </span>
+
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <span class={[
+            "font-medium",
+            cond do
+              @done -> "text-zinc-400"
+              @current -> "text-zinc-100"
+              true -> "text-zinc-300"
+            end
+          ]}>
+            {@title}
+          </span>
+          <span :if={@optional} class="text-[11px] text-zinc-600">optional</span>
+        </div>
+        <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
+          <%= if @done do %>
+            {@done_text}
+          <% else %>
+            {render_slot(@inner_block)}
+          <% end %>
+        </p>
+      </div>
+
+      <div class="shrink-0 sm:pl-4">
+        <.link
+          :if={@done}
+          navigate={@done_navigate}
+          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
+        >
+          View <.cta_arrow class="ml-0.5 h-3 w-3" />
+        </.link>
+        <%!-- ONE brand fill on the page: the current step's action. Later
+             steps stay clickable, quietly (sequenced, not locked). --%>
+        <.button :if={not @done and @can_act? and @current} navigate={@navigate} size={:md}>
+          {@action_label}
+        </.button>
+        <.button
+          :if={not @done and @can_act? and not @current}
+          navigate={@navigate}
+          variant={:secondary}
+          size={:md}
+        >
+          {@action_label}
+        </.button>
+      </div>
+    </li>
+    """
+  end
 
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
