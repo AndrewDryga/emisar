@@ -177,42 +177,38 @@ defmodule EmisarWeb.RunnerDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
-      width={:detail}
+      width={:table}
     >
       <:title>
-        <%!-- The runner's name is a hostname-ish machine id — mono, like every
-             identifier-titled detail page. --%>
-        <.detail_header
-          back="Runners"
-          navigate={~p"/app/#{@current_account}/runners"}
-          title={@runner.name}
-          mono
-        />
+        <%!-- Runners / {group} / {name}. The name is a hostname-ish machine id,
+             so it renders mono like every identifier-titled detail page. --%>
+        <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
+        <.back_link navigate={~p"/app/#{@current_account}/runners?#{[group: @runner.group]}"}>
+          {@runner.group}
+        </.back_link>
+        <span class="font-mono text-lg tracking-tight text-zinc-50 sm:text-xl">{@runner.name}</span>
       </:title>
       <:actions>
-        <%!-- This runner's slice of the audit trail (events whose subject is it):
-             registrations, trust decisions, state changes. Subject-scoped by the
-             audit page, so the link only pre-filters. --%>
+        <%!-- This runner's slice of the audit trail (events whose target is it):
+             registrations, trust decisions, state changes. --%>
         <.link
           navigate={
             ~p"/app/#{@current_account}/audit?#{[target_kind: "runner", target_id: @runner.id]}"
           }
-          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View activity →
+          View activity <.cta_arrow />
         </.link>
       </:actions>
-      <%!-- Connection meta strip — same shape as RunDetail /
-           ApprovalDetail. Status leads so the connection state is the
-           first thing the eye lands on; everything else (hostname,
-           version, group, etc.) sits beside it for context. External
-           ID dropped — it's debug-trace, not at-a-glance signal. --%>
-      <.meta_strip cols={6}>
+
+      <%!-- Connection facts on the CANVAS — a naked meta grid, no island. Status
+           leads so the connection state is the first thing the eye lands on; the
+           hostname gets a full 1/3 cell so it reads in one line, copy button
+           aligned (it wrapped + misaligned when crammed into a 6-col strip). --%>
+      <div class="mt-1 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-3">
         <.meta_field label="Status">
           <.status_badge status={connection_status(Runners.connection_state(@runner))} />
         </.meta_field>
-        <%!-- wrap: a hostname is a machine value that must read in full — on a
-             phone it takes the row and wraps, keeping its copy button on-screen. --%>
         <.meta_field label="Hostname" wrap>
           <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
           <span :if={!@runner.hostname} class="text-zinc-500">—</span>
@@ -231,40 +227,39 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.meta_field label="Active runs">
           <span class="text-zinc-200">{@runner.action_load}</span>
         </.meta_field>
-        <%!-- Labels + last-disconnect reason fold into the strip on their own
-             full-width row (a hairline sets them off) rather than a second
-             bordered band below — one calmer meta block. Labels show when set;
-             the disconnect reason only while the runner is actually down (else
-             it's stale noise from the last drop). --%>
-        <div
-          :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
-          class="col-span-full flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/60 pt-3"
-        >
-          <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Labels
-            </span>
-            <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
-          </div>
-          <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
-            <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
-            <span class="text-xs">
-              Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
-            </span>
-          </div>
-        </div>
-      </.meta_strip>
+      </div>
 
-      <%!-- A signature-enforcing runner has locked the portal out: it verifies
-           a client signature on every run, so operator/runbook/API dispatch
-           from here is refused. Surfacing it up top keeps the disabled Run
-           buttons below from reading as a bug. --%>
+      <%!-- Labels + last-disconnect reason on their own hairline row (labels
+           when set, the reason only while the runner is down — else it's stale
+           noise from the last drop), not a second bordered band. --%>
+      <div
+        :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
+        class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-4"
+      >
+        <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Labels
+          </span>
+          <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
+        </div>
+        <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
+          <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+          <span class="text-xs">
+            Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
+          </span>
+        </div>
+      </div>
+
+      <%!-- A signature-enforcing runner has locked the portal out: it verifies a
+           client signature on every run, so operator/runbook/API dispatch from
+           here is refused. Surfacing it up top keeps the disabled Run buttons
+           below from reading as a bug. --%>
       <.callout
         :if={@runner.enforce_signatures}
         tone={:brand}
         icon="hero-shield-check"
         title="Signed dispatch only"
-        class="mt-4"
+        class="mt-6"
       >
         This runner verifies a client signature on every run and refuses unsigned ones, so
         the portal can't dispatch to it. Runs and runbooks must come from an MCP client
@@ -277,24 +272,25 @@ defmodule EmisarWeb.RunnerDetailLive do
 
       <.loading_state :if={@loading?} />
 
-      <%!-- On desktop the catalog takes the wide column (lg:order-1) and recent
-           runs sit alongside as a freshness check (lg:order-2). On a phone the
-           order flips by DOM: after the meta block, "is this thing healthy?" is
-           answered by recent runs FIRST, then the long catalog. --%>
-      <div :if={not @loading?} class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <.panel variant={:split} title="Recent runs" class="lg:order-2">
-          <:actions :if={@recent_runs != []}>
-            <.link
-              navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
-              class="text-xs font-medium text-brand-400 hover:text-brand-300"
-            >
-              View all →
-            </.link>
-          </:actions>
+      <%!-- Advertised actions (the wide column) + recent runs (a freshness
+           check beside it) as CANVAS sections — section title + hairline rows,
+           no islands. On a phone recent runs comes FIRST in DOM ("is this
+           healthy?"), then the long catalog; lg flips the visual order. --%>
+      <div :if={not @loading?} class="mt-8 grid grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-3">
+        <section class="lg:order-2">
+          <.section_header title="Recent runs">
+            <:actions :if={@recent_runs != []}>
+              <.link
+                navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
+                class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+              >
+                View all <.cta_arrow />
+              </.link>
+            </:actions>
+          </.section_header>
+
           <%= if @recent_runs == [] do %>
-            <div class="px-5 py-10 text-center text-sm text-zinc-500">
-              Nothing dispatched yet.
-            </div>
+            <p class="py-6 text-sm text-zinc-500">Nothing dispatched yet.</p>
           <% else %>
             <ul class="divide-y divide-zinc-800/70">
               <li :for={run <- @recent_runs}>
@@ -302,13 +298,13 @@ defmodule EmisarWeb.RunnerDetailLive do
               </li>
             </ul>
           <% end %>
-        </.panel>
+        </section>
 
-        <.panel variant={:split} title="Advertised actions" class="lg:col-span-2 lg:order-1">
-          <:badge><.count_badge count={@actions_metadata.count} tone={:neutral} /></:badge>
+        <section class="lg:order-1 lg:col-span-2">
+          <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
           <%= if @actions == [] do %>
-            <.empty_state icon="hero-cpu-chip" title="No actions yet">
+            <.empty_state variant={:bare} icon="hero-cpu-chip" title="No actions yet">
               This runner hasn't reported a catalog yet. Check the runner logs on the host.
             </.empty_state>
           <% else %>
@@ -381,7 +377,7 @@ defmodule EmisarWeb.RunnerDetailLive do
 
             <div
               :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
-              class="px-5 py-3"
+              class="pt-3"
             >
               <LiveTable.paginator
                 id="actions"
@@ -391,19 +387,18 @@ defmodule EmisarWeb.RunnerDetailLive do
               />
             </div>
           <% end %>
-        </.panel>
+        </section>
       </div>
 
-      <%!-- Danger zone — destructive actions live in their own
-           visually-distinct card so they can't be mistaken for the
-           regular content above. Disable is the soft "stop". Delete is
-           available for any runner that isn't currently connected
-           (disconnected / disabled / pending) — that's how you clear a
-           stale duplicate holding a name; a connected runner must be
-           disabled first so a misclick can't wipe a live one. --%>
+      <%!-- Danger zone — destructive actions in their own visually-distinct
+           confirm zones so they can't be mistaken for the content above.
+           Disable is the soft "stop"; Delete is available for any runner that
+           isn't currently connected (that's how you clear a stale duplicate
+           holding a name; a connected runner must be disabled first so a
+           misclick can't wipe a live one). --%>
       <div
         :if={is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-6"
+        class="mt-8"
       >
         <.confirm_zone
           title="Disable this runner"
@@ -417,14 +412,11 @@ defmodule EmisarWeb.RunnerDetailLive do
         </.confirm_zone>
       </div>
 
-      <%!-- Enable: the inverse of disable. Shown only while the runner is
-           disabled (the disable zone above hides then). Positive styling —
-           it's a restorative action, not a danger one. --%>
       <div
         :if={
           not is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)
         }
-        class="mt-6"
+        class="mt-8"
       >
         <.confirm_zone tone={:success} title="Enable this runner" phx-click="enable">
           <:body>
@@ -437,7 +429,7 @@ defmodule EmisarWeb.RunnerDetailLive do
 
       <div
         :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-6"
+        class="mt-8"
       >
         <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
              button only OPENS the dialog; `delete` still fires from Confirm
