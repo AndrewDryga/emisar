@@ -3834,15 +3834,16 @@ defmodule EmisarWeb.CoreComponents do
                   <%!-- The one-liner embeds a single-use enrollment key shown
                          only here — a root-capable credential; say so on the
                          page the operator actually installs from, so it never
-                         lands in a chat/ticket. The note is ABOUT the artifact
-                         above, so it renders as the wait line's status grammar
-                         (amber dot + lead + zinc body), naked on canvas — a
-                         box around non-actionable prose would outshout the
+                         lands in a chat/ticket. A static PROPERTY of the
+                         artifact above, so it reads one level below the live
+                         wait status: key icon (not a status dot — nothing is
+                         "live" here), medium lead, naked on canvas — a box
+                         around non-actionable prose would outshout the
                          credential itself. --%>
                   <div class="mt-5 flex items-start gap-3">
-                    <.status_dot tone={:amber} size={:md} class="mt-1.5" />
+                    <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                     <div class="min-w-0">
-                      <div class="text-sm font-semibold text-zinc-200">
+                      <div class="text-sm font-medium text-zinc-200">
                         Live credential — won't be shown again
                       </div>
                       <p class="mt-1 text-sm leading-relaxed text-zinc-400">
@@ -3869,42 +3870,50 @@ defmodule EmisarWeb.CoreComponents do
                   </p>
                 </section>
 
-                <section>
-                  <div class="flex items-center gap-3">
-                    <%!-- Amber: this is a PENDING state — brand-green would
-                         read "connected" before anything has connected. Naked
-                         on the canvas: a wait line, not a widget — air, not a
-                         hairline, separates it from the task above. --%>
-                    <.status_dot tone={:amber} size={:md} ping />
-                    <div class="text-sm text-zinc-300">
-                      Waiting for a runner to connect — this page advances on its own.
-                      You can leave; the runner will appear in Runners either way.
+                <%!-- The page's LIVE status — the strongest voice in the
+                     column: the only PING dot, a semibold lead, the body
+                     beneath. The credential note above is a static property
+                     and deliberately reads one level quieter (key icon, no
+                     ping). Troubleshooting nests INSIDE the status block so
+                     its spacing reads as a child of the wait, never an
+                     uneven sibling. Amber: pending — brand-green would read
+                     "connected" before anything has connected. --%>
+                <section class="flex items-start gap-3">
+                  <.status_dot tone={:amber} size={:lg} ping class="mt-[5px]" />
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-zinc-100">
+                      Waiting for a runner to connect
                     </div>
-                  </div>
+                    <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                      This page advances on its own — you can leave; the runner will appear
+                      in Runners either way.
+                    </p>
 
-                  <%!-- After the grace period with no join (the install page's
-                         watchdog flips show_troubleshooting) the likely funnel
-                         failure is a wrong/truncated key, :443 firewalled, or a
-                         non-systemd host — none of which the pulse alone
-                         reveals. Surface the same checks the quickstart doc
-                         carries. --%>
-                  <div :if={@show_troubleshooting} class="mt-6">
-                    <div class="text-sm font-semibold text-zinc-300">
-                      Not seeing it yet? Check the host:
+                    <%!-- After the grace period with no join (the install
+                           page's watchdog flips show_troubleshooting) the
+                           likely funnel failure is a wrong/truncated key,
+                           :443 firewalled, or a non-systemd host — none of
+                           which the pulse alone reveals. Surface the same
+                           checks the quickstart doc carries. --%>
+                    <div :if={@show_troubleshooting} class="mt-5">
+                      <div class="text-sm font-medium text-zinc-300">
+                        Not seeing it yet? Check the host:
+                      </div>
+                      <.steps class="mt-3">
+                        <:step>
+                          It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                          over outbound HTTPS (nothing needs to listen on it).
+                        </:step>
+                        <:step>
+                          You ran the whole line with
+                          <code class="font-mono text-zinc-300">sudo</code>
+                          and the key wasn't truncated on paste.
+                        </:step>
+                        <:step>
+                          It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                        </:step>
+                      </.steps>
                     </div>
-                    <.steps class="mt-3">
-                      <:step>
-                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                        over outbound HTTPS (nothing needs to listen on it).
-                      </:step>
-                      <:step>
-                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                        and the key wasn't truncated on paste.
-                      </:step>
-                      <:step>
-                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                      </:step>
-                    </.steps>
                   </div>
                 </section>
               </div>
@@ -3988,7 +3997,7 @@ defmodule EmisarWeb.CoreComponents do
                   </div>
                   <.icon
                     name="hero-arrow-top-right-on-square"
-                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
               </li>
@@ -4005,7 +4014,7 @@ defmodule EmisarWeb.CoreComponents do
                   </div>
                   <.icon
                     name="hero-arrow-right"
-                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+                    class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
               </li>
