@@ -205,7 +205,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            leads so the connection state is the first thing the eye lands on; the
            hostname gets a full 1/3 cell so it reads in one line, copy button
            aligned (it wrapped + misaligned when crammed into a 6-col strip). --%>
-      <div class="mt-1 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-3">
+      <div class="mt-8 grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-3">
         <.meta_field label="Status">
           <.status_badge status={connection_status(Runners.connection_state(@runner))} />
         </.meta_field>
@@ -234,7 +234,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            noise from the last drop), not a second bordered band. --%>
       <div
         :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
-        class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-4"
+        class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-5"
       >
         <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -257,7 +257,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
            this runner's posture (it's signed-only), the shield lead carrying
            the brand tint, aligned with everything else below. --%>
-      <div :if={@runner.enforce_signatures} class="mt-6 flex items-start gap-3">
+      <div :if={@runner.enforce_signatures} class="mt-10 flex items-start gap-3">
         <.icon name="hero-shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
         <div class="min-w-0">
           <div class="text-sm font-semibold text-zinc-100">Signed dispatch only</div>
@@ -279,7 +279,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            check beside it) as CANVAS sections — section title + hairline rows,
            no islands. On a phone recent runs comes FIRST in DOM ("is this
            healthy?"), then the long catalog; lg flips the visual order. --%>
-      <div :if={not @loading?} class="mt-8 grid grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-3">
+      <div :if={not @loading?} class="mt-14 grid grid-cols-1 gap-x-12 gap-y-14 lg:grid-cols-3">
         <section class="lg:order-2">
           <.section_header title="Recent runs">
             <:actions :if={@recent_runs != []}>
@@ -403,7 +403,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            of these. --%>
       <section
         :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-12"
+        class="mt-16"
       >
         <.section_header title="Danger zone" />
         <div class="divide-y divide-zinc-800/70">

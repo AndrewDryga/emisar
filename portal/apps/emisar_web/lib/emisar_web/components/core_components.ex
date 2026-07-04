@@ -3228,8 +3228,8 @@ defmodule EmisarWeb.CoreComponents do
   def meta_field(assigns) do
     ~H"""
     <div class={["min-w-0", @wrap && "col-span-2 sm:col-span-1"]}>
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
-      <div class={["mt-0.5", if(@wrap, do: "break-words", else: "truncate")]}>
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@label}</div>
+      <div class={["mt-1.5 text-[15px] leading-tight", if(@wrap, do: "break-words", else: "truncate")]}>
         {render_slot(@inner_block)}
       </div>
     </div>
@@ -3570,7 +3570,7 @@ defmodule EmisarWeb.CoreComponents do
          danger lives on the ROSE button + the typed/data confirm it fires, not
          a tinted frame. Callers stack these under a "Danger zone" section header
          in a `divide-y` list. --%>
-    <div class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
         <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
         <p class="mt-1 text-xs leading-relaxed text-zinc-500">{render_slot(@body)}</p>
