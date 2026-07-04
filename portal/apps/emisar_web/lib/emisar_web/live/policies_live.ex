@@ -1018,9 +1018,10 @@ defmodule EmisarWeb.PoliciesLive do
   defp tier_card(assigns) do
     ~H"""
     <label class={["block rounded-lg border bg-black/30 p-3", tier_border(@tier)]}>
+      <%!-- Eyebrows stay zinc — tone lives in the select's value, not the
+           header (and HIGH vs CRITICAL read as two barely distinct reds). --%>
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
-        <span class={["h-1.5 w-1.5 rounded-full", tier_dot(@tier)]}></span>
       </div>
       <%!-- Options below the floor are disabled — they'd make this tier
            more permissive than a lower-risk one, which the server rejects.
@@ -1152,9 +1153,4 @@ defmodule EmisarWeb.PoliciesLive do
   # "Allow" card read as a warning about the setting). The dot + label
   # carry severity.
   defp tier_border(_tier), do: "border-zinc-700/50"
-
-  defp tier_dot("low"), do: "bg-zinc-500"
-  defp tier_dot("medium"), do: "bg-amber-400"
-  defp tier_dot("high"), do: "bg-rose-400"
-  defp tier_dot("critical"), do: "bg-rose-500"
 end

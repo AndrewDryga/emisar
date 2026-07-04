@@ -303,7 +303,10 @@ defmodule EmisarWeb.DashboardLive do
             </span>
           </span>
         </div>
+        <%!-- Gated on runs existing — at zero it dead-ended into an equally
+             empty page. --%>
         <.link
+          :if={@recent_runs != []}
           navigate={~p"/app/#{@current_account}/runs"}
           class="group text-xs font-medium text-brand-400 hover:text-brand-300"
         >

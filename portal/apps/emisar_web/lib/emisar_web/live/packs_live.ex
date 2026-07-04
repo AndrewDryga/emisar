@@ -423,8 +423,14 @@ defmodule EmisarWeb.PacksLive do
         title="No packs reported yet"
         class="mt-8"
       >
-        A pack is the bundle of actions a runner can run. Connect a runner and the packs
-        it loads appear here to trust or reject.
+        A pack is the bundle of actions a runner can run.
+        <.link
+          navigate={~p"/app/#{@current_account}/runners"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          Connect a runner
+        </.link>
+        and the packs it loads appear here to trust or reject.
       </.empty_state>
 
       <form
@@ -483,10 +489,7 @@ defmodule EmisarWeb.PacksLive do
                 <%!-- Relative like every peer list ("1d ago"); chronology reads
                      first→last; absolute rides the local_time hover. --%>
                 <div class="ml-auto shrink-0 text-right text-xs text-zinc-500">
-                  <div
-                    :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}
-                    class="text-[10px] text-zinc-400"
-                  >
+                  <div :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}>
                     first seen <.local_time value={v.first_seen_at} mode={:relative} class="inline" />
                   </div>
                   <div>

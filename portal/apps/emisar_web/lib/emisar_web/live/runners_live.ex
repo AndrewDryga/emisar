@@ -251,7 +251,7 @@ defmodule EmisarWeb.RunnersLive do
           <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
             <span class="flex items-center gap-1.5">
               <.status_dot tone={:brand} size={:sm} />
-              <span class="tabular-nums text-zinc-400">{@fleet.online} online</span>
+              <span class="tabular-nums text-zinc-400">{@fleet.online} connected</span>
             </span>
             <span :if={@fleet.offline > 0} class="flex items-center gap-1.5">
               <.status_dot tone={:amber} size={:sm} />

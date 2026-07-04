@@ -243,7 +243,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # ABSENT (offline/pending/disabled only render when > 0 — silence is the
       # confirmation). The whole-account total is NOT repeated here — it lives
       # in the group header(s) below.
-      assert html =~ "1 online"
+      assert html =~ "1 connected"
       refute html =~ "offline"
       assert html =~ "1 disabled"
     end

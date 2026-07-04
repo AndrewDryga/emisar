@@ -1336,7 +1336,7 @@ defmodule EmisarWeb.CoreComponents do
         <div class="w-full border-t border-zinc-800/70"></div>
       </div>
       <div class="relative flex justify-center">
-        <span class="bg-zinc-950 px-3 text-xs uppercase tracking-wider text-zinc-500">{@label}</span>
+        <span class="bg-zinc-950 px-3 text-xs lowercase text-zinc-500">{@label}</span>
       </div>
     </div>
     """
