@@ -7,7 +7,7 @@ defmodule EmisarWeb.AuditLive do
   request id) at `/app/audit/:id`.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Audit}
+  alias Emisar.{ApiKeys, Audit, Billing}
   alias EmisarWeb.{AuditSummary, LiveTable}
 
   def mount(params, _session, socket) do
@@ -120,6 +120,14 @@ defmodule EmisarWeb.AuditLive do
 
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
+  end
+
+  # The download hands over exactly what the operator is looking at — the
+  # active filter params ride the href; cursors don't (the download walks the
+  # whole filtered set itself).
+  defp audit_download_path(assigns) do
+    query = Map.drop(assigns.filter_params, ["account_id_or_slug", "before", "after"])
+    ~p"/app/#{assigns.current_account}/audit/download?#{query}"
   end
 
   # Quick relative-range presets for the audit date filter — re-adds the buttons
@@ -270,15 +278,43 @@ defmodule EmisarWeb.AuditLive do
       <%!-- Sub-feature side door — streaming config is its own page; its entry
            rides the TITLE row (the pattern for a page's secondary surface),
            not the intro prose and never below the rows. --%>
-      <:actions :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}>
+      <:actions>
         <%!-- :md, not :sm — a control on the 28px title row needs the full-size
-             button to hold its own beside the H1. --%>
+             button to hold its own beside the H1. Export downloads the CURRENT
+             FILTERED VIEW as CSV; both export surfaces are Team+ (the console
+             trail is on every plan — taking the data OUT is paid), so a free
+             plan's buttons walk to Billing instead of pretending. --%>
+        <%= if Billing.audit_export_available?(@current_account) do %>
+          <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
+            Export CSV
+          </.button>
+        <% else %>
+          <.button
+            variant={:secondary}
+            size={:md}
+            navigate={~p"/app/#{@current_account}/settings/billing"}
+            title="Audit export is available on the Team plan"
+          >
+            Export CSV · Team
+          </.button>
+        <% end %>
         <.button
+          :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
           variant={:secondary}
           size={:md}
-          navigate={~p"/app/#{@current_account}/audit/export"}
+          navigate={
+            if Billing.audit_export_available?(@current_account),
+              do: ~p"/app/#{@current_account}/audit/export",
+              else: ~p"/app/#{@current_account}/settings/billing"
+          }
+          title={
+            unless Billing.audit_export_available?(@current_account),
+              do: "Audit export is available on the Team plan"
+          }
         >
-          Stream to SIEM
+          {if Billing.audit_export_available?(@current_account),
+            do: "Stream to SIEM",
+            else: "Stream to SIEM · Team"}
         </.button>
       </:actions>
 

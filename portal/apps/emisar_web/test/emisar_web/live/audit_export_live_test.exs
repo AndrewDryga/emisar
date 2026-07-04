@@ -11,6 +11,8 @@ defmodule EmisarWeb.AuditExportLiveTest do
   describe "SIEM export keys" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      # Export (SIEM + CSV) is Team+ — these tests exercise the feature itself.
+      Fixtures.Accounts.create_subscription(account, "team")
       %{conn: conn, user: user, account: account}
     end
 
@@ -348,6 +350,16 @@ defmodule EmisarWeb.AuditExportLiveTest do
         build_conn() |> put_req_header("authorization", "Bearer #{raw}") |> get(~p"/api/audit")
 
       assert json_response(denied, 401) == %{"error" => "unauthorized"}
+    end
+
+    test "a free-plan account is redirected to billing", %{conn: _conn} do
+      {conn, _user, account} = register_and_log_in(build_conn())
+
+      assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
+               live(conn, ~p"/app/#{account}/audit/export")
+
+      assert to == ~p"/app/#{account}/settings/billing"
+      assert %{"error" => "Audit export is available on the Team plan."} = flash
     end
 
     test "the SIEM card is hidden from a non-manager (operator)", %{account: account} do

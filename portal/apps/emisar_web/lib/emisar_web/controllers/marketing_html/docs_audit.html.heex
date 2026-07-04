@@ -49,9 +49,14 @@
         agent do last night, and why" is a filter, not an investigation.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Streaming to a SIEM</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Exporting the trail <.plan_badge tier={:team} />
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        The export endpoint serves NDJSON — one event per line, cursor-paginated, forward-only.
+        Two ways out, both on the Team plan and up: the <strong>Export CSV</strong>
+        button on the
+        Audit log downloads exactly the view you've filtered to, and the export endpoint serves
+        NDJSON — one event per line, cursor-paginated, forward-only.
         Mint a key with the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
         scope from the Audit page; that key can read events and nothing else — it can never

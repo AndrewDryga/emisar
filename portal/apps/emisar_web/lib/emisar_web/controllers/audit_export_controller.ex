@@ -40,12 +40,13 @@ defmodule EmisarWeb.AuditExportController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, ApiKeys, Audit}
+  alias Emisar.{Accounts, ApiKeys, Audit, Billing}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext
 
   plug :authenticate
   plug :require_scope, "audit:read"
+  plug :require_export_plan
 
   # GET /api/audit
   def index(conn, params) do
@@ -220,6 +221,24 @@ defmodule EmisarWeb.AuditExportController do
         |> put_status(:unauthorized)
         |> json(%{error: "unauthorized"})
         |> halt()
+    end
+  end
+
+  # Audit export (SIEM API + CSV download alike) is a Team+ feature — the
+  # in-console trail is on every plan; taking the data out is paid. 403 with
+  # an upgrade pointer, mirroring the scope error's shape.
+  defp require_export_plan(conn, _opts) do
+    if Billing.audit_export_available?(conn.assigns.current_subject.account) do
+      conn
+    else
+      conn
+      |> put_status(:forbidden)
+      |> json(%{
+        error: "plan_required",
+        required: "team",
+        message: "Audit export is available on the Team plan. Upgrade in Settings → Billing."
+      })
+      |> halt()
     end
   end
 

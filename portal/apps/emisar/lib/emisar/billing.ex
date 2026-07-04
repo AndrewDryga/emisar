@@ -34,6 +34,7 @@ defmodule Emisar.Billing do
         "Unlimited users",
         "Single sign-on (OIDC)",
         "90-day audit retention",
+        "Audit export (CSV + SIEM API)",
         "Email support"
       ]
     },
@@ -138,6 +139,17 @@ defmodule Emisar.Billing do
     entitled_feature(
       posture,
       "features_sso_enabled?",
+      posture.plan_name in ["team", "enterprise"]
+    )
+  end
+
+  @doc "True when the account's plan includes audit-log export — the CSV download AND the SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Free keeps the in-console trail; taking the data OUT is the paid surface."
+  def audit_export_available?(%Accounts.Account{} = account) do
+    posture = account.id |> peek_subscription_for_account() |> effective_plan()
+
+    entitled_feature(
+      posture,
+      "features_audit_export_enabled?",
       posture.plan_name in ["team", "enterprise"]
     )
   end

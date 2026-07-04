@@ -18,6 +18,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
 
   setup do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
+    # Export is Team+ — these tests exercise the feed itself.
+    Fixtures.Accounts.create_subscription(account, "team")
 
     {raw, _key} =
       Fixtures.ApiKeys.create_api_key(
@@ -27,6 +29,24 @@ defmodule EmisarWeb.AuditExportControllerTest do
       )
 
     %{account: account, subject: subject, raw_key: raw}
+  end
+
+  test "a free-plan key is refused with an upgrade pointer", %{} do
+    {free_user, free_account, _subject} = Fixtures.Subjects.owner_subject()
+
+    {raw, _key} =
+      Fixtures.ApiKeys.create_api_key(
+        account_id: free_account.id,
+        created_by_id: free_user.id,
+        scopes: ["audit:read"]
+      )
+
+    conn =
+      build_conn()
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> get(~p"/api/audit")
+
+    assert %{"error" => "plan_required", "required" => "team"} = json_response(conn, 403)
   end
 
   defp insert_event(account, event_type, attrs \\ []) do

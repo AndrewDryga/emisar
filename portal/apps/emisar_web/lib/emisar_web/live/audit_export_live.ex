@@ -6,31 +6,43 @@ defmodule EmisarWeb.AuditExportLive do
   the trail, and it sat stranded below hundreds of rows there.
   """
   use EmisarWeb, :live_view
-  alias Emisar.ApiKeys
+  alias Emisar.{ApiKeys, Billing}
   alias EmisarWeb.{Permissions, UrlHelpers}
 
   def mount(_params, _session, socket) do
-    if ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) do
-      if connected?(socket) do
-        # Live token list — minting/revoking (here or elsewhere) flows via
-        # api_key.* broadcasts.
-        ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
-      end
+    cond do
+      not Billing.audit_export_available?(socket.assigns.current_account) ->
+        # Export (this SIEM feed and the CSV download alike) is Team+ — the
+        # console trail stays on every plan; taking the data OUT is paid.
+        {:ok,
+         socket
+         |> put_flash(:error, "Audit export is available on the Team plan.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/billing")}
 
-      {:ok,
-       socket
-       |> assign(:page_title, "SIEM export")
-       |> assign(:export_secret, nil)
-       |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
-       |> assign_export_keys()}
-    else
-      # Viewers/operators have nothing to do here — the page is only mint +
-      # revoke. Send them back to the trail rather than rendering a dead shell.
-      {:ok,
-       socket
-       |> put_flash(:error, "Managing export tokens needs an admin role.")
-       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
+      not ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Managing export tokens needs an admin role.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
+
+      true ->
+        mount_export(socket)
     end
+  end
+
+  defp mount_export(socket) do
+    if connected?(socket) do
+      # Live token list — minting/revoking (here or elsewhere) flows via
+      # api_key.* broadcasts.
+      ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
+    end
+
+    {:ok,
+     socket
+     |> assign(:page_title, "SIEM export")
+     |> assign(:export_secret, nil)
+     |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
+     |> assign_export_keys()}
   end
 
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),

@@ -20,7 +20,7 @@ defmodule Emisar.Billing.Entitlements do
   """
 
   @limit_keys ~w[runners_limit members_limit audit_retention_days]
-  @feature_keys ~w[features_sso_enabled? features_scim_enabled?]
+  @feature_keys ~w[features_sso_enabled? features_scim_enabled? features_audit_export_enabled?]
 
   # Postgres timestamps cap around year 294276, so an absurd
   # audit_retention_days must not survive into retention arithmetic.
