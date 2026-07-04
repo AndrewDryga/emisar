@@ -72,6 +72,12 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 Structural rules that ride along:
 
+- **A canvas `:cards` list carries `divide-y` only — no top `border-t`.** The between-row
+  hairline is row-lattice grammar; a `border-t` at the top of a headerless list is an
+  orphaned rule that reads as a separator under a column header that isn't there (esp.
+  above a group header — "default · 1 runner total"). Only a real header row above the
+  body earns the top rule. `wrapper_class="divide-y divide-zinc-800/70"`, never
+  `… border-t border-zinc-800/70`; the audit list is the reference.
 - **Sibling islands.** Co-equal concerns are sibling `card`/`panel` islands — never
   card-in-card, never one mega-card, never fully flat. No two stacked competing headers:
   dedupe a title+subheading pair that says the same thing twice.

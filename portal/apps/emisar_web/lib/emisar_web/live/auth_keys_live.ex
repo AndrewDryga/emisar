@@ -360,7 +360,7 @@ defmodule EmisarWeb.AuthKeysLive do
           metadata={@metadata}
           filters={@filters}
           filter_params={@filter_params}
-          wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+          wrapper_class="divide-y divide-zinc-800/70"
         >
           <%!-- Canvas rows; the per-row icon disc died with the island. --%>
           <:item :let={key}>

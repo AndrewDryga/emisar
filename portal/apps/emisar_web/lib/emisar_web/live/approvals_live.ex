@@ -329,7 +329,7 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@pending}
             metadata={@pending_metadata}
             filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            wrapper_class="divide-y divide-zinc-800/70"
           >
             <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
                  pending dot, the expiry), the dashboard's approvals grammar. --%>
@@ -421,7 +421,7 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@grants}
             metadata={@grants_metadata}
             filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            wrapper_class="divide-y divide-zinc-800/70"
           >
             <%!-- Canvas rows; the per-row key icon died with the island — every
                  row wearing the same glyph decorated nothing. --%>
@@ -508,7 +508,7 @@ defmodule EmisarWeb.ApprovalsLive do
             rows={@decided}
             metadata={@decided_metadata}
             filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            wrapper_class="divide-y divide-zinc-800/70"
           >
             <:item :let={request}>
               <li>

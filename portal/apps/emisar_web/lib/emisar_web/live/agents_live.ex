@@ -717,7 +717,7 @@ defmodule EmisarWeb.AgentsLive do
       width={if @live_action == :connect, do: :form, else: :table}
     >
       <:title>
-        <%!-- The connect flow is a title-row CTA (the Runners "Add a runner" /
+        <%!-- The connect flow is a title-row CTA (the Runners "Connect a runner" /
              audit "Stream to SIEM" pattern) — except while the inline panel IS
              the page (onboarding / a secret reveal), where a second CTA to the
              same flow would just duplicate it. --%>
@@ -876,7 +876,7 @@ defmodule EmisarWeb.AgentsLive do
           metadata={@metadata}
           filter_params={@filter_params}
           filters={@filters}
-          wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+          wrapper_class="divide-y divide-zinc-800/70"
           group_by={&owner_label/1}
         >
           <%!-- Grouped by OWNER (the runners-group grammar): the page's real

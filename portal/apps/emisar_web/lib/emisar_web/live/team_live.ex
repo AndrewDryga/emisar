@@ -798,7 +798,7 @@ defmodule EmisarWeb.TeamLive do
           metadata={@metadata}
           filter_params={@filter_params}
           overflow={:visible}
-          wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+          wrapper_class="divide-y divide-zinc-800/70"
         >
           <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
                avatar stays — it's the ONE identity disc, not decoration. --%>
