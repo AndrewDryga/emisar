@@ -3956,7 +3956,7 @@ defmodule EmisarWeb.CoreComponents do
                 rel="noopener noreferrer"
                 class="text-brand-400 hover:text-brand-300"
               >
-                Verify the release's provenance + checksum →
+                Verify the release's provenance →
               </.link>
             </div>
           </section>
