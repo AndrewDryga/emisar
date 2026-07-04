@@ -13,10 +13,14 @@ defmodule EmisarWeb.AuditDownloadController do
   alias Emisar.{Audit, Billing}
   alias EmisarWeb.{LiveTable, TimeHelpers}
 
-  # 100 is the paginator's hard page cap; 500 pages bounds a runaway download
-  # at 50k rows — beyond that, the SIEM API is the right tool.
+  # 100 is the paginator's hard page cap. The row bound is checked UP FRONT
+  # with one count and over-bound downloads are REFUSED (never silently
+  # truncated — a forensic export that looks complete but isn't would be worse
+  # than an error); the page guard is just the belt to that check's suspenders.
   @page_limit 100
-  @max_pages 500
+
+  defp max_rows, do: Application.get_env(:emisar_web, :audit_download_max_rows, 100_000)
+  defp max_pages, do: div(max_rows(), @page_limit) + 1
 
   def download(conn, params) do
     subject = conn.assigns.current_subject
@@ -34,13 +38,38 @@ defmodule EmisarWeb.AuditDownloadController do
         |> redirect(to: ~p"/app/#{account}/settings/billing")
 
       true ->
-        stream_csv(conn, subject, account, params)
+        start_download(conn, subject, account, params)
     end
   end
 
-  defp stream_csv(conn, subject, account, params) do
+  # ONE up-front count decides honestly: within bounds → stream it all;
+  # over → refuse with the right tool named (the SIEM API is cursor-resumable
+  # NDJSON, built for full-history extracts), never a truncated file.
+  defp start_download(conn, subject, account, params) do
     opts = list_opts(params, subject)
 
+    case Audit.list_events(subject, Keyword.put(opts, :page, limit: 1)) do
+      {:ok, _probe, %{count: count}} when count > 0 ->
+        if count <= max_rows() do
+          stream_csv(conn, subject, account, opts, params)
+        else
+          conn
+          |> put_flash(
+            :error,
+            "This view has #{count} events — the CSV download caps at #{max_rows()}. " <>
+              "Narrow the filters, or pull the full trail through the SIEM export API."
+          )
+          |> redirect(to: ~p"/app/#{account}/audit?#{Map.drop(params, ["account_id_or_slug"])}")
+        end
+
+      _ ->
+        conn
+        |> put_flash(:error, "Nothing to export — this view has no events.")
+        |> redirect(to: ~p"/app/#{account}/audit?#{Map.drop(params, ["account_id_or_slug"])}")
+    end
+  end
+
+  defp stream_csv(conn, subject, account, opts, _params) do
     filename =
       "audit-#{account.slug}-#{Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")}.csv"
 
@@ -77,8 +106,18 @@ defmodule EmisarWeb.AuditDownloadController do
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
 
-  defp stream_pages(conn, subject, opts, cursor, pages, count) when pages < @max_pages do
-    page_opts = Keyword.put(opts, :page, page(cursor))
+  defp stream_pages(conn, subject, opts, cursor, pages, count) do
+    if pages >= max_pages() do
+      {conn, count}
+    else
+      stream_page(conn, subject, opts, cursor, pages, count)
+    end
+  end
+
+  defp stream_page(conn, subject, opts, cursor, pages, count) do
+    # count: false — a walk must not re-count the whole filtered set per page
+    # (the up-front probe already counted once).
+    page_opts = opts |> Keyword.put(:page, page(cursor)) |> Keyword.put(:count, false)
 
     case Audit.list_events(subject, page_opts) do
       {:ok, [], _meta} ->
@@ -96,8 +135,6 @@ defmodule EmisarWeb.AuditDownloadController do
         {conn, count}
     end
   end
-
-  defp stream_pages(conn, _subject, _opts, _cursor, _pages, count), do: {conn, count}
 
   defp page(nil), do: [limit: @page_limit]
   defp page(cursor), do: [limit: @page_limit, cursor: cursor]

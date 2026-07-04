@@ -334,12 +334,16 @@ defmodule Emisar.Repo do
     {filter, opts} = Keyword.pop(opts, :filter, [])
     {order_by, opts} = Keyword.pop(opts, :order_by, [])
     {paginator_opts, opts} = Keyword.pop(opts, :page, [])
+    # `count: false` skips the total-count aggregate (metadata.count = nil) —
+    # a cursor WALK (the audit CSV export) re-listing page after page must not
+    # re-count the whole filtered set on every page.
+    {count?, opts} = Keyword.pop(opts, :count, true)
 
     with {:ok, paginator_opts} <- Paginator.init(query_module, order_by, paginator_opts),
          {:ok, queryable} <- Filter.filter(queryable, query_module, filter),
          keyset_query = Paginator.query(queryable, paginator_opts),
          {:ok, rows} <- run_keyset_query(keyset_query, opts) do
-      count = __MODULE__.aggregate(queryable, :count, :id)
+      count = if count?, do: __MODULE__.aggregate(queryable, :count, :id)
       {results, metadata} = Paginator.metadata(rows, paginator_opts)
 
       {results, ecto_preloads} = Preloader.preload(results, preload, query_module)

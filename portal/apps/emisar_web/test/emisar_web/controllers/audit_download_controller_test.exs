@@ -59,6 +59,43 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
     end
 
+    test "a view over the row cap is REFUSED with guidance — never silently truncated", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      # Lower the cap for the test; tests in one module run serially, so the
+      # temporary env can't race the neighbours.
+      Application.put_env(:emisar_web, :audit_download_max_rows, 2)
+      on_exit(fn -> Application.delete_env(:emisar_web, :audit_download_max_rows) end)
+
+      for n <- 1..3 do
+        {:ok, _} =
+          Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "u#{n}")
+      end
+
+      conn = get(conn, ~p"/app/#{account}/audit/download")
+
+      assert redirected_to(conn) =~ ~p"/app/#{account}/audit"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "caps at 2"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "SIEM export API"
+      # No export was logged — nothing left the building.
+      assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
+    end
+
+    test "an empty view redirects with 'nothing to export' instead of a bare header file", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      conn = get(conn, ~p"/app/#{account}/audit/download?event_type=runbook.published")
+
+      assert redirected_to(conn) =~ ~p"/app/#{account}/audit"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Nothing to export"
+    end
+
     test "another account's slug 404s before any data is read", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
       other_account = Fixtures.Accounts.create_account(plan: "team")
