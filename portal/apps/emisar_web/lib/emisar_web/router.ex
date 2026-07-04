@@ -230,6 +230,8 @@ defmodule EmisarWeb.Router do
 
         live "/runners", RunnersLive, :index
         live "/runners/install", RunnerInstallLive, :new
+        # Before /runners/:id so "keys" isn't captured as a runner id.
+        live "/runners/keys", AuthKeysLive, :index
         live "/runners/:id", RunnerDetailLive, :show
 
         live "/runs", RunsLive, :index
@@ -254,8 +256,8 @@ defmodule EmisarWeb.Router do
         get "/audit/download", AuditDownloadController, :download
         live "/audit/:id", AuditDetailLive, :show
 
-        live "/settings/runners/auth-keys", AuthKeysLive, :index
         live "/settings/agents", AgentsLive, :index
+        live "/settings/agents/connect", AgentsLive, :connect
         live "/settings/team", TeamLive, :index
         live "/settings/team/invite", TeamLive, :new
         live "/settings/sso", SSOSettingsLive, :index

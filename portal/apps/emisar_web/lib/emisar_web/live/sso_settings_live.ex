@@ -922,7 +922,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
       flash={@flash}
-      section={:sso}
+      section={:team}
       width={:settings}
     >
       <:title>

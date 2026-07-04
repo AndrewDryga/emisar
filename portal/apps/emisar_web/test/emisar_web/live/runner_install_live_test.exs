@@ -63,7 +63,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/install")
 
       assert html =~ "couldn&#39;t mint a runner key"
-      assert html =~ "Settings &rarr; Runner keys" or html =~ "Settings → Runner keys"
+      assert html =~ "Runners &rarr; Runner keys" or html =~ "Runners → Runner keys"
       # No live command was rendered for the viewer.
       refute html =~ ~s(data-copy-text=" curl -sSL)
       # …and no key was minted on their behalf.

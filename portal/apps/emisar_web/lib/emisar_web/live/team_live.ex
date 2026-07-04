@@ -847,6 +847,16 @@ defmodule EmisarWeb.TeamLive do
                     <% true -> %>
                       <.chip>Not configured</.chip>
                   <% end %>
+                  <%!-- SSO's ONE console door — its nav item is gone (a
+                       rare-touch, admin-only surface lives behind its owning
+                       page, like runner keys behind Runners). --%>
+                  <.link
+                    :if={SSO.subject_can_configure_sso?(@current_subject)}
+                    navigate={~p"/app/#{@current_account}/settings/sso"}
+                    class="font-medium text-brand-400 hover:text-brand-300"
+                  >
+                    Manage providers →
+                  </.link>
                 </div>
               </div>
               <%= cond do %>

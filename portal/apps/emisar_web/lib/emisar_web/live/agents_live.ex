@@ -71,7 +71,6 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
      |> assign(:revoke_target, nil)
-     |> assign(:connect_open?, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
@@ -124,7 +123,6 @@ defmodule EmisarWeb.AgentsLive do
              socket
              |> assign(:selected_client, id)
              |> assign(:quick_secret, raw)
-             |> assign(:connect_open?, true)
              |> reload()}
 
           {:error, _} ->
@@ -182,9 +180,6 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
-
-  def handle_event("toggle_connect", _params, socket),
-    do: {:noreply, assign(socket, :connect_open?, not socket.assigns.connect_open?)}
 
   def handle_event("revoke", %{"id" => id}, socket) do
     Permissions.gated(
@@ -270,9 +265,8 @@ defmodule EmisarWeb.AgentsLive do
        socket
        |> assign(:selected_client, "custom")
        |> assign(:quick_secret, raw)
-       # The reveal renders inside the connect panel — force it open or a
-       # collapsed panel would hide the one-time secret.
-       |> assign(:connect_open?, true)
+       # The reveal renders inside the connect panel — quick_secret being set
+       # pins the inline panel open on the index (see assign_connect_inline).
        |> put_flash(
          :info,
          "Key rotated. Copy the new key below and update your agent — the old key keeps " <>
@@ -289,13 +283,14 @@ defmodule EmisarWeb.AgentsLive do
   # so the operator doesn't jump back to page 1 on revoke or every 5 s.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
-  # Only the FIRST load picks the resting state — later reloads (tick,
-  # broadcasts, mutations) must not fight the operator's toggle.
-  defp assign_new_connect_open(socket, keys) do
-    case socket.assigns[:connect_open?] do
-      nil -> assign(socket, :connect_open?, active_keys(keys) == [])
-      _ -> socket
-    end
+  # The connect panel embeds INLINE only while connecting IS the page's job:
+  # a fleet with no live agent keys (onboarding — the runners-wizard pattern),
+  # or a one-time secret on screen (a quick mint / rotation reveal must not
+  # vanish when the reload lands). Otherwise the flow lives on its own
+  # /connect page behind the title CTA.
+  defp assign_connect_inline(socket, keys) do
+    inline? = active_keys(keys) == [] or socket.assigns.quick_secret != nil
+    assign(socket, :show_connect_inline?, inline?)
   end
 
   # Fill the static Owner filter's options with the account's real key creators
@@ -335,11 +330,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:dormant_count, count_status(keys, :dormant))
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
-        # First load decides the connect panel's resting state: open for a
-        # fresh account (connecting IS the job), collapsed once agents exist
-        # (the returning operator's job is the list). Server-owned — the 5s
-        # status tick re-renders would strip a browser-only <details>.
-        |> assign_new_connect_open(keys)
+        |> assign_connect_inline(keys)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -356,6 +347,9 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:dormant_count, 0)
         |> assign(:never_used_count, 0)
         |> assign(:issued_count, 0)
+        # A failed read must NOT flip the page into onboarding — the account
+        # may well have agents; only a secret on screen keeps the panel.
+        |> assign(:show_connect_inline?, socket.assigns.quick_secret != nil)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -744,21 +738,65 @@ defmodule EmisarWeb.AgentsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:agents}
-      width={:table}
+      width={if @live_action == :connect, do: :form, else: :table}
     >
-      <:title>LLM agents</:title>
+      <:title>
+        <%!-- The connect flow is a title-row CTA (the Runners "Add a runner" /
+             audit "Stream to SIEM" pattern) — except while the inline panel IS
+             the page (onboarding / a secret reveal), where a second CTA to the
+             same flow would just duplicate it. --%>
+        <%= if @live_action == :connect do %>
+          <.back_link navigate={~p"/app/#{@current_account}/settings/agents"}>LLM agents</.back_link>
+          Connect an agent
+        <% else %>
+          LLM agents
+        <% end %>
+      </:title>
+      <:actions :if={
+        @live_action == :index and not @show_connect_inline? and
+          ApiKeys.subject_can_manage_api_keys?(@current_subject)
+      }>
+        <.button
+          navigate={~p"/app/#{@current_account}/settings/agents/connect"}
+          size={:md}
+          icon="hero-plus"
+        >
+          Connect an agent
+        </.button>
+      </:actions>
 
-      <.page_intro>
+      <.page_intro :if={@live_action == :index}>
         Connect an LLM agent over MCP to dispatch gated, audited actions — each agent's key is
         scoped to runners and capabilities, and revocable in one click.
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
+      <.page_intro :if={@live_action == :connect}>
+        Pick how your agent connects — we only mint a key once you choose, named after the
+        client, setup pre-filled. Keeps the audit trail and the agents list clean.
+        <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
+      </.page_intro>
+
+      <.connect_panel
+        :if={@live_action == :connect}
+        configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
+        selected_client={@selected_client}
+        quick_secret={@quick_secret}
+        form={@form}
+        action_scope_text={@action_scope_text}
+        runners={@runners}
+        selected_runner_ids={@selected_runner_ids}
+        selected_runner_groups={@selected_runner_groups}
+      />
+
       <%!-- NAKED posture line (the runners grammar): activity now leads, the
            quiet states render only when they exist, and the key total lives in
            the list's own pager — not repeated here. Thresholds ride the title
            tooltips. --%>
-      <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+      <div
+        :if={@live_action == :index}
+        class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
+      >
         <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
           <.status_dot tone={:brand} size={:sm} ping={@active_count > 0} />
           <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
@@ -785,42 +823,27 @@ defmodule EmisarWeb.AgentsLive do
         </span>
       </div>
 
-      <%!-- Connect-a-client guide. Open when connecting is the job (no
-           agents yet, or mid-flow); collapsed to this header once agents
-           exist, so the returning operator's list isn't below the fold. --%>
-      <div class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]">
-        <button
-          type="button"
-          phx-click="toggle_connect"
-          class="flex w-full items-center justify-between gap-4 px-6 py-4 text-left hover:bg-white/[0.04]"
-        >
-          <div>
-            <h2 class="font-display text-sm font-semibold tracking-[-0.01em] text-zinc-100">
-              Connect an agent
-            </h2>
-            <p class="mt-0.5 text-xs text-zinc-500">
-              Pick how your agent connects — we only mint a key once you choose, named after
-              the client, setup pre-filled. Keeps the audit trail and the agents list clean.
-            </p>
-          </div>
-          <.icon
-            name="hero-chevron-down"
-            class={"h-4 w-4 shrink-0 text-zinc-500 transition#{if @connect_open?, do: " rotate-180"}"}
+      <%!-- The empty state IS the connect flow (the runners install-wizard
+           pattern): no agents → the panel renders right here, no detour. It
+           also pins open while a one-time secret is on screen (quick mint /
+           rotation reveal), so the reload can't hide the only copy. --%>
+      <section :if={@live_action == :index and @show_connect_inline?} class="pb-6">
+        <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+          Connect an agent
+        </h2>
+        <div class="mt-3">
+          <.connect_panel
+            configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
+            selected_client={@selected_client}
+            quick_secret={@quick_secret}
+            form={@form}
+            action_scope_text={@action_scope_text}
+            runners={@runners}
+            selected_runner_ids={@selected_runner_ids}
+            selected_runner_groups={@selected_runner_groups}
           />
-        </button>
-
-        <.connect_panel
-          :if={@connect_open?}
-          configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
-          selected_client={@selected_client}
-          quick_secret={@quick_secret}
-          form={@form}
-          action_scope_text={@action_scope_text}
-          runners={@runners}
-          selected_runner_ids={@selected_runner_ids}
-          selected_runner_groups={@selected_runner_groups}
-        />
-      </div>
+        </div>
+      </section>
 
       <%!-- Connected agents list — single-column rows matching the
            AuthKeys / Grants visual language. --%>
@@ -828,7 +851,7 @@ defmodule EmisarWeb.AgentsLive do
            panel), matching the Pending / Members sections — not a bordered
            section wrapping it, which boxed the filter against a second
            border. --%>
-      <section class="mt-8">
+      <section :if={@live_action == :index} class="mt-8">
         <.section_header title="Connected agents" />
 
         <LiveTable.live_table

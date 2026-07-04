@@ -1757,22 +1757,6 @@ defmodule EmisarWeb.CoreComponents do
         Team
       </.nav_link>
       <.nav_link
-        :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}
-        to={~p"/app/#{@current_account}/settings/runners/auth-keys"}
-        active={@section == :auth_keys}
-        icon="hero-key"
-      >
-        Runner keys
-      </.nav_link>
-      <.nav_link
-        :if={Emisar.SSO.subject_can_configure_sso?(@current_subject)}
-        to={~p"/app/#{@current_account}/settings/sso"}
-        active={@section == :sso}
-        icon="hero-lock-closed"
-      >
-        Single sign-on
-      </.nav_link>
-      <.nav_link
         to={~p"/app/#{@current_account}/settings/billing"}
         active={@section == :billing}
         icon="hero-credit-card"
@@ -3850,7 +3834,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :install_command, :any, required: true
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
-  attr :on_failure_path, :string, default: "/app/settings/runners/auth-keys"
+  attr :on_failure_path, :string, default: "/app/runners/keys"
 
   def install_wizard(assigns) do
     ~H"""
@@ -3989,7 +3973,7 @@ defmodule EmisarWeb.CoreComponents do
           <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
             We couldn't mint a runner key just now. Open
             <.link navigate={@on_failure_path} class="font-semibold underline">
-              Settings → Runner keys
+              Runners → Runner keys
             </.link>
             and create one manually, or refresh this page to try again.
           </div>
@@ -4079,7 +4063,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
         Mint a runner key and run the installer on a host.
-        <:cta navigate={~p"/app/\#{@current_account}/settings/runners/auth-keys"}>New runner key</:cta>
+        <:cta navigate={~p"/app/\#{@current_account}/runners/keys"}>New runner key</:cta>
       </.empty_state>
 
       <.empty_state variant={:hint}>No overrides. The tier defaults decide.</.empty_state>

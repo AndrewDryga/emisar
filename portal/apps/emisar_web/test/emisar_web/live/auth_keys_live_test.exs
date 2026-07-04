@@ -19,7 +19,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _} = Runners.revoke_auth_key(revoked, subject)
 
     # Default Status=active → the revoked key is hidden.
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ "live-key-aaa"
     refute html =~ "dead-key-zzz"
 
@@ -28,7 +28,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # apply_filter KEEPS the explicit blank in the URL — that's what overrides
     # the "active" default on the next load instead of snapping back to it.
     lv |> form("#auth-keys-filter", %{"status" => ""}) |> render_change()
-    assert_patched(lv, ~p"/app/#{account}/settings/runners/auth-keys?status=")
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?status=")
 
     html = render(lv)
     assert html =~ "live-key-aaa"
@@ -40,7 +40,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   test "no auth keys → onboarding empty state", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     assert html =~ "No runner keys yet."
     assert html =~ "bearer secret a fresh runner uses to register"
@@ -55,7 +55,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _raw, _key} = Runners.create_auth_key(%{description: "still-here"}, subject)
 
     {:ok, _lv, html} =
-      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?page=garbage-cursor")
+      live(conn, ~p"/app/#{account}/runners/keys?page=garbage-cursor")
 
     assert html =~ "still-here"
   end
@@ -67,7 +67,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     # Ticking Reusable reveals the max_uses input (progressive disclosure).
     html =
@@ -101,7 +101,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     too_long = String.duplicate("x", 201)
 
@@ -118,7 +118,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   test "create shows the secret once; dismiss hides it; revoke retires the key", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     html =
       lv
@@ -158,7 +158,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # raw secret is never re-rendered after dismiss.
   test "a dismissed secret cannot be re-revealed", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     html =
       lv
@@ -184,7 +184,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "guarded-key"}, subject)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
     dialog = "revoke-key-#{key.id}"
 
     # Empty token → Confirm disabled; the dialog won't dispatch `revoke`.
@@ -217,7 +217,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              build_conn()
              |> log_in_user(viewer)
-             |> live(~p"/app/#{account}/settings/runners/auth-keys")
+             |> live(~p"/app/#{account}/runners/keys")
 
     assert flash["error"] == "Page not found."
   end
@@ -226,7 +226,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     refute html =~ "minted-elsewhere"
 
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "minted-elsewhere"}, subject)
@@ -243,13 +243,13 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # placeholder as a <span> (so "last used" is followed by the placeholder
     # span, with the {" "} space preserved), not a hook-driven <time>.
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "freshly-minted"}, subject)
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ ~r/last used\s<span[^>]*>never<\/span>/
 
     # Once stamped, it renders the time through the hook-driven <time>, and the
     # mid-sentence space survives the formatter's line-break (the {" "} guard).
     key |> Ecto.Changeset.change(last_used_at: DateTime.utc_now()) |> Emisar.Repo.update!()
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ ~s(phx-hook="LocalTime")
     assert html =~ ~s(data-format="relative")
     assert html =~ ~r/last used\s<time/
@@ -263,7 +263,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     assert html =~ "At runner limit"
     assert html =~ "3 of 3 runners in use"
@@ -275,7 +275,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     assert html =~ "One runner slot left"
     refute html =~ "At runner limit"
@@ -288,7 +288,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     lv
     |> form("#auth_key_form", %{
@@ -311,7 +311,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     html =
       lv
@@ -349,7 +349,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              build_conn()
              |> log_in_user(operator)
-             |> live(~p"/app/#{account}/settings/runners/auth-keys")
+             |> live(~p"/app/#{account}/runners/keys")
 
     assert flash["error"] == "Page not found."
   end
@@ -371,7 +371,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _raw, key_b} =
       Runners.create_auth_key(%{description: "bravo-key"}, subject_b)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account_a}/settings/runners/auth-keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account_a}/runners/keys")
 
     # A's admin sees A's key and never B's.
     assert html =~ "alpha-key"
@@ -399,7 +399,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
     # View it via the Status=revoked filter (default hides revoked).
     {:ok, lv, html} =
-      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?status=revoked")
+      live(conn, ~p"/app/#{account}/runners/keys?status=revoked")
 
     assert html =~ "spent-key"
     assert html =~ "Revoked"
@@ -415,7 +415,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   test "revoking an absent key id is a quiet no-op", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     # No such key in the loaded list → the find misses → no-op, page intact.
     html = render_click(lv, "revoke", %{"id" => Ecto.UUID.generate()})
@@ -440,7 +440,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _} = Runners.revoke_auth_key(key, subject)
 
     {:ok, lv, _html} =
-      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?status=revoked")
+      live(conn, ~p"/app/#{account}/runners/keys?status=revoked")
 
     revoked_at = Emisar.Repo.reload!(key).revoked_at
     render_click(lv, "revoke", %{"id" => key.id})

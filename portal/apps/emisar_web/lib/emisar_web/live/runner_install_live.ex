@@ -103,7 +103,7 @@ defmodule EmisarWeb.RunnerInstallLive do
         install_command={@install_command}
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
-        on_failure_path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
+        on_failure_path={~p"/app/#{@current_account}/runners/keys"}
       />
 
       <%!-- Follow-up resources, not part of the guided step — siblings

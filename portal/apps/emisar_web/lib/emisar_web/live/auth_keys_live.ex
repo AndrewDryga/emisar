@@ -92,7 +92,7 @@ defmodule EmisarWeb.AuthKeysLive do
     {:noreply,
      LiveTable.apply_filter(
        socket,
-       ~p"/app/#{socket.assigns.current_account}/settings/runners/auth-keys",
+       ~p"/app/#{socket.assigns.current_account}/runners/keys",
        params,
        Runners.AuthKey.Query.filters()
      )}
@@ -225,10 +225,12 @@ defmodule EmisarWeb.AuthKeysLive do
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
       flash={@flash}
-      section={:auth_keys}
+      section={:runners}
       width={:table}
     >
-      <:title>Runner keys</:title>
+      <:title>
+        <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link> Runner keys
+      </:title>
       <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
         <.button phx-click={show_create()} size={:md} icon="hero-plus">
           New key
@@ -353,7 +355,7 @@ defmodule EmisarWeb.AuthKeysLive do
         <LiveTable.live_table
           layout={:cards}
           id="auth-keys"
-          path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
+          path={~p"/app/#{@current_account}/runners/keys"}
           rows={@auth_keys}
           metadata={@metadata}
           filters={@filters}

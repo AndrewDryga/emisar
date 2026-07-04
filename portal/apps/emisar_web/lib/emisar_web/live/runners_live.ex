@@ -159,6 +159,17 @@ defmodule EmisarWeb.RunnersLive do
       <%!-- The wizard IS the add flow, so the button (→ the same wizard) is
            redundant while an empty fleet shows it inline. --%>
       <:actions :if={not @show_wizard?}>
+        <%!-- Runner keys are the fleet's OWN sub-feature (the audit "Stream to
+             SIEM" pattern) — a quiet secondary door on the owning page, not a
+             nav item of their own. --%>
+        <.button
+          :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
+          navigate={~p"/app/#{@current_account}/runners/keys"}
+          variant={:secondary}
+          size={:md}
+        >
+          Runner keys
+        </.button>
         <.button navigate={~p"/app/#{@current_account}/runners/install"} size={:md} icon="hero-plus">
           Add a runner
         </.button>
@@ -187,7 +198,7 @@ defmodule EmisarWeb.RunnersLive do
             install_command={@install_command}
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
-            on_failure_path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
+            on_failure_path={~p"/app/#{@current_account}/runners/keys"}
           />
 
           <%!-- Follow-up resources, siblings below the wizard — same as the

@@ -36,9 +36,31 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
+      # Empty account: the connect flow IS the page (inline, no detour) —
+      # and no title CTA duplicating it.
       assert html =~ "Connect an agent"
-      assert html =~ "we only mint a key once you choose"
+      refute html =~ ~p"/app/#{account}/settings/agents/connect"
       assert Repo.all(ApiKey) == []
+    end
+
+    test "the dedicated /connect page carries the flow; the index gets the title CTA once agents exist",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents/connect")
+      assert html =~ "we only mint a key once you choose"
+      assert html =~ "Connect an agent"
+
+      # With a live key the index collapses to the list + a title-row CTA
+      # into the flow (the Runners "Add a runner" pattern).
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, _key} =
+        ApiKeys.create_key(%{name: "Bot", scopes: ["actions:read"], runner_filter: []}, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+      assert html =~ ~p"/app/#{account}/settings/agents/connect"
+      refute html =~ "we only mint a key once you choose"
     end
 
     test "the list has status/name filters + the custom panel states the capability",
