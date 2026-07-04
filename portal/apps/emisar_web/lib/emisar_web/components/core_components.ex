@@ -2556,49 +2556,6 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  The ONE bordered navigation card — icon + title + one-line description,
-  whole card clickable. `href` means an external destination (new tab +
-  outward arrow); `navigate` stays in-app (right arrow).
-
-      <.link_card navigate={~p"/packs"} icon="hero-cube-transparent" title="Pack registry">
-        Browse linux-core, cassandra, showcase.
-      </.link_card>
-  """
-  attr :title, :string, required: true
-  attr :icon, :string, required: true
-  attr :navigate, :string, default: nil
-  attr :href, :string, default: nil
-  slot :inner_block, required: true
-
-  def link_card(%{href: href} = assigns) when is_binary(href) do
-    ~H"""
-    <.link href={@href} target="_blank" rel="noopener noreferrer" class={link_card_class()}>
-      <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-        <.icon name={@icon} class="h-4 w-4 text-brand-400" /> {@title}
-        <.icon name="hero-arrow-top-right-on-square" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
-      </div>
-      <p class="mt-1 text-xs text-zinc-500">{render_slot(@inner_block)}</p>
-    </.link>
-    """
-  end
-
-  def link_card(assigns) do
-    ~H"""
-    <.link navigate={@navigate} class={link_card_class()}>
-      <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-        <.icon name={@icon} class="h-4 w-4 text-brand-400" /> {@title}
-        <.cta_arrow class="ml-auto h-3.5 w-3.5 text-zinc-600" />
-      </div>
-      <p class="mt-1 text-xs text-zinc-500">{render_slot(@inner_block)}</p>
-    </.link>
-    """
-  end
-
-  defp link_card_class do
-    "group rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-4 transition hover:bg-zinc-900/80"
-  end
-
-  @doc """
   The trailing "→" of a forward CTA (link or button), sliding right when its
   enclosing `group` is hovered — ONE animated-arrow shape so every
   call-to-action reads the same. **The parent link/button MUST carry
@@ -3830,9 +3787,12 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <%!-- CONTENT ON CANVAS — no outer grey box. The only contained surfaces
-         are the ones a box MEANS something for: the command artifact and the
-         live-credential warning. --%>
+    <%!-- CONTENT ON CANVAS — no outer grey box, and one section per job in the
+         operator's journey: the task (command + credential note), the trust
+         read (what the script does), the live wait line, then resources as
+         quiet hairline rows. The only contained surfaces are the ones a box
+         MEANS something for: the command artifact and the live-credential
+         warning (the calmed secret grammar — neutral surface, amber ring). --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
@@ -3840,8 +3800,8 @@ defmodule EmisarWeb.CoreComponents do
 
       <%= cond do %>
         <% is_binary(@install_command) -> %>
-          <div class="mt-6 space-y-6">
-            <div>
+          <div class="mt-8 space-y-10">
+            <section>
               <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                 Run this on the host
               </div>
@@ -3860,83 +3820,83 @@ defmodule EmisarWeb.CoreComponents do
                   Copy
                 </.copy_button>
               </div>
+              <%!-- Right where the odd first character raises the question. --%>
+              <p class="mt-2 text-xs text-zinc-600">
+                The leading space keeps the key out of your shell history.
+              </p>
               <%!-- The one-liner embeds a single-use enrollment key shown
                      only here — a root-capable credential. The marketing
                      quickstart tells the trust story, but the operator has left
                      that page; carry it onto the page they actually install
                      from so they don't paste it into a chat/ticket or run an
                      unknown root script blind. --%>
-              <div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-200/90">
-                <div class="flex items-center gap-2 font-semibold text-amber-200">
-                  <.icon name="hero-key" class="h-4 w-4" /> Live credential — won't be shown again
+              <div class="mt-4 rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40">
+                <div class="flex items-center gap-2 text-sm font-semibold text-amber-100">
+                  <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
+                  Live credential — won't be shown again
                 </div>
-                <p class="mt-1.5">
-                  The command runs with <code class="font-mono">sudo</code>
-                  and carries a <span class="font-semibold">one-time</span>
-                  key: it enrolls
-                  exactly one host, then expires. Treat it like a password — paste it straight
-                  onto the host, never into a chat or ticket.
-                </p>
-                <p :if={@show_keys_link} class="mt-1.5">
-                  Baking an image, or enrolling a whole fleet with cloud-init? Mint a
-                  <span class="font-semibold">multi-use</span>
-                  key under
-                  <.link
-                    navigate={@keys_path}
-                    class="font-semibold text-brand-400 hover:text-brand-300"
-                  >
-                    Runner keys →
-                  </.link>
+                <p class="mt-1.5 text-xs leading-5 text-zinc-400">
+                  The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                  and carries a <span class="font-medium text-zinc-200">one-time</span>
+                  key: it enrolls exactly one host, then expires. Treat it like a password —
+                  paste it straight onto the host, never into a chat or ticket.
                 </p>
               </div>
-              <div class="mt-2 text-xs leading-5 text-zinc-500">
-                <p>
-                  The leading space keeps the key out of your shell history. It's a plain shell
-                  script —
-                  <.link
-                    href="/install.sh"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="font-semibold text-brand-400 hover:text-brand-300"
-                  >
-                    read it first →
-                  </.link>
-                </p>
-                <ul class="mt-2 space-y-1">
-                  <%!-- mt-[3px]: optically centers the 14px check on the 20px
-                       first text line (mt-0.5 sat visibly high). --%>
-                  <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                    <span>Verifies the download's SHA-256 before running anything</span>
-                  </li>
-                  <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                    <span>
-                      Runs the runner as a dedicated
-                      <code class="font-mono text-zinc-400">emisar</code>
-                      user (not root) under a systemd unit
-                    </span>
-                  </li>
-                  <li class="flex items-start gap-2">
-                    <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                    <span>Only dials out — nothing listens on the host</span>
-                  </li>
-                </ul>
-                <p class="mt-2">
-                  Prefer to verify before you run?
-                  <.link
-                    href={~p"/trust" <> "#release-integrity"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="font-semibold text-brand-400 hover:text-brand-300"
-                  >
-                    Check the release's provenance + checksum →
-                  </.link>
-                </p>
-              </div>
-            </div>
+              <%!-- The alternate path is routing, not warning — it lives
+                     outside the credential note, right after the one-time
+                     story it forks from. --%>
+              <p :if={@show_keys_link} class="mt-3 text-xs text-zinc-500">
+                Baking an image, or enrolling a whole fleet with cloud-init? Mint a
+                <span class="font-medium text-zinc-400">multi-use</span>
+                key under
+                <.link navigate={@keys_path} class="font-semibold text-brand-400 hover:text-brand-300">
+                  Runner keys →
+                </.link>
+              </p>
+            </section>
 
-            <div class="border-t border-zinc-800/70 pt-4">
+            <section>
+              <.section_header title="What the script does" />
+              <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
+                <%!-- mt-[3px]: optically centers the 14px check on the first
+                     text line (mt-0.5 sat visibly high). --%>
+                <li class="flex items-start gap-2.5">
+                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                  <span>Verifies the download's SHA-256 before running anything</span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                  <span>
+                    Runs the runner as a dedicated <code class="font-mono text-zinc-300">emisar</code>
+                    user (not root) under a systemd unit
+                  </span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
+                  <span>Only dials out — nothing listens on the host</span>
+                </li>
+              </ul>
+              <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1.5 text-xs font-medium">
+                <.link
+                  href="/install.sh"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-brand-400 hover:text-brand-300"
+                >
+                  It's a plain shell script — read it first →
+                </.link>
+                <.link
+                  href={~p"/trust" <> "#release-integrity"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-brand-400 hover:text-brand-300"
+                >
+                  Verify the release's provenance + checksum →
+                </.link>
+              </div>
+            </section>
+
+            <section class="border-t border-zinc-800/70 pt-6">
               <div class="flex items-center gap-3">
                 <%!-- Amber: this is a PENDING state — brand-green would read
                      "connected" before anything has connected. Naked on the
@@ -3955,7 +3915,7 @@ defmodule EmisarWeb.CoreComponents do
                      Surface the same checks the quickstart doc carries. --%>
               <div
                 :if={@show_troubleshooting}
-                class="mt-3 border-t border-zinc-800/70 pt-3 text-xs leading-5 text-zinc-400"
+                class="mt-4 text-xs leading-5 text-zinc-400"
               >
                 <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
                 <.steps class="mt-1.5">
@@ -3972,7 +3932,7 @@ defmodule EmisarWeb.CoreComponents do
                   </:step>
                 </.steps>
               </div>
-            </div>
+            </section>
           </div>
         <% @install_command == :mint_failed -> %>
           <div class="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
@@ -3988,6 +3948,51 @@ defmodule EmisarWeb.CoreComponents do
             Generating your install command…
           </div>
       <% end %>
+
+      <%!-- Other ways in — quiet rows on the canvas, never island cards
+           competing with the task above. Rendered for every wizard state
+           (a failed mint still deserves the manual-install door). --%>
+      <section class="mt-10">
+        <.section_header title="Resources" />
+        <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+          <li>
+            <.link
+              href="/docs/quickstart"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-zinc-100">Installation guide</div>
+                <div class="mt-0.5 text-xs text-zinc-500">
+                  Image-bake, cloud-init, manual install.
+                </div>
+              </div>
+              <.icon
+                name="hero-arrow-top-right-on-square"
+                class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+              />
+            </.link>
+          </li>
+          <li>
+            <.link
+              navigate="/packs"
+              class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-zinc-100">Pack registry</div>
+                <div class="mt-0.5 text-xs text-zinc-500">
+                  Browse linux-core, cassandra, showcase. Install snippets included.
+                </div>
+              </div>
+              <.icon
+                name="hero-arrow-right"
+                class="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+              />
+            </.link>
+          </li>
+        </ul>
+      </section>
     </div>
     """
   end

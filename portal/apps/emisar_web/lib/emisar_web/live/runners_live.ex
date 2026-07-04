@@ -214,17 +214,6 @@ defmodule EmisarWeb.RunnersLive do
             keys_path={~p"/app/#{@current_account}/runners/keys"}
             show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
           />
-
-          <%!-- Follow-up resources, siblings below the wizard — same as the
-               dedicated install page. --%>
-          <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
-              Image-bake, cloud-init, manual install.
-            </.link_card>
-            <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
-              Browse linux-core, cassandra, showcase. Install snippets included.
-            </.link_card>
-          </div>
         <% @runners == [] && @metadata.count == 0 -> %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>

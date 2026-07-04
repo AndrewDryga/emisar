@@ -119,17 +119,6 @@ defmodule EmisarWeb.RunnerInstallLive do
         keys_path={~p"/app/#{@current_account}/runners/keys"}
         show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
       />
-
-      <%!-- Follow-up resources, not part of the guided step — siblings
-           below the wizard, outside its surface. --%>
-      <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <.link_card href="/docs/quickstart" icon="hero-book-open" title="Installation guide">
-          Image-bake, cloud-init, manual install.
-        </.link_card>
-        <.link_card navigate="/packs" icon="hero-cube-transparent" title="Pack registry">
-          Browse linux-core, cassandra, showcase. Install snippets included.
-        </.link_card>
-      </div>
     </.dashboard_shell>
     """
   end

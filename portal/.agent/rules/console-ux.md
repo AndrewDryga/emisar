@@ -217,7 +217,7 @@ one of them is wrong.
   `EmisarWeb.RunnerScope`); the census + extraction backlog live in
   `.agent/design/console-inventory.md` §3–4. Phase 0 extractions (callout, panel-header
   unification, `code_panel`, `status_dot`, `disclosure`, `choice_cards`, `avatar`,
-  `steps`, `meta_line`, `link_card`, recovery-codes, `mfa_enrollment`, …) land as focused
+  `steps`, `meta_line`, recovery-codes, `mfa_enrollment`, …) land as focused
   commits, each migrating all call sites.
 - **The design gate:** a console-touching task is done only after a desktop + mobile
   screenshot of the changed surface is reviewed against this doctrine and the design
