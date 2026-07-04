@@ -446,7 +446,7 @@ defmodule EmisarWeb.LiveTable do
       <div
         data-combobox-panel
         hidden
-        class="absolute z-20 mt-1 w-full min-w-[18rem] overflow-hidden rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
+        class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
       >
         <input
           type="text"
@@ -467,31 +467,44 @@ defmodule EmisarWeb.LiveTable do
               All
             </button>
           </li>
-          <%= for {group_label, [{group_value, group_option_label} | options]} <- @groups do %>
+          <%= for {group_label, [group_option | options]} <- @groups do %>
             <li>
               <button
                 type="button"
                 data-combobox-option
-                data-value={group_value}
-                data-search={String.downcase("#{group_label} #{group_option_label}")}
+                data-value={option_value(group_option)}
+                data-search={String.downcase("#{group_label} #{option_label(group_option)}")}
+                data-description={option_description(group_option)}
                 class={[combobox_option_class(), "font-medium text-zinc-200"]}
               >
-                {group_option_label}
+                {option_label(group_option)}
               </button>
             </li>
-            <li :for={{value, label} <- options}>
+            <li :for={option <- options}>
               <button
                 type="button"
                 data-combobox-option
-                data-value={value}
-                data-search={String.downcase("#{group_label} #{label} #{value}")}
+                data-value={option_value(option)}
+                data-search={
+                  String.downcase("#{group_label} #{option_label(option)} #{option_value(option)}")
+                }
+                data-description={option_description(option)}
                 class={[combobox_option_class(), "pl-6 text-zinc-300"]}
               >
-                {label}
+                {option_label(option)}
               </button>
             </li>
           <% end %>
         </ul>
+        <%!-- Hover pane: the hook mirrors the hovered option's data-description
+             here — a fixed footer instead of per-option tooltips, which would
+             clip inside the scrolling list. --%>
+        <div
+          data-combobox-description
+          hidden
+          class="border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-[11px] leading-relaxed text-zinc-400"
+        >
+        </div>
       </div>
     </div>
     """
@@ -608,19 +621,28 @@ defmodule EmisarWeb.LiveTable do
     "block w-full truncate px-3 py-1.5 text-left transition hover:bg-white/[0.06] data-[hidden]:hidden"
   end
 
-  # The trigger's face: the selected value's label (searching group headers and
-  # their children), or "All" when nothing is picked.
+  # The trigger's face: a picked event reads "Group · Label" (a bare child
+  # label like "Created" says nothing about WHAT was created); a group
+  # sentinel's label is already self-describing. "All" when nothing is picked.
   defp combobox_selected_label(_groups, nil), do: "All"
 
   defp combobox_selected_label(groups, selected) do
-    groups
-    |> Enum.flat_map(fn {_group, options} -> options end)
-    |> List.keyfind(selected, 0)
-    |> case do
-      {_value, label} -> label
-      nil -> selected
-    end
+    Enum.find_value(groups, selected, fn {group_label, options} ->
+      case List.keyfind(options, selected, 0) do
+        nil -> nil
+        option -> face_label(group_label, selected, option_label(option))
+      end
+    end)
   end
+
+  defp face_label(_group, "group:" <> _, label), do: label
+  defp face_label(group, _value, label), do: "#{group} · #{label}"
+
+  # Filter option tuples are {value, label} or {value, label, description}.
+  defp option_value(option), do: elem(option, 0)
+  defp option_label(option), do: elem(option, 1)
+  defp option_description({_v, _l, description}), do: description
+  defp option_description(_option), do: nil
 
   # Filter.values may be either a flat list of `{value, label}` OR a
   # list of `{group_label, [{value, label}, …]}` for grouped renders
@@ -733,8 +755,8 @@ defmodule EmisarWeb.LiveTable do
     |> List.wrap()
     |> Enum.map_join(", ", fn v ->
       case List.keyfind(labels, v, 0) do
-        {_value, label} -> label
         nil -> v
+        option -> option_label(option)
       end
     end)
     |> then(&"#{f.title}: #{&1}")

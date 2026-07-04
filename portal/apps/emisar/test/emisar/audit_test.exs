@@ -632,8 +632,38 @@ defmodule Emisar.AuditTest do
     test "each event-type group leads with its selectable '<Group> — all events' header" do
       options = Audit.Event.Query.event_type_filter_options()
 
-      assert {"Runner", [{"group:Runner", "Runner — all events"} | _]} =
+      assert {"Runner", [{"group:Runner", "Runner — all events", group_description} | rest]} =
                Enum.find(options, fn {label, _} -> label == "Runner" end)
+
+      assert group_description == "Every Runner event."
+      # Every option carries its hover description.
+      assert Enum.all?(rest, fn {_value, _label, description} -> is_binary(description) end)
+    end
+
+    test "conditional filters only apply to types that carry them" do
+      filters = Audit.Event.Query.filters()
+      names = fn applicable -> Enum.map(applicable, & &1.name) end
+
+      # account.created happens at sign-up, pre-session — neither request_id
+      # nor auth_method is ever stamped on it.
+      applicable = Audit.Event.Query.applicable_filters(filters, "account.created")
+      refute :request_id in names.(applicable)
+      refute :auth_method in names.(applicable)
+
+      # A run terminal carries the dispatching request but no sign-in method
+      # (API keys don't sign in).
+      applicable = Audit.Event.Query.applicable_filters(filters, "action_run.success")
+      assert :request_id in names.(applicable)
+      refute :auth_method in names.(applicable)
+
+      # An admin action carries both.
+      applicable = Audit.Event.Query.applicable_filters(filters, "membership.role_changed")
+      assert :request_id in names.(applicable)
+      assert :auth_method in names.(applicable)
+
+      # A group sentinel applies a filter when ANY of its types supports it.
+      applicable = Audit.Event.Query.applicable_filters(filters, "group:Account")
+      assert :auth_method in names.(applicable)
     end
 
     test "actor_id narrows the list to one identity", %{account: account, subject: subject} do

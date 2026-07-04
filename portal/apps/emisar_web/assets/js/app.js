@@ -43,6 +43,14 @@ const Combobox = {
     this.search = this.el.querySelector("[data-combobox-search]")
     this.hidden = this.el.querySelector("[data-combobox-value]")
     this.options = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
+    this.descriptionPane = this.el.querySelector("[data-combobox-description]")
+
+    // The hovered option's description mirrors into the footer pane — a fixed
+    // strip instead of per-option tooltips (which would clip in the scroll).
+    this.options.forEach((o) => {
+      o.addEventListener("mouseenter", () => this.describe(o.dataset.description))
+      o.addEventListener("mouseleave", () => this.describe(null))
+    })
 
     this.trigger.addEventListener("click", () => this.toggle())
     this.search.addEventListener("input", () => this.filter())
@@ -70,7 +78,16 @@ const Combobox = {
     this.search.focus()
   },
 
-  close() { this.panel.hidden = true },
+  close() {
+    this.panel.hidden = true
+    this.describe(null)
+  },
+
+  describe(text) {
+    if (!this.descriptionPane) return
+    this.descriptionPane.textContent = text || ""
+    this.descriptionPane.hidden = !text
+  },
 
   filter() {
     const q = this.search.value.trim().toLowerCase()
