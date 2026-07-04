@@ -217,6 +217,7 @@ defmodule EmisarWeb.Router do
     scope "/:account_id_or_slug" do
       live_session :authenticated,
         on_mount: [
+          {EmisarWeb.UserAuth, :reload_stale_assets},
           {EmisarWeb.UserAuth, :ensure_authenticated},
           {EmisarWeb.UserAuth, :ensure_account_slug},
           {EmisarWeb.UserAuth, :ensure_sso_compliant},

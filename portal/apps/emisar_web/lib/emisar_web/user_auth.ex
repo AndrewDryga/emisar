@@ -300,6 +300,29 @@ defmodule EmisarWeb.UserAuth do
   # Attached to every LiveView via `EmisarWeb.live_view/0`, so the dead
   # render carries `@app_js?` up to `root.html.heex`; controller-rendered
   # marketing pages never set it and get the lean `marketing.js` instead.
+  # A LIVE-navigated tab keeps executing the JS bundle it loaded until a FULL
+  # page load — after a deploy, markup (fresh, over the socket) skews against
+  # hooks (stale), which has shipped "the feature doesn't work" reports twice
+  # (the time tooltip, the combobox corner fusion). When the connect params'
+  # tracked statics no longer match the digest manifest, break out of live
+  # navigation by redirecting to the SAME url — a full load with the new
+  # bundle. No-op in dev/test (no digest manifest → static_changed? is false).
+  def on_mount(:reload_stale_assets, _params, _session, socket) do
+    if Phoenix.LiveView.static_changed?(socket) do
+      {:cont,
+       Phoenix.LiveView.attach_hook(
+         socket,
+         :stale_asset_reload,
+         :handle_params,
+         fn _params, uri, socket ->
+           {:halt, Phoenix.LiveView.redirect(socket, external: uri)}
+         end
+       )}
+    else
+      {:cont, socket}
+    end
+  end
+
   def on_mount(:assign_app_bundle, _params, _session, socket) do
     {:cont, Phoenix.Component.assign(socket, :app_js?, true)}
   end
