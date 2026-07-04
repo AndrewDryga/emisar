@@ -2653,14 +2653,16 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp steps_list_class(:guide), do: "space-y-2.5 text-xs leading-relaxed text-zinc-400"
+  defp steps_list_class(:guide), do: "space-y-3 text-sm leading-relaxed text-zinc-400"
   defp steps_list_class(:plan), do: "divide-y divide-zinc-900"
 
   defp steps_row_class(:guide), do: "flex items-start gap-2.5"
   defp steps_row_class(:plan), do: "flex items-start gap-3 px-5 py-3"
 
   defp steps_circle_class(:guide) do
-    "grid h-5 w-5 shrink-0 place-items-center rounded-full bg-zinc-800 text-[10px] font-semibold text-zinc-300"
+    # mt-px: optically centers the 20px circle on the first text line
+    # (text-sm leading-relaxed ≈ 22.75px line box).
+    "mt-px grid h-5 w-5 shrink-0 place-items-center rounded-full bg-zinc-800 text-[11px] font-semibold text-zinc-300"
   end
 
   defp steps_circle_class(:plan) do
@@ -3834,18 +3836,20 @@ defmodule EmisarWeb.CoreComponents do
                          quickstart tells the trust story, but the operator has
                          left that page; carry it onto the page they actually
                          install from so they don't paste it into a chat/ticket
-                         or run an unknown root script blind. --%>
-                  <div class="mt-5 rounded-xl bg-zinc-900/60 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40">
-                    <div class="flex items-center gap-2 text-sm font-semibold text-amber-100">
-                      <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
-                      Live credential — won't be shown again
-                    </div>
-                    <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+                         or run an unknown root script blind. The shared
+                         credential grammar, no inner secret — the command
+                         inset above holds it. --%>
+                  <div class="mt-5">
+                    <.secret_reveal
+                      id="install-credential-note"
+                      variant={:card}
+                      title="Live credential — won't be shown again"
+                    >
                       The command runs with <code class="font-mono text-zinc-300">sudo</code>
                       and carries a <span class="font-medium text-zinc-200">one-time</span>
                       key: it enrolls exactly one host, then expires. Treat it like a password —
                       paste it straight onto the host, never into a chat or ticket.
-                    </p>
+                    </.secret_reveal>
                   </div>
                   <%!-- The alternate path is routing, not warning — it lives
                          outside the credential note, right after the one-time
@@ -3882,11 +3886,11 @@ defmodule EmisarWeb.CoreComponents do
                          non-systemd host — none of which the pulse alone
                          reveals. Surface the same checks the quickstart doc
                          carries. --%>
-                  <div :if={@show_troubleshooting} class="mt-4 text-xs leading-5 text-zinc-400">
+                  <div :if={@show_troubleshooting} class="mt-6">
                     <div class="text-sm font-semibold text-zinc-300">
                       Not seeing it yet? Check the host:
                     </div>
-                    <.steps class="mt-2">
+                    <.steps class="mt-3">
                       <:step>
                         It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
                         over outbound HTTPS (nothing needs to listen on it).
@@ -4402,7 +4406,7 @@ defmodule EmisarWeb.CoreComponents do
             <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
             <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
           </div>
-          <p class="mt-1 text-xs text-zinc-400">{render_slot(@inner_block)}</p>
+          <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
 
           <%!-- Same copy pattern as the dashboard install reveal:
                grab text from the visible `<pre>` instead of
