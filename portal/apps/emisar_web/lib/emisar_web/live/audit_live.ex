@@ -193,6 +193,10 @@ defmodule EmisarWeb.AuditLive do
       |> assign(:filters, filters)
       |> assign(:filter_params, params)
       |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
+      |> assign(
+        :active_facet_summary,
+        params |> LiveTable.active_filter_labels(filters) |> Enum.join(" · ")
+      )
       |> assign(:actor_id, actor_id)
       |> assign(:subject_id, subject_id)
 
@@ -299,27 +303,36 @@ defmodule EmisarWeb.AuditLive do
         </button>
       </div>
 
-      <%!-- The facet panel toggle sits on its OWN row, directly above where
-           the panel opens — the control touches what it reveals. The
-           active-facet count rides the label ("Filters · 2") so a CLOSED
-           panel still says filters are narrowing the list; brand tint = the
-           active-filter convention. --%>
-      <div class="mb-4 text-xs">
-        <button
-          type="button"
-          phx-click="toggle_filters"
-          aria-expanded={to_string(@filters_open?)}
-          class={[
-            "inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium ring-1 transition",
-            if(@active_facet_count > 0 or @filters_open?,
-              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-            )
-          ]}
-        >
-          Filters<span :if={@active_facet_count > 0} class="tabular-nums">· {@active_facet_count}</span>
-        </button>
-      </div>
+      <%!-- The facet drawer opens from a DISCLOSURE line, not a floating chip —
+           the same fold grammar as the approval detail's raw-args row, so it
+           reads as part of the document. Server-owned open state (a native
+           <details> would snap shut on every live re-render); the chevron
+           rotates, and a CLOSED line NARRATES its active facets as prose
+           ("Filters — Type: Runner — all events") so nothing is ever silently
+           narrowing the trail. --%>
+      <button
+        type="button"
+        phx-click="toggle_filters"
+        aria-expanded={to_string(@filters_open?)}
+        class="group -mx-2 mb-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-white/[0.04]"
+      >
+        <.icon
+          name="hero-chevron-right"
+          class={"h-3.5 w-3.5 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-600 group-hover:text-zinc-400"}"}
+        />
+        <span class={[
+          "font-medium",
+          if(@active_facet_count > 0 or @filters_open?,
+            do: "text-brand-300",
+            else: "text-zinc-400 group-hover:text-zinc-200"
+          )
+        ]}>
+          Filters
+        </span>
+        <span :if={@active_facet_count > 0 and not @filters_open?} class="truncate text-zinc-500">
+          — {@active_facet_summary}
+        </span>
+      </button>
 
       <%!-- The trail itself: one line per event, DAY-grouped, directly on the
            canvas — no table chrome. Each row is dot (outcome) + the event's

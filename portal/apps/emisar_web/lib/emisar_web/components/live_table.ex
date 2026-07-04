@@ -703,6 +703,45 @@ defmodule EmisarWeb.LiveTable do
     end)
   end
 
+  @doc """
+  The active (non-default) filters as human "Title: Label" strings — a
+  `:collapsible` page's CLOSED toggle narrates what's narrowing the list
+  ("Type: Runner — all events · Severity: Failures & errors") instead of a
+  bare count. List values resolve through the filter's option labels
+  (grouped or flat); datetimes prettify the `T`; a boolean reads as its title.
+  """
+  def active_filter_labels(params, filters) do
+    for f <- filters,
+        value = filter_value(params, to_string(f.name), f),
+        blank_or_nil(value) != blank_or_nil(f.default) do
+      active_filter_label(f, value)
+    end
+  end
+
+  defp active_filter_label(%Filter{type: :boolean} = f, _value), do: f.title
+
+  defp active_filter_label(%Filter{type: :datetime} = f, value),
+    do: "#{f.title}: #{String.replace(to_string(value), "T", " ")}"
+
+  defp active_filter_label(%Filter{type: {:list, _}} = f, value) do
+    labels =
+      f.values
+      |> normalize_groups()
+      |> Enum.flat_map(fn {_group, options} -> options end)
+
+    value
+    |> List.wrap()
+    |> Enum.map_join(", ", fn v ->
+      case List.keyfind(labels, v, 0) do
+        {_value, label} -> label
+        nil -> v
+      end
+    end)
+    |> then(&"#{f.title}: #{&1}")
+  end
+
+  defp active_filter_label(%Filter{} = f, value), do: "#{f.title}: #{value}"
+
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps
   # its controls live so the operator can clear back to the full set.
