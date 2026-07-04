@@ -201,207 +201,221 @@ defmodule EmisarWeb.RunnerDetailLive do
         </.link>
       </:actions>
 
-      <%!-- Connection facts on the CANVAS — a naked meta grid, no island. Status
-           leads so the connection state is the first thing the eye lands on; the
-           hostname gets a full 1/3 cell so it reads in one line, copy button
-           aligned (it wrapped + misaligned when crammed into a 6-col strip). --%>
-      <div class="mt-8 grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-3">
-        <.meta_field label="Status">
-          <.status_badge status={connection_status(Runners.connection_state(@runner))} />
-        </.meta_field>
-        <.meta_field label="Hostname" wrap>
-          <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
-          <span :if={!@runner.hostname} class="text-zinc-500">—</span>
-        </.meta_field>
-        <.meta_field label="Version">
-          <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
-        </.meta_field>
-        <.meta_field label="Group">
-          <span class="truncate text-zinc-200">{@runner.group}</span>
-        </.meta_field>
-        <.meta_field label="Last heartbeat">
-          <span class="text-zinc-200">
-            <.local_time value={heartbeat_at(@runner)} mode={:relative} />
-          </span>
-        </.meta_field>
-        <.meta_field label="Active runs">
-          <span class="text-zinc-200">{@runner.action_load}</span>
-        </.meta_field>
-      </div>
+      <%!-- The page owns its own rhythm: ONE space-y-12 wrapper makes the shell's
+           space-y-6 a no-op (a single child) and sets a generous 48px between the
+           major blocks. A per-block `mt-*` on a shell child can't do this — the
+           shell's space-y wins on specificity and collapses every gap but the
+           first back to 24px, so the air silently vanishes. Approvals owns its
+           rhythm the same way. The `mt-4` is the one gap the wrapper still owns:
+           breathing room under the page title before the vital-stats grid (the
+           shell starts content tight, right under the title). --%>
+      <div class="mt-4 space-y-12">
+        <%!-- Identity: the vital-stats grid and the labels/disconnect row are ONE
+             block — the row is a hairline continuation of the grid — so they stay
+             tight together, above the 48px gap to the next section. --%>
+        <div>
+          <%!-- Connection facts on the CANVAS — a naked meta grid, no island. Status
+               leads so the connection state is the first thing the eye lands on; the
+               hostname gets a full 1/3 cell so it reads in one line, copy button
+               aligned (it wrapped + misaligned when crammed into a 6-col strip). --%>
+          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-3">
+            <.meta_field label="Status">
+              <.status_badge status={connection_status(Runners.connection_state(@runner))} />
+            </.meta_field>
+            <.meta_field label="Hostname" wrap>
+              <.copyable_id :if={@runner.hostname} value={@runner.hostname} class="text-zinc-200" />
+              <span :if={!@runner.hostname} class="text-zinc-500">—</span>
+            </.meta_field>
+            <.meta_field label="Version">
+              <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
+            </.meta_field>
+            <.meta_field label="Group">
+              <span class="truncate text-zinc-200">{@runner.group}</span>
+            </.meta_field>
+            <.meta_field label="Last heartbeat">
+              <span class="text-zinc-200">
+                <.local_time value={heartbeat_at(@runner)} mode={:relative} />
+              </span>
+            </.meta_field>
+            <.meta_field label="Active runs">
+              <span class="text-zinc-200">{@runner.action_load}</span>
+            </.meta_field>
+          </div>
 
-      <%!-- Labels + last-disconnect reason on their own hairline row (labels
+          <%!-- Labels + last-disconnect reason on their own hairline row (labels
            when set, the reason only while the runner is down — else it's stale
            noise from the last drop), not a second bordered band. --%>
-      <div
-        :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
-        class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-5"
-      >
-        <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Labels
-          </span>
-          <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
+          <div
+            :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
+            class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-5"
+          >
+            <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Labels
+              </span>
+              <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
+            </div>
+            <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
+              <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+              <span class="text-xs">
+                Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
+              </span>
+            </div>
+          </div>
         </div>
-        <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
-          <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
-          <span class="text-xs">
-            Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
-          </span>
-        </div>
-      </div>
 
-      <%!-- A signature-enforcing runner has locked the portal out: it verifies a
+        <%!-- A signature-enforcing runner has locked the portal out: it verifies a
            client signature on every run, so operator/runbook/API dispatch from
            here is refused. Surfacing it up top keeps the disabled Run buttons
            below from reading as a bug. --%>
-      <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
+        <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
            this runner's posture (it's signed-only), the shield lead carrying
            the brand tint, aligned with everything else below. --%>
-      <div :if={@runner.enforce_signatures} class="mt-10 flex items-start gap-3">
-        <.icon name="hero-shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
-        <div class="min-w-0">
-          <div class="text-sm font-semibold text-zinc-100">Signed dispatch only</div>
-          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-            This runner verifies a client signature on every run and refuses unsigned ones, so
-            the portal can't dispatch to it. Runs and runbooks must come from an MCP client
-            configured with a signing key and certificate — mint them with
-            <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
-              emisar signing init
-            </code>
-            on the host.
-          </p>
+        <div :if={@runner.enforce_signatures} class="flex items-start gap-3">
+          <.icon name="hero-shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-zinc-100">Signed dispatch only</div>
+            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+              This runner verifies a client signature on every run and refuses unsigned ones, so
+              the portal can't dispatch to it. Runs and runbooks must come from an MCP client
+              configured with a signing key and certificate — mint them with
+              <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
+                emisar signing init
+              </code>
+              on the host.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <.loading_state :if={@loading?} />
+        <.loading_state :if={@loading?} />
 
-      <%!-- Advertised actions (the wide column) + recent runs (a freshness
+        <%!-- Advertised actions (the wide column) + recent runs (a freshness
            check beside it) as CANVAS sections. Recent runs is DOM-FIRST so a
            phone answers "is it healthy?" before the long catalog; on desktop
            EXPLICIT placement (col-start/row-start) pins both to row 1 so their
            headers sit on the same line — `order`+col-span auto-placement drifted
            them onto different rows. `items-start` keeps a short empty column
            from stretching to the tall one. --%>
-      <div
-        :if={not @loading?}
-        class="mt-24 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
-      >
-        <section class="lg:col-start-3 lg:row-start-1">
-          <.section_header title="Recent runs">
-            <:actions :if={@recent_runs != []}>
-              <.link
-                navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
-                class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
-              >
-                View all <.cta_arrow />
-              </.link>
-            </:actions>
-          </.section_header>
+        <div
+          :if={not @loading?}
+          class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
+        >
+          <section class="lg:col-start-3 lg:row-start-1">
+            <.section_header title="Recent runs">
+              <:actions :if={@recent_runs != []}>
+                <.link
+                  navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
+                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                >
+                  View all <.cta_arrow />
+                </.link>
+              </:actions>
+            </.section_header>
 
-          <%= if @recent_runs == [] do %>
-            <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet">
-              Nothing dispatched to this runner yet — runs land here as they happen.
-            </.empty_state>
-          <% else %>
-            <ul class="divide-y divide-zinc-800/70">
-              <li :for={run <- @recent_runs}>
-                <.run_row run={run} current_account={@current_account} />
-              </li>
-            </ul>
-          <% end %>
-        </section>
+            <%= if @recent_runs == [] do %>
+              <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet">
+                Nothing dispatched to this runner yet — runs land here as they happen.
+              </.empty_state>
+            <% else %>
+              <ul class="divide-y divide-zinc-800/70">
+                <li :for={run <- @recent_runs}>
+                  <.run_row run={run} current_account={@current_account} />
+                </li>
+              </ul>
+            <% end %>
+          </section>
 
-        <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
-          <.section_header title="Advertised actions" count={@actions_metadata.count} />
+          <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
+            <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
-          <%= if @actions == [] do %>
-            <.empty_state variant={:bare} icon="hero-cpu-chip" title="No actions yet">
-              This runner hasn't reported a catalog yet. Check the runner logs on the host.
-            </.empty_state>
-          <% else %>
-            <ul class="divide-y divide-zinc-800/70">
-              <.list_row :for={action <- @actions}>
-                <:title>
-                  <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
-                </:title>
-                <:meta :if={action.title}>
-                  {action.title}
-                </:meta>
-                <:actions>
-                  <.risk_pill risk={action.risk} />
-                  <%!-- Dispatch only makes sense when the runner is online AND
+            <%= if @actions == [] do %>
+              <.empty_state variant={:bare} icon="hero-cpu-chip" title="No actions yet">
+                This runner hasn't reported a catalog yet. Check the runner logs on the host.
+              </.empty_state>
+            <% else %>
+              <ul class="divide-y divide-zinc-800/70">
+                <.list_row :for={action <- @actions}>
+                  <:title>
+                    <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
+                  </:title>
+                  <:meta :if={action.title}>
+                    {action.title}
+                  </:meta>
+                  <:actions>
+                    <.risk_pill risk={action.risk} />
+                    <%!-- Dispatch only makes sense when the runner is online AND
                        accepts portal dispatch — otherwise the run sits in
                        `pending` until reconnect, or (for a signature-enforcing
                        runner) the portal can't dispatch at all. Gate the button
                        visually so operators don't queue work that won't run. --%>
-                  <%= cond do %>
-                    <% not Runs.subject_can_dispatch_run?(@current_subject) -> %>
-                      <%!-- Viewers read the catalog; the Run affordance isn't
+                    <%= cond do %>
+                      <% not Runs.subject_can_dispatch_run?(@current_subject) -> %>
+                        <%!-- Viewers read the catalog; the Run affordance isn't
                            theirs to have (§4 — hidden, not dead). --%>
-                      <span></span>
-                    <% @runner.enforce_signatures -> %>
-                      <%!-- Signed-only: the portal can't dispatch here. aria-disabled
+                        <span></span>
+                      <% @runner.enforce_signatures -> %>
+                        <%!-- Signed-only: the portal can't dispatch here. aria-disabled
                            (focusable, so the title explains WHY) + the lock icon carry
                            it without relying on color alone (a11y) — not real `disabled`,
                            which drops focus and hides the explanation. --%>
-                      <.button
-                        size={:sm}
-                        variant={:secondary}
-                        aria-disabled="true"
-                        icon="hero-lock-closed"
-                        title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
-                        class="shrink-0 cursor-not-allowed opacity-60"
-                      >
-                        Run
-                      </.button>
-                    <% @runner.online? -> %>
-                      <%!-- Secondary: a brand fill per catalog row out-shouts the
+                        <.button
+                          size={:sm}
+                          variant={:secondary}
+                          aria-disabled="true"
+                          icon="hero-lock-closed"
+                          title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
+                          class="shrink-0 cursor-not-allowed opacity-60"
+                        >
+                          Run
+                        </.button>
+                      <% @runner.online? -> %>
+                        <%!-- Secondary: a brand fill per catalog row out-shouts the
                            page's real primary; the row's affordance is enough. --%>
-                      <.button
-                        navigate={
-                          ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
-                        }
-                        variant={:secondary}
-                        size={:sm}
-                        class="shrink-0"
-                      >
-                        Run
-                      </.button>
-                    <% true -> %>
-                      <%!-- Offline: aria-disabled (focusable, title explains why) + a
+                        <.button
+                          navigate={
+                            ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
+                          }
+                          variant={:secondary}
+                          size={:sm}
+                          class="shrink-0"
+                        >
+                          Run
+                        </.button>
+                      <% true -> %>
+                        <%!-- Offline: aria-disabled (focusable, title explains why) + a
                            signal-slash icon carry "can't run" without relying on the
                            dimmed color alone (a11y). --%>
-                      <.button
-                        size={:sm}
-                        variant={:secondary}
-                        aria-disabled="true"
-                        icon="hero-signal-slash"
-                        title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
-                        class="shrink-0 cursor-not-allowed opacity-60"
-                      >
-                        Run
-                      </.button>
-                  <% end %>
-                </:actions>
-              </.list_row>
-            </ul>
+                        <.button
+                          size={:sm}
+                          variant={:secondary}
+                          aria-disabled="true"
+                          icon="hero-signal-slash"
+                          title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
+                          class="shrink-0 cursor-not-allowed opacity-60"
+                        >
+                          Run
+                        </.button>
+                    <% end %>
+                  </:actions>
+                </.list_row>
+              </ul>
 
-            <div
-              :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
-              class="pt-3"
-            >
-              <LiveTable.paginator
-                id="actions"
-                path={~p"/app/#{@current_account}/runners/#{@runner.id}"}
-                metadata={@actions_metadata}
-                filter_params={@filter_params}
-              />
-            </div>
-          <% end %>
-        </section>
-      </div>
+              <div
+                :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
+                class="pt-3"
+              >
+                <LiveTable.paginator
+                  id="actions"
+                  path={~p"/app/#{@current_account}/runners/#{@runner.id}"}
+                  metadata={@actions_metadata}
+                  filter_params={@filter_params}
+                />
+              </div>
+            <% end %>
+          </section>
+        </div>
 
-      <%!-- Danger zone — destructive/restorative actions as canvas hairline
+        <%!-- Danger zone — destructive/restorative actions as canvas hairline
            rows under their own section, not rose-boxed islands. Disable is the
            soft "stop"; Enable is its restorative inverse (shown only while
            disabled); Delete is available for any runner that isn't currently
@@ -409,71 +423,69 @@ defmodule EmisarWeb.RunnerDetailLive do
            connected runner must be disabled first so a misclick can't wipe a
            live one). Rendered only for a manager, who always has at least one
            of these. --%>
-      <section
-        :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-24"
-      >
-        <.section_header title="Danger zone" />
-        <div class="divide-y divide-zinc-800/70">
-          <.confirm_zone
-            :if={is_nil(@runner.disabled_at)}
-            title="Disable this runner"
-            confirm="Disable this runner? It will not be able to reconnect."
-            phx-click="disable"
-          >
-            <:body>
-              Removes it from the catalog and rejects future reconnects. Audit history is preserved.
-            </:body>
-            Disable runner
-          </.confirm_zone>
+        <section :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}>
+          <.section_header title="Danger zone" />
+          <div class="divide-y divide-zinc-800/70">
+            <.confirm_zone
+              :if={is_nil(@runner.disabled_at)}
+              title="Disable this runner"
+              confirm="Disable this runner? It will not be able to reconnect."
+              phx-click="disable"
+            >
+              <:body>
+                Removes it from the catalog and rejects future reconnects. Audit history is preserved.
+              </:body>
+              Disable runner
+            </.confirm_zone>
 
-          <.confirm_zone
-            :if={not is_nil(@runner.disabled_at)}
-            tone={:success}
-            title="Enable this runner"
-            phx-click="enable"
-          >
-            <:body>
-              Clears the disabled flag so the host can reconnect and reappear in the catalog.
-              Counts against your plan's runner limit.
-            </:body>
-            Enable runner
-          </.confirm_zone>
+            <.confirm_zone
+              :if={not is_nil(@runner.disabled_at)}
+              tone={:success}
+              title="Enable this runner"
+              phx-click="enable"
+            >
+              <:body>
+                Clears the disabled flag so the host can reconnect and reappear in the catalog.
+                Counts against your plan's runner limit.
+              </:body>
+              Enable runner
+            </.confirm_zone>
 
-          <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
+            <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
                button only OPENS the dialog; `delete` still fires from Confirm
                and stays server-authz-gated (Runners.subject_can_manage_runners?). --%>
-          <.confirm_zone
+            <.confirm_zone
+              :if={not @runner.online?}
+              title="Delete this runner"
+              phx-click={show_confirm_dialog("delete-runner")}
+            >
+              <:body>
+                Removes the runner row from your account. The host can re-register on its
+                next connect (it will appear as a fresh runner with new tokens), which is
+                the intended path when you want to recover from a wedged state or
+                re-bootstrap a host. Run history and audit events are preserved.
+              </:body>
+              Delete runner
+            </.confirm_zone>
+          </div>
+
+          <.confirm_dialog
             :if={not @runner.online?}
+            id="delete-runner"
             title="Delete this runner"
-            phx-click={show_confirm_dialog("delete-runner")}
+            confirm_label="Delete runner"
+            confirm_token={@runner.name}
+            typed={@typed}
+            on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
           >
             <:body>
-              Removes the runner row from your account. The host can re-register on its
-              next connect (it will appear as a fresh runner with new tokens), which is
-              the intended path when you want to recover from a wedged state or
-              re-bootstrap a host. Run history and audit events are preserved.
+              Removes <span class="font-medium text-rose-100">{@runner.name}</span>
+              from your account. The host can re-register on its next connect as a fresh
+              runner with new tokens. Run history and audit events are preserved.
             </:body>
-            Delete runner
-          </.confirm_zone>
-        </div>
-
-        <.confirm_dialog
-          :if={not @runner.online?}
-          id="delete-runner"
-          title="Delete this runner"
-          confirm_label="Delete runner"
-          confirm_token={@runner.name}
-          typed={@typed}
-          on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
-        >
-          <:body>
-            Removes <span class="font-medium text-rose-100">{@runner.name}</span>
-            from your account. The host can re-register on its next connect as a fresh
-            runner with new tokens. Run history and audit events are preserved.
-          </:body>
-        </.confirm_dialog>
-      </section>
+          </.confirm_dialog>
+        </section>
+      </div>
     </.dashboard_shell>
     """
   end

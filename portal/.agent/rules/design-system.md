@@ -211,6 +211,21 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
   `rounded-lg`. A child's radius is never larger than its parent's.
 - **Section rhythm (marketing):** `py-24 sm:py-32` between sections; content in
   `mx-auto max-w-7xl px-6 lg:px-8`; prose columns `max-w-2xl/3xl`.
+- **Console rhythm — the shell OWNS inter-block spacing; don't hand-roll `mt-*`
+  between top-level blocks.** `dashboard_shell`'s content wrapper is `space-y-6`,
+  which emits `.space-y-6 > * ~ * { margin-top: 24px }` at specificity (0,3,0) —
+  it BEATS any `mt-*` (0,1,0) on a direct shell child. So a per-block `mt-*`
+  between top-level page blocks is **silently overridden** to 24px; only the
+  *first* child (which `space-y` exempts) keeps its `mt-*`, reading as an
+  inconsistent one-off. To give a page a more generous rhythm, **wrap its body
+  in ONE `space-y-N` child** — that makes the shell's `space-y-6` a no-op (a
+  single child) and lets the wrapper own the gap (Approvals + runner detail use
+  `space-y-12` = 48px; group blocks that belong together in a sub-`<div>` so a
+  hairline continuation row stays attached). The trap generalizes to **any**
+  `space-y-*` ancestor (a card list, a provider card): a child's `mt-*` loses to
+  the parent's `space-y`. Sweep target: an `mt-*`/`pt-*` on a direct child of a
+  `space-y-*` expecting a bespoke gap — it renders as the `space-y` value, not
+  the `mt-*`.
 - **Elevation = light, not just a box.** Marketing's signature surfaces use
   `.surface-glass` (top sheen + inner highlight + deep soft shadow).
 - **Console elevation — "ISLANDS ON BLACK" (shipped 2026-07-03; the P1–P5
