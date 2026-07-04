@@ -443,10 +443,17 @@ defmodule EmisarWeb.LiveTable do
           <CoreComponents.icon name="hero-chevron-down" class="h-3 w-3 shrink-0 text-zinc-500" />
         </button>
       </label>
+      <%!-- The panel CONTINUES the trigger's border (same 1px, same color —
+           brand when the filter is active) instead of the float ring, whose
+           outside-the-box shadow read as a second, misaligned edge style. --%>
       <div
         data-combobox-panel
         hidden
-        class="absolute z-20 -mt-px w-full overflow-hidden rounded-b-lg rounded-t-none bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
+        class={[
+          "absolute z-20 -mt-px w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
+          "bg-zinc-900 shadow-xl shadow-black/60",
+          if(@active?, do: "border-brand-500/60", else: "border-zinc-700")
+        ]}
       >
         <input
           type="text"
