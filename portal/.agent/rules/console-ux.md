@@ -112,6 +112,13 @@ Structural rules that ride along:
 - **Settings never embed in operational pages** without a PM decision — the current three
   (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
   until that pass; do not add a fourth.
+- **The Settings IA (2026-07-04 restructure).** The nav's Settings group is exactly TWO
+  items: **Team** (the people + access hub — the roster LEADS the page; the Security
+  posture rows (2FA, SSO) follow below it as the rare-touch footer concern, and they are
+  SSO's one console door) and **Billing**. Every credential surface lives behind its
+  OWNING page as a title-row door, never a nav item: runner keys → Runners, agent keys →
+  LLM agents (+ /connect create flow), SIEM tokens → Audit. Don't re-add nav items for
+  sub-features; don't move the roster back below account config.
 
 ## 4. States are part of the page, not a later pass
 
