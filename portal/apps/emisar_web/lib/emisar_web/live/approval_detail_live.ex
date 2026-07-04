@@ -239,6 +239,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
+  # ONE form, one note field, two submit buttons — the button's value routes.
+  def handle_event("decide", %{"decision" => "approve"} = params, socket),
+    do: handle_event("approve", params, socket)
+
+  def handle_event("decide", %{"decision" => "deny"} = params, socket),
+    do: handle_event("deny", params, socket)
+
   def handle_event("approve", params, socket) do
     Permissions.gated(
       socket,
@@ -842,18 +849,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-zinc-400" />
             <span>You can't approve your own request — a different operator must approve it.</span>
           </div>
-          <%!-- Approve form. Default state = one-shot ("just this
-               call") which doesn't create a grant. Reuse-window UI
-               is collapsed behind a checkbox so the common path
-               is one click of the green button. --%>
-          <form
-            :if={not @self_blocked?}
-            phx-submit="approve"
-            phx-change="grant_form_changed"
-            class="mt-4 space-y-4"
-          >
+          <%!-- ONE decision form: a single note field logged with whichever
+               decision is taken (two competing optional textareas doubled the
+               form, and the deny box under Approve read as a note for the
+               approval just taken). Default approve state = one-shot ("just
+               this call"), no grant. --%>
+          <form phx-submit="decide" phx-change="grant_form_changed" class="mt-4 space-y-4">
             <%!-- Bare name (uncontrolled): the LV doesn't track this note, the
-                 approve handler reads whatever's posted. `aria-label` names it
+                 decide handler reads whatever's posted. `aria-label` names it
                  for AT (the placeholder is not an accessible name); `min-h-0`
                  undoes the component's default min-height for a compact 2-row box. --%>
             <.input
@@ -861,12 +864,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
               name="reason"
               value={nil}
               rows="2"
-              aria-label="Approval note"
-              placeholder="Note (optional)"
+              aria-label="Decision note"
+              placeholder="Note — logged with your decision (optional)"
               class="min-h-0 resize-none"
             />
 
-            <.disclosure>
+            <.disclosure :if={not @self_blocked?}>
               <:summary>
                 <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
                 Allow the LLM to reuse this approval
@@ -931,32 +934,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </div>
             </.disclosure>
 
+            <%!-- Approve stays gated for the self-blocked requester; deny is
+                 always available (denying your own request is fine). --%>
             <.button
+              :if={not @self_blocked?}
+              name="decision"
+              value="approve"
               class="w-full"
               icon="hero-check"
               phx-disable-with="Approving…"
             >
               Approve and send
             </.button>
-          </form>
-
-          <%!-- Deny carries its own reason — the higher-stakes decision was
-               the one with nowhere to record *why*, leaving a blank reason in
-               the decision history. The handler already accepts it. --%>
-          <form phx-submit="deny" class="mt-3 space-y-3">
-            <%!-- `tone={:rose}` tints the focus ring rose — this is the
-                 destructive decision. `aria-label` names it for AT. --%>
-            <.input
-              type="textarea"
-              name="reason"
-              value={nil}
-              tone={:rose}
-              rows="2"
-              aria-label="Reason for denial"
-              placeholder="Why are you denying this? (optional, logged in the decision history)"
-              class="min-h-0 resize-none"
-            />
             <.button
+              name="decision"
+              value="deny"
               variant={:secondary}
               tone={:rose}
               class="w-full"

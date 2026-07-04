@@ -250,16 +250,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert changed =~ ~s(name="scope")
   end
 
-  test "the three free-text decision controls each have an accessible name", %{conn: conn} do
+  test "the free-text decision controls each have an accessible name", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    # The approve note + deny reason are placeholder-only by design, so they
-    # carry an aria-label (a placeholder is not an accessible name for AT).
-    assert html =~ ~s(aria-label="Approval note")
-    assert html =~ ~s(aria-label="Reason for denial")
+    # The ONE decision note is placeholder-only by design, so it carries an
+    # aria-label (a placeholder is not an accessible name for AT).
+    assert html =~ ~s(aria-label="Decision note")
 
     # The max-uses input is only shown once a real grant window is picked; it
     # gets a visible eyebrow label associated by for/id.
@@ -283,8 +282,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # path once raised FunctionClauseError on the missing `reason`).
     html =
       lv
-      |> element("form[phx-submit='deny']")
-      |> render_submit()
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"decision" => "deny"})
 
     assert html =~ "Denied."
   end
@@ -297,8 +296,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     html =
       lv
-      |> form("form[phx-submit='deny']", %{"reason" => "duplicate of an earlier run"})
-      |> render_submit()
+      |> form("form[phx-submit='decide']", %{"reason" => "duplicate of an earlier run"})
+      |> render_submit(%{"decision" => "deny"})
 
     # The outcome LEADS the page (verdict callout carries the note); the live
     # decide panel is gone once the request is settled.
@@ -345,8 +344,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     html =
       lv
-      |> form("form[phx-submit='deny']", %{"reason" => ""})
-      |> render_submit()
+      |> form("form[phx-submit='decide']", %{"reason" => ""})
+      |> render_submit(%{"decision" => "deny"})
 
     assert html =~ "expired before your decision landed"
     # The form flipped to decision-history — no interactive decision left.
@@ -395,8 +394,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     html =
       lv
-      |> form("form[phx-submit='approve']", %{"reason" => "go"})
-      |> render_submit()
+      |> form("form[phx-submit='decide']", %{"reason" => "go"})
+      |> render_submit(%{"decision" => "approve"})
 
     # The gate refuses up front with the actionable re-issue prompt, not a
     # generic "didn't record" — and the run is never finalized/dispatched.
