@@ -85,8 +85,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       # one-shot approval.
       html =
         lv
-        |> element("form[phx-submit='approve']")
-        |> render_submit(%{"reason" => "ok"})
+        |> form("form[phx-submit='decide']", %{})
+        |> render_submit(%{"reason" => "ok", "decision" => "approve"})
 
       assert html =~ "Approved for this call only."
       assert reload_status(request.id) == :approved
@@ -101,8 +101,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
       html =
         lv
-        |> element("form[phx-submit='deny']")
-        |> render_submit()
+        |> form("form[phx-submit='decide']", %{})
+        |> render_submit(%{"decision" => "deny"})
 
       assert html =~ "Denied."
       assert reload_status(request.id) == :denied
@@ -204,8 +204,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       assert html =~ "Approve and send"
 
       lv
-      |> element("form[phx-submit='approve']")
-      |> render_submit(%{"reason" => "ok"})
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"reason" => "ok", "decision" => "approve"})
 
       assert reload_status(request.id) == :approved
     end
