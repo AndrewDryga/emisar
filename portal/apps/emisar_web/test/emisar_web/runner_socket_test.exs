@@ -23,7 +23,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       Fixtures.Accounts.create_subscription(account, "team")
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      {:ok, raw_key, _key} = Runners.create_auth_key(%{description: "test"}, subject)
+      {:ok, raw_key, _key} = Runners.create_enrollment_key(%{description: "test"}, subject)
       %{account: account, user: user, raw_key: raw_key}
     end
 
@@ -52,7 +52,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         |> put_req_header("authorization", "Bearer emkey-auth-NOTREAL")
         |> post(~p"/runner/register", %{})
 
-      assert json_response(conn, 401) == %{"error" => "auth_key_invalid"}
+      assert json_response(conn, 401) == %{"error" => "enrollment_key_invalid"}
     end
   end
 
@@ -77,7 +77,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # Reusable: these tests register several runners off one bootstrap key.
       {:ok, raw_key, _key} =
-        Runners.create_auth_key(%{description: "test", reusable: true}, subject)
+        Runners.create_enrollment_key(%{description: "test", reusable: true}, subject)
 
       %{account: account, raw_key: raw_key}
     end
@@ -103,7 +103,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw_key, _key} =
-        Runners.create_auth_key(%{description: "test", reusable: true}, subject)
+        Runners.create_enrollment_key(%{description: "test", reusable: true}, subject)
 
       for n <- 1..3 do
         response =

@@ -9,7 +9,7 @@ defmodule Emisar.Runners do
   metadata. The DB keeps only durable, event-driven facts.
 
   Reads/writes go through `Runner.Query` + `Runner.Changeset` (and
-  similar per-entity modules under `Emisar.Runners.AuthKey`,
+  similar per-entity modules under `Emisar.Runners.EnrollmentKey`,
   `Token`). The public surface takes `%Subject{}` and
   routes through `Authorizer.for_subject/2`; the runner-socket-driven
   state helpers (`apply_state`, `connect_runner`, `mark_disconnected`,
@@ -21,11 +21,11 @@ defmodule Emisar.Runners do
   alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.Runners.{AuthKey, Authorizer, Presence, Runner, Token, UserRunnerScope}
+  alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token, UserRunnerScope}
   require Logger
 
   # 11 chars for "emkey-auth-" + 16 random chars => 27.
-  @auth_key_prefix_size 27
+  @enrollment_key_prefix_size 27
   # 7 chars for "rnrtok-" + 5 random.
   @token_prefix_size 12
 
@@ -223,17 +223,17 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — true when any of `runner_ids` is a runner in `account_id` that
-  registered with `auth_key_id` as its bootstrap key. The install wizard checks
+  registered with `enrollment_key_id` as its bootstrap key. The install wizard checks
   this on a presence join so it only advances when the runner minted from THIS
   page's key connects — not any runner that happens to join the account's
   presence (a reconnect, another host coming up).
   """
-  def any_runner_bootstrapped_by_key?(runner_ids, auth_key_id, account_id)
-      when is_list(runner_ids) and is_binary(auth_key_id) and is_binary(account_id) do
+  def any_runner_bootstrapped_by_key?(runner_ids, enrollment_key_id, account_id)
+      when is_list(runner_ids) and is_binary(enrollment_key_id) and is_binary(account_id) do
     Runner.Query.not_deleted()
     |> Runner.Query.by_ids(runner_ids)
     |> Runner.Query.by_account_id(account_id)
-    |> Runner.Query.by_bootstrap_auth_key_id(auth_key_id)
+    |> Runner.Query.by_bootstrap_enrollment_key_id(enrollment_key_id)
     |> Repo.exists?()
   end
 
@@ -320,7 +320,7 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal lookup by `external_id` scoped to an account. Used inside
-  `register_via_auth_key/2`; not exposed to LiveView/MCP — they don't
+  `register_via_enrollment_key/2`; not exposed to LiveView/MCP — they don't
   have an external_id at the auth boundary.
   """
   def fetch_runner_by_external_id_for_account(external_id, account_id)
@@ -801,56 +801,59 @@ defmodule Emisar.Runners do
 
   # -- Auth keys -------------------------------------------------------
 
-  def list_auth_keys(%Subject{} = subject, opts \\ []) do
+  def list_enrollment_keys(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_auth_keys_permission()
+             Authorizer.manage_enrollment_keys_permission()
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       # The FULL inventory on purpose — a wizard-minted enrollment key is a
       # live root-capable credential; hiding it under-reported the very list
       # an operator audits (and the only place it can be revoked pre-use).
-      AuthKey.Query.not_deleted()
-      |> AuthKey.Query.ordered_by_recent()
-      |> apply_auth_key_preloads(preloads)
+      EnrollmentKey.Query.not_deleted()
+      |> EnrollmentKey.Query.ordered_by_recent()
+      |> apply_enrollment_key_preloads(preloads)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(AuthKey.Query, opts)
+      |> Repo.list(EnrollmentKey.Query, opts)
     end
   end
 
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).
-  defp apply_auth_key_preloads(queryable, preloads) do
+  defp apply_enrollment_key_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
-      :created_by, queryable -> AuthKey.Query.with_preloaded_created_by(queryable)
+      :created_by, queryable -> EnrollmentKey.Query.with_preloaded_created_by(queryable)
     end)
   end
 
   @doc """
   Changeset for the auth-key create form (operator-facing fields, no secret
   minted). Drives `phx-change` validation + inline field errors in the
-  LiveView; the real key is minted by `create_auth_key/2`.
+  LiveView; the real key is minted by `create_enrollment_key/2`.
   """
-  def change_auth_key(attrs \\ %{}), do: AuthKey.Changeset.form(attrs)
+  def change_enrollment_key(attrs \\ %{}), do: EnrollmentKey.Changeset.form(attrs)
 
-  def create_auth_key(attrs, %Subject{account: account} = subject) do
+  def create_enrollment_key(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_auth_keys_permission()
+             Authorizer.manage_enrollment_keys_permission()
            ) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
-      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @auth_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @enrollment_key_prefix_size)
 
       Multi.new()
-      |> Multi.insert(:key, AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs))
+      |> Multi.insert(
+        :key,
+        EnrollmentKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
+      )
       |> Multi.insert(:audit, fn %{key: key} ->
-        Audit.Events.auth_key_created(subject, key)
+        Audit.Events.enrollment_key_created(subject, key)
       end)
-      |> Repo.commit_multi(after_commit: &broadcast_auth_key_created(&1.key))
+      |> Repo.commit_multi(after_commit: &broadcast_enrollment_key_created(&1.key))
       |> case do
         {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
@@ -865,23 +868,23 @@ defmodule Emisar.Runners do
     Emisar.PubSub.subscribe(Presence.topic(account_id))
   end
 
-  @doc "Subscribe the caller to the account's auth-key list changes (`{:list_changed, :auth_key, …}`)."
-  def subscribe_account_auth_keys(account_id),
-    do: Emisar.PubSub.subscribe(account_auth_keys_topic(account_id))
+  @doc "Subscribe the caller to the account's auth-key list changes (`{:list_changed, :enrollment_key, …}`)."
+  def subscribe_account_enrollment_keys(account_id),
+    do: Emisar.PubSub.subscribe(account_enrollment_keys_topic(account_id))
 
-  defp account_auth_keys_topic(account_id), do: "account:#{account_id}:auth_keys"
+  defp account_enrollment_keys_topic(account_id), do: "account:#{account_id}:enrollment_keys"
 
-  defp broadcast_auth_key_created(%AuthKey{} = key) do
+  defp broadcast_enrollment_key_created(%EnrollmentKey{} = key) do
     Emisar.PubSub.broadcast(
-      account_auth_keys_topic(key.account_id),
-      {:list_changed, :auth_key, "auth_key.created", key.id}
+      account_enrollment_keys_topic(key.account_id),
+      {:list_changed, :enrollment_key, "enrollment_key.created", key.id}
     )
   end
 
-  defp broadcast_auth_key_revoked(%AuthKey{} = key) do
+  defp broadcast_enrollment_key_revoked(%EnrollmentKey{} = key) do
     Emisar.PubSub.broadcast(
-      account_auth_keys_topic(key.account_id),
-      {:list_changed, :auth_key, "auth_key.revoked", key.id}
+      account_enrollment_keys_topic(key.account_id),
+      {:list_changed, :enrollment_key, "enrollment_key.revoked", key.id}
     )
   end
 
@@ -921,8 +924,8 @@ defmodule Emisar.Runners do
   auto-unused key beyond the per-account ring cap of #{@install_ring_cap}.
 
   Returns `{:ok, raw_secret, key}`. No audit log on mint — auto-gen is
-  noise. Once a runner registers with the key, `consume_auth_key/1`
-  clears the auto flag and audit logs `auth_key.bound` with `auto: true`.
+  noise. Once a runner registers with the key, `consume_enrollment_key/1`
+  clears the auto flag and audit logs `enrollment_key.bound` with `auto: true`.
   """
   def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
     with :ok <-
@@ -935,7 +938,7 @@ defmodule Emisar.Runners do
       cap = opts[:ring_cap] || @install_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
-      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @auth_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @enrollment_key_prefix_size)
 
       Multi.new()
       # Insert first, then evict — so the account never momentarily has
@@ -943,7 +946,7 @@ defmodule Emisar.Runners do
       # dashboard mounts).
       |> Multi.insert(
         :key,
-        AuthKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
+        EnrollmentKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
       )
       |> Multi.run(:evicted, fn _repo, %{key: key} ->
         {:ok, evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)}
@@ -959,7 +962,7 @@ defmodule Emisar.Runners do
   defp evict_install_ring_overflow(account_id, cap, grace_seconds, now) do
     protected_floor = DateTime.add(now, -grace_seconds, :second)
 
-    AuthKey.Query.evictable_install_overflow(account_id, cap, protected_floor)
+    EnrollmentKey.Query.evictable_install_overflow(account_id, cap, protected_floor)
     |> Repo.delete_all()
   end
 
@@ -967,38 +970,38 @@ defmodule Emisar.Runners do
   # revoked_at (plus a fresh audit row + broadcast) would move the revocation
   # time and pollute the trail. Still permission-gated so an unauthorized
   # caller is rejected, not silently OK'd.
-  def revoke_auth_key(%AuthKey{revoked_at: revoked_at} = key, %Subject{} = subject)
+  def revoke_enrollment_key(%EnrollmentKey{revoked_at: revoked_at} = key, %Subject{} = subject)
       when not is_nil(revoked_at) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_auth_keys_permission()
+             Authorizer.manage_enrollment_keys_permission()
            ) do
       {:ok, key}
     end
   end
 
-  def revoke_auth_key(%AuthKey{} = key, %Subject{} = subject) do
+  def revoke_enrollment_key(%EnrollmentKey{} = key, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_auth_keys_permission()
+             Authorizer.manage_enrollment_keys_permission()
            ) do
       by_user_id = Subject.actor_id(subject)
 
-      AuthKey.Query.not_deleted()
-      |> AuthKey.Query.by_id(key.id)
+      EnrollmentKey.Query.not_deleted()
+      |> EnrollmentKey.Query.by_id(key.id)
       |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(AuthKey.Query,
-        with: &AuthKey.Changeset.revoke(&1, by_user_id),
-        audit: &Audit.Events.auth_key_revoked(subject, &1),
-        after_commit: &broadcast_auth_key_revoked/1
+      |> Repo.fetch_and_update(EnrollmentKey.Query,
+        with: &EnrollmentKey.Changeset.revoke(&1, by_user_id),
+        audit: &Audit.Events.enrollment_key_revoked(subject, &1),
+        after_commit: &broadcast_enrollment_key_revoked/1
       )
     end
   end
 
   @doc """
-  Peeks at the presented raw secret, resolving it to an `%AuthKey{}`.
+  Peeks at the presented raw secret, resolving it to an `%EnrollmentKey{}`.
   Returns nil when there's no match or the key is unusable (revoked/
   deleted/expired/single-use exhausted). Constant-time hash comparison.
   `peek_*` per AGENTS.md §1.1 — nil-or-struct credential lookup.
@@ -1006,12 +1009,12 @@ defmodule Emisar.Runners do
   Internal — only called from the runner-register controller before
   any Subject exists. The presented raw secret IS the auth.
   """
-  def peek_auth_key_by_secret(raw) when is_binary(raw) do
-    if String.length(raw) < @auth_key_prefix_size do
+  def peek_enrollment_key_by_secret(raw) when is_binary(raw) do
+    if String.length(raw) < @enrollment_key_prefix_size do
       nil
     else
       hash = Crypto.hash(raw)
-      peek_by_prefix(raw, hash, @auth_key_prefix_size)
+      peek_by_prefix(raw, hash, @enrollment_key_prefix_size)
     end
   end
 
@@ -1023,11 +1026,11 @@ defmodule Emisar.Runners do
 
       # Deliberately all(): `usable?/1` below is the single liveness gate
       # (it rejects deleted/revoked/expired/exhausted in one place).
-      queryable = AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix)
+      queryable = EnrollmentKey.Query.all() |> EnrollmentKey.Query.by_key_prefix(prefix)
 
-      with %AuthKey{} = key <- Repo.peek(queryable),
+      with %EnrollmentKey{} = key <- Repo.peek(queryable),
            true <- Crypto.secure_compare(key.key_hash, hash),
-           true <- AuthKey.usable?(key) do
+           true <- EnrollmentKey.usable?(key) do
         key
       else
         _ -> nil
@@ -1092,10 +1095,10 @@ defmodule Emisar.Runners do
     do: Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission())
 
   @doc "Whether `subject` may manage runner auth keys (admin+)."
-  def subject_can_manage_auth_keys?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_auth_keys_permission())
+  def subject_can_manage_enrollment_keys?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_enrollment_keys_permission())
 
-  # -- Registration (auth_key -> runner + token exchange) --------------
+  # -- Registration (enrollment_key -> runner + token exchange) --------------
 
   @doc """
   Internal — runner-register controller, raw secret in hand (the secret IS
@@ -1107,18 +1110,18 @@ defmodule Emisar.Runners do
   Returns `{:ok, runner, token, raw_token}` on success or
   `{:error, reason}` / `{:error, :over_limit, plan, limit}`.
   """
-  def register_via_auth_key(raw_or_key, attrs, context \\ %RequestContext{})
+  def register_via_enrollment_key(raw_or_key, attrs, context \\ %RequestContext{})
 
-  def register_via_auth_key(raw, attrs, context) when is_binary(raw) do
-    case peek_auth_key_by_secret(raw) do
-      nil -> {:error, :auth_key_invalid}
-      %AuthKey{} = key -> register_via_auth_key(key, attrs, context)
+  def register_via_enrollment_key(raw, attrs, context) when is_binary(raw) do
+    case peek_enrollment_key_by_secret(raw) do
+      nil -> {:error, :enrollment_key_invalid}
+      %EnrollmentKey{} = key -> register_via_enrollment_key(key, attrs, context)
     end
   end
 
-  def register_via_auth_key(%AuthKey{} = key, attrs, context) do
+  def register_via_enrollment_key(%EnrollmentKey{} = key, attrs, context) do
     key = Repo.preload(key, :account)
-    was_auto? = AuthKey.auto_unused?(key)
+    was_auto? = EnrollmentKey.auto_unused?(key)
     external_id = registration_external_id(attrs)
 
     Multi.new()
@@ -1133,7 +1136,7 @@ defmodule Emisar.Runners do
     # defeating the race where two concurrent registrations both see
     # uses_count = 0.
     |> Multi.run(:consume, fn _repo, _changes ->
-      case consume_auth_key(key) do
+      case consume_enrollment_key(key) do
         :ok -> {:ok, :consumed}
         {:error, reason} -> {:error, reason}
       end
@@ -1141,7 +1144,7 @@ defmodule Emisar.Runners do
     # Surface the auto→permanent promotion. The mint itself is deliberately
     # silent (would flood the log), so binding is where the key first
     # becomes visible.
-    |> maybe_audit_auth_key_bound(key, was_auto?)
+    |> maybe_audit_enrollment_key_bound(key, was_auto?)
     |> Multi.run(:registration, fn repo, _changes ->
       register_or_reuse_runner(repo, key, attrs, external_id)
     end)
@@ -1177,10 +1180,10 @@ defmodule Emisar.Runners do
     end
   end
 
-  defp maybe_audit_auth_key_bound(multi, _key, false), do: multi
+  defp maybe_audit_enrollment_key_bound(multi, _key, false), do: multi
 
-  defp maybe_audit_auth_key_bound(multi, key, true),
-    do: Multi.insert(multi, :auth_key_bound, Audit.Events.auth_key_bound(key))
+  defp maybe_audit_enrollment_key_bound(multi, key, true),
+    do: Multi.insert(multi, :enrollment_key_bound, Audit.Events.enrollment_key_bound(key))
 
   # Only a brand-new seat is audited as a registration — a reconnecting
   # runner that already has a row isn't.
@@ -1235,7 +1238,7 @@ defmodule Emisar.Runners do
           hostname: attrs[:hostname],
           labels: attrs[:labels] || %{},
           runner_version: attrs[:version] || attrs[:runner_version],
-          bootstrap_auth_key_id: key.id
+          bootstrap_enrollment_key_id: key.id
         })
 
       case repo.insert(changeset,
@@ -1282,16 +1285,16 @@ defmodule Emisar.Runners do
   # Atomically charge one use against `key`. The WHERE clause
   # re-evaluates every `usable?` condition at SQL level so we can't
   # TOCTOU between SELECT and UPDATE.
-  defp consume_auth_key(%AuthKey{} = key) do
+  defp consume_enrollment_key(%EnrollmentKey{} = key) do
     now = DateTime.utc_now()
 
     query =
-      AuthKey.Query.consumable_by_id(key.id, now)
-      |> AuthKey.Query.consume_one(now)
+      EnrollmentKey.Query.consumable_by_id(key.id, now)
+      |> EnrollmentKey.Query.consume_one(now)
 
     case Repo.update_all(query, []) do
       {1, _} -> :ok
-      {0, _} -> {:error, :auth_key_invalid}
+      {0, _} -> {:error, :enrollment_key_invalid}
     end
   end
 

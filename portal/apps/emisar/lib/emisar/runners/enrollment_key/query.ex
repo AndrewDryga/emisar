@@ -1,21 +1,21 @@
-defmodule Emisar.Runners.AuthKey.Query do
+defmodule Emisar.Runners.EnrollmentKey.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
 
   def all,
-    do: from(auth_keys in Emisar.Runners.AuthKey, as: :auth_keys)
+    do: from(enrollment_keys in Emisar.Runners.EnrollmentKey, as: :enrollment_keys)
 
   def not_deleted(queryable \\ all()),
-    do: where(queryable, [auth_keys: k], is_nil(k.deleted_at))
+    do: where(queryable, [enrollment_keys: k], is_nil(k.deleted_at))
 
   def by_id(queryable, id),
-    do: where(queryable, [auth_keys: k], k.id == ^id)
+    do: where(queryable, [enrollment_keys: k], k.id == ^id)
 
   def by_account_id(queryable, account_id),
-    do: where(queryable, [auth_keys: k], k.account_id == ^account_id)
+    do: where(queryable, [enrollment_keys: k], k.account_id == ^account_id)
 
   def ordered_by_recent(queryable \\ not_deleted()),
-    do: order_by(queryable, [auth_keys: k], desc: k.inserted_at)
+    do: order_by(queryable, [enrollment_keys: k], desc: k.inserted_at)
 
   @impl Emisar.Repo.Query
   def filters,
@@ -36,10 +36,17 @@ defmodule Emisar.Runners.AuthKey.Query do
         fun: fn queryable, statuses ->
           dyn =
             cond do
-              "active" in statuses and "revoked" in statuses -> dynamic([auth_keys: k], true)
-              "revoked" in statuses -> dynamic([auth_keys: k], not is_nil(k.revoked_at))
-              "active" in statuses -> dynamic([auth_keys: k], is_nil(k.revoked_at))
-              true -> dynamic([auth_keys: k], true)
+              "active" in statuses and "revoked" in statuses ->
+                dynamic([enrollment_keys: k], true)
+
+              "revoked" in statuses ->
+                dynamic([enrollment_keys: k], not is_nil(k.revoked_at))
+
+              "active" in statuses ->
+                dynamic([enrollment_keys: k], is_nil(k.revoked_at))
+
+              true ->
+                dynamic([enrollment_keys: k], true)
             end
 
           {queryable, dyn}
@@ -48,11 +55,15 @@ defmodule Emisar.Runners.AuthKey.Query do
     ]
 
   def by_key_prefix(queryable \\ all(), prefix),
-    do: where(queryable, [auth_keys: k], k.key_prefix == ^prefix)
+    do: where(queryable, [enrollment_keys: k], k.key_prefix == ^prefix)
 
   @doc "Auto-generated keys no runner has consumed yet — the eviction pool."
   def auto_unused(queryable \\ not_deleted()) do
-    where(queryable, [auth_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+    where(
+      queryable,
+      [enrollment_keys: k],
+      not is_nil(k.auto_generated_at) and is_nil(k.last_used_at)
+    )
   end
 
   @doc "Install-key ring overflow. Matches the api_key variant — see ApiKey.Query."
@@ -60,32 +71,32 @@ defmodule Emisar.Runners.AuthKey.Query do
     overflow_ids =
       auto_unused()
       |> by_account_id(account_id)
-      |> order_by([auth_keys: k], desc: k.auto_generated_at)
+      |> order_by([enrollment_keys: k], desc: k.auto_generated_at)
       |> offset(^cap)
-      |> select([auth_keys: k], k.id)
+      |> select([enrollment_keys: k], k.id)
 
     all()
     |> by_account_id(account_id)
     |> where(
-      [auth_keys: k],
+      [enrollment_keys: k],
       k.id in subquery(overflow_ids) and k.auto_generated_at < ^protected_floor
     )
   end
 
   @doc """
-  WHERE clause for `consume_auth_key/1`'s conditional UPDATE: matches
+  WHERE clause for `consume_enrollment_key/1`'s conditional UPDATE: matches
   only rows whose every `usable?` condition still holds. The check
   happens at SQL level so two concurrent registrations can't both
   decrement a single-use key.
   """
   def consumable_by_id(id, now) do
     all()
-    |> where([auth_keys: k], k.id == ^id)
-    |> where([auth_keys: k], is_nil(k.revoked_at))
-    |> where([auth_keys: k], is_nil(k.deleted_at))
-    |> where([auth_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
+    |> where([enrollment_keys: k], k.id == ^id)
+    |> where([enrollment_keys: k], is_nil(k.revoked_at))
+    |> where([enrollment_keys: k], is_nil(k.deleted_at))
+    |> where([enrollment_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
     |> where(
-      [auth_keys: k],
+      [enrollment_keys: k],
       (k.reusable and (is_nil(k.max_uses) or k.uses_count < k.max_uses)) or
         (not k.reusable and k.uses_count == 0)
     )
@@ -106,8 +117,8 @@ defmodule Emisar.Runners.AuthKey.Query do
   @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
   def select_labels(queryable, ids, field) do
     queryable
-    |> where([auth_keys: k], k.id in ^ids)
-    |> select([auth_keys: k], {k.id, field(k, ^field)})
+    |> where([enrollment_keys: k], k.id in ^ids)
+    |> select([enrollment_keys: k], {k.id, field(k, ^field)})
   end
 
   @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
@@ -117,7 +128,7 @@ defmodule Emisar.Runners.AuthKey.Query do
       join(
         queryable,
         :left,
-        [auth_keys: k],
+        [enrollment_keys: k],
         created_by in ^Emisar.Users.User.Query.not_deleted(),
         on: k.created_by_id == created_by.id,
         as: ^binding
@@ -130,7 +141,7 @@ defmodule Emisar.Runners.AuthKey.Query do
 
   @impl Emisar.Repo.Query
   def cursor_fields,
-    do: [{:auth_keys, :desc, :inserted_at}, {:auth_keys, :asc, :id}]
+    do: [{:enrollment_keys, :desc, :inserted_at}, {:enrollment_keys, :asc, :id}]
 
   # created_by is a soft-delete schema — scope the preload to
   # not_deleted() so the filter is explicit at the preload site.

@@ -231,8 +231,8 @@ defmodule EmisarWeb.Router do
         live "/runners", RunnersLive, :index
         live "/runners/install", RunnerInstallLive, :new
         # Before /runners/:id so "keys" isn't captured as a runner id.
-        live "/runners/keys", AuthKeysLive, :index
-        live "/runners/keys/new", AuthKeysLive, :new
+        live "/runners/keys", EnrollmentKeysLive, :index
+        live "/runners/keys/new", EnrollmentKeysLive, :new
         live "/runners/:id", RunnerDetailLive, :show
 
         live "/runs", RunsLive, :index

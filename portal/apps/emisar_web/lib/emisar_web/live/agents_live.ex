@@ -851,7 +851,7 @@ defmodule EmisarWeb.AgentsLive do
       </section>
 
       <%!-- Connected agents list — single-column rows matching the
-           AuthKeys / Grants visual language. --%>
+           EnrollmentKeys / Grants visual language. --%>
       <%!-- Plain heading above a standalone live_table (self-framed cards
            panel), matching the Pending / Members sections — not a bordered
            section wrapping it, which boxed the filter against a second
@@ -946,7 +946,7 @@ defmodule EmisarWeb.AgentsLive do
                   Rotate
                 </.button>
                 <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
-                     as runner keys (one ladder for one action class). --%>
+                     as enrollment keys (one ladder for one action class). --%>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)

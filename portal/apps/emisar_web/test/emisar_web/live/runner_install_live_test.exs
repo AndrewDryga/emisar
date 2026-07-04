@@ -1,10 +1,10 @@
 defmodule EmisarWeb.RunnerInstallLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Repo
-  alias Emisar.Runners.AuthKey
+  alias Emisar.Runners.EnrollmentKey
 
   describe "GET /app/runners/install" do
-    test "states the key is one-time and points multi-use at Runner keys", %{conn: conn} do
+    test "states the key is one-time and points multi-use at Enrollment keys", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
@@ -82,7 +82,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     } do
       {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
 
-      assert [%AuthKey{} = key] = Repo.all(AuthKey)
+      assert [%EnrollmentKey{} = key] = Repo.all(EnrollmentKey)
       assert key.account_id == account.id
       # Auto-generated (the install ring), not yet bound to a runner.
       assert key.auto_generated_at != nil
@@ -99,7 +99,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert html =~ "Generating your install command"
       refute html =~ ~s(data-copy-text=" curl -sSL)
       # …and crucially mints no auth key.
-      assert Repo.all(AuthKey) == []
+      assert Repo.all(EnrollmentKey) == []
     end
 
     # Redirect only for the runner minted from THIS page's key — not any runner
@@ -111,13 +111,13 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
 
       # The connected mount auto-minted this page's install key.
-      assert [%AuthKey{} = key] = Repo.all(AuthKey)
+      assert [%EnrollmentKey{} = key] = Repo.all(EnrollmentKey)
 
       # A runner registers with THAT key (its bootstrap key) and joins presence.
       runner =
         Fixtures.Runners.create_runner(
           account_id: account.id,
-          bootstrap_auth_key_id: key.id,
+          bootstrap_enrollment_key_id: key.id,
           connected?: false
         )
 

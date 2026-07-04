@@ -1,4 +1,4 @@
-defmodule EmisarWeb.AuthKeysLive do
+defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
@@ -7,16 +7,16 @@ defmodule EmisarWeb.AuthKeysLive do
   def mount(_params, _session, socket) do
     # Manage-only page (auth keys have no view-only permission): anyone
     # without manage lands on not-found at LOAD time, not on first submit.
-    if Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject) do
+    if Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject) do
       # Subscribe to the per-account auth-keys topic so another operator's
       # create / revoke (or an auto-bind from a runner registration) reflows
       # this list without the viewer having to refresh.
       if connected?(socket),
-        do: Runners.subscribe_account_auth_keys(socket.assigns.current_account.id)
+        do: Runners.subscribe_account_enrollment_keys(socket.assigns.current_account.id)
 
       {:ok,
        socket
-       |> assign(:page_title, "Runner keys")
+       |> assign(:page_title, "Enrollment keys")
        |> assign(:new_secret, nil)
        |> assign(:new_key, nil)
        |> assign(:base_url, UrlHelpers.derive_base_url(socket))
@@ -24,23 +24,25 @@ defmodule EmisarWeb.AuthKeysLive do
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))
        |> ConfirmDialog.init()
-       |> assign_form(Runners.change_auth_key())}
+       |> assign_form(Runners.change_enrollment_key())}
     else
       {:ok,
        socket
-       |> put_flash(:info, "Runner keys need an owner or admin role.")
+       |> put_flash(:info, "Enrollment keys need an owner or admin role.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
   end
 
   def handle_params(params, _uri, socket) do
     page_title =
-      if socket.assigns.live_action == :new, do: "Issue a runner key", else: "Runner keys"
+      if socket.assigns.live_action == :new,
+        do: "Issue an enrollment key",
+        else: "Enrollment keys"
 
     {:noreply, socket |> assign(:page_title, page_title) |> load(params)}
   end
 
-  def handle_info({:list_changed, :auth_key, _event_type, _id}, socket),
+  def handle_info({:list_changed, :enrollment_key, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -55,15 +57,15 @@ defmodule EmisarWeb.AuthKeysLive do
     end
   end
 
-  def handle_event("validate", %{"auth_key" => params}, socket) do
-    changeset = Runners.change_auth_key(params) |> Map.put(:action, :validate)
+  def handle_event("validate", %{"enrollment_key" => params}, socket) do
+    changeset = Runners.change_enrollment_key(params) |> Map.put(:action, :validate)
     {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("create", %{"auth_key" => params}, socket) do
+  def handle_event("create", %{"enrollment_key" => params}, socket) do
     Permissions.gated(
       socket,
-      Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
+      Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject),
       &do_create(&1, params)
     )
   end
@@ -78,7 +80,7 @@ defmodule EmisarWeb.AuthKeysLive do
   def handle_event("revoke", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
+      Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject),
       &do_revoke(&1, id)
     )
   end
@@ -97,12 +99,12 @@ defmodule EmisarWeb.AuthKeysLive do
        socket,
        ~p"/app/#{socket.assigns.current_account}/runners/keys",
        params,
-       Runners.AuthKey.Query.filters()
+       Runners.EnrollmentKey.Query.filters()
      )}
   end
 
   defp do_create(socket, params) do
-    changeset = Runners.change_auth_key(params)
+    changeset = Runners.change_enrollment_key(params)
 
     if changeset.valid? do
       attrs =
@@ -112,7 +114,7 @@ defmodule EmisarWeb.AuthKeysLive do
         |> put_expires(params["expires_at"])
         |> put_max_uses(params["max_uses"])
 
-      case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
+      case Runners.create_enrollment_key(attrs, socket.assigns.current_subject) do
         {:ok, raw, key} ->
           # The reveal IS the success step on the /new page — no flash, and no
           # list reload (the list isn't shown here; :index remounts fresh).
@@ -120,7 +122,7 @@ defmodule EmisarWeb.AuthKeysLive do
            socket
            |> assign(:new_secret, raw)
            |> assign(:new_key, key)
-           |> assign_form(Runners.change_auth_key())}
+           |> assign_form(Runners.change_enrollment_key())}
 
         # Field errors (e.g. a DB constraint) render inline on the form.
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -132,12 +134,12 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp do_revoke(socket, id) do
-    case Enum.find(socket.assigns.auth_keys, &(&1.id == id)) do
+    case Enum.find(socket.assigns.enrollment_keys, &(&1.id == id)) do
       nil ->
         {:noreply, socket}
 
       key ->
-        case Runners.revoke_auth_key(key, socket.assigns.current_subject) do
+        case Runners.revoke_enrollment_key(key, socket.assigns.current_subject) do
           {:ok, _} -> {:noreply, socket |> put_flash(:info, "Key revoked.") |> reload()}
           {:error, _} -> {:noreply, socket}
         end
@@ -153,16 +155,16 @@ defmodule EmisarWeb.AuthKeysLive do
     # Revoked keys hide by default via the status filter's `%Filter{default:}` —
     # LiveTable resolves absent → "active" and keeps an explicit "All" in the
     # URL (apply_filter gets the filters below), so no param injection here.
-    filters = Runners.AuthKey.Query.filters()
+    filters = Runners.EnrollmentKey.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
-    case Runners.list_auth_keys(
+    case Runners.list_enrollment_keys(
            socket.assigns.current_subject,
            Keyword.put(opts, :preload, [:created_by])
          ) do
-      {:ok, auth_keys, meta} ->
+      {:ok, enrollment_keys, meta} ->
         socket
-        |> assign(:auth_keys, auth_keys)
+        |> assign(:enrollment_keys, enrollment_keys)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -171,7 +173,7 @@ defmodule EmisarWeb.AuthKeysLive do
       # degrade to an empty list rather than recursing forever.
       {:error, _} when map_size(params) == 0 ->
         socket
-        |> assign(:auth_keys, [])
+        |> assign(:enrollment_keys, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -195,7 +197,7 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
-    assign(socket, :form, to_form(changeset, as: "auth_key"))
+    assign(socket, :form, to_form(changeset, as: "enrollment_key"))
   end
 
   defp put_if_present(map, _key, nil), do: map
@@ -234,21 +236,24 @@ defmodule EmisarWeb.AuthKeysLive do
       <:title>
         <%= if @live_action == :new do %>
           <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
-          <.back_link navigate={~p"/app/#{@current_account}/runners/keys"}>Runner keys</.back_link>
-          Issue a runner key
+          <.back_link navigate={~p"/app/#{@current_account}/runners/keys"}>
+            Enrollment keys
+          </.back_link>
+          Issue an enrollment key
         <% else %>
-          <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link> Runner keys
+          <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
+          Enrollment keys
         <% end %>
       </:title>
       <:actions :if={
-        @live_action == :index and Runners.subject_can_manage_auth_keys?(@current_subject)
+        @live_action == :index and Runners.subject_can_manage_enrollment_keys?(@current_subject)
       }>
         <.button navigate={~p"/app/#{@current_account}/runners/keys/new"} size={:md} icon="hero-plus">
           New key
         </.button>
       </:actions>
 
-      <%!-- ===== Issue a runner key — its own focused page (:new) =====
+      <%!-- ===== Issue an enrollment key — its own focused page (:new) =====
            CONTENT ON CANVAS, task + rail (the install-wizard grammar) at the
            same 7xl column as the list it's reached from, so the header never
            jumps: the form (or its success reveal) is the task on the left; the
@@ -268,7 +273,7 @@ defmodule EmisarWeb.AuthKeysLive do
                affordances), carrying the two next moves. --%>
           <.secret_reveal
             :if={@new_secret}
-            title="Copy this runner key now — it will not be shown again."
+            title="Copy this enrollment key now — it will not be shown again."
             secret={@new_secret}
           >
             Treat it like a password. Anyone with this key can register a runner
@@ -279,7 +284,7 @@ defmodule EmisarWeb.AuthKeysLive do
             <:actions>
               <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
               <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
-                Back to runner keys
+                Back to enrollment keys
               </.button>
             </:actions>
           </.secret_reveal>
@@ -287,7 +292,7 @@ defmodule EmisarWeb.AuthKeysLive do
           <.simple_form
             :if={is_nil(@new_secret)}
             for={@form}
-            id="auth_key_form"
+            id="enrollment_key_form"
             phx-change="validate"
             phx-submit="create"
           >
@@ -334,11 +339,11 @@ defmodule EmisarWeb.AuthKeysLive do
           </.simple_form>
         </div>
 
-        <%!-- The reading rail — what a runner key IS and how its lifecycle
+        <%!-- The reading rail — what an enrollment key IS and how its lifecycle
              works, so an operator issuing one understands the exchange and
              the revoke semantics before they mint a root-capable secret. --%>
         <aside class="mt-10 lg:mt-0">
-          <.section_header title="What a runner key is" />
+          <.section_header title="What an enrollment key is" />
           <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
             <p>
               A bearer secret a fresh host presents to
@@ -385,7 +390,7 @@ defmodule EmisarWeb.AuthKeysLive do
           layout={:cards}
           id="auth-keys"
           path={~p"/app/#{@current_account}/runners/keys"}
-          rows={@auth_keys}
+          rows={@enrollment_keys}
           metadata={@metadata}
           filters={@filters}
           filter_params={@filter_params}
@@ -429,10 +434,11 @@ defmodule EmisarWeb.AuthKeysLive do
               <:actions>
                 <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm.
                      The button only OPENS the dialog; `revoke` still fires from
-                     Confirm and stays server-authz-gated (subject_can_manage_auth_keys?). --%>
+                     Confirm and stays server-authz-gated (subject_can_manage_enrollment_keys?). --%>
                 <.button
                   :if={
-                    is_nil(key.revoked_at) and Runners.subject_can_manage_auth_keys?(@current_subject)
+                    is_nil(key.revoked_at) and
+                      Runners.subject_can_manage_enrollment_keys?(@current_subject)
                   }
                   variant={:secondary}
                   tone={:rose}
@@ -445,7 +451,7 @@ defmodule EmisarWeb.AuthKeysLive do
                 <.confirm_dialog
                   :if={is_nil(key.revoked_at)}
                   id={"revoke-key-#{key.id}"}
-                  title="Revoke runner key"
+                  title="Revoke enrollment key"
                   confirm_label="Revoke key"
                   confirm_token={key.key_prefix}
                   typed={@typed}
@@ -464,29 +470,29 @@ defmodule EmisarWeb.AuthKeysLive do
             </.list_row>
           </:item>
           <:empty>
-            <.empty_state variant={:bare} icon="hero-key" title="No runner keys yet.">
-              A runner key is the bearer secret a fresh host enrolls with — mint a
+            <.empty_state variant={:bare} icon="hero-key" title="No enrollment keys yet.">
+              An enrollment key is the bearer secret a fresh host enrolls with — mint a
               reusable one for image bakes and cloud-init fleets. The install
               wizard's one-time keys appear here too, revocable until used.
               <.button
-                :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
+                :if={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
                 navigate={~p"/app/#{@current_account}/runners/keys/new"}
                 variant={:secondary}
                 size={:sm}
                 icon="hero-plus"
                 class="mt-4"
               >
-                New runner key
+                New enrollment key
               </.button>
             </.empty_state>
           </:empty>
         </LiveTable.live_table>
 
         <p
-          :if={not Runners.subject_can_manage_auth_keys?(@current_subject)}
+          :if={not Runners.subject_can_manage_enrollment_keys?(@current_subject)}
           class="text-xs text-zinc-500"
         >
-          Only owners and admins can issue or revoke runner keys.
+          Only owners and admins can issue or revoke enrollment keys.
         </p>
       </div>
     </.dashboard_shell>

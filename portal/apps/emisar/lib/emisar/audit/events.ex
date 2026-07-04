@@ -276,7 +276,7 @@ defmodule Emisar.Audit.Events do
   # runner is the actor, no operator `%Subject{}` is involved.
   def runner_registered(
         %Runners.Runner{} = runner,
-        %Runners.AuthKey{} = key,
+        %Runners.EnrollmentKey{} = key,
         context \\ %RequestContext{}
       ) do
     Audit.changeset(runner.account_id, "runner.registered",
@@ -291,7 +291,7 @@ defmodule Emisar.Audit.Events do
         external_id: runner.external_id,
         group: runner.group,
         hostname: runner.hostname,
-        auth_key_id: key.id
+        enrollment_key_id: key.id
       }
     )
   end
@@ -307,34 +307,34 @@ defmodule Emisar.Audit.Events do
 
   # -- Auth keys (runner install/enrolment keys) -----------------------
 
-  def auth_key_created(%Subject{} = subject, %Runners.AuthKey{} = key) do
+  def enrollment_key_created(%Subject{} = subject, %Runners.EnrollmentKey{} = key) do
     Audit.changeset(
       key.account_id,
-      "auth_key.created",
+      "enrollment_key.created",
       actor(subject) ++
         [
-          target_kind: "auth_key",
+          target_kind: "enrollment_key",
           target_id: key.id,
           payload: %{prefix: key.key_prefix, reusable: key.reusable}
         ]
     )
   end
 
-  def auth_key_revoked(%Subject{} = subject, %Runners.AuthKey{} = key) do
+  def enrollment_key_revoked(%Subject{} = subject, %Runners.EnrollmentKey{} = key) do
     Audit.changeset(
       key.account_id,
-      "auth_key.revoked",
+      "enrollment_key.revoked",
       actor(subject) ++
-        [target_kind: "auth_key", target_id: key.id, payload: %{prefix: key.key_prefix}]
+        [target_kind: "enrollment_key", target_id: key.id, payload: %{prefix: key.key_prefix}]
     )
   end
 
   # Auto-generated install key promoted to permanent when a runner first
   # binds with it — system actor (no user is acting), mirroring api_key_bound.
-  def auth_key_bound(%Runners.AuthKey{} = key) do
-    Audit.changeset(key.account_id, "auth_key.bound",
+  def enrollment_key_bound(%Runners.EnrollmentKey{} = key) do
+    Audit.changeset(key.account_id, "enrollment_key.bound",
       actor_kind: "system",
-      target_kind: "auth_key",
+      target_kind: "enrollment_key",
       target_id: key.id,
       payload: %{prefix: key.key_prefix, auto: true}
     )

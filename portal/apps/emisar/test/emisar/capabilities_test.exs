@@ -21,7 +21,7 @@ defmodule Emisar.CapabilitiesTest do
       {&Accounts.subject_can_manage_account_security?/1, [:owner, :admin]},
       {&Accounts.subject_can_manage_team?/1, [:owner, :admin]},
       {&Runners.subject_can_manage_runners?/1, [:owner, :admin]},
-      {&Runners.subject_can_manage_auth_keys?/1, [:owner, :admin]},
+      {&Runners.subject_can_manage_enrollment_keys?/1, [:owner, :admin]},
       {&ApiKeys.subject_can_manage_api_keys?/1, [:owner, :admin]},
       {&Policies.subject_can_manage_policies?/1, [:owner, :admin]},
       {&Runbooks.subject_can_manage_runbooks?/1, [:owner, :admin]},

@@ -543,13 +543,13 @@ defmodule Emisar.Audit do
           :name,
           &Emisar.ApiKeys.ApiKey.Query.by_account_id(&1, account_id)
         ),
-      "auth_key" =>
+      "enrollment_key" =>
         fetch_labels(
-          Emisar.Runners.AuthKey.Query,
+          Emisar.Runners.EnrollmentKey.Query,
           ids_by_kind,
-          "auth_key",
+          "enrollment_key",
           :description,
-          &Emisar.Runners.AuthKey.Query.by_account_id(&1, account_id)
+          &Emisar.Runners.EnrollmentKey.Query.by_account_id(&1, account_id)
         ),
       "action_run" =>
         fetch_labels(

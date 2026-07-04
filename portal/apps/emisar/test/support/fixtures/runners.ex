@@ -26,7 +26,7 @@ defmodule Emisar.Fixtures.Runners do
       hostname: attrs[:hostname] || "host-#{Fixtures.Random.unique_int()}",
       labels: attrs[:labels] || %{},
       runner_version: attrs[:runner_version] || "0.1.0",
-      bootstrap_auth_key_id: attrs[:bootstrap_auth_key_id]
+      bootstrap_enrollment_key_id: attrs[:bootstrap_enrollment_key_id]
     }
 
     {:ok, runner} =
@@ -61,7 +61,7 @@ defmodule Emisar.Fixtures.Runners do
   Creates a bootstrap auth key. Returns `{raw, key}` so callers can
   test both the raw secret + the persisted struct.
   """
-  def create_auth_key(attrs \\ %{}) do
+  def create_enrollment_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
     user_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
@@ -77,18 +77,18 @@ defmodule Emisar.Fixtures.Runners do
 
     {:ok, user} = Users.fetch_user_by_id(user_id)
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    {:ok, raw, key} = Runners.create_auth_key(create_attrs, subject)
+    {:ok, raw, key} = Runners.create_enrollment_key(create_attrs, subject)
     {raw, key}
   end
 
   @doc """
   Auth key persisted from a caller-supplied raw secret — the seed/dev
-  bootstrap shape (`AuthKey.Changeset.create_with_secret/4`). Tests use
+  bootstrap shape (`EnrollmentKey.Changeset.create_with_secret/4`). Tests use
   it to exercise the secret→key round-trip with a known raw value.
   """
-  def create_auth_key_with_secret(raw, account_id, user_id, attrs \\ %{}) do
+  def create_enrollment_key_with_secret(raw, account_id, user_id, attrs \\ %{}) do
     {:ok, key} =
-      Runners.AuthKey.Changeset.create_with_secret(account_id, user_id, raw, attrs)
+      Runners.EnrollmentKey.Changeset.create_with_secret(account_id, user_id, raw, attrs)
       |> Repo.insert()
 
     key

@@ -1276,12 +1276,12 @@ end
 
 # -- Bootstrap auth key (unchanged) ----------------------------------
 
-case Runners.list_auth_keys(owner_subject) do
+case Runners.list_enrollment_keys(owner_subject) do
   {:ok, [], _} ->
     case System.get_env("EMISAR_DEV_FIXED_AUTH_KEY") do
       fixed when is_binary(fixed) and byte_size(fixed) >= 27 ->
         {:ok, _key} =
-          Emisar.Runners.AuthKey.Changeset.create_with_secret(account.id, user.id, fixed, %{
+          Emisar.Runners.EnrollmentKey.Changeset.create_with_secret(account.id, user.id, fixed, %{
             description: "Dev fixed auth key (docker-compose)",
             group: "dev-docker",
             reusable: true
@@ -1292,7 +1292,7 @@ case Runners.list_auth_keys(owner_subject) do
 
       _ ->
         {:ok, raw, _key} =
-          Runners.create_auth_key(
+          Runners.create_enrollment_key(
             %{
               description: "Demo auth key",
               group: "edge-web",
@@ -1307,9 +1307,9 @@ case Runners.list_auth_keys(owner_subject) do
         IO.puts("")
     end
 
-    Audit.log(account.id, "auth_key.created",
+    Audit.log(account.id, "enrollment_key.created",
       actor_kind: "system",
-      target_kind: "auth_key",
+      target_kind: "enrollment_key",
       payload: %{seeded: true}
     )
 

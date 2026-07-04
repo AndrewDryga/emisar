@@ -14,7 +14,7 @@ defmodule Emisar.Runners.Token do
     field :last_used_at, :utc_datetime_usec
 
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
-    belongs_to :issued_via_key, Emisar.Runners.AuthKey, where: [deleted_at: nil]
+    belongs_to :issued_via_key, Emisar.Runners.EnrollmentKey, where: [deleted_at: nil]
 
     timestamps()
   end

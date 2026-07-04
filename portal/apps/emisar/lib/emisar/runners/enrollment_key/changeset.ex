@@ -1,4 +1,4 @@
-defmodule Emisar.Runners.AuthKey.Changeset do
+defmodule Emisar.Runners.EnrollmentKey.Changeset do
   @moduledoc """
   Changesets for runner auth keys: create / mint-install (auto-generated)
   / revoke / soft-delete / usage. The raw key only ever flows through
@@ -6,7 +6,7 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   persisted form.
   """
   use Emisar, :changeset
-  alias Emisar.Runners.AuthKey
+  alias Emisar.Runners.EnrollmentKey
 
   @doc """
   Validation-only changeset for the operator create form. Casts the
@@ -19,13 +19,13 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   and is parsed when the key is actually created.
   """
   def form(attrs \\ %{}) do
-    %AuthKey{}
+    %EnrollmentKey{}
     |> cast(attrs, [:description, :reusable, :max_uses])
     |> validate_fields()
   end
 
   def create(account_id, user_id, prefix, hash, attrs) do
-    %AuthKey{}
+    %EnrollmentKey{}
     |> cast(attrs, [:description, :reusable, :max_uses, :expires_at])
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
@@ -45,24 +45,24 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   end
 
   # Mirrors Emisar.Runners' mint size ("emkey-auth-" + 16 random chars);
-  # the round-trip test on `peek_auth_key_by_secret/1` breaks on drift.
-  @auth_key_prefix_size 27
+  # the round-trip test on `peek_enrollment_key_by_secret/1` breaks on drift.
+  @enrollment_key_prefix_size 27
 
   @doc """
   Seed/dev-bootstrap variant of `create/5` deriving prefix + hash from a
   caller-supplied raw secret (docker-compose's fixed dev key, test
   fixtures). Production keys MUST mint through
-  `Emisar.Runners.create_auth_key/2` — a known raw value defeats the
+  `Emisar.Runners.create_enrollment_key/2` — a known raw value defeats the
   server-side randomization that makes auth keys credentials.
   """
   def create_with_secret(account_id, user_id, raw, attrs)
-      when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
-    prefix = String.slice(raw, 0, @auth_key_prefix_size)
+      when is_binary(raw) and byte_size(raw) >= @enrollment_key_prefix_size do
+    prefix = String.slice(raw, 0, @enrollment_key_prefix_size)
     create(account_id, user_id, prefix, Emisar.Crypto.hash(raw), attrs)
   end
 
   def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
-    %AuthKey{}
+    %EnrollmentKey{}
     |> cast(attrs, [:description])
     |> put_default_value(:description, "Dashboard install command")
     |> put_change(:account_id, account_id)
@@ -74,7 +74,7 @@ defmodule Emisar.Runners.AuthKey.Changeset do
     |> validate_required([:account_id])
   end
 
-  def usage(%AuthKey{} = key) do
+  def usage(%EnrollmentKey{} = key) do
     change(key,
       last_used_at: DateTime.utc_now(),
       uses_count: key.uses_count + 1
@@ -83,14 +83,15 @@ defmodule Emisar.Runners.AuthKey.Changeset do
 
   # Idempotent: re-revoking an already-revoked key is a no-op (no re-stamp), so
   # the lock-race path (caller passed a stale-active key) can't move revoked_at.
-  def revoke(%AuthKey{revoked_at: revoked_at} = key, _by_user_id) when not is_nil(revoked_at),
-    do: change(key)
+  def revoke(%EnrollmentKey{revoked_at: revoked_at} = key, _by_user_id)
+      when not is_nil(revoked_at),
+      do: change(key)
 
-  def revoke(%AuthKey{} = key, by_user_id) do
+  def revoke(%EnrollmentKey{} = key, by_user_id) do
     change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
 
-  def delete(%AuthKey{} = key) do
+  def delete(%EnrollmentKey{} = key) do
     change(key, deleted_at: DateTime.utc_now())
   end
 end

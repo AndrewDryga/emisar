@@ -122,17 +122,17 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("runner.disconnected", p),
     do: pairs(reason: get(p, :reason))
 
-  defp summarize("auth_key.created", p) do
+  defp summarize("enrollment_key.created", p) do
     pairs(
       group: get(p, :group),
       reusable: format_bool(get(p, :reusable))
     )
   end
 
-  defp summarize("auth_key.revoked", p),
+  defp summarize("enrollment_key.revoked", p),
     do: pairs(prefix: get(p, :prefix))
 
-  defp summarize("auth_key.bound", p) do
+  defp summarize("enrollment_key.bound", p) do
     base = pairs(prefix: get(p, :prefix))
     if get(p, :auto), do: base ++ [{"source", "auto-mint"}], else: base
   end

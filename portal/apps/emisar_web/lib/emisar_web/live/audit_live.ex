@@ -751,7 +751,7 @@ defmodule EmisarWeb.AuditLive do
 
   defp ref_path(account, "policy", _id), do: ~p"/app/#{account}/policies"
   defp ref_path(account, "account", _id), do: ~p"/app/#{account}/settings/team"
-  defp ref_path(account, "auth_key", _id), do: ~p"/app/#{account}/runners/keys"
+  defp ref_path(account, "enrollment_key", _id), do: ~p"/app/#{account}/runners/keys"
   defp ref_path(account, "api_key", _id), do: ~p"/app/#{account}/settings/agents"
   defp ref_path(account, "approval_grant", _id), do: ~p"/app/#{account}/approvals"
   defp ref_path(account, "user", _id), do: ~p"/app/#{account}/settings/team"

@@ -3277,7 +3277,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   One `<li>` row for a list section, with the icon-disc + content
-  + actions layout used by AuthKeys, Agents, Grants, Runbooks, etc.
+  + actions layout used by EnrollmentKeys, Agents, Grants, Runbooks, etc.
 
       <.list_row icon="hero-key">
         <:title>{key.name}</:title>
@@ -3896,7 +3896,7 @@ defmodule EmisarWeb.CoreComponents do
                       navigate={@keys_path}
                       class="font-medium text-brand-400 hover:text-brand-300"
                     >
-                      Runner keys →
+                      Enrollment keys →
                     </.link>
                   </p>
                 </section>
@@ -3950,9 +3950,9 @@ defmodule EmisarWeb.CoreComponents do
               </div>
             <% @install_command == :mint_failed -> %>
               <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
-                We couldn't mint a runner key just now. Open
+                We couldn't mint an enrollment key just now. Open
                 <.link navigate={@keys_path} class="font-semibold underline">
-                  Runners → Runner keys
+                  Runners → Enrollment keys
                 </.link>
                 and create one manually, or refresh this page to try again.
               </div>
@@ -4132,8 +4132,8 @@ defmodule EmisarWeb.CoreComponents do
   and usually no icon.
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
-        Mint a runner key and run the installer on a host.
-        <:cta navigate={~p"/app/\#{@current_account}/runners/keys"}>New runner key</:cta>
+        Mint an enrollment key and run the installer on a host.
+        <:cta navigate={~p"/app/\#{@current_account}/runners/keys"}>New enrollment key</:cta>
       </.empty_state>
 
       <.empty_state variant={:hint}>No overrides. The tier defaults decide.</.empty_state>

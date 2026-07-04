@@ -41,7 +41,7 @@ defmodule Emisar.Runners.Runner do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :bootstrap_auth_key, Emisar.Runners.AuthKey, where: [deleted_at: nil]
+    belongs_to :bootstrap_enrollment_key, Emisar.Runners.EnrollmentKey, where: [deleted_at: nil]
 
     has_many :tokens, Emisar.Runners.Token
     has_many :actions, Emisar.Catalog.RunnerAction

@@ -19,7 +19,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute has_element?(lv, "a", "Connect a runner")
     end
 
-    test "the fleet's sub-features ride the title row — Runner keys next to Connect a runner",
+    test "the fleet's sub-features ride the title row — Enrollment keys next to Connect a runner",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
@@ -154,7 +154,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       assert html =~ "viewable-runner"
       # "Connect a runner" points at a mint the viewer can't perform — hidden
-      # (§4), like the Runner keys door.
+      # (§4), like the Enrollment keys door.
       refute has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",

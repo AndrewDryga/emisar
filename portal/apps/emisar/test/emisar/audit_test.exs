@@ -1371,15 +1371,15 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(refs["runner"], runner_b.id)
     end
 
-    test "resolves auth_key, action_run, approval_request, and runbook labels", %{
+    test "resolves enrollment_key, action_run, approval_request, and runbook labels", %{
       account: account,
       user: user
     } do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      {_raw, auth_key} =
-        Fixtures.Runners.create_auth_key(
+      {_raw, enrollment_key} =
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           description: "enroll-prod"
@@ -1409,10 +1409,10 @@ defmodule Emisar.AuditTest do
           subject
         )
 
-      {:ok, e_auth_key} =
-        Audit.log(account.id, "auth_key.touched",
-          target_kind: "auth_key",
-          target_id: auth_key.id
+      {:ok, e_enrollment_key} =
+        Audit.log(account.id, "enrollment_key.touched",
+          target_kind: "enrollment_key",
+          target_id: enrollment_key.id
         )
 
       {:ok, e_run} =
@@ -1427,9 +1427,9 @@ defmodule Emisar.AuditTest do
       {:ok, e_runbook} =
         Audit.log(account.id, "runbook.touched", target_kind: "runbook", target_id: runbook.id)
 
-      refs = Audit.resolve_references([e_auth_key, e_run, e_request, e_runbook])
+      refs = Audit.resolve_references([e_enrollment_key, e_run, e_request, e_runbook])
 
-      assert refs["auth_key"][auth_key.id] == "enroll-prod"
+      assert refs["enrollment_key"][enrollment_key.id] == "enroll-prod"
       assert refs["action_run"][run.id] == "linux.uptime"
       # The approval_request resolver labels by id (no friendlier handle exists).
       assert refs["approval_request"][request.id] == request.id
@@ -1446,7 +1446,7 @@ defmodule Emisar.AuditTest do
     end
 
     test "denials and access taken away are :warn" do
-      for t <- ~w[approval.denied action_run.denied auth_key.revoked user.session_revoked
+      for t <- ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
                   runner.disabled runner.deleted membership.removed membership.suspended
                   approval.expired action_run.cancelled approval.grant_revoked] do
         assert Audit.Event.Query.outcome(t) == :warn, "expected #{t} to be :warn"
@@ -1513,7 +1513,7 @@ defmodule Emisar.AuditTest do
                ~w[user api_key runner runbook scheduler system]
 
       assert filter_values(:target_kind) ==
-               ~w[user account runner api_key auth_key approval_request
+               ~w[user account runner api_key enrollment_key approval_request
                   approval_grant runbook policy]
     end
 

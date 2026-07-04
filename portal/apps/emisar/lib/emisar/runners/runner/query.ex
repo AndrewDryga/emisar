@@ -20,8 +20,8 @@ defmodule Emisar.Runners.Runner.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runners: r], r.account_id == ^account_id)
 
-  def by_bootstrap_auth_key_id(queryable, auth_key_id),
-    do: where(queryable, [runners: r], r.bootstrap_auth_key_id == ^auth_key_id)
+  def by_bootstrap_enrollment_key_id(queryable, enrollment_key_id),
+    do: where(queryable, [runners: r], r.bootstrap_enrollment_key_id == ^enrollment_key_id)
 
   def by_external_id(queryable, external_id),
     do: where(queryable, [runners: r], r.external_id == ^external_id)

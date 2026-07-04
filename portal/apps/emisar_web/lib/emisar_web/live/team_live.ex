@@ -1130,7 +1130,7 @@ defmodule EmisarWeb.TeamLive do
                   <% end %>
                   <%!-- SSO's ONE console door — its nav item is gone (a
                        rare-touch, admin-only surface lives behind its owning
-                       page, like runner keys behind Runners). With no provider
+                       page, like enrollment keys behind Runners). With no provider
                        yet, the right-side "Set up SSO" control IS the door —
                        two links to the same place read as a glitch. --%>
                   <.link

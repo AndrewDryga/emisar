@@ -4,7 +4,7 @@ defmodule EmisarWeb.LiveTableTest do
   param → context-opts translation goes through it, so we pin those.
 
   Render paths are exercised end-to-end via AuditLive / RunsLive for
-  `:table` mode, and via AuthKeysLive / RunbooksLive / AgentsLive /
+  `:table` mode, and via EnrollmentKeysLive / RunbooksLive / AgentsLive /
   ApprovalsLive for `:cards` mode. Here we also smoke-test the cards
   shell directly so the slot+empty+paginator wiring can't regress
   invisibly (the LV tests render the same shell with realistic data

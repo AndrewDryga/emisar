@@ -32,7 +32,7 @@ defmodule Emisar.Runners.Runner.Changeset do
       :hostname,
       :labels,
       :runner_version,
-      :bootstrap_auth_key_id
+      :bootstrap_enrollment_key_id
     ])
     |> validate_required([:account_id, :name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)

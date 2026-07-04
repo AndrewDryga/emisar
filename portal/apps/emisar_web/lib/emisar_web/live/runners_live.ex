@@ -159,16 +159,16 @@ defmodule EmisarWeb.RunnersLive do
       <%!-- The wizard IS the add flow, so the button (→ the same wizard) is
            redundant while an empty fleet shows it inline. --%>
       <:actions :if={not @show_wizard?}>
-        <%!-- Runner keys are the fleet's OWN sub-feature (the audit "Stream to
+        <%!-- Enrollment keys are the fleet's OWN sub-feature (the audit "Stream to
              SIEM" pattern) — a quiet secondary door on the owning page, not a
              nav item of their own. --%>
         <.button
-          :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
+          :if={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
           navigate={~p"/app/#{@current_account}/runners/keys"}
           variant={:secondary}
           size={:md}
         >
-          Runner keys
+          Enrollment keys
         </.button>
         <%!-- "Connect a runner" — the destination page's own title, the
              dashboard onboarding step, and the parallel of "Connect an agent".
@@ -215,7 +215,7 @@ defmodule EmisarWeb.RunnersLive do
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
             keys_path={~p"/app/#{@current_account}/runners/keys"}
-            show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
+            show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
           />
         <% @runners == [] && @metadata.count == 0 -> %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the

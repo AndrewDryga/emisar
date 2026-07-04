@@ -71,7 +71,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # No auto-minted install key — the checklist links to the install page,
       # which mints when the operator navigates into it.
-      assert Emisar.Repo.all(Emisar.Runners.AuthKey) == []
+      assert Emisar.Repo.all(Emisar.Runners.EnrollmentKey) == []
     end
 
     test "a runner alone keeps the checklist — step 1 done, agent step current", %{conn: conn} do

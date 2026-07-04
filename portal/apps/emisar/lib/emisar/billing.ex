@@ -220,7 +220,7 @@ defmodule Emisar.Billing do
   Returns :ok if the account is within plan limits for `resource`.
   Returns `{:error, :over_limit, plan, limit}` otherwise.
 
-  Internal — called by `Runners.register_via_auth_key/2` on the
+  Internal — called by `Runners.register_via_enrollment_key/2` on the
   bootstrap path before any Subject exists, and by `Catalog`/admin
   flows that already authorized upstream. The check itself is
   account-scoped (the runner counting), not subject-scoped.

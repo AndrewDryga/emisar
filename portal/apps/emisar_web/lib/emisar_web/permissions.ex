@@ -3,7 +3,7 @@ defmodule EmisarWeb.Permissions do
   Thin web helper for permission-gated LiveView event handlers.
 
   Authorization itself is a **domain** concern: ask the relevant context's
-  `subject_can_<verb>?/1` predicate (e.g. `Runners.subject_can_manage_auth_keys?/1`)
+  `subject_can_<verb>?/1` predicate (e.g. `Runners.subject_can_manage_enrollment_keys?/1`)
   and pass its boolean result here. `gated/3` only flashes a denial and
   short-circuits when the action isn't allowed — a backstop for a control the
   template already hid via the same predicate. The context function the handler
@@ -12,7 +12,7 @@ defmodule EmisarWeb.Permissions do
       def handle_event("revoke", %{"id" => id}, socket) do
         Permissions.gated(
           socket,
-          Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
+          Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject),
           &do_revoke(&1, id)
         )
       end

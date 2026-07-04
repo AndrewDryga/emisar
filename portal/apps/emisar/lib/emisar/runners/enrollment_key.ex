@@ -1,4 +1,4 @@
-defmodule Emisar.Runners.AuthKey do
+defmodule Emisar.Runners.EnrollmentKey do
   @moduledoc """
   Bootstrap secret an operator generates in the UI, drops onto a VM,
   and the runner presents on first connect. Reusable for stable VM
@@ -9,7 +9,7 @@ defmodule Emisar.Runners.AuthKey do
   """
   use Emisar, :schema
 
-  schema "runner_auth_keys" do
+  schema "runner_enrollment_keys" do
     field :key_prefix, :string
     field :key_hash, :binary, redact: true
     field :description, :string

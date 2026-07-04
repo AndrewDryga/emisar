@@ -7,7 +7,7 @@ defmodule Emisar.RunnersTest do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.Runners
-  alias Emisar.Runners.{AuthKey, Presence, Runner, Token}
+  alias Emisar.Runners.{EnrollmentKey, Presence, Runner, Token}
 
   defp account_with_owner_subject do
     user = Fixtures.Users.create_user()
@@ -297,12 +297,12 @@ defmodule Emisar.RunnersTest do
   describe "any_runner_bootstrapped_by_key?/3" do
     test "true when a listed runner registered with that key" do
       account = Fixtures.Accounts.create_account()
-      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
       runner =
         Fixtures.Runners.create_runner(
           account_id: account.id,
-          bootstrap_auth_key_id: key.id,
+          bootstrap_enrollment_key_id: key.id,
           connected?: false
         )
 
@@ -311,13 +311,13 @@ defmodule Emisar.RunnersTest do
 
     test "false when the listed runner registered with a different key" do
       account = Fixtures.Accounts.create_account()
-      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
-      {_raw, other_key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
+      {_raw, other_key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
       runner =
         Fixtures.Runners.create_runner(
           account_id: account.id,
-          bootstrap_auth_key_id: other_key.id,
+          bootstrap_enrollment_key_id: other_key.id,
           connected?: false
         )
 
@@ -326,12 +326,12 @@ defmodule Emisar.RunnersTest do
 
     test "false when the key's runner exists but its id isn't in the list" do
       account = Fixtures.Accounts.create_account()
-      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
       _bootstrapped =
         Fixtures.Runners.create_runner(
           account_id: account.id,
-          bootstrap_auth_key_id: key.id,
+          bootstrap_enrollment_key_id: key.id,
           connected?: false
         )
 
@@ -344,12 +344,12 @@ defmodule Emisar.RunnersTest do
 
     test "false across accounts — scoped to the given account only" do
       account = Fixtures.Accounts.create_account()
-      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
       runner =
         Fixtures.Runners.create_runner(
           account_id: account.id,
-          bootstrap_auth_key_id: key.id,
+          bootstrap_enrollment_key_id: key.id,
           connected?: false
         )
 
@@ -1296,7 +1296,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "list_auth_keys/2" do
+  describe "list_enrollment_keys/2" do
     setup do
       {account, _user, subject} = account_with_owner_subject()
       %{account: account, subject: subject}
@@ -1306,69 +1306,69 @@ defmodule Emisar.RunnersTest do
       subject: subject
     } do
       {:ok, _, wizard} = Runners.mint_install_key(subject)
-      {:ok, _, manual} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, _, manual} = Runners.create_enrollment_key(%{reusable: true}, subject)
 
       # Both are live, root-capable credentials; hiding the auto-minted one
       # under-reported the very list an operator audits (and the only place
       # it can be revoked pre-use).
-      assert {:ok, keys, _} = Runners.list_auth_keys(subject)
+      assert {:ok, keys, _} = Runners.list_enrollment_keys(subject)
       assert keys |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort([wizard.id, manual.id])
     end
 
     test "the status filter hides or shows revoked keys", %{subject: subject} do
-      {:ok, _, active} = Runners.create_auth_key(%{reusable: true}, subject)
-      {:ok, _, revoked} = Runners.create_auth_key(%{reusable: true}, subject)
-      {:ok, _} = Runners.revoke_auth_key(revoked, subject)
+      {:ok, _, active} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      {:ok, _, revoked} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      {:ok, _} = Runners.revoke_enrollment_key(revoked, subject)
 
       # No status filter → both keys.
-      assert {:ok, both, _} = Runners.list_auth_keys(subject)
+      assert {:ok, both, _} = Runners.list_enrollment_keys(subject)
       assert length(both) == 2
 
       # status=active → only the live key.
-      assert {:ok, [%AuthKey{id: id}], _} =
-               Runners.list_auth_keys(subject, filter: [status: ["active"]])
+      assert {:ok, [%EnrollmentKey{id: id}], _} =
+               Runners.list_enrollment_keys(subject, filter: [status: ["active"]])
 
       assert id == active.id
 
       # status=revoked → only the revoked key.
-      assert {:ok, [%AuthKey{id: id}], _} =
-               Runners.list_auth_keys(subject, filter: [status: ["revoked"]])
+      assert {:ok, [%EnrollmentKey{id: id}], _} =
+               Runners.list_enrollment_keys(subject, filter: [status: ["revoked"]])
 
       assert id == revoked.id
     end
 
     test "is account-scoped — another account's keys don't leak in", %{subject: subject} do
-      {:ok, _, _mine} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, _, _mine} = Runners.create_enrollment_key(%{reusable: true}, subject)
       {_other, _u, other_subject} = account_with_owner_subject()
-      {:ok, _, _theirs} = Runners.create_auth_key(%{reusable: true}, other_subject)
+      {:ok, _, _theirs} = Runners.create_enrollment_key(%{reusable: true}, other_subject)
 
-      assert {:ok, [_one], _} = Runners.list_auth_keys(subject)
+      assert {:ok, [_one], _} = Runners.list_enrollment_keys(subject)
     end
 
-    test "a viewer (no manage_auth_keys) is refused", %{account: account} do
-      assert {:error, :unauthorized} = Runners.list_auth_keys(viewer_subject_for(account))
+    test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do
+      assert {:error, :unauthorized} = Runners.list_enrollment_keys(viewer_subject_for(account))
     end
   end
 
-  describe "change_auth_key/1" do
+  describe "change_enrollment_key/1" do
     test "builds a valid form changeset from the operator-facing fields (no DB write)" do
-      changeset = Runners.change_auth_key(%{"description" => "for dev"})
+      changeset = Runners.change_enrollment_key(%{"description" => "for dev"})
 
       assert %Ecto.Changeset{} = changeset
       assert Ecto.Changeset.get_change(changeset, :description) == "for dev"
       # It's a pure builder — no key was minted.
-      refute Repo.exists?(AuthKey.Query.all())
+      refute Repo.exists?(EnrollmentKey.Query.all())
     end
 
     test "surfaces a validation error for the inline form (max_uses must be > 0)" do
-      changeset = Runners.change_auth_key(%{"max_uses" => 0})
+      changeset = Runners.change_enrollment_key(%{"max_uses" => 0})
 
       refute changeset.valid?
       assert changeset.errors[:max_uses]
     end
   end
 
-  describe "create_auth_key/2" do
+  describe "create_enrollment_key/2" do
     setup do
       {account, user, subject} = account_with_owner_subject()
       %{account: account, user: user, subject: subject}
@@ -1379,8 +1379,8 @@ defmodule Emisar.RunnersTest do
       user: user,
       subject: subject
     } do
-      assert {:ok, raw, %AuthKey{} = key} =
-               Runners.create_auth_key(%{description: "for dev"}, subject)
+      assert {:ok, raw, %EnrollmentKey{} = key} =
+               Runners.create_enrollment_key(%{description: "for dev"}, subject)
 
       assert String.starts_with?(raw, "emkey-auth-")
       assert key.account_id == account.id
@@ -1393,14 +1393,14 @@ defmodule Emisar.RunnersTest do
       # max_uses 0 mints a key that's dead on arrival; create/5 must enforce
       # the same `> 0` guard the editor form does, not rely on it.
       assert {:error, %Ecto.Changeset{} = changeset} =
-               Runners.create_auth_key(%{description: "dead", max_uses: 0}, subject)
+               Runners.create_enrollment_key(%{description: "dead", max_uses: 0}, subject)
 
       assert %{max_uses: ["must be greater than 0"]} = errors_on(changeset)
     end
 
-    test "a viewer (no manage_auth_keys) is refused", %{account: account} do
+    test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do
       assert {:error, :unauthorized} =
-               Runners.create_auth_key(%{reusable: true}, viewer_subject_for(account))
+               Runners.create_enrollment_key(%{reusable: true}, viewer_subject_for(account))
     end
   end
 
@@ -1424,13 +1424,13 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "subscribe_account_auth_keys/1" do
+  describe "subscribe_account_enrollment_keys/1" do
     test "the subscriber receives the account's auth-key list changes" do
       {account, _user, subject} = account_with_owner_subject()
-      :ok = Runners.subscribe_account_auth_keys(account.id)
+      :ok = Runners.subscribe_account_enrollment_keys(account.id)
 
-      {:ok, _raw, key} = Runners.create_auth_key(%{reusable: true}, subject)
-      assert_receive {:list_changed, :auth_key, "auth_key.created", key_id}
+      {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      assert_receive {:list_changed, :enrollment_key, "enrollment_key.created", key_id}
       assert key_id == key.id
     end
 
@@ -1438,10 +1438,10 @@ defmodule Emisar.RunnersTest do
       {_account_a, _ua, _sa} = account_with_owner_subject()
       account_a = Fixtures.Accounts.create_account()
       {_account_b, _ub, subject_b} = account_with_owner_subject()
-      :ok = Runners.subscribe_account_auth_keys(account_a.id)
+      :ok = Runners.subscribe_account_enrollment_keys(account_a.id)
 
-      {:ok, _raw, _key} = Runners.create_auth_key(%{reusable: true}, subject_b)
-      refute_receive {:list_changed, :auth_key, _event, _id}
+      {:ok, _raw, _key} = Runners.create_enrollment_key(%{reusable: true}, subject_b)
+      refute_receive {:list_changed, :enrollment_key, _event, _id}
     end
   end
 
@@ -1493,11 +1493,11 @@ defmodule Emisar.RunnersTest do
     end
 
     test "stores an auto_generated_at timestamp", %{subject: subject} do
-      assert {:ok, raw, %AuthKey{} = key} = Runners.mint_install_key(subject)
+      assert {:ok, raw, %EnrollmentKey{} = key} = Runners.mint_install_key(subject)
       assert String.starts_with?(raw, "emkey-auth-")
       assert key.auto_generated_at != nil
       assert is_nil(key.last_used_at)
-      assert AuthKey.auto_unused?(key)
+      assert EnrollmentKey.auto_unused?(key)
     end
 
     test "ring eviction caps the auto-unused set at the configured size", %{subject: subject} do
@@ -1507,7 +1507,7 @@ defmodule Emisar.RunnersTest do
         {:ok, _, _} = Runners.mint_install_key(subject, ring_cap: 3, eviction_grace_seconds: 0)
       end
 
-      assert Repo.aggregate(AuthKey, :count) == 3
+      assert Repo.aggregate(EnrollmentKey, :count) == 3
     end
 
     test "grace window protects fresh keys from eviction even past cap", %{subject: subject} do
@@ -1517,7 +1517,7 @@ defmodule Emisar.RunnersTest do
         {:ok, _, _} = Runners.mint_install_key(subject, ring_cap: 2, eviction_grace_seconds: 60)
       end
 
-      assert Repo.aggregate(AuthKey, :count) == 5
+      assert Repo.aggregate(EnrollmentKey, :count) == 5
     end
 
     test "does NOT touch other accounts' keys", %{subject: subject} do
@@ -1531,7 +1531,8 @@ defmodule Emisar.RunnersTest do
       end
 
       # `other`'s key is untouched.
-      assert AuthKey.Query.all() |> AuthKey.Query.by_id(other_key.id) |> Repo.peek() != nil
+      assert EnrollmentKey.Query.all() |> EnrollmentKey.Query.by_id(other_key.id) |> Repo.peek() !=
+               nil
     end
 
     test "a viewer (no issue_install_key) is refused" do
@@ -1540,87 +1541,91 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "revoke_auth_key/2" do
+  describe "revoke_enrollment_key/2" do
     setup do
       {account, _user, subject} = account_with_owner_subject()
       %{account: account, subject: subject}
     end
 
     test "stamps revoked_at; the key no longer resolves for registration", %{subject: subject} do
-      {:ok, raw, key} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
 
-      assert {:ok, %AuthKey{revoked_at: %DateTime{}}} = Runners.revoke_auth_key(key, subject)
-      refute Runners.peek_auth_key_by_secret(raw)
+      assert {:ok, %EnrollmentKey{revoked_at: %DateTime{}}} =
+               Runners.revoke_enrollment_key(key, subject)
+
+      refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "revoking an already-revoked key is an idempotent no-op (preserves revoked_at)", %{
       subject: subject
     } do
-      {:ok, _raw, key} = Runners.create_auth_key(%{reusable: true}, subject)
-      {:ok, revoked} = Runners.revoke_auth_key(key, subject)
+      {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      {:ok, revoked} = Runners.revoke_enrollment_key(key, subject)
 
       # A second revoke returns the key without re-stamping a fresh timestamp.
-      assert {:ok, %AuthKey{} = again} = Runners.revoke_auth_key(revoked, subject)
+      assert {:ok, %EnrollmentKey{} = again} = Runners.revoke_enrollment_key(revoked, subject)
       assert again.revoked_at == revoked.revoked_at
     end
 
-    test "a viewer (no manage_auth_keys) is refused", %{account: account, subject: owner} do
-      {:ok, _raw, key} = Runners.create_auth_key(%{reusable: true}, owner)
+    test "a viewer (no manage_enrollment_keys) is refused", %{account: account, subject: owner} do
+      {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, owner)
 
-      assert {:error, :unauthorized} = Runners.revoke_auth_key(key, viewer_subject_for(account))
+      assert {:error, :unauthorized} =
+               Runners.revoke_enrollment_key(key, viewer_subject_for(account))
     end
 
     test "won't touch an auth key in another account (cross-account → :not_found)" do
       {_account_a, _ua, owner_a} = account_with_owner_subject()
       {_account_b, _ub, owner_b} = account_with_owner_subject()
-      {:ok, _raw, key_a} = Runners.create_auth_key(%{reusable: true}, owner_a)
+      {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
 
-      assert {:error, :not_found} = Runners.revoke_auth_key(key_a, owner_b)
+      assert {:error, :not_found} = Runners.revoke_enrollment_key(key_a, owner_b)
     end
   end
 
-  describe "peek_auth_key_by_secret/1" do
+  describe "peek_enrollment_key_by_secret/1" do
     setup do
       {_account, _user, subject} = account_with_owner_subject()
       %{subject: subject}
     end
 
     test "returns the key for a valid secret", %{subject: subject} do
-      {:ok, raw, %AuthKey{id: id}} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, raw, %EnrollmentKey{id: id}} =
+        Runners.create_enrollment_key(%{reusable: true}, subject)
 
-      assert %AuthKey{id: ^id} = Runners.peek_auth_key_by_secret(raw)
+      assert %EnrollmentKey{id: ^id} = Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "returns nil for a revoked key", %{subject: subject} do
-      {:ok, raw, key} = Runners.create_auth_key(%{reusable: true}, subject)
-      {:ok, _} = Runners.revoke_auth_key(key, subject)
+      {:ok, raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
+      {:ok, _} = Runners.revoke_enrollment_key(key, subject)
 
-      refute Runners.peek_auth_key_by_secret(raw)
+      refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "returns nil for an expired key", %{subject: subject} do
       past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:microsecond)
 
       {:ok, raw, _key} =
-        Runners.create_auth_key(%{reusable: true, expires_at: past}, subject)
+        Runners.create_enrollment_key(%{reusable: true, expires_at: past}, subject)
 
-      refute Runners.peek_auth_key_by_secret(raw)
+      refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "returns nil for a single-use key after first use", %{subject: subject} do
-      {:ok, raw, key} = Runners.create_auth_key(%{reusable: false}, subject)
+      {:ok, raw, key} = Runners.create_enrollment_key(%{reusable: false}, subject)
 
       # First use bumps usage; second lookup should miss.
-      assert %AuthKey{id: id} = Runners.peek_auth_key_by_secret(raw)
+      assert %EnrollmentKey{id: id} = Runners.peek_enrollment_key_by_secret(raw)
       assert id == key.id
 
-      {:ok, _} = key |> AuthKey.Changeset.usage() |> Repo.update()
-      refute Runners.peek_auth_key_by_secret(raw)
+      {:ok, _} = key |> EnrollmentKey.Changeset.usage() |> Repo.update()
+      refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "returns nil for garbage input" do
-      refute Runners.peek_auth_key_by_secret("not-a-key")
-      refute Runners.peek_auth_key_by_secret("")
+      refute Runners.peek_enrollment_key_by_secret("not-a-key")
+      refute Runners.peek_enrollment_key_by_secret("")
     end
 
     test "round-trips a fixed seed-bootstrap raw secret" do
@@ -1629,12 +1634,14 @@ defmodule Emisar.RunnersTest do
       raw = "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
 
       key =
-        Fixtures.Runners.create_auth_key_with_secret(raw, account.id, user.id, %{reusable: true})
+        Fixtures.Runners.create_enrollment_key_with_secret(raw, account.id, user.id, %{
+          reusable: true
+        })
 
       assert key.key_prefix == String.slice(raw, 0, 27)
       # Presenting the raw secret resolves to the same record — what makes the
       # docker-compose seeder + runner handoff work without an out-of-band copy.
-      assert %AuthKey{id: id} = Runners.peek_auth_key_by_secret(raw)
+      assert %EnrollmentKey{id: id} = Runners.peek_enrollment_key_by_secret(raw)
       assert id == key.id
     end
   end
@@ -1655,7 +1662,7 @@ defmodule Emisar.RunnersTest do
     test "records the issuing auth-key id when supplied" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {_raw, key} = Fixtures.Runners.create_auth_key(account_id: account.id)
+      {_raw, key} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
       assert {_raw, %Token{issued_via_key_id: key_id}} = Runners.mint_runner_token(runner, key.id)
       assert key_id == key.id
@@ -1729,29 +1736,29 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "subject_can_manage_auth_keys?/1" do
+  describe "subject_can_manage_enrollment_keys?/1" do
     test "true for an owner, false for a viewer" do
       {account, _user, owner} = account_with_owner_subject()
 
-      assert Runners.subject_can_manage_auth_keys?(owner)
-      refute Runners.subject_can_manage_auth_keys?(viewer_subject_for(account))
+      assert Runners.subject_can_manage_enrollment_keys?(owner)
+      refute Runners.subject_can_manage_enrollment_keys?(viewer_subject_for(account))
     end
   end
 
-  describe "register_via_auth_key/2" do
+  describe "register_via_enrollment_key/2" do
     test "mints an runner + token on success" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
         )
 
       assert {:ok, %Runner{} = runner, %Token{}, raw_token} =
-               Runners.register_via_auth_key(raw, %{
+               Runners.register_via_enrollment_key(raw, %{
                  hostname: "demo-1",
                  group: "demo",
                  external_id: "ext-#{System.unique_integer([:positive])}"
@@ -1770,7 +1777,7 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1784,10 +1791,10 @@ defmodule Emisar.RunnersTest do
       }
 
       assert {:ok, %Runner{id: id1, runner_version: "0.3.1"}, %Token{}, _} =
-               Runners.register_via_auth_key(raw, attrs)
+               Runners.register_via_enrollment_key(raw, attrs)
 
       assert {:ok, %Runner{id: id2}, %Token{}, _} =
-               Runners.register_via_auth_key(raw, attrs)
+               Runners.register_via_enrollment_key(raw, attrs)
 
       assert id1 == id2
     end
@@ -1800,7 +1807,7 @@ defmodule Emisar.RunnersTest do
       {account, user, subject} = account_with_owner_subject()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1809,12 +1816,12 @@ defmodule Emisar.RunnersTest do
       attrs = %{hostname: "host-x", group: "g", external_id: "recycled-ext-id"}
 
       assert {:ok, %Runner{id: id1} = runner1, %Token{}, _} =
-               Runners.register_via_auth_key(raw, attrs)
+               Runners.register_via_enrollment_key(raw, attrs)
 
       assert {:ok, %Runner{id: ^id1}} = Runners.delete_runner(runner1, subject)
 
       assert {:ok, %Runner{id: id2}, %Token{}, _} =
-               Runners.register_via_auth_key(raw, attrs)
+               Runners.register_via_enrollment_key(raw, attrs)
 
       refute id1 == id2
     end
@@ -1827,7 +1834,7 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1836,12 +1843,12 @@ defmodule Emisar.RunnersTest do
       base = %{hostname: "samehost", group: "g"}
 
       assert {:ok, %Runner{name: "samehost"} = holder, _, _} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
 
       {:ok, _} = Runners.connect_runner(holder)
 
       assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
     end
 
     test "an OFFLINE holder keeps the name — a conflict is a conflict" do
@@ -1851,7 +1858,7 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1860,10 +1867,10 @@ defmodule Emisar.RunnersTest do
       base = %{hostname: "samehost", group: "g"}
 
       assert {:ok, %Runner{id: holder_id, name: "samehost"}, _, _} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
 
       assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
 
       # The holder is untouched.
       assert %Runner{} = Runners.peek_runner_by_id(holder_id)
@@ -1873,7 +1880,7 @@ defmodule Emisar.RunnersTest do
       {account, user, subject} = account_with_owner_subject()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1882,19 +1889,19 @@ defmodule Emisar.RunnersTest do
       base = %{hostname: "samehost", group: "g"}
 
       assert {:ok, %Runner{} = holder, _, _} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
 
       # Connected holders are never displaced — the conflict stands.
       {:ok, holder} = Runners.connect_runner(holder)
 
       assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
 
       # Deleting the holder soft-deletes it, freeing the name (partial index).
       {:ok, _} = Runners.delete_runner(holder, subject)
 
       assert {:ok, %Runner{name: "samehost"}, _, _} =
-               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
     end
 
     test "registers without an external_id (no crash); re-registering conflicts on the name" do
@@ -1907,7 +1914,7 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1915,10 +1922,10 @@ defmodule Emisar.RunnersTest do
 
       attrs = %{hostname: "no-id-host", group: "g"}
 
-      assert {:ok, %Runner{id: first_id}, _, _} = Runners.register_via_auth_key(raw, attrs)
+      assert {:ok, %Runner{id: first_id}, _, _} = Runners.register_via_enrollment_key(raw, attrs)
 
       assert {:error, :runner_name_taken, "no-id-host"} =
-               Runners.register_via_auth_key(raw, attrs)
+               Runners.register_via_enrollment_key(raw, attrs)
 
       assert %Runner{} = Runners.peek_runner_by_id(first_id)
     end
@@ -1933,14 +1940,14 @@ defmodule Emisar.RunnersTest do
       _ = Fixtures.Runners.create_runner(account_id: account.id)
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
         )
 
       assert {:error, :over_limit, "free", 3} =
-               Runners.register_via_auth_key(raw, %{group: "demo"})
+               Runners.register_via_enrollment_key(raw, %{group: "demo"})
     end
 
     test "a reconnecting runner at the plan cap still registers (its seat is already counted)" do
@@ -1950,14 +1957,14 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
         )
 
       assert {:ok, %Runner{}, _, _} =
-               Runners.register_via_auth_key(raw, %{external_id: "ext-keep", group: "g"})
+               Runners.register_via_enrollment_key(raw, %{external_id: "ext-keep", group: "g"})
 
       _ = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1966,16 +1973,16 @@ defmodule Emisar.RunnersTest do
       # redeploy) must NOT be blocked by its own seat — regression for the
       # limit check running before the reconnect-vs-fresh decision.
       assert {:ok, %Runner{}, _, _} =
-               Runners.register_via_auth_key(raw, %{external_id: "ext-keep", group: "g"})
+               Runners.register_via_enrollment_key(raw, %{external_id: "ext-keep", group: "g"})
 
       # ...but a genuinely NEW runner at the cap is still refused.
       assert {:error, :over_limit, "free", 3} =
-               Runners.register_via_auth_key(raw, %{external_id: "ext-new", group: "g"})
+               Runners.register_via_enrollment_key(raw, %{external_id: "ext-new", group: "g"})
     end
 
-    test "returns :auth_key_invalid for an unknown raw secret" do
-      assert {:error, :auth_key_invalid} =
-               Runners.register_via_auth_key("emkey-auth-garbage", %{})
+    test "returns :enrollment_key_invalid for an unknown raw secret" do
+      assert {:error, :enrollment_key_invalid} =
+               Runners.register_via_enrollment_key("emkey-auth-garbage", %{})
     end
 
     test "threads the request context onto the runner.registered audit row" do
@@ -1984,7 +1991,7 @@ defmodule Emisar.RunnersTest do
       {_owner_user, _acct, subject} = {user, account, owner_subject_for(account, user)}
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
@@ -1993,7 +2000,7 @@ defmodule Emisar.RunnersTest do
       context = %RequestContext{ip_address: "203.0.113.7"}
 
       assert {:ok, %Runner{}, _, _} =
-               Runners.register_via_auth_key(
+               Runners.register_via_enrollment_key(
                  raw,
                  %{hostname: "ctx-host", group: "g", external_id: "ext-ctx"},
                  context
@@ -2019,7 +2026,7 @@ defmodule Emisar.RunnersTest do
       user = Fixtures.Users.create_user()
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: false
@@ -2029,7 +2036,7 @@ defmodule Emisar.RunnersTest do
         1..8
         |> Enum.map(fn i ->
           Task.async(fn ->
-            Runners.register_via_auth_key(raw, %{
+            Runners.register_via_enrollment_key(raw, %{
               hostname: "demo-#{i}",
               group: "demo",
               # Distinct external_ids so a stray double-success would
@@ -2042,45 +2049,49 @@ defmodule Emisar.RunnersTest do
         |> Enum.map(&Task.await(&1, 5_000))
 
       successes = Enum.count(results, &match?({:ok, _, _, _}, &1))
-      failures = Enum.count(results, &match?({:error, :auth_key_invalid}, &1))
+      failures = Enum.count(results, &match?({:error, :enrollment_key_invalid}, &1))
 
       assert successes == 1, "expected exactly 1 success, got #{successes}: #{inspect(results)}"
-      assert failures == 7, "expected 7 :auth_key_invalid failures, got #{failures}"
+      assert failures == 7, "expected 7 :enrollment_key_invalid failures, got #{failures}"
     end
 
     test "promotes an auto-generated install key to permanent on first use" do
       {_account, _user, subject} = account_with_owner_subject()
       {:ok, raw, key} = Runners.mint_install_key(subject)
-      assert AuthKey.auto_unused?(key)
+      assert EnrollmentKey.auto_unused?(key)
 
       assert {:ok, %Runner{}, _, _} =
-               Runners.register_via_auth_key(raw, %{
+               Runners.register_via_enrollment_key(raw, %{
                  hostname: "demo-1",
                  group: "demo",
                  external_id: "ext-#{System.unique_integer([:positive])}"
                })
 
       # auto_generated_at cleared, last_used_at set, key now visible.
-      reloaded = AuthKey.Query.all() |> AuthKey.Query.by_id(key.id) |> Repo.fetch!(AuthKey.Query)
+      reloaded =
+        EnrollmentKey.Query.all()
+        |> EnrollmentKey.Query.by_id(key.id)
+        |> Repo.fetch!(EnrollmentKey.Query)
+
       assert is_nil(reloaded.auto_generated_at)
       assert reloaded.last_used_at != nil
-      assert {:ok, [%AuthKey{id: id}], _} = Runners.list_auth_keys(subject)
+      assert {:ok, [%EnrollmentKey{id: id}], _} = Runners.list_enrollment_keys(subject)
       assert id == key.id
     end
 
-    test "emits an auth_key.bound audit event with auto: true on auto-key bind" do
+    test "emits an enrollment_key.bound audit event with auto: true on auto-key bind" do
       {_account, _user, subject} = account_with_owner_subject()
       {:ok, raw, _key} = Runners.mint_install_key(subject)
 
       {:ok, _runner, _token, _raw_token} =
-        Runners.register_via_auth_key(raw, %{
+        Runners.register_via_enrollment_key(raw, %{
           hostname: "demo",
           group: "demo",
           external_id: "ext-#{System.unique_integer([:positive])}"
         })
 
       events = Audit.list_events(subject, page: [limit: 50]) |> elem(1)
-      bound = Enum.find(events, &(&1.event_type == "auth_key.bound"))
+      bound = Enum.find(events, &(&1.event_type == "enrollment_key.bound"))
       assert bound != nil
       assert bound.payload["auto"] == true
     end
@@ -2122,7 +2133,7 @@ defmodule Emisar.RunnersTest do
       # account_plan/1 is status-agnostic, so a Team account whose subscription
       # lapsed to past_due still resolves to the Team cap (100) and registers a
       # runner under it. Billing status is advisory (banners), never an entitlement
-      # gate — register_via_auth_key only blocks on the runner cap.
+      # gate — register_via_enrollment_key only blocks on the runner cap.
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team", status: "past_due")
       user = Fixtures.Users.create_user()
@@ -2134,14 +2145,14 @@ defmodule Emisar.RunnersTest do
       assert :ok = Billing.check_limit(account, :runners)
 
       {raw, _key} =
-        Fixtures.Runners.create_auth_key(
+        Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
           created_by_id: user.id,
           reusable: true
         )
 
       assert {:ok, %Runner{}, _, _} =
-               Runners.register_via_auth_key(raw, %{external_id: "ext-pastdue", group: "g"})
+               Runners.register_via_enrollment_key(raw, %{external_id: "ext-pastdue", group: "g"})
     end
   end
 

@@ -17,10 +17,10 @@ defmodule EmisarWeb.RunnerConnectController do
   # -- Token exchange -------------------------------------------------
 
   def register(conn, params) do
-    with {:ok, auth_key} <- read_bearer(conn),
+    with {:ok, enrollment_key} <- read_bearer(conn),
          {:ok, runner, token, raw_token} <-
-           Runners.register_via_auth_key(
-             auth_key,
+           Runners.register_via_enrollment_key(
+             enrollment_key,
              %{
                external_id: params["external_id"],
                hostname: params["hostname"],
@@ -42,8 +42,8 @@ defmodule EmisarWeb.RunnerConnectController do
       :missing_bearer ->
         unauthorized(conn, "missing_bearer")
 
-      {:error, :auth_key_invalid} ->
-        unauthorized(conn, "auth_key_invalid")
+      {:error, :enrollment_key_invalid} ->
+        unauthorized(conn, "enrollment_key_invalid")
 
       {:error, :over_limit, plan, limit} ->
         conn

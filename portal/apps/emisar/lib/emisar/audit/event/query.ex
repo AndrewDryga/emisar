@@ -27,9 +27,9 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.enabled", "Runner enabled"},
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
-    {"auth_key.created", "Auth key created"},
-    {"auth_key.revoked", "Auth key revoked"},
-    {"auth_key.bound", "Auth key bound to runner"},
+    {"enrollment_key.created", "Auth key created"},
+    {"enrollment_key.revoked", "Auth key revoked"},
+    {"enrollment_key.bound", "Auth key bound to runner"},
     {"api_key.created", "API key created"},
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
@@ -166,9 +166,9 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Auth key",
      [
-       {"auth_key.created", "Created"},
-       {"auth_key.revoked", "Revoked"},
-       {"auth_key.bound", "Bound to runner"}
+       {"enrollment_key.created", "Created"},
+       {"enrollment_key.revoked", "Revoked"},
+       {"enrollment_key.bound", "Bound to runner"}
      ]},
     {"API key",
      [
@@ -584,7 +584,7 @@ defmodule Emisar.Audit.Event.Query do
           {"account", "Account"},
           {"runner", "Runner"},
           {"api_key", "API key"},
-          {"auth_key", "Auth key"},
+          {"enrollment_key", "Auth key"},
           {"approval_request", "Approval"},
           {"approval_grant", "Standing grant"},
           {"runbook", "Runbook"},
@@ -637,11 +637,12 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator removed a runner from the fleet (audit history is kept)."},
     "runner.error" =>
       {true, false, false, "A runner reported an internal error over its socket."},
-    "auth_key.created" => {true, true, true, "An operator minted a runner bootstrap/auth key."},
-    "auth_key.revoked" =>
+    "enrollment_key.created" =>
+      {true, true, true, "An operator minted a runner bootstrap/auth key."},
+    "enrollment_key.revoked" =>
       {true, true, true,
        "An operator revoked a runner auth key — future registrations with it fail."},
-    "auth_key.bound" =>
+    "enrollment_key.bound" =>
       {true, false, true,
        "A runner presented an auth key for the first time and was bound to it."},
     "api_key.created" => {true, true, true, "An operator minted an LLM-agent or export API key."},

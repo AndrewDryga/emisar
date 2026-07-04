@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.SecretRevealTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.secret_reveal/1` — the ONE reveal-once
-  amber box (runner keys, SIEM tokens, SCIM bearers, MFA recovery codes).
+  amber box (enrollment keys, SIEM tokens, SCIM bearers, MFA recovery codes).
   Asserts the single-secret banner (copy target, dismiss X, install slot)
   and the codes card (per-code copy cells, Copy all, Download .txt,
   `:actions` slot, no X without `on_dismiss`).

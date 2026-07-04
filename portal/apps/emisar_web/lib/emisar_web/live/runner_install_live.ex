@@ -15,7 +15,7 @@ defmodule EmisarWeb.RunnerInstallLive do
     key registers + connects, flash + navigate back to `/app/runners` so
     they land on the page that proves it worked. A different runner joining
     the account's presence (a reconnect, another host) is NOT this install
-    and must not redirect — the join is matched on `bootstrap_auth_key_id`.
+    and must not redirect — the join is matched on `bootstrap_enrollment_key_id`.
   - Same install command + links as the runners-list empty-state wizard
     (an empty fleet drops straight into it), kept in sync via the shared
     `EmisarWeb.RunnerInstall` helper.
@@ -64,7 +64,7 @@ defmodule EmisarWeb.RunnerInstallLive do
   # A runner joined this account's presence — but only bounce the operator to
   # the list when it's the runner minted from THIS page's key. Any OTHER runner
   # joining (a reconnect, another host coming up) is not this operator's install
-  # and must not hijack the page. We check the joined runner's `bootstrap_auth_key_id`
+  # and must not hijack the page. We check the joined runner's `bootstrap_enrollment_key_id`
   # against the key we minted; a leaving/flapping runner never matches (joins only).
   def handle_info(%{event: "presence_diff", payload: %{joins: joins}}, socket)
       when map_size(joins) > 0 do
@@ -117,7 +117,7 @@ defmodule EmisarWeb.RunnerInstallLive do
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
         keys_path={~p"/app/#{@current_account}/runners/keys"}
-        show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
+        show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
       />
     </.dashboard_shell>
     """
