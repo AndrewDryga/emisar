@@ -798,7 +798,14 @@ defmodule EmisarWeb.AgentsLive do
         class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
       >
         <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
-          <.status_dot tone={:brand} size={:sm} ping={@active_count > 0} />
+          <%!-- The dot signals only when something IS active — a green dot
+               beside a zero count signaled nothing. Idle is a fact, not a
+               caution — neutral, like dormant. --%>
+          <.status_dot
+            tone={if @active_count > 0, do: :brand, else: :neutral}
+            size={:sm}
+            ping={@active_count > 0}
+          />
           <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
         </span>
         <span
@@ -806,8 +813,8 @@ defmodule EmisarWeb.AgentsLive do
           class="flex items-center gap-1.5"
           title="last call within 24 hours"
         >
-          <.status_dot tone={:amber} size={:sm} />
-          <span class="tabular-nums text-amber-300">{@idle_count} idle</span>
+          <.status_dot tone={:neutral} size={:sm} />
+          <span class="tabular-nums text-zinc-500">{@idle_count} idle</span>
         </span>
         <span
           :if={@dormant_count > 0}
@@ -852,8 +859,6 @@ defmodule EmisarWeb.AgentsLive do
            section wrapping it, which boxed the filter against a second
            border. --%>
       <section :if={@live_action == :index} class="mt-8">
-        <.section_header title="Connected agents" />
-
         <LiveTable.live_table
           layout={:cards}
           id="agents"
@@ -1022,11 +1027,9 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp status_dot_tone(:active), do: :brand
-  defp status_dot_tone(:idle), do: :amber
   defp status_dot_tone(_), do: :neutral
 
   defp status_word_class(:active), do: "text-brand-300"
-  defp status_word_class(:idle), do: "text-amber-300"
   defp status_word_class(:revoked), do: "text-rose-300"
   defp status_word_class(_), do: "text-zinc-500"
 

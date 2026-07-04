@@ -794,19 +794,17 @@ defmodule EmisarWeb.TeamLive do
             <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
-                <%!-- When require_mfa is on, the un-enrolled count gets a loud
-                     amber chip so the owner sees follow-up at a glance. --%>
+                <%!-- ONE line, one severity: the count wears amber only while
+                     someone is unenrolled (the dashboard pillar's grammar).
+                     Full enrollment renders silence — no green "all good". --%>
+                <% n = @mfa_stats.total - @mfa_stats.enrolled %>
                 <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span class="tabular-nums text-zinc-400">
-                    {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
+                  <span class="flex items-center gap-1.5 tabular-nums">
+                    <.status_dot :if={n > 0} tone={:amber} size={:sm} />
+                    <span class={if n > 0, do: "text-amber-300", else: "text-zinc-400"}>
+                      {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
+                    </span>
                   </span>
-                  <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
-                    <.chip tone={if @current_account.settings.require_mfa, do: :amber, else: :neutral}>
-                      {n} without 2FA
-                    </.chip>
-                  <% else %>
-                    <.chip tone={:brand}>All enrolled</.chip>
-                  <% end %>
                   <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
                 </div>
               </div>
@@ -849,17 +847,18 @@ defmodule EmisarWeb.TeamLive do
                   <% end %>
                   <%!-- SSO's ONE console door — its nav item is gone (a
                        rare-touch, admin-only surface lives behind its owning
-                       page, like runner keys behind Runners). Visible-but-
-                       honest on plans without SSO: the page carries the
-                       upgrade pitch. --%>
+                       page, like runner keys behind Runners). With no provider
+                       yet, the right-side "Set up SSO" control IS the door —
+                       two links to the same place read as a glitch. --%>
                   <.link
-                    :if={Accounts.subject_can_manage_account_security?(@current_subject)}
+                    :if={
+                      @enabled_sso_provider_count > 0 and
+                        Accounts.subject_can_manage_account_security?(@current_subject)
+                    }
                     navigate={~p"/app/#{@current_account}/settings/sso"}
                     class="font-medium text-brand-400 hover:text-brand-300"
                   >
-                    {if SSO.subject_can_configure_sso?(@current_subject),
-                      do: "Manage providers →",
-                      else: "Set up SSO · Team →"}
+                    Manage providers →
                   </.link>
                 </div>
               </div>
@@ -871,7 +870,9 @@ defmodule EmisarWeb.TeamLive do
                     navigate={~p"/app/#{@current_account}/settings/sso"}
                     class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
                   >
-                    Set up SSO first →
+                    {if SSO.subject_can_configure_sso?(@current_subject),
+                      do: "Set up SSO →",
+                      else: "Set up SSO · Team →"}
                   </.link>
                 <% true -> %>
                   <.switch
@@ -1266,7 +1267,6 @@ defmodule EmisarWeb.TeamLive do
           >
             Resend confirmation
           </.button>
-          <span class="text-xs text-zinc-500">you</span>
         </div>
       <% not @can_manage? -> %>
         <%!-- Viewers can't manage a member but can audit them — every role on

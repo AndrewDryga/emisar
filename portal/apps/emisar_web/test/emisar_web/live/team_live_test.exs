@@ -23,15 +23,18 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the Security panel is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Free plan: the door stays visible but honest about the plan gate.
+      # Free plan, no provider: ONE door — the right-side setup link, honest
+      # about the plan gate ("Manage providers" appears only once a provider
+      # exists).
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Set up SSO · Team"
       assert html =~ ~p"/app/#{account}/settings/sso"
+      refute html =~ "Manage providers"
 
-      # With the plan, it reads as plain management.
+      # With the plan (still no provider), setup reads as plain setup.
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Manage providers"
+      assert html =~ "Set up SSO →"
     end
   end
 
@@ -936,7 +939,8 @@ defmodule EmisarWeb.TeamLiveTest do
       # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
       # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
       assert html =~ "1 of 2 enrolled"
-      assert html =~ "1 without 2FA"
+      # ONE line, one severity — the enrolled count wears amber, no twin chip.
+      assert html =~ "1 of 2 enrolled"
     end
   end
 

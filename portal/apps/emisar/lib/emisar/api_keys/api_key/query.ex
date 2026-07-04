@@ -127,7 +127,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
         name: :status,
         title: "Status",
         type: {:list, :string},
-        values: [{"live", "Live"}, {"revoked", "Revoked"}],
+        values: [{"live", "Active"}, {"revoked", "Revoked"}],
         # Default to live keys — the connected-agents view shouldn't be cluttered
         # with dead credentials; because it's the DEFAULT, LiveTable renders it
         # un-highlighted. Operators opt into revoked (or "All") explicitly.
