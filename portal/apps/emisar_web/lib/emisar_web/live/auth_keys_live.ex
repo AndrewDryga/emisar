@@ -253,9 +253,12 @@ defmodule EmisarWeb.AuthKeysLive do
            same 7xl column as the list it's reached from, so the header never
            jumps: the form (or its success reveal) is the task on the left; the
            "what is this" explainer fills the rail on the right. --%>
+      <%!-- Task column is sized to a readable FORM width (36rem), not 1fr —
+           a 3-field form shouldn't stretch to fill the 7xl column; the rail
+           sits right beside it. --%>
       <div
         :if={@live_action == :new}
-        class="lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-x-20"
+        class="lg:grid lg:grid-cols-[minmax(0,36rem)_22rem] lg:gap-x-16"
       >
         <div class="space-y-8">
           <.runner_cap_callout billing={@billing} current_account={@current_account} />
