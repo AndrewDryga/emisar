@@ -2642,8 +2642,8 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <ol class={[steps_list_class(@variant), @class]}>
       <li :for={{step, idx} <- Enum.with_index(@step)} class={steps_row_class(@variant)}>
-        <span class={steps_circle_class(@variant)}>
-          {idx + 1}
+        <span class={steps_marker_class(@variant)}>
+          {steps_marker(@variant, idx)}
         </span>
         <div class={steps_content_class(@variant)}>
           {render_slot(step)}
@@ -2656,18 +2656,25 @@ defmodule EmisarWeb.CoreComponents do
   defp steps_list_class(:guide), do: "space-y-3 text-sm leading-relaxed text-zinc-400"
   defp steps_list_class(:plan), do: "divide-y divide-zinc-900"
 
-  defp steps_row_class(:guide), do: "flex items-start gap-2.5"
+  # Baseline-aligned: the guide marker is TYPE (a quiet "1."), not a widget,
+  # so it sits on the text baseline like any numeral.
+  defp steps_row_class(:guide), do: "flex items-baseline gap-2.5"
   defp steps_row_class(:plan), do: "flex items-start gap-3 px-5 py-3"
 
-  defp steps_circle_class(:guide) do
-    # mt-px: optically centers the 20px circle on the first text line
-    # (text-sm leading-relaxed ≈ 22.75px line box).
-    "mt-px grid h-5 w-5 shrink-0 place-items-center rounded-full bg-zinc-800 text-[11px] font-semibold text-zinc-300"
+  # A bare ordered-list numeral — a filled disc per row read as chrome and
+  # outweighed the instructions it was numbering.
+  defp steps_marker_class(:guide) do
+    "w-4 shrink-0 text-right text-xs font-medium tabular-nums text-zinc-500"
   end
 
-  defp steps_circle_class(:plan) do
+  defp steps_marker_class(:plan) do
     "grid h-6 w-6 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300"
   end
+
+  # The plan variant keeps its circled step marker — a run sequence in a dense
+  # card row; the guide numeral takes the list period.
+  defp steps_marker(:guide, idx), do: "#{idx + 1}."
+  defp steps_marker(:plan, idx), do: idx + 1
 
   defp steps_content_class(:guide), do: "min-w-0 flex-1"
   defp steps_content_class(:plan), do: "min-w-0 flex-1 text-sm"

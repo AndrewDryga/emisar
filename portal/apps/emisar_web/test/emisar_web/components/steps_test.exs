@@ -10,7 +10,7 @@ defmodule EmisarWeb.Components.StepsTest do
   alias EmisarWeb.CoreComponents
 
   describe "steps/1" do
-    test "guide: circle numbers derive from slot order" do
+    test "guide: bare list numerals derive from slot order — no circle chrome" do
       assigns = %{}
 
       html =
@@ -22,12 +22,11 @@ defmodule EmisarWeb.Components.StepsTest do
         </CoreComponents.steps>
         """)
 
-      assert html =~ ~r{>\s*1\s*</span>}
-      assert html =~ ~r{>\s*2\s*</span>}
-      assert html =~ ~r{>\s*3\s*</span>}
+      assert html =~ ~r{>\s*1\.\s*</span>}
+      assert html =~ ~r{>\s*2\.\s*</span>}
+      assert html =~ ~r{>\s*3\.\s*</span>}
       assert html =~ "Create the app."
-      assert html =~ "rounded-full bg-zinc-800"
-      assert html =~ "h-5 w-5"
+      refute html =~ "rounded-full"
       assert html =~ "mt-3"
       refute html =~ "divide-y"
     end
