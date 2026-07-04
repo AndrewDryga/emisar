@@ -3832,24 +3832,26 @@ defmodule EmisarWeb.CoreComponents do
                     The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
-                         only here — a root-capable credential. The marketing
-                         quickstart tells the trust story, but the operator has
-                         left that page; carry it onto the page they actually
-                         install from so they don't paste it into a chat/ticket
-                         or run an unknown root script blind. The shared
-                         credential grammar, no inner secret — the command
-                         inset above holds it. --%>
-                  <div class="mt-5">
-                    <.secret_reveal
-                      id="install-credential-note"
-                      variant={:card}
-                      title="Live credential — won't be shown again"
-                    >
-                      The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                      and carries a <span class="font-medium text-zinc-200">one-time</span>
-                      key: it enrolls exactly one host, then expires. Treat it like a password —
-                      paste it straight onto the host, never into a chat or ticket.
-                    </.secret_reveal>
+                         only here — a root-capable credential; say so on the
+                         page the operator actually installs from, so it never
+                         lands in a chat/ticket. The note is ABOUT the artifact
+                         above, so it renders as the wait line's status grammar
+                         (amber dot + lead + zinc body), naked on canvas — a
+                         box around non-actionable prose would outshout the
+                         credential itself. --%>
+                  <div class="mt-5 flex items-start gap-3">
+                    <.status_dot tone={:amber} size={:md} class="mt-1.5" />
+                    <div class="min-w-0">
+                      <div class="text-sm font-semibold text-zinc-200">
+                        Live credential — won't be shown again
+                      </div>
+                      <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                        The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                        and carries a <span class="font-medium text-zinc-200">one-time</span>
+                        key: it enrolls exactly one host, then expires. Treat it like a password —
+                        paste it straight onto the host, never into a chat or ticket.
+                      </p>
+                    </div>
                   </div>
                   <%!-- The alternate path is routing, not warning — it lives
                          outside the credential note, right after the one-time

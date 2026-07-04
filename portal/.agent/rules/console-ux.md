@@ -172,7 +172,13 @@ one of them is wrong.
 
 1. **No green confirmation box.** A callout earns its space only when actionable
    (warning/error/next-step). Healthy state renders as *absence* — collapse
-   `if ok → green else → amber` to `:if={problem?}`.
+   `if ok → green else → amber` to `:if={problem?}`. **The same test applies to
+   every tone:** a box holds a *functional* payload (a secret + its copy/ack, a
+   form, a verdict, an event alert). A note ABOUT an adjacent artifact —
+   credential hygiene under a command, caveats beside a control — is naked
+   status-line grammar (tone dot + lead + zinc body), never a ringed island
+   that outshouts the artifact it describes (the install wizard's amber
+   credential box was this violation).
 2. **Choice→consequence editors.** A control whose settings produce a real consequence
    renders that consequence as the color-coded verdict (warning-only); option cards argue
    toward it; **selection state stays neutral** — a risky option must never wear the safe
