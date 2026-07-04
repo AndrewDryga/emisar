@@ -458,20 +458,22 @@ defmodule EmisarWeb.RunbookEditorLive do
       </:actions>
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <.panel variant={:split} title="Steps">
-          <:actions>
-            <.button
-              variant={:secondary}
-              size={:md}
-              type="button"
-              icon="hero-plus"
-              phx-click="add_action_step"
-            >
-              Add step
-            </.button>
-          </:actions>
+        <section>
+          <.section_header title="Steps">
+            <:actions>
+              <.button
+                variant={:secondary}
+                size={:md}
+                type="button"
+                icon="hero-plus"
+                phx-click="add_action_step"
+              >
+                Add step
+              </.button>
+            </:actions>
+          </.section_header>
 
-          <div class="space-y-3 p-5">
+          <div class="space-y-3">
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
                  has no metadata input to bind to, so it surfaces here on the
                  Steps panel rather than in a top flash banner. --%>
@@ -513,10 +515,11 @@ defmodule EmisarWeb.RunbookEditorLive do
                  header's button. --%>
             <.add_row :if={@steps != []} label="Add step" phx-click="add_action_step" />
           </div>
-        </.panel>
+        </section>
 
-        <aside class="space-y-4">
-          <.panel title="Details">
+        <aside class="space-y-8">
+          <section>
+            <.section_header title="Details" />
             <form phx-change="meta_change" class="space-y-4">
               <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
                    form posts top-level keys that `meta_change` reads directly;
@@ -554,9 +557,10 @@ defmodule EmisarWeb.RunbookEditorLive do
                 placeholder="Optional human-readable summary."
               />
             </form>
-          </.panel>
+          </section>
 
-          <.panel :if={@runbook} title="Version">
+          <section :if={@runbook}>
+            <.section_header title="Version" />
             <dl class="space-y-2 text-xs text-zinc-400">
               <.kv label="Current">v{@runbook.version}</.kv>
               <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
@@ -565,7 +569,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <p :if={@runbook.status == :published} class="mt-4 text-xs text-zinc-500 leading-relaxed">
               Published runbooks are immutable — saving creates a new draft version.
             </p>
-          </.panel>
+          </section>
         </aside>
       </div>
 

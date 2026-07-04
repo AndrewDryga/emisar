@@ -361,18 +361,12 @@ defmodule EmisarWeb.BillingLive do
         <section>
           <.section_header title="Plans" />
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <%!-- The current plan is IDENTITY, not a pass state — a neutral
-                 brighter ring + the "current" chip say it; green stays
-                 reserved for pass/healthy. --%>
+            <%!-- ONE card style for every plan — identity ("current") and merch
+                 ("most popular") are the CHIPS' job; per-plan border treatments
+                 read as three different products. --%>
             <article
               :for={plan <- @plans}
-              class={[
-                "relative flex flex-col rounded-xl border p-5",
-                if(current_plan?(plan, @summary),
-                  do: "border-zinc-600 bg-zinc-900/40",
-                  else: "border-zinc-900 bg-zinc-950/40"
-                )
-              ]}
+              class="relative flex flex-col rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-5"
             >
               <div class="flex items-center justify-between gap-2">
                 <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>

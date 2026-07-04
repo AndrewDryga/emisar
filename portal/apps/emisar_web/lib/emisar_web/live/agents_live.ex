@@ -360,6 +360,15 @@ defmodule EmisarWeb.AgentsLive do
 
   defp active_keys(keys), do: Enum.reject(keys, & &1.revoked_at)
 
+  # The issuing human — the grouping key for the list. Falls back to "Auto"
+  # for system-minted keys with no creator.
+  defp owner_label(%{created_by: %{} = user}), do: user.full_name || user.email
+  defp owner_label(_), do: "Auto-minted"
+
+  # Page rows sorted by owner so `group_by` emits one header per person
+  # (within a group the context's recent-first order is preserved).
+  defp sort_by_owner(keys), do: Enum.sort_by(keys, &owner_label/1)
+
   defp count_status(keys, status),
     do: Enum.count(active_keys(keys), &(client_status(&1) == status))
 
@@ -439,41 +448,6 @@ defmodule EmisarWeb.AgentsLive do
     |> assign(:form, to_form(changeset, as: "api_key"))
     |> assign(:selected_runner_ids, selected_runner_ids(params, runners))
     |> assign(:selected_runner_groups, selected_runner_groups(params, runners))
-  end
-
-  defp format_runner_filter(ids, runners) do
-    names =
-      runners
-      |> Enum.filter(&(&1.id in ids))
-      |> Enum.map(& &1.name)
-
-    case names do
-      [] -> "—"
-      [one] -> one
-      [a, b] -> "#{a}, #{b}"
-      list -> "#{Enum.at(list, 0)} +#{length(list) - 1}"
-    end
-  end
-
-  # Combined-scope label for an API key row: surfaces whichever
-  # filter is active, or "All runners" when both are empty.
-  defp format_key_scope(key, runners) do
-    runner_ids = key.runner_filter || []
-    groups = key.runner_group_filter || []
-
-    cond do
-      runner_ids == [] and groups == [] ->
-        "all runners"
-
-      groups != [] and runner_ids == [] ->
-        "groups: #{Enum.join(groups, ", ")}"
-
-      groups == [] and runner_ids != [] ->
-        format_runner_filter(runner_ids, runners)
-
-      true ->
-        "groups: #{Enum.join(groups, ", ")} + #{length(runner_ids)} explicit"
-    end
   end
 
   defp expired?(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}),
@@ -874,18 +848,25 @@ defmodule EmisarWeb.AgentsLive do
           layout={:cards}
           id="agents"
           path={~p"/app/#{@current_account}/settings/agents"}
-          rows={@api_keys}
+          rows={sort_by_owner(@api_keys)}
           metadata={@metadata}
           filter_params={@filter_params}
           filters={@filters}
           wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+          group_by={&owner_label/1}
         >
-          <%!-- Canvas rows; the per-family icon disc died with the island —
-               it carried no meaning, and the reported client is named in the
-               meta line. --%>
+          <%!-- Grouped by OWNER (the runners-group grammar): the page's real
+               subject is people and the credentials they've issued. --%>
+          <:group_header :let={owner}>
+            <li class="flex items-baseline gap-2 pb-2 pt-5 first:pt-0">
+              <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                {owner}
+              </h2>
+            </li>
+          </:group_header>
+
           <:item :let={key}>
             <.list_row padding="py-4">
-              <%!-- Row 1: name + status pill --%>
               <:title>
                 <span class="truncate font-medium text-zinc-100">{key.name}</span>
                 <.client_status_pill key={key} />
@@ -894,10 +875,14 @@ defmodule EmisarWeb.AgentsLive do
                 <.chip :for={scope <- key.scopes || []} tone={:neutral} mono>{scope}</.chip>
               </:chips>
               <:meta>
-                <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
+                <%!-- Identity + liveness only — the runner-scope dump told the
+                     reader nothing at a glance (it lives on the key's own
+                     mint/rotate surfaces). --%>
                 <.meta_line class="text-[11px]">
                   <:seg mono>{key.key_prefix}…</:seg>
-                  <:seg>{format_key_scope(key, @runners)}</:seg>
+                  <:seg :if={reported_client(key)}>
+                    client <span class="text-zinc-300">{reported_client(key)}</span>
+                  </:seg>
                   <:seg>
                     last call{" "}<.local_time
                       value={key.last_used_at}
@@ -912,13 +897,6 @@ defmodule EmisarWeb.AgentsLive do
                     </span>
                   </:seg>
                 </.meta_line>
-
-                <%!-- Row 3: the MCP client this key reported at `initialize`
-                     (clientInfo) — what's actually talking, vs the operator
-                     name above. Only shown once a client has connected. --%>
-                <div :if={reported_client(key)} class="mt-0.5 truncate text-[11px]">
-                  client <span class="text-zinc-300">{reported_client(key)}</span>
-                </div>
               </:meta>
               <:actions>
                 <%!-- What this agent actually did — deep-link the audit log

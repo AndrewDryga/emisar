@@ -789,9 +789,10 @@ defmodule EmisarWeb.TeamLive do
              fold, so the explainer prose lives in each toggle's confirm dialog
              (which already carries the consequences) — the page shows posture,
              not persuasion. --%>
-        <.panel title="Security" padding="">
-          <ul class="divide-y divide-zinc-800/70">
-            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+        <section>
+          <.section_header title="Security" />
+          <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
                 <%!-- ONE line, one severity: the count wears amber only while
@@ -830,7 +831,7 @@ defmodule EmisarWeb.TeamLive do
 
             <%!-- SSO can't be required without an enabled connection (that would
                  lock everyone out), so the control becomes the set-up link. --%>
-            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-zinc-100">Single sign-on</div>
                 <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -892,7 +893,7 @@ defmodule EmisarWeb.TeamLive do
               <% end %>
             </li>
           </ul>
-        </.panel>
+        </section>
 
         <%!-- Member list — uses LiveTable :cards with overflow={:visible}
              so the per-row `<details>` action dropdown can escape the

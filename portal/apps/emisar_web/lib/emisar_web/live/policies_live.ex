@@ -655,10 +655,16 @@ defmodule EmisarWeb.PoliciesLive do
           You can view the policy, but only owners and admins can change it.
         </p>
 
-        <.panel title="Default policy">
-          <:subtitle>
-            The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
-          </:subtitle>
+        <%!-- CONTENT ON CANVAS: the page-level editor sits naked — its inner
+             functional groups (tier inputs, the approval knob group, the
+             verdict box) carry their own containment. Targeted rulesets keep
+             their cards below: N discrete deletable instances earn islands. --%>
+        <section>
+          <.section_header title="Default policy">
+            <:subtitle>
+              The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+            </:subtitle>
+          </.section_header>
 
           <.policy_fields
             editor_id="account"
@@ -670,7 +676,7 @@ defmodule EmisarWeb.PoliciesLive do
             save_label="Save default policy"
             dirty={@account[:dirty?] || false}
           />
-        </.panel>
+        </section>
 
         <section class="space-y-4">
           <.section_header title="Targeted rulesets" class="mb-0">
