@@ -3789,22 +3789,24 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <%!-- CONTENT ON CANVAS, task + rail: the DOING (command, credential note,
          wait line) owns the left column; the READING (what the script does,
-         resources) is a right rail behind a vertical hairline at lg, stacking
-         below on mobile. ONE type ladder — section_header 16 / body 14 /
-         meta 12; never an uppercase eyebrow as a section title. The only
-         contained surfaces are the ones a box MEANS something for: the
-         command artifact and the live-credential warning (the calmed secret
-         grammar — neutral surface, amber ring). --%>
+         resources) is a right rail at lg, stacking below on mobile. Columns
+         separate by AIR alone — hairlines are row-lattice grammar, never
+         section chrome (vertical rules belong to the shell). ONE type
+         ladder — section_header 16 / body 14 / meta 12; never an uppercase
+         eyebrow as a section title. The only contained surfaces are the ones
+         a box MEANS something for: the command artifact and the
+         live-credential warning (the calmed secret grammar — neutral
+         surface, amber ring). --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
       </p>
 
-      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-12">
+      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-20">
         <div>
           <%= cond do %>
             <% is_binary(@install_command) -> %>
-              <div class="space-y-8">
+              <div class="space-y-10">
                 <section>
                   <.section_header title="Run this on the host" />
                   <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads
@@ -3861,11 +3863,12 @@ defmodule EmisarWeb.CoreComponents do
                   </p>
                 </section>
 
-                <section class="border-t border-zinc-800/70 pt-6">
+                <section>
                   <div class="flex items-center gap-3">
                     <%!-- Amber: this is a PENDING state — brand-green would
                          read "connected" before anything has connected. Naked
-                         on the canvas: a wait line, not a widget. --%>
+                         on the canvas: a wait line, not a widget — air, not a
+                         hairline, separates it from the task above. --%>
                     <.status_dot tone={:amber} size={:md} ping />
                     <div class="text-sm text-zinc-300">
                       Waiting for a runner to connect — this page advances on its own.
@@ -3919,7 +3922,7 @@ defmodule EmisarWeb.CoreComponents do
              true for every wizard state (a failed mint still deserves the
              manual-install door). Quiet rows on the canvas, never island
              cards competing with the task. --%>
-        <aside class="mt-10 space-y-10 lg:mt-0 lg:border-l lg:border-zinc-800/70 lg:pl-12">
+        <aside class="mt-10 space-y-10 lg:mt-0">
           <section>
             <.section_header title="What the script does" />
             <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
