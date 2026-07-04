@@ -133,8 +133,8 @@ defmodule Emisar.Audit do
   read it.
 
   `attrs` accepts the same shape as `log/3` and overrides the defaults
-  (`actor_kind: "user", actor_id: user.id, subject_kind: "user",
-   subject_id: user.id, subject_label: user.email`).
+  (`actor_kind: "user", actor_id: user.id, target_kind: "user",
+   target_id: user.id, target_label: user.email`).
   """
   def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
     case user_changesets(user, event_type, attrs) do
@@ -163,9 +163,9 @@ defmodule Emisar.Audit do
     defaults = %{
       actor_kind: "user",
       actor_id: user.id,
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email
     }
 
     merged = Map.merge(defaults, normalize(attrs))
@@ -182,9 +182,9 @@ defmodule Emisar.Audit do
   """
   def run_event_changeset(%Runs.ActionRun{} = run) do
     changeset(run.account_id, "action_run.#{run.status}",
-      subject_kind: "action_run",
-      subject_id: run.id,
-      subject_label: run.action_id,
+      target_kind: "action_run",
+      target_id: run.id,
+      target_label: run.action_id,
       actor_kind: actor_kind(run),
       actor_id: run.requested_by_id || run.api_key_id,
       # Authoritative for the run's own events, including the terminal ones
@@ -259,15 +259,15 @@ defmodule Emisar.Audit do
   def list_events(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      # actor_id / subject_id ride as opts — the dynamic "by actor" / "by
+      # actor_id / target_id ride as opts — the dynamic "by actor" / "by
       # subject" pickers aren't in the static filters/0 list, so they can't go
       # through :filter. Everything else is a LiveTable filter, applied via :filter.
       {actor_id, opts} = Keyword.pop(opts, :actor_id)
-      {subject_id, opts} = Keyword.pop(opts, :subject_id)
+      {target_id, opts} = Keyword.pop(opts, :target_id)
 
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
-      |> filter_by_subject_id(subject_id)
+      |> filter_by_target_id(target_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
     end
@@ -306,24 +306,24 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Distinct subjects of `subject_kind` in the account's audit log — the options
+  Distinct subjects of `target_kind` in the account's audit log — the options
   for the page's on-demand "filter by subject" picker, as `{id, label}` sorted by
   label. Mirrors `list_actor_options/2`. Returns `{:ok, [{id, label}]}` or
   `{:error, :unauthorized}`.
   """
-  def list_subject_options(subject_kind, %Subject{} = subject) when is_binary(subject_kind) do
+  def list_target_options(target_kind, %Subject{} = subject) when is_binary(target_kind) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
       ids =
         Event.Query.all()
-        |> Event.Query.distinct_subject_ids_of_kind(subject_kind)
+        |> Event.Query.distinct_target_ids_of_kind(target_kind)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       labels =
-        %{subject_kind => ids}
+        %{target_kind => ids}
         |> resolve_labels(subject.account.id)
-        |> Map.get(subject_kind, %{})
+        |> Map.get(target_kind, %{})
 
       options =
         ids
@@ -338,8 +338,8 @@ defmodule Emisar.Audit do
   defp filter_by_actor_id(queryable, nil), do: queryable
   defp filter_by_actor_id(queryable, id), do: Event.Query.by_actor_id(queryable, id)
 
-  defp filter_by_subject_id(queryable, nil), do: queryable
-  defp filter_by_subject_id(queryable, id), do: Event.Query.by_subject_id(queryable, id)
+  defp filter_by_target_id(queryable, nil), do: queryable
+  defp filter_by_target_id(queryable, id), do: Event.Query.by_target_id(queryable, id)
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
@@ -470,7 +470,7 @@ defmodule Emisar.Audit do
 
     events
     |> Enum.flat_map(fn event ->
-      [{event.actor_kind, event.actor_id}, {event.subject_kind, event.subject_id}]
+      [{event.actor_kind, event.actor_id}, {event.target_kind, event.target_id}]
     end)
     |> Enum.reject(fn {_, id} -> is_nil(id) end)
     |> Enum.uniq()

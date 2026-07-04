@@ -487,7 +487,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
              page, so the link only pre-filters. --%>
         <.link
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[subject_kind: "approval_request", subject_id: @request.id]}"
+            ~p"/app/#{@current_account}/audit?#{[target_kind: "approval_request", target_id: @request.id]}"
           }
           class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
         >

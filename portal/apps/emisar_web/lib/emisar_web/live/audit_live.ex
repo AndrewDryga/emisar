@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AuditLive do
   @moduledoc """
-  Append-only audit log list. Actor + subject columns resolve their
+  Append-only audit log list. Actor + target columns resolve their
   display labels in a single batched pass (`Audit.resolve_references/1`)
   and render as links into the relevant detail page when one exists.
   Click a row to drill into the full event (payload, IP, user agent,
@@ -63,11 +63,11 @@ defmodule EmisarWeb.AuditLive do
          do: Map.delete(merged, "actor_id"),
          else: merged
 
-    # Same for the subject picker — a changed subject kind invalidates its pick.
+    # Same for the target picker — a changed target kind invalidates its pick.
     merged =
-      if blank_to_nil(params["subject_kind"]) !=
-           blank_to_nil(socket.assigns.filter_params["subject_kind"]),
-         do: Map.delete(merged, "subject_id"),
+      if blank_to_nil(params["target_kind"]) !=
+           blank_to_nil(socket.assigns.filter_params["target_kind"]),
+         do: Map.delete(merged, "target_id"),
          else: merged
 
     {:noreply,
@@ -148,12 +148,12 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
-  # Same shape for the Subject column: when a subject kind is selected, surface a
-  # "filter by subject" picker for that kind (its distinct subjects in the log).
-  defp subject_kind_filter(params, subject) do
-    with kind when is_binary(kind) <- blank_to_nil(params["subject_kind"]),
-         {:ok, [_ | _] = options} <- Audit.list_subject_options(kind, subject) do
-      [Audit.Event.Query.subject_filter(options)]
+  # Same shape for the Target column: when a target kind is selected, surface a
+  # "filter by target" picker for that kind (its distinct targets in the log).
+  defp target_kind_filter(params, subject) do
+    with kind when is_binary(kind) <- blank_to_nil(params["target_kind"]),
+         {:ok, [_ | _] = options} <- Audit.list_target_options(kind, subject) do
+      [Audit.Event.Query.target_filter(options)]
     else
       _ -> []
     end
@@ -168,24 +168,24 @@ defmodule EmisarWeb.AuditLive do
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.
-    # base_filters stays the opts source; the actor/subject pickers are
-    # render-only — actor_id/subject_id apply via the opts path below.
+    # base_filters stays the opts source; the actor/target pickers are
+    # render-only — actor_id/target_id apply via the opts path below.
     subject = socket.assigns.current_subject
     actor_filter = actor_kind_filter(params, subject)
-    subject_filter = subject_kind_filter(params, subject)
+    target_filter = target_kind_filter(params, subject)
 
     filters =
       Enum.flat_map(base_filters, fn
         %{name: :actor_kind} = f -> [f | actor_filter]
-        %{name: :subject_kind} = f -> [f | subject_filter]
+        %{name: :target_kind} = f -> [f | target_filter]
         f -> [f]
       end)
 
     actor_id = blank_to_nil(params["actor_id"])
-    subject_id = blank_to_nil(params["subject_id"])
+    target_id = blank_to_nil(params["target_id"])
 
     # actor_id rides as a URL param outside the form (set by clicking a row's
-    # actor); subject_id is set by its dynamic picker. Both aren't in
+    # actor); target_id is set by its dynamic picker. Both aren't in
     # base_filters, so they're threaded into list_events directly. From/To are
     # LiveTable datetime filters — params_to_opts applies them via :filter.
     socket =
@@ -198,12 +198,12 @@ defmodule EmisarWeb.AuditLive do
         params |> LiveTable.active_filter_labels(filters) |> Enum.join(" · ")
       )
       |> assign(:actor_id, actor_id)
-      |> assign(:subject_id, subject_id)
+      |> assign(:target_id, target_id)
 
     opts =
       params
       |> LiveTable.params_to_opts(base_filters)
-      |> Keyword.merge(actor_id: actor_id, subject_id: subject_id)
+      |> Keyword.merge(actor_id: actor_id, target_id: target_id)
 
     case Audit.list_events(socket.assigns.current_subject, opts) do
       {:ok, events, meta} ->
@@ -404,7 +404,7 @@ defmodule EmisarWeb.AuditLive do
                 party_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
               } />
               <.audit_cell
-                value={subject_text(event, @refs)}
+                value={target_text(event, @refs)}
                 placeholder={if self_event?(event), do: "self", else: "—"}
               />
               <.audit_cell value={event.ip_address} mono />
@@ -487,18 +487,18 @@ defmodule EmisarWeb.AuditLive do
 
   # One quiet meta STRING per event — the accountable identity by name (the
   # kind prefix + the generic ACTOR/SUBJECT/IP columns died with the grid),
-  # then "→ subject" only when the event acted ON something other than its
+  # then "→ target" only when the event acted ON something other than its
   # actor (a sign-in acts on itself; a role change acts on a teammate), then
   # the payload's notable pairs, then the source IP. Plain text on purpose:
   # the row's one link is the row itself (→ the event detail).
   defp event_meta(event, refs) do
-    # Actor and its subject bind into ONE "who → what" segment (a middot
+    # Actor and its target bind into ONE "who → what" segment (a middot
     # between them read as two unrelated facts); the arrow appears only when
     # the event acted on something other than its actor.
     who =
       [
         party_text(event.actor_kind, event.actor_id, event.actor_label, refs),
-        subject_text(event, refs)
+        target_text(event, refs)
       ]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" → ")
@@ -514,19 +514,19 @@ defmodule EmisarWeb.AuditLive do
     |> Enum.map_join(" · ", fn {k, v} -> if(k == "via", do: "via #{v}", else: "#{k}: #{v}") end)
   end
 
-  defp subject_text(event, refs) do
+  defp target_text(event, refs) do
     if self_event?(event),
       do: nil,
-      else: party_text(event.subject_kind, event.subject_id, event.subject_label, refs)
+      else: party_text(event.target_kind, event.target_id, event.target_label, refs)
   end
 
   # An event whose target IS its actor (a sign-in, a runner connect) — the
   # meta line omits it; the Target column says "self". An event with NO
-  # subject at all is not "self", it just has no target (em-dash).
-  defp self_event?(%{subject_kind: nil}), do: false
+  # target at all is not "self", it just has no target (em-dash).
+  defp self_event?(%{target_kind: nil}), do: false
 
   defp self_event?(event),
-    do: event.subject_kind == event.actor_kind and event.subject_id == event.actor_id
+    do: event.target_kind == event.actor_kind and event.target_id == event.actor_id
 
   defp party_text(nil, _id, _label, _refs), do: nil
 

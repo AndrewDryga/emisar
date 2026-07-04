@@ -34,9 +34,9 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_kind: "runner",
           actor_id: runner.id,
           actor_label: runner.name,
-          subject_kind: "runner",
-          subject_id: runner.id,
-          subject_label: runner.name,
+          target_kind: "runner",
+          target_id: runner.id,
+          target_label: runner.name,
           ip_address: "10.0.5.12",
           user_agent: "emisar-runner/0.1.0"
         )
@@ -65,12 +65,12 @@ defmodule EmisarWeb.AuditLiveTest do
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      for {type, subject_kind} <- [
+      for {type, target_kind} <- [
             {"user.sign_in_failed", "user"},
             {"approval.denied", "approval_request"},
             {"runner.connected", "runner"}
           ] do
-        {:ok, _} = Audit.log(account.id, type, subject_kind: subject_kind, subject_label: "x")
+        {:ok, _} = Audit.log(account.id, type, target_kind: target_kind, target_label: "x")
       end
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
@@ -95,12 +95,12 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _event} =
         Audit.log(account.id, "runner.touched",
-          subject_kind: "runner",
-          subject_id: runner.id,
-          subject_label: "old-name"
+          target_kind: "runner",
+          target_id: runner.id,
+          target_label: "old-name"
         )
 
-      # Rename. The audit row still says "old-name" in subject_label.
+      # Rename. The audit row still says "old-name" in target_label.
       runner
       |> Ecto.Changeset.change(name: "renamed-prod")
       |> Repo.update!()
@@ -262,8 +262,8 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _} =
         Audit.log(account.id, "runner.connected",
-          subject_kind: "runner",
-          subject_label: "routine-runner"
+          target_kind: "runner",
+          target_label: "routine-runner"
         )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
@@ -298,9 +298,9 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _} =
         Audit.log(account.id, "runner.connected",
-          subject_kind: "runner",
-          subject_id: runner_id,
-          subject_label: "pinned-runner"
+          target_kind: "runner",
+          target_id: runner_id,
+          target_label: "pinned-runner"
         )
 
       {:ok, _} =
@@ -311,11 +311,11 @@ defmodule EmisarWeb.AuditLiveTest do
         )
 
       {:ok, _lv, html} =
-        live(conn, ~p"/app/#{account}/audit?#{[subject_kind: "runner", subject_id: runner_id]}")
+        live(conn, ~p"/app/#{account}/audit?#{[target_kind: "runner", target_id: runner_id]}")
 
       # The pivot surfaces as the auto-opened facet panel's Subject picker
       # (highlighted + counted), and the rows scope to that subject.
-      assert html =~ ~s(name="subject_id")
+      assert html =~ ~s(name="target_id")
       assert html =~ "pinned-runner"
       refute html =~ "unrelated-actor"
     end
@@ -409,7 +409,7 @@ defmodule EmisarWeb.AuditLiveTest do
       # …and right after its Actor-type trigger — before the next (Subject)
       # filter, not tacked on at the end.
       assert :binary.match(html, ~s(name="actor_id")) <
-               :binary.match(html, ~s(name="subject_kind"))
+               :binary.match(html, ~s(name="target_kind"))
 
       assert html =~ user.email
     end
@@ -417,21 +417,21 @@ defmodule EmisarWeb.AuditLiveTest do
     test "selecting a subject kind surfaces a picker of that kind's resolved subjects",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: user.id)
+      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: user.id)
 
       # No subject kind selected → no subject picker rendered.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
-      refute html =~ ~s(name="subject_id")
+      refute html =~ ~s(name="target_id")
 
       # Pick "user" → the picker appears with the resolved subject (the user's
       # email), right after its Subject trigger — same shape as the actor picker.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=user")
-      assert html =~ ~s(name="subject_id")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=user")
+      assert html =~ ~s(name="target_id")
       assert html =~ ~s(value="#{user.id}")
       assert html =~ user.email
 
-      assert :binary.match(html, ~s(name="subject_kind")) <
-               :binary.match(html, ~s(name="subject_id"))
+      assert :binary.match(html, ~s(name="target_kind")) <
+               :binary.match(html, ~s(name="target_id"))
     end
 
     # `approval_grant` and `policy` have no label resolver,
@@ -443,21 +443,21 @@ defmodule EmisarWeb.AuditLiveTest do
       # Real rows of the resolver-less kinds — the picker still must not appear.
       {:ok, _} =
         Audit.log(account.id, "approval.grant_revoked",
-          subject_kind: "approval_grant",
-          subject_id: Ecto.UUID.generate()
+          target_kind: "approval_grant",
+          target_id: Ecto.UUID.generate()
         )
 
       {:ok, _} =
         Audit.log(account.id, "policy.updated",
-          subject_kind: "policy",
-          subject_id: Ecto.UUID.generate()
+          target_kind: "policy",
+          target_id: Ecto.UUID.generate()
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=approval_grant")
-      refute html =~ ~s(name="subject_id")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=approval_grant")
+      refute html =~ ~s(name="target_id")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=policy")
-      refute html =~ ~s(name="subject_id")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=policy")
+      refute html =~ ~s(name="target_id")
     end
 
     # picking an actor then switching the Actor *type*
@@ -480,19 +480,19 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     # same for the Subject picker: a changed subject kind
-    # invalidates the previously-picked subject_id, dropping it from the URL.
+    # invalidates the previously-picked target_id, dropping it from the URL.
     test "switching the subject kind drops the stale subject pick", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: user.id)
+      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: user.id)
 
       {:ok, lv, _html} =
-        live(conn, ~p"/app/#{account}/audit?subject_kind=user&subject_id=#{user.id}")
+        live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{user.id}")
 
       lv
-      |> form("#audit-events-filter", %{subject_kind: "runner"})
+      |> form("#audit-events-filter", %{target_kind: "runner"})
       |> render_change()
 
-      assert_patch(lv, ~p"/app/#{account}/audit?subject_kind=runner")
+      assert_patch(lv, ~p"/app/#{account}/audit?target_kind=runner")
     end
 
     # a crafted/blank actor_id is normalized: a junk UUID is
@@ -514,20 +514,20 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "real"
     end
 
-    # same normalization for a crafted/blank subject_id.
-    test "a crafted or blank subject_id is normalized, never a crash", %{conn: conn} do
+    # same normalization for a crafted/blank target_id.
+    test "a crafted or blank target_id is normalized, never a crash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, _} =
-        Audit.log(account.id, "user.invited", subject_kind: "user", subject_label: "real")
+        Audit.log(account.id, "user.invited", target_kind: "user", target_label: "real")
 
       {:ok, _lv, html} =
-        live(conn, ~p"/app/#{account}/audit?subject_kind=user&subject_id=#{Ecto.UUID.generate()}")
+        live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{Ecto.UUID.generate()}")
 
       assert html =~ "No events match these filters."
       refute html =~ "real"
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_id=")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_id=")
       assert html =~ "real"
     end
 
@@ -731,10 +731,10 @@ defmodule EmisarWeb.AuditLiveTest do
     # subjects of that kind in the log renders no dependent picker.
     test "a subject kind with no subjects in the log surfaces no picker", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_label: "x")
+      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_label: "x")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=runner")
-      refute html =~ ~s(name="subject_id")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=runner")
+      refute html =~ ~s(name="target_id")
     end
 
     # a system / scheduler / runbook actor has no
@@ -746,8 +746,8 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} =
         Audit.log(account.id, "action_run.denied",
           actor_kind: "system",
-          subject_kind: "action_run",
-          subject_label: "linux.uptime"
+          target_kind: "action_run",
+          target_label: "linux.uptime"
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
@@ -840,8 +840,8 @@ defmodule EmisarWeb.AuditLiveTest do
         Audit.log(account.id, "api_key.created",
           actor_kind: "user",
           actor_label: "owner@example.com",
-          subject_kind: "api_key",
-          subject_label: "ci-bot",
+          target_kind: "api_key",
+          target_label: "ci-bot",
           ip_address: "203.0.113.7",
           user_agent: "Mozilla/5.0 (Macintosh)",
           payload: %{prefix: "emk-abcdef", scopes: ["actions:read", "actions:execute"]}
@@ -866,8 +866,8 @@ defmodule EmisarWeb.AuditLiveTest do
         Audit.log(account.id, "linux.uptime.run",
           actor_kind: "api_key",
           actor_label: "Claude Desktop",
-          subject_kind: "action_run",
-          subject_label: "linux.uptime",
+          target_kind: "action_run",
+          target_label: "linux.uptime",
           ip_address: "127.0.0.1",
           user_agent: "emisar-mcp/dev (client=claude-desktop; host=andrews-mbp.local; os=darwin)"
         )
@@ -888,8 +888,8 @@ defmodule EmisarWeb.AuditLiveTest do
         Audit.log(account.id, "action_run.success",
           actor_kind: "api_key",
           actor_label: "Claude Code",
-          subject_kind: "action_run",
-          subject_label: "nomad.job_status",
+          target_kind: "action_run",
+          target_label: "nomad.job_status",
           ip_address: "127.0.0.1",
           user_agent: "emisar-mcp/0.1.1 (client=claude-code; host=mac)",
           mcp_session_id: "5985d95cf73715ff"

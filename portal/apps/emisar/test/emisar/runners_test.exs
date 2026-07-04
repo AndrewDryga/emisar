@@ -829,7 +829,7 @@ defmodule Emisar.RunnersTest do
       assert event.event_type == "runner.connected"
       assert event.account_id == runner.account_id
       assert event.actor_kind == "runner"
-      assert event.subject_id == runner.id
+      assert event.target_id == runner.id
       assert event.payload["token_id"] == "tok-123"
       assert event.ip_address == "10.0.0.1"
     end
@@ -850,7 +850,7 @@ defmodule Emisar.RunnersTest do
       event = Repo.reload!(event)
       assert event.event_type == "runner.disconnected"
       assert event.account_id == runner.account_id
-      assert event.subject_id == runner.id
+      assert event.target_id == runner.id
       assert event.payload["reason"] == "going away"
     end
   end
@@ -871,7 +871,7 @@ defmodule Emisar.RunnersTest do
       event = Repo.reload!(event)
       assert event.event_type == "runner.error"
       assert event.account_id == runner.account_id
-      assert event.subject_id == runner.id
+      assert event.target_id == runner.id
       assert event.payload["code"] == "boom"
       assert event.payload["detail"] == "pack crashed"
     end

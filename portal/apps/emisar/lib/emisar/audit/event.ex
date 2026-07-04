@@ -18,9 +18,9 @@ defmodule Emisar.Audit.Event do
     field :actor_id, Ecto.UUID
     field :actor_label, :string
 
-    field :subject_kind, :string
-    field :subject_id, Ecto.UUID
-    field :subject_label, :string
+    field :target_kind, :string
+    field :target_id, Ecto.UUID
+    field :target_label, :string
 
     field :ip_address, :string
     field :user_agent, :string

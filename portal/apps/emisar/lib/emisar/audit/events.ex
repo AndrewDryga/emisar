@@ -4,7 +4,7 @@ defmodule Emisar.Audit.Events do
   `Ecto.Changeset` for `Ecto.Multi.insert/3` (or `Repo.insert/1` inside a
   plain transaction), so the caller passes the domain structs plus the
   acting `%Subject{}` and never has to know the audit field schema —
-  `actor_kind` / `actor_id` / `subject_kind` / `subject_id` / `payload`
+  `actor_kind` / `actor_id` / `target_kind` / `target_id` / `payload`
   are this module's concern, not the context's. A fire-and-forget
   standalone event (no `Multi` to join — a runner socket connect, a
   dispatch-time policy decision) still goes through a builder here,
@@ -23,9 +23,9 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(account.id, "account.created",
       actor_kind: "user",
       actor_id: owner.id,
-      subject_kind: "account",
-      subject_id: account.id,
-      subject_label: account.name,
+      target_kind: "account",
+      target_id: account.id,
+      target_label: account.name,
       # A brand-new account has no subscription yet, so it is always on the
       # free plan at creation — recorded literally to avoid a cross-context
       # Billing call from the audit layer.
@@ -37,9 +37,9 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(account.id, "user.signed_up",
       actor_kind: "user",
       actor_id: user.id,
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email
     )
   end
 
@@ -49,9 +49,9 @@ defmodule Emisar.Audit.Events do
       "account.updated",
       actor(subject) ++
         [
-          subject_kind: "account",
-          subject_id: account.id,
-          subject_label: account.name,
+          target_kind: "account",
+          target_id: account.id,
+          target_label: account.name,
           payload: %{name: account.name, slug: account.slug}
         ]
     )
@@ -63,8 +63,8 @@ defmodule Emisar.Audit.Events do
       "account.require_mfa_set",
       actor(subject) ++
         [
-          subject_kind: "account",
-          subject_id: account.id,
+          target_kind: "account",
+          target_id: account.id,
           payload: %{require_mfa: account.settings.require_mfa}
         ]
     )
@@ -76,8 +76,8 @@ defmodule Emisar.Audit.Events do
       "account.require_sso_set",
       actor(subject) ++
         [
-          subject_kind: "account",
-          subject_id: account.id,
+          target_kind: "account",
+          target_id: account.id,
           payload: %{require_sso: account.settings.require_sso}
         ]
     )
@@ -89,8 +89,8 @@ defmodule Emisar.Audit.Events do
       "account.max_grant_lifetime_set",
       actor(subject) ++
         [
-          subject_kind: "account",
-          subject_id: account.id,
+          target_kind: "account",
+          target_id: account.id,
           payload: %{max_grant_lifetime_seconds: account.settings.max_grant_lifetime_seconds}
         ]
     )
@@ -104,8 +104,8 @@ defmodule Emisar.Audit.Events do
       "membership.role_changed",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: membership.user_id,
+          target_kind: "user",
+          target_id: membership.user_id,
           payload: %{from: membership.role, to: new_role}
         ]
     )
@@ -122,7 +122,7 @@ defmodule Emisar.Audit.Events do
       membership.account_id,
       "membership.removed",
       actor(subject) ++
-        [subject_kind: "user", subject_id: membership.user_id, payload: %{role: membership.role}]
+        [target_kind: "user", target_id: membership.user_id, payload: %{role: membership.role}]
     )
   end
 
@@ -137,8 +137,8 @@ defmodule Emisar.Audit.Events do
       "membership.runner_scopes_changed",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: membership.user_id,
+          target_kind: "user",
+          target_id: membership.user_id,
           payload: %{
             scope_count: length(scopes),
             scopes: Enum.map(scopes, fn {type, value} -> %{type: type, value: value} end)
@@ -153,9 +153,9 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(membership.account_id, "session.account_switched",
       actor_kind: "user",
       actor_id: membership.user_id,
-      subject_kind: "user",
-      subject_id: membership.user_id,
-      subject_label: user.email,
+      target_kind: "user",
+      target_id: membership.user_id,
+      target_label: user.email,
       payload: %{role: membership.role}
     )
   end
@@ -166,8 +166,8 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(membership.account_id, "membership.invitation_accepted",
       actor_kind: "user",
       actor_id: membership.user_id,
-      subject_kind: "user",
-      subject_id: membership.user_id,
+      target_kind: "user",
+      target_id: membership.user_id,
       payload: %{role: membership.role}
     )
   end
@@ -198,9 +198,9 @@ defmodule Emisar.Audit.Events do
       "user.updated_by_admin",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email,
+          target_kind: "user",
+          target_id: user.id,
+          target_label: user.email,
           payload: %{full_name: user.full_name}
         ]
     )
@@ -212,9 +212,9 @@ defmodule Emisar.Audit.Events do
       "user.invited",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: invited.id,
-          subject_label: invited.email,
+          target_kind: "user",
+          target_id: invited.id,
+          target_label: invited.email,
           payload: %{role: role}
         ]
     )
@@ -225,9 +225,9 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(membership.account_id, "user.invitation_accepted",
       actor_kind: "user",
       actor_id: user.id,
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email,
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email,
       payload: %{role: membership.role}
     )
   end
@@ -242,9 +242,9 @@ defmodule Emisar.Audit.Events do
       actor_kind: "runner",
       actor_id: runner.id,
       actor_label: runner.name,
-      subject_kind: "runner",
-      subject_id: runner.id,
-      subject_label: runner.name,
+      target_kind: "runner",
+      target_id: runner.id,
+      target_label: runner.name,
       context: context,
       payload: %{token_id: token_id}
     )
@@ -254,8 +254,8 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(account_id, "runner.disconnected",
       actor_kind: "runner",
       actor_id: runner_id,
-      subject_kind: "runner",
-      subject_id: runner_id,
+      target_kind: "runner",
+      target_id: runner_id,
       context: context,
       payload: %{reason: reason}
     )
@@ -265,8 +265,8 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(account_id, "runner.error",
       actor_kind: "runner",
       actor_id: runner_id,
-      subject_kind: "runner",
-      subject_id: runner_id,
+      target_kind: "runner",
+      target_id: runner_id,
       context: context,
       payload: payload
     )
@@ -284,9 +284,9 @@ defmodule Emisar.Audit.Events do
       actor_kind: "runner",
       actor_id: runner.id,
       actor_label: runner.name,
-      subject_kind: "runner",
-      subject_id: runner.id,
-      subject_label: runner.name,
+      target_kind: "runner",
+      target_id: runner.id,
+      target_label: runner.name,
       payload: %{
         external_id: runner.external_id,
         group: runner.group,
@@ -313,8 +313,8 @@ defmodule Emisar.Audit.Events do
       "auth_key.created",
       actor(subject) ++
         [
-          subject_kind: "auth_key",
-          subject_id: key.id,
+          target_kind: "auth_key",
+          target_id: key.id,
           payload: %{prefix: key.key_prefix, reusable: key.reusable}
         ]
     )
@@ -325,7 +325,7 @@ defmodule Emisar.Audit.Events do
       key.account_id,
       "auth_key.revoked",
       actor(subject) ++
-        [subject_kind: "auth_key", subject_id: key.id, payload: %{prefix: key.key_prefix}]
+        [target_kind: "auth_key", target_id: key.id, payload: %{prefix: key.key_prefix}]
     )
   end
 
@@ -334,8 +334,8 @@ defmodule Emisar.Audit.Events do
   def auth_key_bound(%Runners.AuthKey{} = key) do
     Audit.changeset(key.account_id, "auth_key.bound",
       actor_kind: "system",
-      subject_kind: "auth_key",
-      subject_id: key.id,
+      target_kind: "auth_key",
+      target_id: key.id,
       payload: %{prefix: key.key_prefix, auto: true}
     )
   end
@@ -348,9 +348,9 @@ defmodule Emisar.Audit.Events do
       "api_key.created",
       actor(subject) ++
         [
-          subject_kind: "api_key",
-          subject_id: key.id,
-          subject_label: key.name,
+          target_kind: "api_key",
+          target_id: key.id,
+          target_label: key.name,
           payload: %{prefix: key.key_prefix, scopes: key.scopes}
         ]
     )
@@ -362,9 +362,9 @@ defmodule Emisar.Audit.Events do
       "api_key.revoked",
       actor(subject) ++
         [
-          subject_kind: "api_key",
-          subject_id: key.id,
-          subject_label: key.name,
+          target_kind: "api_key",
+          target_id: key.id,
+          target_label: key.name,
           payload: %{prefix: key.key_prefix}
         ]
     )
@@ -383,9 +383,9 @@ defmodule Emisar.Audit.Events do
       "api_key.auto_rotated",
       actor(subject) ++
         [
-          subject_kind: "api_key",
-          subject_id: key.id,
-          subject_label: key.name,
+          target_kind: "api_key",
+          target_id: key.id,
+          target_label: key.name,
           payload: %{
             prefix: key.key_prefix,
             successor_id: successor.id,
@@ -400,9 +400,9 @@ defmodule Emisar.Audit.Events do
   def api_key_bound(%ApiKeys.ApiKey{} = key) do
     Audit.changeset(key.account_id, "api_key.bound",
       actor_kind: "system",
-      subject_kind: "api_key",
-      subject_id: key.id,
-      subject_label: key.name,
+      target_kind: "api_key",
+      target_id: key.id,
+      target_label: key.name,
       payload: %{prefix: key.key_prefix, auto: true}
     )
   end
@@ -431,9 +431,9 @@ defmodule Emisar.Audit.Events do
       "oauth.consent_granted",
       actor(subject) ++
         [
-          subject_kind: "api_key",
-          subject_id: key.id,
-          subject_label: key.name,
+          target_kind: "api_key",
+          target_id: key.id,
+          target_label: key.name,
           payload: %{client_id: client.id, client_name: client.client_name, scopes: key.scopes}
         ]
     )
@@ -481,9 +481,9 @@ defmodule Emisar.Audit.Events do
       ) do
     Audit.changeset(runbook.account_id, "runbook.step_dispatch_failed",
       actor_kind: "system",
-      subject_kind: "runbook",
-      subject_id: runbook.id,
-      subject_label: runbook.title,
+      target_kind: "runbook",
+      target_id: runbook.id,
+      target_label: runbook.title,
       payload: %{
         runbook_id: runbook.id,
         runbook_execution_id: execution_id,
@@ -536,9 +536,9 @@ defmodule Emisar.Audit.Events do
       type,
       actor(subject) ++
         [
-          subject_kind: "pack_version",
-          subject_id: pack_version.id,
-          subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
+          target_kind: "pack_version",
+          target_id: pack_version.id,
+          target_label: "#{pack_version.pack_id}@#{pack_version.version}",
           payload: payload
         ]
     )
@@ -550,9 +550,9 @@ defmodule Emisar.Audit.Events do
   def pack_pinned(%Catalog.PackVersion{} = pack_version, event_type, advertised, baseline) do
     Audit.changeset(pack_version.account_id, event_type,
       actor_kind: "system",
-      subject_kind: "pack_version",
-      subject_id: pack_version.id,
-      subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
+      target_kind: "pack_version",
+      target_id: pack_version.id,
+      target_label: "#{pack_version.pack_id}@#{pack_version.version}",
       payload: %{
         pack_id: pack_version.pack_id,
         version: pack_version.version,
@@ -569,9 +569,9 @@ defmodule Emisar.Audit.Events do
   def pack_trust_drift_detected(%Catalog.PackVersion{} = pack_version, advertised) do
     Audit.changeset(pack_version.account_id, "pack_trust_drift_detected",
       actor_kind: "system",
-      subject_kind: "pack_version",
-      subject_id: pack_version.id,
-      subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
+      target_kind: "pack_version",
+      target_id: pack_version.id,
+      target_label: "#{pack_version.pack_id}@#{pack_version.version}",
       payload: %{
         pack_id: pack_version.pack_id,
         version: pack_version.version,
@@ -597,8 +597,8 @@ defmodule Emisar.Audit.Events do
       "policy.updated",
       actor(subject) ++
         [
-          subject_kind: "policy",
-          subject_id: updated.id,
+          target_kind: "policy",
+          target_id: updated.id,
           payload: %{
             scope_type: to_string(updated.scope_type),
             scope_value: updated.scope_value,
@@ -619,8 +619,8 @@ defmodule Emisar.Audit.Events do
       "policy.scope_deleted",
       actor(subject) ++
         [
-          subject_kind: "policy",
-          subject_id: policy.id,
+          target_kind: "policy",
+          target_id: policy.id,
           payload: %{
             scope_type: to_string(policy.scope_type),
             scope_value: policy.scope_value,
@@ -648,8 +648,8 @@ defmodule Emisar.Audit.Events do
       "approval.decision_recorded",
       actor(subject) ++
         [
-          subject_kind: "approval_request",
-          subject_id: request.id,
+          target_kind: "approval_request",
+          target_id: request.id,
           payload: %{
             run_id: request.run_id,
             decision: decision,
@@ -673,8 +673,8 @@ defmodule Emisar.Audit.Events do
       "approval.approved",
       actor(subject) ++
         [
-          subject_kind: "approval_request",
-          subject_id: request.id,
+          target_kind: "approval_request",
+          target_id: request.id,
           payload: %{
             run_id: request.run_id,
             reason: reason,
@@ -692,8 +692,8 @@ defmodule Emisar.Audit.Events do
       "approval.denied",
       actor(subject) ++
         [
-          subject_kind: "approval_request",
-          subject_id: request.id,
+          target_kind: "approval_request",
+          target_id: request.id,
           payload: %{run_id: request.run_id, reason: reason}
         ]
     )
@@ -704,8 +704,8 @@ defmodule Emisar.Audit.Events do
   def approval_expired(%Approvals.Request{} = request) do
     Audit.changeset(request.account_id, "approval.expired",
       actor_kind: "system",
-      subject_kind: "approval_request",
-      subject_id: request.id,
+      target_kind: "approval_request",
+      target_id: request.id,
       payload: %{run_id: request.run_id, expires_at: request.expires_at}
     )
   end
@@ -718,8 +718,8 @@ defmodule Emisar.Audit.Events do
       "approval.grant_revoked",
       actor(subject) ++
         [
-          subject_kind: "approval_grant",
-          subject_id: grant.id,
+          target_kind: "approval_grant",
+          target_id: grant.id,
           payload: %{action_id: grant.action_id, api_key_id: grant.api_key_id}
         ]
     )
@@ -737,9 +737,9 @@ defmodule Emisar.Audit.Events do
       ) do
     Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
       actor_kind: "system",
-      subject_kind: "pack_version",
-      subject_id: pv_id,
-      subject_label: "#{pack_id}@#{version}",
+      target_kind: "pack_version",
+      target_id: pv_id,
+      target_label: "#{pack_id}@#{version}",
       payload: %{
         pack_id: pack_id,
         version: version,
@@ -750,12 +750,12 @@ defmodule Emisar.Audit.Events do
   end
 
   # No pin row exists for a versioned pack — dispatch failed CLOSED. Derived
-  # from the action (no PackVersion struct to key the subject on).
+  # from the action (no PackVersion struct to key the target on).
   def dispatch_blocked_pack_untrusted(account_id, :no_pin, action) do
     Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
       actor_kind: "system",
-      subject_kind: "pack_version",
-      subject_label: "#{action.pack_id}@#{action.pack_version}",
+      target_kind: "pack_version",
+      target_label: "#{action.pack_id}@#{action.pack_version}",
       payload: %{
         pack_id: action.pack_id,
         version: action.pack_version,
@@ -772,8 +772,8 @@ defmodule Emisar.Audit.Events do
   def dispatch_blocked_requires_attestation(account_id, runner_id, action_id) do
     Audit.changeset(account_id, "dispatch_blocked_requires_attestation",
       actor_kind: "system",
-      subject_kind: "runner",
-      subject_id: runner_id,
+      target_kind: "runner",
+      target_id: runner_id,
       payload: %{action_id: action_id}
     )
   end
@@ -784,11 +784,11 @@ defmodule Emisar.Audit.Events do
       "run.cancel_requested",
       actor(subject) ++
         [
-          # "action_run" — the canonical run subject_kind (every other run event +
+          # "action_run" — the canonical run target_kind (every other run event +
           # the audit ref_path use it); "run" here dropped cancel-requests out of a
           # run's filtered audit trail.
-          subject_kind: "action_run",
-          subject_id: run.id,
+          target_kind: "action_run",
+          target_id: run.id,
           payload: %{from_status: run.status, reason: reason}
         ]
     )
@@ -800,9 +800,9 @@ defmodule Emisar.Audit.Events do
   def grant_used(%Runs.ActionRun{} = run, grant, policy) do
     Audit.changeset(run.account_id, "approval.grant_used",
       actor_kind: "system",
-      subject_kind: "action_run",
-      subject_id: run.id,
-      subject_label: run.action_id,
+      target_kind: "action_run",
+      target_id: run.id,
+      target_label: run.action_id,
       payload: %{
         run_id: run.id,
         grant_id: grant.id,
@@ -820,9 +820,9 @@ defmodule Emisar.Audit.Events do
   def user_provisioned_via_sso(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
     Audit.changeset(provider.account_id, "user.provisioned_via_sso",
       actor_kind: "system",
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email || user.full_name,
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email || user.full_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -843,9 +843,9 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email || user.full_name,
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email || user.full_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -860,9 +860,9 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      subject_kind: "user",
-      subject_id: user.id,
-      subject_label: user.email || user.full_name,
+      target_kind: "user",
+      target_id: user.id,
+      target_label: user.email || user.full_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -897,8 +897,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      subject_kind: "user",
-      subject_id: membership.user_id,
+      target_kind: "user",
+      target_id: membership.user_id,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -917,8 +917,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      subject_kind: "user",
-      subject_id: membership.user_id,
+      target_kind: "user",
+      target_id: membership.user_id,
       payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
     )
   end
@@ -950,9 +950,9 @@ defmodule Emisar.Audit.Events do
       event_type,
       actor(subject) ++
         [
-          subject_kind: "identity_provider",
-          subject_id: provider_id(provider, mapping),
-          subject_label: mapping.external_group_display || mapping.external_group_id,
+          target_kind: "identity_provider",
+          target_id: provider_id(provider, mapping),
+          target_label: mapping.external_group_display || mapping.external_group_id,
           payload: %{
             external_group_id: mapping.external_group_id,
             role: to_string(mapping.role)
@@ -983,9 +983,9 @@ defmodule Emisar.Audit.Events do
       event_type,
       actor(subject) ++
         [
-          subject_kind: "identity_provider",
-          subject_id: provider.id,
-          subject_label: provider.name,
+          target_kind: "identity_provider",
+          target_id: provider.id,
+          target_label: provider.name,
           payload: %{kind: to_string(provider.kind)}
         ]
     )
@@ -1002,9 +1002,9 @@ defmodule Emisar.Audit.Events do
       "sso.link_request_approved",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email || user.full_name,
+          target_kind: "user",
+          target_id: user.id,
+          target_label: user.email || user.full_name,
           payload: %{
             provider_id: provider.id,
             provider_kind: to_string(provider.kind),
@@ -1025,9 +1025,9 @@ defmodule Emisar.Audit.Events do
       "sso.existing_user_linked",
       actor(subject) ++
         [
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email || user.full_name,
+          target_kind: "user",
+          target_id: user.id,
+          target_label: user.email || user.full_name,
           payload: %{
             provider_id: provider.id,
             provider_kind: to_string(provider.kind)
@@ -1043,9 +1043,9 @@ defmodule Emisar.Audit.Events do
       "sso.link_request_dismissed",
       actor(subject) ++
         [
-          subject_kind: "identity_provider",
-          subject_id: request.provider_id,
-          subject_label: request.email || request.full_name || request.provider_identifier,
+          target_kind: "identity_provider",
+          target_id: request.provider_id,
+          target_label: request.email || request.full_name || request.provider_identifier,
           payload: %{provider_id: request.provider_id}
         ]
     )
@@ -1061,8 +1061,8 @@ defmodule Emisar.Audit.Events do
   def subscription_changed(account_id, from_plan, to_plan) when is_binary(account_id) do
     Audit.changeset(account_id, "subscription.changed",
       actor_kind: "system",
-      subject_kind: "account",
-      subject_id: account_id,
+      target_kind: "account",
+      target_id: account_id,
       payload: %{from: from_plan, to: to_plan}
     )
   end
@@ -1074,8 +1074,8 @@ defmodule Emisar.Audit.Events do
       when is_binary(account_id) and is_integer(count) do
     Audit.changeset(account_id, "audit.retention_swept",
       actor_kind: "system",
-      subject_kind: "audit_log",
-      subject_label: "Audit log",
+      target_kind: "audit_log",
+      target_label: "Audit log",
       payload: %{count: count, swept_at: DateTime.to_iso8601(swept_at)}
     )
   end
@@ -1088,8 +1088,8 @@ defmodule Emisar.Audit.Events do
       "audit.exported",
       actor(subject) ++
         [
-          subject_kind: "audit_log",
-          subject_label: "Audit log",
+          target_kind: "audit_log",
+          target_label: "Audit log",
           payload: export_payload(opts, count)
         ]
     )
@@ -1122,7 +1122,7 @@ defmodule Emisar.Audit.Events do
       runner.account_id,
       event_type,
       actor(subject) ++
-        [subject_kind: "runner", subject_id: runner.id, subject_label: runner.name]
+        [target_kind: "runner", target_id: runner.id, target_label: runner.name]
     )
   end
 
@@ -1132,9 +1132,9 @@ defmodule Emisar.Audit.Events do
       event_type,
       actor(subject) ++
         [
-          subject_kind: "runbook",
-          subject_id: runbook.id,
-          subject_label: runbook.title || runbook.name,
+          target_kind: "runbook",
+          target_id: runbook.id,
+          target_label: runbook.title || runbook.name,
           payload: payload
         ]
     )
@@ -1144,7 +1144,7 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(
       membership.account_id,
       event_type,
-      actor(subject) ++ [subject_kind: "user", subject_id: membership.user_id]
+      actor(subject) ++ [target_kind: "user", target_id: membership.user_id]
     )
   end
 
@@ -1157,7 +1157,7 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(
       membership.account_id,
       event_type,
-      actor(subject) ++ [subject_kind: "user", subject_id: user.id, subject_label: user.email]
+      actor(subject) ++ [target_kind: "user", target_id: user.id, target_label: user.email]
     )
   end
 

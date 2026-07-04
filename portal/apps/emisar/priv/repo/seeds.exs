@@ -1309,7 +1309,7 @@ case Runners.list_auth_keys(owner_subject) do
 
     Audit.log(account.id, "auth_key.created",
       actor_kind: "system",
-      subject_kind: "auth_key",
+      target_kind: "auth_key",
       payload: %{seeded: true}
     )
 

@@ -547,7 +547,7 @@ defmodule Emisar.RunsTest do
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])
 
-      types = events |> Enum.filter(&(&1.subject_id == run.id)) |> Enum.map(& &1.event_type)
+      types = events |> Enum.filter(&(&1.target_id == run.id)) |> Enum.map(& &1.event_type)
 
       # The terminal outcome ONLY — none of the intermediate lifecycle noise
       # (pending/sent/running) and NO policy.evaluated row: the audit-logging diet
@@ -588,7 +588,7 @@ defmodule Emisar.RunsTest do
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
       success =
-        Enum.find(events, &(&1.subject_id == run.id and &1.event_type == "action_run.success"))
+        Enum.find(events, &(&1.target_id == run.id and &1.event_type == "action_run.success"))
 
       assert success.ip_address == "203.0.113.7"
       assert success.user_agent == "Codex-CLI/1.0"
@@ -743,7 +743,7 @@ defmodule Emisar.RunsTest do
       # the mutable run-row status. Regression: `:pending_approval` was missing from
       # `@audited_run_statuses`, so this row was silently never written.
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
-      types = events |> Enum.filter(&(&1.subject_id == run.id)) |> Enum.map(& &1.event_type)
+      types = events |> Enum.filter(&(&1.target_id == run.id)) |> Enum.map(& &1.event_type)
       assert "action_run.pending_approval" in types
       refute "policy.evaluated" in types
     end
@@ -938,8 +938,8 @@ defmodule Emisar.RunsTest do
       blocked = Enum.find(events, &(&1.event_type == "dispatch_blocked_requires_attestation"))
 
       assert blocked
-      assert blocked.subject_kind == "runner"
-      assert blocked.subject_id == runner.id
+      assert blocked.target_kind == "runner"
+      assert blocked.target_id == runner.id
       assert blocked.payload["action_id"] == "linux.uptime"
     end
 
@@ -2209,8 +2209,8 @@ defmodule Emisar.RunsTest do
       failed = Enum.find(events, &(&1.event_type == "runbook.step_dispatch_failed"))
 
       assert failed, "expected a runbook.step_dispatch_failed audit row"
-      assert failed.subject_kind == "runbook"
-      assert failed.subject_id == runbook.id
+      assert failed.target_kind == "runbook"
+      assert failed.target_id == runbook.id
       assert failed.payload["runbook_id"] == runbook.id
       assert failed.payload["runbook_execution_id"] == execution_id
       assert failed.payload["runbook_step_id"] == "step6"
@@ -2461,7 +2461,7 @@ defmodule Emisar.RunsTest do
       event =
         Emisar.Audit.Event
         |> Repo.all()
-        |> Enum.find(&(&1.subject_id == run.id and &1.event_type == "action_run.success"))
+        |> Enum.find(&(&1.target_id == run.id and &1.event_type == "action_run.success"))
 
       assert event.payload["executed_command"] == "uptime -p"
     end

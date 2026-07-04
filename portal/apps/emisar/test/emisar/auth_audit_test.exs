@@ -280,7 +280,7 @@ defmodule Emisar.AuthAuditTest do
 
       assert [event] = events_of(account, "membership.role_changed")
       assert event.actor_id == owner.id
-      assert event.subject_id == member.id
+      assert event.target_id == member.id
       assert event.payload["from"] == "operator"
       assert event.payload["to"] == "admin"
     end
@@ -294,7 +294,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, _} = Accounts.delete_membership(membership, owner_subject)
 
       assert [event] = events_of(account, "membership.removed")
-      assert event.subject_id == member.id
+      assert event.target_id == member.id
       assert event.payload["role"] == "operator"
     end
 
@@ -353,7 +353,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, runbook} = Emisar.Runbooks.create_runbook(attrs, subject)
 
       assert [event] = events_of(account, "runbook.created")
-      assert event.subject_id == runbook.id
+      assert event.target_id == runbook.id
       assert event.payload["name"] == attrs.name
       assert event.payload["version"] == 1
     end
@@ -378,7 +378,7 @@ defmodule Emisar.AuthAuditTest do
         Emisar.Runbooks.save_new_version(runbook, %{description: "tweaked"}, subject)
 
       assert [event] = events_of(account, "runbook.updated")
-      assert event.subject_id == v2.id
+      assert event.target_id == v2.id
       assert event.payload["from_version"] == 1
       assert event.payload["to_version"] == 2
     end
@@ -432,7 +432,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, published} = Emisar.Runbooks.publish(runbook, subject)
 
       assert [event] = events_of(account, "runbook.published")
-      assert event.subject_id == published.id
+      assert event.target_id == published.id
       assert event.payload["version"] == published.version
     end
   end
@@ -522,8 +522,8 @@ defmodule Emisar.AuthAuditTest do
           Audit.changeset(p.account_id, "policy.updated",
             actor_kind: "user",
             actor_id: subject.actor.id,
-            subject_kind: "policy",
-            subject_id: p.id,
+            target_kind: "policy",
+            target_id: p.id,
             payload: %{noop: true}
           )
         end)

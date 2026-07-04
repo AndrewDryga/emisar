@@ -326,8 +326,8 @@ defmodule Emisar.Audit.Event.Query do
   def by_actor_kind(queryable, kind),
     do: where(queryable, [events: e], e.actor_kind == ^kind)
 
-  def by_subject_kind(queryable, kind),
-    do: where(queryable, [events: e], e.subject_kind == ^kind)
+  def by_target_kind(queryable, kind),
+    do: where(queryable, [events: e], e.target_kind == ^kind)
 
   @doc """
   Distinct `actor_id`s for actors of `kind` in the scoped events — the id set
@@ -359,17 +359,17 @@ defmodule Emisar.Audit.Event.Query do
     }
   end
 
-  def by_subject_id(queryable, id),
-    do: where(queryable, [events: e], e.subject_id == ^id)
+  def by_target_id(queryable, id),
+    do: where(queryable, [events: e], e.target_id == ^id)
 
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
 
-  @doc "Distinct `subject_id`s of `kind` — options for the on-demand subject picker."
-  def distinct_subject_ids_of_kind(queryable \\ all(), kind) do
+  @doc "Distinct `target_id`s of `kind` — options for the on-demand subject picker."
+  def distinct_target_ids_of_kind(queryable \\ all(), kind) do
     queryable
-    |> where([events: e], e.subject_kind == ^kind and not is_nil(e.subject_id))
-    |> select([events: e], e.subject_id)
+    |> where([events: e], e.target_kind == ^kind and not is_nil(e.target_id))
+    |> select([events: e], e.target_id)
     |> distinct(true)
   end
 
@@ -378,15 +378,15 @@ defmodule Emisar.Audit.Event.Query do
   given its loaded `{id, label}` options. Fun lives here to keep the query in
   the query module (IL-1).
   """
-  def subject_filter(options) do
+  def target_filter(options) do
     %Filter{
-      name: :subject_id,
-      title: "Subject",
+      name: :target_id,
+      title: "Target",
       type: {:list, :string},
       # Half-width — pairs beside the Subject-kind picker that reveals it.
       span: :half,
       values: options,
-      fun: fn queryable, ids -> {queryable, dynamic([events: e], e.subject_id in ^ids)} end
+      fun: fn queryable, ids -> {queryable, dynamic([events: e], e.target_id in ^ids)} end
     }
   end
 
@@ -555,8 +555,8 @@ defmodule Emisar.Audit.Event.Query do
         fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.actor_kind in ^kinds)} end
       },
       %Filter{
-        name: :subject_kind,
-        title: "Subject type",
+        name: :target_kind,
+        title: "Target type",
         type: {:list, :string},
         # :row_start — mirrors Actor type; the revealed Subject value picker pairs
         # in the cell beside it.
@@ -574,7 +574,7 @@ defmodule Emisar.Audit.Event.Query do
           {"policy", "Policy"}
         ],
         fun: fn queryable, kinds ->
-          {queryable, dynamic([events: e], e.subject_kind in ^kinds)}
+          {queryable, dynamic([events: e], e.target_kind in ^kinds)}
         end
       }
     ]

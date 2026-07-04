@@ -237,7 +237,7 @@ defmodule EmisarWeb.SSOControllerTest do
         Emisar.Audit.Event.Query.all()
         |> Emisar.Audit.Event.Query.by_account_id(account.id)
         |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
-        |> Emisar.Audit.Event.Query.by_subject_id(user.id)
+        |> Emisar.Audit.Event.Query.by_target_id(user.id)
         |> Repo.all()
 
       assert event.payload["method"] == "sso"

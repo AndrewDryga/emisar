@@ -831,7 +831,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
+      {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: runner.id)
 
       row = Enum.find(events, &(&1.event_type == "runner.error"))
       assert row, "expected a runner.error audit row"
@@ -856,7 +856,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
+      {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: runner.id)
 
       row =
         Enum.find(events, fn e ->
@@ -985,7 +985,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     {:ok, events, _meta} = Emisar.Audit.list_events(subject, page: [limit: 200])
 
     Enum.count(events, fn e ->
-      e.subject_id == run.id and
+      e.target_id == run.id and
         e.event_type in ~w(action_run.success action_run.error action_run.failed)
     end)
   end

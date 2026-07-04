@@ -30,9 +30,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
-        subject_kind: "action_run",
-        subject_id: run.id,
-        subject_label: run.action_id,
+        target_kind: "action_run",
+        target_id: run.id,
+        target_label: run.action_id,
         context: %RequestContext{user_agent: "Go-http-client/1.1"}
       )
 
@@ -94,9 +94,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
-        subject_kind: "action_run",
-        subject_id: run.id,
-        subject_label: run.action_id
+        target_kind: "action_run",
+        target_id: run.id,
+        target_label: run.action_id
       )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
@@ -141,9 +141,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
-        subject_kind: "action_run",
-        subject_id: foreign_run.id,
-        subject_label: "net.http_probe"
+        target_kind: "action_run",
+        target_id: foreign_run.id,
+        target_label: "net.http_probe"
       )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
@@ -156,7 +156,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
   # when the action_run subject has been deleted since the
   # event, the page still renders: the subject label falls back to the stamped
-  # `subject_label` (no live row to resolve), and the runner line simply hides
+  # `target_label` (no live row to resolve), and the runner line simply hides
   # because the subject-gated run fetch finds nothing.
   test "a deleted action_run subject falls back to its stamped label and hides the runner line",
        %{conn: conn} do
@@ -182,9 +182,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "action_run.denied",
         actor_kind: "system",
-        subject_kind: "action_run",
-        subject_id: run.id,
-        subject_label: "net.http_probe"
+        target_kind: "action_run",
+        target_id: run.id,
+        target_label: "net.http_probe"
       )
 
     # The run is deleted after the event was recorded (retention, manual cleanup).
@@ -204,7 +204,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   test "an event with nil actor and subject kind renders the not-recorded card", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    # A bare event: no actor_kind / subject_kind stamped at all.
+    # A bare event: no actor_kind / target_kind stamped at all.
     {:ok, event} = Audit.log(account.id, "audit.bare_event", [])
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
@@ -223,8 +223,8 @@ defmodule EmisarWeb.AuditDetailLiveTest do
       Audit.log(account.id, "user.signed_in",
         actor_kind: "user",
         actor_id: user.id,
-        subject_kind: "user",
-        subject_id: user.id
+        target_kind: "user",
+        target_id: user.id
       )
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
@@ -321,8 +321,8 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "policy.updated",
         actor_kind: "user",
-        subject_kind: "policy",
-        subject_id: Ecto.UUID.generate(),
+        target_kind: "policy",
+        target_id: Ecto.UUID.generate(),
         payload: %{"changes" => changes, "before" => before_rules, "after" => after_rules}
       )
 

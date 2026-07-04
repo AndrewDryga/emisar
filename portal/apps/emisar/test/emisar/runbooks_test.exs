@@ -259,7 +259,7 @@ defmodule Emisar.RunbooksTest do
       # The Multi writes the audit row in the same transaction as the insert.
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
       created = Enum.find(events, &(&1.event_type == "runbook.created"))
-      assert created.subject_id == runbook.id
+      assert created.target_id == runbook.id
     end
 
     test "rejects a slug that doesn't match the URL-safe format", %{subject: subject} do
@@ -519,7 +519,7 @@ defmodule Emisar.RunbooksTest do
       # so the audit trail shows which version the save produced.
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
       updated = Enum.find(events, &(&1.event_type == "runbook.updated"))
-      assert updated.subject_id == v2.id
+      assert updated.target_id == v2.id
       assert updated.payload["from_version"] == v1.version
       assert updated.payload["to_version"] == v2.version
     end
@@ -568,7 +568,7 @@ defmodule Emisar.RunbooksTest do
 
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
       published = Enum.find(events, &(&1.event_type == "runbook.published"))
-      assert published.subject_id == runbook.id
+      assert published.target_id == runbook.id
     end
 
     test "a draft saves with an incomplete (blank-action) step — WIP is allowed", %{

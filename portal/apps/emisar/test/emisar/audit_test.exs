@@ -194,9 +194,9 @@ defmodule Emisar.AuditTest do
       # …with the user-scoped defaults derived from the user row.
       assert Ecto.Changeset.get_field(changeset, :actor_kind) == "user"
       assert Ecto.Changeset.get_field(changeset, :actor_id) == user.id
-      assert Ecto.Changeset.get_field(changeset, :subject_kind) == "user"
-      assert Ecto.Changeset.get_field(changeset, :subject_id) == user.id
-      assert Ecto.Changeset.get_field(changeset, :subject_label) == user.email
+      assert Ecto.Changeset.get_field(changeset, :target_kind) == "user"
+      assert Ecto.Changeset.get_field(changeset, :target_id) == user.id
+      assert Ecto.Changeset.get_field(changeset, :target_label) == user.email
     end
 
     test "fans out to every account the user is an active member of" do
@@ -646,14 +646,14 @@ defmodule Emisar.AuditTest do
       assert Enum.map(events, & &1.actor_id) == [actor_a]
     end
 
-    test "subject_id narrows the list to one subject", %{account: account, subject: subject} do
+    test "target_id narrows the list to one subject", %{account: account, subject: subject} do
       subj_a = Ecto.UUID.generate()
       subj_b = Ecto.UUID.generate()
-      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_a)
-      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_b)
+      {:ok, _} = Audit.log(account.id, "x", target_kind: "user", target_id: subj_a)
+      {:ok, _} = Audit.log(account.id, "x", target_kind: "user", target_id: subj_b)
 
-      {:ok, events, _} = Audit.list_events(subject, subject_id: subj_a)
-      assert Enum.map(events, & &1.subject_id) == [subj_a]
+      {:ok, events, _} = Audit.list_events(subject, target_id: subj_a)
+      assert Enum.map(events, & &1.target_id) == [subj_a]
     end
 
     test "the from / to date-range filters bound the window", %{
@@ -895,7 +895,7 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_subject_options/2 (the dynamic subject picker)" do
+  describe "list_target_options/2 (the dynamic subject picker)" do
     # the picker read enforces view_audit BEFORE any DB
     # touch; a runner subject (the websocket caller — no view_audit) is denied,
     # never handed options. A real `Subject.for_runner` carries the runner role's
@@ -906,7 +906,7 @@ defmodule Emisar.AuditTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Audit.list_subject_options("user", subject)
+      assert {:error, :unauthorized} = Audit.list_target_options("user", subject)
     end
 
     # a subject id that only resolves in account A never
@@ -926,9 +926,9 @@ defmodule Emisar.AuditTest do
       _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user_a.id)
 
       {:ok, _} =
-        Audit.log(account_a.id, "user.invited", subject_kind: "user", subject_id: user_a.id)
+        Audit.log(account_a.id, "user.invited", target_kind: "user", target_id: user_a.id)
 
-      assert {:ok, []} = Audit.list_subject_options("user", subject_b)
+      assert {:ok, []} = Audit.list_target_options("user", subject_b)
     end
 
     # (context half) — `policy` and `approval_grant` have no
@@ -940,12 +940,12 @@ defmodule Emisar.AuditTest do
 
       {:ok, _} =
         Audit.log(account.id, "policy.updated",
-          subject_kind: "policy",
-          subject_id: Ecto.UUID.generate()
+          target_kind: "policy",
+          target_id: Ecto.UUID.generate()
         )
 
-      assert {:ok, []} = Audit.list_subject_options("policy", subject)
-      assert {:ok, []} = Audit.list_subject_options("approval_grant", subject)
+      assert {:ok, []} = Audit.list_target_options("policy", subject)
+      assert {:ok, []} = Audit.list_target_options("approval_grant", subject)
     end
 
     # a subject id that WAS resolvable when the event was
@@ -972,11 +972,11 @@ defmodule Emisar.AuditTest do
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
 
       {:ok, _} =
-        Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: member.id)
+        Audit.log(account.id, "user.invited", target_kind: "user", target_id: member.id)
 
       # While the member is in the account, the picker offers them.
       assert {:ok, [{id, "departing@example.com"}]} =
-               Audit.list_subject_options("user", subject)
+               Audit.list_target_options("user", subject)
 
       assert id == member.id
 
@@ -987,7 +987,7 @@ defmodule Emisar.AuditTest do
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Repo.update!()
 
-      assert {:ok, []} = Audit.list_subject_options("user", subject)
+      assert {:ok, []} = Audit.list_target_options("user", subject)
     end
   end
 
@@ -1201,20 +1201,20 @@ defmodule Emisar.AuditTest do
         Audit.log(account.id, "user.touched",
           actor_kind: "user",
           actor_id: user.id,
-          subject_kind: "user",
-          subject_id: user.id
+          target_kind: "user",
+          target_id: user.id
         )
 
       {:ok, e_runner} =
         Audit.log(account.id, "runner.touched",
-          subject_kind: "runner",
-          subject_id: runner.id
+          target_kind: "runner",
+          target_id: runner.id
         )
 
       {:ok, e_key} =
         Audit.log(account.id, "api_key.touched",
-          subject_kind: "api_key",
-          subject_id: api_key.id
+          target_kind: "api_key",
+          target_id: api_key.id
         )
 
       refs = Audit.resolve_references([e_user, e_runner, e_key])
@@ -1253,8 +1253,8 @@ defmodule Emisar.AuditTest do
         Audit.log(account_a.id, "cross.account",
           actor_kind: "user",
           actor_id: user_b.id,
-          subject_kind: "runner",
-          subject_id: runner_b.id
+          target_kind: "runner",
+          target_id: runner_b.id
         )
 
       refs = Audit.resolve_references([event])
@@ -1303,21 +1303,21 @@ defmodule Emisar.AuditTest do
 
       {:ok, e_auth_key} =
         Audit.log(account.id, "auth_key.touched",
-          subject_kind: "auth_key",
-          subject_id: auth_key.id
+          target_kind: "auth_key",
+          target_id: auth_key.id
         )
 
       {:ok, e_run} =
-        Audit.log(account.id, "run.touched", subject_kind: "action_run", subject_id: run.id)
+        Audit.log(account.id, "run.touched", target_kind: "action_run", target_id: run.id)
 
       {:ok, e_request} =
         Audit.log(account.id, "approval.touched",
-          subject_kind: "approval_request",
-          subject_id: request.id
+          target_kind: "approval_request",
+          target_id: request.id
         )
 
       {:ok, e_runbook} =
-        Audit.log(account.id, "runbook.touched", subject_kind: "runbook", subject_id: runbook.id)
+        Audit.log(account.id, "runbook.touched", target_kind: "runbook", target_id: runbook.id)
 
       refs = Audit.resolve_references([e_auth_key, e_run, e_request, e_runbook])
 
@@ -1394,7 +1394,7 @@ defmodule Emisar.AuditTest do
       assert filter_values(:actor_kind) ==
                ~w[user api_key runner runbook scheduler system]
 
-      assert filter_values(:subject_kind) ==
+      assert filter_values(:target_kind) ==
                ~w[user account runner api_key auth_key action_run approval_request
                   approval_grant runbook policy]
     end
@@ -1595,7 +1595,7 @@ defmodule Emisar.AuditTest do
 
   # -- Taxonomy helpers ------------------------------------------------
 
-  # The %Filter{} value codes for a static filter (e.g. actor_kind / subject_kind
+  # The %Filter{} value codes for a static filter (e.g. actor_kind / target_kind
   # enumerations) — read from the query module's own filters/0 so the assertion
   # tracks the real dropdown, not a hand-copied list.
   defp filter_values(name) do

@@ -361,7 +361,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         Event.Query.all()
         |> Event.Query.by_account_id(account.id)
         |> Event.Query.by_event_type("user.signed_out")
-        |> Event.Query.by_subject_id(user.id)
+        |> Event.Query.by_target_id(user.id)
         |> Repo.all()
 
       assert length(events) == 1

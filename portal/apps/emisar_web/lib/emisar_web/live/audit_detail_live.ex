@@ -32,10 +32,10 @@ defmodule EmisarWeb.AuditDetailLive do
   end
 
   # The runner an action_run executed on — a property of the SUBJECT (the
-  # run), not the actor. nil unless the subject is a run still readable in
+  # run), not the actor. nil unless the target is a run still readable in
   # the caller's account; the run fetch is subject-gated, so cross-account
   # ids resolve to nil rather than leaking.
-  defp subject_runner(%{subject_kind: "action_run", subject_id: id}, %{} = subject)
+  defp subject_runner(%{target_kind: "action_run", target_id: id}, %{} = subject)
        when is_binary(id) do
     case Runs.fetch_run_by_id(id, subject, preload: [:runner]) do
       {:ok, %{runner: %Runners.Runner{} = runner}} -> runner
@@ -138,14 +138,14 @@ defmodule EmisarWeb.AuditDetailLive do
         <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
              the actor byte-for-byte beside itself is noise — say "same as actor". --%>
         <.entity_card
-          role="Subject"
+          role="Target"
           self?={
-            not is_nil(@event.actor_kind) and @event.actor_kind == @event.subject_kind and
-              @event.actor_id == @event.subject_id
+            not is_nil(@event.actor_kind) and @event.actor_kind == @event.target_kind and
+              @event.actor_id == @event.target_id
           }
-          kind={@event.subject_kind}
-          id={@event.subject_id}
-          label={@event.subject_label}
+          kind={@event.target_kind}
+          id={@event.target_id}
+          label={@event.target_label}
           refs={@refs}
           current_account={@current_account}
           runner={@subject_runner}
@@ -365,7 +365,7 @@ defmodule EmisarWeb.AuditDetailLive do
         <.copyable_id value={@id} class="text-[10px] text-zinc-400" />
       </div>
       <%!-- Runner line — which host an action_run executed on. A property
-           of the subject (the run), with a link to the runner. No icon —
+           of the target (the run), with a link to the runner. No icon —
            just `runner: name (group) version`. --%>
       <p :if={@runner} class="mt-1 text-[11px] text-zinc-400">
         <span class="text-zinc-500">runner:</span>
@@ -436,7 +436,7 @@ defmodule EmisarWeb.AuditDetailLive do
     if is_nil(ua) or UserAgent.go_http_client?(ua), do: nil, else: UserAgent.label(ua)
   end
 
-  # `runner: name (group) version` for the subject runner line — group and
+  # `runner: name (group) version` for the target runner line — group and
   # version are appended only when present.
   defp runner_label(%Runners.Runner{} = runner) do
     base =

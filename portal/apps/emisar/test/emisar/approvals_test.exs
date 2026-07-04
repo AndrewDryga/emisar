@@ -1743,12 +1743,12 @@ defmodule Emisar.ApprovalsTest do
 
       assert Enum.any?(
                events,
-               &(&1.event_type == "approval.decision_recorded" and &1.subject_id == request.id)
+               &(&1.event_type == "approval.decision_recorded" and &1.target_id == request.id)
              )
 
       assert Enum.any?(
                events,
-               &(&1.event_type == "approval.denied" and &1.subject_id == request.id)
+               &(&1.event_type == "approval.denied" and &1.target_id == request.id)
              )
     end
 
@@ -2488,8 +2488,8 @@ defmodule Emisar.ApprovalsTest do
       audit = Enum.find(events, &(&1.event_type == "approval.grant_revoked"))
 
       assert audit, "expected an approval.grant_revoked audit row"
-      assert audit.subject_kind == "approval_grant"
-      assert audit.subject_id == grant.id
+      assert audit.target_kind == "approval_grant"
+      assert audit.target_id == grant.id
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
       assert audit.payload["action_id"] == "x"
@@ -2701,7 +2701,7 @@ defmodule Emisar.ApprovalsTest do
       assert Enum.any?(
                Emisar.Audit.list_events(subject, page: [limit: 50])
                |> elem(1),
-               &(&1.event_type == "approval.expired" and &1.subject_id == request.id)
+               &(&1.event_type == "approval.expired" and &1.target_id == request.id)
              )
     end
 

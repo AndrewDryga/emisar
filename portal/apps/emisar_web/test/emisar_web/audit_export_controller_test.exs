@@ -32,8 +32,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
   defp insert_event(account, event_type, attrs \\ []) do
     base = %{
       actor_kind: "system",
-      subject_kind: "user",
-      subject_id: Ecto.UUID.generate(),
+      target_kind: "user",
+      target_id: Ecto.UUID.generate(),
       payload: %{}
     }
 

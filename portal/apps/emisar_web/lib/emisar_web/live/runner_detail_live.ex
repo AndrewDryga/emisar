@@ -195,7 +195,7 @@ defmodule EmisarWeb.RunnerDetailLive do
              audit page, so the link only pre-filters. --%>
         <.link
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[subject_kind: "runner", subject_id: @runner.id]}"
+            ~p"/app/#{@current_account}/audit?#{[target_kind: "runner", target_id: @runner.id]}"
           }
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >

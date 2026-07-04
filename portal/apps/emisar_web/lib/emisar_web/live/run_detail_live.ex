@@ -138,7 +138,7 @@ defmodule EmisarWeb.RunDetailLive do
              so the link just pre-filters — it can't widen access. --%>
         <.link
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[subject_kind: "action_run", subject_id: @run.id]}"
+            ~p"/app/#{@current_account}/audit?#{[target_kind: "action_run", target_id: @run.id]}"
           }
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >

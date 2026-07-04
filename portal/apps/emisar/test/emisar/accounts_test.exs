@@ -988,7 +988,7 @@ defmodule Emisar.AccountsTest do
 
       assert switched
       assert switched.actor_id == owner.id
-      assert switched.subject_label == owner.email
+      assert switched.target_label == owner.email
     end
 
     test "writes ONLY the audit row — the membership and account rows are untouched" do

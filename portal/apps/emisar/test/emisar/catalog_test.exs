@@ -385,9 +385,9 @@ defmodule Emisar.CatalogTest do
       audit = Enum.find(events, &(&1.event_type == "pack_trust_adopted"))
 
       assert audit, "expected a pack_trust_adopted audit row"
-      assert audit.subject_kind == "pack_version"
-      assert audit.subject_id == pack_version.id
-      assert audit.subject_label == "p@1.0"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_id == pack_version.id
+      assert audit.target_label == "p@1.0"
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
       # The pre-trust row had no trusted hash; the pending bytes are what got adopted.
@@ -586,9 +586,9 @@ defmodule Emisar.CatalogTest do
       audit = Enum.find(events, &(&1.event_type == "pack_trust_rejected"))
 
       assert audit, "expected a pack_trust_rejected audit row"
-      assert audit.subject_kind == "pack_version"
-      assert audit.subject_id == pack_version.id
-      assert audit.subject_label == "p@1.0"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_id == pack_version.id
+      assert audit.target_label == "p@1.0"
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
       # Never-trusted custom pack — no trusted hash, the advertised bytes were rejected.

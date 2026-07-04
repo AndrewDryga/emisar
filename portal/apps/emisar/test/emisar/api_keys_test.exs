@@ -392,9 +392,9 @@ defmodule Emisar.ApiKeysTest do
       {:ok, events, _meta} =
         Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
 
-      assert [event] = Enum.filter(events, &(&1.subject_id == key.id))
-      assert event.subject_kind == "api_key"
-      assert event.subject_label == "SIEM export"
+      assert [event] = Enum.filter(events, &(&1.target_id == key.id))
+      assert event.target_kind == "api_key"
+      assert event.target_label == "SIEM export"
       # Persisted payload is string-keyed (reloaded through JSON); the minted
       # scopes are recorded so an auditor sees exactly what the token can do.
       assert event.payload["scopes"] == ["audit:read"]
@@ -507,7 +507,7 @@ defmodule Emisar.ApiKeysTest do
       rotation =
         Enum.find(Repo.all(Audit.Event), &(&1.event_type == "api_key.auto_rotated"))
 
-      assert rotation.subject_id == key.id
+      assert rotation.target_id == key.id
       assert rotation.payload["successor_prefix"] == successor.key_prefix
     end
 
@@ -781,7 +781,7 @@ defmodule Emisar.ApiKeysTest do
       {:ok, [event], _} =
         Emisar.Audit.list_events(subject, filter: [event_type: ["api_key.bound"]])
 
-      assert event.subject_id == bound.id
+      assert event.target_id == bound.id
     end
   end
 
