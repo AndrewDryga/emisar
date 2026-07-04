@@ -150,14 +150,14 @@ defmodule EmisarWeb.LiveTable do
         filters={@filters}
         params={@filter_params}
         layout={@filter_layout}
-        disabled={filters_inert?(@rows, @filter_params, @filters)}
+        hidden={filters_inert?(@rows, @filter_params, @filters)}
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <div
-          id={"#{@id}-empty"}
-          class="rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-5 py-10 text-center text-sm text-zinc-500"
-        >
+        <%!-- The empty follows its wrapper: a CANVAS list's zero state sits
+             naked under the section hairline (a boxed "nothing" is a stray
+             island); the island chrome remains only for island lists. --%>
+        <div id={"#{@id}-empty"} class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-500"]}>
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -182,9 +182,12 @@ defmodule EmisarWeb.LiveTable do
         <%!-- Footer matches the rows' inset: the ISLAND default pads px-5 like
              its rows; a custom (canvas) wrapper's rows sit at x=0, so the pager
              does too — its rails then align with the columns above. --%>
+        <%!-- "N / M total" informs only when the page doesn't hold everything —
+             under a fully visible set it's noise ("4 / 4 total"). --%>
         <div
           :if={
-            @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0
+            @metadata.previous_page_cursor || @metadata.next_page_cursor ||
+              (@metadata.count || 0) > length(@rows)
           }
           class={[is_nil(@wrapper_class) && "px-5", "pb-1"]}
         >
@@ -212,14 +215,13 @@ defmodule EmisarWeb.LiveTable do
         filters={@filters}
         params={@filter_params}
         layout={@filter_layout}
-        disabled={filters_inert?(@rows, @filter_params, @filters)}
+        hidden={filters_inert?(@rows, @filter_params, @filters)}
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <div
-          id={"#{@id}-empty"}
-          class="rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] p-8 text-center text-sm text-zinc-400"
-        >
+        <%!-- The dense table sits on the canvas, so its zero state does too —
+             a boxed "nothing" was a stray island. --%>
+        <div id={"#{@id}-empty"} class="border-t border-zinc-800/70 py-8 text-sm text-zinc-500">
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -352,17 +354,14 @@ defmodule EmisarWeb.LiveTable do
   attr :filters, :list, required: true
   attr :params, :map, required: true
   attr :layout, :atom, default: :inline
-  attr :disabled, :boolean, default: false
+  # ACCOUNT-empty hides the bar outright — dead controls above a zero-state
+  # pitch push the page's job down (filter-empty keeps live controls, since
+  # `filters_inert?` is false while any filter is applied).
+  attr :hidden, :boolean, default: false
 
   defp filter_form(assigns) do
     ~H"""
-    <form
-      id={@id}
-      phx-change="filter"
-      phx-submit="filter"
-      class={["space-y-3", @disabled && "opacity-50"]}
-      aria-disabled={@disabled}
-    >
+    <form :if={not @hidden} id={@id} phx-change="filter" phx-submit="filter" class="space-y-3">
       <%!-- `:inline` — a few compact controls flow in one wrapping row. `:stacked`
            — a two-column grid where each filter's `span` picks its row/cell, so a
            kind picker can pair with a revealed value dropdown beside it. Every
@@ -372,7 +371,6 @@ defmodule EmisarWeb.LiveTable do
           <.filter_input
             filter={filter}
             value={filter_value(@params, to_string(filter.name), filter)}
-            disabled={@disabled}
           />
         </div>
       </div>
@@ -772,6 +770,12 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp active_filter_label(%Filter{} = f, value), do: "#{f.title}: #{value}"
+
+  defp cards_empty_class(nil) do
+    "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-5 py-10 text-center"
+  end
+
+  defp cards_empty_class(_wrapper_class), do: "border-t border-zinc-800/70 py-8"
 
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps

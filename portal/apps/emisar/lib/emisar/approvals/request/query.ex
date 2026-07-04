@@ -19,6 +19,9 @@ defmodule Emisar.Approvals.Request.Query do
   def pending(queryable \\ all()),
     do: where(queryable, [requests: r], r.status == :pending)
 
+  def decided(queryable \\ all()),
+    do: where(queryable, [requests: r], r.status != :pending)
+
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [requests: r], desc: r.requested_at)
 

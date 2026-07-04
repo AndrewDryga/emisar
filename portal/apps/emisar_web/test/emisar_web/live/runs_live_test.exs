@@ -143,18 +143,20 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "No runs yet"
   end
 
-  test "filters are disabled on a genuinely empty list, live once a filter is active", %{
+  test "the filter bar hides at account-empty, stays live once a filter is active", %{
     conn: conn
   } do
     {conn, _user, account} = register_and_log_in(conn)
 
-    # No runs + no active filter → nothing to filter → the Status select is disabled.
+    # No runs + no active filter → dead controls would just push the pitch
+    # down — the bar doesn't render at all.
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs")
-    assert has_element?(lv, "#runs-filter select[disabled]")
+    refute has_element?(lv, "#runs-filter")
 
     # An active filter (even though it matches nothing) keeps the controls live,
     # so the operator can always clear back to the full set.
     {:ok, lv2, _html} = live(conn, ~p"/app/#{account}/runs?status=success")
+    assert has_element?(lv2, "#runs-filter")
     refute has_element?(lv2, "#runs-filter select[disabled]")
   end
 
@@ -270,17 +272,18 @@ defmodule EmisarWeb.RunsLiveTest do
   end
 
   describe "no-LLM onboarding banner" do
-    test "shows on a content page when the account has no agent key", %{conn: conn} do
+    test "the page-wide banner is GONE — the nav dot is the one nudge signal", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
-      assert html =~ "No LLM connected yet"
-      assert html =~ "Connect an LLM"
-      assert html =~ ~p"/app/#{account}/settings/agents"
+      # Three signals for one fact (banner + nav dot + dashboard pillar) was
+      # noise; the banner strip died. No agents AND no runners → not even the
+      # dot: the first job is a runner, so the agents nudge waits its turn.
+      refute html =~ "No LLM connected yet"
     end
 
-    test "disappears once an MCP key exists", %{conn: conn} do
+    test "still no banner once an MCP key exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 

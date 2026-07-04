@@ -65,16 +65,24 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the list has status/name filters + the custom panel states the capability",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+      {conn, user, account} = register_and_log_in(conn)
+      # The filter bar renders only once there's something to filter —
+      # account-empty hides it (the pitch leads instead).
+      subject = owner_subject(user, account)
 
-      # Part b — the list filter bar (always rendered).
+      {:ok, _raw, _key} =
+        ApiKeys.create_key(%{name: "Bot", scopes: ["actions:read"], runner_filter: []}, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      # Part b — the list filter bar (rendered once keys exist).
       assert html =~ "Name"
       assert html =~ "Status"
 
       # Part a — the capability copy appears once the operator opens the
-      # custom-key form (it's behind the "custom" client tab).
-      custom = render_click(lv, "select_client", %{"client" => "custom"})
+      # custom-key form (behind the "custom" tab, on the CONNECT page).
+      {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/settings/agents/connect")
+      custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
       assert custom =~ "read and execute every action"
     end
 

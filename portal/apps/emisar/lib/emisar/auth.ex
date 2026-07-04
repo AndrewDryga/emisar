@@ -376,9 +376,27 @@ defmodule Emisar.Auth do
         {:ok, _} = repo.delete(token)
 
         case Users.fetch_user_by_id(token.user_id) do
-          {:ok, user} -> {:ok, {:ok, user}}
+          # Completing the emailed code IS proof of inbox ownership — an
+          # unconfirmed user is confirmed here, so the "verify your email"
+          # banner can't nag someone who just authenticated via that inbox.
+          # Audited like the link path (user.email_confirmed, method noted).
+          {:ok, %Users.User{confirmed_at: nil} = user} ->
+            {:ok, confirmed} = Users.mark_user_confirmed(user)
+
+            :ok =
+              Audit.log_for_user(confirmed, "user.email_confirmed",
+                payload: %{method: "magic_link"},
+                context: context
+              )
+
+            {:ok, {:ok, confirmed}}
+
+          {:ok, user} ->
+            {:ok, {:ok, user}}
+
           # A soft-deleted user behind a live token reads as a dead link.
-          {:error, :not_found} -> {:ok, {:error, :invalid_or_expired}}
+          {:error, :not_found} ->
+            {:ok, {:error, :invalid_or_expired}}
         end
       else
         # Wrong nonce or secret → spend one attempt. Returns `{:ok, …}` so the

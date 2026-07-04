@@ -105,17 +105,16 @@ defmodule EmisarWeb.ApprovalsLive do
         )
       )
 
-    # "Decided" = the full list minus the ones already showing in the
-    # Pending section above (only relevant on page 1 — on later pages
-    # the cursors don't overlap). Caps keep the section tight.
-    {:ok, all_recent, decided_meta} =
-      list_or_empty(Approvals.list_approval_requests_for_account(subject, decided_opts))
-
-    # Compare by id, not whole-struct: `pending` and `all_recent` come from two
-    # reads with potentially different preloads, so `--` (struct equality) could
-    # silently fail to drop the overlap and show a request in BOTH sections.
-    pending_ids = MapSet.new(pending, & &1.id)
-    decided = Enum.reject(all_recent, &MapSet.member?(pending_ids, &1.id))
+    # Decided-only AT THE QUERY — the old "all minus pending" client-side
+    # subtraction made the pager count include pending rows it never showed
+    # ("2 / 4 total" with no Next), a dead end on a governance surface.
+    {:ok, decided, decided_meta} =
+      list_or_empty(
+        Approvals.list_approval_requests_for_account(
+          subject,
+          Keyword.put(decided_opts, :status, :decided)
+        )
+      )
 
     socket
     |> assign(:pending, pending)
@@ -126,8 +125,8 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:decided, decided)
     |> assign(:decided_metadata, decided_meta)
     |> assign(:filter_params, params)
-    |> assign(:runner_labels, runner_labels_for(pending ++ all_recent))
-    |> assign(:user_labels, user_labels_for(pending ++ all_recent))
+    |> assign(:runner_labels, runner_labels_for(pending ++ decided))
+    |> assign(:user_labels, user_labels_for(pending ++ decided))
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))

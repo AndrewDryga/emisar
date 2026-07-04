@@ -585,6 +585,16 @@ defmodule Emisar.Runners do
 
   def fleet_all_offline?(%Subject{}), do: false
 
+  @doc "Whether the account has ANY active runner — sequences fleet-dependent nudges."
+  def any_runners?(%Subject{account: %{id: account_id}} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      :ok -> count_billable_runners(account_id) > 0
+      _ -> false
+    end
+  end
+
+  def any_runners?(%Subject{}), do: false
+
   @doc """
   Whether the account's whole active fleet is signed-only — there's at least one
   billable (active, non-disabled) runner and every one of them advertises
@@ -799,7 +809,10 @@ defmodule Emisar.Runners do
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
-      AuthKey.Query.visible_to_operators()
+      # The FULL inventory on purpose — a wizard-minted enrollment key is a
+      # live root-capable credential; hiding it under-reported the very list
+      # an operator audits (and the only place it can be revoked pre-use).
+      AuthKey.Query.not_deleted()
       |> AuthKey.Query.ordered_by_recent()
       |> apply_auth_key_preloads(preloads)
       |> Authorizer.for_subject(subject)

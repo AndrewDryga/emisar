@@ -14,14 +14,6 @@ defmodule Emisar.Runners.AuthKey.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [auth_keys: k], k.account_id == ^account_id)
 
-  @doc """
-  Hides auto-generated keys until they've been bound to a runner.
-  Auto-unused entries stay invisible to operator-facing surfaces.
-  """
-  def visible_to_operators(queryable \\ not_deleted()) do
-    where(queryable, [auth_keys: k], is_nil(k.auto_generated_at) or not is_nil(k.last_used_at))
-  end
-
   def ordered_by_recent(queryable \\ not_deleted()),
     do: order_by(queryable, [auth_keys: k], desc: k.inserted_at)
 

@@ -113,6 +113,10 @@ defmodule Emisar.Approvals do
   end
 
   defp apply_request_status_filter(query, nil), do: query
+  # :decided = everything a human (or expiry) already resolved — the approvals
+  # page's "Recent decisions" section queries THIS, never "all minus pending"
+  # client-side (which made the pager count lie and orphaned rows past page 1).
+  defp apply_request_status_filter(query, :decided), do: Request.Query.decided(query)
   defp apply_request_status_filter(query, status), do: Request.Query.by_status(query, status)
 
   def fetch_approval_request_by_id(id, %Subject{} = subject, opts \\ []) do

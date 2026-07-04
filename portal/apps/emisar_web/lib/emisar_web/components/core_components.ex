@@ -1466,32 +1466,11 @@ defmodule EmisarWeb.CoreComponents do
           </:action>
         </.callout>
 
-        <%!-- Onboarding nudge: an operator whose account has no MCP key yet —
-             emisar does nothing until an LLM is connected. Brand-toned (an
-             invitation, not the amber warning above), and self-resolves once the
-             first key exists (`@no_agents?` flips false). Gated on `view_api_keys`
-             upstream, so only operators who can act see it. Suppressed on the
-             agents page (where they'd act) and the dashboard (whose onboarding
-             checklist already carries the same nudge) to avoid double-nudging. --%>
-        <.callout
-          :if={@no_agents? && @section not in [:agents, :dashboard]}
-          tone={:brand}
-          variant={:strip}
-          icon="hero-cpu-chip"
-        >
-          No LLM connected yet — give an MCP client like Claude or Cursor a scoped key to start
-          dispatching actions.
-          <:action>
-            <.button
-              variant={:secondary}
-              size={:sm}
-              navigate={~p"/app/#{@current_account}/settings/agents"}
-            >
-              Connect an LLM
-            </.button>
-          </:action>
-        </.callout>
-
+        <%!-- The no-LLM nudge is ONE signal: the nav item's attention dot.
+             The page-wide banner strip died — three signals for one fact (a
+             brand-washed banner on every page + the nav dot + the dashboard
+             pillar) shouted an invitation, and green belongs to pass/healthy,
+             not to "nothing connected yet". --%>
         <%!-- min-h (not h): the title WRAPS on a phone instead of ellipsizing —
              a truncated machine id ("api-iad-…") is useless on an audit-grade
              surface, so the bar grows to fit and break-words splits an unbroken
@@ -1501,7 +1480,10 @@ defmodule EmisarWeb.CoreComponents do
              the page title is the first line of the content, set large, and the
              page begins. --%>
         <header class="px-4 pb-2 pt-7 sm:px-8 sm:pt-9">
-          <div class={["mx-auto flex w-full items-start gap-3", shell_width(@width)]}>
+          <div class={[
+            "mx-auto flex w-full flex-wrap items-start gap-x-3 gap-y-3",
+            shell_width(@width)
+          ]}>
             <%!-- Mobile hamburger (hidden on lg) --%>
             <button
               type="button"
@@ -1514,10 +1496,14 @@ defmodule EmisarWeb.CoreComponents do
             >
               <.icon name="hero-bars-3" class="h-5 w-5" />
             </button>
-            <h1 class="min-w-0 flex-1 break-words font-display text-[28px] font-bold leading-tight tracking-[-0.03em] text-zinc-50">
+            <%!-- basis-0 + a generous min width: while the title has room it
+                 shares the row with the actions; on a phone the actions WRAP
+                 to their own line below instead of crushing the h1 into
+                 mid-word breaks ("Run/ner/s"). --%>
+            <h1 class="min-w-[12rem] flex-1 basis-0 break-words font-display text-[28px] font-bold leading-tight tracking-[-0.03em] text-zinc-50">
               {render_slot(@title)}
             </h1>
-            <div class="flex shrink-0 items-center gap-2 pt-1.5 sm:gap-3">
+            <div class="flex shrink-0 flex-wrap items-center gap-2 pt-1.5 sm:gap-3">
               {render_slot(@actions)}
             </div>
           </div>

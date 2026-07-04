@@ -1282,20 +1282,37 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "any_runners?/1" do
+    test "false on an empty fleet, true once a runner exists, false without permission" do
+      {account, _user, subject} = account_with_owner_subject()
+      refute Runners.any_runners?(subject)
+
+      Fixtures.Runners.create_runner(account_id: account.id)
+      assert Runners.any_runners?(subject)
+
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      # Viewers can see runners, so the nudge predicate holds for them too.
+      assert Runners.any_runners?(viewer)
+    end
+  end
+
   describe "list_auth_keys/2" do
     setup do
       {account, _user, subject} = account_with_owner_subject()
       %{account: account, subject: subject}
     end
 
-    test "lists operator-visible keys, hiding auto-unused install keys", %{subject: subject} do
-      {:ok, _, _} = Runners.mint_install_key(subject)
+    test "lists the FULL inventory — a wizard-minted install key is a live credential", %{
+      subject: subject
+    } do
+      {:ok, _, wizard} = Runners.mint_install_key(subject)
       {:ok, _, manual} = Runners.create_auth_key(%{reusable: true}, subject)
 
-      # Both rows exist; only the manually-issued one is operator-visible.
-      assert Repo.aggregate(AuthKey, :count) == 2
-      assert {:ok, [%AuthKey{id: id}], _} = Runners.list_auth_keys(subject)
-      assert id == manual.id
+      # Both are live, root-capable credentials; hiding the auto-minted one
+      # under-reported the very list an operator audits (and the only place
+      # it can be revoked pre-use).
+      assert {:ok, keys, _} = Runners.list_auth_keys(subject)
+      assert keys |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort([wizard.id, manual.id])
     end
 
     test "the status filter hides or shows revoked keys", %{subject: subject} do

@@ -654,10 +654,13 @@ defmodule EmisarWeb.UserAuth do
   defp fleet_offline_for(nil), do: false
   defp fleet_offline_for(subject), do: Emisar.Runners.fleet_all_offline?(subject)
 
-  # "Connect an agent" nudge: no LLM agent (API key) on the account yet. Computed
-  # at mount (assign_new); resolves once the first agent appears.
+  # "Connect an agent" nudge (the LLM-agents nav dot): no agent key yet AND the
+  # fleet exists — a brand-new account's first job is a runner, so nudging
+  # agents before any host is connected points at the wrong next step.
   defp no_agents_for(nil), do: false
-  defp no_agents_for(subject), do: Emisar.ApiKeys.no_agents?(subject)
+
+  defp no_agents_for(subject),
+    do: Emisar.ApiKeys.no_agents?(subject) and Emisar.Runners.any_runners?(subject)
 
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns
