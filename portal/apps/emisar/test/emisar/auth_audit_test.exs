@@ -123,15 +123,17 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == user.id
     end
 
-    test "verify_magic_link audits user.signed_in with the magic_link method", %{
+    test "verify_magic_link writes NO user.signed_in — session establishment owns it", %{
       user: user,
       account: account
     } do
       {token_id, nonce, secret} = Auth.issue_magic_link(user)
 
       assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
-      assert [event] = events_of(account, "user.signed_in")
-      assert event.payload["method"] == "magic_link"
+      # Verifying a factor is not signing in — Users.record_sign_in (the
+      # session layer) is the single writer, so a login audits exactly once
+      # and an MFA factor-one alone audits nothing.
+      assert events_of(account, "user.signed_in") == []
     end
 
     test "a wrong secret on a live token audits user.sign_in_failed for that user", %{

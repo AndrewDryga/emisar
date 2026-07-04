@@ -71,6 +71,25 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
     end
 
+    test "one login audits user.signed_in exactly once per account", %{conn: conn, user: user} do
+      # Regression: verify_magic_link used to ALSO audit success, double-writing
+      # every login (session establishment is the one writer). The audit row is
+      # membership-scoped, so the user needs an account to receive it.
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+      assert get_session(conn, :user_token)
+
+      signed_in_events =
+        Event.Query.all()
+        |> Event.Query.by_event_type("user.signed_in")
+        |> Repo.all()
+
+      assert length(signed_in_events) == 1
+    end
+
     # The typed code is verified in MagicLinkLive (tested there); it then redirects
     # here with a handoff to establish the session. These cover the completion +
     # its browser-binding — the handoff alone is never enough.

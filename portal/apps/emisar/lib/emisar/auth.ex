@@ -387,14 +387,11 @@ defmodule Emisar.Auth do
         {:ok, {:error, :invalid_or_expired}}
       end
     end)
-    |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
-      extra: [context: context],
-      user_fn: fn
-        %{outcome: {:ok, %Users.User{} = user}} -> user
-        _ -> nil
-      end,
-      payload_fn: fn _ -> %{method: "magic_link"} end
-    )
+    # No success audit here — verifying a factor is NOT signing in. The session
+    # layer's `Users.record_sign_in/3` is the ONE writer of `user.signed_in`,
+    # fired when a session is actually established (after MFA, when required);
+    # auditing here too double-wrote every login and stamped "signed in" for
+    # MFA logins that never completed factor two. Failures still audit below.
     |> Repo.commit_multi()
     |> case do
       {:ok, %{outcome: {:ok, %Users.User{} = user}}} ->
