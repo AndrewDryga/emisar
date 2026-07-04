@@ -403,7 +403,10 @@ defmodule EmisarWeb.AuditLive do
               <.audit_cell value={
                 party_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
               } />
-              <.audit_cell value={subject_text(event, @refs)} />
+              <.audit_cell
+                value={subject_text(event, @refs)}
+                placeholder={if self_event?(event), do: "self", else: "—"}
+              />
               <.audit_cell value={event.ip_address} mono />
               <.local_time
                 value={event.occurred_at}
@@ -462,9 +465,11 @@ defmodule EmisarWeb.AuditLive do
 
   attr :value, :string, default: nil
   attr :mono, :boolean, default: false
+  attr :placeholder, :string, default: "—"
 
   # An xl+ forensic column cell (Actor / Target / Source IP). An empty cell
-  # renders the muted em-dash on its own span — never the value's styling.
+  # renders its muted placeholder on its own span — the em-dash, or "self"
+  # when an event's target IS its actor — never the value's styling.
   defp audit_cell(assigns) do
     ~H"""
     <div class="hidden min-w-0 xl:block">
@@ -475,7 +480,7 @@ defmodule EmisarWeb.AuditLive do
       >
         {@value}
       </span>
-      <span :if={!@value} class="text-xs text-zinc-600">—</span>
+      <span :if={!@value} class="text-xs text-zinc-600">{@placeholder}</span>
     </div>
     """
   end
@@ -510,10 +515,18 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp subject_text(event, refs) do
-    if event.subject_kind == event.actor_kind and event.subject_id == event.actor_id,
+    if self_event?(event),
       do: nil,
       else: party_text(event.subject_kind, event.subject_id, event.subject_label, refs)
   end
+
+  # An event whose target IS its actor (a sign-in, a runner connect) — the
+  # meta line omits it; the Target column says "self". An event with NO
+  # subject at all is not "self", it just has no target (em-dash).
+  defp self_event?(%{subject_kind: nil}), do: false
+
+  defp self_event?(event),
+    do: event.subject_kind == event.actor_kind and event.subject_id == event.actor_id
 
   defp party_text(nil, _id, _label, _refs), do: nil
 
