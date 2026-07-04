@@ -132,7 +132,7 @@ defmodule EmisarWeb.RunbooksLive do
           </.empty_state>
         <% @runbooks == [] && @metadata.count == 0 &&
              not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-          <.empty_state icon="hero-book-open" title="No runbooks yet">
+          <.empty_state variant={:bare} icon="hero-book-open" title="No runbooks yet">
             Runbooks are cloud-side workflows that expand into ordered action dispatches.
             Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
             <:cta

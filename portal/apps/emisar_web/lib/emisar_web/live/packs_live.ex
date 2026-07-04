@@ -419,6 +419,7 @@ defmodule EmisarWeb.PacksLive do
 
       <.empty_state
         :if={@pack_count == 0 and @name_filter == "" and not @load_error? and not @loading?}
+        variant={:bare}
         icon="hero-cube"
         title="No packs reported yet"
         class="mt-8"

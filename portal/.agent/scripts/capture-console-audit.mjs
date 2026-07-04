@@ -193,7 +193,14 @@ try {
 
   console.log("detail pages (ids harvested from the lists):");
   const details = [
-    { list: "/runners", pattern: `/app/${SLUG}/runners/`, not: "/install", name: "runner-detail" },
+    // UUID tail — the bare prefix matched the title-row "Runner keys" button first.
+    {
+      list: "/runners",
+      pattern: `/app/${SLUG}/runners/[0-9a-f-]{36}$`,
+      not: null,
+      name: "runner-detail",
+    },
+    { list: "/audit", pattern: `/app/${SLUG}/audit/[0-9a-f-]{36}$`, not: null, name: "audit-detail" },
     { list: "/runs", pattern: `/app/${SLUG}/runs/`, not: "/new/", name: "run-detail" },
     { list: "/approvals", pattern: `/app/${SLUG}/approvals/`, not: null, name: "approval-detail" },
     { list: "/runbooks", pattern: "/runbooks/[^/]+/edit$", not: null, name: "runbook-edit" },

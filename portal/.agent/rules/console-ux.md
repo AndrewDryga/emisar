@@ -79,8 +79,8 @@ Structural rules that ride along:
   annotation · `:actions`); a bare surface is a `card`. A hand-rolled header row inside a
   `card` is banned — that's `panel` (with `padding={:none}` for `divide-y` list bodies).
 - **Island-header grammar (design-review R2).** Two registers, chosen by what the island
-  IS, never by taste: an **eyebrow** (`title_variant={:eyebrow}` on `panel`, or
-  `code_panel`'s label — the xs uppercase zinc-400 atom) heads a piece of the RECORD — a
+  IS, never by taste: an **eyebrow** (`title_variant={:eyebrow}` on `panel` — the xs uppercase
+  zinc-400 atom) heads a piece of the RECORD — a
   read-only field or fragment of the entity (Reason, Arguments, Payload, Changes, Actor /
   Subject, What this does); a **title-case display header** (`panel`'s default) heads a
   surface with its own job — interactive (Decide, an editor) or a navigable collection
@@ -88,6 +88,9 @@ Structural rules that ride along:
   *field-label* level (`meta_field`, an id line INSIDE a card) — it never heads an island.
   Eyebrows are always zinc-400: tone lives in the content (chips, diff rows), never the
   header — three colored eyebrows in one island read as three competing accents.
+  (`code_panel`'s label was deliberately REGRADED to the 16px title tier — a command
+  inset is the page's anchor artifact, not a record fragment; see the why-comment at
+  its definition.)
 - **Detail meta leads.** A detail page opens with `meta_strip`, Status field first;
   em-dash (muted, own span) for absent values.
 - **Filters are all visible — never hidden behind a "More filters" disclosure — and

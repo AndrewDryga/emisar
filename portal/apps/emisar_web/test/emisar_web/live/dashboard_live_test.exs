@@ -86,7 +86,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       # The runners pillar graduates from the install CTA to live state
       # (one registered runner, not connected in a test).
-      assert html =~ "/ 1 online"
+      assert html =~ "/ 1 connected"
       refute html =~ "Put your first host online"
       assert html =~ "Recent runs"
       # The agents pillar still shows its CTA — no API key was minted in
@@ -221,11 +221,11 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       send(lv.pid, %{event: "presence_diff"})
       send(lv.pid, :reload_dashboard)
-      assert render(lv) =~ "/ 1 online"
+      assert render(lv) =~ "/ 1 connected"
 
       # Unrelated message shapes are ignored, never a crash.
       send(lv.pid, :stray_message)
-      assert render(lv) =~ "/ 1 online"
+      assert render(lv) =~ "/ 1 connected"
     end
   end
 

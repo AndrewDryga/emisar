@@ -858,7 +858,18 @@ defmodule EmisarWeb.AgentsLive do
            panel), matching the Pending / Members sections — not a bordered
            section wrapping it, which boxed the filter against a second
            border. --%>
-      <section :if={@live_action == :index} class="mt-8">
+      <%!-- Hidden while the embedded picker IS the zero state — a second
+           "No agents connected yet" hairline under it was pure noise. An
+           ACTIVE filter keeps the section: filter-empty needs its live bar
+           (and the clear link) to escape back to the full set. --%>
+      <section
+        :if={
+          @live_action == :index and
+            not (@show_connect_inline? and @api_keys == [] and
+                   not LiveTable.has_active_filters?(@filter_params, @filters))
+        }
+        class="mt-8"
+      >
         <LiveTable.live_table
           layout={:cards}
           id="agents"

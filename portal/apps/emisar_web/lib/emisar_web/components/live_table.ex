@@ -814,7 +814,10 @@ defmodule EmisarWeb.LiveTable do
   def paginator(assigns) do
     ~H"""
     <nav
-      :if={@metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0}
+      :if={
+        @metadata.previous_page_cursor || @metadata.next_page_cursor ||
+          (@metadata.count || 0) > @page_count
+      }
       id={"#{@id}-pager"}
       class="flex items-center justify-between text-xs text-zinc-400"
     >

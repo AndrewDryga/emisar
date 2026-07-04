@@ -405,7 +405,7 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/runners"}
     >
       <:value>
-        {@connected}<span class="text-2xl text-zinc-500"> / {@total} online</span>
+        {@connected}<span class="text-2xl text-zinc-500"> / {@total} connected</span>
       </:value>
       <:status>{runners_status(@connected, @total)}</:status>
     </.pillar>

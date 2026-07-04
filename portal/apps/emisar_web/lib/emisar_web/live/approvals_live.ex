@@ -349,7 +349,7 @@ defmodule EmisarWeb.ApprovalsLive do
                         class="flex-none"
                       />
                     </div>
-                    <div class="mt-0.5 truncate text-xs text-zinc-500">
+                    <div class="mt-0.5 text-xs text-zinc-500 sm:truncate">
                       on {runner_label(request, @runner_labels)} · requested by {user_label(
                         request.requested_by_id,
                         @user_labels
@@ -509,7 +509,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 <.status_dot tone={:amber} size={:sm} />
                 <span class="text-amber-300">no cap</span>
                 <span class="hidden text-zinc-500 sm:inline">
-                  — approved grants expire only as approved
+                  — each grant keeps the lifetime it was approved with
                 </span>
               </span>
               <span
@@ -568,7 +568,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="truncate font-mono text-sm text-zinc-200">
                       {request.context["action_id"] || "—"}
                     </div>
-                    <div class="truncate text-xs text-zinc-500">
+                    <div class="text-xs text-zinc-500 sm:truncate">
                       on {runner_label(request, @runner_labels)}
                       <%!-- The status badge on the right carries the outcome word
                            (approved / denied / expired); the meta just attributes
