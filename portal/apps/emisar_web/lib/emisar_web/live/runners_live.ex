@@ -232,36 +232,37 @@ defmodule EmisarWeb.RunnersLive do
             configured with each runner's signing key.
           </.callout>
           <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
-             scanning every dot. Whole-account (like the group sidebar +
-             list below), counted from presence — there's no `:stale` state
-             (heartbeat liveness is socket-enforced; see Runners.connection_state). --%>
-          <%!-- Health-at-a-glance, small + muted like the per-group totals below.
-             The whole-account total is NOT repeated here — it lives in the group
-             header(s), so it isn't duplicated above and below the table. --%>
-          <.summary_band>
-            <.summary_stat tone={:brand} value={@fleet.online} label="Online" />
-            <%!-- Amber, not rose: offline = needs attention, not failed —
-                 the ONE tone the fact wears everywhere. --%>
-            <.summary_stat tone={:amber} value={@fleet.offline} label="Offline" />
-            <.summary_stat
-              :if={@fleet.pending > 0}
-              tone={:amber}
-              value={@fleet.pending}
-              label="Pending"
-            />
-            <.summary_stat
-              :if={@fleet.disabled > 0}
-              tone={:neutral}
-              value={@fleet.disabled}
-              label="Disabled"
-            />
-          </.summary_band>
+             scanning every dot. Whole-account (like the group headers below),
+             counted from presence. NAKED posture line, not a boxed band — the
+             dashboard pillar grammar: healthy counts stay quiet, offline wears
+             amber (needs attention, not failed — the ONE tone the fact wears
+             everywhere). --%>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+            <span class="flex items-center gap-1.5">
+              <.status_dot tone={:brand} size={:sm} />
+              <span class="tabular-nums text-zinc-400">{@fleet.online} online</span>
+            </span>
+            <span :if={@fleet.offline > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:amber} size={:sm} />
+              <span class="tabular-nums text-amber-300">{@fleet.offline} offline</span>
+            </span>
+            <span :if={@fleet.pending > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:amber} size={:sm} />
+              <span class="tabular-nums text-amber-300">{@fleet.pending} pending</span>
+            </span>
+            <span :if={@fleet.disabled > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="tabular-nums text-zinc-500">{@fleet.disabled} disabled</span>
+            </span>
+          </div>
 
           <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per
              group than the count next to the header. That's
              intentional — operators expect group counts to be
              source-of-truth, not "what fits on this page". --%>
+          <%!-- CONTENT ON CANVAS (the audit/runs language): rows under hairlines,
+               group labels as naked uppercase text — no island, no banded fills. --%>
           <LiveTable.live_table
             layout={:cards}
             id="runners"
@@ -269,11 +270,12 @@ defmodule EmisarWeb.RunnersLive do
             rows={sort_by_group(@runners)}
             metadata={@metadata}
             filter_params={@filter_params}
+            wrapper_class="divide-y divide-zinc-800/70"
             group_by={fn runner -> runner.group || "(no group)" end}
           >
             <:group_header :let={group_label}>
-              <li class="border-b border-zinc-800/70 bg-black/30 px-5 py-2 flex items-baseline gap-2">
-                <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <li class="flex items-baseline gap-2 pb-2 pt-5 first:pt-0">
+                <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
                   {group_label}
                 </h2>
                 <span class="text-[11px] text-zinc-500">
@@ -286,10 +288,10 @@ defmodule EmisarWeb.RunnersLive do
 
             <:item :let={runner}>
               <% state = connection_status(Runners.connection_state(runner)) %>
-              <li class="px-5 py-3">
+              <li>
                 <.link
                   navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
-                  class="flex items-center gap-4 transition hover:opacity-90"
+                  class="-mx-2 flex items-center gap-4 rounded-md px-2 py-3 transition hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">
                     <%!-- flex-wrap: the runner's name is its identity (often name
