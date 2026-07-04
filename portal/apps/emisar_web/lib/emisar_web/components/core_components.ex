@@ -3565,37 +3565,32 @@ defmodule EmisarWeb.CoreComponents do
 
   def confirm_zone(assigns) do
     ~H"""
-    <section class={[
-      "flex items-start justify-between gap-4 rounded-xl border p-5",
-      confirm_zone_section(@tone)
-    ]}>
-      <div>
-        <h3 class={["text-sm font-semibold", confirm_zone_title(@tone)]}>{@title}</h3>
-        <p class={["mt-1 text-xs", confirm_zone_body(@tone)]}>{render_slot(@body)}</p>
+    <%!-- CONTENT ON CANVAS — a destructive/restorative action is a hairline row
+         (title · consequence · toned button), NOT a rose-boxed island. The
+         danger lives on the ROSE button + the typed/data confirm it fires, not
+         a tinted frame. Callers stack these under a "Danger zone" section header
+         in a `divide-y` list. --%>
+    <div class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div class="min-w-0">
+        <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-500">{render_slot(@body)}</p>
       </div>
-      <div class="shrink-0">
-        <.button
-          variant={confirm_zone_button_variant(@tone)}
-          tone={confirm_zone_button_tone(@tone)}
-          size={:md}
-          data-confirm={@confirm}
-          {@rest}
-        >
-          {render_slot(@inner_block)}
-        </.button>
-      </div>
-    </section>
+      <.button
+        class="shrink-0 self-start sm:self-auto"
+        variant={confirm_zone_button_variant(@tone)}
+        tone={confirm_zone_button_tone(@tone)}
+        size={:md}
+        data-confirm={@confirm}
+        {@rest}
+      >
+        {render_slot(@inner_block)}
+      </.button>
+    </div>
     """
   end
 
-  # `:danger` keeps the original rose danger-zone styling; `:success` is the
-  # brand-green twin for restorative actions, so both read alike structurally.
-  defp confirm_zone_section(:danger), do: "border-rose-900/40 bg-rose-950/20"
-  defp confirm_zone_section(:success), do: "border-brand-500/30 bg-brand-500/[0.04]"
-  defp confirm_zone_title(:danger), do: "text-rose-200"
-  defp confirm_zone_title(:success), do: "text-brand-100"
-  defp confirm_zone_body(:danger), do: "text-rose-300/70"
-  defp confirm_zone_body(:success), do: "text-brand-300/70"
+  # `:danger` is the rose destructive button; `:success` the brand-green twin for
+  # a restorative action (enable) — a filled primary so it reads "do this".
   defp confirm_zone_button_variant(:danger), do: :secondary
   defp confirm_zone_button_variant(:success), do: :primary
 

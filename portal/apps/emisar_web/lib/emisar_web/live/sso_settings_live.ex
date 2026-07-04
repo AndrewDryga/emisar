@@ -1293,19 +1293,25 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.card>
 
             <%!-- Danger zone at the bottom — the destructive action lives apart
-                 from the routine config above and still runs the typed confirm. --%>
-            <.confirm_zone
-              title="Delete this connection"
-              phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
-              type="button"
-            >
-              <:body>
-                Removes the connection and stops new sign-ins through it. Members who sign in only
-                through it lose access until it's re-added; existing sessions aren't ended. This
-                can't be undone.
-              </:body>
-              Delete connection
-            </.confirm_zone>
+                 from the routine config above (its own canvas section) and still
+                 runs the typed confirm. --%>
+            <section class="mt-10">
+              <.section_header title="Danger zone" />
+              <div class="divide-y divide-zinc-800/70">
+                <.confirm_zone
+                  title="Delete this connection"
+                  phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
+                  type="button"
+                >
+                  <:body>
+                    Removes the connection and stops new sign-ins through it. Members who sign in
+                    only through it lose access until it's re-added; existing sessions aren't ended.
+                    This can't be undone.
+                  </:body>
+                  Delete connection
+                </.confirm_zone>
+              </div>
+            </section>
 
             <.confirm_dialog
               id={"delete-provider-#{provider.id}"}

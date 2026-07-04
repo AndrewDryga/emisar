@@ -30,8 +30,9 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
     assert html =~ "Disable this runner"
     assert html =~ "Removes it from the catalog."
     assert html =~ "Disable runner"
-    # The destructive button is built by the component (danger/rose), with the
-    # confirm dialog + the action wired through.
+    # Canvas row: neutral title, the danger carried by the ROSE button (not a
+    # tinted frame), with the confirm dialog + the action wired through.
+    assert html =~ "text-zinc-100"
     assert html =~ "text-rose-200"
     assert html =~ "data-confirm"
     assert html =~ "Disable this runner? It cannot reconnect."
@@ -51,9 +52,11 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
 
     assert html =~ "Enable this runner"
     assert html =~ "Enable runner"
-    # Emerald styling, the success button, the action wired through — and NO
-    # confirm dialog (enable is a safe restorative action, not a destructive one).
-    assert html =~ "text-brand-100"
+    # Neutral title + the emerald PRIMARY button (a filled "do this" for the
+    # restore), the action wired through — and NO confirm dialog (enable is a
+    # safe restorative action, not a destructive one).
+    assert html =~ "text-zinc-100"
+    assert html =~ "bg-brand-500"
     assert html =~ ~s(phx-click="enable")
     refute html =~ "data-confirm"
   end

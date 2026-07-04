@@ -254,21 +254,24 @@ defmodule EmisarWeb.RunnerDetailLive do
            client signature on every run, so operator/runbook/API dispatch from
            here is refused. Surfacing it up top keeps the disabled Run buttons
            below from reading as a bug. --%>
-      <.callout
-        :if={@runner.enforce_signatures}
-        tone={:brand}
-        icon="hero-shield-check"
-        title="Signed dispatch only"
-        class="mt-6"
-      >
-        This runner verifies a client signature on every run and refuses unsigned ones, so
-        the portal can't dispatch to it. Runs and runbooks must come from an MCP client
-        configured with a signing key and certificate — mint them with
-        <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
-          emisar signing init
-        </code>
-        on the host.
-      </.callout>
+      <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
+           this runner's posture (it's signed-only), the shield lead carrying
+           the brand tint, aligned with everything else below. --%>
+      <div :if={@runner.enforce_signatures} class="mt-6 flex items-start gap-3">
+        <.icon name="hero-shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-zinc-100">Signed dispatch only</div>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            This runner verifies a client signature on every run and refuses unsigned ones, so
+            the portal can't dispatch to it. Runs and runbooks must come from an MCP client
+            configured with a signing key and certificate — mint them with
+            <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
+              emisar signing init
+            </code>
+            on the host.
+          </p>
+        </div>
+      </div>
 
       <.loading_state :if={@loading?} />
 
@@ -390,61 +393,65 @@ defmodule EmisarWeb.RunnerDetailLive do
         </section>
       </div>
 
-      <%!-- Danger zone — destructive actions in their own visually-distinct
-           confirm zones so they can't be mistaken for the content above.
-           Disable is the soft "stop"; Delete is available for any runner that
-           isn't currently connected (that's how you clear a stale duplicate
-           holding a name; a connected runner must be disabled first so a
-           misclick can't wipe a live one). --%>
-      <div
-        :if={is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-8"
+      <%!-- Danger zone — destructive/restorative actions as canvas hairline
+           rows under their own section, not rose-boxed islands. Disable is the
+           soft "stop"; Enable is its restorative inverse (shown only while
+           disabled); Delete is available for any runner that isn't currently
+           connected (that's how you clear a stale duplicate holding a name; a
+           connected runner must be disabled first so a misclick can't wipe a
+           live one). Rendered only for a manager, who always has at least one
+           of these. --%>
+      <section
+        :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}
+        class="mt-12"
       >
-        <.confirm_zone
-          title="Disable this runner"
-          confirm="Disable this runner? It will not be able to reconnect."
-          phx-click="disable"
-        >
-          <:body>
-            Removes it from the catalog and rejects future reconnects. Audit history is preserved.
-          </:body>
-          Disable runner
-        </.confirm_zone>
-      </div>
+        <.section_header title="Danger zone" />
+        <div class="divide-y divide-zinc-800/70">
+          <.confirm_zone
+            :if={is_nil(@runner.disabled_at)}
+            title="Disable this runner"
+            confirm="Disable this runner? It will not be able to reconnect."
+            phx-click="disable"
+          >
+            <:body>
+              Removes it from the catalog and rejects future reconnects. Audit history is preserved.
+            </:body>
+            Disable runner
+          </.confirm_zone>
 
-      <div
-        :if={
-          not is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)
-        }
-        class="mt-8"
-      >
-        <.confirm_zone tone={:success} title="Enable this runner" phx-click="enable">
-          <:body>
-            Clears the disabled flag so the host can reconnect and reappear in the catalog.
-            Counts against your plan's runner limit.
-          </:body>
-          Enable runner
-        </.confirm_zone>
-      </div>
+          <.confirm_zone
+            :if={not is_nil(@runner.disabled_at)}
+            tone={:success}
+            title="Enable this runner"
+            phx-click="enable"
+          >
+            <:body>
+              Clears the disabled flag so the host can reconnect and reappear in the catalog.
+              Counts against your plan's runner limit.
+            </:body>
+            Enable runner
+          </.confirm_zone>
 
-      <div
-        :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-8"
-      >
-        <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
-             button only OPENS the dialog; `delete` still fires from Confirm
-             and stays server-authz-gated (Runners.subject_can_manage_runners?). --%>
-        <.confirm_zone title="Delete this runner" phx-click={show_confirm_dialog("delete-runner")}>
-          <:body>
-            Removes the runner row from your account. The host can re-register on its
-            next connect (it will appear as a fresh runner with new tokens), which is
-            the intended path when you want to recover from a wedged state or
-            re-bootstrap a host. Run history and audit events are preserved.
-          </:body>
-          Delete runner
-        </.confirm_zone>
+          <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
+               button only OPENS the dialog; `delete` still fires from Confirm
+               and stays server-authz-gated (Runners.subject_can_manage_runners?). --%>
+          <.confirm_zone
+            :if={not @runner.online?}
+            title="Delete this runner"
+            phx-click={show_confirm_dialog("delete-runner")}
+          >
+            <:body>
+              Removes the runner row from your account. The host can re-register on its
+              next connect (it will appear as a fresh runner with new tokens), which is
+              the intended path when you want to recover from a wedged state or
+              re-bootstrap a host. Run history and audit events are preserved.
+            </:body>
+            Delete runner
+          </.confirm_zone>
+        </div>
 
         <.confirm_dialog
+          :if={not @runner.online?}
           id="delete-runner"
           title="Delete this runner"
           confirm_label="Delete runner"
@@ -458,7 +465,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             runner with new tokens. Run history and audit events are preserved.
           </:body>
         </.confirm_dialog>
-      </div>
+      </section>
     </.dashboard_shell>
     """
   end
