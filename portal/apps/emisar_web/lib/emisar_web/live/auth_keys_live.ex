@@ -248,14 +248,16 @@ defmodule EmisarWeb.AuthKeysLive do
       </:actions>
 
       <%!-- ===== Issue a runner key — its own focused page (:new) =====
-           Pulled off the list so the form gets room to breathe on a canvas
-           page (not an island competing with the roster), with a real success
-           step (Issue another / Back to keys) instead of a vanishing flash. --%>
-      <div :if={@live_action == :new} class="mx-auto max-w-2xl space-y-5">
+           CONTENT ON CANVAS — no island. The shell owns the :form column
+           width; the form sits directly on the page (the install-wizard
+           grammar), with a real success step (Issue another / Back to keys)
+           instead of a vanishing flash. --%>
+      <div :if={@live_action == :new} class="space-y-8">
         <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
         <%!-- Created: the secret is shown ONCE — the reveal IS the success
-             step, carrying the two next moves. --%>
+             step (a box IS earned here: it holds the secret + its copy
+             affordances), carrying the two next moves. --%>
         <.secret_reveal
           :if={@new_secret}
           title="Copy this runner key now — it will not be shown again."
@@ -274,10 +276,8 @@ defmodule EmisarWeb.AuthKeysLive do
           </:actions>
         </.secret_reveal>
 
-        <%!-- No panel title — the shell title already says "Issue a runner key"
-             (never a stacked near-synonym pair); the lead line carries intent. --%>
-        <.panel :if={is_nil(@new_secret)}>
-          <p class="mb-5 text-sm leading-relaxed text-zinc-400">
+        <div :if={is_nil(@new_secret)}>
+          <p class="text-sm leading-relaxed text-zinc-400">
             Reusable keys suit stable fleets; single-use keys are right for autoscalers.
             <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
           </p>
@@ -287,7 +287,7 @@ defmodule EmisarWeb.AuthKeysLive do
             id="auth_key_form"
             phx-change="validate"
             phx-submit="create"
-            class="space-y-5"
+            class="mt-6"
           >
             <.input
               field={@form[:description]}
@@ -330,7 +330,7 @@ defmodule EmisarWeb.AuthKeysLive do
               </.button>
             </:actions>
           </.simple_form>
-        </.panel>
+        </div>
       </div>
 
       <.page_intro :if={@live_action == :index}>
