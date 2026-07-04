@@ -445,12 +445,14 @@ defmodule EmisarWeb.LiveTable do
       </label>
       <%!-- The panel CONTINUES the trigger's border (same 1px, same color —
            brand when the filter is active) instead of the float ring, whose
-           outside-the-box shadow read as a second, misaligned edge style. --%>
+           outside-the-box shadow read as a second, misaligned edge style. No
+           overlap: the trigger's own border-b stays visible as the seam
+           between field and search — overlapping it painted the divider away. --%>
       <div
         data-combobox-panel
         hidden
         class={[
-          "absolute z-20 -mt-px w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
+          "absolute z-20 w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
           "bg-zinc-900 shadow-xl shadow-black/60",
           if(@active?, do: "border-brand-500/60", else: "border-zinc-700")
         ]}
