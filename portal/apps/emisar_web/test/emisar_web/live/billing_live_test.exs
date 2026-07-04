@@ -106,22 +106,20 @@ defmodule EmisarWeb.BillingLiveTest do
   end
 
   describe "usage meter + plan display" do
-    test "a Free account at the runner ceiling colours the meter rose (≥100%)", %{conn: conn} do
-      # 3/3 billable runners on Free is 100% utilisation → the runners bar uses
-      # the rose `usage_class`. (count_billable_runners is presence-agnostic, so
-      # unconnected fixtures still count toward the cap.)
+    test "a Free account at the runner ceiling colours the meter amber, never rose", %{
+      conn: conn
+    } do
+      # 3/3 billable runners on Free is 100% utilisation — a plan fact, not a
+      # failure: amber says "look at your limits"; rose is reserved for a hard
+      # lockout that the clamped pct can never render.
       {conn, _user, account} = register_and_log_in(conn)
       for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "/ 3"
-      # At/over 100% the meter bar (an `h-full transition-[width]` div) is rose; the
-      # brand/amber classes appear elsewhere on the page (the "Most popular"
-      # chip), so scope the assertion to the bar's own class combination.
-      assert html =~ ~s(class="h-full transition-[width] bg-rose-400")
-      refute html =~ ~s(class="h-full transition-[width] bg-amber-400")
-      refute html =~ ~s(class="h-full transition-[width] bg-brand-400")
+      assert html =~ ~s(class="h-full transition-[width] bg-amber-400")
+      refute html =~ ~s(class="h-full transition-[width] bg-rose-400")
     end
 
     test "a Team account at 80% of its runner cap colours the meter amber", %{conn: conn} do

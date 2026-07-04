@@ -163,13 +163,11 @@ defmodule EmisarWeb.BillingLive do
 
   defp usage_pct(_, _), do: nil
 
-  defp usage_class(pct) when is_integer(pct) do
-    cond do
-      pct >= 100 -> "bg-rose-400"
-      pct >= 80 -> "bg-amber-400"
-      true -> "bg-brand-400"
-    end
-  end
+  # AT/near capacity is a plan fact, not a failure — amber says "look at your
+  # limits"; rose would cry lockout (and the pct clamps at 100, so a true
+  # over-limit never renders anyway).
+  defp usage_class(pct) when is_integer(pct) and pct >= 80, do: "bg-amber-400"
+  defp usage_class(pct) when is_integer(pct), do: "bg-brand-400"
 
   defp usage_class(_), do: "bg-brand-400"
 
@@ -363,12 +361,15 @@ defmodule EmisarWeb.BillingLive do
         <section>
           <.section_header title="Plans" />
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <%!-- The current plan is IDENTITY, not a pass state — a neutral
+                 brighter ring + the "current" chip say it; green stays
+                 reserved for pass/healthy. --%>
             <article
               :for={plan <- @plans}
               class={[
                 "relative flex flex-col rounded-xl border p-5",
                 if(current_plan?(plan, @summary),
-                  do: "border-brand-500/40 bg-brand-500/5",
+                  do: "border-zinc-600 bg-zinc-900/40",
                   else: "border-zinc-900 bg-zinc-950/40"
                 )
               ]}
@@ -381,7 +382,7 @@ defmodule EmisarWeb.BillingLive do
                   <% plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan) -> %>
                     <%!-- Upsell merch only reads as such BELOW the badged plan —
                          a customer already above it gets silence. --%>
-                    <.chip upcase tone={:amber}>Most popular</.chip>
+                    <.chip upcase>Most popular</.chip>
                   <% true -> %>
                     <span></span>
                 <% end %>
@@ -399,7 +400,7 @@ defmodule EmisarWeb.BillingLive do
               <div class="mt-5">
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
-                    <%!-- No footer: the CURRENT chip + brand border already say it —
+                    <%!-- No footer: the CURRENT chip + brighter ring already say it —
                          a disabled "You're here" button was a fake affordance. --%>
                     <span></span>
                   <% plan.key == "enterprise" -> %>
