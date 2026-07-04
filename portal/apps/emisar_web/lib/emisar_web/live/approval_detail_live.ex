@@ -519,18 +519,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
         </.meta_field>
         <.meta_field label="Runner">
           <%= if @run && @run.runner do %>
-            <span class="inline-flex min-w-0 items-center gap-1.5">
-              <.status_dot
-                tone={if(@runner_connection == :online, do: :brand, else: :neutral)}
-                title={if(@runner_connection == :online, do: "Online", else: "Offline")}
-              />
-              <.link
-                navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
-                class="truncate text-zinc-200 hover:text-brand-300"
-              >
-                {@run.runner.name}
-              </.link>
-            </span>
+            <%!-- Identity only — run-detail's Runner meta is the same shape.
+                 A wordless colored dot said "connectivity" by color alone;
+                 the offline case already escalates in the Decide panel. --%>
+            <.link
+              navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
+              class="truncate text-zinc-200 hover:text-brand-300"
+            >
+              {@run.runner.name}
+            </.link>
           <% else %>
             <span class="truncate font-mono text-xs text-zinc-400">
               {truncated_runner_id(@request.context["runner_id"])}
