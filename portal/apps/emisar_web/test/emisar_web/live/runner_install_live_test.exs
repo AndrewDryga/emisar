@@ -4,6 +4,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
   alias Emisar.Runners.AuthKey
 
   describe "GET /app/runners/install" do
+    test "states the key is one-time and points multi-use at Runner keys", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+
+      assert html =~ "one-time"
+      assert html =~ "multi-use"
+      assert html =~ ~p"/app/#{account}/runners/keys"
+    end
+
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       %{conn: conn, account: account}

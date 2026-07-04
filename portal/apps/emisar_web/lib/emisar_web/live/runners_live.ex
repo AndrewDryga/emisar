@@ -198,7 +198,7 @@ defmodule EmisarWeb.RunnersLive do
             install_command={@install_command}
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
-            on_failure_path={~p"/app/#{@current_account}/runners/keys"}
+            keys_path={~p"/app/#{@current_account}/runners/keys"}
           />
 
           <%!-- Follow-up resources, siblings below the wizard — same as the

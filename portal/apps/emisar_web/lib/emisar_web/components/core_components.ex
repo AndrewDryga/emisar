@@ -3834,7 +3834,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :install_command, :any, required: true
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
-  attr :on_failure_path, :string, default: "/app/runners/keys"
+  attr :keys_path, :string, default: "/app/runners/keys"
 
   def install_wizard(assigns) do
     ~H"""
@@ -3882,9 +3882,21 @@ defmodule EmisarWeb.CoreComponents do
                 </div>
                 <p class="mt-1.5">
                   The command runs with <code class="font-mono">sudo</code>
-                  and carries a single-use key that enrolls this host to run infrastructure
-                  actions on your fleet. Treat it like a password — paste it straight onto the
-                  host, never into a chat or ticket.
+                  and carries a <span class="font-semibold">one-time</span>
+                  key: it enrolls
+                  exactly one host, then expires. Treat it like a password — paste it straight
+                  onto the host, never into a chat or ticket.
+                </p>
+                <p class="mt-1.5">
+                  Baking an image, or enrolling a whole fleet with cloud-init? Mint a
+                  <span class="font-semibold">multi-use</span>
+                  key under
+                  <.link
+                    navigate={@keys_path}
+                    class="font-semibold text-brand-400 hover:text-brand-300"
+                  >
+                    Runner keys →
+                  </.link>
                 </p>
               </div>
               <div class="mt-2 text-xs leading-5 text-zinc-500">
@@ -3972,7 +3984,7 @@ defmodule EmisarWeb.CoreComponents do
         <% @install_command == :mint_failed -> %>
           <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
             We couldn't mint a runner key just now. Open
-            <.link navigate={@on_failure_path} class="font-semibold underline">
+            <.link navigate={@keys_path} class="font-semibold underline">
               Runners → Runner keys
             </.link>
             and create one manually, or refresh this page to try again.
