@@ -663,15 +663,16 @@ defmodule EmisarWeb.AuditLive do
 
   @doc """
   Outcome → house tone for the audit event's `<.status_dot>` — failures `:rose`,
-  denials/removals `:amber`, routine events `:neutral`. Keyed off
-  `Audit.Event.Query.outcome/1` so the dot + the "Outcome" filter never
-  disagree. Public because the detail page's title dot must match the list
-  (same sharing mechanism as `ref/1`).
+  denials/removals `:amber`, pass verdicts `:brand`, routine events `:neutral`.
+  Keyed off `Audit.Event.Query.outcome/1` so the dot + the "Severity" filter
+  never disagree. Public because the detail page's title dot must match the
+  list (same sharing mechanism as `ref/1`).
   """
   def outcome_tone(event_type) do
     case Audit.Event.Query.outcome(event_type) do
       :danger -> :rose
       :warn -> :amber
+      :pass -> :brand
       :neutral -> :neutral
     end
   end
@@ -680,10 +681,15 @@ defmodule EmisarWeb.AuditLive do
   # (rose), a denial/removal/expiry (amber) — pop out of a wall of routine sign-ins
   # (which stay neutral zinc). The title carries the color, not just the 2px dot,
   # so the signal reads at a glance without making every row loud.
+  # Pass verdicts keep the neutral title ON PURPOSE: the brand dot already says
+  # "the gate said yes", and an agent ripping through fifty successful runs
+  # must not paint the trail green — problems shout (dot + title), passes nod
+  # (dot only), routine stays silent.
   defp event_title_class(event_type) do
     case Audit.Event.Query.outcome(event_type) do
       :danger -> "font-medium text-rose-200"
       :warn -> "text-amber-200"
+      :pass -> "text-zinc-200"
       :neutral -> "text-zinc-200"
     end
   end

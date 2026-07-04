@@ -109,16 +109,22 @@ defmodule Emisar.Audit.Event.Query do
   def known_event_type_values, do: @known_event_types
 
   # An event's OUTCOME from its type suffix: a failure (`:danger`), a warn-class
-  # denial/removal (`:warn`), or routine (`:neutral`). The audit list/detail
-  # dots color by this AND the "Outcome" filter narrows by it, so the two can
-  # never disagree — one source, read by both (the web reads it, never copies it).
+  # denial/removal (`:warn`), a pass verdict (`:pass` — the gate saying YES: a
+  # run succeeding, an approval landing, a grant or consent letting something
+  # through), or routine (`:neutral`). The audit list/detail dots color by this
+  # AND the "Severity" filter narrows by it, so the two can never disagree —
+  # one source, read by both (the web reads it, never copies it). Lifecycle
+  # positives (connected, enabled, accepted, confirmed) stay :neutral on
+  # purpose: green marks verdicts, not activity, or it becomes wallpaper.
   @danger_suffixes ~w[_failed .failed .error .timed_out]
   @warn_suffixes ~w[.denied .refused .revoked _revoked .disabled .deleted .removed .suspended .expired .cancelled]
+  @pass_suffixes ~w[.success .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
       String.ends_with?(event_type, @danger_suffixes) -> :danger
       String.ends_with?(event_type, @warn_suffixes) -> :warn
+      String.ends_with?(event_type, @pass_suffixes) -> :pass
       true -> :neutral
     end
   end
@@ -509,7 +515,11 @@ defmodule Emisar.Audit.Event.Query do
         title: "Severity",
         type: {:list, :string},
         span: :half,
-        values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],
+        values: [
+          {"danger", "Failures & errors"},
+          {"warn", "Denials & removals"},
+          {"pass", "Successes & approvals"}
+        ],
         fun: fn queryable, outcomes ->
           types = event_types_for_outcomes(outcomes)
           {queryable, dynamic([events: e], e.event_type in ^types)}

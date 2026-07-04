@@ -601,10 +601,14 @@ defmodule Emisar.AuditTest do
       {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
       assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
 
-      # Both outcomes keep the failure + the denial, still dropping the routine.
+      # Both outcomes keep the failure + the denial, still dropping the pass.
       {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
       kept = Enum.map(both, & &1.event_type) |> Enum.sort()
       assert kept == ["action_run.failed", "approval.denied"]
+
+      # "pass" keeps only the yes-verdict.
+      {:ok, passes, _} = Audit.list_events(subject, filter: [outcome: ["pass"]])
+      assert Enum.map(passes, & &1.event_type) == ["approval.approved"]
     end
 
     test "the Type filter scopes to a whole group via the 'All <group>' option", %{
@@ -1390,9 +1394,17 @@ defmodule Emisar.AuditTest do
       end
     end
 
-    test "routine events are :neutral" do
-      for t <- ~w[action_run.success approval.approved api_key.created runner.connected
-                  runner.enabled user.signed_in session.account_switched] do
+    test "pass verdicts — the gate saying yes — are :pass" do
+      for t <- ~w[action_run.success approval.approved approval.grant_used
+                  sso.link_request_approved oauth.consent_granted] do
+        assert Audit.Event.Query.outcome(t) == :pass, "expected #{t} to be :pass"
+      end
+    end
+
+    test "lifecycle positives stay :neutral — green marks verdicts, not activity" do
+      for t <- ~w[api_key.created runner.connected runner.enabled user.signed_in
+                  user.email_confirmed user.mfa_enabled membership.invitation_accepted
+                  membership.reinstated runbook.published session.account_switched] do
         assert Audit.Event.Query.outcome(t) == :neutral, "expected #{t} to be :neutral"
       end
     end
@@ -1411,14 +1423,16 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
-      # Real known types, one per tone (outcome/1: danger / warn / neutral).
+      # Real known types, one per tone (outcome/1: danger / warn / pass / neutral).
       {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
       {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
 
       assert Audit.Event.Query.outcome("action_run.failed") == :danger
       assert Audit.Event.Query.outcome("approval.denied") == :warn
-      assert Audit.Event.Query.outcome("approval.approved") == :neutral
+      assert Audit.Event.Query.outcome("approval.approved") == :pass
+      assert Audit.Event.Query.outcome("runner.connected") == :neutral
 
       {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
       assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]

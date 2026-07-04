@@ -61,13 +61,14 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "Source IP"
     end
 
-    test "rows carry an outcome dot — rose for failures, amber for denials, neutral for routine",
+    test "rows carry an outcome dot — rose failures, amber denials, brand passes, neutral routine",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       for {type, target_kind} <- [
             {"user.sign_in_failed", "user"},
             {"approval.denied", "approval_request"},
+            {"action_run.success", "action_run"},
             {"runner.connected", "runner"}
           ] do
         {:ok, _} = Audit.log(account.id, type, target_kind: target_kind, target_label: "x")
@@ -77,6 +78,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
       assert html =~ "bg-rose-400"
       assert html =~ "bg-amber-400"
+      assert html =~ "bg-brand-400"
       assert html =~ "bg-zinc-600"
     end
 
