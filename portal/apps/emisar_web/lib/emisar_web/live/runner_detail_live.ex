@@ -279,7 +279,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            check beside it) as CANVAS sections — section title + hairline rows,
            no islands. On a phone recent runs comes FIRST in DOM ("is this
            healthy?"), then the long catalog; lg flips the visual order. --%>
-      <div :if={not @loading?} class="mt-14 grid grid-cols-1 gap-x-12 gap-y-14 lg:grid-cols-3">
+      <div :if={not @loading?} class="mt-20 grid grid-cols-1 gap-x-12 gap-y-14 lg:grid-cols-3">
         <section class="lg:order-2">
           <.section_header title="Recent runs">
             <:actions :if={@recent_runs != []}>
@@ -293,7 +293,9 @@ defmodule EmisarWeb.RunnerDetailLive do
           </.section_header>
 
           <%= if @recent_runs == [] do %>
-            <p class="py-6 text-sm text-zinc-500">Nothing dispatched yet.</p>
+            <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet">
+              Nothing dispatched to this runner yet — runs land here as they happen.
+            </.empty_state>
           <% else %>
             <ul class="divide-y divide-zinc-800/70">
               <li :for={run <- @recent_runs}>
@@ -403,7 +405,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            of these. --%>
       <section
         :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}
-        class="mt-16"
+        class="mt-20"
       >
         <.section_header title="Danger zone" />
         <div class="divide-y divide-zinc-800/70">

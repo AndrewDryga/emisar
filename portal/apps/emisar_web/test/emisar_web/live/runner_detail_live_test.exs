@@ -37,8 +37,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "hasn&#39;t reported a catalog yet"
   end
 
-  # a runner never dispatched to renders the
-  # "Nothing dispatched yet." empty state in the recent-runs sidebar.
+  # a runner never dispatched to renders the "No runs yet"
+  # empty state in the recent-runs sidebar.
   test "a runner with no recent runs shows the empty recent-runs state", %{
     conn: conn,
     account: account,
@@ -46,7 +46,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "Nothing dispatched yet."
+    assert html =~ "No runs yet"
+    assert html =~ "Nothing dispatched to this runner yet"
   end
 
   test "a bad cursor in the URL falls back to the first page, not a crash", %{
