@@ -694,6 +694,29 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "real"
     end
 
+    test "an active preset chip highlights and a second click clears the range", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      # First click arms the window: from lands in the URL + the chip lights up.
+      html = lv |> element("button[phx-value-window='24h']") |> render_click()
+      to = assert_patch(lv)
+      params = URI.decode_query(URI.parse(to).query)
+      assert params["window"] == "24h"
+      assert Map.has_key?(params, "from")
+      assert html =~ ~s(aria-pressed="true")
+
+      # Second click clears the range entirely — the chip is a toggle.
+      lv |> element("button[phx-value-window='24h']") |> render_click()
+      to = assert_patch(lv)
+      params = URI.decode_query(URI.parse(to).query || "")
+      refute Map.has_key?(params, "window")
+      refute Map.has_key?(params, "from")
+      refute Map.has_key?(params, "to")
+    end
+
     # a quick-range preset only touches from/to; an
     # unrelated active filter (a Type pick) is preserved across the click.
     test "a preset preserves an unrelated active filter", %{conn: conn} do

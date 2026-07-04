@@ -50,8 +50,16 @@ defmodule EmisarWeb.AuditLive do
     # hidden (it's set by clicking a row's actor), so merge it back or a
     # dropdown change would silently drop an active actor filter. From/To now
     # live in the form, so the form params carry them.
-    preserved = Map.take(socket.assigns.filter_params, ["actor_id"])
+    preserved = Map.take(socket.assigns.filter_params, ["actor_id", "window"])
     merged = Map.merge(preserved, params)
+
+    # A manually edited From/To supersedes the quick-range chip — its highlight
+    # would lie about the bound otherwise.
+    merged =
+      if params["from"] != socket.assigns.filter_params["from"] or
+           params["to"] != socket.assigns.filter_params["to"],
+         do: Map.delete(merged, "window"),
+         else: merged
 
     # Switching the actor kind invalidates a previously-picked actor (its id
     # belongs to the old kind), so drop it — else the new kind's picker reads
@@ -77,17 +85,28 @@ defmodule EmisarWeb.AuditLive do
   def handle_event("preset", %{"window" => window}, socket) do
     # Quick relative-range chips set :from to (now − window) and clear :to, so
     # "Last 24h" is the last 24h up to NOW (a stale upper bound would make it a
-    # weird window). Whitelisted window → an unknown (crafted) value is a no-op,
-    # never a crash or an arbitrary bound. Other active filters are preserved.
-    case preset_from(window) do
-      nil ->
-        {:noreply, socket}
+    # weird window). Clicking the ACTIVE chip clears the range (a toggle).
+    # Whitelisted window → an unknown (crafted) value is a no-op, never a crash
+    # or an arbitrary bound. Other active filters are preserved.
+    params = socket.assigns.filter_params
 
-      from ->
-        merged = socket.assigns.filter_params |> Map.put("from", from) |> Map.delete("to")
+    merged =
+      cond do
+        params["window"] == window ->
+          params |> Map.delete("window") |> Map.delete("from") |> Map.delete("to")
 
-        {:noreply,
-         LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
+        from = preset_from(window) ->
+          params |> Map.put("window", window) |> Map.put("from", from) |> Map.delete("to")
+
+        true ->
+          nil
+      end
+
+    if merged do
+      {:noreply,
+       LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -274,12 +293,25 @@ defmodule EmisarWeb.AuditLive do
            presets the date-unification dropped, without a second bar. --%>
       <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
         <span class="text-zinc-500">Quick filters:</span>
+        <%!-- An active preset wears the brand active-filter tint and clicking
+             it again clears the window — the chip is a TOGGLE, like every
+             other filter control. Which chip is active rides a `window` URL
+             param (the materialized From value can't be matched back to its
+             preset a minute later); the From facet stays the visible source
+             of truth for the actual bound. --%>
         <button
           :for={{label, window} <- audit_presets()}
           type="button"
           phx-click="preset"
           phx-value-window={window}
-          class="rounded-md bg-zinc-900 px-2 py-1 font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+          aria-pressed={to_string(@filter_params["window"] == window)}
+          class={[
+            "rounded-md px-2 py-1 font-medium ring-1 transition",
+            if(@filter_params["window"] == window,
+              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
+              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+            )
+          ]}
         >
           {label}
         </button>
