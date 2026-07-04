@@ -1198,8 +1198,11 @@ defmodule EmisarWeb.AgentsLive do
               />
               <p class="mt-2 text-xs text-zinc-500">
                 Restart {client_label(@selected_client)} after pasting.
-                <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
-                  Troubleshooting →
+                <.link
+                  href={~p"/docs/connect-an-llm"}
+                  class="group text-brand-400 hover:text-brand-300"
+                >
+                  Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
                 </.link>
               </p>
             </div>
@@ -1266,15 +1269,18 @@ defmodule EmisarWeb.AgentsLive do
       />
       <p class="mt-2 text-[11px] text-zinc-500">
         Inspects the bridge first?
-        <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
-          Manual install →
+        <.link
+          href={~p"/docs/connect-an-llm"}
+          class="group text-brand-400 hover:text-brand-300"
+        >
+          Manual install <.cta_arrow class="ml-0.5 h-3 w-3" />
         </.link>
         ·
         <.link
           href={~p"/trust" <> "#release-integrity"}
-          class="text-brand-400 hover:text-brand-300"
+          class="group text-brand-400 hover:text-brand-300"
         >
-          Verify the release →
+          Verify the release <.cta_arrow class="ml-0.5 h-3 w-3" />
         </.link>
       </p>
     </div>
@@ -1332,9 +1338,9 @@ defmodule EmisarWeb.AgentsLive do
           href={@auto_permit.doc_url}
           target="_blank"
           rel="noopener noreferrer"
-          class="text-brand-400 hover:text-brand-300"
+          class="group text-brand-400 hover:text-brand-300"
         >
-          {@client_label} MCP docs →
+          {@client_label} MCP docs <.cta_arrow class="ml-0.5 h-3 w-3" />
         </.link>
       </p>
     </.disclosure>
@@ -1463,8 +1469,11 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-500">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom MCP servers. Connection refused or 401?
-        <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
-          Troubleshooting →
+        <.link
+          href={~p"/docs/connect-an-llm"}
+          class="group text-brand-400 hover:text-brand-300"
+        >
+          Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
         </.link>
       </p>
     </div>

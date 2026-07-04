@@ -140,9 +140,9 @@ defmodule EmisarWeb.RunDetailLive do
              itself, so the link just pre-filters — it can't widen access. --%>
         <.link
           navigate={~p"/app/#{@current_account}/audit?#{run_trail_query(@run)}"}
-          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View activity →
+          View activity <.cta_arrow />
         </.link>
         <.button
           :if={

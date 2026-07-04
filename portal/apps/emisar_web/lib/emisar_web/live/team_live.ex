@@ -1139,9 +1139,9 @@ defmodule EmisarWeb.TeamLive do
                         Accounts.subject_can_manage_account_security?(@current_subject)
                     }
                     navigate={~p"/app/#{@current_account}/settings/sso"}
-                    class="font-medium text-brand-400 hover:text-brand-300"
+                    class="group inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
                   >
-                    Manage providers →
+                    Manage providers <.cta_arrow />
                   </.link>
                 </div>
               </div>
@@ -1280,9 +1280,9 @@ defmodule EmisarWeb.TeamLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
           }
-          class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View activity →
+          View activity <.cta_arrow />
         </.link>
       <% true -> %>
         <.dropdown
