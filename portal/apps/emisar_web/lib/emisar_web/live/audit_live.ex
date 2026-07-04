@@ -355,6 +355,10 @@ defmodule EmisarWeb.AuditLive do
              failures (the danger+warn severities) — so the rows an operator hunts
              for surface out of a wall of routine sign-ins, without hand-building
              the Severity filter. Toggles the filter the panel already exposes. --%>
+        <%!-- Active wears the BRAND active-filter tint like every other filter
+             control — rose would say "something is wrong", but an engaged
+             toggle is a filter state, not an alarm (the problem ROWS carry
+             their own rose/amber). --%>
         <button
           type="button"
           phx-click="toggle_problems"
@@ -362,7 +366,7 @@ defmodule EmisarWeb.AuditLive do
           class={[
             "rounded-md px-2 py-1 font-medium ring-1 transition",
             if(problems_only?(@filter_params),
-              do: "bg-rose-500/15 text-rose-200 ring-rose-500/40",
+              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
               else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
             )
           ]}
