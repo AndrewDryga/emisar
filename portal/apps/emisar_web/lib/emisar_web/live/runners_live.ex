@@ -291,16 +291,11 @@ defmodule EmisarWeb.RunnersLive do
             group_by={fn runner -> runner.group || "(no group)" end}
           >
             <:group_header :let={group_label}>
-              <li class="flex items-baseline gap-2 pb-2 pt-5 first:pt-0">
-                <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-                  {group_label}
-                </h2>
-                <span class="text-[11px] text-zinc-500">
-                  {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
-                    do: "runner",
-                    else: "runners"} total
-                </span>
-              </li>
+              <.list_group_header label={group_label}>
+                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
+                  do: "runner",
+                  else: "runners"} total
+              </.list_group_header>
             </:group_header>
 
             <:item :let={runner}>

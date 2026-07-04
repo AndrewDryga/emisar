@@ -3147,6 +3147,30 @@ defmodule EmisarWeb.CoreComponents do
   defp count_badge_tone(:brand), do: "bg-brand-500/20 text-brand-200"
 
   @doc """
+  The uppercase group label that opens a run of grouped `:cards` rows (runners
+  by group, agents by owner). Renders the `<li>` the divided list expects, and
+  owns the BETWEEN-GROUP rhythm (`pt-8`, dropped for the first group) so every
+  grouped list breathes the same. Optional trailing meta — a count — via the
+  default slot.
+
+      <.list_group_header label={@group}>{@n} runners total</.list_group_header>
+      <.list_group_header label={@owner} />
+  """
+  attr :label, :string, required: true
+  slot :inner_block
+
+  def list_group_header(assigns) do
+    ~H"""
+    <li class="flex items-baseline gap-2 pb-2 pt-8 first:pt-0">
+      <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">{@label}</h2>
+      <span :if={@inner_block != []} class="text-[11px] text-zinc-500">
+        {render_slot(@inner_block)}
+      </span>
+    </li>
+    """
+  end
+
+  @doc """
   Key-value row for detail panes. `:row` (default) is a label-left /
   value-right flex row; `:grid` emits a bare `<dt>`/`<dd>` pair (no wrapper)
   for a mono, column-aligned readout — drop it inside a

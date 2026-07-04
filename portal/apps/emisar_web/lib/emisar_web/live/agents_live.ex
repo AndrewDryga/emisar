@@ -882,11 +882,7 @@ defmodule EmisarWeb.AgentsLive do
           <%!-- Grouped by OWNER (the runners-group grammar): the page's real
                subject is people and the credentials they've issued. --%>
           <:group_header :let={owner}>
-            <li class="flex items-baseline gap-2 pb-2 pt-5 first:pt-0">
-              <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-                {owner}
-              </h2>
-            </li>
+            <.list_group_header label={owner} />
           </:group_header>
 
           <:item :let={key}>
