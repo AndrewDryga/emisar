@@ -87,6 +87,35 @@ defmodule EmisarWeb.AuditSummaryTest do
     end
   end
 
+  describe "run-family rows lead with the action" do
+    test "success carries the bare command identity first" do
+      assert [{"action", "caddy.access_log_tail"}, {"duration_ms", "260ms"}] ==
+               AuditSummary.summary_pairs(
+                 ev("action_run.success", %{
+                   "action" => "caddy.access_log_tail",
+                   "duration_ms" => 260
+                 })
+               )
+    end
+
+    test "statuses without a special summary still name what was to run" do
+      assert [{"action", "linux.reboot_host"}] ==
+               AuditSummary.summary_pairs(
+                 ev("action_run.pending_approval", %{"action" => "linux.reboot_host"})
+               )
+    end
+
+    test "grant_used names the action, then the grant" do
+      assert [{"action", "linux.uptime"}, {"grant", "0af3c2d1"}] ==
+               AuditSummary.summary_pairs(
+                 ev("approval.grant_used", %{
+                   "action" => "linux.uptime",
+                   "grant_id" => "0af3c2d1-aaaa-bbbb-cccc-000000000000"
+                 })
+               )
+    end
+  end
+
   describe "action_run.success" do
     test "renders sub-second duration in ms" do
       assert [{"duration_ms", "850ms"}] =

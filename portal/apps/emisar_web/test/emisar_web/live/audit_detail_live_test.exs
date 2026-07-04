@@ -53,6 +53,33 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ ~s(data-copy="#audit-payload-json")
   end
 
+  test "a current-shape run event targets the runner and links back to the run", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    runner = Fixtures.Runners.create_runner(%{account_id: account.id, name: "web-02"})
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "caddy.access_log_tail",
+        source: "mcp",
+        args: %{}
+      })
+
+    {:ok, event} = Audit.record(Audit.run_event_changeset(%{run | status: :success}))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    # Target = WHERE it executed (the runner, by name)…
+    assert html =~ "web-02"
+    assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
+    # …and the card links back to WHAT ran.
+    assert html =~ "run:"
+    assert html =~ "caddy.access_log_tail"
+    assert html =~ ~p"/app/#{account}/runs/#{run.id}"
+  end
+
   test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
     conn: conn
   } do

@@ -585,7 +585,6 @@ defmodule Emisar.Audit.Event.Query do
           {"runner", "Runner"},
           {"api_key", "API key"},
           {"auth_key", "Auth key"},
-          {"action_run", "Action run"},
           {"approval_request", "Approval"},
           {"approval_grant", "Standing grant"},
           {"runbook", "Runbook"},
@@ -733,7 +732,7 @@ defmodule Emisar.Audit.Event.Query do
     "approval.expired" =>
       {false, false, true, "A held approval request lapsed without a decision (system sweep)."},
     "approval.grant_used" =>
-      {false, false, true, "A standing grant auto-approved a matching action."},
+      {true, false, true, "A standing grant auto-approved a matching action."},
     "approval.grant_revoked" => {true, true, true, "An operator revoked a standing grant."},
     "run.cancel_requested" => {true, true, true, "Someone asked to cancel an in-flight run."},
     "action_run.success" =>
@@ -809,16 +808,30 @@ defmodule Emisar.Audit.Event.Query do
   selected type targets nothing but its own actor (a sign-in, a runner
   connect — "Target type" is meaningless for self-events).
   """
-  def applicable_filters(filters, type_param) do
+  def applicable_filters(filters, type_param, params \\ %{}) do
     types = List.wrap(type_param)
 
     Enum.reject(filters, fn filter ->
       cond do
         filter.name not in @conditional_filter_names -> false
+        # A conditional facet with a LIVE value stays applicable (and visible)
+        # regardless of Type — a trace link (`?request_id=req_…` from a run's
+        # "View activity") must actually filter, and an applied-but-hidden
+        # facet would be an invisible, unclearable filter.
+        param_present?(params, filter.name) -> false
         filter.name == :target_kind -> types != [] and not any_type_supports?(types, :target_kind)
         true -> not (types != [] and any_type_supports?(types, filter.name))
       end
     end)
+  end
+
+  defp param_present?(params, name) do
+    case Map.get(params, to_string(name)) do
+      nil -> false
+      "" -> false
+      list when is_list(list) -> Enum.any?(list, &(&1 not in [nil, ""]))
+      _ -> true
+    end
   end
 
   defp any_type_supports?(types, name), do: Enum.any?(types, &type_supports?(name, &1))

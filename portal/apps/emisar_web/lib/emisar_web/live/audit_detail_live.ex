@@ -21,7 +21,8 @@ defmodule EmisarWeb.AuditDetailLive do
          |> assign(:page_title, "Audit · #{event.event_type}")
          |> assign(:event, event)
          |> assign(:refs, refs)
-         |> assign(:subject_runner, subject_runner(event, socket.assigns.current_subject))}
+         |> assign(:subject_runner, subject_runner(event, socket.assigns.current_subject))
+         |> assign(:target_run, target_run(event, socket.assigns.current_subject))}
 
       {:error, _} ->
         {:ok,
@@ -31,10 +32,10 @@ defmodule EmisarWeb.AuditDetailLive do
     end
   end
 
-  # The runner an action_run executed on — a property of the SUBJECT (the
-  # run), not the actor. nil unless the target is a run still readable in
-  # the caller's account; the run fetch is subject-gated, so cross-account
-  # ids resolve to nil rather than leaking.
+  # The runner an action_run executed on, for HISTORICAL rows only — run
+  # events now target the runner directly and this stays nil. nil unless the
+  # target is a run still readable in the caller's account; the run fetch is
+  # subject-gated, so cross-account ids resolve to nil rather than leaking.
   defp subject_runner(%{target_kind: "action_run", target_id: id}, %{} = subject)
        when is_binary(id) do
     case Runs.fetch_run_by_id(id, subject, preload: [:runner]) do
@@ -44,6 +45,24 @@ defmodule EmisarWeb.AuditDetailLive do
   end
 
   defp subject_runner(_event, _subject), do: nil
+
+  # The inverse for the CURRENT run-event shape (target = the runner, the run
+  # in `payload.run_id`): the Target card links back to the run. Same
+  # subject-gated fetch — a cross-account or deleted run resolves to nil.
+  defp target_run(%{target_kind: "runner", payload: %{} = payload}, %{} = subject) do
+    case payload["run_id"] || payload[:run_id] do
+      id when is_binary(id) ->
+        case Runs.fetch_run_by_id(id, subject) do
+          {:ok, run} -> run
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp target_run(_event, _subject), do: nil
 
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
@@ -149,6 +168,7 @@ defmodule EmisarWeb.AuditDetailLive do
           refs={@refs}
           current_account={@current_account}
           runner={@subject_runner}
+          run={@target_run}
         />
       </div>
 
@@ -320,6 +340,7 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :refs, :map, default: %{}
   attr :user_agent, :string, default: nil
   attr :runner, :map, default: nil
+  attr :run, :map, default: nil
   attr :mcp_session, :string, default: nil
   attr :mcp_client, :string, default: nil
   attr :mcp_client_host, :string, default: nil
@@ -364,9 +385,9 @@ defmodule EmisarWeb.AuditDetailLive do
         <span class="font-semibold uppercase tracking-wider">id</span>
         <.copyable_id value={@id} class="text-[10px] text-zinc-400" />
       </div>
-      <%!-- Runner line — which host an action_run executed on. A property
-           of the target (the run), with a link to the runner. No icon —
-           just `runner: name (group) version`. --%>
+      <%!-- Runner line — which host an action_run executed on (historical rows
+           whose target is the run). No icon — just `runner: name (group)
+           version`. --%>
       <p :if={@runner} class="mt-1 text-[11px] text-zinc-400">
         <span class="text-zinc-500">runner:</span>
         <.link
@@ -374,6 +395,17 @@ defmodule EmisarWeb.AuditDetailLive do
           class="text-brand-300 hover:text-brand-200"
         >
           {runner_label(@runner)}
+        </.link>
+      </p>
+      <%!-- Run line — the inverse: current run events target the RUNNER and
+           carry the run in the payload; link back to what actually ran. --%>
+      <p :if={@run} class="mt-1 text-[11px] text-zinc-400">
+        <span class="text-zinc-500">run:</span>
+        <.link
+          navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          {@run.action_id}
         </.link>
       </p>
       <%!-- Device line — what the ACTOR was using. Browser/OS for human

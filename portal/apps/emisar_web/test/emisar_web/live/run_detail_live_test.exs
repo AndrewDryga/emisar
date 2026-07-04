@@ -37,6 +37,18 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run
   end
 
+  test "View activity links the dispatch's request_id trace", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # Run events target the RUNNER, so the run's trail is its request_id trace
+    # (transitions + grant use + cancel), not a target filter.
+    assert html =~ "View activity"
+    assert html =~ ~s(request_id=#{run.request_id})
+  end
+
   test "the policy panel carries the WHY, not a verdict chip (told once by status)",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

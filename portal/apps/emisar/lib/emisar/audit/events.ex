@@ -783,13 +783,18 @@ defmodule Emisar.Audit.Events do
       run.account_id,
       "run.cancel_requested",
       actor(subject) ++
+        Audit.run_target(run) ++
         [
-          # "action_run" — the canonical run target_kind (every other run event +
-          # the audit ref_path use it); "run" here dropped cancel-requests out of a
-          # run's filtered audit trail.
-          target_kind: "action_run",
-          target_id: run.id,
-          payload: %{from_status: run.status, reason: reason}
+          # The RUN's dispatch id, not the canceller's own HTTP request — so the
+          # cancel stays in the dispatch's request_id trace (the run detail's
+          # "View activity" view). The actor's ip/ua/auth still say who asked.
+          request_id: run.request_id,
+          payload: %{
+            action: run.action_id,
+            run_id: run.id,
+            from_status: run.status,
+            reason: reason
+          }
         ]
     )
   end
@@ -798,19 +803,25 @@ defmodule Emisar.Audit.Events do
   # originating approval ride in the payload so operators can trace why it
   # fired without prompting. System actor.
   def grant_used(%Runs.ActionRun{} = run, grant, policy) do
-    Audit.changeset(run.account_id, "approval.grant_used",
-      actor_kind: "system",
-      target_kind: "action_run",
-      target_id: run.id,
-      target_label: run.action_id,
-      payload: %{
-        run_id: run.id,
-        grant_id: grant.id,
-        approval_request_id: grant.approval_request_id,
-        policy_id: policy && policy.id,
-        uses_count: grant.uses_count + 1,
-        max_uses: grant.max_uses
-      }
+    Audit.changeset(
+      run.account_id,
+      "approval.grant_used",
+      [actor_kind: "system"] ++
+        Audit.run_target(run) ++
+        [
+          # The dispatch id — groups this row with the run's own events in the
+          # request_id trace.
+          request_id: run.request_id,
+          payload: %{
+            action: run.action_id,
+            run_id: run.id,
+            grant_id: grant.id,
+            approval_request_id: grant.approval_request_id,
+            policy_id: policy && policy.id,
+            uses_count: grant.uses_count + 1,
+            max_uses: grant.max_uses
+          }
+        ]
     )
   end
 

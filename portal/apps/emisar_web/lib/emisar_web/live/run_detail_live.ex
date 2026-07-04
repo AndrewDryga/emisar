@@ -133,13 +133,13 @@ defmodule EmisarWeb.RunDetailLive do
         >
           <.icon name="hero-clipboard-document" class="-ml-0.5 mr-1 h-3.5 w-3.5" />Copy id
         </.copy_button>
-        <%!-- Close the loop: this run's slice of the audit trail (every event
-             whose subject is this run). Subject-scoped by the audit page itself,
-             so the link just pre-filters — it can't widen access. --%>
+        <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
+             groups the run's transitions, its grant use, and its cancel request
+             (run events target the RUNNER, so the old target filter would only
+             find this run's pre-rename rows). Subject-scoped by the audit page
+             itself, so the link just pre-filters — it can't widen access. --%>
         <.link
-          navigate={
-            ~p"/app/#{@current_account}/audit?#{[target_kind: "action_run", target_id: @run.id]}"
-          }
+          navigate={~p"/app/#{@current_account}/audit?#{run_trail_query(@run)}"}
           class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View activity →
@@ -465,4 +465,10 @@ defmodule EmisarWeb.RunDetailLive do
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"
   defp matched_rules_label(rules) when is_list(rules), do: Enum.join(rules, ", ")
+  # Legacy runs written before request_id stamping fall back to the old
+  # target-filter shape (which is exactly what their rows carry).
+  defp run_trail_query(%{request_id: rid}) when is_binary(rid) and rid != "",
+    do: [request_id: rid]
+
+  defp run_trail_query(run), do: [target_kind: "action_run", target_id: run.id]
 end

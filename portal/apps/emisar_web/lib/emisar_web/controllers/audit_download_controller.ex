@@ -93,7 +93,11 @@ defmodule EmisarWeb.AuditDownloadController do
   # ride outside the form.
   defp list_opts(params, _subject) do
     base_filters =
-      Audit.Event.Query.applicable_filters(Audit.Event.Query.filters(), params["event_type"])
+      Audit.Event.Query.applicable_filters(
+        Audit.Event.Query.filters(),
+        params["event_type"],
+        params
+      )
 
     params
     |> LiveTable.params_to_opts(base_filters)

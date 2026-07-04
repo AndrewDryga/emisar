@@ -191,7 +191,11 @@ defmodule EmisarWeb.AuditLive do
     # when the selected Type can't carry them (or none is set), so the filter
     # panel shows only filters that can actually narrow the log.
     base_filters =
-      Audit.Event.Query.applicable_filters(Audit.Event.Query.filters(), params["event_type"])
+      Audit.Event.Query.applicable_filters(
+        Audit.Event.Query.filters(),
+        params["event_type"],
+        params
+      )
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.
@@ -580,10 +584,16 @@ defmodule EmisarWeb.AuditLive do
     |> Enum.join(" · ")
   end
 
-  # "via magic_link" reads as prose; every other pair stays forensic "k: v".
+  # "via magic_link" reads as prose, and "action" renders as the bare command
+  # identity (`caddy.access_log_tail · duration_ms: 260ms` — the WHAT of a run
+  # row, not a k: v fact about it); every other pair stays forensic "k: v".
   defp pairs_text(event) do
     AuditSummary.summary_pairs(event)
-    |> Enum.map_join(" · ", fn {k, v} -> if(k == "via", do: "via #{v}", else: "#{k}: #{v}") end)
+    |> Enum.map_join(" · ", fn
+      {"via", v} -> "via #{v}"
+      {"action", v} -> v
+      {k, v} -> "#{k}: #{v}"
+    end)
   end
 
   defp target_text(event, refs) do
@@ -725,6 +735,9 @@ defmodule EmisarWeb.AuditLive do
   defp ref_href(%{kind: kind, id: id, current_account: account}), do: ref_path(account, kind, id)
 
   defp ref_path(account, "runner", id) when is_binary(id), do: ~p"/app/#{account}/runners/#{id}"
+  # "action_run" targets exist only on HISTORICAL rows (run events now target
+  # the runner and carry the run in payload); the trail renders history as
+  # written, so the branch stays.
   defp ref_path(account, "action_run", id) when is_binary(id), do: ~p"/app/#{account}/runs/#{id}"
 
   defp ref_path(account, "approval_request", id) when is_binary(id),

@@ -181,34 +181,68 @@ defmodule Emisar.Audit do
   parent `run` update — see `Runs.transition/3`.
   """
   def run_event_changeset(%Runs.ActionRun{} = run) do
-    changeset(run.account_id, "action_run.#{run.status}",
-      target_kind: "action_run",
-      target_id: run.id,
-      target_label: run.action_id,
-      actor_kind: actor_kind(run),
-      actor_id: run.requested_by_id || run.api_key_id,
-      # Authoritative for the run's own events, including the terminal ones
-      # logged from the runner-socket process (no request metadata there).
-      # request_id is the action-dispatch id (req_…) — the meaningful
-      # "request" for a run — promoted to a first-class field instead of
-      # being buried in (and duplicated by) the payload.
-      request_id: run.request_id,
-      mcp_session_id: run.mcp_session_id,
-      # The dispatcher's ip/ua, snapshotted on the run at create time — so even
-      # the terminal event written from the runner-socket process (no inbound
-      # request) attributes the action to its source, never the runner's socket.
-      ip_address: run.ip_address,
-      user_agent: run.user_agent,
-      payload:
-        compact(%{
-          runner_id: run.runner_id,
-          runbook_id: run.runbook_id,
-          exit_code: run.exit_code,
-          duration_ms: run.duration_ms,
-          executed_command: run.executed_command,
-          reason: run.reason_text
-        })
+    changeset(
+      run.account_id,
+      "action_run.#{run.status}",
+      run_target(run) ++
+        [
+          actor_kind: actor_kind(run),
+          actor_id: run.requested_by_id || run.api_key_id,
+          # Authoritative for the run's own events, including the terminal ones
+          # logged from the runner-socket process (no request metadata there).
+          # request_id is the action-dispatch id (req_…) — the meaningful
+          # "request" for a run — promoted to a first-class field instead of
+          # being buried in (and duplicated by) the payload.
+          request_id: run.request_id,
+          mcp_session_id: run.mcp_session_id,
+          # The dispatcher's ip/ua, snapshotted on the run at create time — so even
+          # the terminal event written from the runner-socket process (no inbound
+          # request) attributes the action to its source, never the runner's socket.
+          ip_address: run.ip_address,
+          user_agent: run.user_agent,
+          payload:
+            compact(%{
+              action: run.action_id,
+              run_id: run.id,
+              runbook_id: run.runbook_id,
+              exit_code: run.exit_code,
+              duration_ms: run.duration_ms,
+              executed_command: run.executed_command,
+              reason: run.reason_text
+            })
+        ]
     )
+  end
+
+  @doc """
+  Target fields for any run-family event: the RUNNER the run executed on —
+  the target answers "where did this happen", so an operator pivoting on it
+  gets the host's whole history (connects, disables, every run). What ran
+  (`action`) and the run's own id ride in the payload, and `request_id`
+  groups the dispatch's full story. Shared by `run_event_changeset/1` and
+  the `Audit.Events` run builders so the shape can't drift.
+  """
+  def run_target(%Runs.ActionRun{} = run) do
+    [target_kind: "runner", target_id: run.runner_id, target_label: run_runner_name(run)]
+  end
+
+  # The runner's name for the write-time label stamp — one indexed point read
+  # per audited transition when the assoc isn't loaded. `all()` on purpose (the
+  # same label-resolver seam refs use): a just-soft-deleted runner still labels
+  # its final events.
+  defp run_runner_name(%Runs.ActionRun{runner: %Emisar.Runners.Runner{name: name}}), do: name
+  defp run_runner_name(%Runs.ActionRun{runner_id: nil}), do: nil
+
+  defp run_runner_name(%Runs.ActionRun{runner_id: id}) do
+    labels =
+      Emisar.Runners.Runner.Query.all()
+      |> Emisar.Runners.Runner.Query.select_labels([id], :name)
+      |> Repo.all()
+
+    case labels do
+      [{_id, name}] -> name
+      _ -> nil
+    end
   end
 
   # Drop nil-valued keys so audit rows for pending/sent runs don't

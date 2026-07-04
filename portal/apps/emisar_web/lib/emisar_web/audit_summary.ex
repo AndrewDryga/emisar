@@ -184,11 +184,13 @@ defmodule EmisarWeb.AuditSummary do
     do: pairs(reason: get(p, :reason))
 
   defp summarize("approval.grant_used", p) do
-    case get(p, :grant_id) do
-      nil -> []
-      id when is_binary(id) -> [{"grant", String.slice(id, 0, 8)}]
-      _ -> []
-    end
+    grant =
+      case get(p, :grant_id) do
+        id when is_binary(id) -> [{"grant", String.slice(id, 0, 8)}]
+        _ -> []
+      end
+
+    pairs(action: get(p, :action)) ++ grant
   end
 
   defp summarize("approval.grant_revoked", p) do
@@ -197,25 +199,38 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   defp summarize("run.cancel_requested", p),
-    do: pairs(reason: get(p, :reason))
+    do: pairs(action: get(p, :action), reason: get(p, :reason))
 
+  # Run-family rows lead with the bare `action` — the run's identity, rendered
+  # unprefixed by the list — followed by that outcome's forensic facts.
+  # (Historical rows predate `payload.action`; `pairs/1` just drops the nil.)
   defp summarize("action_run.success", p),
-    do: pairs(duration_ms: format_duration(get(p, :duration_ms)))
+    do: pairs(action: get(p, :action), duration_ms: format_duration(get(p, :duration_ms)))
 
-  defp summarize("action_run.failed", p),
-    do: pairs(exit_code: get(p, :exit_code), duration_ms: format_duration(get(p, :duration_ms)))
+  defp summarize("action_run.failed", p) do
+    pairs(
+      action: get(p, :action),
+      exit_code: get(p, :exit_code),
+      duration_ms: format_duration(get(p, :duration_ms))
+    )
+  end
 
   defp summarize("action_run.error", p),
-    do: pairs(exit_code: get(p, :exit_code))
+    do: pairs(action: get(p, :action), exit_code: get(p, :exit_code))
 
   defp summarize("action_run.timed_out", p),
-    do: pairs(duration_ms: format_duration(get(p, :duration_ms)))
+    do: pairs(action: get(p, :action), duration_ms: format_duration(get(p, :duration_ms)))
 
   defp summarize("action_run.denied", p),
-    do: pairs(reason: get(p, :reason))
+    do: pairs(action: get(p, :action), reason: get(p, :reason))
 
   defp summarize("action_run.cancelled", p),
-    do: pairs(reason: get(p, :reason))
+    do: pairs(action: get(p, :action), reason: get(p, :reason))
+
+  # The statuses without a special summary (pending_approval, refused, …)
+  # still name what was to run.
+  defp summarize("action_run." <> _rest, p),
+    do: pairs(action: get(p, :action))
 
   defp summarize("policy.updated", p) do
     # Surface the most interesting bit: how many overrides were

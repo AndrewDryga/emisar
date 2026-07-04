@@ -547,7 +547,8 @@ defmodule Emisar.RunsTest do
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])
 
-      types = events |> Enum.filter(&(&1.target_id == run.id)) |> Enum.map(& &1.event_type)
+      types =
+        events |> Enum.filter(&(&1.payload["run_id"] == run.id)) |> Enum.map(& &1.event_type)
 
       # The terminal outcome ONLY — none of the intermediate lifecycle noise
       # (pending/sent/running) and NO policy.evaluated row: the audit-logging diet
@@ -588,10 +589,18 @@ defmodule Emisar.RunsTest do
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
       success =
-        Enum.find(events, &(&1.target_id == run.id and &1.event_type == "action_run.success"))
+        Enum.find(
+          events,
+          &(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success")
+        )
 
       assert success.ip_address == "203.0.113.7"
       assert success.user_agent == "Codex-CLI/1.0"
+
+      # The run event's target is WHERE it executed; what ran is a payload fact.
+      assert success.target_kind == "runner"
+      assert success.target_id == run.runner_id
+      assert success.payload["action"] == "linux.uptime"
     end
 
     test "wire envelope carries trusted pack hash when one is on file" do
@@ -743,7 +752,10 @@ defmodule Emisar.RunsTest do
       # the mutable run-row status. Regression: `:pending_approval` was missing from
       # `@audited_run_statuses`, so this row was silently never written.
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
-      types = events |> Enum.filter(&(&1.target_id == run.id)) |> Enum.map(& &1.event_type)
+
+      types =
+        events |> Enum.filter(&(&1.payload["run_id"] == run.id)) |> Enum.map(& &1.event_type)
+
       assert "action_run.pending_approval" in types
       refute "policy.evaluated" in types
     end
@@ -2461,7 +2473,7 @@ defmodule Emisar.RunsTest do
       event =
         Emisar.Audit.Event
         |> Repo.all()
-        |> Enum.find(&(&1.target_id == run.id and &1.event_type == "action_run.success"))
+        |> Enum.find(&(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success"))
 
       assert event.payload["executed_command"] == "uptime -p"
     end

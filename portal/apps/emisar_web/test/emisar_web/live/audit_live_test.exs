@@ -68,7 +68,7 @@ defmodule EmisarWeb.AuditLiveTest do
       for {type, target_kind} <- [
             {"user.sign_in_failed", "user"},
             {"approval.denied", "approval_request"},
-            {"action_run.success", "action_run"},
+            {"action_run.success", "runner"},
             {"runner.connected", "runner"}
           ] do
         {:ok, _} = Audit.log(account.id, type, target_kind: target_kind, target_label: "x")

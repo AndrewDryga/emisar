@@ -253,11 +253,60 @@ defmodule Emisar.AuditTest do
       # The changeset payload carries atom keys (compact/1 builds an atom-keyed
       # map; JSON serialization to string keys happens at insert time).
       payload = Ecto.Changeset.get_field(changeset, :payload)
-      # runner_id is present; the still-nil fields are compacted out.
-      assert payload[:runner_id] == runner.id
+      # What ran + the run's identity are payload facts; the still-nil
+      # fields are compacted out.
+      assert payload[:action] == "linux.uptime"
+      assert payload[:run_id] == run.id
       refute Map.has_key?(payload, :exit_code)
       refute Map.has_key?(payload, :duration_ms)
       refute Map.has_key?(payload, :executed_command)
+    end
+  end
+
+  describe "run_target/1" do
+    # The target answers WHERE: run-family rows target the runner the run
+    # executed on (pivoting on it yields the host's whole history); what ran
+    # rides in the payload.
+    test "targets the runner, labeled with its name" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      assert Audit.run_target(run) == [
+               target_kind: "runner",
+               target_id: runner.id,
+               target_label: runner.name
+             ]
+    end
+
+    test "labels from the loaded runner assoc without a lookup, and survives a missing runner" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      loaded = %{run | runner: %{runner | name: "already-loaded"}}
+      assert Audit.run_target(loaded)[:target_label] == "already-loaded"
+
+      # A hard-deleted runner (beyond soft-delete) still yields a usable
+      # target — the id stands, the label is simply absent.
+      gone = %{run | runner_id: Ecto.UUID.generate()}
+      assert Audit.run_target(gone)[:target_label] == nil
     end
   end
 
@@ -683,6 +732,16 @@ defmodule Emisar.AuditTest do
 
       applicable = Audit.Event.Query.applicable_filters(filters, nil)
       assert :target_kind in names.(applicable)
+
+      # A LIVE param keeps its conditional facet applicable regardless of Type —
+      # a trace link (`?request_id=…` from a run's "View activity") must filter,
+      # never silently show the whole trail.
+      applicable = Audit.Event.Query.applicable_filters(filters, nil, %{"request_id" => "req_x"})
+      assert :request_id in names.(applicable)
+
+      # …but a blank param is no param.
+      applicable = Audit.Event.Query.applicable_filters(filters, nil, %{"request_id" => ""})
+      refute :request_id in names.(applicable)
     end
 
     test "actor_id narrows the list to one identity", %{account: account, subject: subject} do
@@ -1446,7 +1505,7 @@ defmodule Emisar.AuditTest do
 
   describe "the event taxonomy (known types, kinds, noisy set, builders)" do
     # the Actor-type dropdown exposes exactly the six actor
-    # kinds and the Subject filter the ten subject kinds the catalog enumerates;
+    # kinds and the Target filter the nine target kinds the catalog enumerates;
     # both lists are read straight from the LiveTable %Filter{} values so a
     # silently-added/dropped kind is caught.
     test "the actor-kind and subject-kind filter enumerations match the catalog" do
@@ -1454,7 +1513,7 @@ defmodule Emisar.AuditTest do
                ~w[user api_key runner runbook scheduler system]
 
       assert filter_values(:target_kind) ==
-               ~w[user account runner api_key auth_key action_run approval_request
+               ~w[user account runner api_key auth_key approval_request
                   approval_grant runbook policy]
     end
 

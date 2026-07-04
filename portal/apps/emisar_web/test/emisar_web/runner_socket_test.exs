@@ -985,7 +985,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     {:ok, events, _meta} = Emisar.Audit.list_events(subject, page: [limit: 200])
 
     Enum.count(events, fn e ->
-      e.target_id == run.id and
+      e.payload["run_id"] == run.id and
         e.event_type in ~w(action_run.success action_run.error action_run.failed)
     end)
   end
