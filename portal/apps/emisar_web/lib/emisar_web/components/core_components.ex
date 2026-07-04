@@ -2309,11 +2309,14 @@ defmodule EmisarWeb.CoreComponents do
   # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
   # read as "still happening", not done — the one cue that separates
   # sent/running (and a held pending_approval) from a static same-hue dot.
-  defp status_dot_spec(s) when s in ~w[success connected approved published], do: {:brand, false}
+  defp status_dot_spec(s) when s in ~w[success connected approved published trusted],
+    do: {:brand, false}
+
   defp status_dot_spec(s) when s in ~w[running sent], do: {:brand, true}
   defp status_dot_spec("pending_approval"), do: {:amber, true}
   defp status_dot_spec("refused"), do: {:amber, false}
   defp status_dot_spec("offline"), do: {:amber, false}
+  defp status_dot_spec("pending"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
 
   defp status_dot_spec(s)
@@ -3022,35 +3025,33 @@ defmodule EmisarWeb.CoreComponents do
 
   def collapsible_section(assigns) do
     ~H"""
-    <.card padding="p-0" class={@class}>
-      <details
-        id={@id}
-        phx-hook="CollapsibleSection"
-        data-collapse-key={@id}
-        open={@open}
-        class="group/sect"
-      >
-        <%!-- The whole header is the toggle: a calm hover tint signals it's
-             clickable, the radius stays concentric with the card (square bottom
-             once open so it meets the body cleanly), and the chevron brightens +
-             flips for state. The summary slot rides just left of the chevron. --%>
-        <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-5 py-4 transition-colors hover:bg-zinc-800/40 group-open/sect:rounded-b-none [&::-webkit-details-marker]:hidden">
-          <h2 class="min-w-0 flex-1 truncate font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            {@title}
-          </h2>
-          <div class="flex shrink-0 items-center gap-2.5">
-            {render_slot(@summary)}
-            <.icon
-              name="hero-chevron-down"
-              class="h-4 w-4 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-180"
-            />
-          </div>
-        </summary>
-        <div class="border-t border-zinc-800/70 px-5 pb-5 pt-4">
-          {render_slot(@inner_block)}
+    <details
+      id={@id}
+      phx-hook="CollapsibleSection"
+      data-collapse-key={@id}
+      open={@open}
+      class={["group/sect border-t border-zinc-800/70", @class]}
+    >
+      <%!-- CONTENT ON CANVAS: a disclosure LINE on a hairline, not a boxed
+           card (the audit Filters-line grammar). The whole row is the toggle;
+           the chevron rotates for state; the summary slot rides just left of
+           the chevron. --%>
+      <summary class="flex cursor-pointer list-none items-center gap-3 py-3.5 transition-colors [&::-webkit-details-marker]:hidden">
+        <.icon
+          name="hero-chevron-right"
+          class="h-3 w-3 shrink-0 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-90"
+        />
+        <h2 class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300 transition group-hover/sect:text-zinc-100">
+          {@title}
+        </h2>
+        <div class="flex shrink-0 items-center gap-2.5">
+          {render_slot(@summary)}
         </div>
-      </details>
-    </.card>
+      </summary>
+      <div class="pb-5 pl-5 pt-1">
+        {render_slot(@inner_block)}
+      </div>
+    </details>
     """
   end
 

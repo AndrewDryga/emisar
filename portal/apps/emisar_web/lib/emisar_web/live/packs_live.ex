@@ -450,39 +450,32 @@ defmodule EmisarWeb.PacksLive do
         No packs match "{@name_filter}".
       </p>
 
-      <ul id="packs" phx-update="stream" class="mt-4 space-y-4">
-        <%!-- Sanctioned hand-rolled card (see .agent/rules/ui-shared-components.md):
-             a stream <li> wrapping a nested version list, so it can't be a <div>
-             <.card> and isn't a flat <.list_row>. Keep the card chrome inline. --%>
-        <li
-          :for={{dom_id, pack} <- @streams.packs}
-          id={dom_id}
-          class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
-        >
-          <header class="flex items-center justify-between gap-4 border-b border-zinc-900 px-5 py-3">
-            <div class="flex items-center gap-2">
-              <.icon name="hero-cube" class="h-4 w-4 text-zinc-500" />
-              <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
-              <span class="text-xs text-zinc-500">·</span>
-              <span class="text-xs text-zinc-500">{version_count_label(pack.versions)}</span>
-              <.chip :if={any_pending?(pack.versions)} tone={:amber} class="ml-2">
-                pending
-              </.chip>
-            </div>
+      <ul id="packs" phx-update="stream" class="mt-4">
+        <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
+             naked group — mono pack id + version count on a hairline — with
+             its version rows below. The stream <li> wraps label + rows. --%>
+        <li :for={{dom_id, pack} <- @streams.packs} id={dom_id} class="pt-5 first:pt-0">
+          <header class="flex items-baseline gap-2 border-b border-zinc-800/70 pb-2">
+            <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
+            <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
+            <.status_badge
+              :if={any_pending?(pack.versions)}
+              status="pending"
+              class="ml-2 text-[11px]"
+            />
           </header>
 
           <ul class="divide-y divide-zinc-800/70">
-            <li :for={v <- pack.versions} class="flex flex-col gap-3 px-5 py-3">
+            <li :for={v <- pack.versions} class="flex flex-col gap-3 py-3">
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <div class="flex min-w-0 items-center gap-3">
-                  <.chip mono>v{v.version}</.chip>
+                  <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <%!-- Lowercase like every status chip in the console — packs
-                       was the lone uppercase holdout (one casing, one family). --%>
-                  <.chip :if={v.trust_state == :trusted} tone={:brand}>trusted</.chip>
-                  <.chip :if={v.trust_state == :pending} tone={:amber}>pending</.chip>
+                  <%!-- Trust state reads as the dot + word, not a filled pill —
+                       the same status grammar as every run/runner row. --%>
+                  <.status_badge status={to_string(v.trust_state)} />
                   <%!-- If this exact trusted hash is a published pack version,
                        link out to its public registry page (opens in a new tab). --%>
                   <.registry_link version={v} />
@@ -658,23 +651,25 @@ defmodule EmisarWeb.PacksLive do
               <details
                 :if={v.trust_state == :trusted}
                 open={MapSet.member?(@open_versions, v.id)}
-                class="group rounded bg-black/30 ring-1 ring-white/[0.08]"
+                class="group"
               >
+                <%!-- A disclosure LINE, not a boxed inset — the audit
+                     Filters-line grammar. --%>
                 <summary
                   phx-click="inspect_pack"
                   phx-value-id={v.id}
                   phx-value-pack-id={pack.id}
                   phx-value-version={v.version}
-                  class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[11px] text-zinc-400 hover:text-zinc-200"
+                  class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
                 >
                   <.icon
                     name="hero-chevron-right"
-                    class="h-3.5 w-3.5 transition-transform group-open:rotate-90"
+                    class="h-3 w-3 transition-transform group-open:rotate-90"
                   />
                   <span class="group-open:hidden">View contents</span>
                   <span class="hidden group-open:inline">Trusted contents</span>
                 </summary>
-                <div class="border-t border-zinc-900 px-3 py-2">
+                <div class="mt-2 pl-4">
                   <p :if={is_nil(@inspected_actions[v.id])} class="text-[11px] text-zinc-500">
                     Loading…
                   </p>
