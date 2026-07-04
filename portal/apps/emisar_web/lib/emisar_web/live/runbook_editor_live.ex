@@ -575,25 +575,30 @@ defmodule EmisarWeb.RunbookEditorLive do
            the very field it validates. --%>
       <% ready_to_publish = publishable?(@steps) %>
       <%!-- Save draft leads until every step can actually run (has an action AND
-           a target). Publishing an unrunnable runbook is a footgun on a
-           brand-new one, so it stays de-emphasized until it's ready. --%>
+           a target) — publishing an unrunnable runbook is a footgun on a
+           brand-new one. The PRIMARY always holds the first slot, so the
+           hierarchy reads the same in both states. --%>
       <div class="mt-6 flex items-center gap-3 border-t border-zinc-900 pt-4">
-        <.button
-          variant={if(ready_to_publish, do: :primary, else: :secondary)}
-          type="button"
-          phx-click="publish"
-          phx-disable-with="Publishing..."
-        >
-          Publish
-        </.button>
-        <.button
-          variant={if(ready_to_publish, do: :secondary, else: :primary)}
-          type="button"
-          phx-click="save"
-          phx-disable-with="Saving..."
-        >
-          Save draft
-        </.button>
+        <%= if ready_to_publish do %>
+          <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
+            Publish
+          </.button>
+          <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
+            Save draft
+          </.button>
+        <% else %>
+          <.button type="button" phx-click="save" phx-disable-with="Saving...">
+            Save draft
+          </.button>
+          <.button
+            variant={:secondary}
+            type="button"
+            phx-click="publish"
+            phx-disable-with="Publishing..."
+          >
+            Publish
+          </.button>
+        <% end %>
       </div>
     </.dashboard_shell>
     """

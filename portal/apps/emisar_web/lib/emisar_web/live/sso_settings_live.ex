@@ -927,8 +927,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     >
       <:title>
         <%!-- The detail view titles itself with the connection, like every
-             other detail page (detail_header family); the list keeps the
-             section name. --%>
+             other detail page (detail_header family); /new titles itself with
+             its JOB (§7.1); the list carries the section name with a back link
+             to Team, its owning page (SSO has no nav item of its own). --%>
         <%= case {@live_action, @providers} do %>
           <% {:show, [provider | _]} -> %>
             <.detail_header
@@ -936,7 +937,13 @@ defmodule EmisarWeb.SSOSettingsLive do
               navigate={~p"/app/#{@current_account}/settings/sso"}
               title={provider.name}
             />
+          <% {:new, _} -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/sso"}>
+              Single sign-on
+            </.back_link>
+            Add an identity provider
           <% _ -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Single sign-on
         <% end %>
       </:title>
@@ -961,19 +968,12 @@ defmodule EmisarWeb.SSOSettingsLive do
              sub-header over sibling field islands (Provider · OIDC · …), never
              one giant card. --%>
         <div :if={@live_action == :new} class="space-y-5">
-          <div>
-            <.link
-              navigate={~p"/app/#{@current_account}/settings/sso"}
-              class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
-            >
-              <.icon name="hero-arrow-left" class="h-4 w-4" /> Connections
-            </.link>
-            <h2 class="mt-3 text-lg font-semibold text-zinc-100">Add an identity provider</h2>
-            <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
-              We'll use the issuer's OIDC discovery document. Follow the steps in each section to
-              create an OAuth/OIDC app at your provider, then paste its client ID and secret.
-            </p>
-          </div>
+          <%!-- The shell title carries the job + the ONE back affordance; no
+               second in-body title. --%>
+          <p class="max-w-prose text-sm leading-relaxed text-zinc-500">
+            We'll use the issuer's OIDC discovery document. Follow the steps in each section to
+            create an OAuth/OIDC app at your provider, then paste its client ID and secret.
+          </p>
 
           <.simple_form
             :if={@form}
