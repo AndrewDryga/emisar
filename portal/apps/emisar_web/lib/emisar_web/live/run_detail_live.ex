@@ -402,7 +402,17 @@ defmodule EmisarWeb.RunDetailLive do
              concatenate and only the real newlines break lines. Block
              elements or template indentation here would double the
              spacing, since <pre> makes all whitespace significant. --%>
+        <%!-- A terminal run that streamed nothing gets one quiet line instead
+             of a 24rem black void (the in-flight min-height stays — more may
+             be coming). --%>
+        <p
+          :if={not @output_present? and @run.status not in [:sent, :running]}
+          class="bg-black p-4 font-mono text-xs text-zinc-600"
+        >
+          No output captured.
+        </p>
         <pre
+          :if={@output_present? or @run.status in [:sent, :running]}
           id="run-output"
           phx-update="stream"
           class="max-h-[60vh] min-h-[24rem] overflow-auto whitespace-pre-wrap break-all bg-black p-4 font-mono text-xs leading-normal text-zinc-300"

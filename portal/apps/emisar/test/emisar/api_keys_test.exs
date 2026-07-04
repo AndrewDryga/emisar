@@ -926,6 +926,20 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "subject_can_issue_quick_key?/1" do
+    test "operators and above can quick-mint; viewers cannot" do
+      account = Fixtures.Accounts.create_account()
+
+      operator =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert ApiKeys.subject_can_issue_quick_key?(operator)
+      refute ApiKeys.subject_can_issue_quick_key?(viewer)
+    end
+  end
+
   describe "subject_can_manage_api_keys?/1" do
     test "is true for an owner and an admin (they hold manage_api_keys)" do
       {_owner, account, owner_subject} = owner_subject_pair()

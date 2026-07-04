@@ -1087,6 +1087,10 @@ defmodule Emisar.Runners do
   def subject_can_manage_runners?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runners_permission())
 
+  @doc "Whether the subject can mint an install key / connect a host (operators and above)."
+  def subject_can_install_runners?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission())
+
   @doc "Whether `subject` may manage runner auth keys (admin+)."
   def subject_can_manage_auth_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_auth_keys_permission())

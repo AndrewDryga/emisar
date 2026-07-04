@@ -34,7 +34,7 @@ defmodule EmisarWeb.AuditDownloadController do
 
       not Billing.audit_export_available?(account) ->
         conn
-        |> put_flash(:error, "Audit export is available on the Team plan.")
+        |> put_flash(:info, "Audit export is available on the Team plan.")
         |> redirect(to: ~p"/app/#{account}/settings/billing")
 
       true ->

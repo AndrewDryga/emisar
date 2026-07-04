@@ -254,7 +254,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       # retire it from a crafted event (managing keys needs admin+).
       owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
-      {:ok, _raw, key} =
+      {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
           %{name: "Owner export token", scopes: ["audit:read"]},
           owner_subject
@@ -359,7 +359,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
                live(conn, ~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/settings/billing"
-      assert %{"error" => "Audit export is available on the Team plan."} = flash
+      assert %{"info" => "Audit export is available on the Team plan."} = flash
     end
 
     test "the SIEM card is hidden from a non-manager (operator)", %{account: account} do
@@ -379,7 +379,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
                build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/audit"
-      assert %{"error" => "Managing export tokens needs an admin role."} = flash
+      assert %{"info" => "Managing export tokens needs an admin role."} = flash
     end
 
     test "another account's export tokens never appear in this account's SIEM list",

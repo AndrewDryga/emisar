@@ -502,7 +502,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Single sign-on is a paid feature"
+      assert html =~ "Single sign-on needs an owner or admin role."
       refute html =~ "Acme Okta"
     end
   end
@@ -1061,6 +1061,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
+      # An OWNER holds the permission — this lock is the PLAN's, so it upsells.
       assert html =~ "Single sign-on is a paid feature"
       assert html =~ "See plans"
       refute html =~ "Connect your organization"
@@ -1085,7 +1086,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
-      assert html =~ "Single sign-on is a paid feature"
+      assert html =~ "Single sign-on needs an owner or admin role."
       refute html =~ "Add an identity provider"
     end
   end

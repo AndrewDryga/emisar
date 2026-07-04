@@ -212,16 +212,16 @@ defmodule EmisarWeb.AuthKeysLiveTest do
         role: "viewer"
       )
 
-    # Manage-only page: a viewer is bounced at LOAD time (reads as
-    # not-found), never reaching the form to fail on submit.
-    dest = ~p"/app/#{account}"
+    # Manage-only page: a viewer is bounced at LOAD time with the honest
+    # why-not, never reaching the form to fail on submit.
+    dest = ~p"/app/#{account}/runners"
 
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              build_conn()
              |> log_in_user(viewer)
              |> live(~p"/app/#{account}/runners/keys")
 
-    assert flash["error"] == "Page not found."
+    assert flash["info"] == "Runner keys need an owner or admin role."
   end
 
   test "a list_changed broadcast refreshes the key list", %{conn: conn} do
@@ -331,9 +331,8 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
   # the page is manage-only (auth keys have no
   # view permission). An operator (view-only on runners, no manage_auth_keys) is
-  # bounced at LOAD time with "Page not found." — they never reach the form or a
-  # `revoke` event. (The viewer redirect is covered above; this is the operator,
-  # the highest non-manage role.)
+  # bounced at LOAD time with an honest why-not back to Runners — they never
+  # reach the form or a `revoke` event.
   test "an operator is redirected at mount — the page is manage-only", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
@@ -346,14 +345,14 @@ defmodule EmisarWeb.AuthKeysLiveTest do
         role: "operator"
       )
 
-    dest = ~p"/app/#{account}"
+    dest = ~p"/app/#{account}/runners"
 
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              build_conn()
              |> log_in_user(operator)
              |> live(~p"/app/#{account}/runners/keys")
 
-    assert flash["error"] == "Page not found."
+    assert flash["info"] == "Runner keys need an owner or admin role."
   end
 
   # the list is account-scoped (A's admin sees

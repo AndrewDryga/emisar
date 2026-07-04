@@ -136,7 +136,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     # a viewer holds `view_runners`, so the list page
     # renders for them (it's not manage-gated). The "Add a runner" affordance is
     # a plain link to the install wizard, present on the page header.
-    test "a viewer can view the runners list; 'Add a runner' links to install", %{conn: conn} do
+    test "a viewer can view the runners list; install affordances are issue-tier", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "viewable-runner")
 
@@ -153,8 +153,9 @@ defmodule EmisarWeb.RunnersLiveTest do
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "viewable-runner"
-      # "Add a runner" is a link to the install wizard, not a server action.
-      assert has_element?(
+      # "Add a runner" points at a mint the viewer can't perform — hidden
+      # (§4), like the Runner keys door.
+      refute has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/runners/install"}']",
                "Add a runner"

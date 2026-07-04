@@ -1519,6 +1519,10 @@ defmodule Emisar.SSO do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "Permission HALF of the SSO gate — a permission-lock and a plan-lock are different messages."
+  def subject_can_manage_sso?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission())
+
   @doc "True when the subject may configure OIDC SSO — `manage_sso` on the Team or Enterprise plan."
   def subject_can_configure_sso?(%Subject{account: account} = subject) do
     Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()) and

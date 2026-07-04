@@ -54,29 +54,24 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       refute html =~ "couldn't mint a bootstrap auth key"
     end
 
-    # a viewer lacks `issue_install_key`, so
-    # `mint_install_key` returns {:error, :unauthorized} and the LV renders the
-    # `:mint_failed` failure path (pointing at the auth-keys page) instead of a
-    # command. The page is reachable (it has no view gate) — the mint is the gate.
-    test "a viewer gets the :mint_failed failure path, not a command", %{account: account} do
+    test "a viewer is redirected at mount — install is issue-tier", %{conn: conn} do
+      {_conn, _owner, account} = register_and_log_in(conn)
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
-      {:ok, _lv, html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/install")
+      dest = ~p"/app/#{account}/runners"
 
-      assert html =~ "couldn&#39;t mint a runner key"
-      assert html =~ "Runners &rarr; Runner keys" or html =~ "Runners → Runner keys"
-      # No live command was rendered for the viewer.
-      refute html =~ ~s(data-copy-text=" curl -sSL)
-      # …and no key was minted on their behalf.
-      assert Repo.all(AuthKey) == []
+      assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+               build_conn()
+               |> log_in_user(viewer)
+               |> live(~p"/app/#{account}/runners/install")
+
+      assert %{"info" => "Connecting a runner needs an operator role or above."} = flash
     end
 
     # the connected mount mints exactly one

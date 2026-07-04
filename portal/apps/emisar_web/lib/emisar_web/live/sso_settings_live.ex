@@ -52,6 +52,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       socket
       |> assign(:page_title, "Single sign-on")
       |> assign(:can_configure?, SSO.subject_can_configure_sso?(socket.assigns.current_subject))
+      |> assign(:has_sso_permission?, SSO.subject_can_manage_sso?(socket.assigns.current_subject))
       |> assign(
         :can_configure_directory_sync?,
         SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject)
@@ -954,7 +955,18 @@ defmodule EmisarWeb.SSOSettingsLive do
       </:actions>
 
       <div :if={not @can_configure?}>
-        <.locked current_account={@current_account} />
+        <%!-- Two different locks, two different messages (§4): a role gate is
+             not an upsell, and pitching plans to an admin-less operator on an
+             Enterprise account read as a billing bug. --%>
+        <.empty_state
+          :if={not @has_sso_permission?}
+          icon="hero-lock-closed"
+          title="Single sign-on needs an owner or admin role."
+        >
+          Providers, enforcement, and directory sync are configured by account
+          owners and admins.
+        </.empty_state>
+        <.locked :if={@has_sso_permission?} current_account={@current_account} />
       </div>
 
       <div :if={@can_configure?} class="space-y-6">

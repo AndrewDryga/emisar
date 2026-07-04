@@ -3824,6 +3824,9 @@ defmodule EmisarWeb.CoreComponents do
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
   attr :keys_path, :string, default: "/app/runners/keys"
+  # The multi-use pointer targets a manage-only page — hide it for callers
+  # whose subject can't open it (an in-product link must never 404).
+  attr :show_keys_link, :boolean, default: true
 
   def install_wizard(assigns) do
     ~H"""
@@ -3874,7 +3877,7 @@ defmodule EmisarWeb.CoreComponents do
                   exactly one host, then expires. Treat it like a password — paste it straight
                   onto the host, never into a chat or ticket.
                 </p>
-                <p class="mt-1.5">
+                <p :if={@show_keys_link} class="mt-1.5">
                   Baking an image, or enrolling a whole fleet with cloud-init? Mint a
                   <span class="font-semibold">multi-use</span>
                   key under

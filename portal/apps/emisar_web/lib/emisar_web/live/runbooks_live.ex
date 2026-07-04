@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunbooksLive do
   button that opens the parameterized dispatch form.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runbooks}
+  alias Emisar.{Catalog, Runbooks, Runs}
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
@@ -105,7 +105,13 @@ defmodule EmisarWeb.RunbooksLive do
       width={:table}
     >
       <:title>Runbooks</:title>
-      <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
+      <%!-- Hidden while the account-empty pitch carries its own Create CTA —
+           two identical affordances on one screen. --%>
+      <:actions :if={
+        Runbooks.subject_can_manage_runbooks?(@current_subject) and
+          not (@runbooks == [] and @metadata.count == 0 and
+                 not LiveTable.has_active_filters?(@filter_params, @filters))
+      }>
         <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size={:md} icon="hero-plus">
           New runbook
         </.button>
@@ -132,7 +138,7 @@ defmodule EmisarWeb.RunbooksLive do
           </.empty_state>
         <% @runbooks == [] && @metadata.count == 0 &&
              not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-          <.empty_state variant={:bare} icon="hero-book-open" title="No runbooks yet">
+          <.empty_state variant={:bare} icon="hero-book-open" title="No runbooks yet.">
             Runbooks are cloud-side workflows that expand into ordered action dispatches.
             Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
             <:cta
@@ -160,14 +166,23 @@ defmodule EmisarWeb.RunbooksLive do
             <%!-- Canvas rows; the per-row icon disc died with the island. --%>
             <:item :let={runbook}>
               <.list_row padding="py-4">
-                <%!-- Row 1: title (link to editor) + status pill + version --%>
+                <%!-- Row 1: title (managers → editor; everyone else plain —
+                     linking a viewer into a form they can't save loses their
+                     20 minutes to a denial flash) + status pill + version --%>
                 <:title>
                   <.link
+                    :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
                     class="truncate font-medium text-zinc-100 hover:text-brand-300"
                   >
                     {runbook.title}
                   </.link>
+                  <span
+                    :if={not Runbooks.subject_can_manage_runbooks?(@current_subject)}
+                    class="truncate font-medium text-zinc-100"
+                  >
+                    {runbook.title}
+                  </span>
                   <.status_badge status={runbook.status} />
                   <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
                   <%!-- Headline risk — the most-severe step's risk, so the
@@ -188,7 +203,10 @@ defmodule EmisarWeb.RunbooksLive do
                   <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. --%>
                   <.button
-                    :if={runbook.status == :published}
+                    :if={
+                      runbook.status == :published and
+                        Runs.subject_can_dispatch_run?(@current_subject)
+                    }
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
                     variant={:secondary}
                     size={:sm}

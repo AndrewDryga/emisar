@@ -328,6 +328,10 @@ defmodule EmisarWeb.RunnerDetailLive do
                        runner) the portal can't dispatch at all. Gate the button
                        visually so operators don't queue work that won't run. --%>
                   <%= cond do %>
+                    <% not Runs.subject_can_dispatch_run?(@current_subject) -> %>
+                      <%!-- Viewers read the catalog; the Run affordance isn't
+                           theirs to have (§4 — hidden, not dead). --%>
+                      <span></span>
                     <% @runner.enforce_signatures -> %>
                       <%!-- Signed-only: the portal can't dispatch here. aria-disabled
                            (focusable, so the title explains WHY) + the lock icon carry

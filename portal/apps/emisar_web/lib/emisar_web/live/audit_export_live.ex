@@ -16,13 +16,13 @@ defmodule EmisarWeb.AuditExportLive do
         # console trail stays on every plan; taking the data OUT is paid.
         {:ok,
          socket
-         |> put_flash(:error, "Audit export is available on the Team plan.")
+         |> put_flash(:info, "Audit export is available on the Team plan.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/billing")}
 
       not ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) ->
         {:ok,
          socket
-         |> put_flash(:error, "Managing export tokens needs an admin role.")
+         |> put_flash(:info, "Managing export tokens needs an admin role.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
 
       true ->

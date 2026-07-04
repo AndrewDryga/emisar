@@ -26,6 +26,19 @@ defmodule EmisarWeb.RunnerInstallLive do
   alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
+    # Install mints a root-capable key at mount — a role that can't mint got a
+    # gutted wizard framing the permanent denial as a retryable failure.
+    if Runners.subject_can_install_runners?(socket.assigns.current_subject) do
+      mount_install(socket)
+    else
+      {:ok,
+       socket
+       |> put_flash(:info, "Connecting a runner needs an operator role or above.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
+    end
+  end
+
+  defp mount_install(socket) do
     socket =
       if connected?(socket) do
         Runners.subscribe_connections(socket.assigns.current_account.id)
@@ -104,6 +117,7 @@ defmodule EmisarWeb.RunnerInstallLive do
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
         keys_path={~p"/app/#{@current_account}/runners/keys"}
+        show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
       />
 
       <%!-- Follow-up resources, not part of the guided step — siblings

@@ -15,6 +15,20 @@ defmodule EmisarWeb.RunbookRunLive do
   @output_preview_lines 8
 
   def mount(%{"id" => id}, _session, socket) do
+    # A dispatch surface — a role that can't dispatch would get a live Run
+    # form (and, plan resolution being dispatch-gated, LOSE the read posture
+    # too). Runbook contents stay readable from the list.
+    if Runs.subject_can_dispatch_run?(socket.assigns.current_subject) do
+      mount_run_page(id, socket)
+    else
+      {:ok,
+       socket
+       |> put_flash(:info, "Running a runbook needs an operator role or above.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
+    end
+  end
+
+  defp mount_run_page(id, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
         # The runbook fetch above gates render/redirect, so it stays in

@@ -1715,6 +1715,20 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "subject_can_install_runners?/1" do
+    test "operators and above can mint an install key; viewers cannot" do
+      account = Fixtures.Accounts.create_account()
+
+      operator =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert Runners.subject_can_install_runners?(operator)
+      refute Runners.subject_can_install_runners?(viewer)
+    end
+  end
+
   describe "subject_can_manage_auth_keys?/1" do
     test "true for an owner, false for a viewer" do
       {account, _user, owner} = account_with_owner_subject()

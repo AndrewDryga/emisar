@@ -12,7 +12,16 @@ defmodule EmisarWeb.RunbookEditorLive do
   alias EmisarWeb.Permissions
 
   def mount(params, _session, socket) do
-    {:ok, apply_action(socket, socket.assigns.live_action, params)}
+    # The editor is a manage surface — rendering a live form to a role whose
+    # Save can only deny would trade twenty minutes of edits for a flash.
+    if Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject) do
+      {:ok, apply_action(socket, socket.assigns.live_action, params)}
+    else
+      {:ok,
+       socket
+       |> put_flash(:info, "Runbooks are edited by owners and admins.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
+    end
   end
 
   defp apply_action(socket, :new, _params) do

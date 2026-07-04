@@ -2591,6 +2591,19 @@ defmodule Emisar.SSOTest do
 
   # -- subject_can_configure_sso?/1 ------------------------------------
 
+  describe "subject_can_manage_sso?/1" do
+    test "permission-only: true for an admin even on a plan without SSO" do
+      account = Fixtures.Accounts.create_account()
+      admin = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :admin)
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      # Free plan: the permission half holds; the plan half (configure_sso?) doesn't.
+      assert SSO.subject_can_manage_sso?(admin)
+      refute SSO.subject_can_configure_sso?(admin)
+      refute SSO.subject_can_manage_sso?(viewer)
+    end
+  end
+
   describe "subject_can_configure_sso?/1" do
     test "true for an enterprise owner (manage_sso + SSO plan)" do
       {_user, _account, subject} = enterprise_owner()

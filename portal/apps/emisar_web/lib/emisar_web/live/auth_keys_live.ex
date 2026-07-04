@@ -28,8 +28,8 @@ defmodule EmisarWeb.AuthKeysLive do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Page not found.")
-       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}")}
+       |> put_flash(:info, "Runner keys need an owner or admin role.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
   end
 

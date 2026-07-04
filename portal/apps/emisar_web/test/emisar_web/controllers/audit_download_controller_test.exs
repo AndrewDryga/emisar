@@ -53,7 +53,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
 
       assert redirected_to(conn) == ~p"/app/#{account}/settings/billing"
 
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) ==
                "Audit export is available on the Team plan."
 
       assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []

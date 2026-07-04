@@ -301,13 +301,15 @@ defmodule EmisarWeb.RunNewLiveTest do
       |> log_in_user(viewer)
       |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
+    # The form's inputs are hidden for a viewer — submit a raw payload to
+    # prove the EVENT-level gate (IL-15) holds regardless of the rendered UI.
     html =
       lv
-      |> form("#dispatch_form", %{
+      |> form("#dispatch_form", %{})
+      |> render_submit(%{
         "args" => %{"path" => "/var/log/app.log"},
         "reason" => "viewer trying anyway"
       })
-      |> render_submit()
 
     assert html =~ "You don&#39;t have permission to do that."
   end

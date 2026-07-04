@@ -170,7 +170,12 @@ defmodule EmisarWeb.RunnersLive do
         >
           Runner keys
         </.button>
-        <.button navigate={~p"/app/#{@current_account}/runners/install"} size={:md} icon="hero-plus">
+        <.button
+          :if={Runners.subject_can_install_runners?(@current_subject)}
+          navigate={~p"/app/#{@current_account}/runners/install"}
+          size={:md}
+          icon="hero-plus"
+        >
           Add a runner
         </.button>
       </:actions>
@@ -190,6 +195,14 @@ defmodule EmisarWeb.RunnersLive do
             This is a load error, not an empty fleet — a host may well be connected. Refresh the
             page; if it persists, your access to this account may have changed.
           </.empty_state>
+        <% @show_wizard? and not Runners.subject_can_install_runners?(@current_subject) -> %>
+          <%!-- Zero fleet, no install permission: the pitch without a wizard
+               whose mint can only fail. --%>
+          <.empty_state variant={:bare} icon="hero-server-stack" title="No runners yet.">
+            A runner is the emisar binary on one of your hosts — ask an operator,
+            admin, or owner to connect the first one; its live state will appear
+            here.
+          </.empty_state>
         <% @show_wizard? -> %>
           <%!-- No runners yet → the empty state IS the installer. A runner is the
                emisar binary on one of your hosts; paste the one-liner to connect
@@ -199,6 +212,7 @@ defmodule EmisarWeb.RunnersLive do
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
             keys_path={~p"/app/#{@current_account}/runners/keys"}
+            show_keys_link={Runners.subject_can_manage_auth_keys?(@current_subject)}
           />
 
           <%!-- Follow-up resources, siblings below the wizard — same as the

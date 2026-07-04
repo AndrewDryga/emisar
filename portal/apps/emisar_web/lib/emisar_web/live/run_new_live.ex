@@ -357,8 +357,10 @@ defmodule EmisarWeb.RunNewLive do
             <.arg_input :for={arg <- @args_schema} arg={arg} form={@form} />
 
             <%!-- Mark-optional-only: Reason is required, so it carries no marker;
-                 the audit-transparency note moves to a hint below the field. --%>
-            <div>
+                 the audit-transparency note moves to a hint below the field.
+                 Dispatchers only — an editable form above a "you can't run
+                 this" note handed viewers dead inputs. --%>
+            <div :if={@can_dispatch?}>
               <.input
                 name="reason"
                 value={@reason}

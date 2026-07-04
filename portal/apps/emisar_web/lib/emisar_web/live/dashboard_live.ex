@@ -161,6 +161,7 @@ defmodule EmisarWeb.DashboardLive do
         can_view_runners?={@can_view_runners?}
         can_view_runs?={@can_view_runs?}
         can_view_agents?={@can_view_agents?}
+        approvals_decider?={Approvals.subject_can_decide_approval?(@current_subject)}
       />
     </.dashboard_shell>
     """
@@ -196,6 +197,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_view_runners?, :boolean, default: true
   attr :can_view_runs?, :boolean, default: true
   attr :can_view_agents?, :boolean, default: true
+  attr :approvals_decider?, :boolean, default: false
 
   defp live_dashboard(assigns) do
     ~H"""
@@ -244,10 +246,10 @@ defmodule EmisarWeb.DashboardLive do
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <div class="flex min-w-0 flex-wrap items-baseline gap-3">
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            Awaiting your approval
+            {if @approvals_decider?, do: "Awaiting your approval", else: "Pending approvals"}
           </h2>
           <span class="text-xs tabular-nums text-amber-300">
-            {@pending_approvals_count} waiting on you
+            {@pending_approvals_count} {if @approvals_decider?, do: "waiting on you", else: "pending"}
           </span>
         </div>
         <.link

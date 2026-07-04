@@ -107,7 +107,9 @@ defmodule EmisarWeb.AgentsLive do
     # quick-mints can be scoped too, not only Custom-tab keys.
     Permissions.gated(
       socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      # Quick-mint is the ISSUE tier (operators and above) — gating it on
+      # manage broke the flow for the very role the picker rendered for.
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
       fn socket ->
         name = client_label(id)
 
@@ -728,7 +730,7 @@ defmodule EmisarWeb.AgentsLive do
       </:title>
       <:actions :if={
         @live_action == :index and not @show_connect_inline? and
-          ApiKeys.subject_can_manage_api_keys?(@current_subject)
+          ApiKeys.subject_can_issue_quick_key?(@current_subject)
       }>
         <.button
           navigate={~p"/app/#{@current_account}/settings/agents/connect"}
@@ -751,8 +753,21 @@ defmodule EmisarWeb.AgentsLive do
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
+      <.empty_state
+        :if={
+          @live_action == :connect and
+            not ApiKeys.subject_can_issue_quick_key?(@current_subject)
+        }
+        variant={:bare}
+        icon="hero-cpu-chip"
+        title="Connecting an agent needs an operator role or above."
+      >
+        Ask an operator, admin, or owner to mint the key — you'll see the
+        agent and its activity here once it's connected.
+      </.empty_state>
+
       <.connect_panel
-        :if={@live_action == :connect}
+        :if={@live_action == :connect and ApiKeys.subject_can_issue_quick_key?(@current_subject)}
         configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
         selected_client={@selected_client}
         quick_secret={@quick_secret}
@@ -812,7 +827,16 @@ defmodule EmisarWeb.AgentsLive do
         <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
           Connect an agent
         </h2>
-        <div class="mt-3">
+        <%!-- A role that can't mint gets the honest note, not a picker whose
+             every chip dies in a denial flash. --%>
+        <p
+          :if={not ApiKeys.subject_can_issue_quick_key?(@current_subject)}
+          class="mt-3 max-w-prose text-sm leading-relaxed text-zinc-500"
+        >
+          Connecting an agent needs an operator role or above — ask an operator,
+          admin, or owner to mint the key.
+        </p>
+        <div :if={ApiKeys.subject_can_issue_quick_key?(@current_subject)} class="mt-3">
           <.connect_panel
             configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
             selected_client={@selected_client}

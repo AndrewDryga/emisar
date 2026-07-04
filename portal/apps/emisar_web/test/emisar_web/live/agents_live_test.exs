@@ -817,11 +817,9 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     # an operator holds
-    # view_api_keys (the page renders) and issue_quick_key, but the agents page
-    # gates ALL mints + create + revoke on the stricter manage_api_keys (admin+).
-    # So every forced mutating event — select_client (quick-mint), create, revoke —
-    # gets the gated flash and writes nothing.
-    test "an operator can view but every mutating event is gated", %{conn: conn} do
+    # view_api_keys (the page renders) and issue_quick_key (quick-mint is the
+    # operator's LEGIT flow) — while custom create + revoke stay manage-gated.
+    test "an operator quick-mints; custom create and revoke stay gated", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _raw, key} =
@@ -850,15 +848,15 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       denial = "You don&#39;t have permission to do that."
 
-      # quick-mint via a client tile → gated, no key minted.
-      assert render_click(lv, "select_client", %{"client" => "claude_code"}) =~ denial
-      # custom create → gated, no key.
+      # quick-mint via a client tile → the operator's legit flow succeeds.
+      refute render_click(lv, "select_client", %{"client" => "claude_code"}) =~ denial
+      assert Enum.count(Repo.all(ApiKey)) == 2
+      # custom create → still manage-gated, no third key.
       assert render_click(lv, "create", %{"api_key" => %{"name" => "sneaky"}}) =~ denial
-      # revoke an existing key → gated, key untouched.
+      # revoke an existing key → still manage-gated, key untouched.
       assert render_click(lv, "revoke", %{"id" => key.id}) =~ denial
 
-      # Only the owner-created key exists; no operator mint landed.
-      assert [%ApiKey{name: "view-me-bot"}] = Repo.all(ApiKey)
+      assert Enum.count(Repo.all(ApiKey)) == 2
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 

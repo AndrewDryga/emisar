@@ -558,6 +558,10 @@ defmodule Emisar.ApiKeys do
   def subject_can_view_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_api_keys_permission())
 
+  @doc "Whether the subject can quick-mint an agent key (operators and above) — the connect flow's gate."
+  def subject_can_issue_quick_key?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.issue_quick_key_permission())
+
   @doc "Whether `subject` may manage MCP API keys (admin+)."
   def subject_can_manage_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())

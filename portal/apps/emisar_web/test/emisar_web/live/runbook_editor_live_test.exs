@@ -371,7 +371,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Enum.max_by(runbooks, & &1.version).title == "Patch night v2"
     end
 
-    test "a viewer cannot save", %{account: account} do
+    test "a viewer is redirected at mount — the editor is manage-only", %{account: account} do
       viewer = Fixtures.Users.create_user()
 
       _ =
@@ -381,10 +381,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           role: "viewer"
         )
 
-      {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runbooks/new")
+      dest = ~p"/app/#{account}/runbooks"
 
-      assert render_click(lv, "save", %{}) =~ "You don&#39;t have permission to do that."
+      assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+               build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runbooks/new")
+
+      assert %{"info" => "Runbooks are edited by owners and admins."} = flash
       assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
     end
 

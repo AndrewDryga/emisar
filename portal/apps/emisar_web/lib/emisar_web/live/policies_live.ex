@@ -987,7 +987,8 @@ defmodule EmisarWeb.PoliciesLive do
               <span class="font-semibold">In effect —</span>
               a single approval is enough, and the requester may approve their own request.
             </p>
-            <p class="mt-1 text-xs text-amber-200/80">
+            <%!-- The remedy line instructs an EDIT — only for roles that can. --%>
+            <p :if={@can_manage} class="mt-1 text-xs text-amber-200/80">
               Choose a different operator, or raise the count, to add independent review.
             </p>
           </div>
