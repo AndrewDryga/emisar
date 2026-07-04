@@ -1126,7 +1126,7 @@ defmodule EmisarWeb.TeamLive do
                     <% @enabled_sso_provider_count > 0 -> %>
                       <.chip>{sso_provider_label(@enabled_sso_provider_count)}</.chip>
                     <% true -> %>
-                      <.chip>Not configured</.chip>
+                      <.chip>not configured</.chip>
                   <% end %>
                   <%!-- SSO's ONE console door — its nav item is gone (a
                        rare-touch, admin-only surface lives behind its owning

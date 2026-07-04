@@ -290,8 +290,12 @@ defmodule EmisarWeb.BillingLive do
                  "team": the next priced plan up, or nil at the top / when the
                  only step up is a contact-sales tier (enterprise). --%>
             <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
+            <%!-- Quiet on purpose: the Team plan CARD below carries the one
+                 brand-filled upgrade — two identical green CTAs double-stated
+                 the same action. --%>
             <.button
               :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
+              variant={:secondary}
               phx-click="upgrade"
               phx-value-plan={upgrade_to.key}
               phx-disable-with="Starting checkout…"

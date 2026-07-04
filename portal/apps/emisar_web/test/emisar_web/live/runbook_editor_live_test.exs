@@ -676,12 +676,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # Drop the single seeded step → the Steps panel shows its empty-state.
       empty = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(empty) == 0
-      assert empty =~ "No steps. Add an action step above to start."
+      assert empty =~ "No steps yet — add the first one below."
 
       # Adding one brings the first card back and clears the empty-state line.
       filled = render_click(lv, "add_action_step", %{})
       assert count_step_cards(filled) == 1
-      refute filled =~ "No steps. Add an action step above to start."
+      refute filled =~ "No steps yet — add the first one below."
     end
   end
 
@@ -700,7 +700,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # A fresh :new editor seeds exactly one step; removing it leaves none.
       html = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(html) == 0
-      assert html =~ "No steps. Add an action step above to start."
+      assert html =~ "No steps yet — add the first one below."
     end
   end
 

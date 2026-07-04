@@ -1147,7 +1147,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium text-zinc-100">{provider.name}</span>
                       <.chip>{kind_label(provider.kind)}</.chip>
-                      <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
+                      <.status_badge :if={provider.enabled} status="enabled" />
                       <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                       <.chip :if={provider.scim_enabled}>Directory sync</.chip>
                     </div>
@@ -1202,7 +1202,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <.chip>{kind_label(provider.kind)}</.chip>
-                  <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
+                  <.status_badge :if={provider.enabled} status="enabled" />
                   <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
                 </div>
                 <%!-- Delete lives in a danger zone at the bottom, not up here beside
@@ -1784,7 +1784,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     <.card padding="p-5">
       <.section_header title="Directory sync (SCIM)">
         <:actions>
-          <.chip :if={@provider.scim_enabled} tone={:brand}>Enabled</.chip>
+          <.status_badge :if={@provider.scim_enabled} status="enabled" />
           <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
           <div class="ml-auto flex items-center gap-2">
             <.button
@@ -1839,7 +1839,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         </p>
         <div
           :if={is_nil(@provider.scim_last_seen_at)}
-          class="flex items-center gap-2.5 rounded-lg bg-amber-500/5 px-3 py-2.5 ring-1 ring-amber-500/20"
+          class="flex items-center gap-2.5"
         >
           <.status_dot tone={:amber} size={:md} />
           <p class="text-sm text-zinc-400">No syncs yet — waiting for your IdP to connect.</p>

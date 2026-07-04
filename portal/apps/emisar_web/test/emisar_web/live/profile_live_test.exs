@@ -170,7 +170,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       html = render(lv)
-      assert html =~ "This device"
+      assert html =~ "this device"
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
@@ -200,7 +200,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Exactly one row is badged the current device; the second device renders
       # its IP + parsed label.
-      assert html =~ "This device"
+      assert html =~ "this device"
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome on Linux"
 

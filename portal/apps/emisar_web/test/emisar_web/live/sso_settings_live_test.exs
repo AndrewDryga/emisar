@@ -99,7 +99,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Acme Okta"
-      assert html =~ "Enabled"
+      assert html =~ "enabled"
     end
 
     test "creates a connection through the form, then lands on its detail", %{

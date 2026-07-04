@@ -2235,7 +2235,7 @@ defmodule EmisarWeb.CoreComponents do
   # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
   # read as "still happening", not done — the one cue that separates
   # sent/running (and a held pending_approval) from a static same-hue dot.
-  defp status_dot_spec(s) when s in ~w[success connected approved published trusted],
+  defp status_dot_spec(s) when s in ~w[success connected approved published trusted enabled],
     do: {:brand, false}
 
   defp status_dot_spec(s) when s in ~w[running sent], do: {:brand, true}

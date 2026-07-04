@@ -468,19 +468,10 @@ defmodule EmisarWeb.RunbookEditorLive do
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <section>
-          <.section_header title="Steps">
-            <:actions>
-              <.button
-                variant={:secondary}
-                size={:md}
-                type="button"
-                icon="hero-plus"
-                phx-click="add_action_step"
-              >
-                Add step
-              </.button>
-            </:actions>
-          </.section_header>
+          <%!-- ONE add affordance: the dashed composer row below the list
+               (where the next step lands) — a twin title-row button
+               double-stated the action. --%>
+          <.section_header title="Steps" />
 
           <div class="space-y-3">
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
@@ -489,7 +480,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <.callout :if={msg = save_error_message(@form)} tone={:rose}>{msg}</.callout>
 
             <.empty_state :if={@steps == []} variant={:hint}>
-              No steps. Add an action step above to start.
+              No steps yet — add the first one below.
             </.empty_state>
 
             <datalist id="catalog-actions">
@@ -522,7 +513,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <%!-- Composer standard: the add affordance lives where the next
                  step goes, so a 3-card list doesn't scroll back to the
                  header's button. --%>
-            <.add_row :if={@steps != []} label="Add step" phx-click="add_action_step" />
+            <.add_row label="Add step" phx-click="add_action_step" />
           </div>
         </section>
 
