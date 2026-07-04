@@ -19,6 +19,17 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute has_element?(lv, "a", "Add a runner")
     end
 
+    test "the fleet's sub-features ride the title row — Runner keys next to Add a runner",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert html =~ "Add a runner"
+      assert html =~ ~p"/app/#{account}/runners/keys"
+    end
+
     test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

@@ -19,6 +19,20 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Send invite"
       refute html =~ "Only owners and admins can invite"
     end
+
+    test "the Security panel is SSO's one console door (its nav item is gone)", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # Free plan: the door stays visible but honest about the plan gate.
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert html =~ "Set up SSO · Team"
+      assert html =~ ~p"/app/#{account}/settings/sso"
+
+      # With the plan, it reads as plain management.
+      Fixtures.Accounts.create_subscription(account, "team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert html =~ "Manage providers"
+    end
   end
 
   describe "GET /app/settings/team/invite" do

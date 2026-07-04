@@ -849,13 +849,17 @@ defmodule EmisarWeb.TeamLive do
                   <% end %>
                   <%!-- SSO's ONE console door — its nav item is gone (a
                        rare-touch, admin-only surface lives behind its owning
-                       page, like runner keys behind Runners). --%>
+                       page, like runner keys behind Runners). Visible-but-
+                       honest on plans without SSO: the page carries the
+                       upgrade pitch. --%>
                   <.link
-                    :if={SSO.subject_can_configure_sso?(@current_subject)}
+                    :if={Accounts.subject_can_manage_account_security?(@current_subject)}
                     navigate={~p"/app/#{@current_account}/settings/sso"}
                     class="font-medium text-brand-400 hover:text-brand-300"
                   >
-                    Manage providers →
+                    {if SSO.subject_can_configure_sso?(@current_subject),
+                      do: "Manage providers →",
+                      else: "Set up SSO · Team →"}
                   </.link>
                 </div>
               </div>
