@@ -875,11 +875,11 @@ defmodule EmisarWeb.AgentsLive do
                 <.chip :for={scope <- key.scopes || []} tone={:neutral} mono>{scope}</.chip>
               </:chips>
               <:meta>
-                <%!-- Identity + liveness only — the runner-scope dump told the
-                     reader nothing at a glance (it lives on the key's own
-                     mint/rotate surfaces). --%>
+                <%!-- Identity + liveness only. No key prefix: truncated it
+                     rendered the SAME shared literal on every row (the
+                     distinguishing tail is exactly what got cut) — the name,
+                     owner group, and client already identify the credential. --%>
                 <.meta_line class="text-[11px]">
-                  <:seg mono>{key.key_prefix}…</:seg>
                   <:seg :if={reported_client(key)}>
                     client <span class="text-zinc-300">{reported_client(key)}</span>
                   </:seg>
