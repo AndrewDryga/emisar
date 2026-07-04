@@ -595,7 +595,8 @@ defmodule Emisar.Audit.Event.Query do
   # Request ID rides any request-scoped event; Sign-in method is stamped on any
   # event a USER SESSION produces (not just sign-ins — a policy edit or team
   # change made in a session carries it too), so both apply broadly and are
-  # Per-type metadata: {carries request_id?, carries auth_method?, description}.
+  # Per-type metadata:
+  # {carries request_id?, carries auth_method?, targets other than actor?, description}.
   # request_id/auth_method are PROVENANCE columns riding the %Subject{} — a
   # signed-in user's action carries both; an MCP/API-key request carries only
   # request_id (keys don't "sign in"); engine/socket/sweeper/pre-auth events
@@ -604,198 +605,213 @@ defmodule Emisar.Audit.Event.Query do
   # event is written.
   @event_type_meta %{
     "account.created" =>
-      {false, false, "A workspace was created (at sign-up, before any session exists)."},
-    "account.updated" => {true, true, "An admin changed the workspace's name or slug."},
+      {false, false, true, "A workspace was created (at sign-up, before any session exists)."},
+    "account.updated" => {true, true, true, "An admin changed the workspace's name or slug."},
     "account.require_mfa_set" =>
-      {true, true, "An admin toggled the workspace-wide two-factor requirement."},
+      {true, true, true, "An admin toggled the workspace-wide two-factor requirement."},
     "account.require_sso_set" =>
-      {true, true, "An admin toggled the workspace-wide single sign-on requirement."},
+      {true, true, true, "An admin toggled the workspace-wide single sign-on requirement."},
     "account.max_grant_lifetime_set" =>
-      {true, true, "An admin capped how long a standing approval grant may live."},
+      {true, true, true, "An admin capped how long a standing approval grant may live."},
     "runner.registered" =>
-      {true, false, "A runner enrolled with the control plane (its first HTTP registration)."},
+      {true, false, false,
+       "A runner enrolled with the control plane (its first HTTP registration)."},
     "runner.connected" =>
-      {false, false, "A runner's live socket came up — it can now receive actions."},
+      {false, false, false, "A runner's live socket came up — it can now receive actions."},
     "runner.disconnected" =>
-      {false, false, "A runner's live socket dropped (shutdown, network, or restart)."},
+      {false, false, false, "A runner's live socket dropped (shutdown, network, or restart)."},
     "runner.disabled" =>
-      {true, true, "An operator disabled a runner — dispatches to it are refused."},
-    "runner.enabled" => {true, true, "An operator re-enabled a previously disabled runner."},
+      {true, true, true, "An operator disabled a runner — dispatches to it are refused."},
+    "runner.enabled" =>
+      {true, true, true, "An operator re-enabled a previously disabled runner."},
     "runner.deleted" =>
-      {true, true, "An operator removed a runner from the fleet (audit history is kept)."},
-    "runner.error" => {false, false, "A runner reported an internal error over its socket."},
-    "auth_key.created" => {true, true, "An operator minted a runner bootstrap/auth key."},
+      {true, true, true, "An operator removed a runner from the fleet (audit history is kept)."},
+    "runner.error" =>
+      {true, false, false, "A runner reported an internal error over its socket."},
+    "auth_key.created" => {true, true, true, "An operator minted a runner bootstrap/auth key."},
     "auth_key.revoked" =>
-      {true, true, "An operator revoked a runner auth key — future registrations with it fail."},
+      {true, true, true,
+       "An operator revoked a runner auth key — future registrations with it fail."},
     "auth_key.bound" =>
-      {true, false, "A runner presented an auth key for the first time and was bound to it."},
-    "api_key.created" => {true, true, "An operator minted an LLM-agent or export API key."},
+      {true, false, true,
+       "A runner presented an auth key for the first time and was bound to it."},
+    "api_key.created" => {true, true, true, "An operator minted an LLM-agent or export API key."},
     "api_key.revoked" =>
-      {true, true, "An operator revoked an API key — its next call gets a 401."},
+      {true, true, true, "An operator revoked an API key — its next call gets a 401."},
     "api_key.bound" =>
-      {true, false, "An API key was used for the first time (its client identified itself)."},
-    "api_key.auto_rotated" => {false, false, "The system rotated an API key automatically."},
+      {true, false, true,
+       "An API key was used for the first time (its client identified itself)."},
+    "api_key.auto_rotated" => {true, false, true, "The system rotated an API key automatically."},
     "oauth.consent_granted" =>
-      {true, true, "A user authorized an OAuth client to act on their behalf."},
+      {true, true, true, "A user authorized an OAuth client to act on their behalf."},
     "pack_trust_baseline_match" =>
-      {false, false,
+      {false, false, true,
        "A runner advertised a pack matching the compiled-in baseline — auto-trusted."},
     "pack_trust_baseline_mismatch" =>
-      {false, false,
+      {false, false, true,
        "A runner advertised a pack differing from the baseline — pinned pending review."},
     "pack_trust_review_required" =>
-      {false, false, "A pack version needs an operator's trust decision before it can run."},
+      {false, false, true, "A pack version needs an operator's trust decision before it can run."},
     "pack_trust_drift_detected" =>
-      {false, false, "A runner's pack contents changed under an already-trusted version."},
+      {false, false, true, "A runner's pack contents changed under an already-trusted version."},
     "pack_trust_adopted" =>
-      {true, true, "An operator trusted a pack hash — runners advertising it may execute."},
+      {true, true, true, "An operator trusted a pack hash — runners advertising it may execute."},
     "pack_trust_rejected" =>
-      {true, true, "An operator rejected a pack hash — dispatches with it are refused."},
+      {true, true, true, "An operator rejected a pack hash — dispatches with it are refused."},
     "dispatch_blocked_pack_untrusted" =>
-      {true, false, "A dispatch was refused because the runner's pack isn't trusted."},
+      {true, false, true, "A dispatch was refused because the runner's pack isn't trusted."},
     "dispatch_blocked_requires_attestation" =>
-      {true, false,
+      {true, false, true,
        "A dispatch was refused because the request wasn't signed (attestation required)."},
     "user.signed_up" =>
-      {true, false, "A new user registered (the method rides the event payload)."},
+      {false, false, false, "A new user registered (the method rides the event payload)."},
     "user.signed_in" =>
-      {true, false,
+      {true, false, false,
        "A session was established (the method — magic link / SSO — rides the payload)."},
-    "user.signed_out" => {true, false, "A user ended their session."},
+    "user.signed_out" => {true, false, false, "A user ended their session."},
     "session.account_switched" =>
-      {false, false, "A member switched their active workspace (the tenant-entry receipt)."},
+      {false, false, false,
+       "A member switched their active workspace (the tenant-entry receipt)."},
     "user.sign_in_failed" =>
-      {true, false, "A sign-in attempt failed (wrong or expired code, bad link)."},
-    "user.invited" => {true, true, "An admin invited a teammate into the workspace."},
+      {true, false, false, "A sign-in attempt failed (wrong or expired code, bad link)."},
+    "user.invited" => {true, true, true, "An admin invited a teammate into the workspace."},
     "user.invitation_accepted" =>
-      {true, false, "An invitee accepted and registered a new user account."},
-    "user.email_confirmed" => {true, false, "A user proved ownership of their email address."},
+      {true, false, false, "An invitee accepted and registered a new user account."},
+    "user.email_confirmed" =>
+      {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
-      {true, true, "A user asked to change their sign-in email (confirmation pending)."},
-    "user.email_changed" => {true, false, "A user's sign-in email change completed."},
-    "user.profile_updated" => {true, true, "A user edited their own profile."},
-    "user.updated_by_admin" => {true, true, "An admin edited a teammate's profile."},
+      {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
+    "user.email_changed" => {true, false, false, "A user's sign-in email change completed."},
+    "user.profile_updated" => {true, true, false, "A user edited their own profile."},
+    "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
     "user.magic_link_issued" =>
-      {true, false, "A sign-in code/link was requested and emailed (consumed or not)."},
-    "user.mfa_enabled" => {true, true, "A user enrolled a second factor."},
-    "user.mfa_disabled" => {true, true, "A user (or admin) removed a second-factor enrollment."},
-    "user.mfa_failed" => {true, false, "A second-factor challenge failed during sign-in."},
+      {true, false, false, "A sign-in code/link was requested and emailed (consumed or not)."},
+    "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
+    "user.mfa_disabled" =>
+      {true, true, false, "A user (or admin) removed a second-factor enrollment."},
+    "user.mfa_failed" => {true, false, false, "A second-factor challenge failed during sign-in."},
     "user.mfa_recovery_code_used" =>
-      {true, false, "A one-time recovery code was spent to pass the second factor."},
+      {true, false, false, "A one-time recovery code was spent to pass the second factor."},
     "user.mfa_recovery_codes_regenerated" =>
-      {true, true, "A user regenerated their recovery codes (old ones invalidated)."},
-    "user.session_revoked" => {true, true, "A user revoked one of their own sessions."},
+      {true, true, false, "A user regenerated their recovery codes (old ones invalidated)."},
+    "user.session_revoked" => {true, true, false, "A user revoked one of their own sessions."},
     "user.other_sessions_revoked" =>
-      {true, true, "A user revoked every session except the current one."},
-    "user.sessions_revoked" => {true, true, "An admin revoked a teammate's sessions."},
-    "membership.role_changed" => {true, true, "An admin changed a member's role."},
-    "membership.removed" => {true, true, "An admin removed a member from the workspace."},
+      {true, true, false, "A user revoked every session except the current one."},
+    "user.sessions_revoked" => {true, true, true, "An admin revoked a teammate's sessions."},
+    "membership.role_changed" => {true, true, true, "An admin changed a member's role."},
+    "membership.removed" => {true, true, true, "An admin removed a member from the workspace."},
     "membership.suspended" =>
-      {true, true, "An admin suspended a member — they can't sign into this workspace."},
-    "membership.reinstated" => {true, true, "An admin reinstated a suspended member."},
+      {true, true, true, "An admin suspended a member — they can't sign into this workspace."},
+    "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
     "membership.invitation_accepted" =>
-      {true, false, "An existing user accepted an invitation into this workspace."},
+      {true, false, false, "An existing user accepted an invitation into this workspace."},
     "membership.runner_scopes_changed" =>
-      {true, true, "An admin changed which runners a member may target."},
+      {true, true, true, "An admin changed which runners a member may target."},
     "policy.updated" =>
-      {true, true, "An admin changed the action policy (tier defaults or overrides)."},
-    "runbook.created" => {true, true, "An operator created a runbook draft."},
-    "runbook.updated" => {true, true, "An operator edited a runbook (new version)."},
-    "runbook.published" => {true, true, "An operator published a runbook version for dispatch."},
-    "runbook.dispatched" => {true, true, "A runbook run started — its steps dispatch in order."},
+      {true, true, true, "An admin changed the action policy (tier defaults or overrides)."},
+    "runbook.created" => {true, true, true, "An operator created a runbook draft."},
+    "runbook.updated" => {true, true, true, "An operator edited a runbook (new version)."},
+    "runbook.published" =>
+      {true, true, true, "An operator published a runbook version for dispatch."},
+    "runbook.dispatched" =>
+      {true, true, true, "A runbook run started — its steps dispatch in order."},
     "runbook.step_dispatch_failed" =>
-      {false, false, "The engine couldn't dispatch a runbook step to its runner."},
+      {false, false, true, "The engine couldn't dispatch a runbook step to its runner."},
     "approval.approved" =>
-      {true, true, "An approver granted a held action (optionally with a standing grant)."},
-    "approval.denied" => {true, true, "An approver denied a held action."},
+      {true, true, true, "An approver granted a held action (optionally with a standing grant)."},
+    "approval.denied" => {true, true, true, "An approver denied a held action."},
     "approval.expired" =>
-      {false, false, "A held approval request lapsed without a decision (system sweep)."},
-    "approval.grant_used" => {true, false, "A standing grant auto-approved a matching action."},
-    "approval.grant_revoked" => {true, true, "An operator revoked a standing grant."},
-    "run.cancel_requested" => {true, true, "Someone asked to cancel an in-flight run."},
+      {false, false, true, "A held approval request lapsed without a decision (system sweep)."},
+    "approval.grant_used" =>
+      {false, false, true, "A standing grant auto-approved a matching action."},
+    "approval.grant_revoked" => {true, true, true, "An operator revoked a standing grant."},
+    "run.cancel_requested" => {true, true, true, "Someone asked to cancel an in-flight run."},
     "action_run.success" =>
-      {true, false, "A dispatched action completed successfully on its runner."},
-    "action_run.failed" => {true, false, "A dispatched action exited non-zero on its runner."},
-    "action_run.error" => {true, false, "A dispatched action errored before/while executing."},
+      {true, false, true, "A dispatched action completed successfully on its runner."},
+    "action_run.failed" =>
+      {true, false, true, "A dispatched action exited non-zero on its runner."},
+    "action_run.error" =>
+      {true, false, true, "A dispatched action errored before/while executing."},
     "action_run.refused" =>
-      {true, false, "A runner refused an action (signature or pack mismatch)."},
-    "action_run.cancelled" => {true, false, "An in-flight action was cancelled."},
-    "action_run.timed_out" => {true, false, "A dispatched action exceeded its time limit."},
-    "action_run.denied" => {true, false, "Policy denied an action at dispatch."},
-    "action_run.pending_approval" => {true, false, "Policy held an action for human approval."},
+      {true, false, true, "A runner refused an action (signature or pack mismatch)."},
+    "action_run.cancelled" => {true, false, true, "An in-flight action was cancelled."},
+    "action_run.timed_out" => {true, false, true, "A dispatched action exceeded its time limit."},
+    "action_run.denied" => {true, false, true, "Policy denied an action at dispatch."},
+    "action_run.pending_approval" =>
+      {true, false, true, "Policy held an action for human approval."},
     "user.provisioned_via_sso" =>
-      {true, false, "A user was created just-in-time on their first SSO sign-in."},
+      {true, false, false, "A user was created just-in-time on their first SSO sign-in."},
     "user.provisioned_via_scim" =>
-      {true, false, "The identity provider provisioned a user over SCIM."},
-    "user.renamed_via_scim" => {true, false, "The identity provider renamed a user over SCIM."},
+      {true, false, true, "The identity provider provisioned a user over SCIM."},
+    "user.renamed_via_scim" =>
+      {false, false, true, "The identity provider renamed a user over SCIM."},
     "membership.deprovisioned_via_scim" =>
-      {true, false, "The identity provider deprovisioned a member (suspended, sessions killed)."},
+      {true, false, true,
+       "The identity provider deprovisioned a member (suspended, sessions killed)."},
     "membership.reprovisioned_via_scim" =>
-      {true, false, "The identity provider re-activated a previously deprovisioned member."},
+      {true, false, true, "The identity provider re-activated a previously deprovisioned member."},
     "membership.role_synced_via_scim" =>
-      {true, false, "A member's role was recomputed from directory group mappings."},
+      {true, false, true, "A member's role was recomputed from directory group mappings."},
     "sso.group_mapping_created" =>
-      {true, true, "An admin mapped a directory group to a workspace role."},
+      {true, true, true, "An admin mapped a directory group to a workspace role."},
     "sso.group_mapping_updated" =>
-      {true, true, "An admin changed a directory-group role mapping."},
+      {true, true, true, "An admin changed a directory-group role mapping."},
     "sso.group_mapping_deleted" =>
-      {true, true, "An admin removed a directory-group role mapping."},
+      {true, true, true, "An admin removed a directory-group role mapping."},
     "sso.link_request_approved" =>
-      {true, true, "A user approved linking their SSO identity to an existing account."},
+      {true, true, true, "A user approved linking their SSO identity to an existing account."},
     "sso.link_request_dismissed" =>
-      {true, true, "A user dismissed an SSO identity-link request."},
-    "audit.exported" => {true, false, "Audit events were exported over the SIEM API."},
+      {true, true, true, "A user dismissed an SSO identity-link request."},
+    "audit.exported" => {true, false, true, "Audit events were exported over the SIEM API."},
     "audit.retention_swept" =>
-      {false, false, "The retention sweep pruned events past their retain-until date."},
+      {false, false, false, "The retention sweep pruned events past their retain-until date."},
     "subscription.changed" =>
-      {false, false, "The billing plan changed (via checkout or the billing provider)."}
+      {false, false, true, "The billing plan changed (via checkout or the billing provider)."}
   }
 
   @doc "One-line description of when an event type is written — the Type picker's hover pane."
   def event_type_description("group:" <> label), do: "Every #{label} event."
 
-  def event_type_description(type),
-    do: @event_type_meta |> Map.get(type, {false, false, ""}) |> elem(2)
+  def event_type_description(type), do: type_meta(type) |> elem(3)
 
-  # PROVENANCE support per type — drives which conditional filters apply.
-  defp type_supports?(:request_id, "group:" <> label), do: any_in_group?(label, 0)
-
-  defp type_supports?(:request_id, type),
-    do: @event_type_meta |> Map.get(type, {false, false, ""}) |> elem(0)
-
-  defp type_supports?(:auth_method, "group:" <> label), do: any_in_group?(label, 1)
-
-  defp type_supports?(:auth_method, type),
-    do: @event_type_meta |> Map.get(type, {false, false, ""}) |> elem(1)
-
-  defp any_in_group?(label, elem_index) do
+  # PROVENANCE support per type — drives which conditional filters apply. A
+  # `group:` sentinel supports a filter when ANY of its types does.
+  defp type_supports?(name, "group:" <> label) do
     case List.keyfind(@grouped_event_types, label, 0) do
-      {_, options} ->
-        Enum.any?(options, fn {value, _} ->
-          @event_type_meta |> Map.get(value, {false, false, ""}) |> elem(elem_index)
-        end)
-
-      nil ->
-        false
+      {_, options} -> Enum.any?(options, fn {value, _} -> type_supports?(name, value) end)
+      nil -> false
     end
   end
 
-  @conditional_filter_names [:request_id, :auth_method]
+  defp type_supports?(:request_id, type), do: type_meta(type) |> elem(0)
+  defp type_supports?(:auth_method, type), do: type_meta(type) |> elem(1)
+  defp type_supports?(:target_kind, type), do: type_meta(type) |> elem(2)
+
+  defp type_meta(type), do: Map.get(@event_type_meta, type, {false, false, true, ""})
+
+  @conditional_filter_names [:request_id, :auth_method, :target_kind]
 
   @doc """
-  Drops the conditional filters (Request ID, Sign-in method) that can't match
-  the selected event `Type`, so the audit filter panel only shows filters that
-  do something. `type_param` is the raw `event_type` filter value (a list, a
-  string, or nil). With no Type selected, both conditional filters are dropped.
+  Drops the conditional filters that can't match the selected event `Type`, so
+  the audit panel only shows filters that do something. Request ID and Sign-in
+  method are niche — hidden until a supporting Type is selected. Target type is
+  the inverse: useful on the mixed stream (no Type), hidden only when every
+  selected type targets nothing but its own actor (a sign-in, a runner
+  connect — "Target type" is meaningless for self-events).
   """
   def applicable_filters(filters, type_param) do
     types = List.wrap(type_param)
 
     Enum.reject(filters, fn filter ->
-      filter.name in @conditional_filter_names and
-        not (types != [] and Enum.any?(types, &type_supports?(filter.name, &1)))
+      cond do
+        filter.name not in @conditional_filter_names -> false
+        filter.name == :target_kind -> types != [] and not any_type_supports?(types, :target_kind)
+        true -> not (types != [] and any_type_supports?(types, filter.name))
+      end
     end)
   end
+
+  defp any_type_supports?(types, name), do: Enum.any?(types, &type_supports?(name, &1))
 
   # The known event types whose suffix outcome (outcome/1) is one of `outcomes`
   # — the "Outcome" filter resolves to these, so a danger/warn pick narrows to

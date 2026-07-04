@@ -446,7 +446,7 @@ defmodule EmisarWeb.LiveTable do
       <div
         data-combobox-panel
         hidden
-        class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
+        class="absolute z-20 -mt-px w-full overflow-hidden rounded-b-lg rounded-t-none bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10"
       >
         <input
           type="text"

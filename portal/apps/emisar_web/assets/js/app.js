@@ -73,6 +73,9 @@ const Combobox = {
 
   open() {
     this.panel.hidden = false
+    // The field and its dropdown fuse into one continuous element while open:
+    // the trigger's bottom corners square off against the panel.
+    this.trigger.classList.add("rounded-b-none")
     this.search.value = ""
     this.filter()
     this.search.focus()
@@ -80,6 +83,7 @@ const Combobox = {
 
   close() {
     this.panel.hidden = true
+    this.trigger.classList.remove("rounded-b-none")
     this.describe(null)
   },
 

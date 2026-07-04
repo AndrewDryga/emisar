@@ -664,6 +664,21 @@ defmodule Emisar.AuditTest do
       # A group sentinel applies a filter when ANY of its types supports it.
       applicable = Audit.Event.Query.applicable_filters(filters, "group:Account")
       assert :auth_method in names.(applicable)
+
+      # Sign-up happens pre-session — no request context is ever stamped.
+      applicable = Audit.Event.Query.applicable_filters(filters, "user.signed_up")
+      refute :request_id in names.(applicable)
+
+      # Target type is meaningless for self-events (a sign-in acts on its own
+      # actor) — hidden for them, but KEPT on the mixed stream (no Type).
+      applicable = Audit.Event.Query.applicable_filters(filters, "user.signed_in")
+      refute :target_kind in names.(applicable)
+
+      applicable = Audit.Event.Query.applicable_filters(filters, "membership.role_changed")
+      assert :target_kind in names.(applicable)
+
+      applicable = Audit.Event.Query.applicable_filters(filters, nil)
+      assert :target_kind in names.(applicable)
     end
 
     test "actor_id narrows the list to one identity", %{account: account, subject: subject} do
