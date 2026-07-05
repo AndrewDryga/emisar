@@ -479,16 +479,18 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <%!-- Trust state reads as the dot + word, not a filled pill —
-                       the same status grammar as every run/runner row. --%>
-                  <.status_badge status={to_string(v.trust_state)} />
                   <%!-- If this exact trusted hash is a published pack version,
                        link out to its public registry page (opens in a new tab). --%>
                   <.registry_link version={v} />
                 </div>
-                <%!-- Relative like every peer list ("1d ago"); chronology reads
-                     first→last; absolute rides the local_time hover. --%>
+                <%!-- The meta column caps with the trust state (dot + word, not a
+                     filled pill — the run/runner status grammar), then the
+                     first→last chronology beneath it. Relative like every peer
+                     list ("1d ago"); absolute rides the local_time hover. --%>
                 <div class="ml-auto shrink-0 text-right text-xs text-zinc-500">
+                  <div class="mb-1 flex justify-end">
+                    <.status_badge status={to_string(v.trust_state)} />
+                  </div>
                   <div :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}>
                     first seen <.local_time value={v.first_seen_at} mode={:relative} class="inline" />
                   </div>
