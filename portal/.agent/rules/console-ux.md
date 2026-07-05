@@ -45,6 +45,15 @@ with meaning assigned at the call site:
 
 - Attr name is `tone` for color meaning; `variant` is reserved for *structure*
   (`:primary/:secondary/:ghost`, `:boxed/:bare/:strip`). Never encode color in a variant.
+- **Button chrome is for an ACTION; navigation is a LINK.** A filled/tinted/ringed
+  button (any `<.button>` variant, or a hand-rolled button-SHAPED span) means "this
+  *does* something" — submits, mutates, opens a flow. Moving to another page is a
+  `<.link>` styled as the house nav affordance: brand text + `cta_arrow`, at the
+  content baseline. Make a link **prominent by placement and the brand hue**, never by
+  wrapping it in button chrome — a button-looking nav link reads as a form submit and
+  is the smell (the dashboard pillar SSO action ping-ponged subtle-link → button-chip →
+  link before this landed). A stat tile / pillar whose whole surface is already the
+  `<.link>` carries its forward action as this inline brand line, not a nested chip.
 - `:pass | :pending | :deny | :neutral` stays **only** on policy-verdict components
   (`status_tone/1`, `state_chip`, LiveTable `card_accent`) — it names a verdict, not a hue.
 - Enums are **atoms**, never strings (`variant={:primary}`, not `"primary"`); every enum
