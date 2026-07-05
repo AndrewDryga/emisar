@@ -782,8 +782,11 @@ defmodule EmisarWeb.AgentsLive do
            quiet states render only when they exist, and the key total lives in
            the list's own pager — not repeated here. Thresholds ride the title
            tooltips. --%>
+      <%!-- Activity posture — only once agents exist. In onboarding (no keys)
+           "0 active now" is a fact about nothing; the connect flow below is the
+           whole story until the first agent lands. --%>
       <div
-        :if={@live_action == :index}
+        :if={@live_action == :index and @issued_count > 0}
         class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
       >
         <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
@@ -823,20 +826,18 @@ defmodule EmisarWeb.AgentsLive do
            pattern): no agents → the panel renders right here, no detour. It
            also pins open while a one-time secret is on screen (quick mint /
            rotation reveal), so the reload can't hide the only copy. --%>
-      <section :if={@live_action == :index and @show_connect_inline?} class="pb-6">
-        <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-          Connect an agent
-        </h2>
+      <section :if={@live_action == :index and @show_connect_inline?}>
+        <.section_header title="Connect an agent" />
         <%!-- A role that can't mint gets the honest note, not a picker whose
              every chip dies in a denial flash. --%>
         <p
           :if={not ApiKeys.subject_can_issue_quick_key?(@current_subject)}
-          class="mt-3 max-w-prose text-sm leading-relaxed text-zinc-500"
+          class="max-w-prose text-sm leading-relaxed text-zinc-500"
         >
           Connecting an agent needs an operator role or above — ask an operator,
           admin, or owner to mint the key.
         </p>
-        <div :if={ApiKeys.subject_can_issue_quick_key?(@current_subject)} class="mt-3">
+        <div :if={ApiKeys.subject_can_issue_quick_key?(@current_subject)}>
           <.connect_panel
             configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
             selected_client={@selected_client}
@@ -860,14 +861,11 @@ defmodule EmisarWeb.AgentsLive do
            "No agents connected yet" hairline under it was pure noise. An
            ACTIVE filter keeps the section: filter-empty needs its live bar
            (and the clear link) to escape back to the full set. --%>
-      <section
-        :if={
-          @live_action == :index and
-            not (@show_connect_inline? and @api_keys == [] and
-                   not LiveTable.has_active_filters?(@filter_params, @filters))
-        }
-        class="mt-8"
-      >
+      <section :if={
+        @live_action == :index and
+          not (@show_connect_inline? and @api_keys == [] and
+                 not LiveTable.has_active_filters?(@filter_params, @filters))
+      }>
         <LiveTable.live_table
           layout={:cards}
           id="agents"
@@ -1062,19 +1060,20 @@ defmodule EmisarWeb.AgentsLive do
     assigns = assign(assigns, :config, config)
 
     ~H"""
-    <div class="border-t border-zinc-900">
-      <%!-- Client picker, grouped into two transport families.
-           Cloud row first because that's the no-install path most
-           new users want; Local row below for IDE / desktop clients
-           that go through the stdio bridge. --%>
-      <div class="border-b border-zinc-900 px-6 py-4">
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+    <div>
+      <%!-- Client picker on the canvas — grouped into two transport families.
+           Cloud first (the no-install path most new users want); Local below
+           for IDE / desktop clients that go through the stdio bridge. Small
+           group labels organize the tabs; the pick step is framed by the page
+           intro / section header above, so the picker carries no header. --%>
+      <div>
+        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
           Cloud
           <span class="ml-1 normal-case tracking-normal text-zinc-600">
             — hosted LLMs: no install, URL + token
           </span>
         </p>
-        <div class="mt-2 flex flex-wrap gap-1.5">
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
           <.client_tab
             :for={id <- remote_client_ids()}
             id={id}
@@ -1083,11 +1082,11 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
 
-        <p class="mt-5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+        <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
           Local / IDE clients
           <span class="ml-1 normal-case tracking-normal text-zinc-600">— uses the stdio bridge</span>
         </p>
-        <div class="mt-2 flex flex-wrap gap-1.5">
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
           <.client_tab
             :for={id <- local_client_ids()}
             id={id}
@@ -1096,10 +1095,10 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
 
-        <p class="mt-5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+        <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
           Roll your own
         </p>
-        <div class="mt-2 flex flex-wrap gap-1.5">
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
           <.client_tab
             id="custom"
             label="Custom key (advanced)"
@@ -1120,7 +1119,7 @@ defmodule EmisarWeb.AgentsLive do
                480px of reserved dead space buried the agents list. --%>
           <span></span>
         <% @selected_client == "custom" -> %>
-          <div class="space-y-5 px-6 py-5">
+          <div class="mt-10 space-y-6">
             <%= if @quick_secret do %>
               <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
@@ -1146,7 +1145,7 @@ defmodule EmisarWeb.AgentsLive do
             />
           </div>
         <% @config && @config.kind == :remote -> %>
-          <div class="space-y-6 px-6 py-5">
+          <div class="mt-10 space-y-8">
             <%= if @quick_secret do %>
               <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
@@ -1170,7 +1169,7 @@ defmodule EmisarWeb.AgentsLive do
             />
           </div>
         <% @config -> %>
-          <div class="space-y-6 px-6 py-5">
+          <div class="mt-10 space-y-8">
             <%= if @quick_secret do %>
               <.callout tone={:amber}>
                 <span class="font-semibold">New key minted — it's live now.</span>
@@ -1183,10 +1182,9 @@ defmodule EmisarWeb.AgentsLive do
             <.local_install_block />
 
             <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Paste this into {client_label(@selected_client)}
-              </h3>
-              <p class="mt-1 text-[11px] text-zinc-500 font-mono">{@config.location}</p>
+              <.section_header title={"Paste this into #{client_label(@selected_client)}"}>
+                <:subtitle><span class="font-mono">{@config.location}</span></:subtitle>
+              </.section_header>
               <.code_panel
                 id={"snippet-#{@selected_client}"}
                 label="Snippet"
@@ -1194,7 +1192,6 @@ defmodule EmisarWeb.AgentsLive do
                 copy
                 copy_label="Copy snippet"
                 code={@config.body}
-                class="mt-2"
               />
               <p class="mt-2 text-xs text-zinc-500">
                 Restart {client_label(@selected_client)} after pasting.
@@ -1254,18 +1251,14 @@ defmodule EmisarWeb.AgentsLive do
   defp local_install_block(assigns) do
     ~H"""
     <div>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-        Install the bridge
-        <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">
-          one-time, per machine
-        </span>
-      </h3>
+      <.section_header title="Install the bridge">
+        <:subtitle>one-time, per machine</:subtitle>
+      </.section_header>
       <.code_panel
         id="install-mcp-cmd"
         label="macOS / Linux"
         copy
         code="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
-        class="mt-2"
       />
       <p class="mt-2 text-[11px] text-zinc-500">
         Inspects the bridge first?
@@ -1431,37 +1424,39 @@ defmodule EmisarWeb.AgentsLive do
 
   defp remote_mcp_panel(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <%!-- The two values cloud LLMs need. Bearer header is rendered
-           in full (operator just minted it) so they can copy the whole
-           "Authorization: Bearer emk-..." string verbatim. --%>
-      <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
-        <div class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2.5">
-          <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
-          <.copy_button
-            id={"copy-#{@client_id}-conn"}
-            text={"URL: #{@rpc_url}\nHeader: #{@auth_header}"}
-          >
-            Copy URL + header
-          </.copy_button>
-        </div>
-        <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
-          <span class="text-zinc-500">URL:</span>
-          <span id={"rpc-url-#{@client_id}"} class="break-all text-zinc-200">{@rpc_url}</span>
-          <span class="text-zinc-500">Header:</span>
-          <span id={"auth-hdr-#{@client_id}"} class="break-all text-zinc-200">{@auth_header}</span>
+    <div class="space-y-8">
+      <div>
+        <.section_header title="Add the connector">
+          <:subtitle>Paste both values into {@client_label}'s custom-connector setup.</:subtitle>
+        </.section_header>
+        <%!-- The two values cloud LLMs need. Bearer header is rendered
+             in full (operator just minted it) so they can copy the whole
+             "Authorization: Bearer emk-..." string verbatim. --%>
+        <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
+          <div class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2.5">
+            <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
+            <.copy_button
+              id={"copy-#{@client_id}-conn"}
+              text={"URL: #{@rpc_url}\nHeader: #{@auth_header}"}
+            >
+              Copy URL + header
+            </.copy_button>
+          </div>
+          <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
+            <span class="text-zinc-500">URL:</span>
+            <span id={"rpc-url-#{@client_id}"} class="break-all text-zinc-200">{@rpc_url}</span>
+            <span class="text-zinc-500">Header:</span>
+            <span id={"auth-hdr-#{@client_id}"} class="break-all text-zinc-200">{@auth_header}</span>
+          </div>
         </div>
       </div>
 
-      <%!-- Per-host step list. Each client config above stores its own
-           list because the menu paths differ (Claude.ai uses "Custom
-           connectors", ChatGPT uses "Connectors" under different
-           settings). --%>
-      <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.08]">
-        <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Steps for {@client_label}
-        </p>
-        <.steps class="mt-2">
+      <div>
+        <%!-- Per-host step list on the canvas — content, not an artifact. Each
+             client config stores its own list because the menu paths differ
+             (Claude.ai uses "Custom connectors", ChatGPT "Connectors"). --%>
+        <.section_header title={"Steps for #{@client_label}"} />
+        <.steps>
           <:step :for={step <- @steps}>{step}</:step>
         </.steps>
       </div>
@@ -1492,14 +1487,15 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-500">
         Mints an MCP key with the standard <code class="font-mono text-zinc-300">actions:read</code>
         + <code class="font-mono text-zinc-300">actions:execute</code>
-        scopes — the same shape the per-client tabs above use. The form below adds a
-        name, description, and expiry on top of the shared scope picker.
+        scopes — the same shape the per-client tabs above use. The form adds a name,
+        description, expiry, and an optional per-action allowlist.
       </p>
-      <%!-- The scope picker narrows *runners*, not actions. Make the
-           action reach explicit so the operator knows what they're granting. --%>
+      <%!-- Custom keys reach the whole fleet (no runner picker here — that's a
+           quick-mint affordance); the allowlist narrows ACTIONS, not runners.
+           Make the reach explicit so the operator knows what they're granting. --%>
       <p class="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-500/20">
-        This key can read and execute every action your trusted packs expose on the selected
-        runners; risky actions still require policy approval.
+        This key can read and execute every action your trusted packs expose on every
+        runner; risky actions still require policy approval.
       </p>
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
@@ -1596,8 +1592,8 @@ defmodule EmisarWeb.AgentsLive do
       )
 
     ~H"""
-    <div class="border-b border-zinc-900 bg-zinc-950/40">
-      <form phx-change="update_scope" class="space-y-3 px-6 py-4">
+    <div class="overflow-hidden rounded-lg bg-zinc-950/40 ring-1 ring-white/[0.06]">
+      <form phx-change="update_scope" class="space-y-3 p-4">
         <div>
           <p class="text-sm font-medium text-zinc-200">Allowed runners</p>
           <p class="mt-1 text-xs text-zinc-500">
