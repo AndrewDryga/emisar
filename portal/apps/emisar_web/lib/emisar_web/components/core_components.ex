@@ -4343,7 +4343,10 @@ defmodule EmisarWeb.CoreComponents do
   defp empty_state_title_color(:hint, :zinc), do: "text-zinc-300"
   defp empty_state_title_color(_variant, :danger), do: "text-rose-200"
 
-  defp empty_state_body(:boxed), do: "mt-2 text-sm text-zinc-500"
+  # `mt-4` gives the headline room to breathe from the body; `mx-auto max-w-lg`
+  # caps the measure so a paragraph reads at a comfortable line length instead
+  # of stretching the full width of the placeholder box.
+  defp empty_state_body(:boxed), do: "mx-auto mt-4 max-w-lg text-sm text-zinc-500"
   defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"
   defp empty_state_body(:hint), do: "text-xs leading-relaxed text-zinc-500"
 

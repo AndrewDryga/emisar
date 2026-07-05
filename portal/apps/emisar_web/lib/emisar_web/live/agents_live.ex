@@ -1173,30 +1173,16 @@ defmodule EmisarWeb.AgentsLive do
         <.section_header title="How agent keys work" />
         <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
           <p>
-            Each key is a bearer credential for
-            <span class="font-medium text-zinc-300">one MCP client</span>
-            — the agent presents it on every call, and its activity lands in Runs and
-            the audit trail under the key's name.
+            Each key is a bearer credential for <span class="font-medium text-zinc-300">one MCP client</span>. Every call it
+            makes lands in Runs and the audit trail under the key's name, so you can
+            always see exactly what each agent did.
           </p>
           <p>
-            A key never widens what's allowed. What it may DO is your
+            A key can never do more than the member who mints it: your
             <span class="font-medium text-zinc-300">policy</span>
-            — risky actions pause for human approval, out-of-policy ones are denied.
-            Which runners it can reach is
-            <span class="font-medium text-zinc-300">your own runner scope</span>
-            (set per member on the Team page): a key inherits the reach of whoever
-            minted it, and shrinks the moment that scope does.
-          </p>
-          <p>
-            The key itself carries no extra permission to lock down — that's why there
-            are no per-key scope knobs here. To narrow one agent, mint it under a member
-            whose runner scope is already narrow.
-          </p>
-          <p>
-            Quick-connect keys don't expire; revoke one from the agents list when its
-            client no longer needs access. Custom keys default to a 30-day expiry.
-            Rotating mints a successor — the old key keeps working until the new one's
-            first use, then it's revoked automatically.
+            still gates risky actions for approval, and it reaches only that member's
+            runners. To scope an agent tightly, mint it under a member whose reach is
+            already narrow — and revoke it anytime from the agents list.
           </p>
         </div>
       </aside>
