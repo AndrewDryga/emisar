@@ -93,7 +93,7 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   # A runner connected/disconnected somewhere in the account — re-fetch
-  # so the badge, action_load, and heartbeat refresh from presence.
+  # so the status badge and heartbeat refresh from presence.
   def handle_info(%{event: "presence_diff"}, socket) do
     case Runners.fetch_runner_by_id(socket.assigns.runner.id, socket.assigns.current_subject) do
       {:ok, runner} -> {:noreply, assign(socket, :runner, runner)}
@@ -218,11 +218,12 @@ defmodule EmisarWeb.RunnerDetailLive do
              block — the row is a hairline continuation of the grid — so they stay
              tight together, above the 48px gap to the next section. --%>
         <div>
-          <%!-- Connection facts on the CANVAS — a naked meta grid, no island. Status
-               leads so the connection state is the first thing the eye lands on; the
-               hostname gets a full 1/3 cell so it reads in one line, copy button
-               aligned (it wrapped + misaligned when crammed into a 6-col strip). --%>
-          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-3">
+          <%!-- Connection facts on the CANVAS — a naked meta row, no island. Status
+               leads so the connection state is the first thing the eye lands on.
+               ONE row at sm+ (five fields at natural width fit the 7xl column
+               with room to spare); phones keep the tidy 2-col grid, where the
+               hostname's `wrap` spans both columns so it reads in one line. --%>
+          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-16">
             <.meta_field label="Status">
               <.status_badge status={connection_status(Runners.connection_state(@runner))} />
             </.meta_field>
@@ -236,13 +237,14 @@ defmodule EmisarWeb.RunnerDetailLive do
             <.meta_field label="Group">
               <span class="truncate text-zinc-200">{@runner.group}</span>
             </.meta_field>
+            <%!-- No "Active runs" cell: most actions complete in milliseconds,
+                 so a live count is a permanent 0 — dead information. The
+                 runners LIST surfaces `action_load` only while it's > 0
+                 (a genuinely long-running action), which is the right home. --%>
             <.meta_field label="Last heartbeat">
               <span class="text-zinc-200">
                 <.local_time value={heartbeat_at(@runner)} mode={:relative} />
               </span>
-            </.meta_field>
-            <.meta_field label="Active runs">
-              <span class="text-zinc-200">{@runner.action_load}</span>
             </.meta_field>
           </div>
 
