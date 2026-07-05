@@ -1085,19 +1085,13 @@ defmodule EmisarWeb.AgentsLive do
             </div>
           <% @config && @config.kind == :remote -> %>
             <div class="mt-10 space-y-8">
-              <%= if @quick_secret do %>
-                <.minted_note>
-                  Copy the bearer token below before you leave this page; we won't show it
-                  again. If you lose it, pick the client again to mint a new one.
-                </.minted_note>
-              <% end %>
-
               <.remote_mcp_panel
                 client_id={@selected_client}
                 client_label={client_label(@selected_client)}
                 rpc_url={@config.rpc_url}
                 auth_header={@config.auth_header}
                 steps={@config.steps}
+                minted?={@quick_secret != nil}
               />
             </div>
           <% @config -> %>
@@ -1112,9 +1106,8 @@ defmodule EmisarWeb.AgentsLive do
                      not up by the install step — "the snippet below" now points
                      right at it. --%>
                 <.minted_note :if={@quick_secret} class="mb-4">
-                  The snippet below contains it — copy the whole snippet, not just part. We
-                  won't show this key again after you leave the page; pick the client again to
-                  mint a new one.
+                  Copy the whole snippet below now — it holds your key, and you won't see it
+                  again. Lost it later? Pick this client again for a fresh key.
                 </.minted_note>
                 <.code_panel
                   id={"snippet-#{@selected_client}"}
@@ -1343,6 +1336,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :rpc_url, :string, required: true
   attr :auth_header, :string, required: true
   attr :steps, :list, required: true
+  attr :minted?, :boolean, default: false
 
   defp remote_mcp_panel(assigns) do
     ~H"""
@@ -1351,6 +1345,12 @@ defmodule EmisarWeb.AgentsLive do
         <.section_header title="Add the connector">
           <:subtitle>Paste both values into {@client_label}'s custom-connector setup.</:subtitle>
         </.section_header>
+        <%!-- The fresh-mint note sits WITH the connector values that hold the
+             token — "the bearer token below" points right at it. --%>
+        <.minted_note :if={@minted?} class="mb-4">
+          Copy the bearer token below now — you won't see it again. Lost it later? Pick
+          this client again for a fresh key.
+        </.minted_note>
         <%!-- The two values cloud LLMs need. Bearer header is rendered
              in full (operator just minted it) so they can copy the whole
              "Authorization: Bearer emk-..." string verbatim. --%>
