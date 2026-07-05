@@ -313,6 +313,15 @@ defmodule Emisar.ApiKeys do
     )
   end
 
+  # The key's FIRST call — the agent connected. Fires exactly once per key (the
+  # auth boundary gates on `first_use?`), so it's not a per-request storm.
+  defp broadcast_api_key_first_used(%ApiKey{} = key) do
+    Emisar.PubSub.broadcast(
+      account_api_keys_topic(key.account_id),
+      {:list_changed, :api_key, "api_key.first_used", key.id}
+    )
+  end
+
   @doc """
   Mints a fresh API key for the Agents page's pre-filled snippet,
   marks it auto-generated (invisible until an LLM uses it), and evicts
@@ -439,9 +448,11 @@ defmodule Emisar.ApiKeys do
            true <- Crypto.secure_compare(key.key_hash, hash),
            true <- ApiKey.usable?(key) do
         was_auto? = ApiKey.auto_unused?(key)
-        # nil→set below happens exactly once, so the sweep costs nothing on
-        # every later request with this key.
-        completes_rotation? = is_nil(key.last_used_at) and not is_nil(key.replaces_id)
+        # nil→set happens exactly once, so first_use? — and the rotation-retire
+        # + the "agent connected" broadcast it gates — cost nothing on every
+        # later request with this key.
+        first_use? = is_nil(key.last_used_at)
+        completes_rotation? = first_use? and not is_nil(key.replaces_id)
 
         multi =
           Multi.new()
@@ -467,6 +478,11 @@ defmodule Emisar.ApiKeys do
 
         after_commit = fn changes ->
           Enum.each(Map.get(changes, :retired, []), &broadcast_api_key_revoked/1)
+          # The first call proves the agent connected — reflow the agents list
+          # (its status badge) and the connect flow's "waiting" state live.
+          if first_use?, do: broadcast_api_key_first_used(changes.key)
+          # after_commit callbacks must return :ok (Repo.execute_changes_after_commit).
+          :ok
         end
 
         case Repo.commit_multi(multi, after_commit: after_commit) do

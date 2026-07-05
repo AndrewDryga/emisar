@@ -53,6 +53,10 @@ defmodule EmisarWeb.AgentsLive do
      socket
      |> assign(:page_title, "LLM agents")
      |> assign(:quick_secret, nil)
+     # The just-minted quick key we're watching for its first call, and whether
+     # it has connected — drives the connect flow's "waiting → connected" state.
+     |> assign(:quick_key_id, nil)
+     |> assign(:quick_connected?, false)
      |> assign(:selected_client, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
@@ -82,7 +86,9 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply,
      socket
      |> assign(:selected_client, "custom")
-     |> assign(:quick_secret, nil)}
+     |> assign(:quick_secret, nil)
+     |> assign(:quick_key_id, nil)
+     |> assign(:quick_connected?, false)}
   end
 
   def handle_event("select_client", %{"client" => id}, socket) do
@@ -101,11 +107,13 @@ defmodule EmisarWeb.AgentsLive do
         name = client_label(id)
 
         case ApiKeys.mint_quick_key(socket.assigns.current_subject, name: name) do
-          {:ok, raw, _key} ->
+          {:ok, raw, key} ->
             {:noreply,
              socket
              |> assign(:selected_client, id)
              |> assign(:quick_secret, raw)
+             |> assign(:quick_key_id, key.id)
+             |> assign(:quick_connected?, false)
              |> reload()}
 
           {:error, _} ->
@@ -168,6 +176,15 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply, reload(socket)}
   end
 
+  # The agent's first call landed. If it's the specific key the connect flow is
+  # watching, flip its "waiting" state to "connected" — keyed to THAT key's id,
+  # never an account-wide key event (a different agent connecting mustn't flip
+  # this one).
+  def handle_info({:list_changed, :api_key, "api_key.first_used", id}, socket) do
+    connected? = socket.assigns.quick_connected? or id == socket.assigns.quick_key_id
+    {:noreply, socket |> assign(:quick_connected?, connected?) |> reload()}
+  end
+
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
     do: {:noreply, reload(socket)}
 
@@ -188,10 +205,12 @@ defmodule EmisarWeb.AgentsLive do
     }
 
     case ApiKeys.create_key(attrs, socket.assigns.current_subject) do
-      {:ok, raw, _key} ->
+      {:ok, raw, key} ->
         {:noreply,
          socket
          |> assign(:quick_secret, raw)
+         |> assign(:quick_key_id, key.id)
+         |> assign(:quick_connected?, false)
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
@@ -242,6 +261,15 @@ defmodule EmisarWeb.AgentsLive do
     assign(socket, :show_connect_inline?, inline?)
   end
 
+  # Tick fallback for the `api_key.first_used` broadcast: if the watched key
+  # already shows a first call in the loaded list, it connected. Once true it
+  # stays true; nil watch = nothing to watch.
+  defp quick_key_connected?(%{assigns: %{quick_connected?: true}}, _keys), do: true
+  defp quick_key_connected?(%{assigns: %{quick_key_id: nil}}, _keys), do: false
+
+  defp quick_key_connected?(%{assigns: %{quick_key_id: id}}, keys),
+    do: Enum.any?(keys, &(&1.id == id and &1.last_used_at))
+
   # Fill the static Owner filter's options with the account's real key creators
   # (the filter's SQL still comes from the Query module's `fun`).
   defp with_owner_options(subject) do
@@ -279,6 +307,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:dormant_count, count_status(keys, :dormant))
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
+        |> assign(:quick_connected?, quick_key_connected?(socket, keys))
         |> assign_connect_inline(keys)
         |> assign(:load_error?, false)
 
@@ -681,6 +710,9 @@ defmodule EmisarWeb.AgentsLive do
         configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
         selected_client={@selected_client}
         quick_secret={@quick_secret}
+        quick_key_id={@quick_key_id}
+        quick_connected?={@quick_connected?}
+        current_account={@current_account}
         form={@form}
       />
 
@@ -782,6 +814,9 @@ defmodule EmisarWeb.AgentsLive do
             configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
             selected_client={@selected_client}
             quick_secret={@quick_secret}
+            quick_key_id={@quick_key_id}
+            quick_connected?={@quick_connected?}
+            current_account={@current_account}
             form={@form}
           />
         </div>
@@ -999,6 +1034,9 @@ defmodule EmisarWeb.AgentsLive do
   attr :configs_for, :any, required: true
   attr :selected_client, :any, required: true
   attr :quick_secret, :string, default: nil
+  attr :quick_key_id, :string, default: nil
+  attr :quick_connected?, :boolean, default: false
+  attr :current_account, :any, required: true
   attr :form, :any, default: nil
 
   defp connect_panel(assigns) do
@@ -1163,6 +1201,49 @@ defmodule EmisarWeb.AgentsLive do
                 auto_permit={Map.get(@config, :auto_permit)}
               />
             </div>
+        <% end %>
+
+        <%!-- Live connection status for the just-minted key — the agents analog
+             of the runner-install "waiting → connected" watchdog. Keyed to THIS
+             key's id (the api_key.first_used handler), so a different agent
+             connecting can't flip it. Amber pending → brand once its first call
+             lands (instant via the broadcast, tick as the fallback). --%>
+        <%= cond do %>
+          <% is_nil(@quick_key_id) -> %>
+            <span></span>
+          <% @quick_connected? -> %>
+            <section class="mt-8 flex items-start gap-3 rounded-xl border border-brand-500/30 bg-brand-500/[0.04] p-4">
+              <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 shrink-0 text-brand-400" />
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-zinc-100">Connected — your agent is live</div>
+                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                  Its first call just landed. Every request now shows under its name in
+                  <.link
+                    navigate={~p"/app/#{@current_account}/settings/agents"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >
+                    agents
+                  </.link>
+                  and <.link
+                    navigate={~p"/app/#{@current_account}/runs"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >Runs</.link>.
+                </p>
+              </div>
+            </section>
+          <% true -> %>
+            <section class="mt-8 flex items-start gap-3 rounded-xl border border-dashed border-amber-500/30 p-4">
+              <.status_dot tone={:amber} size={:lg} ping class="mt-[5px]" />
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-zinc-100">
+                  Waiting for your agent's first call
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                  This updates on its own the moment your agent connects — you can leave; it'll
+                  show in the agents list either way.
+                </p>
+              </div>
+            </section>
         <% end %>
       </div>
 

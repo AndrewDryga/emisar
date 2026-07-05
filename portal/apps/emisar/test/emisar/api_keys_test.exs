@@ -708,6 +708,20 @@ defmodule Emisar.ApiKeysTest do
       assert event.target_id == bound.id
     end
 
+    test "the first call broadcasts api_key.first_used once; later calls don't" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
+      ApiKeys.subscribe_account_api_keys(account.id)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+      assert_receive {:list_changed, :api_key, "api_key.first_used", id}
+      assert id == key.id
+
+      # A later call bumps last_used_at but is no longer a first call — no storm.
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+      refute_receive {:list_changed, :api_key, "api_key.first_used", _}
+    end
+
     test "first use of a rotation successor retires the replaced key and audits it" do
       {_user, account, subject} = owner_subject_pair()
       {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
