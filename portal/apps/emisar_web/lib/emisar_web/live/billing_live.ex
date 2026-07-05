@@ -246,7 +246,7 @@ defmodule EmisarWeb.BillingLive do
         <section>
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Current plan
               </div>
               <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -319,7 +319,35 @@ defmodule EmisarWeb.BillingLive do
             >
               Manage subscription
             </.button>
+            <%!-- Enterprise is sales-led — support IS the money action, in the
+                 same hero slot the self-serve states put theirs. --%>
+            <.button
+              :if={
+                @summary.plan == "enterprise" and
+                  Billing.subject_can_manage_billing?(@current_subject)
+              }
+              variant={:secondary}
+              href={support_mailto(@current_account)}
+            >
+              Contact support
+            </.button>
           </div>
+
+          <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
+               plan + billing changes go through our team — a downgrade here would
+               route to a Paddle portal the account has no customer in. A posture
+               fact about this surface, not an interruption: the naked note
+               grammar, with the action up in the hero row. --%>
+          <.status_note
+            :if={@summary.plan == "enterprise"}
+            icon="hero-lifebuoy"
+            tone={:neutral}
+            title="Custom Enterprise plan"
+            class="mt-6 max-w-prose"
+          >
+            Your plan and billing are handled with our team, not self-serve. Contact support to
+            change your plan, ask about an invoice, or cancel — we'll take care of it.
+          </.status_note>
 
           <%!-- The summary limits are entitlement-aware (Paddle product
                custom_data overrides the compiled plan defaults) — never
@@ -340,28 +368,10 @@ defmodule EmisarWeb.BillingLive do
           </div>
         </section>
 
-        <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so plan
-             + billing changes go through our team — a downgrade here would route
-             to a Paddle portal the account has no customer in. Surface the special
-             state + the one real action instead of dead self-serve controls. --%>
-        <.callout
-          :if={@summary.plan == "enterprise"}
-          tone={:neutral}
-          icon="hero-lifebuoy"
-          title="Custom Enterprise plan"
-        >
-          Your plan and billing are handled with our team, not self-serve. Contact support to
-          change your plan, ask about an invoice, or cancel — we'll take care of it.
-          <:action :if={Billing.subject_can_manage_billing?(@current_subject)}>
-            <.button variant={:secondary} size={:md} href={support_mailto(@current_account)}>
-              Contact support
-            </.button>
-          </:action>
-        </.callout>
-
         <%!-- Plan cards. Three across on desktop, single column on
-             phones. Current plan visually pinned, popular plan
-             highlighted with a ribbon. --%>
+             phones. Picking a plan is the choice_cards concept, so the cards
+             wear that recipe: the current plan takes the selected treatment
+             (bright ring), the rest the quiet one. --%>
         <section>
           <.section_header title="Plans" />
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -370,20 +380,22 @@ defmodule EmisarWeb.BillingLive do
                  read as three different products. --%>
             <article
               :for={plan <- @plans}
-              class="relative flex flex-col rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-5"
+              class={[
+                "relative flex flex-col rounded-lg p-5 ring-1",
+                if(current_plan?(plan, @summary),
+                  do: "bg-white/[0.04] ring-white/25",
+                  else: "bg-black/20 ring-zinc-800"
+                )
+              ]}
             >
               <div class="flex items-center justify-between gap-2">
                 <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
-                <%= cond do %>
-                  <% current_plan?(plan, @summary) -> %>
-                    <.chip tone={:neutral}>current</.chip>
-                  <% plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan) -> %>
-                    <%!-- Upsell merch only reads as such BELOW the badged plan —
-                         a customer already above it gets silence. --%>
-                    <.chip>most popular</.chip>
-                  <% true -> %>
-                    <span></span>
-                <% end %>
+                <.chip :if={current_plan?(plan, @summary)} tone={:neutral}>current</.chip>
+                <%!-- Upsell merch only reads as such BELOW the badged plan —
+                     a customer already above it gets silence. --%>
+                <.chip :if={plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan)}>
+                  most popular
+                </.chip>
               </div>
 
               <p class="mt-2 text-sm text-zinc-400">{price_label(plan)}</p>
@@ -395,23 +407,21 @@ defmodule EmisarWeb.BillingLive do
                 </li>
               </ul>
 
-              <div class="mt-5">
+              <%!-- No footer on the current plan: the chip + bright ring already
+                   say it — a disabled "You're here" button was a fake affordance. --%>
+              <div :if={not current_plan?(plan, @summary)} class="mt-5">
                 <%= cond do %>
-                  <% current_plan?(plan, @summary) -> %>
-                    <%!-- No footer: the CURRENT chip + brighter ring already say it —
-                         a disabled "You're here" button was a fake affordance. --%>
-                    <span></span>
                   <% plan.key == "enterprise" -> %>
                     <.button variant={:secondary} size={:md} class="w-full" phx-click="contact_sales">
                       Contact sales
                     </.button>
                   <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
-                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
-                      Owners only
-                    </span>
+                    <%!-- Quiet fact for non-owners, not a gray slab that apes a
+                         disabled button. --%>
+                    <p class="py-2 text-center text-xs font-medium text-zinc-500">Owners only</p>
                   <% @summary.plan == "enterprise" -> %>
                     <%!-- On a custom Enterprise plan every other tier is a downgrade,
-                         and there's no self-serve path off it — the notice above
+                         and there's no self-serve path off it — the note above
                          carries the one real action (contact support). --%>
                     <.button
                       variant={:ghost}
