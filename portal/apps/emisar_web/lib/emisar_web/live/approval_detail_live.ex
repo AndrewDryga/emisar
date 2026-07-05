@@ -631,45 +631,36 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>
           <div class="space-y-10">
-            <%!-- THE ARTIFACT — the single most decision-relevant fact on the page,
-               one altitude above every supporting panel (surface step + white
-               ring, not another identical hairline box): the plain-English effect
-               from the pack manifest as its caption, then the exact command the
-               runner will execute — the run's arguments resolved into the
-               action's template. The command shows only when our compiled pack is
-               provably the runner's (pinned hash, or advertised version);
-               otherwise the raw arguments ARE the artifact and render in its
-               place. Sensitive args are masked. --%>
-            <section
-              :if={@executed_command || @action_description || (@run && @run.args != %{})}
-              class="overflow-hidden rounded-xl bg-zinc-900/[0.85] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.12]"
-            >
-              <header class="flex items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
-                <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-                  {if @executed_command, do: "Command", else: "Arguments"}
-                </h2>
-                <span class="text-xs text-zinc-500">
-                  {if @executed_command,
-                    do: "what the runner will execute",
-                    else: "what the runner will receive"}
-                </span>
-              </header>
-              <%!-- Caption one step of gray BELOW the command — the brightest thing
-                 in the artifact must be the thing the runner will execute. --%>
+            <%!-- What will run: the plain-English effect from the pack manifest
+               as NAKED prose (a note about the artifact never lives inside the
+               artifact's box), then the exact command in the standard
+               code_panel ARTIFACT — the only box here, earned by the code it
+               holds. The command shows only when our compiled pack is provably
+               the runner's (pinned hash, or advertised version); otherwise the
+               raw arguments ARE the artifact. Sensitive args are masked. --%>
+            <section :if={@executed_command || @action_description || (@run && @run.args != %{})}>
               <p
                 :if={@action_description}
-                class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-400"
+                class="mb-4 max-w-prose text-sm leading-relaxed text-zinc-400"
               >
                 {@action_description}
               </p>
-              <pre
+              <.code_panel
                 :if={@executed_command}
-                class="overflow-x-auto bg-black/50 py-4 pl-5 pr-8 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
-              ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
-              <pre
+                id={"approval-command-#{@request.id}"}
+                label="Command"
+                annotation="what the runner will execute"
+                prompt
+                code={@executed_command}
+              />
+              <.code_panel
                 :if={is_nil(@executed_command) && @run && @run.args != %{}}
-                class="max-h-64 overflow-auto bg-black/50 px-5 py-4 font-mono text-xs leading-relaxed text-zinc-300"
-              >{format_json(@run.args)}</pre>
+                id={"approval-raw-args-#{@request.id}"}
+                label="Arguments"
+                annotation="what the runner will receive"
+                max_h="max-h-64"
+                code={format_json(@run.args)}
+              />
             </section>
 
             <%!-- The raw args stay one click away once the command carries the
@@ -800,8 +791,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_panel(assigns) do
     ~H"""
-    <.panel title="Decide">
-      <:subtitle>Logged to the audit trail.</:subtitle>
+    <%!-- NAKED on the canvas — a form's fields are self-contained controls
+         (the runbook editor / every create flow already sit boxless); the
+         panel island read as one more wash box. --%>
+    <section>
+      <.section_header title="Decide">
+        <:subtitle>Logged to the audit trail.</:subtitle>
+      </.section_header>
 
       <%!-- Live countdown so the operator decides against the clock, not a static
            "expires in 3h". Ticks client-side (ExpiryCountdown hook); at zero it
@@ -820,26 +816,29 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <span data-countdown-text>{countdown_fallback(@expires_at)}</span>
       </div>
 
-      <p
-        :if={@min_approvals > 1}
-        class="rounded-lg bg-black/30 px-3 py-2 text-xs text-zinc-300 ring-1 ring-white/[0.08]"
-      >
+      <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
         This action needs <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
         — {@approved_count} so far.
       </p>
 
-      <.offline_notice :if={@runner_state == :offline} severity={:info} title="Runner offline">
+      <.status_note
+        :if={@runner_state == :offline}
+        icon="hero-bolt-slash"
+        tone={:amber}
+        title="Runner offline"
+        class="mt-4"
+      >
         You can still approve — the action queues and runs once the runner reconnects, or
         expires if it doesn't.
-      </.offline_notice>
+      </.status_note>
 
       <%= cond do %>
         <% not @can_decide? -> %>
-          <p class="mt-4 rounded-lg bg-black/30 p-4 text-xs text-zinc-400 ring-1 ring-white/[0.08]">
+          <p class="mt-4 text-xs leading-relaxed text-zinc-500">
             Viewers can't decide approvals.
           </p>
         <% @already_decided? -> %>
-          <p class="mt-4 rounded-lg bg-black/30 p-4 text-xs text-zinc-400 ring-1 ring-white/[0.08]">
+          <p class="mt-4 text-xs leading-relaxed text-zinc-500">
             You've already recorded your decision on this request. Waiting on the remaining approvers.
           </p>
         <% true -> %>
@@ -847,13 +846,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
                policy forbids self-approval — the context refuses it anyway
                (IL-15), this just removes the dead button. They can still Deny
                their own request. --%>
-          <div
-            :if={@self_blocked?}
-            class="mt-4 flex items-start gap-2 rounded-lg bg-black/30 p-3 text-xs text-zinc-300 ring-1 ring-white/[0.08]"
-          >
-            <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-zinc-400" />
-            <span>You can't approve your own request — a different operator must approve it.</span>
-          </div>
+          <p :if={@self_blocked?} class="mt-4 text-xs leading-relaxed text-zinc-500">
+            You can't approve your own request — a different operator must approve it.
+          </p>
           <%!-- ONE decision form: a single note field logged with whichever
                decision is taken (two competing optional textareas doubled the
                form, and the deny box under Approve read as a note for the
@@ -973,7 +968,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.button>
           </form>
       <% end %>
-    </.panel>
+    </section>
     """
   end
 

@@ -521,7 +521,12 @@ after being taught, so every one is checked EVERY time, mechanically:
    (Rotate! not just the happy list). Screenshot desktop AND mobile for
    create/connect flows.
 3. **No new wash boxes** — a box is EARNED by a secret (`secret_reveal`), a
-   form, a code artifact, or an actionable warning. A NOTE is status grammar:
+   code artifact (`code_panel`), or an actionable warning. **FORMS ARE NAKED**
+   — fields are self-contained controls (the runbook editor, every create
+   flow, the approval Decide rail); a `.panel` around a form is one more wash
+   box. The old "ONE raised anchor" exception is DEAD too: the approval
+   Command is a standard `code_panel` artifact with its description as naked
+   prose above it — prose never rides inside the artifact's box. A NOTE is status grammar:
    icon lead + medium title + zinc body, naked on canvas (§5). Check the diff
    for added `bg-*/ring-*` on prose. The boxed `secret_reveal` banner is ONLY
    the form-replacing success step on a dedicated create page (keys/new, MFA
