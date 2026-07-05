@@ -329,7 +329,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.section_header>
 
             <%= if @recent_runs == [] do %>
-              <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet">
+              <.empty_state icon="hero-bolt" title="No runs yet">
                 Nothing dispatched to this runner yet — runs land here as they happen.
               </.empty_state>
             <% else %>
@@ -345,7 +345,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
             <%= if @actions == [] do %>
-              <.empty_state variant={:bare} icon="hero-cpu-chip" title="No actions yet">
+              <.empty_state icon="hero-cpu-chip" title="No actions yet">
                 This runner hasn't reported a catalog yet. Check the runner logs on the host.
               </.empty_state>
             <% else %>
