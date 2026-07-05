@@ -854,7 +854,7 @@ defmodule EmisarWeb.PoliciesLive do
       id={"policy-form-" <> @editor_id}
       phx-change="form_change"
       phx-submit="save"
-      class="mt-4 space-y-4"
+      class="mt-6 space-y-8"
     >
       <input type="hidden" name="editor" value={@editor_id} />
 
@@ -938,7 +938,7 @@ defmodule EmisarWeb.PoliciesLive do
           Applies to any action this policy sends to the approval queue.
         </p>
 
-        <div class="mt-3">
+        <div class="mt-4">
           <.label variant={:eyebrow}>Who can approve</.label>
           <.choice_cards
             name="policy[approval][allow_self_approval]"
@@ -956,7 +956,7 @@ defmodule EmisarWeb.PoliciesLive do
           </.choice_cards>
         </div>
 
-        <div class="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <div class="mt-6 flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             Required approvals
           </span>
@@ -974,32 +974,39 @@ defmodule EmisarWeb.PoliciesLive do
           </span>
         </div>
 
-        <%!-- The callout earns its space only as a WARNING — when self-approval plus a
+        <%!-- The verdict earns its space only as a WARNING — when self-approval plus a
              single approval lets the requester sign off on their own request. A healthy
-             gate shows no box: the cards + count already say what it does, and a green
-             "all good" callout is just noise that trains operators to ignore boxes. --%>
-        <.callout :if={@single_reviewer?} tone={:amber} icon="hero-shield-exclamation" class="mt-4">
-          <span class="font-semibold">In effect —</span>
-          a single approval is enough, and the requester may approve their own request.
-          <%!-- The remedy line instructs an EDIT — only for roles that can. --%>
-          <p :if={@can_manage} class="mt-1 text-xs opacity-80">
-            Choose a different operator, or raise the count, to add independent review.
-          </p>
-        </.callout>
+             gate shows nothing: the cards + count already say what it does, and a green
+             "all good" note is just noise that trains operators to ignore it. It reads
+             in the calm icon-caps-a-spine grammar (`event_block`), not a wash box — the
+             amber icon carries the severity. The remedy is descriptive, so it shows for
+             everyone (a viewer still learns how the gate could be tightened). --%>
+        <.event_block
+          :if={@single_reviewer?}
+          tone={:amber}
+          icon="hero-shield-exclamation"
+          title="In effect — a single approval is enough, and the requester may approve their own request"
+          class="mt-6"
+        >
+          <:body>Choose a different operator, or raise the count, to add independent review.</:body>
+        </.event_block>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval
              gate for its target. Nudge the operator when that's the case. --%>
-        <.callout
+        <.event_block
           :if={@approval_weakenings != []}
           tone={:amber}
+          icon="hero-shield-exclamation"
           title="Weaker approval gate than the default policy"
-          class="mt-3"
+          class="mt-4"
         >
-          This ruleset replaces the default for its target, and its gate is laxer — it {weakening_sentence(
-            @approval_weakenings
-          )}. Tighten it here if that isn't intended.
-        </.callout>
+          <:body>
+            This ruleset replaces the default for its target, and its gate is laxer — it {weakening_sentence(
+              @approval_weakenings
+            )}. Tighten it here if that isn't intended.
+          </:body>
+        </.event_block>
       </div>
 
       <%!-- The editor footer grammar: hairline, primary leading, the dirty
