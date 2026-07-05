@@ -386,7 +386,7 @@ defmodule EmisarWeb.LiveTable do
         <.clear_filters_link
           :if={@layout == :inline and has_active_filters?(@params, @filters)}
           path={@path}
-          class="pb-2.5"
+          class="pb-2"
         />
       </div>
       <%!-- Stacked (the audit facet panel): the grid owns the rows, so the
