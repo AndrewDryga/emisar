@@ -379,15 +379,40 @@ defmodule EmisarWeb.LiveTable do
             value={filter_value(@params, to_string(filter.name), filter)}
           />
         </div>
+        <%!-- Inline: the clear affordance flows as the row's LAST item, riding
+             the container's items-end so it bottom-aligns with the controls
+             (pb centers it against a control's text) — not a lonely line below
+             a one-row bar. Wraps along naturally when the filters do. --%>
+        <.clear_filters_link
+          :if={@layout == :inline and has_active_filters?(@params, @filters)}
+          path={@path}
+          class="pb-2.5"
+        />
       </div>
-      <.link
-        :if={has_active_filters?(@params, @filters)}
-        patch={@path}
-        class="inline-flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-zinc-200"
-      >
-        <span aria-hidden="true" class="text-base leading-none">&times;</span> Clear filters
-      </.link>
+      <%!-- Stacked (the audit facet panel): the grid owns the rows, so the
+           clear affordance keeps its own line beneath. --%>
+      <.clear_filters_link
+        :if={@layout == :stacked and has_active_filters?(@params, @filters)}
+        path={@path}
+      />
     </form>
+    """
+  end
+
+  attr :path, :string, required: true
+  attr :class, :string, default: nil
+
+  defp clear_filters_link(assigns) do
+    ~H"""
+    <.link
+      patch={@path}
+      class={[
+        "inline-flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-zinc-200",
+        @class
+      ]}
+    >
+      <span aria-hidden="true" class="text-base leading-none">&times;</span> Clear filters
+    </.link>
     """
   end
 
