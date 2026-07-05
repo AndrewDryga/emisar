@@ -537,7 +537,12 @@ after being taught, so every one is checked EVERY time, mechanically:
    naked note (a step inside the operator's own flow stays a bare note);
    `<.event_block icon= title=>` is the note plus the icon-capped quiet spine,
    for a transient action result that INTERRUPTS a page whose main content is
-   something else (the agents rotation reveal is the template).
+   something else (the agents rotation reveal is the template). A boxed
+   `.callout` earns its frame only for a TRANSIENT actionable interruption (a
+   past-due subscription, a pack blocking dispatch); a PERMANENT account state
+   ("Enterprise billing is sales-led") is a posture fact → `status_note`, with
+   its action promoted to the surface's normal action row, never an `:action`
+   riding inside a box.
 4. **Rhythm is owned once** — by the shell's `space-y-6` or by ONE page
    wrapper (`space-y-12`); never per-block `mt-*`/`pb-*` on shell children
    (§3.3 — they silently lose to the shell).
