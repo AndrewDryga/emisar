@@ -330,7 +330,17 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.section_header>
 
             <%= if @recent_runs == [] do %>
-              <.empty_state icon="hero-bolt" title="No runs yet">
+              <%!-- Shared min-height + centered content so this narrow (1/3)
+                   placeholder matches the wide "No actions yet" box beside it —
+                   their descriptions wrap to different line counts, so a bare box
+                   would be two different heights. A fixed floor doesn't couple to
+                   the neighbor the way items-stretch would in the mixed (one
+                   column full) state. --%>
+              <.empty_state
+                icon="hero-bolt"
+                title="No runs yet"
+                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+              >
                 Nothing dispatched to this runner yet — runs land here as they happen.
               </.empty_state>
             <% else %>
@@ -346,7 +356,11 @@ defmodule EmisarWeb.RunnerDetailLive do
             <.section_header title="Advertised actions" count={@actions_metadata.count} />
 
             <%= if @actions == [] do %>
-              <.empty_state icon="hero-cpu-chip" title="No actions yet">
+              <.empty_state
+                icon="hero-cpu-chip"
+                title="No actions yet"
+                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+              >
                 This runner hasn't reported a catalog yet. Check the runner logs on the host.
               </.empty_state>
             <% else %>
