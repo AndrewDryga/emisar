@@ -288,6 +288,7 @@ defmodule EmisarWeb.RunNewLive do
               Examples
             </div>
             <ul class="space-y-2">
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned artifact frame (example args JSON), pending code_panel migration --%>
               <li
                 :for={ex <- action_examples(@action)}
                 class="rounded-lg bg-black/40 p-3 ring-1 ring-white/[0.08]"

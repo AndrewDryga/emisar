@@ -378,6 +378,7 @@ defmodule EmisarWeb.BillingLive do
             <%!-- ONE card style for every plan — identity ("current") and merch
                  ("most popular") are the CHIPS' job; per-plan border treatments
                  read as three different products. --%>
+            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = selected ring) --%>
             <article
               :for={plan <- @plans}
               class={[

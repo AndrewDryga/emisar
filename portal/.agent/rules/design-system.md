@@ -542,7 +542,12 @@ after being taught, so every one is checked EVERY time, mechanically:
    past-due subscription, a pack blocking dispatch); a PERMANENT account state
    ("Enterprise billing is sales-led") is a posture fact → `status_note`, with
    its action promoted to the surface's normal action row, never an `:action`
-   riding inside a box.
+   riding inside a box. **Credo-enforced**:
+   `Emisar.Checks.NoIslandContainers` flags a container tag carrying a wash
+   background + frame in any `live/` template (state washes, buttons, spans,
+   pre/code recesses don't match); an earned artifact frame or sanctioned
+   recessed control surface carries the HEEx
+   `credo:disable-for-next-line` marker on the line above the tag, with why.
 4. **Rhythm is owned once** — by the shell's `space-y-6` or by ONE page
    wrapper (`space-y-12`); never per-block `mt-*`/`pb-*` on shell children
    (§3.3 — they silently lose to the shell).

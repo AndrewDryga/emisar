@@ -974,6 +974,7 @@ defmodule EmisarWeb.TeamLive do
 
               <%!-- Edit form appears inline under the row. No bolted-
                    on table column; just normal flow. --%>
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed control surface (inline row editor, the policy-knob family) --%>
               <div
                 :if={@editing_id == membership.id and @edit_form}
                 class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"
@@ -1003,6 +1004,7 @@ defmodule EmisarWeb.TeamLive do
                    scope" is clicked. ONE grouped multi-select (groups with their
                    runners nested beneath); selecting a group disables its runners
                    (already covered). Empty selection = "all runners" default. --%>
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed control surface (inline row editor, the policy-knob family) --%>
               <div
                 :if={@scope_editing_id == membership.id}
                 class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"

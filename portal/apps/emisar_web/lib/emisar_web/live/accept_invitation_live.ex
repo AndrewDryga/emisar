@@ -76,9 +76,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
       >
         <input type="hidden" name="user[email]" value={@membership.user.email} />
 
-        <div class="rounded-lg bg-zinc-900/60 p-4 text-sm ring-1 ring-white/[0.07]">
-          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Joining as</div>
-          <div class="mt-1 font-mono text-zinc-200">{@membership.user.email}</div>
+        <%!-- Naked meta field (the detail-page key+value grammar) — the box
+             around it was an island (§8.1). --%>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Joining as
+          </div>
+          <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.user.email}</div>
         </div>
 
         <.input field={@form[:full_name]} type="text" label="Your name" required />

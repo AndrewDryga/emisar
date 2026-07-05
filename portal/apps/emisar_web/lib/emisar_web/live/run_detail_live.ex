@@ -394,6 +394,7 @@ defmodule EmisarWeb.RunDetailLive do
              it streams chunk spans into the <pre>, which code_panel's static
              `code` attr can't (the one sanctioned hand-roll, console-ux §1).
              Hidden for statuses where the panel would just be blank. --%>
+        <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned: the run terminal frame (the sanctioned hand-rolled code_panel) --%>
         <div
           :if={show_output?(@run, @output_present?)}
           class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800"

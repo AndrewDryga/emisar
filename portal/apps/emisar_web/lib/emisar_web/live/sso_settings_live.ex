@@ -1439,6 +1439,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           />
           <div :if={@editing?}>
             <.label>Provider type</.label>
+            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a control: the locked read-only field wears the input recipe --%>
             <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-400 ring-1 ring-inset ring-zinc-800">
               <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
               {selected_kind_label(@form, @kind_options)}
@@ -1609,7 +1610,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # one value they register on the IdP side (we never accept it from them — H2).
   defp provider_setup_guide(assigns) do
     ~H"""
-    <div class="rounded-lg bg-zinc-900/50 p-4 ring-1 ring-white/5">
+    <%!-- NAKED supporting rail (the install-wizard rail grammar) — the reading
+         column is separated by AIR, never boxed; the code_lines inside are the
+         earned artifacts. --%>
+    <div>
       <p class="text-sm font-medium text-zinc-200">Setting up {setup_kind_label(@kind)}</p>
       <.steps class="mt-3">
         <:step>

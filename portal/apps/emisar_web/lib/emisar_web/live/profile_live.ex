@@ -600,7 +600,7 @@ defmodule EmisarWeb.ProfileLive do
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
                sliver that read as a rendering bug; "Sign out everywhere else"
                is the long-list affordance. --%>
-          <ul class="divide-y divide-zinc-800/70 rounded-lg bg-zinc-900/60 text-sm ring-1 ring-white/[0.07]">
+          <ul class="divide-y divide-zinc-800/70 text-sm">
             <.list_row
               :for={session <- @sessions}
               icon={session_device_icon(session)}

@@ -46,7 +46,9 @@ defmodule EmisarWeb.SSOPendingLive do
     ~H"""
     <.auth_layout title="Access pending">
       <div :if={@status == :pending} class="space-y-6">
-        <div class="flex items-center gap-3 rounded-lg bg-zinc-900/50 p-4 ring-1 ring-white/5">
+        <%!-- Naked dot-led wait line (the install wizard's wait grammar) — a
+             box around a status line is the island §8.1 bans. --%>
+        <div class="flex items-center gap-3">
           <.status_dot tone={:brand} ping size={:lg} />
           <p class="text-sm text-zinc-300">
             Waiting for an administrator at
