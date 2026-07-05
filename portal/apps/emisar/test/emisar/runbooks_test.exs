@@ -779,6 +779,15 @@ defmodule Emisar.RunbooksTest do
       # the durable execution row for continuation re-prefixing.
       step1 = Enum.find(runs, &(&1.runbook_step_id == "step1"))
       assert step1.reason == "runbook: deploy-check • step 1/3 — release 42"
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
+      dispatched = Enum.find(events, &(&1.event_type == "runbook.dispatched"))
+
+      assert dispatched.target_id == runbook.id
+      assert dispatched.payload["runbook_execution_id"] == execution_id
+      assert dispatched.payload["reason"] == "release 42"
+      assert dispatched.payload["total"] == 3
+      assert dispatched.payload["waves"] == 1
     end
 
     test "returns the full plan keyed to match the runs it creates", %{

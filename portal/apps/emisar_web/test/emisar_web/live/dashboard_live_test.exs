@@ -75,11 +75,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "a runner alone keeps the checklist — step 1 done, agent step current", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
-
-      {:ok, _runner} =
-        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -94,8 +91,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      {:ok, _runner} =
-        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
@@ -134,8 +130,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # Both connections exist so the operational dashboard (not the checklist)
       # renders its pillars.
-      {:ok, _runner} =
-        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
@@ -170,8 +165,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      {:ok, _runner} =
-        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(

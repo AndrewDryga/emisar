@@ -359,8 +359,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # A whole group, plus one runner from a DIFFERENT group (picking a runner
       # inside the chosen group would be redundant — it collapses to the group).
-      {:ok, _dba} = Emisar.Runners.create_runner(%{"name" => "r1", "group" => "dba"}, subject)
-      {:ok, web} = Emisar.Runners.create_runner(%{"name" => "r2", "group" => "web"}, subject)
+      _dba = Fixtures.Runners.create_runner(account_id: account.id, name: "r1", group: "dba")
+      web = Fixtures.Runners.create_runner(account_id: account.id, name: "r2", group: "web")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -389,7 +389,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       email = "scoped3-#{System.unique_integer([:positive])}@example.com"
       {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
-      {:ok, _runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r9", group: "dba")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
@@ -413,8 +413,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       email = "scoped2-#{System.unique_integer([:positive])}@example.com"
       {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
-      {:ok, web} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "web"}, subject)
-      {:ok, _dba} = Emisar.Runners.create_runner(%{"name" => "r8", "group" => "dba"}, subject)
+      web = Fixtures.Runners.create_runner(account_id: account.id, name: "r9", group: "web")
+      _dba = Fixtures.Runners.create_runner(account_id: account.id, name: "r8", group: "dba")
 
       # Pre-existing scope: one group + one runner from another group.
       {:ok, :ok} =

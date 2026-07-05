@@ -1517,28 +1517,22 @@ defmodule Emisar.AuditTest do
                   approval_grant runbook policy]
     end
 
-    # `runbook.dispatched` is DECLARED (known list + grouped
-    # dropdown) but NEVER EMITTED: no `Audit.Events` builder produces it, so the
-    # dropdown option matches zero rows. We ground "never emitted" in the builder
-    # source itself — every event_type string literal in events.ex — so the test
-    # can't drift if a real `runbook.dispatched` builder is later added.
-    test "runbook.dispatched is declared but emitted by no builder (dead dropdown option)" do
+    # `runbook.dispatched` is a first-class audit type: it appears in both
+    # dropdowns and has a builder, so filtering by it can return real rows.
+    test "runbook.dispatched is declared and emitted by a builder" do
       known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
 
       grouped =
         Audit.Event.Query.grouped_event_type_values()
         |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
 
-      # Declared in BOTH the flat known list and the grouped dropdown…
       assert "runbook.dispatched" in known
       assert "runbook.dispatched" in grouped
 
-      # …but produced by no builder. The sibling runbook events ARE emitted —
-      # proves the extraction sees real builder output, not an empty set.
       emitted = emitted_event_types()
       assert "runbook.created" in emitted
       assert "runbook.published" in emitted
-      refute "runbook.dispatched" in emitted
+      assert "runbook.dispatched" in emitted
     end
   end
 
@@ -1622,8 +1616,7 @@ defmodule Emisar.AuditTest do
     # so it can't be collapsed into `system` by the picker either.
     test "directory_sync is not an Actor-type filter value" do
       refute "directory_sync" in filter_values(:actor_kind)
-      # The builders really do stamp it (grounds "distinct class" in source —
-      # the same string-literal extraction the runbook.dispatched drift test uses).
+      # The builders really do stamp it (grounds "distinct class" in source).
       assert "directory_sync" in emitted_event_types()
     end
   end
@@ -1724,9 +1717,8 @@ defmodule Emisar.AuditTest do
   end
 
   # Every event_type string literal a builder passes to `Audit.changeset/3`,
-  # read from the Audit.Events source. Grounds "no builder emits X" in the actual
-  # builder code: if a real `runbook.dispatched` builder is added, this set picks
-  # it up and the drift test fails loudly (which is correct — close the gap then).
+  # read from the Audit.Events source. Grounds builder-vs-dropdown assertions in
+  # actual builder code instead of hand-copied event lists.
   defp emitted_event_types do
     path = Path.join(File.cwd!(), "lib/emisar/audit/events.ex")
 

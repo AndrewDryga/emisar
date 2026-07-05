@@ -12,8 +12,6 @@ defmodule Emisar.OAuth.Client do
     field :redirect_uris, {:array, :string}, default: []
     field :grant_types, {:array, :string}, default: []
     field :response_types, {:array, :string}, default: []
-    field :token_endpoint_auth_method, :string, default: "none"
-    field :client_secret_hash, :binary, redact: true
     field :scope, :string
     field :metadata, :map, default: %{}
     field :last_authorized_at, :utc_datetime_usec

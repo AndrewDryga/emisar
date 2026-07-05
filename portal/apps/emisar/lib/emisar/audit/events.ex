@@ -497,6 +497,25 @@ defmodule Emisar.Audit.Events do
     })
   end
 
+  def runbook_dispatched(
+        %Subject{} = subject,
+        %Runbooks.Runbook{} = runbook,
+        %Runbooks.RunbookExecution{} = execution,
+        total,
+        waves
+      ) do
+    runbook_event(subject, runbook, "runbook.dispatched", %{
+      name: runbook.name,
+      title: runbook.title,
+      version: runbook.version,
+      runbook_id: runbook.id,
+      runbook_execution_id: execution.id,
+      reason: execution.reason,
+      total: total,
+      waves: waves
+    })
+  end
+
   # A wave-engine dispatch that produced no run row (runner offline, a
   # row-less error) — the engine continuation has no acting subject, so
   # the actor is the system.

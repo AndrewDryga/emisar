@@ -131,11 +131,9 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert body["scopes_supported"] == OAuth.supported_scopes()
     end
 
-    # the AS metadata advertises only what is
-    # actually enforced: S256-only PKCE and code-only response type (matching the
-    # consent + token enforcement), and "none" client auth (no client secret). The
-    # dead `oauth_clients.client_secret_hash` column is never reflected as a
-    # secret-bearing auth method.
+    # the AS metadata advertises only what is actually enforced: S256-only PKCE,
+    # code-only response type (matching the consent + token enforcement), and
+    # public-client auth ("none").
     test "AS metadata advertises S256/code-only consistent with enforcement", %{conn: conn} do
       body =
         conn
@@ -145,8 +143,6 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert body["code_challenge_methods_supported"] == ["S256"]
       assert body["response_types_supported"] == ["code"]
       assert body["scopes_supported"] == OAuth.supported_scopes()
-      # Public PKCE clients only: no client-secret auth advertised, so the dead
-      # client_secret_hash column is never surfaced.
       assert body["token_endpoint_auth_methods_supported"] == ["none"]
       refute Enum.any?(body["token_endpoint_auth_methods_supported"], &(&1 =~ "secret"))
     end
@@ -234,6 +230,20 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> json_response(400)
 
       assert body["error"] == "invalid_client_metadata"
+    end
+
+    test "rejects a confidential-client auth method", %{conn: conn} do
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Secret Client",
+          "redirect_uris" => [@redirect],
+          "token_endpoint_auth_method" => "client_secret_basic"
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_client_metadata"
+      assert body["error_description"] =~ "token_endpoint_auth_method must be none"
     end
 
     # `redirect_uris` may arrive as a single bare string;

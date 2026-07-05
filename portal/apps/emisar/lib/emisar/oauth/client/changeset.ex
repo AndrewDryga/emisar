@@ -2,8 +2,7 @@ defmodule Emisar.OAuth.Client.Changeset do
   use Emisar, :changeset
   alias Emisar.OAuth.Client
 
-  @cast_fields ~w(client_name redirect_uris grant_types response_types
-                  token_endpoint_auth_method client_secret_hash scope metadata)a
+  @cast_fields ~w(client_name redirect_uris grant_types response_types scope metadata)a
 
   @doc """
   Register a public OAuth client (RFC 7591 Dynamic Client Registration).
@@ -14,6 +13,7 @@ defmodule Emisar.OAuth.Client.Changeset do
     %Client{}
     |> cast(attrs, @cast_fields)
     |> validate_length(:client_name, max: 200)
+    |> validate_public_auth_method(attrs)
     |> validate_redirect_uris()
   end
 
@@ -33,6 +33,15 @@ defmodule Emisar.OAuth.Client.Changeset do
 
       true ->
         add_error(changeset, :redirect_uris, "must be https:// or http://localhost")
+    end
+  end
+
+  defp validate_public_auth_method(changeset, attrs) do
+    case Map.get(attrs, :token_endpoint_auth_method) ||
+           Map.get(attrs, "token_endpoint_auth_method") do
+      nil -> changeset
+      "none" -> changeset
+      _ -> add_error(changeset, :token_endpoint_auth_method, "must be none")
     end
   end
 

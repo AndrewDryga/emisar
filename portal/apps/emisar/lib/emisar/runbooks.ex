@@ -566,8 +566,20 @@ defmodule Emisar.Runbooks do
       work_list: freeze_work_list(work_list)
     }
 
-    case Repo.insert(RunbookExecution.Changeset.create(attrs)) do
-      {:ok, %RunbookExecution{} = execution} ->
+    Multi.new()
+    |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs))
+    |> Multi.insert(:audit, fn %{execution: execution} ->
+      Audit.Events.runbook_dispatched(
+        subject,
+        runbook,
+        execution,
+        length(work_list),
+        ceil(length(work_list) / @batch_size)
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{execution: %RunbookExecution{} = execution}} ->
         {:ok,
          %{
            id: execution.id,
@@ -576,8 +588,8 @@ defmodule Emisar.Runbooks do
            membership_id: execution.initiating_membership_id
          }}
 
-      {:error, changeset} ->
-        {:error, changeset}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

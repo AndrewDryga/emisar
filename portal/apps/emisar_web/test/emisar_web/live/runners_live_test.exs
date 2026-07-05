@@ -43,17 +43,25 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "lists runners grouped by their `group` field", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _} =
-        Emisar.Runners.create_runner(%{"name" => "a1", "group" => "cassandra-us-east1"}, subject)
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "a1",
+        group: "cassandra-us-east1"
+      )
 
-      {:ok, _} =
-        Emisar.Runners.create_runner(%{"name" => "a2", "group" => "cassandra-us-east1"}, subject)
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "a2",
+        group: "cassandra-us-east1"
+      )
 
-      {:ok, _} =
-        Emisar.Runners.create_runner(%{"name" => "b1", "group" => "postgres-eu-west1"}, subject)
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "b1",
+        group: "postgres-eu-west1"
+      )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
       assert html =~ "cassandra-us-east1"
@@ -253,19 +261,11 @@ defmodule EmisarWeb.RunnersLiveTest do
   describe "GET /app/runners/install" do
     test "always renders the install wizard with a pre-minted command",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, _user, account} = register_and_log_in(conn)
 
       # Pre-existing runner shouldn't bypass the wizard — the user can
       # add a second runner the same way as the first.
-      {:ok, _} =
-        Emisar.Runners.create_runner(
-          %{
-            "name" => "existing",
-            "group" => "default"
-          },
-          subject
-        )
+      Fixtures.Runners.create_runner(account_id: account.id, name: "existing")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
       assert html =~ "Connect a runner"
@@ -307,8 +307,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
   describe "GET /app/runners/:id" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
     end
 
     test "404-redirects when the runner does not belong to the account", %{
@@ -321,17 +321,8 @@ defmodule EmisarWeb.RunnersLiveTest do
                live(conn, ~p"/app/#{account}/runners/#{Ecto.UUID.generate()}")
     end
 
-    test "renders the runner detail page", %{conn: conn, user: user, account: account} do
-      subject = owner_subject(user, account)
-
-      {:ok, runner} =
-        Emisar.Runners.create_runner(
-          %{
-            "name" => "my-runner",
-            "group" => "default"
-          },
-          subject
-        )
+    test "renders the runner detail page", %{conn: conn, account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "my-runner")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
       assert html =~ "my-runner"

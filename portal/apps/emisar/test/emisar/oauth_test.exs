@@ -48,16 +48,26 @@ defmodule Emisar.OAuthTest do
   end
 
   describe "register_client/1" do
-    test "registers a PKCE public client (auth method none)" do
+    test "registers a PKCE public client" do
       assert {:ok, %Client{} = client} =
                OAuth.register_client(%{
                  "client_name" => "ChatGPT",
                  "redirect_uris" => [@redirect]
                })
 
-      assert client.token_endpoint_auth_method == "none"
       assert client.client_name == "ChatGPT"
       assert @redirect in client.redirect_uris
+    end
+
+    test "rejects confidential-client auth methods" do
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Secret Client",
+                 "redirect_uris" => [@redirect],
+                 "token_endpoint_auth_method" => "client_secret_post"
+               })
+
+      assert "must be none" in errors_on(changeset).token_endpoint_auth_method
     end
 
     test "rejects a non-https / non-localhost redirect uri" do

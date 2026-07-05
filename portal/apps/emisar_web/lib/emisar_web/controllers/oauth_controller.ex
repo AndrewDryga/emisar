@@ -224,7 +224,7 @@ defmodule EmisarWeb.OAuthController do
       redirect_uris: client.redirect_uris,
       grant_types: client.grant_types,
       response_types: client.response_types,
-      token_endpoint_auth_method: client.token_endpoint_auth_method,
+      token_endpoint_auth_method: "none",
       scope: client.scope
     }
   end

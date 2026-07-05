@@ -333,22 +333,6 @@ defmodule Emisar.Runners do
 
   # -- Runners: mutations ----------------------------------------------
 
-  def create_runner(attrs, %Subject{account: account} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ) do
-      changeset =
-        %Accounts.Account{id: account.id}
-        |> Runner.Changeset.create(attrs)
-
-      # A name conflict is a conflict — the unique-index error renders
-      # inline on the form; the operator renames or deletes the holder.
-      Repo.insert(changeset)
-    end
-  end
-
   def disable_runner(%Runner{} = runner, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

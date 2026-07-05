@@ -15,7 +15,6 @@ defmodule Emisar.SecretRedactionTest do
     {Emisar.ApiKeys.ApiKey, [:key_hash]},
     {Emisar.Runners.EnrollmentKey, [:key_hash]},
     {Emisar.Runners.Token, [:token_hash]},
-    {Emisar.OAuth.Client, [:client_secret_hash]},
     {Emisar.OAuth.Token, [:access_token_hash, :refresh_token_hash]},
     {Emisar.OAuth.AuthorizationCode, [:code_hash]},
     {Emisar.SSO.IdentityProvider, [:client_secret, :scim_token_hash]},

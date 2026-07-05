@@ -565,55 +565,6 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "create_runner/2" do
-    setup do
-      {account, _user, subject} = account_with_owner_subject()
-      %{account: account, subject: subject}
-    end
-
-    test "creates a runner in the subject's account", %{account: account, subject: subject} do
-      assert {:ok, %Runner{} = runner} =
-               Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
-
-      assert runner.account_id == account.id
-      assert runner.name == "edge-01"
-      assert runner.group == "edge"
-    end
-
-    test "an OFFLINE holder conflicts the same as a connected one", %{
-      account: account,
-      subject: subject
-    } do
-      holder =
-        Fixtures.Runners.create_runner(account_id: account.id, name: "edge-01", connected?: false)
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
-
-      assert "is already used by another runner in this account" in errors_on(changeset).name
-      assert %Runner{} = Runners.peek_runner_by_id(holder.id)
-    end
-
-    test "keeps the conflict when the holder is CONNECTED", %{account: account, subject: subject} do
-      holder =
-        Fixtures.Runners.create_runner(account_id: account.id, name: "edge-01", connected?: true)
-
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
-
-      assert "is already used by another runner in this account" in errors_on(changeset).name
-      assert %Runner{} = Runners.peek_runner_by_id(holder.id)
-    end
-
-    test "a viewer (no manage_runners) is refused", %{account: account} do
-      assert {:error, :unauthorized} =
-               Runners.create_runner(
-                 %{"name" => "v-1", "group" => "g"},
-                 viewer_subject_for(account)
-               )
-    end
-  end
-
   describe "disable_runner/2" do
     setup do
       {account, _user, subject} = account_with_owner_subject()

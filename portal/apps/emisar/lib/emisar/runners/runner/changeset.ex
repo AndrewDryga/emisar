@@ -1,8 +1,8 @@
 defmodule Emisar.Runners.Runner.Changeset do
   @moduledoc """
   All changesets for `%Emisar.Runners.Runner{}`. The schema itself is
-  data-only — every transition (registration, manual create, advertised
-  state, connected, disconnected, disabled, deleted) lives here as a
+  data-only — every transition (registration, advertised state, connected,
+  disconnected, disabled, deleted) lives here as a
   single-purpose changeset.
   """
   use Emisar, :changeset
@@ -37,26 +37,6 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_required([:account_id, :name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_length(:group, min: 1, max: 80)
-    |> validate_advertised_fields()
-    |> unique_constraint([:account_id, :external_id])
-    |> unique_constraint(:name,
-      name: :runners_account_id_name_index,
-      message: "is already used by another runner in this account"
-    )
-  end
-
-  @doc """
-  Manual operator-created runner from the dashboard / seeds / tests.
-  Auto-generates `external_id` when the caller didn't supply one, so
-  every runner row always has the stable id `apply_state` matches on
-  during reconnects.
-  """
-  def create(%Emisar.Accounts.Account{} = account, attrs) do
-    %Runner{}
-    |> cast(ensure_external_id(attrs), [:name, :external_id, :group, :labels])
-    |> put_change(:account_id, account.id)
-    |> validate_required([:name, :external_id, :group])
-    |> validate_length(:name, min: 1, max: 80)
     |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
     |> unique_constraint(:name,

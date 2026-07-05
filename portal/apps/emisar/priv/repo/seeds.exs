@@ -21,6 +21,7 @@ alias Emisar.Policies
 alias Emisar.Repo
 alias Emisar.Runbooks
 alias Emisar.Runners
+alias Emisar.Runners.Runner
 alias Emisar.Runs
 alias Emisar.Users
 alias Emisar.Users.User
@@ -413,10 +414,18 @@ runner_specs = [
   }
 ]
 
-# Use create_runner; idempotent via (account_id, name) unique index. The
-# fixed `external_id` is what the live docker runner adopts — set it on BOTH
-# branches so re-seeding an older DB (rows created before external_id was
-# pinned) still converges to the id the container presents.
+# Seed runners through the registration changeset; the public product path is
+# enrollment-key self-registration, not an operator-created runner row. The fixed
+# `external_id` is what the live docker runner adopts — set it on BOTH branches
+# so re-seeding an older DB (rows created before external_id was pinned) still
+# converges to the id the container presents.
+insert_seed_runner = fn account_id, attrs ->
+  attrs
+  |> Map.put(:account_id, account_id)
+  |> Runner.Changeset.register()
+  |> Repo.insert()
+end
+
 ensure_runner = fn spec ->
   {:ok, all_runners, _} = Runners.list_runners_for_account(owner_subject)
 
@@ -432,16 +441,16 @@ ensure_runner = fn spec ->
 
     nil ->
       {:ok, r} =
-        Runners.create_runner(
+        insert_seed_runner.(
+          account.id,
           %{
-            "name" => spec.name,
-            "external_id" => spec.external_id,
-            "group" => spec.group,
-            "hostname" => spec.hostname,
-            "labels" => spec.labels,
-            "runner_version" => spec.version
-          },
-          owner_subject
+            name: spec.name,
+            external_id: spec.external_id,
+            group: spec.group,
+            hostname: spec.hostname,
+            labels: spec.labels,
+            runner_version: spec.version
+          }
         )
 
       r
@@ -1533,7 +1542,9 @@ for {name, slug, plan} <- [
         existing
 
       {:error, :not_found} ->
-        {:ok, created} = Runners.create_runner(%{name: runner_name, group: "prod"}, subject)
+        {:ok, created} =
+          insert_seed_runner.(acct.id, %{name: runner_name, group: "prod"})
+
         created
     end
     |> Ecto.Changeset.change(

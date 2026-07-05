@@ -1,8 +1,6 @@
 defmodule Emisar.Cluster.GCETest do
   use ExUnit.Case, async: true
-
   import ExUnit.CaptureLog
-
   alias Cluster.Strategy.State
   alias Emisar.Cluster.GCE
 
