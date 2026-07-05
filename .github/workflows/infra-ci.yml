@@ -1,0 +1,83 @@
+name: infra CI
+
+# CI for the Terraform that manages emisar's Google Cloud DNS zone (infra/).
+# Same security posture as the other workflows: read-only token, NO secrets, and
+# NO cloud credentials — `validate` runs with the backend disabled, so CI never
+# touches Terraform Cloud or GCP. Tools are pinned by version AND checksum-
+# verified before use; first-party `actions/*` track major-version tags.
+#
+# This is the change-management gate for DNS: every edit to the zone goes through
+# a PR that must pass fmt + validate + tflint before a human approves the apply
+# in Terraform Cloud. See infra/COMPLIANCE.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".tool-versions"
+      - ".github/workflows/infra-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".tool-versions"
+      - ".github/workflows/infra-ci.yml"
+
+concurrency:
+  group: infra-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: fmt + validate + tflint
+    runs-on: ubuntu-latest
+    env:
+      TFLINT_VERSION: v0.61.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform (version from .tool-versions, checksum-verified)
+        run: |
+          ver="$(awk '/^terraform /{print $2}' .tool-versions)"
+          test -n "$ver" || { echo "::error::no terraform pin in .tool-versions"; exit 1; }
+          tmp="$(mktemp -d)" && cd "$tmp"
+          base="https://releases.hashicorp.com/terraform/${ver}"
+          curl -fsSLO "${base}/terraform_${ver}_linux_amd64.zip"
+          curl -fsSLO "${base}/terraform_${ver}_SHA256SUMS"
+          grep " terraform_${ver}_linux_amd64.zip$" "terraform_${ver}_SHA256SUMS" | sha256sum -c -
+          unzip -q "terraform_${ver}_linux_amd64.zip"
+          sudo install -m 0755 terraform /usr/local/bin/terraform
+          terraform version
+
+      - name: Install TFLint (pinned, checksum-verified)
+        run: |
+          tmp="$(mktemp -d)" && cd "$tmp"
+          base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
+          curl -fsSLO "${base}/tflint_linux_amd64.zip"
+          curl -fsSLO "${base}/checksums.txt"
+          grep " tflint_linux_amd64.zip$" checksums.txt | sha256sum -c -
+          unzip -q tflint_linux_amd64.zip
+          sudo install -m 0755 tflint /usr/local/bin/tflint
+          tflint --version
+
+      - name: terraform fmt
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate (no backend, no credentials)
+        working-directory: infra
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: tflint
+        working-directory: infra
+        run: |
+          tflint --init
+          tflint

@@ -15,7 +15,7 @@ Context compaction drops everything except this file (re-injected from disk) and
 3. **`<project>/.agent/LOG.md`** (if present) — your own recent chain-of-thought: what you were doing and *why*, and the next step you set yourself. This is how intent survives a compaction.
 4. **`<project>/.agent/tasks/`** — the work queue (run `coop tasks`; it reads `.agent/tasks/`). Resume the first todo or in_progress task.
 
-Four top-level areas, each with its own `AGENTS.md` + `.agent/`:
+Five top-level areas, each with its own `AGENTS.md`:
 
 | Project | Language | What it is | Read before editing |
 |---|---|---|---|
@@ -23,6 +23,7 @@ Four top-level areas, each with its own `AGENTS.md` + `.agent/`:
 | `runner/` | Go | the on-host runner that executes actions | `runner/AGENTS.md` |
 | `mcp/` | Go | the stdio↔HTTP MCP bridge for LLM clients | `mcp/AGENTS.md` |
 | `packs/` | YAML | the action-pack catalog — what runners may execute | `packs/AGENTS.md` |
+| `infra/` | Terraform | the Google Cloud DNS zone for `emisar.dev` (compute is on Fly) | `infra/AGENTS.md` |
 
 ---
 

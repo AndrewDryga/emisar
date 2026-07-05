@@ -62,3 +62,14 @@ __pycache__/
 
 # Self-signed dev/e2e TLS certs (mix phx.gen.cert)
 **/priv/cert/
+
+# Terraform (infra/) — state and real var files never get committed; the provider
+# lock (.terraform.lock.hcl) and *.tfvars.example DO. State can hold sensitive
+# values and drifts per-operator; tfvars may carry real values.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log

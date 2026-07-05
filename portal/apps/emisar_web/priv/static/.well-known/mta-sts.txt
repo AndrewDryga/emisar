@@ -1,0 +1,5 @@
+version: STSv1
+mode: testing
+mx: aspmx.l.google.com
+mx: *.aspmx.l.google.com
+max_age: 604800

@@ -1,0 +1,18 @@
+# Exclude local state, secrets, and non-infra material from any Terraform package
+# uploaded for a remote run. Patterns are relative to this module dir (infra/).
+.git
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+# real var files may hold values; the committed *.example template is fine to keep
+terraform.tfvars
+*.auto.tfvars
+# repo-root local/dev material that must never ride along in an infra package
+.agent/
+.claude/
+.codex/
+.expert/
+dev/
+docs/
