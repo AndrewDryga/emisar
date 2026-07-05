@@ -32,7 +32,7 @@
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
           src="/images/screenshots/connect-llm-agents.webp"
-          alt="The LLM agents page: a client picker (Claude.ai, ChatGPT, Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI) that mints a pre-configured API key, plus the list of connected agents with their scopes."
+          alt="The LLM agents page: a client picker (Claude.ai, ChatGPT, Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI) that mints a pre-configured API key, plus the list of connected agents with their status."
           loading="lazy"
           class="w-full"
         />
@@ -196,20 +196,19 @@
           of OAuth. In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>.
           Pick your LLM client from the tab strip — we mint a key named
           after it and drop a prefilled snippet you can paste into the
-          client's config. Quick keys are scoped to
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:read</code>
-          + <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:execute</code>
-          (the standard MCP shape).
+          client's config.
         </p>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Want a tighter scope? Pick the
-          <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Custom</code>
-          tab and restrict which runners or groups the key may target. Keys are revocable and
-          scoped per key. A separate
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
-          scope exists for shipping the audit log to a SIEM — it can read events but never execute
-          an action. The dashboard reveals the raw key once — copy and store it.
+          The key itself carries no permissions to tune — what it may run is your account
+          <strong>policy</strong>
+          (risky actions pause for approval), and which runners it can
+          reach is the runner scope of the member who mints it (set on the <strong>Team</strong>
+          page). To hand one agent a tighter blast radius, mint it under a member whose runner
+          scope is already narrow. A separate read-only <strong>audit-export</strong>
+          token —
+          minted on the audit page — ships the audit log to a SIEM and can never execute an
+          action. The dashboard reveals the raw key once; copy and store it.
         </p>
 
         <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">

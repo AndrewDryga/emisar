@@ -747,8 +747,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Admin"
       assert html =~ "Operator"
       assert html =~ "Viewer"
-      # The scoped-key shape an LLM-access reviewer checks.
-      assert html =~ "audit:read"
+      # An LLM-access reviewer checks the key model: policy + the minting member's
+      # runner scope, not a per-key grant.
+      assert html =~ "runner scope"
     end
 
     test "the runners page renders the host CLI and uninstall flags", %{conn: conn} do

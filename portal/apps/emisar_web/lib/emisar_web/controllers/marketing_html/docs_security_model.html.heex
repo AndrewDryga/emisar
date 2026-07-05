@@ -91,7 +91,8 @@
           ship as NDJSON over <code>GET /api/audit</code>
           — forward-only with keyset
           cursor pagination and RFC 5988 <code>Link</code>
-          headers — gated on an <code>audit:read</code>-scoped API key minted from the audit page. Point any
+          headers — gated on a read-only <strong>audit-export</strong>
+          token minted from the audit page. Point any
           SIEM that speaks HTTP at it; that token reads events but never executes an action.
           Runner-side, every action
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
