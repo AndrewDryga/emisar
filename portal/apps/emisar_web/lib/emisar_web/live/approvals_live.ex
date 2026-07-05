@@ -199,10 +199,12 @@ defmodule EmisarWeb.ApprovalsLive do
   # New grants start at uses_count=1 — minting a grant also dispatches the
   # run it was approved from, and that execution counts. The 0 clauses
   # stay as a fallback for legacy grants minted before that was recorded.
+  # Plain English — "1 use" read as "1 use REMAINING"; "used once" can't.
   defp format_uses(%{uses_count: 0, max_uses: nil}), do: "not used yet"
   defp format_uses(%{uses_count: 0, max_uses: max}), do: "not used yet · cap #{max}"
-  defp format_uses(%{uses_count: c, max_uses: nil}), do: "#{c} #{pluralize(c, "use")}"
-  defp format_uses(%{uses_count: c, max_uses: max}), do: "#{c} / #{max} uses"
+  defp format_uses(%{uses_count: 1, max_uses: nil}), do: "used once"
+  defp format_uses(%{uses_count: c, max_uses: nil}), do: "used #{c} times"
+  defp format_uses(%{uses_count: c, max_uses: max}), do: "used #{c} of #{max}"
 
   # A grant's expiry — "no expiry" when open-ended, else "expires 3m
   # ago" with the timestamp through <.local_time> (viewer-local,
@@ -218,9 +220,6 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   defp expiry_status(assigns), do: ~H"no expiry"
-
-  defp pluralize(1, word), do: word
-  defp pluralize(_, word), do: word <> "s"
 
   # The exact arguments an `:exact_args` grant is locked to, as a "k=v"
   # summary. The grant row stores only the hash, so we read the raw args
@@ -341,7 +340,9 @@ defmodule EmisarWeb.ApprovalsLive do
                   navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
                   class="group -mx-2 flex items-start gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
                 >
-                  <.status_dot tone={:amber} size={:md} class="mt-1" />
+                  <%!-- (20px title line − 8px dot) / 2 = 6px — measured to the FIRST
+                       text line, not eyeballed. --%>
+                  <.status_dot tone={:amber} size={:md} class="mt-1.5" />
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-mono text-sm text-zinc-200">
@@ -446,16 +447,21 @@ defmodule EmisarWeb.ApprovalsLive do
                     {grant_args_line(g)}
                   </div>
 
+                  <%!-- Line 1 = accountability: which key HOLDS the capability,
+                       who granted it, and WHEN (an unexplained grant minted
+                       during an incident window is exactly what an auditor
+                       scans for). Line 2 = lifetime + usage. --%>
                   <.meta_line class="mt-1">
                     <:seg>via {grant_key_label(g)}</:seg>
                     <:seg :if={g.granted_by}>
                       granted by {g.granted_by.full_name || g.granted_by.email}
+                      <.local_time value={g.inserted_at} mode={:relative} />
                     </:seg>
-                    <:seg>{format_uses(g)}</:seg>
                   </.meta_line>
 
                   <.meta_line class="mt-0.5">
                     <:seg><.expiry_status grant={g} /></:seg>
+                    <:seg>{format_uses(g)}</:seg>
                     <:seg>
                       last used{" "}<.local_time
                         value={g.last_used_at}
@@ -576,6 +582,9 @@ defmodule EmisarWeb.ApprovalsLive do
                            (approved / denied / expired); the meta just attributes
                            the decider. An expired request has none, so it shows
                            only the badge. --%>
+                      <span :if={request.requested_by_id}>
+                        · requested by {user_label(request.requested_by_id, @user_labels)}
+                      </span>
                       <span :if={request.decided_by_id}>
                         · decided by {user_label(request.decided_by_id, @user_labels)}
                       </span>
