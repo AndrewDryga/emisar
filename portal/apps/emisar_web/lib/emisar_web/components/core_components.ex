@@ -1462,6 +1462,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
   attr :no_agents?, :boolean, default: false
+  attr :onboarding_incomplete?, :boolean, default: false
   attr :flash, :map, default: %{}
 
   slot :inner_block, required: true
@@ -1491,6 +1492,7 @@ defmodule EmisarWeb.CoreComponents do
           pending_packs_count={@pending_packs_count}
           fleet_all_offline?={@fleet_all_offline?}
           no_agents?={@no_agents?}
+          onboarding_incomplete?={@onboarding_incomplete?}
         />
         <.shell_user current_user={@current_user} current_account={@current_account} />
       </aside>
@@ -1534,6 +1536,7 @@ defmodule EmisarWeb.CoreComponents do
             pending_packs_count={@pending_packs_count}
             fleet_all_offline?={@fleet_all_offline?}
             no_agents?={@no_agents?}
+            onboarding_incomplete?={@onboarding_incomplete?}
           />
           <.shell_user current_user={@current_user} current_account={@current_account} />
         </aside>
@@ -1720,6 +1723,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
   attr :no_agents?, :boolean, default: false
+  attr :onboarding_incomplete?, :boolean, default: false
   attr :current_account, :map, required: true
 
   defp shell_nav(assigns) do
@@ -1746,7 +1750,13 @@ defmodule EmisarWeb.CoreComponents do
          brand + user blocks) nothing sits half-clipped at the scroll fold —
          "Support" cut in half read as a rendering defect on every screenshot. --%>
     <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2 text-sm">
-      <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
+      <.nav_link
+        to={~p"/app/#{@current_account}"}
+        active={@section == :dashboard}
+        icon="hero-home"
+        alert={@onboarding_incomplete?}
+        alert_label="Finish setup — add a runner or an agent"
+      >
         Dashboard
       </.nav_link>
 

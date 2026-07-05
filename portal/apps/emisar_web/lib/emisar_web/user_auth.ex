@@ -505,6 +505,7 @@ defmodule EmisarWeb.UserAuth do
        |> Phoenix.Component.assign(:pending_packs_count, pack_pending_count_for(subject))
        |> Phoenix.Component.assign(:fleet_all_offline?, fleet_offline_for(subject))
        |> Phoenix.Component.assign(:no_agents?, no_agents_for(subject))
+       |> Phoenix.Component.assign(:onboarding_incomplete?, onboarding_incomplete_for(subject))
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
          :handle_info,
@@ -529,7 +530,8 @@ defmodule EmisarWeb.UserAuth do
        |> Phoenix.Component.assign(:pending_approvals_count, 0)
        |> Phoenix.Component.assign(:pending_packs_count, 0)
        |> Phoenix.Component.assign(:fleet_all_offline?, false)
-       |> Phoenix.Component.assign(:no_agents?, false)}
+       |> Phoenix.Component.assign(:no_agents?, false)
+       |> Phoenix.Component.assign(:onboarding_incomplete?, false)}
     end
   end
 
@@ -604,9 +606,14 @@ defmodule EmisarWeb.UserAuth do
     do: {:cont, schedule_fleet_recompute(socket)}
 
   defp refresh_fleet_offline(:recompute_fleet_offline, socket) do
+    subject = socket.assigns[:current_subject]
+
     {:halt,
      Phoenix.Component.assign(socket, %{
-       fleet_all_offline?: fleet_offline_for(socket.assigns[:current_subject]),
+       fleet_all_offline?: fleet_offline_for(subject),
+       # A runner registering clears the onboarding nudge live (it depends on
+       # any_runners?, which the same presence event just flipped).
+       onboarding_incomplete?: onboarding_incomplete_for(subject),
        fleet_recompute_scheduled?: false
      })}
   end
@@ -661,6 +668,15 @@ defmodule EmisarWeb.UserAuth do
 
   defp no_agents_for(subject),
     do: Emisar.ApiKeys.no_agents?(subject) and Emisar.Runners.any_runners?(subject)
+
+  # "Finish onboarding" nudge (the Dashboard nav dot): the account has neither a
+  # runner NOR an LLM agent yet, so it can't do anything — a fresh workspace's
+  # very first step. Adding EITHER a runner or an agent clears it. (Distinct from
+  # the two dots above, which nudge the *next* step once one exists.)
+  defp onboarding_incomplete_for(nil), do: false
+
+  defp onboarding_incomplete_for(subject),
+    do: not Emisar.Runners.any_runners?(subject) and Emisar.ApiKeys.no_agents?(subject)
 
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns
