@@ -789,11 +789,10 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <div :if={@live_action == :index and not @loading?} class="space-y-6">
-        <%!-- Member list — uses LiveTable :cards with overflow={:visible}
-             so the per-row `<details>` action dropdown can escape the
-             rounded card boundary instead of being clipped. Inline edit
-             and scope-edit forms render INSIDE the :item slot below the
-             top-line content, keeping the natural flow per row. --%>
+        <%!-- Member list — naked hairline rows; the per-row `<details>`
+             action dropdown floats freely (nothing clips on the canvas).
+             Inline edit and scope-edit forms render INSIDE the :item slot
+             below the top-line content, keeping the natural flow per row. --%>
         <.section_header title="Members" />
 
         <LiveTable.live_table
@@ -803,7 +802,6 @@ defmodule EmisarWeb.TeamLive do
           rows={@memberships}
           metadata={@metadata}
           filter_params={@filter_params}
-          overflow={:visible}
           wrapper_class="divide-y divide-zinc-800/70"
         >
           <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The

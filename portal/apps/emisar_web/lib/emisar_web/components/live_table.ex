@@ -83,12 +83,6 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:responsive` only. `fn row -> :pass | :pending | :deny | :neutral`. Colors a left spine on each mobile card so problem/pending rows pop in a long scroll; routine rows get a transparent spine (no shift). Without it every card reads the same weight."
 
-  attr :overflow, :atom,
-    default: :hidden,
-    values: [:hidden, :visible],
-    doc:
-      "`:cards` only. Set `:visible` when the rendered rows include floating popovers / dropdowns that need to escape the rounded card boundary (TeamLive's per-row <details> popover)"
-
   attr :wrapper_class, :string,
     default: nil,
     doc:
@@ -138,7 +132,7 @@ defmodule EmisarWeb.LiveTable do
       assigns
       |> assign(:grouped_rows, group_rows(assigns.rows, assigns.group_by))
       |> assign_new(:resolved_wrapper_class, fn ->
-        assigns.wrapper_class || default_cards_wrapper_class(assigns.overflow)
+        assigns.wrapper_class || default_cards_wrapper_class()
       end)
 
     ~H"""
@@ -168,7 +162,7 @@ defmodule EmisarWeb.LiveTable do
               <%= if @group_header != [] do %>
                 {render_slot(@group_header, group_label)}
               <% else %>
-                <li class="bg-zinc-950/60 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <li class="pb-2 pt-5 text-xs font-semibold uppercase tracking-wider text-zinc-400 first:pt-0">
                   {group_label}
                 </li>
               <% end %>
@@ -272,17 +266,15 @@ defmodule EmisarWeb.LiveTable do
              action ids). Re-render each row as a label/value card reusing the
              same :col slots + labels — so the page authors the table once, and
              the card restores the columns the table hides on small screens. --%>
-        <ul
-          :if={@responsive}
-          id={"#{@id}-cards"}
-          class="divide-y divide-zinc-800/70 overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] sm:hidden"
-        >
+        <%!-- NAKED hairline rows (§8.1 — the gray island wrapper is dead);
+             the status spine keeps a small left inset so its color reads. --%>
+        <ul :if={@responsive} id={"#{@id}-cards"} class="divide-y divide-zinc-800/70 sm:hidden">
           <li
             :for={row <- @rows}
             id={@row_id && "#{@row_id.(row)}-card"}
             phx-click={@row_click && @row_click.(row)}
             class={[
-              "space-y-2 border-l-2 px-4 py-3.5",
+              "space-y-2 border-l-2 py-3.5 pl-3",
               card_spine_class(@card_accent && @card_accent.(row)),
               @row_click && "cursor-pointer hover:bg-white/[0.04]"
             ]}
@@ -328,13 +320,10 @@ defmodule EmisarWeb.LiveTable do
   defp card_spine_class(:pass), do: "border-l-brand-500/40"
   defp card_spine_class(_), do: "border-l-transparent"
 
-  defp default_cards_wrapper_class(:visible) do
-    "divide-y divide-zinc-800/70 rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
-  end
-
-  defp default_cards_wrapper_class(_) do
-    "divide-y divide-zinc-800/70 overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]"
-  end
+  # NAKED hairline rows on the canvas (§8.1) — the island wrapper is dead, and
+  # with no rounded/overflow clipping the old `overflow` escape hatch went
+  # with it.
+  defp default_cards_wrapper_class, do: "divide-y divide-zinc-800/70"
 
   # `:always` pages render the form unconditionally; a `:collapsible` page
   # renders it only while its host says so — the data leads, the facets wait.
@@ -804,10 +793,6 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp active_filter_label(%Filter{} = f, value), do: "#{f.title}: #{value}"
-
-  defp cards_empty_class(nil) do
-    "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-5 py-10 text-center"
-  end
 
   # No top rule: the populated list starts flush under its section header
   # (c3dd1fb1 dropped the orphaned rule there), so the zero state must too —

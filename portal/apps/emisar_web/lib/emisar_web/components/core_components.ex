@@ -1571,11 +1571,13 @@ defmodule EmisarWeb.CoreComponents do
             "mx-auto flex w-full flex-wrap items-start gap-x-3 gap-y-3",
             shell_width(@width)
           ]}>
-            <%!-- Mobile hamburger (hidden on lg) --%>
+            <%!-- Mobile hamburger (hidden on lg) — the 36px button centers on
+                 the title's 35px first line; a top margin pushed the icon
+                 visibly below the title's optical center. --%>
             <button
               type="button"
               aria-label="Open menu"
-              class="-ml-1.5 mt-1 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
+              class="-ml-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
               phx-click={
                 JS.show(to: "#mobile-nav", display: "block")
                 |> JS.add_class("overflow-hidden", to: "body")
@@ -1590,7 +1592,9 @@ defmodule EmisarWeb.CoreComponents do
             <h1 class="min-w-[12rem] flex-1 basis-0 break-words font-display text-[28px] font-bold leading-tight tracking-[-0.03em] text-zinc-50">
               {render_slot(@title)}
             </h1>
-            <div class="flex shrink-0 flex-wrap items-center gap-2 pt-1.5 sm:gap-3">
+            <%!-- ml-auto: actions hold the RIGHT edge on the shared row AND
+                 when they wrap to their own line on a phone. --%>
+            <div class="ml-auto flex shrink-0 flex-wrap items-center gap-2 pt-1.5 sm:gap-3">
               {render_slot(@actions)}
             </div>
           </div>
@@ -3385,14 +3389,18 @@ defmodule EmisarWeb.CoreComponents do
 
   def back_link(assigns) do
     ~H"""
-    <span class="inline-flex items-center text-zinc-500">
+    <%!-- On a phone the crumb takes its OWN quiet line above the entity title
+         (the shared row rarely fits both), so the separator slash never
+         dangles at a wrap point; sm+ restores the inline "Crumb / Entity"
+         breadcrumb at the title's size. --%>
+    <span class="flex items-center text-base text-zinc-500 sm:inline-flex sm:text-[length:inherit]">
       <.link
         navigate={@navigate}
         class="font-medium text-zinc-400 hover:text-zinc-200"
       >
         {render_slot(@inner_block)}
       </.link>
-      <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
+      <span class="mx-2 hidden text-zinc-700 sm:inline" aria-hidden="true">/</span>
     </span>
     """
   end

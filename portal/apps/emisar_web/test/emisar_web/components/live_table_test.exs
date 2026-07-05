@@ -278,27 +278,10 @@ defmodule EmisarWeb.LiveTableTest do
       refute html =~ "after=next-cursor&"
     end
 
-    test "overflow={:visible} drops overflow-hidden so popovers can escape the rounded card" do
+    test "the default :cards wrapper is naked hairline rows — no island wash, no clipping" do
       assigns = %{}
 
-      visible =
-        rendered_to_string(~H"""
-        <LiveTable.live_table
-          layout={:cards}
-          id="t"
-          path="/"
-          overflow={:visible}
-          rows={[%{id: 1}]}
-          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
-          filter_params={%{}}
-        >
-          <:item :let={_t}>
-            <li>row</li>
-          </:item>
-        </LiveTable.live_table>
-        """)
-
-      hidden =
+      html =
         rendered_to_string(~H"""
         <LiveTable.live_table
           layout={:cards}
@@ -314,8 +297,9 @@ defmodule EmisarWeb.LiveTableTest do
         </LiveTable.live_table>
         """)
 
-      refute visible =~ "overflow-hidden"
-      assert hidden =~ "overflow-hidden"
+      assert html =~ "divide-y divide-zinc-800/70"
+      refute html =~ "overflow-hidden"
+      refute html =~ "bg-zinc-900/60"
     end
 
     test "wrapper_class fully replaces the default <ul> class so different visual layouts (e.g. gapped attention cards) can share the shell" do
