@@ -221,6 +221,21 @@ defmodule Emisar.Runs.ActionRun.Query do
         fun: fn queryable, runner_id ->
           {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
         end
+      },
+      # Same shape for the account's agent keys: options are per-account so the
+      # LiveView injects them; a deep-link (`?api_key_id=…` from an agent's
+      # "View activity") applies and the control reads active with that agent
+      # selected — agent activity lives on the run (`api_key_id`), not the
+      # audit actor (terminal run events are engine-attributed).
+      %Filter{
+        name: :api_key_id,
+        title: "Agent",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, api_key_id ->
+          {queryable, dynamic([runs: r], r.api_key_id == ^api_key_id)}
+        end
       }
     ]
 end

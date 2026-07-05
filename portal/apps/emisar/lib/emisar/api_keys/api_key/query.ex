@@ -156,6 +156,13 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     |> select([owner: u], {u.id, u.email})
   end
 
+  @doc """
+  `{key_id, name}` options for the runs "Agent" filter — the keys themselves,
+  as pickable choices. Compose with `for_subject/2`.
+  """
+  def options(queryable \\ visible_to_operators()),
+    do: select(queryable, [api_keys: k], {k.id, k.name})
+
   defp status_dynamic(statuses) do
     cond do
       "live" in statuses and "revoked" in statuses -> dynamic(true)

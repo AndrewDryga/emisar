@@ -67,15 +67,29 @@ defmodule Emisar.RunsTest do
       assert {:ok, [_run], _meta} = Runs.list_runs(viewer_subject)
     end
 
-    test "the runner_id pivot scopes the feed to one runner" do
+    test "the runner_id filter scopes the feed to one runner" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account.id)
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, on_a} = Runs.create_run(base_attrs(account.id, runner_a.id))
       {:ok, _on_b} = Runs.create_run(base_attrs(account.id, runner_b.id))
 
-      assert {:ok, [listed], _meta} = Runs.list_runs(subject, runner_id: runner_a.id)
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [runner_id: runner_a.id])
       assert listed.id == on_a.id
+    end
+
+    test "the api_key_id (Agent) filter scopes the feed to one key's runs" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      {:ok, agent_run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{source: "mcp", api_key_id: key.id}))
+
+      {:ok, _operator_run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [api_key_id: key.id])
+      assert listed.id == agent_run.id
     end
   end
 

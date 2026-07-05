@@ -99,6 +99,48 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "list_key_options/1" do
+    test "returns {id, name} for the account's agent keys, revoked included" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, live_key} =
+        ApiKeys.create_key(%{name: "live", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, retired_key} =
+        ApiKeys.create_key(%{name: "retired", scopes: ["actions:read"]}, subject)
+
+      # Revoked keys stay pickable — their run history is exactly what an
+      # operator filters for. Audit-export tokens never create runs, so they
+      # are not an Agent option.
+      {:ok, _} = ApiKeys.revoke_api_key(retired_key, subject)
+      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+
+      assert {:ok, options} = ApiKeys.list_key_options(subject)
+
+      assert Enum.sort(options) ==
+               Enum.sort([{live_key.id, "live"}, {retired_key.id, "retired"}])
+    end
+
+    test "cross-account — B's options never include A's keys; a viewer can read" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine", scopes: ["actions:read"]}, subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      assert {:ok, []} = ApiKeys.list_key_options(subject_b)
+
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      assert {:ok, [{_id, "mine"}]} = ApiKeys.list_key_options(viewer_subject)
+    end
+  end
+
   describe "list_audit_export_keys_for_account/2" do
     test "audit-export tokens land on the audit list, never the agents list" do
       {_user, _account, subject} = owner_subject_pair()

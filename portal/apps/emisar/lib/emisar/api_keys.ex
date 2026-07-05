@@ -82,6 +82,28 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  `{:ok, [{key_id, name}]}` — the account's visible agent keys (revoked ones
+  included: run history references them), for the runs page's "Agent" filter
+  options. `%Subject{}` needs `view_api_keys`.
+  """
+  def list_key_options(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      options =
+        ApiKey.Query.visible_to_operators()
+        |> ApiKey.Query.by_kind(:mcp)
+        |> ApiKey.Query.options()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, options}
+    end
+  end
+
+  @doc """
   Lists audit-export tokens (`kind: :audit_export`) for the audit page.
   Same visibility rules + creator preload as the agents list, but scoped
   to the SIEM-export bucket only so the audit page renders just the keys

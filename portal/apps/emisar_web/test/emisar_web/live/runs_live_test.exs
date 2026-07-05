@@ -43,7 +43,7 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ ~s(data-format="relative")
   end
 
-  test "the agent 'View activity' pivot (api_key_id) scopes runs to that key + shows a clearable chip",
+  test "a deep-linked api_key_id scopes runs to that agent and reads active in the Agent filter",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
@@ -71,12 +71,13 @@ defmodule EmisarWeb.RunsLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?#{[api_key_id: key.id]}")
 
-    # Scoped to this agent's run (the dead audit-actor link is replaced by the
-    # runs feed where agent activity actually lives); the other agent is excluded.
+    # Scoped to this agent's run; the other agent is excluded.
     assert html =~ "ci.deploy_canary"
     refute html =~ "linux.uptime"
-    # The clearable "Agent: <name>" pivot chip resolves the key's name.
-    assert html =~ "Agent:"
+    # No pivot chip — the Agent filter itself carries the selection: its hidden
+    # input holds the key's id, and the combobox label shows its name.
+    refute html =~ "Agent:"
+    assert html =~ ~s(name="api_key_id" value="#{key.id}")
     assert html =~ "Claude Code"
   end
 
