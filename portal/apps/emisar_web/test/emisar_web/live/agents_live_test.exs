@@ -63,7 +63,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "we only mint a key once you choose"
     end
 
-    test "the list has status/name filters + the custom panel states the capability",
+    test "the list has status/name filters + the custom tab opens the key-builder form",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       # The filter bar renders only once there's something to filter —
@@ -79,11 +79,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Name"
       assert html =~ "Status"
 
-      # Part a — the capability copy appears once the operator opens the
-      # custom-key form (behind the "custom" tab, on the CONNECT page).
+      # Part a — the custom-key form's purpose copy appears once the operator
+      # opens the "custom" tab (on the CONNECT page).
       {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/settings/agents/connect")
       custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
-      assert custom =~ "execute every action"
+      assert custom =~ "Create a key by hand"
     end
 
     test "the default status filter is the baseline — no clear-× until moved off it",

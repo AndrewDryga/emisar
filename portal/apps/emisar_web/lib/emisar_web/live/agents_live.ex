@@ -1102,20 +1102,20 @@ defmodule EmisarWeb.AgentsLive do
             </div>
           <% @config -> %>
             <div class="mt-10 space-y-8">
-              <%= if @quick_secret do %>
-                <.minted_note>
-                  The snippet below contains it — copy the whole snippet, not just part. We
-                  won't show this key again after you leave the page; pick the client again to
-                  mint a new one.
-                </.minted_note>
-              <% end %>
-
               <.local_install_block />
 
               <div>
                 <.section_header title={"Paste this into #{client_label(@selected_client)}"}>
                   <:subtitle><span class="font-mono">{@config.location}</span></:subtitle>
                 </.section_header>
+                <%!-- The fresh-mint note sits WITH the snippet that holds the key,
+                     not up by the install step — "the snippet below" now points
+                     right at it. --%>
+                <.minted_note :if={@quick_secret} class="mb-4">
+                  The snippet below contains it — copy the whole snippet, not just part. We
+                  won't show this key again after you leave the page; pick the client again to
+                  mint a new one.
+                </.minted_note>
                 <.code_panel
                   id={"snippet-#{@selected_client}"}
                   label="Snippet"
@@ -1185,11 +1185,17 @@ defmodule EmisarWeb.AgentsLive do
   # Thin wrapper over the shared <.status_note> so the "New key minted"
   # phrase + its key/amber identity live in ONE place for the three quick-mint
   # branches.
+  attr :class, :string, default: nil
   slot :inner_block, required: true
 
   defp minted_note(assigns) do
     ~H"""
-    <.status_note icon="hero-key" tone={:amber} title="New key minted — it's live now">
+    <.status_note
+      icon="hero-key"
+      tone={:amber}
+      title="New key minted — it's live now"
+      class={@class}
+    >
       {render_slot(@inner_block)}
     </.status_note>
     """
@@ -1398,10 +1404,8 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <div class="space-y-5">
       <p class="text-sm leading-relaxed text-zinc-400">
-        For an agent that isn't in the presets above — or a key you want to name and
-        time yourself. It's the same credential the presets mint: it can read and
-        execute every action account <strong class="text-zinc-200">Policy</strong>
-        allows on the runners you can reach — risky ones still pause for approval.
+        Create a key by hand — for an agent that isn't one of the presets above, or when
+        you want to give it your own name and expiry date.
       </p>
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
