@@ -129,6 +129,7 @@ defmodule EmisarWeb.RunDetailLive do
         <.copy_button
           text={@run.id}
           label_copied="Copied id"
+          size={:md}
           class="bg-transparent text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200"
         >
           <.icon name="hero-clipboard-document" class="-ml-0.5 mr-1 h-3.5 w-3.5" />Copy id
@@ -167,149 +168,155 @@ defmodule EmisarWeb.RunDetailLive do
            blocks (mt-4 = breathing room under the title); the attention stack
            keeps its own tight inner rhythm. --%>
       <div class="mt-4 space-y-12">
-        <%!-- Run facts on the CANVAS — the naked meta row (the runner-detail
-             grammar), no island. Status leads; ONE row at sm+ (natural widths
-             fit the 7xl column); phones keep the tidy 2-col grid, the forensic
-             timestamp spanning both columns via `wrap`. --%>
-        <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
-          <.meta_field label="Status">
-            <.status_badge status={@run.status} />
-          </.meta_field>
-          <.meta_field label="Runner">
-            <.link
-              navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
-              class="truncate text-zinc-200 hover:text-brand-300"
-            >
-              {runner_label(@run.runner)}
-            </.link>
-          </.meta_field>
-          <.meta_field label="Dispatched by">
-            <span class="block truncate">
-              <span class="text-zinc-200">{run_actor(@run)}</span>
-              <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
-              <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
-            </span>
-            <span
-              :if={@run.mcp_session_id}
-              class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
-              title={@run.mcp_session_id}
-            >
-              session {String.slice(@run.mcp_session_id, 0, 8)}
-            </span>
-          </.meta_field>
-          <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
+        <%!-- The STATUS block: the naked meta row plus, when the run is held /
+             dead / blocked, its attention stack — grouped tight (mt-8) because
+             the event blocks ELABORATE the status badge two lines up; floated
+             as their own 48px section they read weaker than the section
+             headers below while carrying the page's live state. --%>
+        <div>
+          <%!-- Run facts on the CANVAS — the naked meta row (the runner-detail
+               grammar), no island. Status leads; ONE row at sm+ (natural widths
+               fit the 7xl column); phones keep the tidy 2-col grid, the forensic
+               timestamp spanning both columns via `wrap`. --%>
+          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+            <.meta_field label="Status">
+              <.status_badge status={@run.status} />
+            </.meta_field>
+            <.meta_field label="Runner">
+              <.link
+                navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
+                class="truncate text-zinc-200 hover:text-brand-300"
+              >
+                {runner_label(@run.runner)}
+              </.link>
+            </.meta_field>
+            <.meta_field label="Dispatched by">
+              <span class="block truncate">
+                <span class="text-zinc-200">{run_actor(@run)}</span>
+                <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
+                <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
+              </span>
+              <span
+                :if={@run.mcp_session_id}
+                class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
+                title={@run.mcp_session_id}
+              >
+                session {String.slice(@run.mcp_session_id, 0, 8)}
+              </span>
+            </.meta_field>
+            <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
                (text-zinc-500) — never the value span's brighter/monospace styling,
                or the two "no value" cells look mismatched. --%>
-          <.meta_field label="Duration">
-            <span :if={@run.duration_ms} class="text-zinc-200">
-              {format_duration(@run.duration_ms)}
-            </span>
-            <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
-          </.meta_field>
-          <.meta_field label="Exit code">
-            <span
-              :if={is_integer(@run.exit_code)}
-              class={["font-mono", exit_code_class(@run.exit_code)]}
-            >
-              {@run.exit_code}
-            </span>
-            <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
-          </.meta_field>
-          <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
+            <.meta_field label="Duration">
+              <span :if={@run.duration_ms} class="text-zinc-200">
+                {format_duration(@run.duration_ms)}
+              </span>
+              <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
+            </.meta_field>
+            <.meta_field label="Exit code">
+              <span
+                :if={is_integer(@run.exit_code)}
+                class={["font-mono", exit_code_class(@run.exit_code)]}
+              >
+                {@run.exit_code}
+              </span>
+              <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
+            </.meta_field>
+            <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
                sibling detail pages describing the same event in two datetime
                dialects read as two authors. --%>
-          <.meta_field label="Started" wrap>
-            <.local_time
-              value={@run.inserted_at}
-              mode={:forensic}
-              class="tabular-nums text-zinc-200"
-            />
-          </.meta_field>
-        </div>
+            <.meta_field label="Started" wrap>
+              <.local_time
+                value={@run.inserted_at}
+                mode={:forensic}
+                class="tabular-nums text-zinc-200"
+              />
+            </.meta_field>
+          </div>
 
-        <%!-- The ATTENTION stack — the run's held/failed/offline moment as
-             EVENT BLOCKS (the icon-capped-spine grammar, §8.1), not wash
-             boxes: amber = pending on someone/something, rose = a dead
-             outcome. Grouped so the rare co-render (queued + offline) keeps
-             its own rhythm inside the page's 48px blocks. --%>
-        <div :if={attention?(@run, @approval_request, @runner_connection)} class="space-y-8">
-          <%!-- Approval hold — the run is waiting on a human decision. --%>
-          <.event_block
-            :if={@run.status == :pending_approval and @approval_request}
-            icon="hero-hand-raised"
-            title="Waiting on approval"
-          >
-            <:body>This run is held until an approver decides.</:body>
-            <div class="mt-4">
-              <.button
-                tone={:amber}
-                size={:md}
-                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-              >
-                View approval →
-              </.button>
-            </div>
-          </.event_block>
+          <%!-- The ATTENTION stack — the run's held/failed/offline moment as
+               EVENT BLOCKS (the icon-capped-spine grammar, §8.1), not wash
+               boxes: amber = pending on someone/something, rose = a dead
+               outcome. --%>
+          <div :if={attention?(@run, @approval_request, @runner_connection)} class="mt-8 space-y-8">
+            <%!-- Approval hold — the run is waiting on a human decision. --%>
+            <.event_block
+              :if={@run.status == :pending_approval and @approval_request}
+              icon="hero-hand-raised"
+              title="Waiting on approval"
+            >
+              <:body>This run is held until an approver decides.</:body>
+              <div class="mt-4">
+                <.button
+                  tone={:amber}
+                  size={:md}
+                  navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+                >
+                  View approval →
+                </.button>
+              </div>
+            </.event_block>
 
-          <%!-- Cancelled-with-reason — an approver's denial cancels the run and
+            <%!-- Cancelled-with-reason — an approver's denial cancels the run and
                writes "approval denied: …" into reason_text; a bare grey badge
                would drop that reason. Driven by the run (not the approval row,
                which a prune may have removed). --%>
-          <.event_block
-            :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-            icon="hero-no-symbol"
-            tone={:rose}
-            title="Cancelled"
-          >
-            <:body><span class="whitespace-pre-wrap">{@run.reason_text}</span></:body>
-            <div :if={@approval_request} class="mt-4">
-              <.button
-                variant={:secondary}
-                tone={:rose}
-                size={:md}
-                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-              >
-                View approval →
-              </.button>
-            </div>
-          </.event_block>
+            <.event_block
+              :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
+              icon="hero-no-symbol"
+              tone={:rose}
+              title="Cancelled"
+            >
+              <:body><span class="whitespace-pre-wrap">{@run.reason_text}</span></:body>
+              <div :if={@approval_request} class="mt-4">
+                <.button
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:md}
+                  navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+                >
+                  View approval →
+                </.button>
+              </div>
+            </.event_block>
 
-          <%!-- Error — only when terminal-failed and we got a message back. --%>
-          <.event_block
-            :if={@run.error_message}
-            icon="hero-exclamation-triangle"
-            tone={:rose}
-            title="Error"
-          >
-            <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
-          </.event_block>
+            <%!-- Error — only when terminal-failed and we got a message back. --%>
+            <.event_block
+              :if={@run.error_message}
+              icon="hero-exclamation-triangle"
+              tone={:rose}
+              title="Error"
+            >
+              <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
+            </.event_block>
 
-          <%!-- Runner-dropped warning — in flight but its runner's socket is
+            <%!-- Runner-dropped warning — in flight but its runner's socket is
                gone. Don't fake a terminal status; flag that output may be
                incomplete until it reconnects (or the timeout sweep errors it). --%>
-          <.event_block
-            :if={@run.status in [:sent, :running] and @runner_connection == :offline}
-            icon="hero-bolt-slash"
-            title="Runner disconnected"
-          >
-            <:body>
-              Its socket dropped while this run was in flight — output may be incomplete.
-              The run is marked errored if the runner doesn't reconnect shortly.
-            </:body>
-          </.event_block>
+            <.event_block
+              :if={@run.status in [:sent, :running] and @runner_connection == :offline}
+              icon="hero-bolt-slash"
+              title="Runner disconnected"
+            >
+              <:body>
+                Its socket dropped while this run was in flight — output may be incomplete.
+                The run is marked errored if the runner doesn't reconnect shortly.
+              </:body>
+            </.event_block>
 
-          <%!-- Queued but its target runner is offline — nothing's running yet,
+            <%!-- Queued but its target runner is offline — nothing's running yet,
                so say what's actually blocking it. --%>
-          <.event_block
-            :if={@run.status == :pending and @runner_connection == :offline}
-            icon="hero-bolt-slash"
-            title="Queued — runner offline"
-          >
-            <:body>
-              Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
-              It's marked errored if the runner doesn't return before the dispatch timeout.
-            </:body>
-          </.event_block>
+            <.event_block
+              :if={@run.status == :pending and @runner_connection == :offline}
+              icon="hero-bolt-slash"
+              title="Queued — runner offline"
+            >
+              <:body>
+                Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
+                It's marked errored if the runner doesn't return before the dispatch timeout.
+              </:body>
+            </.event_block>
+          </div>
         </div>
 
         <%!-- ONE why-cluster on the canvas — who asked and what policy said,
@@ -327,8 +334,10 @@ defmodule EmisarWeb.RunDetailLive do
               <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
             </div>
             <div :if={show_policy?(@run)}>
-              <dt class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
+              <%!-- Plain field-key like REASON above — one icon on one label
+                   made the pair read as two different kinds of fact. --%>
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Policy
               </dt>
               <dd
                 :if={@run.policy_reason && @run.policy_reason != ""}

@@ -3559,8 +3559,18 @@ defmodule EmisarWeb.CoreComponents do
       class={@mono && "font-mono text-lg tracking-tight sm:text-xl"}
     >{@title}</span>{render_slot(@inner_block)}<span
       :if={@meta != []}
-      class="ml-2 text-sm font-normal text-zinc-500"
-    >{render_slot(@meta)}</span>
+      class={[
+        "ml-2 font-normal",
+        if(@mono,
+          do: "font-mono text-lg tracking-tight text-zinc-400 sm:text-xl",
+          else: "text-sm text-zinc-500"
+        )
+      ]}
+    ><%!-- A mono title's trailing context ("on edge-fra-01") speaks the SAME
+         face and size as the title — just dimmed to the breadcrumb gray —
+         so the line reads as one heading, not a heading plus a footnote. --%>{render_slot(
+        @meta
+      )}</span>
     """
   end
 
@@ -3584,6 +3594,13 @@ defmodule EmisarWeb.CoreComponents do
   attr :text, :string, default: nil, doc: "literal string to copy (alternative to :target)"
   attr :class, :any, default: nil
   attr :label_copied, :string, default: "Copied"
+
+  attr :size, :atom,
+    default: :sm,
+    values: [:sm, :md],
+    doc:
+      ":md matches <.button size={:md}> metrics — for a copy control sharing a row with buttons"
+
   attr :rest, :global, include: ~w(id)
 
   slot :inner_block, required: true
@@ -3596,7 +3613,8 @@ defmodule EmisarWeb.CoreComponents do
       data-copy-text={@text}
       data-copy-label-copied={@label_copied}
       class={[
-        "rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
+        "bg-zinc-800/80 font-medium text-zinc-200 hover:bg-zinc-700",
+        copy_button_size(@size),
         @class
       ]}
       {@rest}
@@ -3605,6 +3623,9 @@ defmodule EmisarWeb.CoreComponents do
     </button>
     """
   end
+
+  defp copy_button_size(:sm), do: "rounded px-2.5 py-1 text-xs"
+  defp copy_button_size(:md), do: "rounded-lg px-3 py-1.5 text-sm"
 
   @doc """
   Confirmation-zone card — a bordered container with title + body + a `<.button>`

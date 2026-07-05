@@ -66,7 +66,7 @@ defmodule EmisarWeb.Components.DetailHeaderTest do
       refute html =~ "font-mono"
     end
 
-    test "meta renders as the trailing de-emphasized context" do
+    test "a mono title's meta speaks the title's face, dimmed to the breadcrumb gray" do
       assigns = %{}
 
       html =
@@ -77,7 +77,9 @@ defmodule EmisarWeb.Components.DetailHeaderTest do
         """)
 
       assert html =~ "on api-iad-3"
-      assert html =~ "ml-2 text-sm font-normal text-zinc-500"
+      # Same mono size as the title, zinc-400 like the back link — one heading
+      # line, not a heading plus a footnote.
+      assert html =~ "font-mono text-lg tracking-tight text-zinc-400 sm:text-xl"
     end
 
     test "escapes interpolated heading text (no raw HTML injection)" do
