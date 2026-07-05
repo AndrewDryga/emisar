@@ -461,6 +461,13 @@ defmodule EmisarWeb.AgentsLive do
   defp local_client_ids,
     do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 == "custom"))
 
+  # A local client either RUNS its snippet as a command (Claude Code) or pastes
+  # it INTO a config file (Claude Desktop, Cursor, Gemini, Codex). The file
+  # clients' `location` is a real path (starts with "~"); the command client's
+  # is a description — so the setup header can name the right action instead of
+  # always saying "paste".
+  defp config_target_is_file?(%{location: location}), do: String.starts_with?(location, "~")
+
   defp client_config("claude_web", url, key) do
     %{
       kind: :remote,
@@ -1105,9 +1112,26 @@ defmodule EmisarWeb.AgentsLive do
               <.local_install_block />
 
               <div>
-                <.section_header title={"Paste this into #{client_label(@selected_client)}"}>
-                  <:subtitle><span class="font-mono">{@config.location}</span></:subtitle>
-                </.section_header>
+                <%!-- Two shapes, and the header must not lie about which: a
+                     config-file client (Claude Desktop, Cursor, …) pastes the
+                     snippet INTO a file — the path is the load-bearing step, so
+                     it's an imperative + legible inline-code, not a muted gray
+                     subtitle that reads as decoration. A command client (Claude
+                     Code) RUNS the snippet in a terminal — not a paste at all. --%>
+                <%= if config_target_is_file?(@config) do %>
+                  <.section_header title={"Add this to #{client_label(@selected_client)}"} />
+                  <p class="-mt-2 mb-4 text-sm text-zinc-400">
+                    Open
+                    <code class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[13px] text-zinc-200 ring-1 ring-white/10">
+                      {@config.location}
+                    </code>
+                    and add:
+                  </p>
+                <% else %>
+                  <.section_header title="Run this in your terminal">
+                    <:subtitle>{@config.location}</:subtitle>
+                  </.section_header>
+                <% end %>
                 <%!-- The fresh-mint note sits WITH the snippet that holds the key,
                      not up by the install step — "the snippet below" now points
                      right at it. --%>
@@ -1124,13 +1148,10 @@ defmodule EmisarWeb.AgentsLive do
                   code={@config.body}
                 />
                 <p class="mt-2 text-xs text-zinc-500">
-                  Restart {client_label(@selected_client)} after pasting.
-                  <.link
-                    href={~p"/docs/connect-an-llm"}
-                    class="group text-brand-400 hover:text-brand-300"
-                  >
-                    Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
-                  </.link>
+                  {if config_target_is_file?(@config),
+                    do: "Restart #{client_label(@selected_client)} after saving.",
+                    else: "Start a fresh #{client_label(@selected_client)} session to use it."}
+                  <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
                 </p>
               </div>
 
@@ -1230,8 +1251,16 @@ defmodule EmisarWeb.AgentsLive do
   defp local_install_block(assigns) do
     ~H"""
     <div>
+      <%!-- Inspect-first links (manual install · verify the release) sit on the
+           RIGHT as header actions — they open the docs/trust pages in a new tab
+           (doc_link's ↗), so a security-conscious operator can vet the curl|bash
+           without losing this flow. --%>
       <.section_header title="Install the bridge">
         <:subtitle>one-time, per machine</:subtitle>
+        <:actions>
+          <.doc_link href={~p"/docs/connect-an-llm"}>Manual install</.doc_link>
+          <.doc_link href={~p"/trust" <> "#release-integrity"}>Verify the release</.doc_link>
+        </:actions>
       </.section_header>
       <.code_panel
         id="install-mcp-cmd"
@@ -1239,22 +1268,6 @@ defmodule EmisarWeb.AgentsLive do
         copy
         code="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
       />
-      <p class="mt-2 text-[11px] text-zinc-500">
-        Inspects the bridge first?
-        <.link
-          href={~p"/docs/connect-an-llm"}
-          class="group text-brand-400 hover:text-brand-300"
-        >
-          Manual install <.cta_arrow class="ml-0.5 h-3 w-3" />
-        </.link>
-        ·
-        <.link
-          href={~p"/trust" <> "#release-integrity"}
-          class="group text-brand-400 hover:text-brand-300"
-        >
-          Verify the release <.cta_arrow class="ml-0.5 h-3 w-3" />
-        </.link>
-      </p>
     </div>
     """
   end
@@ -1312,7 +1325,7 @@ defmodule EmisarWeb.AgentsLive do
           rel="noopener noreferrer"
           class="group text-brand-400 hover:text-brand-300"
         >
-          {@client_label} MCP docs <.cta_arrow class="ml-0.5 h-3 w-3" />
+          {@client_label} MCP docs <.icon name="hero-arrow-up-right" class="ml-0.5 h-3 w-3" />
         </.link>
       </p>
     </.disclosure>
@@ -1393,12 +1406,7 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-500">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom MCP servers. Connection refused or 401?
-        <.link
-          href={~p"/docs/connect-an-llm"}
-          class="group text-brand-400 hover:text-brand-300"
-        >
-          Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
-        </.link>
+        <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
       </p>
     </div>
     """
