@@ -11,6 +11,12 @@ defmodule Emisar.Application do
       {Phoenix.PubSub, name: Emisar.PubSub.Server},
       Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
+      # BEAM clustering on GCP MIGs: libcluster's GCE strategy discovers peers via
+      # the Compute API (Emisar.Cluster.GCE, which uses Emisar.Finch above). Empty
+      # topologies — Fly (dns_cluster handles it), dev, test, single-node — start no
+      # strategy, so this is inert unless EMISAR_CLUSTER_PROJECT is set (runtime.exs).
+      {Cluster.Supervisor,
+       [Application.get_env(:emisar, :cluster_topologies, []), [name: Emisar.ClusterSupervisor]]},
       {Oban, Application.fetch_env!(:emisar, Oban)},
       # Per-account OIDC provider-config workers (discovery + JWKS cache)
       # are started lazily under this supervisor, named via the registry by

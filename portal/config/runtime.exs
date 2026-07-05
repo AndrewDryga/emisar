@@ -127,6 +127,30 @@ if config_env() == :prod do
 
   config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # BEAM clustering on GCP MIGs. When EMISAR_CLUSTER_PROJECT is set (the instance
+  # template sets it), libcluster's GCE strategy lists the project's RUNNING portal
+  # instances via the Compute API and connects them as `emisar@<internal-ip>`
+  # (rel/env.sh.eex names the node). Unset — Fly (dns_cluster above), dev, test,
+  # single-node — leaves the topology empty so the cluster supervisor is inert.
+  cluster_topologies =
+    case System.get_env("EMISAR_CLUSTER_PROJECT") do
+      project when is_binary(project) and project != "" ->
+        [
+          emisar: [
+            strategy: Emisar.Cluster.GCE,
+            config: [
+              project_id: project,
+              cluster_value: System.get_env("EMISAR_CLUSTER_VALUE") || "emisar"
+            ]
+          ]
+        ]
+
+      _ ->
+        []
+    end
+
+  config :emisar, :cluster_topologies, cluster_topologies
+
   if url = System.get_env("STATUS_PAGE_URL") do
     config :emisar_web, status_page_url: url
   end

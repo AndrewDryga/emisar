@@ -1,8 +1,10 @@
 # infra — agent manual
 
-Terraform for emisar's **Google Cloud DNS** zone (`emisar.dev`). DNS only —
-emisar's app, LB, and TLS run on Fly.io. Read `README.md` for the full picture;
-this file is the rules.
+Terraform for running emisar on **Google Cloud** to a **SOC 2 Type II** posture
+(compute + Cloud SQL + LB + DNS + secrets + monitoring), adapted from
+`../onlytty/infra`. **Prepared, not applied** — emisar serves from Fly today;
+applying this is a deliberate Fly→GCP migration. Read `README.md` for the shape and
+`COMPLIANCE.md` for the control mapping; this file is the rules.
 
 ## Gate
 
@@ -12,46 +14,45 @@ terraform init -backend=false && terraform validate
 tflint --init && tflint
 ```
 
-All three must pass before commit — and CI (`.github/workflows/infra-ci.yml`)
-runs exactly this on every PR that touches `infra/`, with no cloud credentials
-(`-backend=false`), so the change-management gate can't be skipped. `validate`
-needs the providers, which `init` downloads. A live `plan`/`apply` is the
-separate, creds-gated deploy step (GCS backend, operator-run apply) — never
-commit on the strength of a local apply alone.
-
-Production-readiness and the SOC 2 control mapping live in `COMPLIANCE.md`; keep
-it honest and current when you change what the zone enforces.
+All three green before commit; CI (`.github/workflows/infra-ci.yml`) runs the same
+with no cloud credentials. The app-side clustering (`Emisar.Cluster.GCE` +
+`…/gce/client.ex`, `application.ex`, `runtime.exs`, `rel/env.sh.eex`, `mix.exs`)
+lives in `portal/` and is gated by the portal loop (`mix compile --warnings-as-errors
+&& mix format --check-formatted && mix credo && mix test`). A live `plan`/`apply` is
+the separate, creds-gated deploy step.
 
 ## Non-negotiable rules
 
-1. **The zone is authoritative — replicate before you cut over.** Once the
-   registrar delegates to this zone, ONLY records in `dns.tf` resolve. Adding a
-   record at the registrar without adding it here means it vanishes at the next
-   apply. Any record that exists at GoDaddy must exist here first.
-2. **Never touch the Fly records blindly.** `_acme-challenge` (CNAME → flydns) and
-   `_fly-ownership` (TXT) are how Fly issues and proves the TLS cert. Breaking
-   them breaks HTTPS on the whole site. The apex `A`/`AAAA` are Fly's LB IPs.
-3. **DNSSEC DS is published LAST.** Enable signing on the zone, delegate NS,
-   confirm resolution, *then* add the DS at the registrar. A DS ahead of working
-   delegation takes the domain offline. Cloud DNS owns the keys; we only emit the DS.
-4. **DMARC ramps, never jumps.** `none → quarantine → reject`, gated on clean
-   `rua` reports. Shipping `reject` without evidence drops legitimate mail.
-5. **CAA is inherited by subdomains.** Every subdomain's issuing CA must be in
-   `var.caa_issuers` (today: Let's Encrypt, covering Fly + BetterUptime). Add the
-   CA before pointing a new subdomain at a host that uses a different one.
-6. **No secrets, no state in git.** `*.tfstate*`, `terraform.tfvars`, and
-   `.terraform/` are git-ignored; keep it that way. This module has no secrets —
-   don't introduce one (put anything sensitive in Secret Manager, referenced, not
-   inlined).
-7. **DKIM/long TXT stays chunked via `regexall`.** Don't hand-split a key across
-   255-char strings — the `format(... join(... regexall(".{1,255}", key)))`
-   pattern in `dns.tf` does it correctly. Miscounting a boundary silently breaks
-   signature verification.
+1. **Private by default — never add a public surface.** The database is private-IP
+   only, compute has no external IP, SSH is IAP + OS Login only. Never add
+   `ipv4_enabled = true`, an `access_config` (external IP), or a `0.0.0.0/0` firewall
+   source. Egress is Cloud NAT; ingress is the LB + IAP ranges only.
+2. **Least-privilege IAM — no Owner/Editor.** The VM SA gets exactly the roles in
+   `iam.tf` and per-secret `secretAccessor`. Add the minimum role for a new need;
+   never a broad `roles/editor`.
+3. **Stateful resources are destroy-guarded.** The DNS zone and Cloud SQL carry
+   `prevent_destroy` + (DB) `deletion_protection`. Removing either is a deliberate,
+   reviewed act — never to make a `terraform destroy` "work".
+4. **Secrets discipline.** Externally-issued secrets (SECRET_KEY_BASE, Paddle/Postmark
+   tokens) are Secret Manager containers here, VALUES added out-of-band — never in
+   state or git. The ONE exception is the Terraform-generated DB password (in state,
+   mitigated by the locked-down bucket); don't add more secrets to state.
+5. **The zone is authoritative — replicate before cutover.** Only records in `dns.tf`
+   resolve once delegated. **DNSSEC DS is published LAST**, after NS delegation
+   resolves — a DS ahead of working delegation takes the domain offline.
+6. **Clustering is flag-gated — never break the Fly path.** `Emisar.Cluster.GCE`
+   activates only when `EMISAR_CLUSTER_PROJECT` is set; Fly keeps using `dns_cluster`.
+   Any change here must leave the Fly deployment's clustering untouched.
+7. **DMARC / MTA-STS ramp, never jump.** `none → quarantine → reject` and
+   `testing → enforce`, gated on clean reports.
+8. **Migrations run on boot under Ecto's advisory lock** (cloud-init), so concurrent
+   instances are safe. Committed portal migrations stay frozen (portal AGENTS.md §8).
 
 ## House style
 
 Match `../onlytty/infra`: comments explain **why** (the abuse case, the ordering
-hazard), never restate the resource. One record, one clearly-labelled resource.
-Values that vary or carry a security decision (Fly IPs, DMARC policy, CAA
-issuers) are variables with a description that IS the documentation; emisar's live
-values are the defaults.
+hazard, the SOC 2 control), never restate the resource. One concern per file
+(`network`/`compute`/`db`/`lb`/`secrets`/`iam`/`monitoring`/`dns`). Values that vary
+or carry a security decision are variables with a description that IS the
+documentation; emisar's production values are the defaults. When you change what the
+stack enforces, keep `COMPLIANCE.md` honest and current in the same change.

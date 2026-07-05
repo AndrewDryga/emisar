@@ -1,27 +1,23 @@
 # ── emisar public DNS — the authoritative Cloud DNS zone for emisar.dev ───────
 #
 # Delegating the registrar (GoDaddy) nameservers to this zone makes Cloud DNS
-# authoritative, so ONLY the records defined here resolve. Everything below was
-# ported 1:1 from the GoDaddy export at migration time — if a record gets added
-# at the registrar later, add it here too or it disappears at the next apply.
+# authoritative, so ONLY the records defined here resolve.
 #
-# emisar's compute, load balancer, and TLS all run on Fly.io; this module owns
-# DNS only. The apex A/AAAA point at Fly's dedicated LB IPs, and the
-# `_acme-challenge` CNAME + `_fly-ownership` TXT are Fly's cert-issuance and
-# domain-proof records — leave them alone or Fly's Let's Encrypt renewal breaks.
+# The apex A/AAAA point at the Google HTTPS load balancer (lb.tf); the Certificate
+# Manager DNS-auth CNAME proves domain control for the Google-managed cert. The
+# email records (MX / SPF / two DKIM / Postmark Return-Path / DMARC / CAA / TLS-RPT
+# / MTA-STS) are provider-independent and carry over unchanged — a spoofable domain
+# is an account-takeover phishing vector for a magic-link product.
 #
-# Dropped from the GoDaddy export on purpose:
+# Dropped on purpose:
 #   • NS / SOA at the apex — Cloud DNS serves its own (see the `nameservers` output).
-#   • `_domainconnect` CNAME — GoDaddy Domain Connect autoconfig; meaningless off GoDaddy.
-#
-# Added here because they were MISSING at GoDaddy and this is a security product
-# whose primary email is a magic-link sign-in (a spoofable domain is an account-
-# takeover phishing vector): DMARC, CAA, SMTP-TLS reporting, and zone DNSSEC.
+#   • the old Fly `_acme-challenge` / `_fly-ownership` records — replaced by the
+#     Certificate Manager DNS authorization above; emisar's TLS is the GCP LB now.
 
 resource "google_dns_managed_zone" "emisar" {
   name        = "emisar"
   dns_name    = var.dns_name
-  description = "emisar public zone — authoritative DNS for ${var.domain} (compute runs on Fly.io)"
+  description = "emisar public zone — authoritative DNS for ${var.domain}"
 
   # Explicit — this zone is intentionally internet-facing (public authoritative DNS).
   visibility = "public"
@@ -57,16 +53,16 @@ resource "google_dns_managed_zone" "emisar" {
     prevent_destroy = true
   }
 
-  depends_on = [google_project_service.dns]
+  depends_on = [google_project_service.apis]
 }
 
-# ── Apex A/AAAA → Fly.io load balancer ───────────────────────────────────────
+# ── Apex A/AAAA → Google HTTPS load balancer (anycast) ───────────────────────
 resource "google_dns_record_set" "a" {
   name         = "${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
   type         = "A"
   ttl          = 300
-  rrdatas      = [var.fly_ipv4]
+  rrdatas      = [google_compute_global_address.ipv4.address]
 }
 
 resource "google_dns_record_set" "aaaa" {
@@ -74,10 +70,10 @@ resource "google_dns_record_set" "aaaa" {
   managed_zone = google_dns_managed_zone.emisar.name
   type         = "AAAA"
   ttl          = 300
-  rrdatas      = [var.fly_ipv6]
+  rrdatas      = [google_compute_global_address.ipv6.address]
 }
 
-# www → apex (Fly serves the canonical redirect to the bare domain).
+# www → apex (the LB redirects the canonical bare domain).
 resource "google_dns_record_set" "www" {
   name         = "www.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -86,23 +82,15 @@ resource "google_dns_record_set" "www" {
   rrdatas      = ["${var.domain}."]
 }
 
-# ── Fly.io TLS + ownership ────────────────────────────────────────────────────
-# Fly answers the ACME DNS-01 challenge behind this CNAME; without it Fly cannot
-# issue or renew emisar's Let's Encrypt certificate.
-resource "google_dns_record_set" "acme_challenge" {
-  name         = "_acme-challenge.${var.domain}."
+# ── TLS: Certificate Manager DNS authorization ────────────────────────────────
+# Proves domain control so the Google-managed cert (lb.tf) provisions. Published
+# into our own zone, so the cert goes ACTIVE minutes after the NS delegation.
+resource "google_dns_record_set" "cert_auth" {
+  name         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].name
   managed_zone = google_dns_managed_zone.emisar.name
-  type         = "CNAME"
+  type         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].type
   ttl          = 300
-  rrdatas      = ["emisar.dev.key3zxr.flydns.net."]
-}
-
-resource "google_dns_record_set" "fly_ownership" {
-  name         = "_fly-ownership.${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "TXT"
-  ttl          = 3600
-  rrdatas      = ["\"app-key3zxr\""]
+  rrdatas      = [google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].data]
 }
 
 # ── Google Workspace inbound mail ─────────────────────────────────────────────
@@ -235,10 +223,11 @@ resource "google_dns_record_set" "mta_sts_txt" {
 }
 
 # ── CAA — restrict certificate issuance ───────────────────────────────────────
-# Was absent at GoDaddy. Verified issuers: the Fly apex cert and the BetterUptime
-# status page (status.) both come from Let's Encrypt. iodef sends any violation
-# report to the security disclosure inbox. Mind the inheritance note on
-# var.caa_issuers before adding subdomains on other hosts.
+# Issuers in use: the Google-managed LB cert comes from Google Trust Services
+# (`pki.goog`), and the BetterUptime status page (status.) from Let's Encrypt —
+# both in var.caa_issuers. iodef sends any violation report to the security
+# disclosure inbox. Mind the inheritance note on var.caa_issuers before adding a
+# subdomain on another host.
 resource "google_dns_record_set" "caa" {
   name         = "${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name

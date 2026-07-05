@@ -1,37 +1,113 @@
 variable "project_id" {
   type        = string
-  description = "GCP project ID that hosts the Cloud DNS managed zone."
+  description = "GCP project ID to deploy emisar into."
+}
+
+variable "region" {
+  type        = string
+  description = "GCP region for the regional MIG + Cloud SQL."
+  default     = "us-central1"
 }
 
 variable "domain" {
   type        = string
-  description = "Apex domain, no trailing dot (e.g. emisar.dev)."
+  description = "Public hostname, no trailing dot (served by the HTTPS LB)."
   default     = "emisar.dev"
 }
 
 variable "dns_name" {
   type        = string
-  description = "Cloud DNS managed-zone DNS name — the apex WITH a trailing dot (e.g. emisar.dev.)."
+  description = "Cloud DNS managed-zone DNS name — the apex WITH a trailing dot."
   default     = "emisar.dev."
 }
 
-# emisar serves from Fly.io; these are its dedicated LB IPs the apex points at.
-# If Fly ever reissues the dedicated IPs, update them here — nowhere else.
-variable "fly_ipv4" {
+variable "subnet_cidr" {
   type        = string
-  description = "Fly.io dedicated IPv4 for the apex A record (emisar's load balancer)."
-  default     = "37.16.18.178"
+  description = "CIDR for the dedicated emisar subnet."
+  default     = "10.82.0.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.subnet_cidr, 1))
+    error_message = "subnet_cidr must be a valid IPv4 CIDR block."
+  }
 }
 
-variable "fly_ipv6" {
+# ── Compute ───────────────────────────────────────────────────────────────────
+variable "machine_type" {
   type        = string
-  description = "Fly.io dedicated IPv6 for the apex AAAA record."
-  default     = "2a09:8280:1::11e:a273:0"
+  description = "Compute Engine machine type for the portal instances."
+  default     = "e2-standard-2"
 }
 
+variable "instance_count" {
+  type        = number
+  description = "MIG size. >1 forms one BEAM cluster via the GCE libcluster strategy (Emisar.Cluster.GCE), so PubSub/Presence span nodes and runs don't strand. Default 2 for HA."
+  default     = 2
+
+  validation {
+    condition     = var.instance_count >= 1 && floor(var.instance_count) == var.instance_count
+    error_message = "instance_count must be an integer >= 1."
+  }
+}
+
+variable "image_tag" {
+  type        = string
+  description = "Tag of the emisar image in Artifact Registry to run. Pin a version/digest for a reproducible rollout; `latest` is the mutable default."
+  default     = "latest"
+}
+
+variable "app_port" {
+  type        = number
+  description = "Port the portal container listens on (LB backend + health check)."
+  default     = 4000
+
+  validation {
+    condition     = var.app_port >= 1 && var.app_port <= 65535 && floor(var.app_port) == var.app_port
+    error_message = "app_port must be an integer between 1 and 65535."
+  }
+}
+
+variable "backend_timeout_sec" {
+  type        = number
+  description = "LB backend timeout (caps a single connection, incl. the runner WebSocket; the runner reconnects)."
+  default     = 86400
+
+  validation {
+    condition     = var.backend_timeout_sec >= 1 && var.backend_timeout_sec <= 86400 && floor(var.backend_timeout_sec) == var.backend_timeout_sec
+    error_message = "backend_timeout_sec must be an integer between 1 and 86400."
+  }
+}
+
+variable "disable_billing" {
+  type        = bool
+  description = "Set EMISAR_DISABLE_BILLING=1 in the release (ship the Paddle stub) instead of requiring the paddle-* secrets. Use for an internal/staging tier."
+  default     = false
+}
+
+# ── Database ──────────────────────────────────────────────────────────────────
+variable "db_tier" {
+  type        = string
+  description = "Cloud SQL machine tier. A shared-core tier (db-g1-small) can't run REGIONAL HA; use a db-custom-* tier."
+  default     = "db-custom-1-3840"
+}
+
+variable "db_disk_size_gb" {
+  type        = number
+  description = "Cloud SQL initial disk size in GB (autoresize is on)."
+  default     = 20
+}
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+variable "alert_email" {
+  type        = string
+  description = "Email address that receives monitoring alerts (uptime, DB CPU/disk)."
+  default     = "ops@emisar.dev"
+}
+
+# ── DNS records (email posture) ───────────────────────────────────────────────
 variable "dmarc_policy" {
   type        = string
-  description = "DMARC enforcement. Ramp it: `none` (monitor via rua only) → `quarantine` → `reject`, moving on only once aggregate reports confirm Postmark + Google Workspace both align. Jumping straight to reject can silently drop legitimate mail."
+  description = "DMARC enforcement. Ramp it: `none` (monitor via rua) → `quarantine` → `reject` once reports confirm Postmark + Workspace align."
   default     = "none"
 
   validation {
@@ -42,12 +118,12 @@ variable "dmarc_policy" {
 
 variable "dmarc_rua" {
   type        = string
-  description = "DMARC aggregate-report (rua) address as a mailto: URI. Point it at a monitored inbox on the domain, or a DMARC service such as Postmark's free monitor. Reports are useless unread — this is how you learn it's safe to ramp the policy."
+  description = "DMARC aggregate-report (rua) address as a mailto: URI."
   default     = "mailto:dmarc@emisar.dev"
 }
 
 variable "caa_issuers" {
   type        = list(string)
-  description = "CAs allowed to issue certificates for the apex AND every subdomain — CAA at the apex is inherited by subdomains that lack their own. Both emisar's Fly cert and the BetterUptime status page issue via Let's Encrypt, so this is `letsencrypt.org`. Before pointing a NEW subdomain at a host that uses a different CA, add that CA here or its cert renewal will fail."
-  default     = ["letsencrypt.org"]
+  description = "CAs allowed to issue certs for the apex AND every subdomain (CAA is inherited). The Google-managed LB cert and the BetterUptime status page both use Let's Encrypt / pki.goog — list every CA in use before adding a subdomain on another host."
+  default     = ["letsencrypt.org", "pki.goog"]
 }

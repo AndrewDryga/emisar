@@ -37,6 +37,9 @@ defmodule Emisar.MixProject do
       # (workers + context reads need it), so the tracker lives in the
       # domain app. Same dep already resolved for emisar_web.
       {:dns_cluster, "~> 0.2.0"},
+      # BEAM clustering on GCP MIGs, where there is no single DNS name for the
+      # instances (Fly uses dns_cluster above). See Emisar.Cluster.GCE.
+      {:libcluster, "~> 3.5"},
       {:phoenix, "~> 1.8"},
       {:phoenix_pubsub, "~> 2.2"},
 

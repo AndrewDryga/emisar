@@ -1,0 +1,109 @@
+#cloud-config
+# Container-Optimized OS. Boots the emisar portal behind the Google HTTPS load
+# balancer: fetches every runtime secret from Secret Manager into a root-only env
+# file, runs DB migrations (Ecto's advisory lock makes this safe across instances),
+# then runs the release. epmd + the Erlang distribution ports let sibling instances
+# form one BEAM cluster; peer discovery is Emisar.Cluster.GCE (Compute API by label).
+#
+# Dollar-brace placeholders are Terraform interpolation; $NAME (no braces) is shell.
+
+write_files:
+  - path: /var/lib/emisar/start.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      ENV_FILE=/run/emisar/env
+      mkdir -p /run/emisar
+      : > "$ENV_FILE"
+      chmod 600 "$ENV_FILE"
+
+      # Metadata access token: auth for both Secret Manager and the Artifact
+      # Registry pull. A successful-but-empty grep/cut won't fail under pipefail,
+      # so guard each step explicitly.
+      TOKEN=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | cut -d'"' -f4)
+      [ -n "$TOKEN" ] || { echo "no metadata access token" >&2; exit 1; }
+
+      # $1 = secret id, $2 = env var. Silently skips a secret with no version yet
+      # (an unpopulated optional) — never write an empty value; the release treats
+      # unset as "feature off".
+      fetch_secret() {
+        local data value
+        data=$(curl -s -H "Authorization: Bearer $TOKEN" "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access" | grep -oE '"data": ?"[^"]*"' | cut -d'"' -f4 || true)
+        [ -n "$data" ] || return 0
+        value=$(printf '%s' "$data" | base64 -d)
+        [ -n "$value" ] || return 0
+        printf '%s=%s\n' "$2" "$value" >> "$ENV_FILE"
+      }
+
+%{ for secret_id, env_name in app_secrets ~}
+      fetch_secret "${secret_id}" "${env_name}"
+%{ endfor ~}
+
+      # A prod boot cannot start without these.
+      grep -q '^SECRET_KEY_BASE=' "$ENV_FILE" || { echo "SECRET_KEY_BASE missing from Secret Manager" >&2; exit 1; }
+      grep -q '^DATABASE_URL=' "$ENV_FILE" || { echo "DATABASE_URL missing from Secret Manager" >&2; exit 1; }
+
+      # Stable cluster cookie across image builds, derived from the app secret so
+      # old + new images share it during a rolling update.
+      SKB=$(grep '^SECRET_KEY_BASE=' "$ENV_FILE" | cut -d= -f2-)
+      printf 'RELEASE_COOKIE=%s\n' "$(printf 'emisar-release-cookie:%s' "$SKB" | sha256sum | cut -d' ' -f1)" >> "$ENV_FILE"
+
+      # This instance's internal IP becomes the BEAM node name (emisar@<ip>).
+      NODE_IP=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+      [ -n "$NODE_IP" ] || { echo "no instance internal IP" >&2; exit 1; }
+
+      # Non-secret runtime env. FORCE_SSL=true: the LB terminates TLS and forwards
+      # X-Forwarded-Proto, so force_ssl serves (no redirect loop); /healthz is
+      # excluded so the plain-HTTP LB probe still gets 200.
+      {
+        printf 'PHX_HOST=%s\n' "${domain}"
+        printf 'PORT=%s\n' "${app_port}"
+        printf 'FORCE_SSL=true\n'
+        printf 'DATABASE_SSL=1\n'
+        printf 'NODE_IP=%s\n' "$NODE_IP"
+        printf 'EMISAR_CLUSTER_PROJECT=%s\n' "${project_id}"
+        printf 'EMISAR_CLUSTER_VALUE=%s\n' "${cluster_value}"
+      } >> "$ENV_FILE"
+%{ if disable_billing ~}
+      printf 'EMISAR_DISABLE_BILLING=1\n' >> "$ENV_FILE"
+%{ endif ~}
+
+      # Authenticate to the private Artifact Registry with the metadata token.
+      REGISTRY=$(printf '%s' "${container_image}" | cut -d/ -f1)
+      docker login -u oauth2accesstoken -p "$TOKEN" "https://$REGISTRY"
+      docker pull ${container_image}
+
+      # Migrations first — Ecto's advisory lock serializes concurrent instances, so
+      # only one runs them and the rest wait, then all boot.
+      docker run --rm --network host --env-file "$ENV_FILE" ${container_image} /app/bin/migrate
+
+      docker rm -f emisar 2>/dev/null || true
+      exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" ${container_image}
+
+  - path: /etc/systemd/system/emisar.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=emisar portal
+      Wants=gcr-online.target network-online.target
+      After=gcr-online.target network-online.target
+      [Service]
+      Restart=always
+      RestartSec=5
+      TimeoutStopSec=45
+      ExecStart=/bin/bash /var/lib/emisar/start.sh
+      ExecStop=/usr/bin/docker stop -t 30 emisar
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # COS drops inbound by default (only lo/icmp/ESTABLISHED/SSH), so the VPC firewall
+  # is not sufficient alone. Open the app port (LB health check + traffic) and the
+  # BEAM cluster ports; the VPC firewall already restricts the sources.
+  - /sbin/iptables -A INPUT -p tcp --dport ${app_port} -j ACCEPT
+  - /sbin/iptables -A INPUT -p tcp --dport 4369 -j ACCEPT
+  - /sbin/iptables -A INPUT -p tcp --dport 9100:9105 -j ACCEPT
+  - systemctl daemon-reload
+  - systemctl enable --now emisar.service

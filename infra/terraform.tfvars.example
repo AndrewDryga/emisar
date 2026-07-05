@@ -1,24 +1,28 @@
 # Copy to terraform.tfvars (gitignored) and set project_id. Everything else
-# already defaults to emisar.dev's live production values in variables.tf.
-#
-#   terraform login   # if using the Terraform Cloud backend in main.tf
-#   terraform init
-#   terraform plan
-#
-# If the Terraform Cloud workspace uses remote execution, set these as workspace
-# variables instead; .terraformignore excludes local *.tfvars from any upload.
+# defaults to emisar's production values in variables.tf. Then:
+#   terraform init && terraform plan   (apply is the deliberate GCP-migration step)
 
-project_id = "emisar" # the GCP project that hosts the Cloud DNS zone
+project_id = "emisar" # the GCP project to deploy into
 
-# --- Overrides (defaults in variables.tf already match emisar.dev) ------------
-# domain   = "emisar.dev"
-# dns_name = "emisar.dev."
-# fly_ipv4 = "37.16.18.178"
-# fly_ipv6 = "2a09:8280:1::11e:a273:0"
+# --- Overrides (defaults in variables.tf) ------------------------------------
+# region       = "us-central1"
+# domain       = "emisar.dev"
+# dns_name     = "emisar.dev."
 
-# DMARC ramp — start at none (monitor), move up once rua reports look clean:
-# dmarc_policy = "none"          # → "quarantine" → "reject"
+# Compute
+# machine_type   = "e2-standard-2"
+# instance_count = 2                 # >1 clusters via Emisar.Cluster.GCE
+# image_tag      = "latest"          # pin a version/digest for a reproducible rollout
+# disable_billing = false            # true → ship the Paddle stub (no paddle-* secrets)
+
+# Database
+# db_tier         = "db-custom-1-3840"   # a shared-core tier can't run REGIONAL HA
+# db_disk_size_gb = 20
+
+# Monitoring
+# alert_email = "ops@emisar.dev"
+
+# DNS email posture
+# dmarc_policy = "none"              # → "quarantine" → "reject"
 # dmarc_rua    = "mailto:dmarc@emisar.dev"
-
-# CAA — Fly (apex) and BetterUptime (status.) both issue via Let's Encrypt:
-# caa_issuers = ["letsencrypt.org"]
+# caa_issuers  = ["letsencrypt.org", "pki.goog"]   # BetterUptime + Google-managed cert

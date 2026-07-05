@@ -1,132 +1,129 @@
-# infra — production readiness & SOC 2 control mapping
+# infra — SOC 2 Type II control mapping
 
-Scope: the DNS infrastructure in `infra/` (the Cloud DNS zone for `emisar.dev`).
-emisar's app/LB/TLS run on Fly.io and have their own posture; this document is
-about the DNS layer and the controls it implements or enables.
+Scope: the emisar-on-GCP infrastructure in this module (compute, database,
+network, TLS, secrets, DNS, monitoring). It is **prepared, not applied**.
 
-**Honest framing.** SOC 2 is an *organizational* attestation over a period of
-time — auditors examine policies, people, and operations, not just code. No repo
-"passes SOC 2." What this module does is implement the **technical controls** a
-SOC 2 auditor looks for in a DNS/IaC system, and produce **evidence** (reviewed
-IaC, a change-management gate, audit trails). The table below is honest about
-what's enforced in code, what's a provider/console setting you must configure,
-and what's an org-level control that lives outside this repo entirely.
+**Honest framing.** SOC 2 Type II is an *organizational* attestation that controls
+operated effectively over a period — auditors examine policies, people, and
+evidence, not just code. No repo "passes SOC 2". What this module does is implement
+the **technical controls** a SOC 2 auditor expects of a cloud platform and produce
+**evidence** (reviewed IaC, private-by-default networking, audit logging, backups,
+monitoring). The table is honest about what's enforced in code (✅), what's a
+provider/console setting you must configure (⚙️), and what's an org-level control
+outside this repo (📋).
 
-Legend: ✅ enforced in this module · ⚙️ configure in the provider (documented
-here) · 📋 org/process control, outside code.
+## Production-readiness / control checklist
 
-## Production-readiness checklist
-
-| Item | Status | Where / evidence |
+| Control | Status | Where / evidence |
 |---|---|---|
-| DNSSEC signing (ECDSA P-256/SHA-256, NSEC3) | ✅ | `dns.tf` zone `dnssec_config`; DS via `dnssec_ds_record` output |
-| CAA — issuance restricted to Let's Encrypt + iodef | ✅ | `dns.tf`; both Fly + BetterUptime certs verified as LE |
-| SPF + DKIM (Google + Postmark) + Return-Path | ✅ | `dns.tf` |
-| DMARC (ramped none→quarantine→reject) | ✅ | `dns.tf`, `var.dmarc_policy` |
-| SMTP-TLS reporting (TLS-RPT) | ✅ | `dns.tf` |
-| MTA-STS (testing mode; enforce after cert + ramp) | ✅ | policy in portal + `mta-sts`/`_mta-sts` in `dns.tf` |
-| Highly available authoritative DNS | ⚙️ | Cloud DNS anycast (100% SLA); no single point we run |
-| Reproducible, versioned infra (IaC) | ✅ | whole module; `git log` is the change record |
-| Zone applied + verified in GCP (staged) | ✅ | `apply` clean (19 added); verify-cutover all-green; DNSSEC signing live (alg 13) |
-| Change-management gate | ✅ | `.github/workflows/infra-ci.yml` (fmt + validate + tflint) |
-| No secrets in state or git | ✅ | module has none; `.gitignore` blocks `*.tfstate`/`*.tfvars` |
-| State encrypted + access-controlled | ✅ | GCS `emisar-tfstate` — UBLA + public-access-prevention + versioned |
-| Least-privilege apply identity | ⚙️ | GCP IAM — see Access below (dns.admin, not owner) |
-| Change audit trail | ✅ | git + PR review + versioned GCS state + GCP Cloud Audit Logs |
-| Monitoring & alerting | 📋/⚙️ | see Monitoring below |
-| Backup / disaster recovery | ✅ | zone is code; `terraform apply` rebuilds it |
+| No public database surface | ✅ | Cloud SQL private IP only (`db.tf`, VPC peering) |
+| Database HA (failover) | ✅ | `availability_type = "REGIONAL"` |
+| Database backups + PITR | ✅ | automated backups, `point_in_time_recovery_enabled`, 30 retained |
+| Database deletion protection | ✅ | `deletion_protection` + Terraform `prevent_destroy` |
+| Encryption in transit (edge) | ✅ | HTTPS LB, `RESTRICTED` SSL policy (TLS 1.2+), HTTP→HTTPS redirect |
+| Encryption in transit (DB) | ✅ | Cloud SQL `ssl_mode = ENCRYPTED_ONLY` + `DATABASE_SSL=1` |
+| Encryption at rest | ⚙️ | Google-managed by default; CMEK is a one-field hardening (Open items) |
+| No public compute IPs | ✅ | instances have no external IP; egress via Cloud NAT |
+| SSH via IAP + OS Login only | ✅ | `iap_ssh` firewall (35.235.240.0/20), `enable-oslogin`, no 0.0.0.0/0 |
+| Host integrity | ✅ | Shielded VM (secure boot + vTPM + integrity monitoring) |
+| Least-privilege service account | ✅ | dedicated SA, scoped roles (`iam.tf`), no Owner/Editor |
+| Secret management | ✅ | Secret Manager, per-secret accessor; values out-of-band |
+| Private image + vuln scanning | ✅ | Artifact Registry (Container Analysis), not public GHCR |
+| Cloud Audit Logs (admin + data) | ✅ | `google_project_iam_audit_config` ADMIN_READ/DATA_READ/DATA_WRITE |
+| Network flow logs | ✅ | subnet `log_config` + LB request logging |
+| Availability: multi-node app | ✅ | regional MIG (2+), auto-healing, GCE clustering (`Emisar.Cluster.GCE`) |
+| Monitoring & alerting | ✅ | uptime check + DB CPU/disk + unreachable → email channel |
+| DNS integrity | ✅ | DNSSEC (ECDSA), CAA; email auth (SPF/DKIM/DMARC/TLS-RPT/MTA-STS) |
+| Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
+| Reproducible infra (IaC) | ✅ | whole stack; `git log` is the change record |
+| State security | ✅ | GCS `emisar-tfstate` — UBLA + public-access-prevention + versioned |
 
-## SOC 2 Trust Services Criteria — how the DNS layer maps
+## SOC 2 Trust Services Criteria — how the platform maps
 
-- **CC8.1 Change management** — the strongest code-demonstrable control here.
-  Every zone change flows: branch → PR → `infra CI` (fmt/validate/tflint) green →
-  human review → merge → `terraform apply` by an authorized operator. No direct
-  console edits (Cloud DNS is authoritative from this code; a hand edit is
-  unreviewed and gets overwritten). Evidence: PR history + the versioned GCS state
-  (every apply is a new object generation) + GCP Cloud Audit Logs. Running apply
-  from a CI job with Workload Identity Federation would add an approval-gated,
-  logged runner — see Access.
-- **CC6 Logical access** — least-privilege apply identity (⚙️ Access, below); the
-  state bucket is IAM-controlled with uniform bucket-level access and public-access
-  prevention; MFA on human GCP accounts; no long-lived credentials in CI (CI is
-  credential-free by design). Registrar (GoDaddy) account MFA is 📋.
-- **CC7 System operations / monitoring** — DMARC `rua`, TLS-RPT `rua`, and CAA
-  `iodef` turn misuse (spoofing, downgrade, unauthorized cert issuance) into
-  signals; GCP Cloud Audit Logs record every zone mutation; uptime/cert/DNSSEC
-  monitors (below) detect availability + integrity failures.
-- **CC6.1 / CC6.7 Data integrity & transmission** — **DNSSEC** makes resolver
-  answers tamper-evident (cache-poisoning / spoofing defense); **CAA** constrains
-  who may issue certs for the name and every subdomain; email is authenticated
-  end-to-end (SPF + two DKIM keys + DMARC), which for a magic-link product is an
-  account-takeover-phishing control, not just deliverability.
-- **A1 Availability** — Cloud DNS is anycast with a 100% uptime SLA; the zone
-  itself is code, so recovery is a re-apply (DR below).
-- **C1 Confidentiality** — no secrets live in this module, its state, or git;
-  anything sensitive (Fly/GCP/Postmark tokens) lives in the respective secret
-  store, referenced, never inlined.
+- **CC6 Logical & physical access** — dedicated least-privilege SA (no Owner/Editor;
+  per-secret accessor, `compute.viewer`/`cloudsql.client`/`artifactregistry.reader`
+  only). No public compute IPs; SSH exclusively through IAP + OS Login. The database
+  has no public IP. Human GCP access + MFA is ⚙️/📋.
+- **CC6.1 / CC6.7 Data at rest & in transit** — TLS 1.2+ at the edge (managed cert,
+  RESTRICTED policy) and required to the database; at rest via Google-managed keys
+  (CMEK optional). **DNSSEC** + **CAA** make DNS answers tamper-evident and constrain
+  cert issuance; email is authenticated end-to-end (SPF + two DKIM keys + DMARC) —
+  an account-takeover-phishing control for a magic-link product.
+- **CC7 System operations / monitoring** — Cloud Audit Logs record every admin and
+  data-access action; VPC flow logs + LB request logs give network/edge forensics;
+  the uptime check + alert policies detect outages and DB pressure. DMARC/TLS-RPT/CAA
+  reporting turn email/cert misuse into signals.
+- **CC8 Change management** — every change is IaC through a PR that must pass the
+  infra CI gate (fmt/validate/tflint, no creds), is human-reviewed, then applied by
+  an authorized operator; the versioned GCS state records each apply. No console
+  edits (they'd drift from and be overwritten by the code).
+- **A1 Availability** — a regional MIG (≥2 nodes, auto-healing, rolling updates) with
+  GCE clustering behind an anycast HTTPS LB; **Cloud SQL regional HA** (synchronous
+  standby + automatic failover). DR: automated backups + PITR (RPO minutes) and the
+  whole platform as code (re-apply rebuilds it).
+- **C1 Confidentiality** — the database is private-IP only; secrets live in Secret
+  Manager (per-secret least-priv), never in code; the image registry is private.
+- **PI Processing integrity** — DB migrations run under Ecto's advisory lock (one
+  runner, others wait); the health check gates traffic so only migrated, healthy
+  nodes serve.
 
 ## Access & least privilege (configure in GCP)
 
-- **GCP:** the apply identity needs `roles/dns.admin` on the project, plus — for
-  the *first* apply only — `roles/serviceusage.serviceUsageAdmin` to enable the
-  DNS API. **Not** Owner/Editor. Prefer **Workload Identity Federation** (short-
-  lived, keyless — e.g. from a GitHub Actions apply job) over a service-account
-  JSON key; if a key is unavoidable, scope it to that SA and rotate it. MFA on all
-  human GCP accounts.
-- **State bucket (`emisar-tfstate`):** uniform bucket-level access,
-  public-access-prevention, and object versioning are enforced; grant
-  `roles/storage.objectAdmin` on just this bucket to the apply identity. Access to
-  the bucket IS access to change production DNS — treat it that way.
-- **CI:** holds no credentials and can't apply — it only lints/validates. Nothing
-  to leak.
+- **VM service account** (`emisar-vm`): exactly `logging.logWriter`,
+  `monitoring.metricWriter`, `compute.viewer` (cluster discovery),
+  `artifactregistry.reader` (image pull), `cloudsql.client`, and per-secret
+  `secretAccessor`. No Owner/Editor. It uses the metadata token — no long-lived key.
+- **Humans**: grant `roles/dns.admin` / project roles to the infra team only; MFA on
+  all GCP accounts; SSH via `gcloud compute ssh --tunnel-through-iap` (no keys on the
+  box). The apply identity ideally runs from CI via Workload Identity Federation.
+- **State bucket** (`emisar-tfstate`): UBLA + public-access-prevention + versioning;
+  access to it IS access to change production — grant `storage.objectAdmin` narrowly.
 
-## Audit logging & evidence retention
+## Data protection
 
-Every change to production DNS is recorded three ways: the **git commit** (author,
-reviewed diff), the **GCS state history** (each apply is a new versioned object),
-and **GCP Cloud Audit Logs** (Admin Activity for `dns.*` — every zone mutation).
-Admin Activity logs are always-on and retained **400 days in the immutable
-`_Required` bucket by default** — no config, and that already covers change-audit
-retention for a typical SOC 2 period. Add a sink to BigQuery / a log bucket only
-for longer retention or SIEM export.
+Encryption in transit is end-to-end (browser→LB TLS, LB→app internal, app→DB
+required-SSL). At rest is Google-managed AES-256 everywhere; for key custody, set
+`encryption_key_name` on Cloud SQL / the disk / Secret Manager (CMEK — Open items).
+The app DB password is generated by Terraform and lands in state; this is accepted
+because state is the locked-down, versioned, IAM-controlled `emisar-tfstate` bucket.
+Externally-issued secrets (SECRET_KEY_BASE, Paddle/Postmark tokens) are added
+out-of-band and never enter state. Stronger: Cloud SQL **IAM auth** (no password)
+via the Auth Proxy — Open items.
 
-## Monitoring & alerting (mostly ops — set these up)
+## Backups & disaster recovery
 
-- **Availability/integrity monitors:** apex + `www` resolve, MX resolves, DNSSEC
-  validates (AD flag present), and TLS cert expiry alerts at <30 days. The public
-  status page (`status.emisar.dev`, BetterUptime) already watches the app; add
-  these DNS/cert checks alongside it.
-- **Email-auth signal:** point the DMARC `rua` and TLS-RPT `rua` at a monitored
-  inbox or a DMARC service and review the reports **before** ramping
-  `var.dmarc_policy` past `none`.
-- **Unauthorized issuance:** CAA `iodef` reports go to `security@emisar.dev` —
-  which must actually be provisioned (it's also the disclosure address).
+Cloud SQL: automated daily backups + point-in-time recovery (RPO ≈ minutes), 30
+backups retained, regional standby for failover. The platform is code, so recovery
+of everything else is `terraform apply`. Worth a periodic restore game-day (restore
+to a scratch instance, confirm the app boots against it).
 
-## Backup & disaster recovery
+## Audit logging
 
-The zone is fully described in code, so recovery is `terraform apply` (minutes),
-and the GCS state is versioned and restorable. The only manual re-steps
-are the NS delegation and the DNSSEC DS at the registrar. RPO ≈ last commit; RTO ≈
-apply + propagation. Worth a periodic game-day: apply into a scratch zone and
-confirm it reproduces.
+Admin Activity logs (every mutation) are always-on and retained **400 days** in the
+immutable `_Required` bucket. **Data Access** logs (who read secrets / DB admin) are
+turned on here (`google_project_iam_audit_config`). Plus VPC flow logs and LB
+request logs. For a longer window or SIEM, export to BigQuery / a log bucket.
+
+## Vulnerability management
+
+Artifact Registry runs Container Analysis (CVE scanning) on the image; the portal's
+own CI runs `sobelow` (Phoenix SAST) + `mix_audit` (dependency CVEs); Shielded VM
+guards host boot integrity. Pin `image_tag` to a digest for reproducible rollouts.
 
 ## What is NOT in this module (org-level — flagged, not hidden)
 
-A SOC 2 audit also needs controls that no Terraform can provide: an infosec
-policy, periodic access reviews, onboarding/offboarding, vendor/subprocessor
-management (GoDaddy, Fly, Google Workspace, Postmark, BetterUptime, Terraform
-Cloud), incident-response and BCP/DR runbooks with evidence they're tested, risk
-assessment, and security training. This module supplies technical evidence for a
-slice of CC6/CC7/CC8/A1/C1; the rest is process the organization owns.
+SOC 2 Type II also needs controls no Terraform provides: an infosec policy,
+periodic access reviews, onboarding/offboarding, vendor/subprocessor management
+(Google, GoDaddy, Postmark, Paddle, BetterUptime), incident-response + BCP/DR
+runbooks *with evidence they were tested over the period*, risk assessment, change-
+approval records, and security training. This module supplies technical evidence for
+CC6/CC7/CC8/A1/C1/PI; the rest is process the organization operates and evidences.
 
-## Open items
+## Open items / hardening
 
-- **MTA-STS → enforce** — policy + DNS ship in `mode: testing`. Run
-  `fly certs add mta-sts.emisar.dev`, then flip the policy file to `mode: enforce`
-  and bump the `_mta-sts` `id` once TLS-RPT reports are clean.
-- **Wire the report inboxes** — DMARC `rua`, TLS-RPT `rua`; then ramp DMARC
-  `none → quarantine → reject` once reports confirm Postmark + Workspace align.
-- **Provision `security@emisar.dev`** — CAA iodef target and disclosure address.
-- **Choose Workload Identity Federation** for the apply identity (avoid a
-  long-lived SA key), ideally from a CI apply job. A Cloud Audit Logs sink is
-  optional — Admin Activity is already retained 400 days by default (above).
+- **CMEK** on Cloud SQL + Secret Manager + disks if key custody is required.
+- **Cloud SQL IAM auth** (no password) via the Auth Proxy sidecar in cloud-init.
+- **Cloud Armor** WAF + rate-limiting attached to the backend service.
+- **Workload Identity Federation** so `terraform apply` runs from CI, not a laptop.
+- Wire DMARC/TLS-RPT report inboxes; ramp DMARC → reject and MTA-STS → enforce.
+- More alert channels (PagerDuty/Slack) + policies (5xx rate, cert expiry).

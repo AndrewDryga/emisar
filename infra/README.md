@@ -1,116 +1,99 @@
-# infra — emisar DNS on Google Cloud DNS
+# infra — emisar on GCP
 
-The authoritative public DNS zone for **emisar.dev**, managed in Terraform on
-**Google Cloud DNS**. This module owns DNS and nothing else: emisar's app, load
-balancer, and TLS run on **Fly.io**, so there is no GCP compute/LB/cert stack
-here (that's the shape of `../onlytty/infra`, whose app is served from GCP —
-emisar's is not). Cloud DNS just answers queries; Fly serves the traffic.
+Terraform for running the emisar control plane on **Google Cloud**, built to a
+**SOC 2 Type II** posture. Adapted from `../onlytty/infra` (same LB + MIG + managed
+cert + Secret Manager shape) and extended for emisar: a **Cloud SQL** database,
+emisar's full secret set, a **private Artifact Registry**, GCE **clustering**, and
+the SOC 2 control layer (audit logs, private networking, backups/DR, monitoring).
 
 ```
-              ┌─ Cloud DNS (authoritative zone, DNSSEC-signed) ─┐
-registrar NS ─┤  A/AAAA → Fly LB   ·   MX → Google Workspace     ├─► emisar.dev
- (GoDaddy)    │  SPF/DKIM/DMARC    ·   _acme-challenge → Fly TLS  │
-              └──────────────────────────────────────────────────┘
+                 ┌─ IPv4/IPv6 anycast ─┐
+DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /healthz) ─► regional MIG
+(Cloud DNS,      │  Certificate Manager)│                              (COS, portal
+ DNSSEC-signed)  └─ :80 → :443 redirect ┘                               container, 2+ nodes)
+                                                                             │
+   Secret Manager (all runtime secrets) ── Artifact Registry (private image)│
+                                                                             ▼
+                          dedicated VPC ── Cloud NAT ── Cloud SQL Postgres (private IP,
+                          (flow logs)      (egress)     regional HA, PITR backups)
 ```
 
-## What's in the zone
+> **This is prepared, not applied.** Per the task that created it, the code is
+> ready to `terraform apply` but has not been run. emisar currently serves from
+> Fly.io; the previously-applied state in this module is just the Cloud DNS zone.
+> Applying this stack is a deliberate **Fly → GCP migration** (the apex A/AAAA move
+> from Fly to the GCP LB, the cert becomes Google-managed). Nothing here touches
+> the live domain until you apply *and* delegate the nameservers.
 
-Every record was ported 1:1 from the GoDaddy export, plus the security records
-that were missing there. `dns.tf` is the source of truth; this is the map.
+## What's in it
 
-| Record | Purpose |
-|---|---|
-| `A` / `AAAA` @ | Fly.io dedicated LB IPs (`var.fly_ipv4` / `var.fly_ipv6`) |
-| `www` CNAME | → apex |
-| `MX` @ | Google Workspace inbound mail |
-| `TXT` @ (SPF) | `v=spf1 include:…_spfm…` → flattens to Google; **Postmark is intentionally not here** |
-| `TXT` `dc-…._spfm` | the SPF-flatten target (→ `_spf.google.com`) |
-| `TXT` `google._domainkey` | Google Workspace DKIM |
-| `TXT` `20260603061232pm._domainkey` | Postmark DKIM (transactional mail) |
-| `CNAME` `pm-bounces` | Postmark custom Return-Path (SPF alignment for Postmark) |
-| `CNAME` `_acme-challenge` | Fly ACME DNS-01 — **required for Fly cert renewal** |
-| `TXT` `_fly-ownership` | Fly domain-ownership proof |
-| `CNAME` `status` | BetterUptime status page |
-| **`TXT` `_dmarc`** | **added** — DMARC policy (ramped; see below) |
-| **`CAA` @** | **added** — restrict issuance to Let's Encrypt + iodef to security@ |
-| **`TXT` `_smtp._tls`** | **added** — SMTP-TLS failure reporting |
-| **DNSSEC** | **added** — zone signed; DS goes to the registrar |
+| Area | Resources | SOC 2 relevance |
+|---|---|---|
+| Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; no public data-store surface |
+| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates | availability; host integrity |
+| Database | Cloud SQL Postgres 16 — private IP, regional HA, PITR backups, SSL-required, deletion-protected | availability, durability/DR, confidentiality |
+| TLS | Certificate Manager managed cert (DNS-auth), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
+| Secrets | Secret Manager for every runtime secret; per-secret least-priv access | secret management |
+| Registry | private Artifact Registry (Container Analysis scanning) | supply chain / vuln mgmt |
+| IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
+| DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
+| Monitoring | uptime check + alert policies (DB CPU/disk, unreachable) → email channel | detection |
 
-**Dropped from GoDaddy on purpose:** the apex `NS`/`SOA` (Cloud DNS serves its
-own) and `_domainconnect` (GoDaddy Domain Connect autoconfig, meaningless here).
+`COMPLIANCE.md` maps each of these to the SOC 2 Trust Services Criteria and is
+honest about what's enforced in code vs. configured vs. org-owned.
 
-## Email authentication, in one paragraph
+## Files
 
-emisar receives mail via **Google Workspace** (MX) and sends transactional mail
-(magic-link sign-in, notifications) via **Postmark** from `no-reply@emisar.dev`.
-Both are DKIM-signed (two `_domainkey` records). SPF authorizes Google at the
-apex; Postmark authenticates on its own `pm-bounces` Return-Path, which
-relaxed-aligns to the domain — so **don't add Postmark to the apex SPF**, that's
-a common and unnecessary "fix". DMARC ties it together. Because the product's
-core email is a sign-in link, an unauthenticated domain is a real account-
-takeover phishing surface — which is why DMARC/CAA/DNSSEC are non-negotiable here.
+`network.tf` · `compute.tf` · `db.tf` · `lb.tf` · `secrets.tf` · `iam.tf`
+(SA + audit) · `monitoring.tf` · `dns.tf` · `main.tf` (provider + APIs + registry)
+· `variables.tf` · `outputs.tf` · `versions.tf` · `templates/cloud-init.yaml` ·
+`scripts/verify-cutover.sh`.
 
-## Status & registrar cutover
+## Clustering (emisar-specific vs onlytty)
 
-The zone is **applied** to the `emisar` GCP project (state in the `emisar-tfstate`
-GCS bucket — see `main.tf`; Terraform uses your gcloud Application Default
-Credentials, no separate login). It is **staged**: it answers on its own Cloud DNS
-nameservers, but emisar.dev still resolves through GoDaddy until the nameservers
-are delegated — so the apply has **no effect on the live domain**.
+On Fly, emisar clusters via `dns_cluster` (`<app>.internal`). GCP MIGs have no such
+DNS name, so on GCP emisar uses **libcluster's GCE strategy** (`Emisar.Cluster.GCE`
++ `…/gce/client.ex`): it lists the MIG's RUNNING instances via the Compute API (by
+the `cluster_name=emisar` label) and connects `emisar@<internal-ip>`. It activates
+only when `EMISAR_CLUSTER_PROJECT` is set (the instance template sets it) — the Fly
+path is untouched. This is what lets `instance_count > 1` form one BEAM cluster so
+PubSub/Presence span nodes and runs don't strand in `:sent`.
 
-Re-apply after a change:
+## Deploy runbook (when you do apply)
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars   # project_id = emisar
-terraform init      # connects to the GCS backend
+# 0. Bootstrap the base APIs once (Terraform can't enable services without these):
+gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=<project>
+
+# 1. Build + push the portal image to the (Terraform-created) Artifact Registry:
+#    terraform apply -target=google_artifact_registry_repository.emisar   # first, to create the repo
+gcloud auth configure-docker <region>-docker.pkg.dev
+docker build -t <region>-docker.pkg.dev/<project>/emisar/emisar:<tag> portal && docker push …
+
+# 2. Add the secret VALUES (never in state; DATABASE_URL is filled by apply):
+mix phx.gen.secret | gcloud secrets versions add emisar-secret-key-base --data-file=- --project=<project>
+#    then emisar-paddle-api-key / -webhook-secret / -client-token (or set disable_billing=true),
+#    and optionally emisar-postmark-* / -sentry-dsn / -mixpanel-token.
+
+# 3. Full apply (VPC, Cloud SQL, MIG, LB, cert, DNS zone). Blocks until the MIG is healthy.
 terraform apply
+
+# 4. Delegate + finish DNSSEC (see `terraform output next_steps`):
+terraform output nameservers          # set at the registrar
+terraform output dnssec_ds_record     # add at the registrar LAST, after NS resolves
 ```
 
-Going live — the one irreversible, registrar-side step:
+`scripts/verify-cutover.sh <new-ns>` compares the zone against the live records
+before you flip nameservers.
 
-```bash
-# 1. Confirm the staged zone replicates live — must be all-green:
-./scripts/verify-cutover.sh "$(terraform output -raw nameservers | head -1)"
+## Email posture (DMARC / MTA-STS)
 
-# 2. Delegate: set these NS at GoDaddy (Nameservers → "I'll use my own"):
-terraform output nameservers
+These records are provider-independent and carry over from the DNS work: DMARC
+starts at `p=none` and ramps (`var.dmarc_policy`); MTA-STS ships in `mode: testing`
+(the portal serves `/.well-known/mta-sts.txt`) and flips to enforce after TLS-RPT
+reports are clean. See the record comments in `dns.tf`.
 
-# 3. AFTER delegation resolves, verify, THEN finish DNSSEC:
-dig +short NS emisar.dev            # the four Cloud DNS nameservers
-dig +short emisar.dev               # still the Fly IP
-terraform output dnssec_ds_record   # add this DS at GoDaddy → DNSSEC (do it LAST)
-```
-
-**Order matters.** Delegate nameservers and confirm the zone resolves *before*
-adding the DNSSEC DS at the registrar — a DS pointing at a zone resolvers can't
-yet validate is the classic way to take a domain fully offline. Cloud DNS manages
-the signing keys; you only ever publish the DS. `terraform output next_steps`
-prints this with live values.
-
-## DMARC ramp
-
-`var.dmarc_policy` defaults to `none` — publish it, watch the `rua` aggregate
-reports for a couple of weeks, confirm Postmark + Workspace both show `pass` and
-`aligned`, then move `none → quarantine → reject`. Point `var.dmarc_rua` at a
-monitored inbox or a DMARC service (Postmark offers a free monitor). Don't jump
-to `reject` blind — that's how you drop your own legitimate mail.
-
-## MTA-STS
-
-Both the policy and its DNS ship here. The portal serves the policy at
-`https://mta-sts.emisar.dev/.well-known/mta-sts.txt`
-(`portal/apps/emisar_web/priv/static/.well-known/mta-sts.txt`); `mta-sts` and
-`_mta-sts` are in the zone. It starts in **`mode: testing`** — TLS failures are
-reported (via TLS-RPT) but no mail is ever blocked. Two steps to go to enforce:
-
-1. **Activate the host cert:** `fly certs add mta-sts.emisar.dev` (needed for the
-   policy URL to serve over HTTPS). Until then senders just can't fetch the
-   policy — same as no MTA-STS, no harm.
-2. **Flip to enforce:** once TLS-RPT reports are clean, change the policy file to
-   `mode: enforce` **and** bump the `id` in the `_mta-sts` TXT so senders
-   re-fetch. Same ramp discipline as DMARC.
-
-## Validate locally
+## Validate locally (does not apply)
 
 ```bash
 terraform fmt -check -recursive
@@ -118,15 +101,7 @@ terraform init -backend=false && terraform validate
 tflint --init && tflint
 ```
 
-CI (`.github/workflows/infra-ci.yml`) runs the same three checks on every PR with
-no cloud credentials, so nothing reaches the zone unreviewed. State lives in the
-versioned, private `emisar-tfstate` GCS bucket; `terraform.tfvars` and `*.tfstate*`
-are git-ignored. No secrets live in this module — the only sensitive-looking
-output, the DNSSEC DS, is public by design.
-
-## Production readiness & SOC 2
-
-`COMPLIANCE.md` maps this layer to the SOC 2 Trust Services Criteria — change
-management, DNSSEC/CAA/email-auth integrity, least-privilege access, audit
-trails, monitoring, and DR — and is honest about which controls are enforced in
-code versus configured in the provider or owned by the organization.
+CI (`.github/workflows/infra-ci.yml`) runs the same with no cloud credentials.
+State lives in the versioned, private `emisar-tfstate` GCS bucket; the generated DB
+password is in state (mitigated by the locked-down bucket) while externally-issued
+secrets stay out-of-band — see `COMPLIANCE.md`.

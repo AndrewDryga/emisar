@@ -2,10 +2,10 @@
 # Pre-cutover verification for the emisar.dev → Cloud DNS migration.
 #
 # Run AFTER `terraform apply` (the zone exists) but BEFORE changing the
-# nameservers at the registrar. It queries the new Cloud DNS nameserver directly
-# and checks every critical record, so you delegate NS only once the new zone is a
-# faithful replica of what's live PLUS the intended new security records. Any
-# problem exits non-zero — do NOT cut over on a red.
+# nameservers at the registrar. It queries the new Cloud DNS nameserver directly:
+# the email/identity records must still match live, and the migrated records (the
+# apex now on the GCP LB, DMARC/CAA/TLS-RPT/MTA-STS) must be present. Any problem
+# exits non-zero — do NOT cut over on a red.
 #
 # Usage:  ./verify-cutover.sh <new-nameserver>
 #   e.g.  ./verify-cutover.sh "$(terraform output -raw nameservers | head -1)"
@@ -18,15 +18,18 @@ set -uo pipefail
 NEW_NS="${1:?usage: verify-cutover.sh <new-nameserver>}"
 DOMAIN="${DOMAIN:-emisar.dev}"
 
-# Ported from GoDaddy — the new zone must answer IDENTICALLY to live.
+# Records UNCHANGED by the migration (email + identity) — the new zone must answer
+# IDENTICALLY to live. The apex A/AAAA are deliberately NOT here: they move from
+# Fly to the GCP load balancer, so they're expected to differ (shown separately).
 PORTED=(
-  "@:A" "@:AAAA" "@:MX" "@:TXT"
-  "www:CNAME" "_acme-challenge:CNAME" "_fly-ownership:TXT"
+  "@:MX" "@:TXT"
+  "www:CNAME"
   "google._domainkey:TXT" "20260603061232pm._domainkey:TXT"
   "pm-bounces:CNAME" "status:CNAME"
 )
-# Added in this migration — must be PRESENT (non-empty) in the new zone.
-ADDED=("_dmarc:TXT" "@:CAA" "_smtp._tls:TXT" "_mta-sts:TXT" "mta-sts:CNAME")
+# Added / migrated — must be PRESENT (non-empty) in the new zone. The apex A/AAAA
+# now point at the GCP LB; _acme-challenge/_fly-ownership are gone (Cert Manager).
+ADDED=("@:A" "@:AAAA" "_dmarc:TXT" "@:CAA" "_smtp._tls:TXT" "_mta-sts:TXT" "mta-sts:CNAME")
 
 fqdn() { [[ "$1" == "@" ]] && echo "$DOMAIN" || echo "$1.$DOMAIN"; }
 # Reassemble multi-string TXT (strip the "chunk" "chunk" joins) so a DKIM key that
