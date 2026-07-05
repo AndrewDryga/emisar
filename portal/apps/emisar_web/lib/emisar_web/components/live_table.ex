@@ -217,7 +217,7 @@ defmodule EmisarWeb.LiveTable do
              `empty_state` placeholder that brings its own frame, and a stray
              solid rule above it reads as a broken table edge. A filtered
              one-liner just sits in the padding. --%>
-        <div id={"#{@id}-empty"} class="py-8 text-sm text-zinc-500">
+        <div id={"#{@id}-empty"} class="py-1 text-sm text-zinc-500">
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -796,10 +796,11 @@ defmodule EmisarWeb.LiveTable do
 
   defp active_filter_label(%Filter{} = f, value), do: "#{f.title}: #{value}"
 
-  # No top rule: the populated list starts flush under its section header
-  # (c3dd1fb1 dropped the orphaned rule there), so the zero state must too —
-  # an empty list wearing a hairline the rows don't reads as a stray divider.
-  defp cards_empty_class(_wrapper_class), do: "py-8"
+  # Near-flush under the section header, like the populated list: the boxed
+  # `empty_state` placeholder is self-framed (dashed border + its own padding),
+  # so a fat `py-8` on TOP of the header's `mb-4` floated it 48px down. A hair of
+  # `py-1` sits it where the first row would, keeping a small buffer.
+  defp cards_empty_class(_wrapper_class), do: "py-1"
 
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps
