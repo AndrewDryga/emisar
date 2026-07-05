@@ -3594,13 +3594,6 @@ defmodule EmisarWeb.CoreComponents do
   attr :text, :string, default: nil, doc: "literal string to copy (alternative to :target)"
   attr :class, :any, default: nil
   attr :label_copied, :string, default: "Copied"
-
-  attr :size, :atom,
-    default: :sm,
-    values: [:sm, :md],
-    doc:
-      ":md matches <.button size={:md}> metrics — for a copy control sharing a row with buttons"
-
   attr :rest, :global, include: ~w(id)
 
   slot :inner_block, required: true
@@ -3613,8 +3606,7 @@ defmodule EmisarWeb.CoreComponents do
       data-copy-text={@text}
       data-copy-label-copied={@label_copied}
       class={[
-        "bg-zinc-800/80 font-medium text-zinc-200 hover:bg-zinc-700",
-        copy_button_size(@size),
+        "rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
         @class
       ]}
       {@rest}
@@ -3623,9 +3615,6 @@ defmodule EmisarWeb.CoreComponents do
     </button>
     """
   end
-
-  defp copy_button_size(:sm), do: "rounded px-2.5 py-1 text-xs"
-  defp copy_button_size(:md), do: "rounded-lg px-3 py-1.5 text-sm"
 
   @doc """
   Confirmation-zone card — a bordered container with title + body + a `<.button>`

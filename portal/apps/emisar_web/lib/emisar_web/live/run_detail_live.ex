@@ -126,14 +126,17 @@ defmodule EmisarWeb.RunDetailLive do
       <:actions>
         <%!-- The run id, copyable for a ticket or a log grep — the full UUID
              without cluttering the meta strip (which deliberately dropped it). --%>
-        <.copy_button
-          text={@run.id}
-          label_copied="Copied id"
+        <%!-- A design-system BUTTON like its row neighbors — the copy behavior
+             is just the delegated data-copy attributes copy.js listens for,
+             so it needs none of the code-panel copy chip's one-off styling. --%>
+        <.button
+          variant={:secondary}
           size={:md}
-          class="bg-transparent text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200"
+          data-copy-text={@run.id}
+          data-copy-label-copied="Copied id"
         >
-          <.icon name="hero-clipboard-document" class="-ml-0.5 mr-1 h-3.5 w-3.5" />Copy id
-        </.copy_button>
+          <.icon name="hero-clipboard-document" class="-ml-0.5 h-3.5 w-3.5" /> Copy id
+        </.button>
         <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
              groups the run's transitions, its grant use, and its cancel request
              (run events target the RUNNER, so the old target filter would only
