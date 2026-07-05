@@ -836,7 +836,7 @@ defmodule EmisarWeb.AgentsLive do
              element and the line just carries the containment. --%>
         <div class="flex w-4 flex-col items-center" aria-hidden="true">
           <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-          <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/25"></div>
+          <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/40"></div>
         </div>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-medium text-zinc-200">
