@@ -81,7 +81,7 @@ defmodule EmisarWeb.AuditDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
-      width={:detail}
+      width={:table}
     >
       <:title>
         <%!-- No leading status dot — a lone colored bullet before the title read
@@ -94,127 +94,131 @@ defmodule EmisarWeb.AuditDetailLive do
       </:title>
       <% posture = parse_client_posture(@event.user_agent) %>
 
-      <%!-- Meta strip — when it occurred, where from, request id. The MCP
-           session + client info moved onto the Actor card below: they
-           describe the actor that did this, not the event in general. --%>
-      <.meta_strip cols={4}>
-        <%!-- wrap: forensic precision must survive a phone — the timestamp takes
+      <%!-- The page owns its rhythm (§3.3): ONE space-y-12 child; the EVENT
+           RECORD block groups the naked meta row with the actor→target pair
+           and the summary chips — they're all facets of one event. --%>
+      <div class="mt-4 space-y-12">
+        <div>
+          <%!-- Event facts on the CANVAS — when it occurred, where from,
+               request id (the actor's MCP session/client ride the Actor
+               cluster: they describe who acted, not the event). --%>
+          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+            <%!-- wrap: forensic precision must survive a phone — the timestamp takes
              the full row and wraps rather than clipping (it isn't copy-backed). --%>
-        <.meta_field label="When" wrap>
-          <.local_time value={@event.occurred_at} mode={:forensic} class="tabular-nums text-zinc-200" />
-        </.meta_field>
-        <%!-- The event's own id — its permalink identity. It used to hide in the
+            <.meta_field label="When" wrap>
+              <.local_time
+                value={@event.occurred_at}
+                mode={:forensic}
+                class="tabular-nums text-zinc-200"
+              />
+            </.meta_field>
+            <%!-- The event's own id — its permalink identity. It used to hide in the
              payload panel's annotation; here it's a first-class, copyable field
              an incident responder can paste into a ticket. --%>
-        <%!-- wrap: the event id is a UUID you copy off a forensic page — it takes
+            <%!-- wrap: the event id is a UUID you copy off a forensic page — it takes
              the full row and wraps so it never clips (and its copy button never
              shears off the cell edge). --%>
-        <.meta_field label="Event ID" wrap>
-          <.copyable_id value={@event.id} class="text-xs text-zinc-300" />
-        </.meta_field>
-        <.meta_field label="IP address">
-          <.copyable_id
-            :if={@event.ip_address}
-            value={@event.ip_address}
-            class="text-xs text-zinc-300"
-          />
-          <span :if={!@event.ip_address} class="text-zinc-500">—</span>
-        </.meta_field>
-        <.meta_field label="Request ID">
-          <.copyable_id
-            :if={@event.request_id}
-            value={@event.request_id}
-            class="text-xs text-zinc-400"
-          />
-          <span :if={!@event.request_id} class="text-zinc-500">—</span>
-        </.meta_field>
-      </.meta_strip>
+            <.meta_field label="Event ID" wrap>
+              <.copyable_id value={@event.id} class="text-xs text-zinc-300" />
+            </.meta_field>
+            <.meta_field label="IP address">
+              <.copyable_id
+                :if={@event.ip_address}
+                value={@event.ip_address}
+                class="text-xs text-zinc-300"
+              />
+              <span :if={!@event.ip_address} class="text-zinc-500">—</span>
+            </.meta_field>
+            <.meta_field label="Request ID">
+              <.copyable_id
+                :if={@event.request_id}
+                value={@event.request_id}
+                class="text-xs text-zinc-400"
+              />
+              <span :if={!@event.request_id} class="text-zinc-500">—</span>
+            </.meta_field>
+          </div>
 
-      <%!-- Actor → Subject row. The arrow makes the relationship
-           visual ("user X acted ON runner Y") instead of forcing
-           the reader to mentally pair two separate cards. The actor's
-           device, MCP session, and MCP client all ride on the actor
-           card — they describe who acted, not the event in general. --%>
-      <div class="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-stretch">
-        <.entity_card
-          role="Actor"
-          kind={@event.actor_kind}
-          id={@event.actor_id}
-          label={@event.actor_label}
-          refs={@refs}
-          current_account={@current_account}
-          user_agent={@event.user_agent}
-          auth_method={@event.auth_method}
-          mfa={@event.mfa}
-          mcp_session={@event.mcp_session_id}
-          mcp_client={if posture.bridge?, do: posture.client}
-          mcp_client_host={if posture.bridge?, do: posture.host}
-          mcp_client_os={if posture.bridge?, do: posture.os}
-        />
-        <div class="hidden flex-none items-center sm:flex">
-          <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
-        </div>
-        <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
+          <%!-- Actor → Target, NAKED clusters (no cards): the arrow still
+               draws the relationship ("user X acted ON runner Y") between
+               the two field-key columns. --%>
+          <div class="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-start sm:gap-6">
+            <.entity_card
+              role="Actor"
+              kind={@event.actor_kind}
+              id={@event.actor_id}
+              label={@event.actor_label}
+              refs={@refs}
+              current_account={@current_account}
+              user_agent={@event.user_agent}
+              auth_method={@event.auth_method}
+              mfa={@event.mfa}
+              mcp_session={@event.mcp_session_id}
+              mcp_client={if posture.bridge?, do: posture.client}
+              mcp_client_host={if posture.bridge?, do: posture.host}
+              mcp_client_os={if posture.bridge?, do: posture.os}
+            />
+            <div class="hidden flex-none items-center pt-6 sm:flex">
+              <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
+            </div>
+            <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
              the actor byte-for-byte beside itself is noise — say "same as actor". --%>
-        <.entity_card
-          role="Target"
-          self?={
-            not is_nil(@event.actor_kind) and @event.actor_kind == @event.target_kind and
-              @event.actor_id == @event.target_id
-          }
-          kind={@event.target_kind}
-          id={@event.target_id}
-          label={@event.target_label}
-          refs={@refs}
-          current_account={@current_account}
-          runner={@subject_runner}
-          run={@target_run}
-        />
-      </div>
+            <.entity_card
+              role="Target"
+              self?={
+                not is_nil(@event.actor_kind) and @event.actor_kind == @event.target_kind and
+                  @event.actor_id == @event.target_id
+              }
+              kind={@event.target_kind}
+              id={@event.target_id}
+              label={@event.target_label}
+              refs={@refs}
+              current_account={@current_account}
+              runner={@subject_runner}
+              run={@target_run}
+            />
+          </div>
 
-      <%!-- At-a-glance summary chips — the "interesting fact" pulled
-           from the payload (via, role from→to, count, etc.). Used to
-           live in the breadcrumb but operators couldn't scan it
-           there; this row lets it breathe and stays out of the
-           page-title chrome. Hidden when the event type has no
-           special summary (most do not). --%>
-      <.card
-        :if={AuditSummary.summary_pairs(@event) != []}
-        class="mt-4 flex flex-wrap items-center gap-2"
-        padding="px-4 py-3"
-      >
-        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          Summary
-        </span>
-        <.chip :for={pair <- AuditSummary.summary_pairs(@event)}>
-          <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
-          <span class="text-zinc-200">{elem(pair, 1)}</span>
-        </.chip>
-      </.card>
+          <%!-- At-a-glance summary chips — the "interesting fact" pulled from
+               the payload (via, role from→to, count, etc.), a NAKED key+chips
+               row. Hidden when the event type has no special summary. --%>
+          <div
+            :if={AuditSummary.summary_pairs(@event) != []}
+            class="mt-8 flex flex-wrap items-center gap-2"
+          >
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Summary
+            </span>
+            <.chip :for={pair <- AuditSummary.summary_pairs(@event)}>
+              <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
+              <span class="text-zinc-200">{elem(pair, 1)}</span>
+            </.chip>
+          </div>
+        </div>
 
-      <%!-- Policy-update diff — special-case rendering for the one
+        <%!-- Policy-update diff — special-case rendering for the one
            event type where the payload diff is the whole reason
            anyone opens the page. Falls through to plain JSON below
            for everything else. --%>
-      <.policy_changes
-        :if={@event.event_type == "policy.updated" and is_map(@event.payload)}
-        changes={@event.payload["changes"] || %{}}
-      />
+        <.policy_changes
+          :if={@event.event_type == "policy.updated" and is_map(@event.payload)}
+          changes={@event.payload["changes"] || %{}}
+        />
 
-      <%!-- Payload — primary content on the page. Wide and tall,
+        <%!-- Payload — primary content on the page. Wide and tall,
            terminal-style for the JSON; copy grabs the rendered JSON
            (innerText) so an operator can paste it into a ticket/grep. --%>
-      <%!-- Event id moved up to a meta field; the payload panel just labels its
+        <%!-- Event id moved up to a meta field; the payload panel just labels its
            copy for what it grabs — the rendered JSON, ready to paste. --%>
-      <.code_panel
-        id="audit-payload-json"
-        label="Payload"
-        copy
-        copy_label="Copy JSON"
-        max_h="max-h-[60vh]"
-        code={pretty_payload(@event.payload)}
-        class="mt-6"
-      />
+        <.code_panel
+          id="audit-payload-json"
+          label="Payload"
+          copy
+          copy_label="Copy JSON"
+          max_h="max-h-[60vh]"
+          code={pretty_payload(@event.payload)}
+        />
+      </div>
     </.dashboard_shell>
     """
   end
@@ -239,13 +243,9 @@ defmodule EmisarWeb.AuditDetailLive do
       |> assign(:changed, overrides["changed"] || [])
 
     ~H"""
-    <.panel
-      :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}
-      variant={:split}
-      title="Changes"
-      class="mt-6"
-    >
-      <div class="space-y-4 p-4">
+    <section :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}>
+      <.section_header title="Changes" />
+      <div class="space-y-5">
         <%= if @defaults_diff != %{} do %>
           <div>
             <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -322,7 +322,7 @@ defmodule EmisarWeb.AuditDetailLive do
           </div>
         <% end %>
       </div>
-    </.panel>
+    </section>
     """
   end
 
@@ -350,29 +350,29 @@ defmodule EmisarWeb.AuditDetailLive do
 
   defp entity_card(%{self?: true} = assigns) do
     ~H"""
-    <.card class="min-w-0 flex-1" padding="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
-      <p class="mt-1 text-sm text-zinc-400">
+    <div class="min-w-0">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
+      <p class="mt-1.5 text-sm text-zinc-400">
         same as actor <span class="text-zinc-600">(self)</span>
       </p>
-    </.card>
+    </div>
     """
   end
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
-    <.card class="flex-1" padding="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
-      <p class="mt-1 text-sm text-zinc-500">— (not recorded)</p>
-    </.card>
+    <div class="min-w-0">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
+      <p class="mt-1.5 text-sm text-zinc-500">— (not recorded)</p>
+    </div>
     """
   end
 
   defp entity_card(assigns) do
     ~H"""
-    <.card class="min-w-0 flex-1" padding="p-4">
-      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@role}</div>
-      <div class="mt-1 text-sm">
+    <div class="min-w-0">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
+      <div class="mt-1.5 text-sm">
         <EmisarWeb.AuditLive.ref
           kind={@kind}
           id={@id}
@@ -437,7 +437,7 @@ defmodule EmisarWeb.AuditDetailLive do
            the actor, so they live here rather than in the event meta strip. --%>
       <div
         :if={@mcp_client || @mcp_session}
-        class="mt-2 space-y-1 border-t border-zinc-900 pt-2 text-[11px]"
+        class="mt-2 space-y-1 border-t border-zinc-800/70 pt-2 text-[11px]"
       >
         <p :if={@mcp_client} class="flex items-center gap-1.5 truncate text-zinc-400">
           <.icon name="hero-cpu-chip" class="h-3 w-3 shrink-0 text-zinc-600" />
@@ -453,7 +453,7 @@ defmodule EmisarWeb.AuditDetailLive do
           MCP session <span class="text-zinc-400">{@mcp_session}</span>
         </p>
       </div>
-    </.card>
+    </div>
     """
   end
 
