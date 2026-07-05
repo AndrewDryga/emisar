@@ -47,13 +47,13 @@ defmodule EmisarWeb.RunsLive do
   defp load_runs(socket, params) do
     subject = socket.assigns.current_subject
 
-    # Both deep-link pivots ("View all runs" from a runner, "View activity"
-    # from an agent key) are REAL searchable filters — they apply through
-    # params_to_opts and read active in the bar, like every other filter.
+    # ONE filters list feeds both the rendered bar and params_to_opts: a
+    # dispatched-by child that isn't visible isn't in the list, so its param
+    # can never narrow the feed from a hidden control.
     filters =
       Runs.ActionRun.Query.filters()
       |> put_runner_options(subject)
-      |> put_agent_options(subject)
+      |> resolve_dispatcher_children(params, subject)
 
     opts = LiveTable.params_to_opts(params, filters)
     run_opts = Keyword.put(opts, :preload, [:runner, :api_key])
@@ -100,20 +100,52 @@ defmodule EmisarWeb.RunsLive do
     end)
   end
 
-  # Same injection for the Agent filter — the account's key names (revoked
-  # included: their run history is exactly what gets audited), sorted.
-  defp put_agent_options(filters, subject) do
-    options =
-      case ApiKeys.list_key_options(subject) do
-        {:ok, options} -> Enum.sort_by(options, fn {_id, name} -> name end)
-        _ -> []
-      end
+  # Which "who exactly" child each Dispatched-by kind reveals.
+  @dispatcher_children %{
+    "mcp" => :api_key_id,
+    "operator" => :requested_by_id,
+    "runbook" => :runbook_id
+  }
 
-    Enum.map(filters, fn
-      %{name: :api_key_id} = filter -> %{filter | values: options}
-      filter -> filter
+  # "Dispatched by" reveals its WHO picker (the audit actor-kind grammar):
+  # LLM agent → Agent, Operator → team member, Runbook → runbook. A child also
+  # stays visible while its OWN value is set (an `?api_key_id=…` deep link
+  # applies and reads active even before the kind is picked); the two hidden
+  # children drop out of the list entirely.
+  defp resolve_dispatcher_children(filters, params, subject) do
+    Enum.flat_map(filters, fn
+      %{name: name} = filter when name in [:api_key_id, :requested_by_id, :runbook_id] ->
+        if dispatcher_child_visible?(name, params),
+          do: [%{filter | values: dispatcher_child_options(name, subject)}],
+          else: []
+
+      filter ->
+        [filter]
     end)
   end
+
+  defp dispatcher_child_visible?(name, params) do
+    @dispatcher_children[params["source"]] == name or
+      params[to_string(name)] not in [nil, ""]
+  end
+
+  # Revoked keys stay pickable — their run history is exactly what gets
+  # audited. Operator/runbook options are the DISTINCT dispatchers already in
+  # the account's runs, so the picker never offers a choice that matches nothing.
+  defp dispatcher_child_options(:api_key_id, subject) do
+    sorted_options(ApiKeys.list_key_options(subject))
+  end
+
+  defp dispatcher_child_options(:requested_by_id, subject) do
+    sorted_options(Runs.list_run_operator_options(subject))
+  end
+
+  defp dispatcher_child_options(:runbook_id, subject) do
+    sorted_options(Runs.list_run_runbook_options(subject))
+  end
+
+  defp sorted_options({:ok, options}), do: Enum.sort_by(options, fn {_id, label} -> label end)
+  defp sorted_options(_), do: []
 
   def render(assigns) do
     ~H"""
@@ -245,7 +277,7 @@ defmodule EmisarWeb.RunsLive do
         </:col>
         <%!-- card={false}: the mobile card already carries the origin via the
              in-cell badge under the action — a labeled SOURCE row doubled it. --%>
-        <:col :let={run} label="Source" card={false} class="w-40 hidden lg:table-cell">
+        <:col :let={run} label="Dispatched by" card={false} class="w-40 hidden lg:table-cell">
           <.source_badge source={run.source} label={run_actor(run)} class="max-w-[10rem] text-xs" />
         </:col>
         <:col :let={run} label="Status" class="w-32">

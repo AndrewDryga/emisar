@@ -38,6 +38,48 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  `{:ok, [{user_id, name-or-email}]}` — the distinct operators who dispatched
+  runs in the account, for the runs page's Operator picker (revealed by
+  "Dispatched by"). `%Subject{}` needs `view_runs`.
+  """
+  def list_run_operator_options(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      options =
+        ActionRun.Query.all()
+        |> ActionRun.Query.operator_options()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, options}
+    end
+  end
+
+  @doc """
+  `{:ok, [{runbook_id, title}]}` — the distinct runbooks that dispatched runs
+  in the account, for the runs page's Runbook picker (revealed by
+  "Dispatched by"). `%Subject{}` needs `view_runs`.
+  """
+  def list_run_runbook_options(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      options =
+        ActionRun.Query.all()
+        |> ActionRun.Query.runbook_options()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, options}
+    end
+  end
+
+  @doc """
   Paginated top-N most recent runs for the dashboard tile. Default
   page size is 8 — the dashboard renders a short fixed list, not a
   scrolling table. Returns `{:ok, [run], %Paginator.Metadata{}}` per

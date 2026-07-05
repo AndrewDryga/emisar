@@ -69,7 +69,7 @@ defmodule EmisarWeb.RunsLiveTest do
     {:ok, _} =
       Runs.create_run(Map.merge(base, %{action_id: "linux.uptime", api_key_id: other_key.id}))
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?#{[api_key_id: key.id]}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?#{[source: "mcp", api_key_id: key.id]}")
 
     # Scoped to this agent's run; the other agent is excluded.
     assert html =~ "ci.deploy_canary"
@@ -79,6 +79,44 @@ defmodule EmisarWeb.RunsLiveTest do
     refute html =~ "Agent:"
     assert html =~ ~s(name="api_key_id" value="#{key.id}")
     assert html =~ "Claude Code"
+
+    # The bare value deep-link (no source) still applies AND stays visible —
+    # a filter must never narrow the feed from a hidden control.
+    {:ok, _lv, bare} = live(conn, ~p"/app/#{account}/runs?#{[api_key_id: key.id]}")
+    assert bare =~ "ci.deploy_canary"
+    refute bare =~ "linux.uptime"
+    assert bare =~ ~s(name="api_key_id" value="#{key.id}")
+  end
+
+  test "'Dispatched by' reveals its WHO picker; hidden children stay out of the bar",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+    {:ok, _} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{}
+      })
+
+    # No kind picked → none of the three children render.
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+    refute html =~ ~s(name="api_key_id")
+    refute html =~ ~s(name="requested_by_id")
+    refute html =~ ~s(name="runbook_id")
+
+    # LLM agent picked → the Agent picker appears (and only it).
+    {:ok, _lv, mcp} = live(conn, ~p"/app/#{account}/runs?source=mcp")
+    assert mcp =~ ~s(name="api_key_id")
+    refute mcp =~ ~s(name="requested_by_id")
+
+    # Operator picked → the Operator picker appears (and only it).
+    {:ok, _lv, operator} = live(conn, ~p"/app/#{account}/runs?source=operator")
+    assert operator =~ ~s(name="requested_by_id")
+    refute operator =~ ~s(name="api_key_id")
   end
 
   test "a deep-linked runner_id scopes runs to that runner and reads active in the Runner filter",

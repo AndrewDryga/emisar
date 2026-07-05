@@ -196,37 +196,29 @@ defmodule Emisar.Runs.ActionRun.Query do
           {queryable, dynamic([runs: r], ilike(r.action_id, ^Like.contains(action)))}
         end
       },
+      # "Dispatched by" — the run's origin kind. Picking one reveals a WHO
+      # picker beside it (the audit actor-kind grammar): LLM agent → Agent,
+      # Operator → team member, Runbook → runbook. :row_start so the revealed
+      # child pairs in the cell beside it under a :stacked layout.
       %Filter{
         name: :source,
-        title: "Source",
+        title: "Dispatched by",
         type: {:list, :string},
+        span: :row_start,
         values: [
           {"operator", "Operator"},
-          {"mcp", "MCP / LLM"},
+          {"mcp", "LLM agent"},
           {"runbook", "Runbook"}
         ],
         fun: fn queryable, sources -> {queryable, dynamic([runs: r], r.source in ^sources)} end
       },
-      # A searchable single-select of the account's runners. `values` is EMPTY
-      # here — the options are per-account (runner names), so the LiveView fills
-      # them in at render; this static def just declares the shape + SQL so a
-      # deep-link (`?runner_id=…` from a runner's "View all runs") applies and
-      # the control reads active with that runner selected.
-      %Filter{
-        name: :runner_id,
-        title: "Runner",
-        type: :string,
-        search: true,
-        values: [],
-        fun: fn queryable, runner_id ->
-          {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
-        end
-      },
-      # Same shape for the account's agent keys: options are per-account so the
-      # LiveView injects them; a deep-link (`?api_key_id=…` from an agent's
-      # "View activity") applies and the control reads active with that agent
-      # selected — agent activity lives on the run (`api_key_id`), not the
-      # audit actor (terminal run events are engine-attributed).
+      # The three "who exactly" children — searchable single-selects whose
+      # options are per-account, so the LiveView fills them in at render and
+      # shows each only while its kind is picked (or its own value is set —
+      # a deep link like `?api_key_id=…` from an agent's "View activity" must
+      # apply AND stay visible, never narrow the list from a hidden control).
+      # Declared here regardless: Repo.Filter resolves :filter names against
+      # this list, so an undeclared filter could never apply at all.
       %Filter{
         name: :api_key_id,
         title: "Agent",
@@ -236,6 +228,61 @@ defmodule Emisar.Runs.ActionRun.Query do
         fun: fn queryable, api_key_id ->
           {queryable, dynamic([runs: r], r.api_key_id == ^api_key_id)}
         end
+      },
+      %Filter{
+        name: :requested_by_id,
+        title: "Operator",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, user_id ->
+          {queryable, dynamic([runs: r], r.requested_by_id == ^user_id)}
+        end
+      },
+      %Filter{
+        name: :runbook_id,
+        title: "Runbook",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, runbook_id ->
+          {queryable, dynamic([runs: r], r.runbook_id == ^runbook_id)}
+        end
+      },
+      # A searchable single-select of the account's runners — independent of
+      # the dispatched-by pair (`?runner_id=…` deep-links from a runner's
+      # "View all runs").
+      %Filter{
+        name: :runner_id,
+        title: "Runner",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, runner_id ->
+          {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
+        end
       }
     ]
+
+  @doc """
+  Distinct `{user_id, name-or-email}` of the runs' dispatching operators —
+  options for the runs page's Operator picker. Compose with `for_subject/2`.
+  """
+  def operator_options(queryable \\ all()) do
+    queryable
+    |> join(:inner, [runs: r], u in assoc(r, :requested_by), as: :requested_by)
+    |> distinct(true)
+    |> select([requested_by: u], {u.id, coalesce(u.full_name, u.email)})
+  end
+
+  @doc """
+  Distinct `{runbook_id, title}` of the runs' runbooks — options for the runs
+  page's Runbook picker. Compose with `for_subject/2`.
+  """
+  def runbook_options(queryable \\ all()) do
+    queryable
+    |> join(:inner, [runs: r], b in assoc(r, :runbook), as: :runbook)
+    |> distinct(true)
+    |> select([runbook: b], {b.id, b.title})
+  end
 end

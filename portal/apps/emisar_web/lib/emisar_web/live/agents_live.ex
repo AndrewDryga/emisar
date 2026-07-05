@@ -947,9 +947,11 @@ defmodule EmisarWeb.AgentsLive do
                      that can see this page also holds view_audit. --%>
                 <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
                      audit actor filter is empty for an api_key (terminal run events
-                     are engine-attributed), so this pivots to the runs feed. --%>
+                     are engine-attributed), so this pivots to the runs feed. Both
+                     params: source picks the Dispatched-by kind, api_key_id the
+                     agent — the bar lands with the pair visibly active. --%>
                 <.button
-                  navigate={~p"/app/#{@current_account}/runs?#{[api_key_id: key.id]}"}
+                  navigate={~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"}
                   variant={:ghost}
                   size={:sm}
                 >

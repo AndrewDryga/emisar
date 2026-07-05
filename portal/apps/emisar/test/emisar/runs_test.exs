@@ -91,6 +91,69 @@ defmodule Emisar.RunsTest do
       assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [api_key_id: key.id])
       assert listed.id == agent_run.id
     end
+
+    test "the requested_by_id (Operator) and runbook_id (Runbook) filters scope the feed" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      runbook = Fixtures.Runbooks.create_runbook(account_id: account.id)
+
+      {:ok, my_run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+
+      {:ok, runbook_run} =
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{source: "runbook", runbook_id: runbook.id})
+        )
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [requested_by_id: user.id])
+      assert listed.id == my_run.id
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [runbook_id: runbook.id])
+      assert listed.id == runbook_run.id
+    end
+  end
+
+  describe "list_run_operator_options/1" do
+    test "returns the distinct dispatching operators, deduplicated" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+      # A run with no requesting user (an engine path) contributes no option.
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert Runs.list_run_operator_options(subject) == {:ok, [{user.id, user.full_name}]}
+    end
+
+    test "cross-account — B's options never include A's operators" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert Runs.list_run_operator_options(subject_b) == {:ok, []}
+      assert {:ok, [_]} = Runs.list_run_operator_options(subject)
+    end
+  end
+
+  describe "list_run_runbook_options/1" do
+    test "returns the distinct runbooks that dispatched runs; cross-account isolated" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      runbook = Fixtures.Runbooks.create_runbook(account_id: account.id, title: "Failover")
+
+      base = %{source: "runbook", runbook_id: runbook.id}
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, base))
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, base))
+      # An operator run contributes no runbook option.
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert Runs.list_run_runbook_options(subject) == {:ok, [{runbook.id, "Failover"}]}
+
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert Runs.list_run_runbook_options(subject_b) == {:ok, []}
+    end
   end
 
   describe "list_recent_runs/2" do

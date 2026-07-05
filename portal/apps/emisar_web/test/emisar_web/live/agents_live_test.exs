@@ -249,9 +249,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # "What did this agent do" is exactly what you want after killing a key —
       # the (revoked) row still deep-links the RUNS feed scoped to this agent's
-      # key (agent activity lives on the run, not the engine-attributed audit actor).
+      # key (agent activity lives on the run, not the engine-attributed audit
+      # actor). Both params: source picks the Dispatched-by kind, api_key_id
+      # the agent, so the runs bar lands with the pair visibly active.
       assert html =~ "View activity"
-      assert html =~ "runs?api_key_id=#{key.id}"
+      assert html =~ "source=mcp"
+      assert html =~ "api_key_id=#{key.id}"
     end
 
     test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do
