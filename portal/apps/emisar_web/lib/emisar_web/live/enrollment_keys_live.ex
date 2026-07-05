@@ -376,7 +376,10 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               key is spent on the first registration — right for an autoscaler baking one host at a
               time; a <span class="font-medium text-zinc-300">reusable</span>
               key keeps enrolling until it expires or hits its max-uses cap, for a stable fleet or
-              image bake. <span class="font-medium text-zinc-300">Revoking is safe</span>
+              image bake.
+            </p>
+            <p>
+              <span class="font-medium text-zinc-300">Revoking is safe</span>
               either way — it blocks new registrations (a revoked key gets a 401), but hosts already
               enrolled keep running on their own tokens.
             </p>
