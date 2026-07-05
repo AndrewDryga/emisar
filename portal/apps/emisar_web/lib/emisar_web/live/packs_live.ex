@@ -717,7 +717,7 @@ defmodule EmisarWeb.PacksLive do
         }
       >
         <:body>
-          Rejects <span class="font-mono font-medium text-rose-100">
+          Rejects <span class="font-mono font-medium text-zinc-200">
             {(@reject_target && @reject_target.token) || "this pack version"}
           </span>: its actions stay blocked and dispatch keeps refusing it. If a runner keeps
           advertising the hash, it reappears here pending another decision.

@@ -167,6 +167,15 @@ Confirm friction scales with blast radius; the copy states the **consequence**, 
 One ladder, no per-page taste: if two pages confirm the same class of action differently,
 one of them is wrong.
 
+**The dialog's LOOK is the calm note grammar, not an alarm wall.** A `confirm_dialog` is a
+NEUTRAL raised surface (`bg-zinc-900 ring-white/10` — the console dropdown recipe), and its
+header IS a `<.status_note tone={:rose} primary>` — a bare toned icon, a **zinc** title, a
+**zinc** body. The destructive tone (rose) lives on exactly two things: that icon and the
+Confirm button. NEVER wash it into a tone-colored container border, a rose title, or
+rose body text (the old delete modal did all three — the user's "not inline with our
+design"). Entity names in the body are neutral-bright (`text-zinc-200`), never `text-rose-100`.
+The danger reads from the icon + the button + the consequence copy — the surface stays calm.
+
 ## 6. Density budgets
 
 - **One primary job above the fold.** The page's reason-to-exist (the table, the form,

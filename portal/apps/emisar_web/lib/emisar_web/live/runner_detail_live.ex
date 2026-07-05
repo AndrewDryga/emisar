@@ -489,7 +489,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
           >
             <:body>
-              Removes <span class="font-medium text-rose-100">{@runner.name}</span>
+              Removes <span class="font-medium text-zinc-200">{@runner.name}</span>
               from your account. The host can re-register on its next connect as a fresh
               runner with new tokens. Run history and audit events are preserved.
             </:body>

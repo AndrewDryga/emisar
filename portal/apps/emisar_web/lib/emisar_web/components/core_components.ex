@@ -3600,7 +3600,7 @@ defmodule EmisarWeb.CoreComponents do
         }
       >
         <:body>
-          Permanently removes <span class="font-medium text-rose-100">{m.user.email}</span>;
+          Permanently removes <span class="font-medium text-zinc-200">{m.user.email}</span>;
           they lose access immediately and need a fresh invite to return.
         </:body>
       </.confirm_dialog>

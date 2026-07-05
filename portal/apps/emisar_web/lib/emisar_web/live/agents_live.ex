@@ -945,7 +945,7 @@ defmodule EmisarWeb.AgentsLive do
       >
         <:body>
           Permanently revokes
-          <span class="font-mono font-medium text-rose-100">
+          <span class="font-mono font-medium text-zinc-200">
             {(@revoke_target && @revoke_target.name) || ""}
           </span>
           — the connected client gets 401s on its next call. This can't be undone;

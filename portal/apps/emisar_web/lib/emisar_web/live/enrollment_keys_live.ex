@@ -481,7 +481,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   }
                 >
                   <:body>
-                    Permanently revokes <span class="font-mono font-medium text-rose-100">{key.key_prefix}…</span>.
+                    Permanently revokes <span class="font-mono font-medium text-zinc-200">{key.key_prefix}…</span>.
                     Existing runners aren't affected, but new registrations with this key will
                     fail. This can't be undone — issue a fresh key instead.
                   </:body>
