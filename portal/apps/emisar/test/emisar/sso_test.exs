@@ -58,23 +58,11 @@ defmodule Emisar.SSOTest do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
   end
 
+  # Thin wrapper over the shared fixture: this file's tests pass the account
+  # struct first and often pin `name: "Okta"` implicitly.
   defp provider_fixture(account, attrs \\ %{}) do
-    attrs =
-      Map.merge(
-        %{
-          kind: :okta,
-          name: "Okta",
-          issuer: "https://idp.test",
-          client_id: "cid",
-          client_secret: "secret",
-          enabled: true,
-          default_role: :viewer
-        },
-        Map.new(attrs)
-      )
-
-    {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
-    provider
+    attrs = attrs |> Map.new() |> Map.put_new(:name, "Okta") |> Map.put(:account_id, account.id)
+    Fixtures.SSO.create_identity_provider(attrs)
   end
 
   defp callback(claims), do: %{"_claims" => claims}
@@ -938,6 +926,26 @@ defmodule Emisar.SSOTest do
       _a = provider_fixture(account_a, %{name: "A"})
 
       assert SSO.list_enabled_providers_for_account(account_b.id) == []
+    end
+  end
+
+  describe "account_has_enabled_provider?/1" do
+    test "true with an enabled connection, false when only disabled ones exist" do
+      {_user, account, _subject} = enterprise_owner()
+      _off = provider_fixture(account, %{kind: :okta, name: "Off", enabled: false})
+
+      refute SSO.account_has_enabled_provider?(account.id)
+
+      _on = provider_fixture(account, %{kind: :keycloak, name: "On", enabled: true})
+      assert SSO.account_has_enabled_provider?(account.id)
+    end
+
+    test "is scoped to the account — another account's enabled provider doesn't count" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, account_b, _sb} = enterprise_owner()
+      _a = provider_fixture(account_a, %{enabled: true})
+
+      refute SSO.account_has_enabled_provider?(account_b.id)
     end
   end
 

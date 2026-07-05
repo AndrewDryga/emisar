@@ -1,6 +1,6 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs, SSO}
 
   @reload_debounce_ms 500
 
@@ -69,6 +69,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:agents, agents_summary(api_keys))
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_mfa, team_mfa(account, subject))
+    |> assign(:sso_enabled?, SSO.account_has_enabled_provider?(account.id))
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
@@ -172,6 +173,7 @@ defmodule EmisarWeb.DashboardLive do
         billing={@billing}
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
         team_mfa={@team_mfa}
+        sso_enabled?={@sso_enabled?}
         pending_packs_count={@pending_packs_count}
         current_account={@current_account}
         can_view_runners?={@can_view_runners?}
@@ -212,6 +214,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :billing, :map, required: true
   attr :can_manage_billing, :boolean, default: false
   attr :team_mfa, :any, required: true
+  attr :sso_enabled?, :boolean, required: true
   attr :pending_packs_count, :integer, default: 0
   attr :current_account, :map, required: true
   attr :can_view_runners?, :boolean, default: true
@@ -274,7 +277,11 @@ defmodule EmisarWeb.DashboardLive do
         current_account={@current_account}
       />
       <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
-      <.team_pillar team_mfa={@team_mfa} current_account={@current_account} />
+      <.team_pillar
+        team_mfa={@team_mfa}
+        sso_enabled?={@sso_enabled?}
+        current_account={@current_account}
+      />
     </div>
 
     <%!-- The escape hatch, only when it's live: a run held on a human decision
@@ -715,13 +722,15 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # The Team pillar is the team-onboarding nudge, two states keyed on member
-  # count: a solo account (just the owner) reports its honest count and pitches
-  # inviting the team; once a team exists, it pitches SSO — federated sign-in for
-  # everyone. Per-member 2FA posture lives on the Team settings roster, where
-  # it's actionable, not as a dashboard stat.
+  # The Team pillar is the team-onboarding nudge, keyed on member count and SSO
+  # state: a solo account (just the owner) reports its honest count and pitches
+  # inviting the team; once a team exists, it pitches SSO — federated sign-in
+  # for everyone; once SSO is LIVE, the forward action is managing the
+  # providers, not enabling what's already on. Per-member 2FA posture lives on
+  # the Team settings roster, where it's actionable, not as a dashboard stat.
 
   attr :team_mfa, :any, required: true
+  attr :sso_enabled?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp team_pillar(%{team_mfa: :unavailable} = assigns) do
@@ -753,9 +762,11 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # A real team exists — the valuable next step is federated identity, so the
-  # pillar pitches SSO. Its settings page owns the plan/permission gate.
-  defp team_pillar(assigns) do
+  # A real team exists — the valuable next step is federated identity: pitch
+  # enabling SSO until a connection is live, then managing the providers
+  # (nudging "Enable" at an account already on SSO reads as a bug). The
+  # settings page owns the plan/permission gate either way.
+  defp team_pillar(%{sso_enabled?: false} = assigns) do
     ~H"""
     <.pillar
       label="Team"
@@ -764,6 +775,19 @@ defmodule EmisarWeb.DashboardLive do
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Enable SSO</:action>
+    </.pillar>
+    """
+  end
+
+  defp team_pillar(assigns) do
+    ~H"""
+    <.pillar
+      label="Team"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/settings/sso"}
+    >
+      <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:action>Manage SSO providers</:action>
     </.pillar>
     """
   end

@@ -166,6 +166,42 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Invite team members"
     end
 
+    test "the Team pillar flips to managing providers once SSO is live", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _runner} =
+        Emisar.Runners.create_runner(%{"name" => "runner-1", "group" => "default"}, subject)
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      # Nudging "Enable" at an account already on SSO reads as a bug — the
+      # forward action is managing the providers, same destination.
+      refute html =~ "Enable SSO"
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/sso"}']",
+               "Manage SSO providers"
+             )
+    end
+
     test "the dispatch nudge appears with connections-but-no-runs and clears after the first run",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

@@ -274,6 +274,14 @@ defmodule Emisar.SSO do
     |> Repo.all()
   end
 
+  @doc "Internal — whether the account has any enabled SSO connection (the dashboard pillar's enable-vs-manage fact)."
+  def account_has_enabled_provider?(account_id) when is_binary(account_id) do
+    IdentityProvider.Query.not_deleted()
+    |> IdentityProvider.Query.enabled()
+    |> IdentityProvider.Query.by_account_id(account_id)
+    |> Repo.exists?()
+  end
+
   @doc "Internal — sign-in: an enabled provider by id, for the begin-auth redirect (pre-Subject)."
   def fetch_provider_for_sign_in(id) do
     if Repo.valid_uuid?(id) do
