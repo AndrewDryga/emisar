@@ -33,5 +33,20 @@ defmodule EmisarWeb.Components.EventBlockTest do
       refute html =~ "ring-amber"
       refute html =~ "bg-amber-500/10"
     end
+
+    test "rose tone marks a dead outcome (cancelled/errored)" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.event_block icon="hero-no-symbol" tone={:rose} title="Cancelled">
+          <:body>approval denied: out of window.</:body>
+        </CoreComponents.event_block>
+        """)
+
+      assert html =~ "text-rose-400"
+      assert html =~ "bg-rose-400/40"
+      refute html =~ "text-amber-300"
+    end
   end
 end

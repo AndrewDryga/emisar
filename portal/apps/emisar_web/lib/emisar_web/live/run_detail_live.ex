@@ -138,12 +138,15 @@ defmodule EmisarWeb.RunDetailLive do
              (run events target the RUNNER, so the old target filter would only
              find this run's pre-rename rows). Subject-scoped by the audit page
              itself, so the link just pre-filters — it can't widen access. --%>
-        <.link
+        <%!-- A BUTTON like its neighbors — a bare text link sandwiched between
+             the Copy-id and Cancel buttons read as a third grammar in one row. --%>
+        <.button
           navigate={~p"/app/#{@current_account}/audit?#{run_trail_query(@run)}"}
-          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+          variant={:secondary}
+          size={:md}
         >
-          View activity <.cta_arrow />
-        </.link>
+          View activity
+        </.button>
         <.button
           :if={
             @run.status in [:sent, :running, :pending] and
@@ -224,21 +227,20 @@ defmodule EmisarWeb.RunDetailLive do
           </.meta_field>
         </div>
 
-        <%!-- The ATTENTION stack — every conditional banner in one tight group
-             (they're all facts about the same held/failed/offline moment), so
-             two banners never sit 48px apart while the wrapper spaces the
-             page's real blocks. Boxes are earned here: each carries an action
-             or a warning-grade consequence. --%>
-        <div :if={attention?(@run, @approval_request, @runner_connection)} class="space-y-3">
+        <%!-- The ATTENTION stack — the run's held/failed/offline moment as
+             EVENT BLOCKS (the icon-capped-spine grammar, §8.1), not wash
+             boxes: amber = pending on someone/something, rose = a dead
+             outcome. Grouped so the rare co-render (queued + offline) keeps
+             its own rhythm inside the page's 48px blocks. --%>
+        <div :if={attention?(@run, @approval_request, @runner_connection)} class="space-y-8">
           <%!-- Approval hold — the run is waiting on a human decision. --%>
-          <.callout
+          <.event_block
             :if={@run.status == :pending_approval and @approval_request}
-            tone={:amber}
             icon="hero-hand-raised"
             title="Waiting on approval"
           >
-            This run is held until an approver decides.
-            <:action>
+            <:body>This run is held until an approver decides.</:body>
+            <div class="mt-4">
               <.button
                 tone={:amber}
                 size={:md}
@@ -246,21 +248,21 @@ defmodule EmisarWeb.RunDetailLive do
               >
                 View approval →
               </.button>
-            </:action>
-          </.callout>
+            </div>
+          </.event_block>
 
           <%!-- Cancelled-with-reason — an approver's denial cancels the run and
                writes "approval denied: …" into reason_text; a bare grey badge
                would drop that reason. Driven by the run (not the approval row,
                which a prune may have removed). --%>
-          <.callout
+          <.event_block
             :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-            tone={:rose}
             icon="hero-no-symbol"
+            tone={:rose}
             title="Cancelled"
           >
-            <span class="whitespace-pre-wrap">{@run.reason_text}</span>
-            <:action :if={@approval_request}>
+            <:body><span class="whitespace-pre-wrap">{@run.reason_text}</span></:body>
+            <div :if={@approval_request} class="mt-4">
               <.button
                 variant={:secondary}
                 tone={:rose}
@@ -269,36 +271,45 @@ defmodule EmisarWeb.RunDetailLive do
               >
                 View approval →
               </.button>
-            </:action>
-          </.callout>
+            </div>
+          </.event_block>
 
           <%!-- Error — only when terminal-failed and we got a message back. --%>
-          <.callout :if={@run.error_message} tone={:rose} title="Error">
-            <span class="whitespace-pre-wrap">{@run.error_message}</span>
-          </.callout>
+          <.event_block
+            :if={@run.error_message}
+            icon="hero-exclamation-triangle"
+            tone={:rose}
+            title="Error"
+          >
+            <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
+          </.event_block>
 
           <%!-- Runner-dropped warning — in flight but its runner's socket is
                gone. Don't fake a terminal status; flag that output may be
                incomplete until it reconnects (or the timeout sweep errors it). --%>
-          <.offline_notice
+          <.event_block
             :if={@run.status in [:sent, :running] and @runner_connection == :offline}
-            severity={:caution}
+            icon="hero-bolt-slash"
             title="Runner disconnected"
           >
-            Its socket dropped while this run was in flight — output may be incomplete.
-            The run is marked errored if the runner doesn't reconnect shortly.
-          </.offline_notice>
+            <:body>
+              Its socket dropped while this run was in flight — output may be incomplete.
+              The run is marked errored if the runner doesn't reconnect shortly.
+            </:body>
+          </.event_block>
 
           <%!-- Queued but its target runner is offline — nothing's running yet,
                so say what's actually blocking it. --%>
-          <.offline_notice
+          <.event_block
             :if={@run.status == :pending and @runner_connection == :offline}
-            severity={:caution}
+            icon="hero-bolt-slash"
             title="Queued — runner offline"
           >
-            Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
-            It's marked errored if the runner doesn't return before the dispatch timeout.
-          </.offline_notice>
+            <:body>
+              Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
+              It's marked errored if the runner doesn't return before the dispatch timeout.
+            </:body>
+          </.event_block>
         </div>
 
         <%!-- ONE why-cluster on the canvas — who asked and what policy said,

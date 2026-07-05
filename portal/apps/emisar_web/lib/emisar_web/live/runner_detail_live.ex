@@ -194,15 +194,19 @@ defmodule EmisarWeb.RunnerDetailLive do
       </:title>
       <:actions>
         <%!-- This runner's slice of the audit trail (events whose target is it):
-             registrations, trust decisions, state changes. --%>
-        <.link
+             registrations, trust decisions, state changes. A BUTTON — the
+             title-row action slot speaks one grammar across detail pages (run
+             detail pairs it with Copy id/Cancel; a lone text link here would
+             make the same action read differently page to page). --%>
+        <.button
           navigate={
             ~p"/app/#{@current_account}/audit?#{[target_kind: "runner", target_id: @runner.id]}"
           }
-          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+          variant={:secondary}
+          size={:md}
         >
-          View activity <.cta_arrow />
-        </.link>
+          View activity
+        </.button>
       </:actions>
 
       <%!-- The page owns its own rhythm: ONE space-y-12 wrapper makes the shell's

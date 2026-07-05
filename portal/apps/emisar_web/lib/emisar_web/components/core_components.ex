@@ -1075,13 +1075,14 @@ defmodule EmisarWeb.CoreComponents do
   defp status_note_icon_class(:neutral), do: "text-zinc-400"
 
   @doc """
-  Transient event block — a completed action's one-time result (the agents
-  key-rotation reveal) interrupting a page whose main content is something
-  else. The amber icon CAPS a quiet spine (its own hue faded back) that binds
-  title, body, and payload into ONE contained unit — §8.1's containment
-  grammar without a wash box. The payload (a `code_panel`, a dismiss button)
-  renders in the default slot beneath the body; give payload children their
-  own `mt-*`.
+  Transient event block — a state the page is passing through (a rotation
+  reveal awaiting its copy, a run held on approval, a cancelled/errored
+  outcome) interrupting a page whose main content is something else. The
+  toned icon CAPS a quiet spine (its own hue faded back) that binds title,
+  body, and payload into ONE contained unit — §8.1's containment grammar
+  without a wash box. `:amber` = pending/attention, `:rose` = a failed or
+  refused outcome. The payload (a `code_panel`, an action button) renders in
+  the default slot beneath the body; give payload children their own `mt-*`.
 
       <.event_block icon="hero-key" title="Key rotated — copy the new key now">
         <:body>Update the client config, then revoke the old key below.</:body>
@@ -1089,6 +1090,7 @@ defmodule EmisarWeb.CoreComponents do
       </.event_block>
   """
   attr :icon, :string, required: true
+  attr :tone, :atom, default: :amber, values: [:amber, :rose]
   attr :title, :string, required: true
   slot :body, required: true
   slot :inner_block
@@ -1097,8 +1099,8 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class="flex gap-4">
       <div class="flex w-4 flex-col items-center" aria-hidden="true">
-        <.icon name={@icon} class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-        <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/40"></div>
+        <.icon name={@icon} class={"mt-0.5 h-4 w-4 shrink-0 #{status_note_icon_class(@tone)}"} />
+        <div class={["mt-3 w-0.5 flex-1 rounded-full", event_block_spine_class(@tone)]}></div>
       </div>
       <div class="min-w-0 flex-1">
         <div class="text-sm font-medium text-zinc-200">{@title}</div>
@@ -1108,6 +1110,9 @@ defmodule EmisarWeb.CoreComponents do
     </div>
     """
   end
+
+  defp event_block_spine_class(:amber), do: "bg-amber-300/40"
+  defp event_block_spine_class(:rose), do: "bg-rose-400/40"
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
