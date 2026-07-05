@@ -60,7 +60,6 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:selected_client, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
-     |> assign(:revoke_target, nil)
      |> assign(:rotated, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
@@ -137,13 +136,6 @@ defmodule EmisarWeb.AgentsLive do
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
       &do_create(&1, params)
     )
-  end
-
-  # Sets the typed-confirm target; the dialog's Confirm fires "revoke",
-  # which stays the server-authz gate (IL-15).
-  def handle_event("open_revoke", %{"id" => id}, socket) do
-    target = Enum.find(socket.assigns.api_keys, &(&1.id == id))
-    {:noreply, socket |> ConfirmDialog.reset() |> assign(:revoke_target, target)}
   end
 
   def handle_event("confirm_typed", params, socket),
@@ -946,13 +938,33 @@ defmodule EmisarWeb.AgentsLive do
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
-                  phx-click={
-                    JS.push("open_revoke", value: %{id: key.id})
-                    |> show_confirm_dialog("revoke-agent-key")
-                  }
+                  phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
                 >
                   Revoke
                 </.button>
+                <%!-- Per-row typed dialog with the key's name baked in at render,
+                     so it opens already-populated. A single page-level dialog
+                     filled by an "open_revoke" round-trip flashed a blank
+                     name/token for one round-trip before the server filled it. --%>
+                <.confirm_dialog
+                  :if={is_nil(key.revoked_at)}
+                  id={"revoke-agent-key-#{key.id}"}
+                  title="Revoke this agent key"
+                  confirm_label="Revoke key"
+                  confirm_token={key.name}
+                  typed={@typed}
+                  on_confirm={
+                    JS.push("revoke", value: %{id: key.id})
+                    |> hide_confirm_dialog("revoke-agent-key-#{key.id}")
+                  }
+                >
+                  <:body>
+                    Permanently revokes
+                    <span class="font-mono font-medium text-zinc-200">{key.name}</span>
+                    — the connected client gets 401s on its next call. This can't be undone;
+                    connect the client again to mint a fresh key.
+                  </:body>
+                </.confirm_dialog>
               </:actions>
             </.list_row>
           </:item>
@@ -977,30 +989,6 @@ defmodule EmisarWeb.AgentsLive do
           </:empty>
         </LiveTable.live_table>
       </section>
-
-      <%!-- One page-level typed-confirm dialog; open_revoke fills
-           @revoke_target. With no target the token is blank, so Confirm
-           stays disabled; "revoke" stays the server gate (IL-15). --%>
-      <.confirm_dialog
-        id="revoke-agent-key"
-        title="Revoke this agent key"
-        confirm_label="Revoke key"
-        confirm_token={(@revoke_target && @revoke_target.name) || ""}
-        typed={@typed}
-        on_confirm={
-          JS.push("revoke", value: %{id: @revoke_target && @revoke_target.id})
-          |> hide_confirm_dialog("revoke-agent-key")
-        }
-      >
-        <:body>
-          Permanently revokes
-          <span class="font-mono font-medium text-zinc-200">
-            {(@revoke_target && @revoke_target.name) || ""}
-          </span>
-          — the connected client gets 401s on its next call. This can't be undone;
-          connect the client again to mint a fresh key.
-        </:body>
-      </.confirm_dialog>
     </.dashboard_shell>
     """
   end
