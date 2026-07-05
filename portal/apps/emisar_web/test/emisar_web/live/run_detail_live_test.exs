@@ -110,9 +110,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The operator-named key is the headline initiator; the source type
-    # ("MCP / LLM") trails as context.
+    # ("LLM agent") trails as context.
     assert html =~ "Claude Code"
-    assert html =~ "MCP / LLM"
+    assert html =~ "LLM agent"
   end
 
   test "prefers the MCP client name + version over a generic key name", %{conn: conn} do

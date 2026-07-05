@@ -224,9 +224,9 @@ defmodule EmisarWeb.TimeHelpers do
   def client_version(%{client_info: %{"version" => v}}) when is_binary(v) and v != "", do: v
   def client_version(_), do: nil
 
-  @doc "Humanized run source (`:mcp` → `MCP / LLM`, …)."
+  @doc "Humanized run source (`:mcp` → `LLM agent`, …) — the sidebar/filter noun."
   def format_source(:operator), do: "Operator"
-  def format_source(:mcp), do: "MCP / LLM"
+  def format_source(:mcp), do: "LLM agent"
   def format_source(:runbook), do: "Runbook"
   def format_source(:scheduled), do: "Scheduled"
   def format_source(_), do: "—"

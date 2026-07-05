@@ -338,6 +338,26 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Approve and send"
   end
 
+  test "a lapsed request the sweeper hasn't denied yet reads expired, never pending", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    # Still :pending in the DB — only the expiry has lapsed. The page must
+    # normalize everywhere: a "pending" status badge above an
+    # "Expired — auto-denied" verdict contradicts itself.
+    request
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -3600, :second))
+    |> Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Expired — auto-denied"
+    refute html =~ ~r/pending/i
+    refute html =~ "Approve and send"
+  end
+
   test "a decision that lost a race to expiry re-fetches and flips the panel", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
