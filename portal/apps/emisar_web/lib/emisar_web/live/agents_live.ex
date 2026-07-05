@@ -1503,17 +1503,11 @@ defmodule EmisarWeb.AgentsLive do
               </.chip>
           <% end %>
         </:summary>
-        <p class="text-xs text-zinc-500">
-          Tick groups or specific runners to scope the next key mint. Re-picking your
-          client re-mints with the current scope.
-        </p>
-        <div class="mt-3">
-          <.scope_picker
-            runners={@runners}
-            selected_runner_ids={@selected_runner_ids}
-            selected_runner_groups={@selected_runner_groups}
-          />
-        </div>
+        <.scope_picker
+          runners={@runners}
+          selected_runner_ids={@selected_runner_ids}
+          selected_runner_groups={@selected_runner_groups}
+        />
       </.disclosure>
     </div>
     """
@@ -1587,26 +1581,26 @@ defmodule EmisarWeb.AgentsLive do
 
   defp custom_key_panel(assigns) do
     ~H"""
-    <div>
+    <%!-- space-y-5 matches simple_form's internal field rhythm, so the scope
+         block reads as one more row of the same form. --%>
+    <div class="space-y-5">
       <p class="text-sm leading-relaxed text-zinc-400">
-        Mints an MCP key with the standard <code class="font-mono text-zinc-300">actions:read</code>
-        + <code class="font-mono text-zinc-300">actions:execute</code>
-        scopes — the same shape the per-client tabs above use. The form adds a name,
-        description, expiry, and an optional per-action allowlist.
+        For an agent that isn't in the presets above — or a key you want to shape by
+        hand: its own name, its own expiry, a runner scope, and an optional allowlist
+        of the exact actions it may run. Like the preset keys, it can read and execute
+        every action its scope allows — risky ones still pause for approval.
       </p>
-      <%!-- Custom keys reach the whole fleet (no runner picker here — that's a
-           quick-mint affordance); the allowlist narrows ACTIONS, not runners.
-           The reach is a security fact, so it reads as the amber status line,
-           not another wash box. --%>
-      <.status_note
-        icon="hero-exclamation-triangle"
-        tone={:amber}
-        title="Fleet-wide reach"
-        class="mt-5"
-      >
-        This key can read and execute every action your trusted packs expose on every
-        runner; risky actions still require policy approval.
-      </.status_note>
+
+      <%!-- The blast-radius control, ABOVE the identity fields — the collapsed
+           summary's amber "Reaches all N runners" chip IS the fleet-wide
+           warning (one grammar, same as the quick-mint tabs); a scoped key
+           wears the brand chip instead. Sits outside the form (the picker is
+           its own phx-change form); the hidden inputs below mirror it in. --%>
+      <.scope_block
+        runners={@runners}
+        selected_runner_ids={@selected_runner_ids}
+        selected_runner_groups={@selected_runner_groups}
+      />
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
         <.input
@@ -1657,10 +1651,10 @@ defmodule EmisarWeb.AgentsLive do
           errors={Enum.map(@form[:action_scope].errors, &translate_error/1)}
         />
 
-        <%!-- Runner / group restrictions read from the shared scope
-             picker above the tab strip — propagate the current
-             selection through the form so the Create button mints a
-             key with the same scope a quick-mint would have. --%>
+        <%!-- Runner / group restrictions read from the Key scope
+             control above — propagate the current selection through
+             the form so the Create button mints a key with the same
+             scope a quick-mint would have. --%>
         <input
           :for={id <- @selected_runner_ids}
           type="hidden"
@@ -1686,13 +1680,12 @@ defmodule EmisarWeb.AgentsLive do
   attr :selected_runner_ids, :list, required: true
   attr :selected_runner_groups, :list, required: true
 
-  # Shared scope picker, rendered as the wizard's Step 2 body (always
-  # visible, not collapsed). Applies to BOTH the quick-mint tabs and
-  # the Custom-tab form. Defaults to "all runners / all groups";
-  # ticking restricts the next mint. Posts `update_scope` on every
-  # change so the selection state survives tab clicks; the actual
-  # mint reads `selected_runner_ids` + `selected_runner_groups` from
-  # the LV socket assigns at click time.
+  # Shared scope picker — the body of every tab's "Key scope"
+  # disclosure (quick-mint tabs AND the Custom form). Defaults to
+  # "all runners / all groups"; ticking restricts the next mint.
+  # Posts `update_scope` on every change so the selection survives
+  # tab clicks; quick mints read it from the socket assigns at click
+  # time, the Custom form mirrors it in through hidden inputs.
   defp scope_picker(assigns) do
     assigns =
       assign(
@@ -1726,9 +1719,7 @@ defmodule EmisarWeb.AgentsLive do
         <% end %>
 
         <p :if={@has_restrictions?} class="text-[11px] text-zinc-500">
-          Changing the scope <em>after</em> minting doesn't update the key —
-          re-click your client tab in Step 3 to mint a fresh one with the new
-          scope.
+          Scope changes never touch keys already minted — they apply to the next key.
         </p>
       </form>
     </div>

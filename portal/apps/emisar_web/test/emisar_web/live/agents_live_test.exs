@@ -83,7 +83,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # custom-key form (behind the "custom" tab, on the CONNECT page).
       {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/settings/agents/connect")
       custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
-      assert custom =~ "read and execute every action"
+      assert custom =~ "every action its scope allows"
     end
 
     test "the default status filter is the baseline — no clear-× until moved off it",
@@ -898,15 +898,30 @@ defmodule EmisarWeb.AgentsLiveTest do
     # is actually submitted.
     test "the Custom tile swaps the snippet for the key-builder form, no mint", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = render_click(lv, "select_client", %{"client" => "custom"})
 
       # The key-builder form is now on the page (it only renders under "custom")…
       assert has_element?(lv, "#api_key_form")
-      assert html =~ "read and execute every action"
+      # …with the Key scope control wearing the fleet-wide amber chip, since
+      # no runner scope is selected yet…
+      assert html =~ "Key scope"
+      assert html =~ "Reaches all 1 runner"
       # …and selecting Custom minted no key (no quick-mint on this tab).
       assert Repo.all(ApiKey) == []
+
+      # Narrowing the scope swaps the warning chip for the scoped summary —
+      # the chip states a live posture fact, not permanent boilerplate.
+      scoped =
+        render_change(
+          element(lv, "form[phx-change=\"update_scope\"]"),
+          %{"scope" => ["runner:#{runner.id}"]}
+        )
+
+      refute scoped =~ "Reaches all 1 runner"
+      assert scoped =~ "1 runner, 0 groups"
     end
 
     # a forged/foreign key id revoke is a quiet no-op: the
