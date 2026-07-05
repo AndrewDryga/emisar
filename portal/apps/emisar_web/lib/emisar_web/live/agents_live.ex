@@ -463,10 +463,11 @@ defmodule EmisarWeb.AgentsLive do
 
   # A local client either RUNS its snippet as a command (Claude Code) or pastes
   # it INTO a config file (Claude Desktop, Cursor, Gemini, Codex). The file
-  # clients' `location` is a real path (starts with "~"); the command client's
-  # is a description — so the setup header can name the right action instead of
-  # always saying "paste".
-  defp config_target_is_file?(%{location: location}), do: String.starts_with?(location, "~")
+  # clients' `location` is a real path (starts with "~"); the command client has
+  # none — so the setup header can name the right action instead of always
+  # saying "paste".
+  defp config_target_is_file?(%{location: location}),
+    do: is_binary(location) and String.starts_with?(location, "~")
 
   defp client_config("claude_web", url, key) do
     %{
@@ -499,7 +500,8 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("claude_code", url, key) do
     %{
       kind: :local,
-      location: "One command — registers the bridge globally",
+      # No `location`: the snippet is a command to RUN, not a file to edit.
+      location: nil,
       body: """
       claude mcp add emisar /usr/local/bin/emisar-mcp \\
           --scope user \\
@@ -1128,17 +1130,10 @@ defmodule EmisarWeb.AgentsLive do
                     and add:
                   </p>
                 <% else %>
-                  <.section_header title="Run this in your terminal">
-                    <:subtitle>{@config.location}</:subtitle>
-                  </.section_header>
+                  <%!-- No subtitle: "Run this in your terminal" says it all;
+                       a generic "one command" line is dead text. --%>
+                  <.section_header title="Run this in your terminal" />
                 <% end %>
-                <%!-- The fresh-mint note sits WITH the snippet that holds the key,
-                     not up by the install step — "the snippet below" now points
-                     right at it. --%>
-                <.minted_note :if={@quick_secret} class="mb-4">
-                  Copy the whole snippet below now — it holds your key, and you won't see it
-                  again. Lost it later? Pick this client again for a fresh key.
-                </.minted_note>
                 <.code_panel
                   id={"snippet-#{@selected_client}"}
                   label="Snippet"
@@ -1147,6 +1142,12 @@ defmodule EmisarWeb.AgentsLive do
                   copy_label="Copy snippet"
                   code={@config.body}
                 />
+                <%!-- The fresh-mint note sits UNDER the snippet that holds the key:
+                     copy the snippet, then the reminder that it won't show again. --%>
+                <.minted_note :if={@quick_secret} class="mt-4">
+                  Copy the whole snippet above now — it holds your key, and you won't see it
+                  again. Lost it later? Pick this client again for a fresh key.
+                </.minted_note>
                 <p class="mt-2 text-xs text-zinc-500">
                   {if config_target_is_file?(@config),
                     do: "Restart #{client_label(@selected_client)} after saving.",
@@ -1258,8 +1259,13 @@ defmodule EmisarWeb.AgentsLive do
       <.section_header title="Install the bridge">
         <:subtitle>one-time, per machine</:subtitle>
         <:actions>
-          <.doc_link href={~p"/docs/connect-an-llm"}>Manual install</.doc_link>
-          <.doc_link href={~p"/trust" <> "#release-integrity"}>Verify the release</.doc_link>
+          <%!-- text-xs so these header-action links stay subordinate to the
+               16px heading — doc_link inherits ambient size, and a section_header
+               actions slot sets none. --%>
+          <div class="flex items-center gap-3 text-xs">
+            <.doc_link href={~p"/docs/connect-an-llm"}>Manual install</.doc_link>
+            <.doc_link href={~p"/trust" <> "#release-integrity"}>Verify the release</.doc_link>
+          </div>
         </:actions>
       </.section_header>
       <.code_panel
