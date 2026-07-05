@@ -461,13 +461,15 @@ defmodule Emisar.ApiKeysTest do
 
       assert String.starts_with?(new_raw, "emk-")
       assert successor.id != original.id
-      # Scope carried forward verbatim.
+      # Scope carried forward verbatim, plus the rotation back-link.
       assert successor.name == original.name
       assert successor.kind == original.kind
       assert Enum.sort(successor.scopes) == Enum.sort(original.scopes)
       assert successor.action_scope == original.action_scope
+      assert successor.replaces_id == original.id
 
-      # The old key isn't revoked — it overlaps until the operator revokes it.
+      # The old key isn't revoked — it overlaps until the successor's first
+      # use (or a manual revoke).
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(original.id, subject)
       assert is_nil(reloaded.revoked_at)
       assert ApiKey.usable?(reloaded)
@@ -532,6 +534,7 @@ defmodule Emisar.ApiKeysTest do
       assert successor.action_scope == key.action_scope
       assert successor.created_by_id == key.created_by_id
       assert successor.created_by_membership_id == key.created_by_membership_id
+      assert successor.replaces_id == key.id
       # Fresh default expiry — not the source's dying one.
       assert DateTime.compare(successor.expires_at, soon) == :gt
 
@@ -824,6 +827,106 @@ defmodule Emisar.ApiKeysTest do
         Emisar.Audit.list_events(subject, filter: [event_type: ["api_key.bound"]])
 
       assert event.target_id == bound.id
+    end
+
+    test "first use of a rotation successor retires the replaced key and audits it" do
+      {_user, account, subject} = owner_subject_pair()
+      {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {:ok, new_raw, successor} = ApiKeys.rotate_api_key(original, subject)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(new_raw)
+
+      {:ok, retired} = ApiKeys.fetch_api_key_by_id(original.id, subject)
+      assert %DateTime{} = retired.revoked_at
+      refute ApiKey.usable?(retired)
+
+      {:ok, [event], _} =
+        Emisar.Audit.list_events(subject,
+          filter: [event_type: ["api_key.retired_by_rotation"]]
+        )
+
+      assert event.target_id == original.id
+      assert event.actor_kind == "api_key"
+      assert event.actor_id == successor.id
+      assert event.payload["successor_id"] == successor.id
+    end
+
+    test "later uses of the successor never re-run the retirement sweep" do
+      {_user, account, subject} = owner_subject_pair()
+      {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {:ok, new_raw, _successor} = ApiKeys.rotate_api_key(original, subject)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(new_raw)
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(new_raw)
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(subject,
+          filter: [event_type: ["api_key.retired_by_rotation"]]
+        )
+
+      assert length(events) == 1
+    end
+
+    test "a hand-revoked replaced key gets no retirement audit; the successor still works" do
+      {_user, account, subject} = owner_subject_pair()
+      {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {:ok, new_raw, _successor} = ApiKeys.rotate_api_key(original, subject)
+      {:ok, _revoked} = ApiKeys.revoke_api_key(original, subject)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(new_raw)
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(subject,
+          filter: [event_type: ["api_key.retired_by_rotation"]]
+        )
+
+      assert events == []
+    end
+
+    test "first use retires the whole abandoned chain, walking through dead middles" do
+      # Rotate twice without ever using the middle key (the lost-secret case):
+      # the last successor's first use retires BOTH ancestors.
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {:ok, _middle_raw, middle} = ApiKeys.rotate_api_key(original, subject)
+      {:ok, last_raw, _last} = ApiKeys.rotate_api_key(middle, subject)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(last_raw)
+
+      {:ok, retired_middle} = ApiKeys.fetch_api_key_by_id(middle.id, subject)
+      {:ok, retired_original} = ApiKeys.fetch_api_key_by_id(original.id, subject)
+      assert %DateTime{} = retired_middle.revoked_at
+      assert %DateTime{} = retired_original.revoked_at
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(subject,
+          filter: [event_type: ["api_key.retired_by_rotation"]]
+        )
+
+      assert Enum.map(events, & &1.target_id) |> Enum.sort() ==
+               Enum.sort([middle.id, original.id])
+    end
+
+    test "the retirement sweep never crosses accounts, even on a forged link" do
+      {_user_a, account_a, subject_a} = owner_subject_pair()
+      {_user_b, account_b, subject_b} = owner_subject_pair()
+      {_raw_b, key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
+
+      {raw_a, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
+      Fixtures.ApiKeys.force_replaces(key_a, key_b.id)
+
+      # The forged successor still authenticates; the foreign key is untouched.
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw_a)
+
+      {:ok, untouched} = ApiKeys.fetch_api_key_by_id(key_b.id, subject_b)
+      assert is_nil(untouched.revoked_at)
+
+      {:ok, events_a, _} =
+        Emisar.Audit.list_events(subject_a,
+          filter: [event_type: ["api_key.retired_by_rotation"]]
+        )
+
+      assert events_a == []
     end
   end
 

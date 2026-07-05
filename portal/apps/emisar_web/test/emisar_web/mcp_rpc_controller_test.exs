@@ -602,7 +602,8 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert [expires] = get_resp_header(first, "x-emisar-successor-expires-at")
       assert {:ok, _expiry, _offset} = DateTime.from_iso8601(expires)
 
-      # The successor authenticates immediately (the header is live).
+      # The successor authenticates immediately (the header is live) — and its
+      # first use PROVES the swap, so the superseded key is retired on the spot.
       pong =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> successor_raw)
@@ -610,15 +611,16 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert %{"result" => %{}} = json_response(pong, 200)
 
-      # At most once — the superseded key's next initialize offers nothing.
+      # The retired key is dead — a bridge must persist the successor BEFORE
+      # first using it (the protocol contract); falling back to the old key
+      # after the successor has authenticated gets a 401.
       second =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> raw)
         |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
         |> rpc("initialize")
 
-      assert %{"result" => _} = json_response(second, 200)
-      assert get_resp_header(second, "x-emisar-successor-key") == []
+      assert json_response(second, 401)
     end
 
     test "no successor for a non-bridge client or a far-from-expiry key",

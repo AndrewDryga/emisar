@@ -315,7 +315,7 @@ defmodule EmisarWeb.AgentsLive do
 
     case ApiKeys.list_api_keys_for_account(
            socket.assigns.current_subject,
-           Keyword.put(opts, :preload, [:created_by])
+           Keyword.put(opts, :preload, [:created_by, :replaces])
          ) do
       {:ok, keys, meta} ->
         socket
@@ -466,6 +466,21 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-500"
+
+  # Rotation lineage. The swap is PENDING while the replaced key is still
+  # usable — this key's first authenticated use retires it. Successors inherit
+  # the name, so the replaced key is named by its distinguishing prefix; the
+  # id-slice fallback covers a hard-deleted (quick-ring-evicted) ancestor.
+  defp swap_pending?(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
+    do: ApiKeys.ApiKey.usable?(replaced)
+
+  defp swap_pending?(%ApiKeys.ApiKey{}), do: false
+
+  defp replaced_key_label(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
+    do: replaced.key_prefix <> "…"
+
+  defp replaced_key_label(%ApiKeys.ApiKey{replaces_id: id}) when is_binary(id),
+    do: String.slice(id, 0, 8) <> "…"
 
   # -- Status derivation ----------------------------------------------
 
@@ -836,8 +851,8 @@ defmodule EmisarWeb.AgentsLive do
       >
         <:body>
           Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
-          with this key. The old key keeps working until you revoke it below — swap first,
-          then revoke.
+          with this key. The old key keeps working until this one's first use — the moment the
+          client authenticates with it, the old key is revoked automatically.
         </:body>
         <.code_panel
           id="rotated-key"
@@ -925,6 +940,26 @@ defmodule EmisarWeb.AgentsLive do
                   <:seg :if={reported_client(key)}>
                     client <span class="text-zinc-300">{reported_client(key)}</span>
                   </:seg>
+                  <%!-- Rotation lineage — the successor names the key it
+                       replaces by prefix (successors inherit the NAME, so the
+                       prefix is the distinguisher). Amber while the old key is
+                       still live: the swap isn't proven until this key's first
+                       use auto-revokes it. --%>
+                  <:seg :if={key.replaces_id}>
+                    <span
+                      :if={swap_pending?(key)}
+                      class="text-amber-300/90"
+                      title="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
+                    >
+                      replaces <span class="font-mono">{replaced_key_label(key)}</span> · swap pending
+                    </span>
+                    <span
+                      :if={not swap_pending?(key)}
+                      title="Minted by rotation — the key it replaced has been revoked"
+                    >
+                      replaced <span class="font-mono">{replaced_key_label(key)}</span>
+                    </span>
+                  </:seg>
                   <:seg>
                     last call{" "}<.local_time
                       value={key.last_used_at}
@@ -965,7 +1000,7 @@ defmodule EmisarWeb.AgentsLive do
                   size={:sm}
                   phx-click="rotate"
                   phx-value-id={key.id}
-                  data-confirm="Rotate this key? A new key with the same scope is minted; the old one keeps working until you revoke it, so update your agent before revoking."
+                  data-confirm="Rotate this key? A new key with the same scope is minted; this one keeps working until the new key's first use, then it's revoked automatically."
                 >
                   Rotate
                 </.button>
@@ -1273,7 +1308,8 @@ defmodule EmisarWeb.AgentsLive do
           <p>
             Quick-connect keys don't expire; revoke one from the agents list when its
             client no longer needs access. Custom keys default to a 30-day expiry.
-            Rotating mints a successor — the old key keeps working until you revoke it.
+            Rotating mints a successor — the old key keeps working until the new one's
+            first use, then it's revoked automatically.
           </p>
         </div>
       </aside>

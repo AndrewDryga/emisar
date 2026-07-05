@@ -407,6 +407,26 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # First use of a rotation successor proved the client swapped, so the key it
+  # replaces is retired automatically. The actor is the successor key (the
+  # acting credential — the auth boundary has no subject yet); the payload
+  # names both ends of the link so the chain reads in one row.
+  def api_key_retired_by_rotation(%ApiKeys.ApiKey{} = key, %ApiKeys.ApiKey{} = successor) do
+    Audit.changeset(key.account_id, "api_key.retired_by_rotation",
+      actor_kind: "api_key",
+      actor_id: successor.id,
+      actor_label: successor.name,
+      target_kind: "api_key",
+      target_id: key.id,
+      target_label: key.name,
+      payload: %{
+        prefix: key.key_prefix,
+        successor_id: successor.id,
+        successor_prefix: successor.key_prefix
+      }
+    )
+  end
+
   # -- OAuth -------------------------------------------------------------
 
   # Operator consent minted an execute-capable backing key for a remote

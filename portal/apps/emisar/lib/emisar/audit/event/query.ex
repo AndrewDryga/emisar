@@ -34,6 +34,7 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
     {"api_key.auto_rotated", "API key auto-rotated"},
+    {"api_key.retired_by_rotation", "API key retired by rotation"},
     {"oauth.consent_granted", "OAuth client authorized"},
     {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
     {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
@@ -176,6 +177,7 @@ defmodule Emisar.Audit.Event.Query do
        {"api_key.revoked", "Revoked"},
        {"api_key.bound", "First use"},
        {"api_key.auto_rotated", "Auto-rotated"},
+       {"api_key.retired_by_rotation", "Retired by rotation"},
        {"oauth.consent_granted", "OAuth client authorized"}
      ]},
     {"Sign-in",
@@ -652,6 +654,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true,
        "An API key was used for the first time (its client identified itself)."},
     "api_key.auto_rotated" => {true, false, true, "The system rotated an API key automatically."},
+    "api_key.retired_by_rotation" =>
+      {true, false, true,
+       "A rotated key's successor was used for the first time — the key it replaces was revoked automatically."},
     "oauth.consent_granted" =>
       {true, true, true, "A user authorized an OAuth client to act on their behalf."},
     "pack_trust_baseline_match" =>

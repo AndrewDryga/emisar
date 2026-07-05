@@ -53,6 +53,10 @@ defmodule Emisar.ApiKeys.ApiKey do
     # Successor minted by auto-rotation — non-nil marks this key superseded
     # and is the at-most-once guard for response-carried rotation.
     belongs_to :rotated_to, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
+    # The rotation back-link: the key this one was minted to replace. Set at
+    # rotation (operator or auto) — never from user input. First use of this
+    # key proves the client swapped, so the replaced chain is retired then.
+    belongs_to :replaces, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
     # Membership of the user who minted this key. MCP dispatch resolves
     # this membership's per-user runner scope at call-time so revoking
     # the operator's scope shrinks every key they ever issued. Nilable —

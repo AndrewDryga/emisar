@@ -36,4 +36,13 @@ defmodule Emisar.Fixtures.ApiKeys do
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
     {raw, key}
   end
+
+  @doc """
+  Forges a rotation back-link directly on the row — the production paths can
+  only mint same-account links, so tests use this to prove the retirement
+  sweep's own scoping holds even against a corrupted link.
+  """
+  def force_replaces(%ApiKeys.ApiKey{} = key, replaced_id) do
+    key |> Ecto.Changeset.change(replaces_id: replaced_id) |> Repo.update!()
+  end
 end

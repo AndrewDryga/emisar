@@ -49,6 +49,17 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_default_kind()
     |> validate_kind_scope_consistency()
     |> maybe_put_default_mcp_expiry(opts)
+    |> maybe_put_replaces(opts)
+  end
+
+  # The rotation back-link is an internal opt (`put_change`, never cast) — a
+  # form-castable replaces_id would let a crafted create request point the
+  # first-use auto-retire at an arbitrary key.
+  defp maybe_put_replaces(changeset, opts) do
+    case Keyword.get(opts, :replaces_id) do
+      nil -> changeset
+      id -> put_change(changeset, :replaces_id, id)
+    end
   end
 
   # When the caller doesn't set `kind`, derive it ONCE from the scope at mint

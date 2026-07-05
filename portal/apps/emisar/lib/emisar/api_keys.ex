@@ -153,7 +153,11 @@ defmodule Emisar.ApiKeys do
   """
   def change_key(attrs \\ %{}), do: ApiKey.Changeset.form(attrs)
 
-  def create_key(attrs, %Subject{account: account} = subject) do
+  # `opts` is internal (rotation threads `replaces_id:` through) — the web
+  # always calls this as `create_key(attrs, subject)`.
+  def create_key(attrs, subject, opts \\ [])
+
+  def create_key(attrs, %Subject{account: account} = subject, opts) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -165,7 +169,7 @@ defmodule Emisar.ApiKeys do
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       changeset =
-        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
+        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs, opts)
 
       Multi.new()
       |> Multi.insert(:key, changeset)
@@ -183,16 +187,18 @@ defmodule Emisar.ApiKeys do
   @doc """
   Mints a fresh successor to an existing key, inheriting its name, kind,
   scopes, action allow-list, and runner filters but with a new secret and a
-  fresh default expiry. The old key keeps working until the operator revokes
-  it (the overlap window), so a short-lived key can be rolled without locking
-  the agent out mid-config-update. `%Subject{}` needs `manage_api_keys`;
-  returns `{:ok, raw_secret, new_key}`.
+  fresh default expiry. The successor carries `replaces_id` back to the
+  source: the old key keeps working through the overlap window, then the
+  successor's FIRST authenticated use proves the client swapped and retires
+  the replaced chain automatically (`api_key.retired_by_rotation` in the
+  audit trail). The operator can still revoke the old key by hand sooner.
+  `%Subject{}` needs `manage_api_keys`; returns `{:ok, raw_secret, new_key}`.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
     # Re-fetch scoped to the subject so a caller can't rotate a key outside its
-    # account; `create_key/2` then re-gates on `manage_api_keys` and mints.
+    # account; `create_key/3` then re-gates on `manage_api_keys` and mints.
     with {:ok, source} <- fetch_api_key_by_id(key.id, subject) do
-      create_key(successor_attrs(source), subject)
+      create_key(successor_attrs(source), subject, replaces_id: source.id)
     end
   end
 
@@ -205,7 +211,8 @@ defmodule Emisar.ApiKeys do
   rotates itself; no `manage_api_keys` involved — so any other subject, or an
   ineligible key, gets `{:error, :not_eligible}`, and losing the mark-race to
   a concurrent session gets `{:error, :already_rotated}`. The source key
-  keeps working until its own expiry (the overlap window).
+  keeps working through the overlap window, then the successor's first use
+  retires it (`replaces_id` + the first-use sweep in `peek_api_key_by_secret`).
   """
   def auto_rotate_expiring(%Subject{actor: %ApiKey{} = key} = subject) do
     if auto_rotation_eligible?(key) do
@@ -241,7 +248,8 @@ defmodule Emisar.ApiKeys do
         source.created_by_membership_id,
         prefix,
         hash,
-        successor_attrs(source)
+        successor_attrs(source),
+        replaces_id: source.id
       )
 
     Multi.new()
@@ -287,6 +295,7 @@ defmodule Emisar.ApiKeys do
   defp apply_api_key_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
       :created_by, queryable -> ApiKey.Query.with_preloaded_created_by(queryable)
+      :replaces, queryable -> ApiKey.Query.with_preloaded_replaces(queryable)
     end)
   end
 
@@ -420,8 +429,12 @@ defmodule Emisar.ApiKeys do
   token to an `%ApiKey{}` so the MCP controller's `:authenticate` plug
   can build a `%Subject{}`, so it runs BEFORE any subject exists. Bumps
   `last_used_at` and — if the key is auto-generated — clears the auto
-  flag and audit-logs `api_key.bound`. Returns the updated struct or nil
-  (`peek_*` per AGENTS.md §1.1 — nil-or-struct credential lookup).
+  flag and audit-logs `api_key.bound`. The FIRST use of a rotation
+  successor (`replaces_id` set, `last_used_at` nil) proves the client
+  swapped, so it also retires the replaced chain — each still-active
+  ancestor is revoked with an `api_key.retired_by_rotation` audit row.
+  Returns the updated struct or nil (`peek_*` per AGENTS.md §1.1 —
+  nil-or-struct credential lookup).
   """
   def peek_api_key_by_secret(raw) when is_binary(raw) do
     if String.length(raw) < @prefix_size do
@@ -438,6 +451,9 @@ defmodule Emisar.ApiKeys do
            true <- Crypto.secure_compare(key.key_hash, hash),
            true <- ApiKey.usable?(key) do
         was_auto? = ApiKey.auto_unused?(key)
+        # nil→set below happens exactly once, so the sweep costs nothing on
+        # every later request with this key.
+        completes_rotation? = is_nil(key.last_used_at) and not is_nil(key.replaces_id)
 
         multi =
           Multi.new()
@@ -452,7 +468,20 @@ defmodule Emisar.ApiKeys do
             multi
           end
 
-        case Repo.commit_multi(multi) do
+        multi =
+          if completes_rotation? do
+            Multi.run(multi, :retired, fn repo, %{key: updated} ->
+              retire_replaced_chain(repo, updated)
+            end)
+          else
+            multi
+          end
+
+        after_commit = fn changes ->
+          Enum.each(Map.get(changes, :retired, []), &broadcast_api_key_revoked/1)
+        end
+
+        case Repo.commit_multi(multi, after_commit: after_commit) do
           {:ok, %{key: updated}} ->
             updated
 
@@ -469,6 +498,64 @@ defmodule Emisar.ApiKeys do
       else
         _ -> nil
       end
+    end
+  end
+
+  # Bounded walk up the `replaces_id` chain from a just-first-used successor,
+  # revoking every still-active ancestor. Re-scoped to the successor's account
+  # even though a link can only be minted same-account — a corrupted link must
+  # never retire a foreign key. The conditional `not_revoked` update is the
+  # race guard: two concurrent first requests both sweep, one wins each
+  # revocation (and writes its audit row); an already-revoked middle key is
+  # walked THROUGH, since a hand-revoked successor can hide a live ancestor.
+  # A chain is acyclic by construction (links point at strictly older rows);
+  # the depth cap is a backstop, and hitting it just leaves the tail for the
+  # operator. Returns `{:ok, [retired keys]}`.
+  defp retire_replaced_chain(repo, %ApiKey{} = successor) do
+    depth_cap = 10
+    retire_replaced_link(repo, successor, successor.replaces_id, [], depth_cap)
+  end
+
+  defp retire_replaced_link(_repo, _successor, replaced_id, retired, budget)
+       when is_nil(replaced_id) or budget == 0,
+       do: {:ok, Enum.reverse(retired)}
+
+  defp retire_replaced_link(repo, successor, replaced_id, retired, budget) do
+    queryable =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(replaced_id)
+      |> ApiKey.Query.by_account_id(successor.account_id)
+
+    case repo.peek(queryable) do
+      nil ->
+        {:ok, Enum.reverse(retired)}
+
+      %ApiKey{} = replaced ->
+        retire_and_continue(repo, successor, replaced, retired, budget)
+    end
+  end
+
+  defp retire_and_continue(repo, successor, replaced, retired, budget) do
+    now = DateTime.utc_now()
+
+    revoke_queryable =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(replaced.id)
+      |> ApiKey.Query.not_revoked()
+
+    case repo.update_all(revoke_queryable, set: [revoked_at: now, updated_at: now]) do
+      {1, _} ->
+        case repo.insert(Audit.Events.api_key_retired_by_rotation(replaced, successor)) do
+          {:ok, _event} ->
+            retired = [%{replaced | revoked_at: now} | retired]
+            retire_replaced_link(repo, successor, replaced.replaces_id, retired, budget - 1)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {0, _} ->
+        retire_replaced_link(repo, successor, replaced.replaces_id, retired, budget - 1)
     end
   end
 

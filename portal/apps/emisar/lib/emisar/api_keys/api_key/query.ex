@@ -87,6 +87,12 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     |> select([api_keys: k], {k.id, field(k, ^field)})
   end
 
+  @doc """
+  Preload the (non-deleted) key this one replaced at rotation. A separate
+  query, not a self-join — the `replaces` assoc's own `where` scopes it.
+  """
+  def with_preloaded_replaces(queryable), do: preload(queryable, :replaces)
+
   @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
   def with_preloaded_created_by(queryable) do
     queryable
