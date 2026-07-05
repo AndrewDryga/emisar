@@ -528,11 +528,17 @@ after being taught, so every one is checked EVERY time, mechanically:
    Command is a standard `code_panel` artifact with its description as naked
    prose above it — prose never rides inside the artifact's box. A NOTE is status grammar:
    icon lead + medium title + zinc body, naked on canvas (§5). Check the diff
-   for added `bg-*/ring-*` on prose. The boxed `secret_reveal` banner is ONLY
-   the form-replacing success step on a dedicated create page (keys/new, MFA
-   enroll); anywhere else a key reveal = the naked status line + the secret in
-   a recessed `code_panel` (the agents quick-mint/rotation grammar) — never
-   two grammars for one event on one surface. Both grammars are COMPONENTS —
+   for added `bg-*/ring-*` on prose. **A SINGLE-secret reveal is the naked
+   grammar EVERYWHERE — dedicated create page included** (the user rejected the
+   boxed amber banner on the enrollment-key issue page, 2026-07-05): naked
+   `status_note` (amber, `primary`) + one `code_panel` per artifact (the secret,
+   the install/use command), on canvas, then the next-step buttons. The old
+   "boxed `secret_reveal` banner on a create page" carve-out is DEAD for single
+   secrets. `secret_reveal` survives ONLY for the recovery-**codes** grid (a
+   distinct save-these-N-codes artifact: MFA enroll + profile). Remaining boxed
+   single-secret holdouts pending migration to the naked grammar: audit-export
+   SIEM token, SSO SCIM token (BACKLOG). Never two grammars for one event on one
+   surface. Both grammars are COMPONENTS —
    never hand-roll them: `<.status_note icon= tone= title= primary>` is the
    naked note (a step inside the operator's own flow stays a bare note);
    `<.event_block icon= title=>` is the note plus the icon-capped quiet spine,
