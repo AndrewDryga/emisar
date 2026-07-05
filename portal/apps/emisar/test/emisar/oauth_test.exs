@@ -157,8 +157,7 @@ defmodule Emisar.OAuthTest do
                OAuth.resolve_access_token(tokens.access_token)
 
       assert acct.id == account.id
-      assert "actions:read" in key.scopes
-      assert "actions:execute" in key.scopes
+      assert key.kind == :mcp
     end
 
     test "the backing key is minted NON-expiring so a long-lived OAuth connection never breaks on key expiry",
@@ -190,7 +189,6 @@ defmodule Emisar.OAuthTest do
       assert event.actor_id == Emisar.Auth.Subject.actor_id(subject)
       assert event.target_kind == "api_key"
       assert event.payload["client_id"] == client.id
-      assert event.payload["scopes"] == ["actions:read", "actions:execute"]
     end
 
     test "fails closed (without burning the code) when the backing key was revoked before exchange",

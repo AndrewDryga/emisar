@@ -13,7 +13,7 @@ defmodule EmisarWeb.MCP.Service do
   modules — `Catalog`, `Runners`, `Runs`.
   """
 
-  alias Emisar.{ApiKeys, Catalog, Runbooks, Runners, Runs}
+  alias Emisar.{Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.MCP.{Idempotency, ToolSchema}
   require Logger
 
@@ -54,11 +54,7 @@ defmodule EmisarWeb.MCP.Service do
     {:ok, actions} = Catalog.list_all_actions_for_account(subject)
 
     actions
-    |> Enum.filter(
-      &(action_visible_to_key?(&1, api_key, runners_by_id) and
-          action_in_membership_scope?(&1, runners_by_id, scopes) and
-          ApiKeys.ApiKey.action_allowed?(api_key, &1.action_id))
-    )
+    |> Enum.filter(&action_in_membership_scope?(&1, runners_by_id, scopes))
     |> Enum.group_by(& &1.action_id)
     |> Enum.map(fn {_action_id, group} -> mcp_tool_from_group(group, runners_by_id) end)
     |> Enum.sort_by(& &1.name)
@@ -84,9 +80,7 @@ defmodule EmisarWeb.MCP.Service do
 
     all_runners
     |> Enum.reject(& &1.disabled_at)
-    |> Enum.filter(
-      &(runner_visible_to_key?(&1, api_key) and Runners.runner_in_scope?(&1, scopes))
-    )
+    |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
     |> Enum.map(fn runner ->
       %{
         name: runner.name,
@@ -305,7 +299,6 @@ defmodule EmisarWeb.MCP.Service do
     attestation = Map.get(opts, :attestation)
 
     with :ok <- validate_reason(reason),
-         :ok <- check_action_scope(api_key, action_id),
          {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
       runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
 
@@ -415,17 +408,6 @@ defmodule EmisarWeb.MCP.Service do
 
   defp validate_reason(_), do: {:error, :reason_required}
 
-  # Per-action allow-list on the key (empty = any action — the default, so
-  # every pre-existing key is unaffected). A leaked key scoped to `linux.uptime`
-  # can't be turned around to run `linux.reboot`. Enforced here, not just hidden
-  # from the tool list, so a hand-crafted call past discovery is refused too
-  # (IL-15 — authorize the action, never trust the rendered UI).
-  defp check_action_scope(api_key, action_id) do
-    if ApiKeys.ApiKey.action_allowed?(api_key, action_id),
-      do: :ok,
-      else: {:error, :action_not_in_key_scope}
-  end
-
   # -- Runner resolution ----------------------------------------------
 
   defp resolve_runners(subject, api_key, action_id, []) do
@@ -483,16 +465,13 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  defp deny_reason(runner, api_key, scopes) do
+  defp deny_reason(runner, _api_key, scopes) do
     cond do
       runner.disabled_at ->
         "runner is disabled"
 
-      not runner_visible_to_key?(runner, api_key) ->
-        "the API key's runner_filter / runner_group_filter doesn't include it"
-
       not Runners.runner_in_scope?(runner, scopes) ->
-        "the user who minted this key has no runner-scope grant for it"
+        "the operator who minted this key has no runner-scope grant for it"
 
       true ->
         "no advertised action with this name on this runner"
@@ -518,10 +497,7 @@ defmodule EmisarWeb.MCP.Service do
 
     runners
     |> Enum.reject(& &1.disabled_at)
-    |> Enum.filter(
-      &(&1.id in runner_ids_advertising and runner_visible_to_key?(&1, api_key) and
-          Runners.runner_in_scope?(&1, scopes))
-    )
+    |> Enum.filter(&(&1.id in runner_ids_advertising and Runners.runner_in_scope?(&1, scopes)))
   end
 
   defp fetch_runners_by_id(subject, ids) do
@@ -622,31 +598,9 @@ defmodule EmisarWeb.MCP.Service do
     do: %{action_id: action.action_id, title: action.title, kind: action.kind, risk: action.risk}
 
   # -- Visibility / membership ----------------------------------------
-
-  defp runner_visible_to_key?(runner, api_key) do
-    no_filter?(api_key) or
-      runner.id in api_key.runner_filter or
-      runner.group in (api_key.runner_group_filter || [])
-  end
-
-  defp action_visible_to_key?(action, api_key, runners_by_id) do
-    cond do
-      no_filter?(api_key) ->
-        true
-
-      action.runner_id in api_key.runner_filter ->
-        true
-
-      true ->
-        case Map.get(runners_by_id, action.runner_id) do
-          %{group: group} -> group in (api_key.runner_group_filter || [])
-          _ -> false
-        end
-    end
-  end
-
-  defp no_filter?(api_key),
-    do: api_key.runner_filter == [] and (api_key.runner_group_filter || []) == []
+  # An MCP key sees + reaches exactly the runners the MINTING OPERATOR can —
+  # their `UserRunnerScope` (`membership_scopes`), resolved at call time. The
+  # key carries no per-key runner filter of its own.
 
   defp membership_scopes(%{created_by_membership_id: nil}), do: []
 

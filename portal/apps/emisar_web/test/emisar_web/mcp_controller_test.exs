@@ -3,7 +3,7 @@ defmodule EmisarWeb.MCPControllerTest do
   Covers the MCP HTTP surface end-to-end. Focuses on the runner-aware
   redesign: discovery via /runners, runner-enum in /tools' inputSchema,
   flat-body dispatch on /tools/:action_id, and visibility filtering by
-  the API key's runner_filter.
+  the key creator's own runner scope.
   """
 
   use EmisarWeb.ConnCase, async: true
@@ -111,13 +111,7 @@ defmodule EmisarWeb.MCPControllerTest do
 
     {:ok, raw, _key} =
       ApiKeys.create_key(
-        %{
-          name: "key-#{unique()}",
-          scopes: opts[:scopes] || ["actions:read", "actions:execute"],
-          action_scope: opts[:action_scope] || [],
-          runner_filter: opts[:runner_filter] || [],
-          runner_group_filter: opts[:runner_group_filter] || []
-        },
+        %{name: "key-#{unique()}", kind: opts[:kind] || :mcp},
         subject
       )
 
@@ -159,73 +153,6 @@ defmodule EmisarWeb.MCPControllerTest do
 
       assert by_name["db-prod-02"]["actions"] |> Enum.map(& &1["action_id"]) ==
                ["cassandra.repair"]
-    end
-
-    test "respects api_key.runner_filter", %{conn: conn, account: account, user: user} do
-      runner_a = make_runner!(account, name: "in-filter")
-      runner_b = make_runner!(account, name: "out-of-filter")
-      advertise_action!(runner_a, action_id: "x")
-      advertise_action!(runner_b, action_id: "y")
-
-      raw = make_api_key!(account, user, runner_filter: [runner_a.id])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runners")
-        |> json_response(200)
-
-      assert [%{"name" => "in-filter"}] = body["runners"]
-    end
-
-    test "respects api_key.runner_group_filter — group-level allowlist",
-         %{conn: conn, account: account, user: user} do
-      # Two runners in `dba` group, one in `app`. A key scoped to the
-      # `dba` group should see both DBA runners and reject the app
-      # runner regardless of which specific runner ids exist.
-      dba_a = make_runner!(account, name: "dba-01", group: "dba")
-      dba_b = make_runner!(account, name: "dba-02", group: "dba")
-      app = make_runner!(account, name: "app-01", group: "app")
-      advertise_action!(dba_a, action_id: "x")
-      advertise_action!(dba_b, action_id: "x")
-      advertise_action!(app, action_id: "y")
-
-      raw = make_api_key!(account, user, runner_group_filter: ["dba"])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runners")
-        |> json_response(200)
-
-      names = body["runners"] |> Enum.map(& &1["name"]) |> Enum.sort()
-      assert names == ["dba-01", "dba-02"]
-    end
-
-    test "runner_filter + runner_group_filter are additive (union)",
-         %{conn: conn, account: account, user: user} do
-      # A key with id-list [edge-01] AND group-list [dba] should see
-      # both: anything in the dba group + the explicit edge-01 runner.
-      dba = make_runner!(account, name: "dba-01", group: "dba")
-      edge = make_runner!(account, name: "edge-01", group: "edge")
-      _other = make_runner!(account, name: "other", group: "misc")
-      advertise_action!(dba, action_id: "x")
-      advertise_action!(edge, action_id: "y")
-
-      raw =
-        make_api_key!(account, user,
-          runner_filter: [edge.id],
-          runner_group_filter: ["dba"]
-        )
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runners")
-        |> json_response(200)
-
-      names = body["runners"] |> Enum.map(& &1["name"]) |> Enum.sort()
-      assert names == ["dba-01", "edge-01"]
     end
 
     test "401 without a Bearer token", %{conn: conn} do
@@ -353,51 +280,6 @@ defmodule EmisarWeb.MCPControllerTest do
 
       assert "reason" in schema["required"]
       assert "mode" in schema["required"]
-    end
-
-    test "hides actions whose only runner is outside the key filter", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      visible = make_runner!(account, name: "visible")
-      hidden = make_runner!(account, name: "hidden")
-      advertise_action!(visible, action_id: "visible.action")
-      advertise_action!(hidden, action_id: "hidden.action")
-
-      raw = make_api_key!(account, user, runner_filter: [visible.id])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/tools")
-        |> json_response(200)
-
-      names = Enum.map(body["tools"], & &1["name"])
-      assert "visible.action" in names
-      refute "hidden.action" in names
-    end
-
-    test "action_scope hides actions the key may not run", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      runner = make_runner!(account, name: "db-prod-01")
-      advertise_action!(runner, action_id: "linux.uptime")
-      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
-
-      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/tools")
-        |> json_response(200)
-
-      names = Enum.map(body["tools"], & &1["name"])
-      assert "linux.uptime" in names
-      refute "linux.reboot" in names
     end
 
     test "every tool exposes an optional `idempotency_key` property the LLM can set", %{
@@ -609,30 +491,6 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["runner"] == "ghost"
     end
 
-    test "403 when one of the listed runners is outside the key filter", %{
-      conn: conn,
-      account: account,
-      user: user,
-      runner: runner
-    } do
-      other = make_runner!(account, name: "db-prod-02")
-      advertise_action!(other, action_id: "linux.uptime")
-
-      raw = make_api_key!(account, user, runner_filter: [runner.id])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/linux.uptime", %{
-          "runners" => ["db-prod-02"],
-          "reason" => "ad-hoc"
-        })
-        |> json_response(403)
-
-      assert body["error"] == "runner_not_in_key_filter"
-      assert body["runner"] == "db-prod-02"
-    end
-
     test "missing reason fails fast with 400 reason_required — not a 202 of per-runner errors", %{
       conn: conn,
       account: account,
@@ -651,56 +509,6 @@ defmodule EmisarWeb.MCPControllerTest do
         |> json_response(400)
 
       assert body["error"] == "reason_required"
-    end
-
-    test "missing scope returns 403", %{conn: conn, account: account, user: user, runner: runner} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/linux.uptime", %{
-          "runners" => [runner.name],
-          "reason" => "x"
-        })
-        |> json_response(403)
-
-      assert body["error"] == "missing_scope"
-    end
-
-    test "action_scope confines a key to its listed actions (per-action denial)", %{
-      conn: conn,
-      account: account,
-      user: user,
-      runner: runner
-    } do
-      # Runner advertises a second, riskier action the key is NOT scoped to.
-      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
-      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
-
-      # The in-scope action dispatches.
-      assert conn
-             |> put_req_header("authorization", "Bearer " <> raw)
-             |> post(~p"/api/mcp/tools/linux.uptime", %{
-               "runners" => [runner.name],
-               "reason" => "allowed by scope"
-             })
-             |> json_response(202)
-
-      # The out-of-scope action is refused at the dispatch boundary — even though
-      # the runner advertises it and policy would allow it. A leaked key can't be
-      # turned around to a riskier action than it was minted for.
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/linux.reboot", %{
-          "runners" => [runner.name],
-          "reason" => "should be blocked"
-        })
-        |> json_response(403)
-
-      assert body["error"] == "action_not_in_key_scope"
-      assert body["action_id"] == "linux.reboot"
     end
 
     test "runner_not_found error includes actionable message", %{
@@ -724,32 +532,6 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["message"] =~ "GET /api/mcp/runners"
     end
 
-    test "runner_not_allowed includes specific reason + message", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      # Two runners; only the first is in the key's filter.
-      in_filter = make_runner!(account, name: "in-filter")
-      out = make_runner!(account, name: "out-of-filter")
-      advertise_action!(in_filter, action_id: "linux.uptime")
-      advertise_action!(out, action_id: "linux.uptime")
-      raw = make_api_key!(account, user, runner_filter: [in_filter.id])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/linux.uptime", %{
-          "runners" => ["out-of-filter"],
-          "reason" => "x"
-        })
-        |> json_response(403)
-
-      assert body["error"] == "runner_not_in_key_filter"
-      assert body["reason"] =~ "runner_filter"
-      assert body["message"] =~ "API key"
-    end
-
     test "action_not_found distinguished from no_runner_in_scope", %{
       conn: conn,
       account: account,
@@ -768,29 +550,6 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["error"] == "action_not_found"
       assert body["action_id"] == "totally.unknown"
       assert body["message"] =~ "/tools"
-    end
-
-    test "no_runner_in_scope: action exists but filter blocks every runner", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      # Action exists on a runner that the key's filter excludes — should
-      # land as `no_runner_in_scope` (403), not `action_not_found` (404).
-      blocked = make_runner!(account, name: "blocked")
-      visible = make_runner!(account, name: "visible")
-      advertise_action!(blocked, action_id: "secret.action")
-      advertise_action!(visible, action_id: "different.action")
-      raw = make_api_key!(account, user, runner_filter: [visible.id])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/secret.action", %{"reason" => "x"})
-        |> json_response(403)
-
-      assert body["error"] == "no_runner_in_scope"
-      assert body["message"] =~ "API key"
     end
 
     test "dispatch to offline runner queues + surfaces warning", %{
@@ -1201,33 +960,6 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["error"] == "invalid_wait"
     end
 
-    test "403 when an execute-only key reads a run (needs actions:read)", %{
-      conn: conn,
-      account: account,
-      user: user,
-      runner: runner
-    } do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      {:ok, run} =
-        Emisar.Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "mcp",
-          args: %{},
-          status: "pending"
-        })
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runs/#{run.id}")
-        |> json_response(403)
-
-      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
-    end
-
     test "404 when fetching a run that belongs to another account", %{
       conn: conn,
       account: account,
@@ -1257,62 +989,6 @@ defmodule EmisarWeb.MCPControllerTest do
         |> json_response(404)
 
       assert body == %{"error" => "not_found"}
-    end
-  end
-
-  describe "read-scope enforcement on the REST surface" do
-    setup %{account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-      {:ok, raw: raw}
-    end
-
-    test "GET /api/mcp/tools is denied without actions:read", %{conn: conn, raw: raw} do
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/tools")
-        |> json_response(403)
-
-      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
-    end
-
-    test "GET /api/mcp/runners is denied without actions:read", %{conn: conn, raw: raw} do
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runners")
-        |> json_response(403)
-
-      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
-    end
-
-    test "an empty scopes:[] key fails closed on every REST endpoint", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      runner = make_runner!(account, name: "runner-1")
-      advertise_action!(runner, action_id: "linux.uptime")
-      raw = make_api_key!(account, user, scopes: [])
-
-      for path <- [~p"/api/mcp/tools", ~p"/api/mcp/runners"] do
-        body =
-          conn
-          |> put_req_header("authorization", "Bearer " <> raw)
-          |> get(path)
-          |> json_response(403)
-
-        assert body == %{"error" => "missing_scope", "required" => "actions:read"}
-      end
-
-      # Dispatch needs actions:execute — also denied for the empty-scope key.
-      dispatch =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> post(~p"/api/mcp/tools/linux.uptime", %{"reason" => "x"})
-        |> json_response(403)
-
-      assert dispatch == %{"error" => "missing_scope", "required" => "actions:execute"}
     end
   end
 
@@ -1746,9 +1422,8 @@ defmodule EmisarWeb.MCPControllerTest do
       account: account,
       user: user
     } do
-      # A default-minted key has empty runner_filter/group_filter AND its creator
-      # membership holds no per-user runner-scope grants — so neither the key-filter
-      # layer nor the creator-scope layer narrows anything: all account runners show.
+      # A default-minted key's creator membership holds no per-user runner-scope
+      # grants, so the creator-scope layer narrows nothing: all account runners show.
       a = make_runner!(account, name: "host-a", group: "g1")
       b = make_runner!(account, name: "host-b", group: "g2")
       c = make_runner!(account, name: "host-c", group: "g3")
@@ -1855,33 +1530,6 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "creator per-user scope layer (REST)" do
-    test "a runner inside the key filter but outside creator scope is still hidden", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      # Both layers are AND-combined: the key's runner_filter allows BOTH runners,
-      # but the key-creator's membership is scoped to only the `allowed` group, so
-      # the runner in `blocked` is hidden from /runners despite passing the filter.
-      allowed = make_runner!(account, name: "allowed-host", group: "allowed")
-      blocked = make_runner!(account, name: "blocked-host", group: "blocked")
-      advertise_action!(allowed, action_id: "x")
-      advertise_action!(blocked, action_id: "y")
-
-      raw = make_api_key!(account, user, runner_filter: [allowed.id, blocked.id])
-      restrict_creator_scope!(account, user, [{"group", "allowed"}])
-
-      names =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> get(~p"/api/mcp/runners")
-        |> json_response(200)
-        |> Map.fetch!("runners")
-        |> Enum.map(& &1["name"])
-
-      assert names == ["allowed-host"]
-    end
-
     test "revoking the creator's scope shrinks every key that membership minted", %{
       conn: conn,
       account: account,
@@ -1914,73 +1562,6 @@ defmodule EmisarWeb.MCPControllerTest do
       # Narrow the creator membership to team-a only — the same key now sees one.
       restrict_creator_scope!(account, user, [{"group", "team-a"}])
       assert list.() == ["scope-a"]
-    end
-
-    test "the runner_group_filter column is NOT NULL — the nil precondition can't exist", %{
-      account: account,
-      user: user
-    } do
-      # The spec row posits a key with NULL runner_group_filter hitting the
-      # `(api_key.runner_group_filter || [])` guards. That precondition is
-      # UNREACHABLE: the column is NOT NULL (default []), so the `|| []` is
-      # dead-but-defensive. Pin the real guarantee — the constraint rejects a NULL
-      # write; the reachable empty-filter case is the normal no-group-restriction
-      # path exercised throughout the filter tests above.
-      raw = make_api_key!(account, user, runner_filter: [])
-      %{id: id} = ApiKeys.peek_api_key_by_secret(raw)
-
-      assert_raise Postgrex.Error, ~r/not_null|null value/, fn ->
-        Repo.update_all(
-          from(k in ApiKeys.ApiKey, where: k.id == ^id),
-          set: [runner_group_filter: nil]
-        )
-      end
-    end
-  end
-
-  describe "REST/RPC dispatch share one gate (Service.dispatch_tool)" do
-    test "a read-only key is denied execute on BOTH surfaces, identically", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      # REST POST /tools/:id and RPC tools/call both route dispatch through the
-      # shared Service.dispatch_tool, so a scope denial lands the same way on each:
-      # the REST 403 missing_scope and the RPC -32002 both name actions:execute.
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
-
-      rest =
-        conn
-        |> auth.()
-        |> post(~p"/api/mcp/tools/linux.uptime", %{"runner" => "host-1", "reason" => "x"})
-        |> json_response(403)
-
-      assert rest == %{"error" => "missing_scope", "required" => "actions:execute"}
-
-      rpc =
-        conn
-        |> auth.()
-        |> put_req_header("content-type", "application/json")
-        |> post(
-          ~p"/api/mcp/rpc",
-          Jason.encode!(%{
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: %{
-              "name" => "linux.uptime",
-              "arguments" => %{"runner" => "host-1", "reason" => "x", "wait" => "0"}
-            }
-          })
-        )
-        |> json_response(200)
-
-      # Same gate, same required scope — only the envelope shape differs by surface.
-      assert rpc["error"]["code"] == -32002
-      assert rpc["error"]["data"]["required"] == "actions:execute"
     end
   end
 

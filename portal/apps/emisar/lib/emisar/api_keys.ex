@@ -185,9 +185,8 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Mints a fresh successor to an existing key, inheriting its name, kind,
-  scopes, action allow-list, and runner filters but with a new secret and a
-  fresh default expiry. The successor carries `replaces_id` back to the
+  Mints a fresh successor to an existing key, inheriting its name and kind but
+  with a new secret and a fresh default expiry. The successor carries `replaces_id` back to the
   source: the old key keeps working through the overlap window, then the
   successor's FIRST authenticated use proves the client swapped and retires
   the replaced chain automatically (`api_key.retired_by_rotation` in the
@@ -205,7 +204,7 @@ defmodule Emisar.ApiKeys do
   @doc """
   Possession-based self-succession for the MCP bridge (response-carried
   rotation): when the subject's OWN `:mcp` key expires within
-  #{@rotation_window_days} days, mints a scope-preserving successor exactly
+  #{@rotation_window_days} days, mints a successor exactly
   once and returns `{:ok, raw_secret, successor}`. The
   `%Subject{actor: %ApiKey{}}` match IS the authorization — the credential
   rotates itself; no `manage_api_keys` involved — so any other subject, or an
@@ -276,18 +275,11 @@ defmodule Emisar.ApiKeys do
     end
   end
 
-  # The scope-preserving attribute set a successor inherits — shared by
-  # operator rotation and auto-rotation so the two paths can't drift.
+  # The attribute set a successor inherits — shared by operator rotation and
+  # auto-rotation so the two paths can't drift. Just identity + kind now; the
+  # key carries no authorization scope of its own.
   defp successor_attrs(%ApiKey{} = source) do
-    %{
-      name: source.name,
-      description: source.description,
-      kind: source.kind,
-      scopes: source.scopes,
-      action_scope: source.action_scope,
-      runner_filter: source.runner_filter,
-      runner_group_filter: source.runner_group_filter
-    }
+    %{name: source.name, description: source.description, kind: source.kind}
   end
 
   # Rendering concerns are the caller's: pass `preload:` only for the
@@ -331,9 +323,9 @@ defmodule Emisar.ApiKeys do
   is noise. Once an LLM authenticates with the key, `usage/1` clears
   the auto flag and `api_key.bound` is logged.
 
-  Sensible defaults are baked in: scopes `actions:read` +
-  `actions:execute`, all runners. Operators wanting custom scopes use
-  the "Custom key" form, which calls `create_key/2` instead.
+  The key is `kind: :mcp`, identity only — it carries no per-key scope; what it
+  may do is account Policy + the minting operator's own runner scope. The
+  "Custom key" form is the same mint with an operator-set name/expiry.
   """
   def mint_quick_key(%Subject{account: account} = subject, opts \\ []) do
     with :ok <-
@@ -347,16 +339,12 @@ defmodule Emisar.ApiKeys do
       cap = opts[:ring_cap] || @quick_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @quick_eviction_grace_seconds
       name = opts[:name] || "Quick connect (auto)"
-      runner_filter = opts[:runner_filter] || []
-      runner_group_filter = opts[:runner_group_filter] || []
 
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       changeset =
         ApiKey.Changeset.mint_quick(account_id, user_id, membership_id, prefix, hash, %{
-          name: name,
-          runner_filter: runner_filter,
-          runner_group_filter: runner_group_filter
+          name: name
         })
 
       Multi.new()
@@ -583,7 +571,7 @@ defmodule Emisar.ApiKeys do
       membership_id,
       prefix,
       hash,
-      %{name: name, scopes: ["actions:read", "actions:execute"]},
+      %{name: name},
       default_expiry: false
     )
     |> Repo.insert()

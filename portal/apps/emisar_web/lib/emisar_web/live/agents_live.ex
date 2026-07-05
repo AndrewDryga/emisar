@@ -21,8 +21,8 @@ defmodule EmisarWeb.AgentsLive do
   every MCP request.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Runners}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, RunnerScope, UrlHelpers}
+  alias Emisar.ApiKeys
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   @active_threshold_secs 5 * 60
@@ -47,27 +47,13 @@ defmodule EmisarWeb.AgentsLive do
     # EMISAR_CLIENT env var so the bridge stamps it onto every
     # User-Agent.
     #
-    # `ApiKeys.mint_quick_key/3` ring-evicts unused autos at 42 per
+    # `ApiKeys.mint_quick_key/2` ring-evicts unused autos at 42 per
     # account, so opening many tabs can't accumulate dangling keys.
-
-    # IL-18: defer the runner read to the connected mount so the
-    # pre-connect render does no query work. The picker briefly shows
-    # its empty state, then fills in once the socket connects.
-    runners =
-      if connected?(socket) do
-        {:ok, list, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
-        list
-      else
-        []
-      end
-
     {:ok,
      socket
      |> assign(:page_title, "LLM agents")
-     |> assign(:runners, runners)
      |> assign(:quick_secret, nil)
      |> assign(:selected_client, nil)
-     |> assign(:action_scope_text, "")
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
      |> assign(:revoke_target, nil)
@@ -114,13 +100,7 @@ defmodule EmisarWeb.AgentsLive do
       fn socket ->
         name = client_label(id)
 
-        opts = [
-          name: name,
-          runner_filter: socket.assigns.selected_runner_ids,
-          runner_group_filter: socket.assigns.selected_runner_groups
-        ]
-
-        case ApiKeys.mint_quick_key(socket.assigns.current_subject, opts) do
+        case ApiKeys.mint_quick_key(socket.assigns.current_subject, name: name) do
           {:ok, raw, _key} ->
             {:noreply,
              socket
@@ -138,36 +118,16 @@ defmodule EmisarWeb.AgentsLive do
     )
   end
 
-  # Pure scope-picker change (no mint). Keeps the selection alive
-  # across tab clicks; the next `select_client` reads these socket
-  # assigns and propagates them into `mint_quick_key`.
-  def handle_event("update_scope", %{"scope" => values}, socket) do
-    %{groups: groups, runner_ids: runner_ids} = RunnerScope.parse(values, socket.assigns.runners)
-
-    {:noreply,
-     socket
-     |> assign(:selected_runner_groups, groups)
-     |> assign(:selected_runner_ids, runner_ids)}
-  end
-
-  def handle_event("update_scope", _params, socket) do
-    {:noreply, socket |> assign(:selected_runner_groups, []) |> assign(:selected_runner_ids, [])}
-  end
-
-  def handle_event("validate", %{"api_key" => params} = all, socket) do
+  def handle_event("validate", %{"api_key" => params}, socket) do
     changeset = ApiKeys.change_key(params) |> Map.put(:action, :validate)
-    # `action_scope` rides outside the api_key params (it's parsed at create,
-    # like the runner-scope hidden inputs) — round-trip the raw text so a
-    # validation re-render keeps what the operator typed.
-    {:noreply,
-     socket |> assign(:action_scope_text, all["action_scope"] || "") |> assign_form(changeset)}
+    {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("create", %{"api_key" => params} = all, socket) do
+  def handle_event("create", %{"api_key" => params}, socket) do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      &do_create(&1, params, all["action_scope"])
+      &do_create(&1, params)
     )
   end
 
@@ -217,19 +177,14 @@ defmodule EmisarWeb.AgentsLive do
 
   # -- Internals -------------------------------------------------------
 
-  defp do_create(socket, params, action_scope_text) do
-    # Custom keys minted from the agents page are always MCP-shaped:
-    # `actions:read` + `actions:execute`, nothing else. The audit
-    # `audit:read` scope lives on the audit page where it belongs;
-    # exposing it here just confused operators looking to wire an LLM.
+  defp do_create(socket, params) do
+    # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
+    # per-key scope: account Policy + the operator's own runner scope decide
+    # what it may do, same as a quick-mint.
     attrs = %{
       name: params["name"] || "",
       description: nil_if_blank(params["description"]),
-      expires_at: parse_expires_at(params["expires_at"]),
-      scopes: ["actions:read", "actions:execute"],
-      action_scope: split_action_ids(action_scope_text),
-      runner_filter: selected_runner_ids(params, socket.assigns.runners),
-      runner_group_filter: selected_runner_groups(params, socket.assigns.runners)
+      expires_at: parse_expires_at(params["expires_at"])
     }
 
     case ApiKeys.create_key(attrs, socket.assigns.current_subject) do
@@ -237,17 +192,13 @@ defmodule EmisarWeb.AgentsLive do
         {:noreply,
          socket
          |> assign(:quick_secret, raw)
-         |> assign(:show_advanced, false)
-         |> assign(:action_scope_text, "")
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
-      # Field errors (required name, length, a per-action-id format error, or a
-      # DB constraint) render inline on the form via <.input>/<.error> — no flash
-      # dump. Keep the typed action-scope text so it isn't lost on a re-render.
+      # Field errors (required name, length, or a DB constraint) render inline
+      # on the form via <.input>/<.error> — no flash dump.
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         socket |> assign(:action_scope_text, action_scope_text || "") |> assign_form(changeset)}
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
@@ -371,13 +322,7 @@ defmodule EmisarWeb.AgentsLive do
     do: Enum.count(active_keys(keys), &(client_status(&1) == status))
 
   defp default_params do
-    %{
-      "name" => "",
-      "description" => "",
-      "expires_at" => "",
-      "runner_filter" => [],
-      "runner_group_filter" => []
-    }
+    %{"name" => "", "description" => "", "expires_at" => ""}
   end
 
   defp nil_if_blank(nil), do: nil
@@ -402,51 +347,8 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  # The action-scope textarea is free text — operators paste action ids one per
-  # line or comma-separated. Split, trim, drop blanks; the changeset validates
-  # each against the `pack.action` shape and rejects an over-long entry.
-  defp split_action_ids(nil), do: []
-
-  defp split_action_ids(text) when is_binary(text) do
-    text
-    |> String.split([",", "\n"])
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-  end
-
-  # Allowlist submitted runner IDs (from the create form's `api_key[runner_filter][]`
-  # hidden inputs) against the account's real runners, so a malicious POST can't
-  # sneak in IDs from another account.
-  defp selected_runner_ids(%{"runner_filter" => ids}, runners) when is_list(ids) do
-    allowed = MapSet.new(Enum.map(runners, & &1.id))
-    Enum.filter(ids, &MapSet.member?(allowed, &1))
-  end
-
-  defp selected_runner_ids(_, _), do: []
-
-  # Same allowlist treatment for groups: only accept group names that actually
-  # exist on at least one of the account's runners.
-  defp selected_runner_groups(%{"runner_group_filter" => groups}, runners) when is_list(groups) do
-    allowed = MapSet.new(Enum.map(runners, & &1.group))
-    Enum.filter(groups, &MapSet.member?(allowed, &1))
-  end
-
-  defp selected_runner_groups(_, _), do: []
-
-  # Reads the scope selection back out of `changeset.params` — the full
-  # string-keyed map handed to `cast`. `runner_filter` /
-  # `runner_group_filter` aren't cast fields (they're posted as hidden
-  # inputs and applied at create time), but `cast` keeps every submitted
-  # string key in `params`, so the scope state still round-trips here.
-  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
-    runners = socket.assigns[:runners] || []
-    params = changeset.params || %{}
-
-    socket
-    |> assign(:form, to_form(changeset, as: "api_key"))
-    |> assign(:selected_runner_ids, selected_runner_ids(params, runners))
-    |> assign(:selected_runner_groups, selected_runner_groups(params, runners))
-  end
+  defp assign_form(socket, %Ecto.Changeset{} = changeset),
+    do: assign(socket, :form, to_form(changeset, as: "api_key"))
 
   defp expired?(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}),
     do: DateTime.compare(exp, DateTime.utc_now()) == :lt
@@ -558,18 +460,6 @@ defmodule EmisarWeb.AgentsLive do
 
   defp local_client_ids,
     do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 == "custom"))
-
-  # Plain string instead of inline ternaries to dodge a fixed-point
-  # bug in the HEEx formatter where multiple `if x == 1, do:`
-  # expressions in one text node grow extra whitespace every time
-  # `mix format` runs.
-  defp scope_summary(runner_ids, group_ids) do
-    "#{length(runner_ids)} runner#{pluralize(runner_ids)}, " <>
-      "#{length(group_ids)} group#{pluralize(group_ids)}"
-  end
-
-  defp pluralize([_]), do: ""
-  defp pluralize(_), do: "s"
 
   defp client_config("claude_web", url, key) do
     %{
@@ -783,10 +673,6 @@ defmodule EmisarWeb.AgentsLive do
         selected_client={@selected_client}
         quick_secret={@quick_secret}
         form={@form}
-        action_scope_text={@action_scope_text}
-        runners={@runners}
-        selected_runner_ids={@selected_runner_ids}
-        selected_runner_groups={@selected_runner_groups}
       />
 
       <%!-- NAKED posture line (the runners grammar): activity now leads, the
@@ -888,10 +774,6 @@ defmodule EmisarWeb.AgentsLive do
             selected_client={@selected_client}
             quick_secret={@quick_secret}
             form={@form}
-            action_scope_text={@action_scope_text}
-            runners={@runners}
-            selected_runner_ids={@selected_runner_ids}
-            selected_runner_groups={@selected_runner_groups}
           />
         </div>
       </section>
@@ -1105,10 +987,6 @@ defmodule EmisarWeb.AgentsLive do
   attr :selected_client, :any, required: true
   attr :quick_secret, :string, default: nil
   attr :form, :any, default: nil
-  attr :action_scope_text, :string, default: ""
-  attr :runners, :list, default: []
-  attr :selected_runner_ids, :list, default: []
-  attr :selected_runner_groups, :list, default: []
 
   defp connect_panel(assigns) do
     config =
@@ -1203,13 +1081,7 @@ defmodule EmisarWeb.AgentsLive do
                 />
               <% end %>
 
-              <.custom_key_panel
-                form={@form}
-                action_scope_text={@action_scope_text}
-                runners={@runners}
-                selected_runner_ids={@selected_runner_ids}
-                selected_runner_groups={@selected_runner_groups}
-              />
+              <.custom_key_panel form={@form} />
             </div>
           <% @config && @config.kind == :remote -> %>
             <div class="mt-10 space-y-8">
@@ -1226,12 +1098,6 @@ defmodule EmisarWeb.AgentsLive do
                 rpc_url={@config.rpc_url}
                 auth_header={@config.auth_header}
                 steps={@config.steps}
-              />
-
-              <.scope_block
-                runners={@runners}
-                selected_runner_ids={@selected_runner_ids}
-                selected_runner_groups={@selected_runner_groups}
               />
             </div>
           <% @config -> %>
@@ -1274,12 +1140,6 @@ defmodule EmisarWeb.AgentsLive do
                 client_label={client_label(@selected_client)}
                 auto_permit={Map.get(@config, :auto_permit)}
               />
-
-              <.scope_block
-                runners={@runners}
-                selected_runner_ids={@selected_runner_ids}
-                selected_runner_groups={@selected_runner_groups}
-              />
             </div>
         <% end %>
       </div>
@@ -1297,13 +1157,18 @@ defmodule EmisarWeb.AgentsLive do
             the audit trail under the key's name.
           </p>
           <p>
-            A key never widens what's allowed: every action still passes your
+            A key never widens what's allowed. What it may DO is your
             <span class="font-medium text-zinc-300">policy</span>
-            — risky ones pause for human approval, out-of-policy ones are denied.
+            — risky actions pause for human approval, out-of-policy ones are denied.
+            Which runners it can reach is
+            <span class="font-medium text-zinc-300">your own runner scope</span>
+            (set per member on the Team page): a key inherits the reach of whoever
+            minted it, and shrinks the moment that scope does.
           </p>
           <p>
-            Scope a key before minting — runner groups, specific runners, or a per-action
-            allowlist on custom keys — to cap the blast radius if it leaks.
+            The key itself carries no extra permission to lock down — that's why there
+            are no per-key scope knobs here. To narrow one agent, mint it under a member
+            whose runner scope is already narrow.
           </p>
           <p>
             Quick-connect keys don't expire; revoke one from the agents list when its
@@ -1467,52 +1332,6 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # Key-scope block. A security product must make the credential's
-  # blast-radius legible, so the collapsed summary FOREGROUNDS it — an
-  # amber "reaches all N runners" when unbound, a brand "scoped to …" when
-  # narrowed — instead of burying "all runners" as a muted default. The
-  # picker itself stays collapsible (re-opening a long runner list for
-  # every connect fought the frictionless path), but the bound is now
-  # impossible to miss, and the footnote says these keys never expire.
-  attr :runners, :list, required: true
-  attr :selected_runner_ids, :list, required: true
-  attr :selected_runner_groups, :list, required: true
-
-  defp scope_block(assigns) do
-    assigns =
-      assign(assigns,
-        scoped?: assigns.selected_runner_ids != [] or assigns.selected_runner_groups != [],
-        runner_count: length(assigns.runners)
-      )
-
-    ~H"""
-    <div>
-      <.disclosure size={:md} open={@scoped?}>
-        <:summary>
-          <span class="font-medium">Key scope</span>
-          <%= cond do %>
-            <% @scoped? -> %>
-              <.chip tone={:brand} icon="hero-shield-check">
-                {scope_summary(@selected_runner_ids, @selected_runner_groups)}
-              </.chip>
-            <% @runner_count == 0 -> %>
-              <span class="text-[11px] text-zinc-500">no runners connected yet</span>
-            <% true -> %>
-              <.chip tone={:amber} icon="hero-globe-alt">
-                Reaches all {@runner_count} {if @runner_count == 1, do: "runner", else: "runners"}
-              </.chip>
-          <% end %>
-        </:summary>
-        <.scope_picker
-          runners={@runners}
-          selected_runner_ids={@selected_runner_ids}
-          selected_runner_groups={@selected_runner_groups}
-        />
-      </.disclosure>
-    </div>
-    """
-  end
-
   attr :client_id, :string, required: true
   attr :client_label, :string, required: true
   attr :rpc_url, :string, required: true
@@ -1574,33 +1393,16 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   attr :form, :any, required: true
-  attr :action_scope_text, :string, required: true
-  attr :runners, :list, required: true
-  attr :selected_runner_ids, :list, required: true
-  attr :selected_runner_groups, :list, required: true
 
   defp custom_key_panel(assigns) do
     ~H"""
-    <%!-- space-y-5 matches simple_form's internal field rhythm, so the scope
-         block reads as one more row of the same form. --%>
     <div class="space-y-5">
       <p class="text-sm leading-relaxed text-zinc-400">
-        For an agent that isn't in the presets above — or a key you want to shape by
-        hand: its own name, its own expiry, a runner scope, and an optional allowlist
-        of the exact actions it may run. Like the preset keys, it can read and execute
-        every action its scope allows — risky ones still pause for approval.
+        For an agent that isn't in the presets above — or a key you want to name and
+        time yourself. It's the same credential the presets mint: it can read and
+        execute every action account <strong class="text-zinc-200">Policy</strong>
+        allows on the runners you can reach — risky ones still pause for approval.
       </p>
-
-      <%!-- The blast-radius control, ABOVE the identity fields — the collapsed
-           summary's amber "Reaches all N runners" chip IS the fleet-wide
-           warning (one grammar, same as the quick-mint tabs); a scoped key
-           wears the brand chip instead. Sits outside the form (the picker is
-           its own phx-change form); the hidden inputs below mirror it in. --%>
-      <.scope_block
-        runners={@runners}
-        selected_runner_ids={@selected_runner_ids}
-        selected_runner_groups={@selected_runner_groups}
-      />
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
         <.input
@@ -1635,93 +1437,10 @@ defmodule EmisarWeb.AgentsLive do
           blast radius if it leaks. Pick a date to override.
         </p>
 
-        <%!-- Optional per-action allow-list. Blank = the key may run any action
-             its runner scope allows; listing ids locks it to exactly those,
-             enforced at dispatch — a leaked key can't be repurposed to a
-             riskier action. Parsed at create like the runner hidden inputs, so
-             it lives outside `api_key[...]` and round-trips via @action_scope_text. --%>
-        <.input
-          type="textarea"
-          name="action_scope"
-          id="api_key_action_scope"
-          value={@action_scope_text}
-          label="Limit to actions (optional)"
-          rows="2"
-          placeholder="e.g. linux.uptime, docker.ps — one per line or comma-separated. Blank = any action."
-          errors={Enum.map(@form[:action_scope].errors, &translate_error/1)}
-        />
-
-        <%!-- Runner / group restrictions read from the Key scope
-             control above — propagate the current selection through
-             the form so the Create button mints a key with the same
-             scope a quick-mint would have. --%>
-        <input
-          :for={id <- @selected_runner_ids}
-          type="hidden"
-          name="api_key[runner_filter][]"
-          value={id}
-        />
-        <input
-          :for={group <- @selected_runner_groups}
-          type="hidden"
-          name="api_key[runner_group_filter][]"
-          value={group}
-        />
-
         <:actions>
           <.button phx-disable-with="Creating...">Create key</.button>
         </:actions>
       </.simple_form>
-    </div>
-    """
-  end
-
-  attr :runners, :list, required: true
-  attr :selected_runner_ids, :list, required: true
-  attr :selected_runner_groups, :list, required: true
-
-  # Shared scope picker — the body of every tab's "Key scope"
-  # disclosure (quick-mint tabs AND the Custom form). Defaults to
-  # "all runners / all groups"; ticking restricts the next mint.
-  # Posts `update_scope` on every change so the selection survives
-  # tab clicks; quick mints read it from the socket assigns at click
-  # time, the Custom form mirrors it in through hidden inputs.
-  defp scope_picker(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :has_restrictions?,
-        assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
-      )
-
-    ~H"""
-    <%!-- Naked inside the disclosure — the disclosure already IS the contained
-         surface; a second box (island-in-island) just adds chrome. --%>
-    <div>
-      <form phx-change="update_scope" class="space-y-3">
-        <div>
-          <p class="text-sm font-medium text-zinc-200">Allowed runners</p>
-          <p class="mt-1 text-xs text-zinc-500">
-            Leave everything unselected to allow all runners. Select groups (auto-includes runners
-            later added to them) and/or individual runners to restrict this key; selecting a group
-            covers every runner in it.
-          </p>
-        </div>
-
-        <%= if @runners == [] do %>
-          <p class="text-xs text-zinc-500">No runners registered yet.</p>
-        <% else %>
-          <.runner_scope_select
-            name="scope[]"
-            runners={@runners}
-            selected={RunnerScope.to_values(@selected_runner_groups, @selected_runner_ids)}
-          />
-        <% end %>
-
-        <p :if={@has_restrictions?} class="text-[11px] text-zinc-500">
-          Scope changes never touch keys already minted — they apply to the next key.
-        </p>
-      </form>
     </div>
     """
   end

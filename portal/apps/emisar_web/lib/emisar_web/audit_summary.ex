@@ -138,12 +138,9 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   defp summarize("api_key.created", p) do
-    scopes = get(p, :scopes)
     base = pairs(prefix: get(p, :prefix))
-
-    if is_list(scopes) and scopes != [],
-      do: base ++ [{"scopes", Enum.join(scopes, ", ")}],
-      else: base
+    kind = get(p, :kind)
+    if kind, do: base ++ [{"kind", to_string(kind)}], else: base
   end
 
   defp summarize("api_key.revoked", p),

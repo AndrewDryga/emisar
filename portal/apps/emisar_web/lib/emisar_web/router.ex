@@ -317,8 +317,8 @@ defmodule EmisarWeb.Router do
     end
 
     # SIEM-shaped audit export — cursor-paginated NDJSON over the same
-    # API-key auth as MCP, but gated on the `audit:read` scope so log
-    # shipping can be granted independently of tool-execution rights.
+    # API-key auth as MCP, but gated on the `:audit_export` key KIND so log
+    # shipping is a separate credential from tool-execution rights.
     get "/audit", AuditExportController, :index
   end
 

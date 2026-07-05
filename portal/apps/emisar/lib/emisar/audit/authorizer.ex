@@ -9,10 +9,9 @@ defmodule Emisar.Audit.Authorizer do
   def list_permissions_for_role(role) when role in [:owner, :admin, :operator, :viewer],
     do: [view_audit_permission()]
 
-  # API clients can view audit when their key carries the `audit:read`
-  # scope; the controller is responsible for the scope gate. The role-
-  # level permission only opens the door — the per-key `scopes` array
-  # decides whether THIS key gets through it.
+  # API clients can view audit; the controller gates the key KIND
+  # (`:audit_export`) so only a log-shipping token — not an MCP key — reaches
+  # `/api/audit`. The role-level permission only opens the door.
   def list_permissions_for_role(:api_client),
     do: [view_audit_permission()]
 

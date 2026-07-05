@@ -10,7 +10,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * No cursor headers on the tail page (signals "you're caught up")
     * `?cursor=<prior next>` resumes strictly after the last delivered row
     * `?event_type=` restricts; CSV form works too
-    * `audit:read` scope gate — `actions:read`-only keys get 403
+    * `kind: :audit_export` gate — an `:mcp` key gets 403 wrong_key_kind
     * Unauthenticated → 401
   """
   use EmisarWeb.ConnCase, async: true
@@ -25,7 +25,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         created_by_id: user.id,
-        scopes: ["audit:read"]
+        kind: :audit_export
       )
 
     %{account: account, subject: subject, raw_key: raw}
@@ -38,7 +38,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       Fixtures.ApiKeys.create_api_key(
         account_id: free_account.id,
         created_by_id: free_user.id,
-        scopes: ["audit:read"]
+        kind: :audit_export
       )
 
     conn =
@@ -88,24 +88,22 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert json_response(conn, 401)["error"] == "unauthorized"
     end
 
-    test "403 when the key lacks the audit:read scope", %{
+    test "403 when an mcp key hits the audit stream (wrong kind)", %{
       conn: conn,
       account: account,
       subject: subject
     } do
-      {:ok, _} = Emisar.Accounts.update_account(account, %{name: "ack"}, subject)
-
       {raw, _} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
           created_by_id: subject.actor.id,
-          scopes: ["actions:read"]
+          kind: :mcp
         )
 
       conn = conn |> bearer(raw) |> get(~p"/api/audit")
       body = json_response(conn, 403)
-      assert body["error"] == "missing_scope"
-      assert body["required"] == "audit:read"
+      assert body["error"] == "wrong_key_kind"
+      assert body["required"] == "audit_export"
     end
   end
 
@@ -321,7 +319,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "cross-account isolation" do
-    test "an audit:read key only sees its own account's events", %{
+    test "an audit-export key only sees its own account's events", %{
       conn: conn,
       account: own_account,
       raw_key: raw
@@ -407,8 +405,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
     end
   end
 
-  describe "scope independence" do
-    test "an audit:read-only key can export but cannot dispatch MCP / actions", %{
+  describe "credential kind independence" do
+    test "an audit-export key can export but is refused on the MCP surface", %{
       conn: conn,
       account: account,
       raw_key: raw
@@ -420,16 +418,15 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert export.status == 200
       assert [_ | _] = export |> ndjson() |> parse_ndjson()
 
-      # The SAME key is denied the MCP tool surface: discovery needs
-      # `actions:read`, dispatch needs `actions:execute`. A token scoped only
-      # to `audit:read` carries neither — so a leaked SIEM key cannot read the
-      # catalog or execute an action.
+      # The SAME key is refused on the MCP tool surface: those endpoints require a
+      # `kind: :mcp` key, and an audit-export token is the wrong kind — so a leaked
+      # SIEM key cannot read the catalog or execute an action.
       tools = build_conn() |> bearer(raw) |> get(~p"/api/mcp/tools")
-      assert json_response(tools, 403)["error"] == "missing_scope"
-      assert json_response(tools, 403)["required"] == "actions:read"
+      assert json_response(tools, 403)["error"] == "wrong_key_kind"
+      assert json_response(tools, 403)["required"] == "mcp"
 
       runners = build_conn() |> bearer(raw) |> get(~p"/api/mcp/runners")
-      assert json_response(runners, 403)["error"] == "missing_scope"
+      assert json_response(runners, 403)["error"] == "wrong_key_kind"
     end
   end
 
@@ -443,7 +440,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
           created_by_id: subject.actor.id,
-          scopes: ["audit:read"]
+          kind: :audit_export
         )
 
       _ = insert_event(account, "user.signed_in")

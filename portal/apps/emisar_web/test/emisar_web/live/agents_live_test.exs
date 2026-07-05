@@ -56,7 +56,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _raw, _key} =
-        ApiKeys.create_key(%{name: "Bot", scopes: ["actions:read"], runner_filter: []}, subject)
+        ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
       assert html =~ ~p"/app/#{account}/settings/agents/connect"
@@ -71,7 +71,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _raw, _key} =
-        ApiKeys.create_key(%{name: "Bot", scopes: ["actions:read"], runner_filter: []}, subject)
+        ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -83,7 +83,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # custom-key form (behind the "custom" tab, on the CONNECT page).
       {:ok, connect_lv, _html} = live(conn, ~p"/app/#{account}/settings/agents/connect")
       custom = render_click(connect_lv, "select_client", %{"client" => "custom"})
-      assert custom =~ "every action its scope allows"
+      assert custom =~ "execute every action"
     end
 
     test "the default status filter is the baseline — no clear-× until moved off it",
@@ -195,36 +195,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert id == auto.id
     end
 
-    test "an unbounded quick-connect foregrounds the key's blast-radius + no-expiry lifetime",
-         %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      # A real fleet to bound — the default scope reaches all of it.
-      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      # The credential's blast-radius is legible, not buried as a muted default.
-      assert html =~ "Reaches all 2 runners"
-      # And its lifetime — quick keys never expire, so rotation is on the operator.
-      assert html =~ "Quick-connect keys"
-    end
-
     test "agents list shows the creator's email", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
       {:ok, _raw, _key} =
-        ApiKeys.create_key(
-          %{
-            name: "manual-bot",
-            scopes: ["actions:read"],
-            runner_filter: []
-          },
-          subject
-        )
+        ApiKeys.create_key(%{name: "manual-bot"}, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -238,7 +214,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
-          %{name: "manual-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "manual-bot"},
           subject
         )
 
@@ -263,13 +239,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, _live} =
         ApiKeys.create_key(
-          %{name: "live-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "live-bot"},
           subject
         )
 
       {:ok, _raw, dead} =
         ApiKeys.create_key(
-          %{name: "dead-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "dead-bot"},
           subject
         )
 
@@ -295,7 +271,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
-          %{name: "prod-mcp", scopes: ["actions:execute"], runner_filter: []},
+          %{name: "prod-mcp"},
           subject
         )
 
@@ -323,14 +299,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Active: last_used 2 min ago
       {:ok, _, active} =
-        ApiKeys.create_key(
-          %{
-            name: "ActiveBot",
-            scopes: ["actions:read"],
-            runner_filter: []
-          },
-          subject
-        )
+        ApiKeys.create_key(%{name: "ActiveBot"}, subject)
 
       active
       |> Ecto.Changeset.change(last_used_at: DateTime.add(DateTime.utc_now(), -120, :second))
@@ -338,14 +307,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Idle: last_used 2 h ago
       {:ok, _, idle} =
-        ApiKeys.create_key(
-          %{
-            name: "IdleBot",
-            scopes: ["actions:read"],
-            runner_filter: []
-          },
-          subject
-        )
+        ApiKeys.create_key(%{name: "IdleBot"}, subject)
 
       idle
       |> Ecto.Changeset.change(last_used_at: DateTime.add(DateTime.utc_now(), -2 * 3600, :second))
@@ -353,14 +315,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Never used: leave last_used_at nil
       {:ok, _, _never} =
-        ApiKeys.create_key(
-          %{
-            name: "NeverBot",
-            scopes: ["actions:read"],
-            runner_filter: []
-          },
-          subject
-        )
+        ApiKeys.create_key(%{name: "NeverBot"}, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -397,11 +352,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
-    # A custom create persists an MCP-shaped key (`actions:read` +
-    # `actions:execute`, nothing else), resets the form, and reloads the list so
-    # the new key is visible. The one-time secret reveal is covered separately
-    # below ("custom create reveals the raw secret once").
-    test "custom create persists an MCP-shaped key and reloads the list", %{conn: conn} do
+    # A custom create persists an MCP key (`kind: :mcp`), resets the form, and
+    # reloads the list so the new key is visible. The one-time secret reveal is
+    # covered separately below ("custom create reveals the raw secret once").
+    test "custom create persists an MCP key and reloads the list", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -414,10 +368,10 @@ defmodule EmisarWeb.AgentsLiveTest do
         })
         |> render_submit()
 
-      # The key persisted with exactly the two MCP scopes (no audit:read).
+      # The key persisted as an MCP-kind credential.
       [key] = Repo.all(ApiKey)
       assert key.name == "my-custom-bot"
-      assert Enum.sort(key.scopes) == ["actions:execute", "actions:read"]
+      assert key.kind == :mcp
       assert is_nil(key.auto_generated_at)
 
       # It's a visible (non-auto) key → shows in the default live list, and the
@@ -425,46 +379,6 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "my-custom-bot"
       assert {:ok, [_], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
       refute html =~ ~s(value="my-custom-bot")
-    end
-
-    test "a custom key can be limited to specific actions via the action-scope field",
-         %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      lv |> render_click("select_client", %{"client" => "custom"})
-
-      # `action_scope` is a top-level textarea (parsed at create, like the runner
-      # hidden inputs), comma/newline separated — trimmed + blank-dropped.
-      lv
-      |> form("#api_key_form", %{
-        "api_key" => %{"name" => "scoped-bot"},
-        "action_scope" => "linux.uptime, docker.ps\n"
-      })
-      |> render_submit()
-
-      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
-      key = Enum.find(keys, &(&1.name == "scoped-bot"))
-
-      assert Enum.sort(key.action_scope) == ["docker.ps", "linux.uptime"]
-    end
-
-    test "a malformed action id renders an inline error and persists no key", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      lv |> render_click("select_client", %{"client" => "custom"})
-
-      html =
-        lv
-        |> form("#api_key_form", %{
-          "api_key" => %{"name" => "bad-scope-bot"},
-          "action_scope" => "not a valid id"
-        })
-        |> render_submit()
-
-      assert html =~ "must be a list of action ids"
-      assert Repo.all(ApiKey) == []
     end
 
     # a `datetime-local` expiry on the custom-create form
@@ -515,7 +429,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "rotate-me", scopes: ["actions:execute"]}, subject)
+        ApiKeys.create_key(%{name: "rotate-me"}, subject)
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
@@ -552,156 +466,6 @@ defmodule EmisarWeb.AgentsLiveTest do
       # Re-picking a real client re-enters the quick-mint clause (a fresh secret).
       again = lv |> render_click("select_client", %{"client" => "claude_code"})
       assert again =~ ~r/EMISAR_API_KEY=emk-[A-Za-z0-9_-]+/
-    end
-
-    # with no runners registered, the scope picker (rendered
-    # once a client is picked) shows its empty state.
-    test "scope picker shows an empty state when no runners are registered", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      assert html =~ "No runners registered yet."
-    end
-
-    # ticking a runner adds its id to the scope selection,
-    # and the selection survives a client-tab switch (it's not reset by
-    # select_client), so the next mint carries it.
-    test "scope selection persists across client-tab switches", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      # Open a client so the scope picker renders, then select the runner.
-      lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      render_change(
-        element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"scope" => ["runner:#{runner.id}"]}
-      )
-
-      # Switch tabs — the selection must survive, then re-mint with it. The new
-      # quick key (auto-generated, so read it straight from the table) is scoped
-      # to the runner.
-      lv |> render_click("select_client", %{"client" => "cursor"})
-
-      scoped = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
-      assert scoped.runner_filter == [runner.id]
-    end
-
-    # a forged/foreign runner id in the scope post is
-    # allowlisted out (only the account's real runners pass), so it never reaches
-    # the mint.
-    test "a foreign runner id in the scope post is dropped", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      {_user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
-      foreign = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      render_change(
-        element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"scope" => ["runner:#{foreign.id}"]}
-      )
-
-      # Re-pick to mint — the foreign id was filtered out, so the key is unscoped.
-      lv |> render_click("select_client", %{"client" => "cursor"})
-
-      minted = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
-      assert minted.runner_filter == []
-    end
-
-    # Key scope — runner GROUPS. Regression: a single-group account (every runner
-    # in one group, e.g. all in "va1-nomad") must still be able to scope a key to
-    # that group. The unified picker offers the group as a selectable option even
-    # when it's the only one — a single group is a valid, durable scope (it
-    # auto-covers runners added to it later).
-    test "a single runner group is offered as a scopable option", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      Fixtures.Runners.create_runner(
-        account_id: account.id,
-        group: "va1-nomad",
-        connected?: false
-      )
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      assert html =~ ~s(value="group:va1-nomad")
-    end
-
-    test "ticking the single group + minting scopes the key to that group", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      Fixtures.Runners.create_runner(
-        account_id: account.id,
-        group: "va1-nomad",
-        connected?: false
-      )
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-      lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      render_change(
-        element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"scope" => ["group:va1-nomad"]}
-      )
-
-      lv |> render_click("select_client", %{"client" => "cursor"})
-
-      scoped = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
-      assert scoped.runner_group_filter == ["va1-nomad"]
-    end
-
-    test "multi-group scoping still works — every group is selectable", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Runners.create_runner(account_id: account.id, group: "prod", connected?: false)
-      Fixtures.Runners.create_runner(account_id: account.id, group: "staging", connected?: false)
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-      html = lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      assert html =~ ~s(value="group:prod")
-      assert html =~ ~s(value="group:staging")
-
-      render_change(
-        element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"scope" => ["group:prod"]}
-      )
-
-      lv |> render_click("select_client", %{"client" => "cursor"})
-
-      scoped = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
-      assert scoped.runner_group_filter == ["prod"]
-    end
-
-    test "a forged/unknown group name in the scope post is dropped", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      Fixtures.Runners.create_runner(
-        account_id: account.id,
-        group: "va1-nomad",
-        connected?: false
-      )
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-      lv |> render_click("select_client", %{"client" => "claude_code"})
-
-      render_change(
-        element(lv, "form[phx-change=\"update_scope\"]"),
-        %{"scope" => ["group:does-not-exist"]}
-      )
-
-      lv |> render_click("select_client", %{"client" => "cursor"})
-
-      minted = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
-      assert minted.runner_group_filter == []
     end
 
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
@@ -742,7 +506,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, _key_a} =
         ApiKeys.create_key(
-          %{name: "alpha-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "alpha-bot"},
           owner_subject(user, account_a)
         )
 
@@ -750,7 +514,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, _key_b} =
         ApiKeys.create_key(
-          %{name: "bravo-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "bravo-bot"},
           subject_b
         )
 
@@ -770,7 +534,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
-          %{name: "live-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "live-bot"},
           owner_subject(owner, account)
         )
 
@@ -803,7 +567,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
-          %{name: "doomed-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "doomed-bot"},
           owner_subject(user, account)
         )
 
@@ -827,7 +591,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
-          %{name: "view-me-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "view-me-bot"},
           owner_subject(owner, account)
         )
 
@@ -863,65 +627,20 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
-    # a forged/foreign runner id posted into the custom-create
-    # form's hidden scope inputs is allowlisted out (`selected_runner_ids/2` keeps
-    # only the account's real runners) before it reaches `create_key`, so the
-    # persisted key is unscoped rather than carrying a cross-account id.
-    test "a foreign runner id in a custom create is dropped before the key is made", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      {_user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
-      foreign = Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
-
-      lv |> render_click("select_client", %{"client" => "custom"})
-
-      # Push `create` with a forged runner_filter carrying B's runner id — the
-      # handler reads the scope back out of the submitted params and allowlists
-      # it (`selected_runner_ids/2`) before building the key, so a hand-rolled
-      # POST can't smuggle in a cross-account id.
-      render_click(lv, "create", %{
-        "api_key" => %{"name" => "scoped-bot"},
-        "runner_filter" => [foreign.id]
-      })
-
-      key = Enum.find(Repo.all(ApiKey), &(&1.name == "scoped-bot"))
-      assert key.account_id == account.id
-      # The foreign id was filtered out — the key is unscoped, not bound to B's runner.
-      assert key.runner_filter == []
-    end
-
     # picking the "Custom" pseudo-client swaps the per-client
     # snippet for the key-builder form (selected_client="custom") and mints
     # nothing: it's a pure UI-state toggle, so the DB stays empty until the form
     # is actually submitted.
     test "the Custom tile swaps the snippet for the key-builder form, no mint", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
-      html = render_click(lv, "select_client", %{"client" => "custom"})
+      render_click(lv, "select_client", %{"client" => "custom"})
 
       # The key-builder form is now on the page (it only renders under "custom")…
       assert has_element?(lv, "#api_key_form")
-      # …with the Key scope control wearing the fleet-wide amber chip, since
-      # no runner scope is selected yet…
-      assert html =~ "Key scope"
-      assert html =~ "Reaches all 1 runner"
       # …and selecting Custom minted no key (no quick-mint on this tab).
       assert Repo.all(ApiKey) == []
-
-      # Narrowing the scope swaps the warning chip for the scoped summary —
-      # the chip states a live posture fact, not permanent boilerplate.
-      scoped =
-        render_change(
-          element(lv, "form[phx-change=\"update_scope\"]"),
-          %{"scope" => ["runner:#{runner.id}"]}
-        )
-
-      refute scoped =~ "Reaches all 1 runner"
-      assert scoped =~ "1 runner, 0 groups"
     end
 
     # a forged/foreign key id revoke is a quiet no-op: the
@@ -934,7 +653,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _raw, foreign_key} =
         ApiKeys.create_key(
-          %{name: "b-bot", scopes: ["actions:read"], runner_filter: []},
+          %{name: "b-bot"},
           subject_b
         )
 

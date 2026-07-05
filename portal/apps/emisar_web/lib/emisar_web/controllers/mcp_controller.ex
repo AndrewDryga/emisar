@@ -25,10 +25,10 @@ defmodule EmisarWeb.MCPController do
 
     * `GET  /api/mcp/runs/:id` — fetch run state with stdout / stderr.
 
-  Every endpoint scopes by `api_key.account_id` AND respects the key's
-  `runner_filter` allowlist: runners outside the filter are invisible
-  in /runners, omitted from the runner enums in /tools, and rejected on
-  dispatch.
+  Every endpoint scopes by `api_key.account_id` AND respects the MINTING
+  OPERATOR's runner scope (`UserRunnerScope`): runners the operator has no
+  grant for are invisible in /runners, omitted from the runner enums in
+  /tools, and rejected on dispatch. The key carries no per-key scope of its own.
 
   All business logic — runner resolution, dispatch, long-poll, payload
   building — lives in `EmisarWeb.MCP.Service`, shared with the JSON-RPC
@@ -38,7 +38,6 @@ defmodule EmisarWeb.MCPController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.ApiKeys
   alias EmisarWeb.MCP.{Auth, Idempotency, Service}
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
@@ -46,8 +45,7 @@ defmodule EmisarWeb.MCPController do
   plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
 
   plug :authenticate
-  plug :require_scope, "actions:read" when action in [:list_runners, :list_tools, :get_run]
-  plug :require_scope, "actions:execute" when action in [:run_tool]
+  plug :require_mcp_key
 
   # GET /api/mcp/runners
   def list_runners(conn, _params) do
@@ -111,19 +109,6 @@ defmodule EmisarWeb.MCPController do
                   "this fire?'."
             })
 
-          {:error, :action_not_in_key_scope} ->
-            conn
-            |> put_status(:forbidden)
-            |> json(%{
-              error: "action_not_in_key_scope",
-              action_id: action_id,
-              message:
-                "This API key is limited to a specific set of actions, and `#{action_id}` " <>
-                  "isn't one of them. Use an action from `GET /api/mcp/tools` (which lists only " <>
-                  "what this key may run) or ask an admin to widen the key's action scope on the " <>
-                  "API keys page."
-            })
-
           {:error, :runner_required, candidates} ->
             conn
             |> put_status(:bad_request)
@@ -182,10 +167,10 @@ defmodule EmisarWeb.MCPController do
               action_id: action_id,
               message:
                 "The action `#{action_id}` exists, but no runner you can reach is currently " <>
-                  "advertising it. This usually means either (a) your API key's `runner_filter` " <>
-                  "or your user's runner scope excludes the runners that have it, or (b) the " <>
-                  "runners that have it are disabled. Ask an admin to grant access to one of " <>
-                  "the relevant runners on the team / API keys page."
+                  "advertising it. This usually means either (a) the runner scope of the " <>
+                  "operator who minted this key excludes the runners that have it, or (b) the " <>
+                  "runners that have it are disabled. Ask an admin to widen that operator's " <>
+                  "runner scope on the Team page."
             })
 
           {:error, :too_many_runners, max} ->
@@ -273,15 +258,17 @@ defmodule EmisarWeb.MCPController do
     end
   end
 
-  defp require_scope(conn, scope) do
-    key = conn.assigns.api_key
-
-    if ApiKeys.ApiKey.has_scope?(key, scope) do
+  # The MCP tool surface is for `:mcp` keys only — an audit-export token
+  # (kind: :audit_export) authenticates but has no business here. What an MCP
+  # key may actually DO is decided downstream by account Policy + approval and
+  # the operator's own runner scope; the key carries no per-key grant.
+  defp require_mcp_key(conn, _opts) do
+    if conn.assigns.api_key.kind == :mcp do
       conn
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "missing_scope", required: scope})
+      |> json(%{error: "wrong_key_kind", required: "mcp"})
       |> halt()
     end
   end

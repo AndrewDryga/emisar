@@ -85,7 +85,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp dispatch(_conn, "ping", _params), do: {:ok, %{}}
 
   defp dispatch(conn, "tools/list", _params) do
-    with :ok <- require_scope(conn, "actions:read") do
+    with :ok <- require_mcp_key(conn) do
       tools =
         Service.list_tools(conn) ++
           [
@@ -108,27 +108,27 @@ defmodule EmisarWeb.MCPRpcController do
         {:error, -32602, "missing tool name"}
 
       name == "wait_for_run" ->
-        with :ok <- require_scope(conn, "actions:read") do
+        with :ok <- require_mcp_key(conn) do
           handle_wait_for_run(conn, args)
         end
 
       name == "list_runbooks" ->
-        with :ok <- require_scope(conn, "actions:read") do
+        with :ok <- require_mcp_key(conn) do
           handle_list_runbooks(conn)
         end
 
       name == "get_runbook" ->
-        with :ok <- require_scope(conn, "actions:read") do
+        with :ok <- require_mcp_key(conn) do
           handle_get_runbook(conn, args)
         end
 
       name == "recent_runs" ->
-        with :ok <- require_scope(conn, "actions:read") do
+        with :ok <- require_mcp_key(conn) do
           handle_recent_runs(conn, args)
         end
 
       true ->
-        with :ok <- require_scope(conn, "actions:execute") do
+        with :ok <- require_mcp_key(conn) do
           handle_tool_call(conn, name, args)
         end
     end
@@ -183,17 +183,6 @@ defmodule EmisarWeb.MCPRpcController do
             "Reason required",
             "Every action call must include a non-empty `reason` — a short sentence on why. " <>
               "It lands in the audit log so an operator can later answer 'why did this fire?'."
-          )
-
-        {:ok, %{content: content, isError: true}}
-
-      {:error, :action_not_in_key_scope} ->
-        {content, _} =
-          ContentBlocks.error_content(
-            "Action not in key scope",
-            "This API key is limited to a specific set of actions and `#{name}` isn't one of " <>
-              "them. Call tools/list to see exactly what it may run, or ask an admin to widen " <>
-              "the key's action scope on the API keys page. Retrying won't help."
           )
 
         {:ok, %{content: content, isError: true}}
@@ -516,13 +505,15 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
-  defp require_scope(conn, scope) do
-    key = conn.assigns.api_key
-
-    if ApiKeys.ApiKey.has_scope?(key, scope) do
+  # The MCP tool surface is for `:mcp` keys only — an audit-export token
+  # authenticates but has no tool business. Downstream, account Policy +
+  # approval + the operator's runner scope decide what an MCP key may do; the
+  # key carries no per-key grant.
+  defp require_mcp_key(conn) do
+    if conn.assigns.api_key.kind == :mcp do
       :ok
     else
-      {:error, -32002, "missing scope", %{required: scope}}
+      {:error, -32002, "wrong key kind", %{required: "mcp"}}
     end
   end
 

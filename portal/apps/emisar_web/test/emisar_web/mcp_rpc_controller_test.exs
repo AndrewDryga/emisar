@@ -92,13 +92,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     {:ok, raw, _key} =
       ApiKeys.create_key(
-        %{
-          name: "key-#{unique()}",
-          scopes: opts[:scopes] || ["actions:read", "actions:execute"],
-          action_scope: opts[:action_scope] || [],
-          runner_filter: opts[:runner_filter] || [],
-          runner_group_filter: opts[:runner_group_filter] || []
-        },
+        %{name: "key-#{unique()}", kind: opts[:kind] || :mcp},
         subject
       )
 
@@ -247,11 +241,8 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # both bearer kinds resolve through one auth path and dispatch with identical
       # ATTRIBUTION SHAPE (same source, same execute scope, same account) — nothing
       # downstream branches on emk- vs emo-. The only difference is the key row id.
-      {:ok, emk, emk_key} =
-        ApiKeys.create_key(
-          %{name: "static-#{unique()}", scopes: ["actions:read", "actions:execute"]},
-          subject
-        )
+      {:ok, emk, _emk_key} =
+        ApiKeys.create_key(%{name: "static-#{unique()}"}, subject)
 
       {emo, _emo_key} = mint_oauth_token!(account, user)
 
@@ -278,13 +269,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert Enum.map(runs, & &1.source) == [:mcp, :mcp]
       assert runs |> Enum.map(& &1.account_id) |> Enum.uniq() == [account.id]
       assert Enum.all?(runs, &is_binary(&1.api_key_id))
-
-      # The emo- token's minted key is execute-capable — consent grants the same
-      # scope set as the manual key, so the dispatch wasn't a read-only fluke.
-      [emk_id] = [emk_key.id]
-      emo_run = Enum.find(runs, &(&1.api_key_id != emk_id))
-      {:ok, emo_key} = ApiKeys.fetch_api_key_by_id(emo_run.api_key_id, subject)
-      assert "actions:execute" in emo_key.scopes
     end
 
     test "an expired emo- token is unauthorized",
@@ -327,41 +311,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
-  describe "scope guard edge (NULL scopes)" do
-    test "the scopes column is NOT NULL — the NULL precondition can't exist",
-         %{account: account, user: user} do
-      # The spec row posits a key row with NULL scopes reaching the
-      # `key.scopes || []` guard. That precondition is UNREACHABLE: the DB
-      # enforces NOT NULL on api_keys.scopes (column default []), so a NULL can
-      # never be persisted — the `|| []` in require_scope is dead-but-defensive.
-      # We pin the actual guarantee: the constraint rejects a NULL write, so the
-      # only reachable fail-closed path is the empty-array case.
-      subject = subject_for(account, user)
-      {:ok, _raw, key} = ApiKeys.create_key(%{name: "null-scopes-#{unique()}"}, subject)
-
-      assert_raise Postgrex.Error, ~r/not_null|null value/, fn ->
-        Repo.update_all(
-          from(k in Emisar.ApiKeys.ApiKey, where: k.id == ^key.id),
-          set: [scopes: nil]
-        )
-      end
-    end
-  end
-
-  describe "ping scope + auth" do
-    test "ping works with a read-only key (no scope check on ping)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("ping", %{}, 7)
-        |> json_response(200)
-
-      assert body == %{"jsonrpc" => "2.0", "id" => 7, "result" => %{}}
-    end
-
+  describe "ping auth" do
     test "an unauthenticated ping is 401 (the auth plug runs first)", %{conn: conn} do
       body =
         conn
@@ -486,7 +436,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       {:ok, raw, key} =
         ApiKeys.create_key(
-          %{name: "generic-key", scopes: ["actions:read", "actions:execute"]},
+          %{name: "generic-key"},
           subject
         )
 
@@ -521,24 +471,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> rpc("initialize")
 
       assert get_resp_header(reused, "mcp-session-id") == ["existing-sess-123"]
-    end
-
-    test "initialize is NOT scope-gated — both read-only and execute-only keys handshake",
-         %{conn: conn, account: account, user: user} do
-      # The handshake precedes capability negotiation, so it carries no scope
-      # gate (only the auth plug). A key of EITHER single scope completes it.
-      for scopes <- [["actions:read"], ["actions:execute"]] do
-        raw = make_api_key!(account, user, scopes: scopes)
-
-        body =
-          conn
-          |> put_req_header("authorization", "Bearer " <> raw)
-          |> rpc("initialize")
-          |> json_response(200)
-
-        assert body["result"]["protocolVersion"] == "2024-11-05"
-        refute Map.has_key?(body, "error")
-      end
     end
 
     test "initialize still requires a valid bearer (auth plug runs first)", %{conn: conn} do
@@ -691,8 +623,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert "wait_for_run" in names
     end
 
-    test "requires actions:read scope", %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["audit:read"])
+    test "an audit-export key is refused on tools/list (wrong kind)",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user, kind: :audit_export)
 
       body =
         conn
@@ -701,7 +634,8 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["error"]["code"] == -32002
-      assert body["error"]["data"]["required"] == "actions:read"
+      assert body["error"]["message"] == "wrong key kind"
+      assert body["error"]["data"]["required"] == "mcp"
     end
   end
 
@@ -725,29 +659,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert is_list(body["result"]["content"])
       assert body["result"]["isError"] == false
-    end
-
-    test "action_scope refuses an out-of-scope action with isError, dispatching nothing",
-         %{conn: conn, account: account, user: user} do
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      advertise_action!(runner, action_id: "linux.reboot", risk: "critical")
-      raw = make_api_key!(account, user, action_scope: ["linux.uptime"])
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-
-      body =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{
-          "name" => "linux.reboot",
-          "arguments" => %{"runner" => "host-1", "reason" => "should be blocked", "wait" => "0"}
-        })
-        |> json_response(200)
-
-      assert body["result"]["isError"] == true
-      assert content_text(body) =~ "action scope"
-      # The refusal is at the dispatch boundary, before any run is created.
-      assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
 
     test "records the Mcp-Session-Id header on the dispatched run",
@@ -1105,13 +1016,13 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert "recent_runs" in names
     end
 
-    test "an actions:read key gets its own dispatched runs back",
+    test "a key gets its own dispatched runs back",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
-        ApiKeys.create_key(%{name: "reader-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "reader-#{unique()}"}, subject)
 
       # A run this key dispatched (carries its api_key_id) so scope=own returns it.
       {:ok, run} =
@@ -1137,7 +1048,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a numeric-string limit is accepted, not silently dropped to the default",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       # Some MCP clients stringify args; "5" must parse, not coerce to an error.
       body =
@@ -1151,7 +1062,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an unrecognized scope errors instead of silently narrowing to own",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -1162,22 +1073,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert body["result"]["isError"] == true
       assert content_text(body) =~ "scope"
     end
-
-    test "an execute-only key calling recent_runs is refused with actions:read",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{"name" => "recent_runs", "arguments" => %{}})
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               json_response(conn, 200)
-    end
   end
 
-  describe "malformed frames + scope denials" do
+  describe "malformed frames" do
     test "a non-2.0 frame is rejected with -32600", %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
 
@@ -1199,40 +1097,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> rpc("tools/call", %{"arguments" => %{}})
 
       assert %{"error" => %{"code" => -32602}} = json_response(conn, 200)
-    end
-
-    test "a read-only key calling an action tool is refused with the required scope", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      runner = make_runner!(account, [])
-      _ = advertise_action!(runner, action_id: "linux.uptime")
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{"name" => "linux_uptime", "arguments" => %{"reason" => "x"}})
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:execute"}}} =
-               json_response(conn, 200)
-    end
-
-    test "an execute-only key calling wait_for_run is refused with actions:read", %{
-      conn: conn,
-      account: account,
-      user: user
-    } do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{"name" => "wait_for_run", "arguments" => %{"run_id" => "x"}})
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               json_response(conn, 200)
     end
   end
 
@@ -1516,7 +1380,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           args: %{}
         })
 
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -1527,64 +1391,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert body["result"]["isError"] == false
       # for_subject scopes to account A even at scope=account — B's run is invisible.
       refute content_text(body) =~ b_run.id
-    end
-  end
-
-  describe "scope denial matrix (read verbs)" do
-    test "an execute-only key is denied list_runbooks (needs actions:read)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               conn
-               |> put_req_header("authorization", "Bearer " <> raw)
-               |> rpc("tools/call", %{"name" => "list_runbooks", "arguments" => %{}})
-               |> json_response(200)
-    end
-
-    test "an execute-only key is denied get_runbook (needs actions:read)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               conn
-               |> put_req_header("authorization", "Bearer " <> raw)
-               |> rpc("tools/call", %{
-                 "name" => "get_runbook",
-                 "arguments" => %{"runbook" => "anything"}
-               })
-               |> json_response(200)
-    end
-
-    test "an empty scopes:[] key fails closed on every gated verb",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: [])
-
-      for {name, args, required} <- [
-            {"linux.uptime", %{"reason" => "x"}, "actions:execute"},
-            {"list_runbooks", %{}, "actions:read"},
-            {"recent_runs", %{}, "actions:read"}
-          ] do
-        body =
-          conn
-          |> put_req_header("authorization", "Bearer " <> raw)
-          |> rpc("tools/call", %{"name" => name, "arguments" => args})
-          |> json_response(200)
-
-        assert body["error"]["code"] == -32002,
-               "expected scope denial for #{name}, got #{inspect(body)}"
-
-        assert body["error"]["data"]["required"] == required
-      end
-
-      # tools/list is read-gated too — empty scopes can't even discover.
-      list =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/list")
-        |> json_response(200)
-
-      assert list["error"]["data"]["required"] == "actions:read"
     end
   end
 
@@ -1671,7 +1477,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   describe "recent_runs limit validation" do
     setup %{account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
       {:ok, raw: raw}
     end
 
@@ -1738,7 +1544,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw, key} =
-        ApiKeys.create_key(%{name: "reader-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "reader-#{unique()}"}, subject)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1921,7 +1727,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       {:ok, raw, key} =
         ApiKeys.create_key(
-          %{name: "ci-key-#{unique()}", scopes: ["actions:read", "actions:execute"]},
+          %{name: "ci-key-#{unique()}"},
           subject
         )
 
@@ -1979,7 +1785,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       other = setup_other_account()
       publish_runbook!(other.account, other.user, slug: "b-secret-runbook")
 
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -1999,7 +1805,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       other = setup_other_account()
       publish_runbook!(other.account, other.user, slug: "b-cross-acct")
 
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -2019,7 +1825,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "resolves a published runbook by its id when the slug doesn't match",
          %{conn: conn, account: account, user: user} do
       runbook = publish_runbook!(account, user, slug: "by-id-lookup")
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -2053,7 +1859,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # Left unpublished on purpose — get_runbook resolves only published.
       assert draft.status == :draft
 
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       for selector <- ["still-a-draft", draft.id] do
         body =
@@ -2078,10 +1884,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, raw_a, key_a} =
-        ApiKeys.create_key(%{name: "a-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "a-#{unique()}"}, subject)
 
       {:ok, raw_b, _key_b} =
-        ApiKeys.create_key(%{name: "b-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "b-#{unique()}"}, subject)
 
       # A run dispatched by key A (carries A's api_key_id).
       {:ok, a_run} =
@@ -2119,10 +1925,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, _raw_a, key_a} =
-        ApiKeys.create_key(%{name: "a-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "a-#{unique()}"}, subject)
 
       {:ok, raw_b, _key_b} =
-        ApiKeys.create_key(%{name: "b-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "b-#{unique()}"}, subject)
 
       {:ok, a_run} =
         Runs.create_run(%{
@@ -2147,7 +1953,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "an unknown runner filter reports runner_not_found, not an empty list",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -2162,7 +1968,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "no matching runs renders the friendly empty intro",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -2172,35 +1978,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert body["result"]["isError"] == false
       assert content_text(body) =~ "No matching runs yet."
-    end
-  end
-
-  describe "per-call scope re-check (IL-15)" do
-    test "initialize is ungated but the later tools/call still re-checks execute",
-         %{conn: conn, account: account, user: user} do
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-
-      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
-
-      # Handshake succeeds for a read-only key (initialize isn't scope-gated).
-      init = conn |> auth.() |> rpc("initialize") |> json_response(200)
-      assert init["result"]["protocolVersion"] == "2024-11-05"
-
-      # The dispatch re-checks execute on its OWN call — handshake success
-      # never grants it. A read-only key is refused.
-      call =
-        conn
-        |> auth.()
-        |> rpc("tools/call", %{
-          "name" => "linux.uptime",
-          "arguments" => %{"runner" => "host-1", "reason" => "x", "wait" => "0"}
-        })
-        |> json_response(200)
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:execute"}}} =
-               call
     end
   end
 
@@ -2503,29 +2280,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert body["result"]["protocolVersion"] == "2024-11-05"
     end
-
-    test "a scope-denied tools/call returns the error body at HTTP 200, not 4xx",
-         %{conn: conn, account: account, user: user} do
-      # Only a malformed frame (400) or an auth failure (401, the plug) leave 200.
-      # An in-band scope denial is a normal JSON-RPC error envelope at HTTP 200 so
-      # the transport stays a single happy status and the client reads `error`.
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
-
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{
-          "name" => "linux.uptime",
-          "arguments" => %{"runner" => "host-1", "reason" => "x", "wait" => "0"}
-        })
-
-      assert conn.status == 200
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:execute"}}} =
-               json_response(conn, 200)
-    end
   end
 
   describe "tools/list descriptor body" do
@@ -2570,7 +2324,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       {:ok, raw, key} =
         ApiKeys.create_key(
-          %{name: "titled-#{unique()}", scopes: ["actions:read", "actions:execute"]},
+          %{name: "titled-#{unique()}"},
           subject
         )
 
@@ -2602,7 +2356,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       {:ok, raw, _key} =
         ApiKeys.create_key(
-          %{name: "ci-dispatch-#{unique()}", scopes: ["actions:read", "actions:execute"]},
+          %{name: "ci-dispatch-#{unique()}"},
           subject
         )
 
@@ -2634,7 +2388,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # Two runners in different groups; the key-creator's membership is scoped to
       # only the `allowed` group. The action on the out-of-scope runner must be
       # absent from tools/list — the per-user scope layer hides it even though the
-      # key itself carries no runner_filter.
+      # key carries no per-key runner scope of its own.
       allowed = make_runner!(account, name: "in-scope", group: "allowed")
       blocked = make_runner!(account, name: "out-scope", group: "blocked")
       advertise_action!(allowed, action_id: "visible.action")
@@ -2723,7 +2477,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       {:ok, raw, key} =
         ApiKeys.create_key(
-          %{name: "attrib-#{unique()}", scopes: ["actions:read", "actions:execute"]},
+          %{name: "attrib-#{unique()}"},
           subject
         )
 
@@ -3119,20 +2873,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "list_runbooks read edges (RPC)" do
-    test "an execute-only key is denied list_runbooks (needs actions:read)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               conn
-               |> put_req_header("authorization", "Bearer " <> raw)
-               |> rpc("tools/call", %{"name" => "list_runbooks", "arguments" => %{}})
-               |> json_response(200)
-    end
-
     test "no published runbooks renders the friendly empty intro",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -3163,7 +2906,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           subject
         )
 
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       text =
         conn
@@ -3178,20 +2921,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "get_runbook read edges (RPC)" do
-    test "an execute-only key is denied get_runbook (needs actions:read)",
-         %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:execute"])
-
-      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
-               conn
-               |> put_req_header("authorization", "Bearer " <> raw)
-               |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{"runbook" => "x"}})
-               |> json_response(200)
-    end
-
     test "a blank runbook arg is a bad-arguments error block",
          %{conn: conn, account: account, user: user} do
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       body =
         conn
@@ -3231,7 +2963,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         )
 
       {:ok, _} = Emisar.Runbooks.publish(runbook, subject)
-      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      raw = make_api_key!(account, user)
 
       detail =
         conn
@@ -3259,7 +2991,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       db = make_runner!(account, name: "db1")
 
       {:ok, raw, key} =
-        ApiKeys.create_key(%{name: "filter-#{unique()}", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "filter-#{unique()}"}, subject)
 
       # Three runs by this key: the target (web1 + nginx.reload) and two decoys
       # that each differ on exactly one filtered dimension.

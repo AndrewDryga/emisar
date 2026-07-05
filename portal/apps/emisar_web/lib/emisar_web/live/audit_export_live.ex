@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AuditExportLive do
   @moduledoc """
-  SIEM export configuration — mint/revoke the admin-only `audit:read`
+  SIEM export configuration — mint/revoke the admin-only `:audit_export`
   tokens and point a collector at `/api/audit`. Split off the audit log
   itself: streaming CONFIG is a one-time admin task, not part of reading
   the trail, and it sat stranded below hundreds of rows there.
@@ -68,10 +68,10 @@ defmodule EmisarWeb.AuditExportLive do
   end
 
   def handle_event("create_export_key", _params, socket) do
-    # Audit-export keys are admin-only AND distinct from MCP keys:
-    # they carry `audit:read` (not `actions:*`), expose `/api/audit`,
-    # and live here rather than the agents page so the SIEM-export use
-    # case isn't mixed in with the LLM-bridge one.
+    # Audit-export keys are admin-only AND a distinct credential KIND from MCP
+    # keys: `kind: :audit_export` is what authorizes `/api/audit` (an MCP key
+    # gets a 403 there, and vice-versa), and they live here rather than the
+    # agents page so SIEM export isn't mixed in with the LLM-bridge use case.
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
@@ -79,8 +79,7 @@ defmodule EmisarWeb.AuditExportLive do
         attrs = %{
           name: "Audit export — #{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")}",
           description: "Read-only token for shipping audit events to a SIEM.",
-          kind: :audit_export,
-          scopes: ["audit:read"]
+          kind: :audit_export
         }
 
         case ApiKeys.create_key(attrs, s.assigns.current_subject) do
@@ -128,8 +127,7 @@ defmodule EmisarWeb.AuditExportLive do
 
       <.page_intro>
         Stream audit events as NDJSON to your SIEM for independent, long-term
-        retention. Mint an <code class="font-mono text-zinc-300">audit:read</code>
-        token, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
+        retention. Mint a read-only export token, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
 
@@ -166,9 +164,7 @@ defmodule EmisarWeb.AuditExportLive do
           secret={@export_secret}
           on_dismiss="dismiss_export_secret"
         >
-          A read-only <span class="font-mono">audit:read</span>
-          token for shipping audit
-          events to a SIEM.
+          A read-only token for shipping audit events to a SIEM.
           <:install_command label="Use with">
             curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
           </:install_command>
@@ -183,7 +179,7 @@ defmodule EmisarWeb.AuditExportLive do
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
               </:title>
               <:chips>
-                <.chip tone={:neutral} mono>audit:read</.chip>
+                <.chip tone={:neutral}>read-only</.chip>
                 <.chip :if={key.revoked_at} tone={:rose}>revoked</.chip>
               </:chips>
               <:meta>

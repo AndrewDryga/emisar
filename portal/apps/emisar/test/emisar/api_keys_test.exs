@@ -24,10 +24,10 @@ defmodule Emisar.ApiKeysTest do
       {_user, _account, subject} = owner_subject_pair()
 
       {:ok, _raw, agent_key} =
-        ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "agent"}, subject)
 
       {:ok, _raw, _export_key} =
-        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+        ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
 
       assert {:ok, [visible], _} = ApiKeys.list_api_keys_for_account(subject)
       assert visible.id == agent_key.id
@@ -35,7 +35,7 @@ defmodule Emisar.ApiKeysTest do
 
     test ":created_by is preloaded only when asked for via :preload" do
       {user, _account, subject} = owner_subject_pair()
-      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
       assert {:ok, [preloaded], _} =
                ApiKeys.list_api_keys_for_account(subject, preload: [:created_by])
@@ -57,7 +57,7 @@ defmodule Emisar.ApiKeysTest do
       {_user_a, _account_a, subject_a} = owner_subject_pair()
 
       {:ok, _raw, _key} =
-        ApiKeys.create_key(%{name: "a-key", scopes: ["actions:read"]}, subject_a)
+        ApiKeys.create_key(%{name: "a-key"}, subject_a)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
@@ -69,11 +69,11 @@ defmodule Emisar.ApiKeysTest do
     test "returns the distinct creators of the account's visible (non-audit) keys" do
       {user, _account, subject} = owner_subject_pair()
 
-      {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a", scopes: ["actions:read"]}, subject)
-      {:ok, _raw, _k2} = ApiKeys.create_key(%{name: "b", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a"}, subject)
+      {:ok, _raw, _k2} = ApiKeys.create_key(%{name: "b"}, subject)
       # An audit-export key is on the audit list, not agents — its creator isn't
       # an agents "owner".
-      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
 
       assert {:ok, [{owner_id, owner_email}]} = ApiKeys.list_key_owner_options(subject)
       assert owner_id == user.id
@@ -82,7 +82,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "the owner filter narrows to a creator's keys; another account sees none" do
       {user, _account, subject} = owner_subject_pair()
-      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
       assert {:ok, [key], _} =
                ApiKeys.list_api_keys_for_account(subject, filter: [owner: [user.id]])
@@ -104,16 +104,16 @@ defmodule Emisar.ApiKeysTest do
       {_user, _account, subject} = owner_subject_pair()
 
       {:ok, _raw, live_key} =
-        ApiKeys.create_key(%{name: "live", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "live"}, subject)
 
       {:ok, _raw, retired_key} =
-        ApiKeys.create_key(%{name: "retired", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "retired"}, subject)
 
       # Revoked keys stay pickable — their run history is exactly what an
       # operator filters for. Audit-export tokens never create runs, so they
       # are not an Agent option.
       {:ok, _} = ApiKeys.revoke_api_key(retired_key, subject)
-      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
 
       assert {:ok, options} = ApiKeys.list_key_options(subject)
 
@@ -123,7 +123,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "cross-account — B's options never include A's keys; a viewer can read" do
       {_user, account, subject} = owner_subject_pair()
-      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
       assert {:ok, []} = ApiKeys.list_key_options(subject_b)
@@ -146,10 +146,10 @@ defmodule Emisar.ApiKeysTest do
       {_user, _account, subject} = owner_subject_pair()
 
       {:ok, _raw, agent_key} =
-        ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "agent"}, subject)
 
       {:ok, _raw, export_key} =
-        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+        ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
 
       # The split is the explicit `kind`, no longer inferred from scope.
       assert agent_key.kind == :mcp
@@ -172,7 +172,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "an owner of account B never sees account A's export tokens (cross-account isolation)" do
       {_user_a, _account_a, subject_a} = owner_subject_pair()
-      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-siem", scopes: ["audit:read"]}, subject_a)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-siem", kind: :audit_export}, subject_a)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
@@ -185,10 +185,10 @@ defmodule Emisar.ApiKeysTest do
       {_u, _a, subject} = owner_subject_pair()
 
       {:ok, _raw, _live} =
-        ApiKeys.create_key(%{name: "live-one", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "live-one"}, subject)
 
       {:ok, _raw, revoked} =
-        ApiKeys.create_key(%{name: "dead-one", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "dead-one"}, subject)
 
       {:ok, _} = ApiKeys.revoke_api_key(revoked, subject)
 
@@ -207,9 +207,9 @@ defmodule Emisar.ApiKeysTest do
       {_u, _a, subject} = owner_subject_pair()
 
       {:ok, _raw, _} =
-        ApiKeys.create_key(%{name: "Claude Desktop", scopes: ["actions:read"]}, subject)
+        ApiKeys.create_key(%{name: "Claude Desktop"}, subject)
 
-      {:ok, _raw, _} = ApiKeys.create_key(%{name: "Cursor", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _} = ApiKeys.create_key(%{name: "Cursor"}, subject)
 
       {:ok, matched, _} = ApiKeys.list_api_keys_for_account(subject, filter: [name: "claude"])
       assert Enum.map(matched, & &1.name) == ["Claude Desktop"]
@@ -259,8 +259,7 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, raw, %ApiKey{} = key} =
                ApiKeys.create_key(
                  %{
-                   name: "ci",
-                   scopes: ["actions:read"]
+                   name: "ci"
                  },
                  subject
                )
@@ -272,94 +271,11 @@ defmodule Emisar.ApiKeysTest do
       assert is_binary(key.key_prefix)
     end
 
-    test "rejects unknown scopes" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      assert {:error, cs} =
-               ApiKeys.create_key(
-                 %{
-                   name: "bad",
-                   scopes: ["actions:nuclear-launch"]
-                 },
-                 subject
-               )
-
-      assert "has an invalid entry" in errors_on(cs).scopes
-    end
-
-    test "persists action_scope and confines the key via action_allowed?/2" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      assert {:ok, _raw, %ApiKey{} = key} =
-               ApiKeys.create_key(
-                 %{name: "scoped", scopes: ["actions:execute"], action_scope: ["linux.uptime"]},
-                 subject
-               )
-
-      assert key.action_scope == ["linux.uptime"]
-      assert ApiKey.action_allowed?(key, "linux.uptime")
-      refute ApiKey.action_allowed?(key, "linux.reboot")
-    end
-
-    test "an empty action_scope allows any action (the default, so existing keys are unaffected)" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      assert {:ok, _raw, %ApiKey{action_scope: []} = key} =
-               ApiKeys.create_key(%{name: "open", scopes: ["actions:execute"]}, subject)
-
-      assert ApiKey.action_allowed?(key, "linux.reboot")
-    end
-
-    test "runner_allowed?/3 confines a key to its runner_filter + runner_group_filter" do
-      # Empty filters → any runner (the default). A pure predicate the domain
-      # dispatch path gates on, by the runner's id + group.
-      assert ApiKey.runner_allowed?(%ApiKey{runner_filter: [], runner_group_filter: []}, "r", "g")
-
-      by_id = %ApiKey{runner_filter: ["r-1"], runner_group_filter: []}
-      assert ApiKey.runner_allowed?(by_id, "r-1", "prod")
-      refute ApiKey.runner_allowed?(by_id, "r-2", "prod")
-
-      by_group = %ApiKey{runner_filter: [], runner_group_filter: ["prod"]}
-      assert ApiKey.runner_allowed?(by_group, "r-9", "prod")
-      refute ApiKey.runner_allowed?(by_group, "r-9", "staging")
-    end
-
-    test "rejects a malformed action_scope entry" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      assert {:error, cs} =
-               ApiKeys.create_key(
-                 %{name: "bad", scopes: ["actions:execute"], action_scope: ["not a valid id"]},
-                 subject
-               )
-
-      assert ~s(must be a list of action ids like "pack.action") in errors_on(cs).action_scope
-    end
-
-    test "accepts hyphenated pack ids (cloud-init.*, aws-ec2.*) in action_scope" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      # The pack segment carries a hyphen for several real packs; the scope
-      # validation must not reject them.
-      assert {:ok, _raw, %ApiKey{} = key} =
-               ApiKeys.create_key(
-                 %{
-                   name: "hyphenated",
-                   scopes: ["actions:execute"],
-                   action_scope: ["cloud-init.analyze_show", "aws-ec2.describe_instances"]
-                 },
-                 subject
-               )
-
-      assert ApiKey.action_allowed?(key, "cloud-init.analyze_show")
-      refute ApiKey.action_allowed?(key, "cloud-init.clean_logs")
-    end
-
     test "MCP keys default to a 30-day expiry when none is given (a leak self-heals)" do
       {_user, _account, subject} = owner_subject_pair()
 
       assert {:ok, _raw, %ApiKey{expires_at: exp} = key} =
-               ApiKeys.create_key(%{name: "mcp", scopes: ["actions:execute"]}, subject)
+               ApiKeys.create_key(%{name: "mcp"}, subject)
 
       assert exp
       assert ApiKey.usable?(key)
@@ -373,31 +289,16 @@ defmodule Emisar.ApiKeysTest do
       explicit = DateTime.add(DateTime.utc_now(), 3600, :second)
 
       assert {:ok, _raw, %ApiKey{expires_at: exp}} =
-               ApiKeys.create_key(
-                 %{name: "short", scopes: ["actions:execute"], expires_at: explicit},
-                 subject
-               )
+               ApiKeys.create_key(%{name: "short", expires_at: explicit}, subject)
 
       assert DateTime.to_unix(exp) == DateTime.to_unix(explicit)
     end
 
-    test "audit-export tokens (audit:read) never get a default expiry — it would break log shipping" do
+    test "audit-export tokens never get a default expiry — it would break log shipping" do
       {_user, _account, subject} = owner_subject_pair()
 
       assert {:ok, _raw, %ApiKey{expires_at: nil}} =
-               ApiKeys.create_key(%{name: "SIEM", scopes: ["audit:read"]}, subject)
-    end
-
-    test "rejects an explicit audit_export kind that lacks the audit:read scope" do
-      {_user, _account, subject} = owner_subject_pair()
-
-      assert {:error, cs} =
-               ApiKeys.create_key(
-                 %{name: "mismatch", kind: :audit_export, scopes: ["actions:execute"]},
-                 subject
-               )
-
-      assert errors_on(cs).scopes != []
+               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
     end
 
     test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
@@ -417,19 +318,18 @@ defmodule Emisar.ApiKeysTest do
       subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} =
-               ApiKeys.create_key(%{name: "ci", scopes: ["actions:read"]}, subject)
+               ApiKeys.create_key(%{name: "ci"}, subject)
     end
 
-    # (audit half), (audit half) — minting a SIEM
-    # export token (the audit:read bucket) writes an `api_key.created` audit row
-    # in the SAME transaction (create_key's Multi.insert(:audit, …)), stamped with
-    # the new key as subject + its scopes in the payload. The mint of a
-    # log-shipping credential is itself part of the log it ships.
-    test "minting an audit:read export token writes an api_key.created audit row" do
+    # Minting a SIEM export token writes an `api_key.created` audit row in the
+    # SAME transaction (create_key's Multi.insert(:audit, …)), stamped with the
+    # new key as target + its kind in the payload. The mint of a log-shipping
+    # credential is itself part of the log it ships.
+    test "minting an audit-export token writes an api_key.created audit row" do
       {_user, _account, subject} = owner_subject_pair()
 
       assert {:ok, _raw, key} =
-               ApiKeys.create_key(%{name: "SIEM export", scopes: ["audit:read"]}, subject)
+               ApiKeys.create_key(%{name: "SIEM export", kind: :audit_export}, subject)
 
       {:ok, events, _meta} =
         Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
@@ -437,35 +337,25 @@ defmodule Emisar.ApiKeysTest do
       assert [event] = Enum.filter(events, &(&1.target_id == key.id))
       assert event.target_kind == "api_key"
       assert event.target_label == "SIEM export"
-      # Persisted payload is string-keyed (reloaded through JSON); the minted
-      # scopes are recorded so an auditor sees exactly what the token can do.
-      assert event.payload["scopes"] == ["audit:read"]
+      # Persisted payload is string-keyed (reloaded through JSON); the key kind
+      # is recorded so an auditor sees what kind of credential was minted.
+      assert event.payload["kind"] == "audit_export"
     end
   end
 
   describe "rotate_api_key/2" do
-    test "mints a successor inheriting scope; the old key stays usable (overlap)" do
+    test "mints a successor inheriting name + kind; the old key stays usable (overlap)" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, _raw, original} =
-        ApiKeys.create_key(
-          %{
-            name: "claude",
-            scopes: ["actions:read", "actions:execute"],
-            action_scope: ["linux.uptime"]
-          },
-          subject
-        )
+      {:ok, _raw, original} = ApiKeys.create_key(%{name: "claude"}, subject)
 
       assert {:ok, new_raw, successor} = ApiKeys.rotate_api_key(original, subject)
 
       assert String.starts_with?(new_raw, "emk-")
       assert successor.id != original.id
-      # Scope carried forward verbatim, plus the rotation back-link.
+      # Identity + kind carried forward, plus the rotation back-link.
       assert successor.name == original.name
       assert successor.kind == original.kind
-      assert Enum.sort(successor.scopes) == Enum.sort(original.scopes)
-      assert successor.action_scope == original.action_scope
       assert successor.replaces_id == original.id
 
       # The old key isn't revoked — it overlaps until the successor's first
@@ -479,7 +369,7 @@ defmodule Emisar.ApiKeysTest do
       {_owner, account, owner_subject} = owner_subject_pair()
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "k", scopes: ["actions:execute"]}, owner_subject)
+        ApiKeys.create_key(%{name: "k"}, owner_subject)
 
       operator = Fixtures.Users.create_user()
 
@@ -499,7 +389,7 @@ defmodule Emisar.ApiKeysTest do
       {_owner_a, _account_a, subject_a} = owner_subject_pair()
 
       {:ok, _raw, key_a} =
-        ApiKeys.create_key(%{name: "a", scopes: ["actions:execute"]}, subject_a)
+        ApiKeys.create_key(%{name: "a"}, subject_a)
 
       {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
@@ -508,20 +398,12 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "auto_rotate_expiring/1" do
-    test "an expiring mcp key self-mints a marked, scope-preserving successor exactly once" do
+    test "an expiring mcp key self-mints a marked successor exactly once" do
       {_user, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(
-          %{
-            name: "claude",
-            scopes: ["actions:read", "actions:execute"],
-            action_scope: ["linux.uptime"],
-            expires_at: soon
-          },
-          subject
-        )
+        ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
 
       key_subject = Subject.for_api_key(key, account)
 
@@ -530,8 +412,6 @@ defmodule Emisar.ApiKeysTest do
       assert String.starts_with?(raw, "emk-")
       assert successor.name == key.name
       assert successor.kind == :mcp
-      assert Enum.sort(successor.scopes) == Enum.sort(key.scopes)
-      assert successor.action_scope == key.action_scope
       assert successor.created_by_id == key.created_by_id
       assert successor.created_by_membership_id == key.created_by_membership_id
       assert successor.replaces_id == key.id
@@ -564,7 +444,7 @@ defmodule Emisar.ApiKeysTest do
       far = DateTime.add(DateTime.utc_now(), 30, :day)
 
       {:ok, _raw, far_key} =
-        ApiKeys.create_key(%{name: "far", scopes: ["actions:read"], expires_at: far}, subject)
+        ApiKeys.create_key(%{name: "far", expires_at: far}, subject)
 
       assert {:error, :not_eligible} =
                ApiKeys.auto_rotate_expiring(Subject.for_api_key(quick, account))
@@ -578,12 +458,12 @@ defmodule Emisar.ApiKeysTest do
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "r", scopes: ["actions:read"], expires_at: soon}, subject)
+        ApiKeys.create_key(%{name: "r", expires_at: soon}, subject)
 
       {:ok, revoked} = ApiKeys.revoke_api_key(key, subject)
 
       {:ok, _raw, export} =
-        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"], expires_at: soon}, subject)
+        ApiKeys.create_key(%{name: "siem", kind: :audit_export, expires_at: soon}, subject)
 
       assert {:error, :not_eligible} =
                ApiKeys.auto_rotate_expiring(Subject.for_api_key(revoked, account))
@@ -606,7 +486,7 @@ defmodule Emisar.ApiKeysTest do
       assert :ok = ApiKeys.subscribe_account_api_keys(account.id)
 
       # Minting a key publishes `api_key.created` on the topic just joined.
-      {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
       assert_receive {:list_changed, :api_key, "api_key.created", key_id}
       assert key_id == key.id
@@ -620,7 +500,7 @@ defmodule Emisar.ApiKeysTest do
 
       # The mint happens on B's topic — A's subscriber must hear nothing.
       {:ok, _raw, _key} =
-        ApiKeys.create_key(%{name: "b-agent", scopes: ["actions:read"]}, subject_b)
+        ApiKeys.create_key(%{name: "b-agent"}, subject_b)
 
       refute_receive {:list_changed, :api_key, _event, _key_id}
     end
@@ -633,8 +513,7 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, raw, %ApiKey{} = key} = ApiKeys.mint_quick_key(subject)
       assert String.starts_with?(raw, "emk-")
       assert %DateTime{} = key.auto_generated_at
-      assert "actions:read" in key.scopes
-      assert "actions:execute" in key.scopes
+      assert key.kind == :mcp
 
       # Quick keys carry the same 30-day default expiry as custom MCP keys.
       expected = DateTime.add(DateTime.utc_now(), 30 * 24 * 3600, :second)
@@ -942,7 +821,7 @@ defmodule Emisar.ApiKeysTest do
       assert key.created_by_id == user.id
       assert key.created_by_membership_id == membership.id
       assert key.name == "OAuth: Claude"
-      assert Enum.sort(key.scopes) == ["actions:execute", "actions:read"]
+      assert key.kind == :mcp
       # OAuth governs the lifecycle, so the backing key opts out of the 30-day
       # default expiry — it must not self-expire mid-refresh.
       assert is_nil(key.expires_at)
@@ -1127,20 +1006,6 @@ defmodule Emisar.ApiKeysTest do
 
       refute ApiKeys.subject_can_manage_api_keys?(operator_subject)
       refute ApiKeys.subject_can_manage_api_keys?(viewer_subject)
-    end
-  end
-
-  describe "ApiKey.has_scope?/2 — the scope gate the MCP + audit-export controllers share" do
-    test "true when the scope is in the grant-list" do
-      assert ApiKey.has_scope?(%ApiKey{scopes: ["actions:read", "audit:read"]}, "audit:read")
-    end
-
-    test "false when the scope is absent" do
-      refute ApiKey.has_scope?(%ApiKey{scopes: ["actions:read"]}, "audit:read")
-    end
-
-    test "false (not a crash) when scopes is nil" do
-      refute ApiKey.has_scope?(%ApiKey{scopes: nil}, "actions:read")
     end
   end
 end

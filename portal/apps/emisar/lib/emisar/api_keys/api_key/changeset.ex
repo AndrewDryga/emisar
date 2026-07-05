@@ -2,11 +2,6 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   use Emisar, :changeset
   alias Emisar.ApiKeys.ApiKey
 
-  # `runbooks:execute` used to live here but the MCP API never grew
-  # a runbook-dispatch endpoint, so a key minted with only that scope
-  # silently couldn't do anything. Drop until we ship the endpoint.
-  @valid_scopes ~w(actions:read actions:execute audit:read)
-
   @doc """
   Validation-only changeset for the operator create form. Casts the
   operator-facing fields and runs the same `name` validations as
@@ -25,29 +20,19 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_length(:name, min: 1, max: 80)
   end
 
+  # `kind` is the sole capability discriminator (`:mcp` default; the audit page
+  # passes `:audit_export`). The key carries no per-key authorization scope —
+  # Policy + approval + the operator's own runner scope decide what it may do.
   def create(account_id, user_id, membership_id, prefix, hash, attrs, opts \\ []) do
     %ApiKey{}
-    |> cast(attrs, [
-      :name,
-      :description,
-      :kind,
-      :runner_filter,
-      :runner_group_filter,
-      :scopes,
-      :action_scope,
-      :expires_at
-    ])
+    |> cast(attrs, [:name, :description, :kind, :expires_at])
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
-    |> validate_required([:account_id, :name, :scopes])
+    |> validate_required([:account_id, :name])
     |> validate_length(:name, min: 1, max: 80)
-    |> validate_subset(:scopes, @valid_scopes)
-    |> validate_action_scope()
-    |> put_default_kind()
-    |> validate_kind_scope_consistency()
     |> maybe_put_default_mcp_expiry(opts)
     |> maybe_put_replaces(opts)
   end
@@ -59,39 +44,6 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     case Keyword.get(opts, :replaces_id) do
       nil -> changeset
       id -> put_change(changeset, :replaces_id, id)
-    end
-  end
-
-  # When the caller doesn't set `kind`, derive it ONCE from the scope at mint
-  # (audit:read ⇒ :audit_export, else the schema's :mcp default) so the column
-  # is always explicit + queryable. This is a write-time classification, not
-  # the read-time scope inference 68a removed — the list sites read `kind`.
-  defp put_default_kind(changeset) do
-    cond do
-      get_change(changeset, :kind) ->
-        changeset
-
-      "audit:read" in (get_field(changeset, :scopes) || []) ->
-        put_change(changeset, :kind, :audit_export)
-
-      true ->
-        changeset
-    end
-  end
-
-  # `kind` and `scopes` must agree: an audit-export token carries `audit:read`,
-  # an MCP key never does — so a miscategorised credential can't land on the
-  # wrong list or dodge the default expiry. The main bite is an explicit
-  # `:audit_export` lacking `audit:read`; the reverse (`:mcp` + `audit:read`)
-  # is already auto-corrected to `:audit_export` by `put_default_kind` (passing
-  # the `:mcp` default is a no-op change, so the scope wins).
-  defp validate_kind_scope_consistency(changeset) do
-    has_audit = "audit:read" in (get_field(changeset, :scopes) || [])
-
-    if get_field(changeset, :kind) == :audit_export and not has_audit do
-      add_error(changeset, :scopes, "an audit_export key must carry the audit:read scope")
-    else
-      changeset
     end
   end
 
@@ -126,40 +78,15 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     end
   end
 
-  # Each action_scope entry is an action_id (`<pack>.<action>`, exactly one dot).
-  # The pack segment may carry a hyphen (`cloud-init.analyze_show`,
-  # `aws-ec2.describe_instances`), so allow `-` on both sides. This is a *bound*,
-  # not a correctness gate — an entry matching no advertised action just never
-  # authorizes a run — but it stops a hostile value smuggling junk into scope.
-  @action_id_format ~r/^[a-z0-9_-]+\.[a-z0-9_-]+$/
-
-  defp validate_action_scope(changeset) do
-    case get_change(changeset, :action_scope) do
-      nil ->
-        changeset
-
-      ids ->
-        if Enum.all?(
-             ids,
-             &(is_binary(&1) and String.length(&1) <= 128 and &1 =~ @action_id_format)
-           ) do
-          changeset
-        else
-          add_error(changeset, :action_scope, "must be a list of action ids like \"pack.action\"")
-        end
-    end
-  end
-
   def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs \\ %{}) do
     %ApiKey{}
-    |> cast(attrs, [:name, :runner_filter, :runner_group_filter])
+    |> cast(attrs, [:name])
     |> put_default_value(:name, "Quick connect (auto)")
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
-    |> put_change(:scopes, ["actions:read", "actions:execute"])
     |> put_change(:auto_generated_at, DateTime.utc_now())
     |> put_default_mcp_expiry()
     |> validate_required([:account_id, :name])
@@ -179,6 +106,4 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   def revoke(%ApiKey{} = key, by_user_id) do
     change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
-
-  def valid_scopes, do: @valid_scopes
 end

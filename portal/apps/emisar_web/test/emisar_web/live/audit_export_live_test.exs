@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AuditExportLiveTest do
   @moduledoc """
-  The SIEM-export page: admin-only `audit:read` token mint/reveal/revoke,
+  The SIEM-export page: admin-only `:audit_export` token mint/reveal/revoke,
   denial paths for lower roles + crafted events, cross-account isolation,
   and the export endpoint honoring revocation. Split off the audit-list
   tests when the panel moved to its own page.
@@ -60,8 +60,8 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert html =~ "SIEM export"
       assert html =~ "Mint export token"
       # …but with zero export tokens the list section is hidden — so no list-row
-      # Revoke affordance renders (the header copy mentions audit:read regardless,
-      # so the list's presence is the real signal). Scope to the card to be sure.
+      # Revoke affordance renders (the header copy is present regardless, so the
+      # list's presence is the real signal). Scope to the card to be sure.
       siem_card = lv |> element("#siem-export") |> render()
       refute siem_card =~ "revoke_export_key"
       refute siem_card =~ "Revoked"
@@ -100,32 +100,6 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert html =~ "Authorization: Bearer"
     end
 
-    # the mint surface hardcodes the scope to
-    # ["audit:read"]; crafted extra params on the event can't widen it. An
-    # operator can't escalate a log-shipping token into an action-executing one
-    # from this page.
-    test "crafted scope params on the mint event cannot widen the token's scope", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
-
-      # Fire the mint event with attacker-supplied scope params.
-      _ =
-        render_click(lv, "create_export_key", %{
-          "scopes" => ["audit:read", "actions:execute"],
-          "name" => "smuggled"
-        })
-
-      # The minted key carries audit:read ONLY — the crafted params were ignored.
-      {:ok, [key], _meta} =
-        Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
-
-      assert key.scopes == ["audit:read"]
-    end
-
     # the raw secret is one-shot: it lives only
     # in the socket assigns, so a fresh mount (a reconnect / reload) never
     # re-shows it. Mint in one session, then open a second LV: no secret.
@@ -155,10 +129,10 @@ defmodule EmisarWeb.AuditExportLiveTest do
       subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, _raw, active} =
-        Emisar.ApiKeys.create_key(%{name: "active-export", scopes: ["audit:read"]}, subject)
+        Emisar.ApiKeys.create_key(%{name: "active-export", kind: :audit_export}, subject)
 
       {:ok, _raw, to_revoke} =
-        Emisar.ApiKeys.create_key(%{name: "dead-export", scopes: ["audit:read"]}, subject)
+        Emisar.ApiKeys.create_key(%{name: "dead-export", kind: :audit_export}, subject)
 
       {:ok, _} = Emisar.ApiKeys.revoke_api_key(to_revoke, subject)
 
@@ -193,7 +167,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       other_subject = Fixtures.Subjects.subject_for(other_admin, account, role: :admin)
 
       {:ok, _raw, _key} =
-        Emisar.ApiKeys.create_key(%{name: "orphan-export", scopes: ["audit:read"]}, other_subject)
+        Emisar.ApiKeys.create_key(%{name: "orphan-export", kind: :audit_export}, other_subject)
 
       # Soft-delete the creator — created_by (a where: deleted_at: nil belongs_to)
       # now resolves to nil on the preload.
@@ -238,7 +212,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       {:ok, _raw, key} =
         Emisar.ApiKeys.create_key(
-          %{name: "Side-channel export", scopes: ["audit:read"]},
+          %{name: "Side-channel export", kind: :audit_export},
           subject
         )
 
@@ -256,7 +230,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
-          %{name: "Owner export token", scopes: ["audit:read"]},
+          %{name: "Owner export token", kind: :audit_export},
           owner_subject
         )
 
@@ -309,7 +283,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       {:ok, _raw, a_key} =
         Emisar.ApiKeys.create_key(
-          %{name: "Account A export token", scopes: ["audit:read"]},
+          %{name: "Account A export token", kind: :audit_export},
           a_subject
         )
 
@@ -390,7 +364,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       {:ok, _raw, _a_key} =
         Emisar.ApiKeys.create_key(
-          %{name: "Account-A-only-export-token", scopes: ["audit:read"]},
+          %{name: "Account-A-only-export-token", kind: :audit_export},
           a_subject
         )
 
@@ -399,27 +373,24 @@ defmodule EmisarWeb.AuditExportLiveTest do
       refute html =~ "Account-A-only-export-token"
     end
 
-    test "audit:read tokens are bucketed out of the LLM agents page", %{
+    test "audit-export tokens are bucketed out of the LLM agents page", %{
       conn: conn,
       user: user,
       account: account
     } do
       subject = Fixtures.Subjects.subject_for(user, account)
 
-      # An export token (audit:read) and an MCP token (actions:*). The audit
-      # page shows the export one; the agents page shows the MCP one — the two
-      # buckets never overlap (without_scope("audit:read") there).
+      # An export token (kind: :audit_export) and an MCP token (kind: :mcp). The
+      # audit page shows the export one; the agents page shows the MCP one — the
+      # two buckets never overlap (they're split by kind).
       {:ok, _raw, _export} =
         Emisar.ApiKeys.create_key(
-          %{name: "ZZ-siem-export-token", scopes: ["audit:read"]},
+          %{name: "ZZ-siem-export-token", kind: :audit_export},
           subject
         )
 
       {:ok, _raw, _mcp} =
-        Emisar.ApiKeys.create_key(
-          %{name: "ZZ-mcp-bridge-token", scopes: ["actions:read", "actions:execute"]},
-          subject
-        )
+        Emisar.ApiKeys.create_key(%{name: "ZZ-mcp-bridge-token"}, subject)
 
       # The audit page's SIEM card lists the export token, not the MCP one.
       # (Both names also appear in the audit *timeline* as `api_key.created`

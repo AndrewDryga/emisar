@@ -389,7 +389,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       email = "scoped3-#{System.unique_integer([:positive])}@example.com"
       {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
-      {:ok, runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
+      {:ok, _runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})

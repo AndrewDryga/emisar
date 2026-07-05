@@ -5,7 +5,8 @@ defmodule EmisarWeb.RunnerScope do
   groups and runners live in one place instead of a groups list plus a separate,
   ungrouped runners list. Selecting a group covers every runner in it, so those
   runners render disabled ("via group") — picking them on top would be redundant.
-  Used by the team member scope editor and the MCP-key scope picker; both read the
+  Used by the team member runner-scope editor (the `UserRunnerScope` that governs
+  which runners an operator — and every key they mint — may reach); reads the
   selection back with `parse/2`.
 
   A custom checkbox tree (not a native `<select multiple>`): full-row tap targets,

@@ -351,7 +351,7 @@ defmodule Emisar.Audit.Events do
           target_kind: "api_key",
           target_id: key.id,
           target_label: key.name,
-          payload: %{prefix: key.key_prefix, scopes: key.scopes}
+          payload: %{prefix: key.key_prefix, kind: key.kind}
         ]
     )
   end
@@ -454,7 +454,7 @@ defmodule Emisar.Audit.Events do
           target_kind: "api_key",
           target_id: key.id,
           target_label: key.name,
-          payload: %{client_id: client.id, client_name: client.client_name, scopes: key.scopes}
+          payload: %{client_id: client.id, client_name: client.client_name}
         ]
     )
   end

@@ -5,9 +5,10 @@ defmodule EmisarWeb.AuditExportController do
       GET /api/audit
 
   Authentication is the standard `Authorization: Bearer <api_key>`
-  header. The key needs the `audit:read` scope; without it the response
-  is 403 (so an operator can mint a key narrowly scoped to log shipping
-  without granting MCP tool access at the same time).
+  header. The key must be an `:audit_export` token (its own credential
+  kind, minted on the audit page); an MCP key gets a 403 — the two kinds
+  are separate credentials, so a log-shipping token never carries MCP
+  tool access.
 
   Pagination is cursor-only, forward-only, and deterministic — the
   shape every SIEM ingestor expects:
@@ -45,7 +46,7 @@ defmodule EmisarWeb.AuditExportController do
   alias EmisarWeb.RequestContext
 
   plug :authenticate
-  plug :require_scope, "audit:read"
+  plug :require_audit_export_key
   plug :require_export_plan
 
   # GET /api/audit
@@ -63,7 +64,7 @@ defmodule EmisarWeb.AuditExportController do
       |> put_resp_content_type("application/x-ndjson")
       |> send_resp(200, body)
     else
-      # The api-key scope (audit:read) is gated by the plug, but the subject's
+      # The key KIND (audit_export) is gated by the plug, but the subject's
       # ROLE permission is the second gate inside list_for_export — a token
       # whose role lacks audit access gets a clean 403, not a 500 from an
       # assertive `{:ok, _} =` match.
@@ -242,18 +243,19 @@ defmodule EmisarWeb.AuditExportController do
     end
   end
 
-  defp require_scope(conn, scope) do
-    key = conn.assigns.api_key
-
-    if ApiKeys.ApiKey.has_scope?(key, scope) do
+  # The audit stream is for `:audit_export` tokens only — an MCP key
+  # authenticates but is the wrong credential kind here. The subject's ROLE
+  # permission is the second gate inside `list_for_export`.
+  defp require_audit_export_key(conn, _opts) do
+    if conn.assigns.api_key.kind == :audit_export do
       conn
     else
       conn
       |> put_status(:forbidden)
       |> json(%{
-        error: "missing_scope",
-        required: scope,
-        message: "Mint an API key with the `#{scope}` scope on the LLM agents page."
+        error: "wrong_key_kind",
+        required: "audit_export",
+        message: "Mint an audit export token on the audit page's SIEM export section."
       })
       |> halt()
     end
