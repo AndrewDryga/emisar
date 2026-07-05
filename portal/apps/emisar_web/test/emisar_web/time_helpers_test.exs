@@ -68,7 +68,15 @@ defmodule EmisarWeb.TimeHelpersTest do
   end
 
   describe "run actor / source labels" do
-    test "prefers MCP client name, then API key name, then the source" do
+    test "the PERSON leads, then MCP client name, then API key name, then the source" do
+      # A loaded requesting user beats the agent name — usernames tell
+      # operators apart where every LLM key is named "Claude Code".
+      assert run_actor(%{
+               requested_by: %{full_name: "Maya Chen", email: "m@x.co"},
+               client_info: %{"name" => "Claude Code"}
+             }) == "Maya Chen"
+
+      assert run_actor(%{requested_by: %{full_name: nil, email: "m@x.co"}}) == "m@x.co"
       assert run_actor(%{client_info: %{"name" => "Claude Code"}}) == "Claude Code"
       assert run_actor(%{client_info: %{}, api_key: %{name: "ci-bot"}}) == "ci-bot"
       assert run_actor(%{client_info: %{}, api_key: nil, source: :operator}) == "Operator"

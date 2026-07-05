@@ -208,11 +208,13 @@ defmodule EmisarWeb.TimeHelpers do
   defp to_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
 
   @doc """
-  Who initiated a run, as a label. Prefers the MCP client the run was
-  dispatched from (clientInfo.name, e.g. "Claude Code"), then the API key's
-  name, then the humanized source. Requires `:api_key` preloaded — an
-  unloaded association or nil falls back to the source.
+  Who initiated a run, as a label. The PERSON leads when known (`requested_by`
+  preloaded — a username tells operators apart where every LLM key is named
+  "Claude Code"); then the MCP client the run was dispatched from
+  (clientInfo.name), then the API key's name, then the humanized source. An
+  unloaded association falls through — the shape matches only loaded rows.
   """
+  def run_actor(%{requested_by: %{full_name: _} = user}), do: user.full_name || user.email
   def run_actor(%{client_info: %{"name" => name}}) when is_binary(name) and name != "", do: name
   def run_actor(%{api_key: %{name: name}}) when is_binary(name) and name != "", do: name
   def run_actor(%{source: source}), do: format_source(source)

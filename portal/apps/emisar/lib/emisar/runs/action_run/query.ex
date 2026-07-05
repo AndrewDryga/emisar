@@ -196,6 +196,19 @@ defmodule Emisar.Runs.ActionRun.Query do
           {queryable, dynamic([runs: r], ilike(r.action_id, ^Like.contains(action)))}
         end
       },
+      # A searchable single-select of the account's runners — independent of
+      # the dispatched-by pair (`?runner_id=…` deep-links from a runner's
+      # "View all runs").
+      %Filter{
+        name: :runner_id,
+        title: "Runner",
+        type: :string,
+        search: true,
+        values: [],
+        fun: fn queryable, runner_id ->
+          {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
+        end
+      },
       # "Dispatched by" — the run's origin kind. Picking one reveals a WHO
       # picker beside it (the audit actor-kind grammar): LLM agent → Agent,
       # Operator → team member, Runbook → runbook. :row_start so the revealed
@@ -247,19 +260,6 @@ defmodule Emisar.Runs.ActionRun.Query do
         values: [],
         fun: fn queryable, runbook_id ->
           {queryable, dynamic([runs: r], r.runbook_id == ^runbook_id)}
-        end
-      },
-      # A searchable single-select of the account's runners — independent of
-      # the dispatched-by pair (`?runner_id=…` deep-links from a runner's
-      # "View all runs").
-      %Filter{
-        name: :runner_id,
-        title: "Runner",
-        type: :string,
-        search: true,
-        values: [],
-        fun: fn queryable, runner_id ->
-          {queryable, dynamic([runs: r], r.runner_id == ^runner_id)}
         end
       }
     ]

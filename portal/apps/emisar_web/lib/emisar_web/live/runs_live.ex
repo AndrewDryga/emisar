@@ -56,7 +56,7 @@ defmodule EmisarWeb.RunsLive do
       |> resolve_dispatcher_children(params, subject)
 
     opts = LiveTable.params_to_opts(params, filters)
-    run_opts = Keyword.put(opts, :preload, [:runner, :api_key])
+    run_opts = Keyword.put(opts, :preload, [:runner, :api_key, :requested_by])
 
     case Runs.list_runs(subject, run_opts) do
       {:ok, runs, meta} ->
