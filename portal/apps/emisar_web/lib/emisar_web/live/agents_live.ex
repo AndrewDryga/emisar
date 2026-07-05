@@ -923,7 +923,6 @@ defmodule EmisarWeb.AgentsLive do
           <:empty>
             <.empty_state
               :if={@load_error?}
-              variant={:bare}
               tone={:danger}
               icon="hero-exclamation-triangle"
               title="Couldn't load your agents"
@@ -933,7 +932,6 @@ defmodule EmisarWeb.AgentsLive do
             </.empty_state>
             <.empty_state
               :if={not @load_error?}
-              variant={:bare}
               icon="hero-cpu-chip"
               title="No agents connected yet."
             >

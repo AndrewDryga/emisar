@@ -188,7 +188,6 @@ defmodule EmisarWeb.RunsLive do
           <%= cond do %>
             <% @load_error? -> %>
               <.empty_state
-                variant={:bare}
                 tone={:danger}
                 icon="hero-exclamation-triangle"
                 title="Couldn't load your runs"
@@ -207,7 +206,7 @@ defmodule EmisarWeb.RunsLive do
               <%!-- Runner-less account: naming dispatch paths that don't exist
                  yet contradicts the product's own guidance — the first job is
                  a runner (the dashboard says the same). --%>
-              <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet.">
+              <.empty_state icon="hero-bolt" title="No runs yet.">
                 Install a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
@@ -219,7 +218,7 @@ defmodule EmisarWeb.RunsLive do
                 here, gated and audited.
               </.empty_state>
             <% true -> %>
-              <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet.">
+              <.empty_state icon="hero-bolt" title="No runs yet.">
                 Dispatch one from a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}

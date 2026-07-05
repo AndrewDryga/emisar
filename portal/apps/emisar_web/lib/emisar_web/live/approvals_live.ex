@@ -427,7 +427,6 @@ defmodule EmisarWeb.ApprovalsLive do
             <:empty>
               <.empty_state
                 :if={@pending_error?}
-                variant={:bare}
                 tone={:danger}
                 icon="hero-exclamation-triangle"
                 title="Couldn't load pending approvals."
@@ -437,7 +436,6 @@ defmodule EmisarWeb.ApprovalsLive do
               </.empty_state>
               <.empty_state
                 :if={not @pending_error?}
-                variant={:bare}
                 icon="hero-check-badge"
                 title="Nothing waiting."
               >
@@ -544,7 +542,6 @@ defmodule EmisarWeb.ApprovalsLive do
             <:empty>
               <.empty_state
                 :if={grants_disabled?(@current_account)}
-                variant={:bare}
                 icon="hero-no-symbol"
                 title="Standing grants are disabled."
               >
@@ -553,7 +550,6 @@ defmodule EmisarWeb.ApprovalsLive do
               </.empty_state>
               <.empty_state
                 :if={not grants_disabled?(@current_account)}
-                variant={:bare}
                 icon="hero-key"
                 title="No active grants."
               >
@@ -682,7 +678,6 @@ defmodule EmisarWeb.ApprovalsLive do
             </:item>
             <:empty>
               <.empty_state
-                variant={:bare}
                 icon="hero-clipboard-document-check"
                 title="No decided approvals yet."
               >

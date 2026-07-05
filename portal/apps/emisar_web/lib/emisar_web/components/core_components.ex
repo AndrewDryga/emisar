@@ -4045,8 +4045,11 @@ defmodule EmisarWeb.CoreComponents do
                      ping). Troubleshooting nests INSIDE the status block so
                      its spacing reads as a child of the wait, never an
                      uneven sibling. Amber: pending — brand-green would read
-                     "connected" before anything has connected. --%>
-                <section class="flex items-start gap-3">
+                     "connected" before anything has connected. The dashed amber
+                     frame marks this as the live placeholder we're waiting to
+                     fill — pending, not an alarm, so it stays a hairline border
+                     with no wash. --%>
+                <section class="flex items-start gap-3 rounded-xl border border-dashed border-amber-500/30 p-4">
                   <.status_dot tone={:amber} size={:lg} ping class="mt-[5px]" />
                   <div class="min-w-0">
                     <div class="text-sm font-semibold text-zinc-100">
@@ -4264,9 +4267,12 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.
-  `:boxed`/`:bare` expect `icon` + `title`; `:hint` is the compact dashed
-  body-first placeholder ("No overrides. …") with an optional small title
-  and usually no icon.
+  `:boxed` (the default) is the dashed-border placeholder for a whole empty
+  page / table / section — the box anchors the content so an empty area reads
+  as an intentional placeholder, not a void. `:bare` is the naked, compact form
+  for an empty a SUB-SECTION already frames (a dashboard pillar's zero state, a
+  runner-detail column) where a box would be competing chrome. `:hint` is the
+  compact dashed body-first placeholder ("No overrides. …").
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
         Mint an enrollment key and run the installer on a host.
@@ -4303,9 +4309,11 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # `boxed` — the dashed-border standalone empty (a whole page with nothing in
-  # it yet). `bare` — borderless + compact, for a LiveTable `:empty` slot that
-  # already sits inside a bordered card. Same anatomy, lighter chrome.
+  # `boxed` — the dashed-border placeholder for a whole page / table / section
+  # that's empty; the box anchors the icon+title+body so the empty content area
+  # reads as an intentional placeholder, not a naked void. `bare` — naked +
+  # compact, for an empty a SUB-SECTION already frames (a dashboard pillar's
+  # zero state, a runner-detail column) where a box would be competing chrome.
   defp empty_state_wrapper(:boxed),
     do: "rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-12 text-center"
 

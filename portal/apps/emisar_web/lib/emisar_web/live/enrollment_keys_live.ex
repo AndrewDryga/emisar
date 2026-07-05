@@ -368,21 +368,17 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             <p>
               A bearer secret a fresh host presents to
               <span class="font-medium text-zinc-300">enroll</span>
-              as a runner. The host runs the install command with it, registers, and trades it for
-              its own long-lived token — the key isn't used again for that host.
+              as a runner: it runs the install command with the key, registers, and trades it for
+              its own long-lived token. The key is never used again for that host.
             </p>
             <p>
               A <span class="font-medium text-zinc-300">single-use</span>
               key is spent on the first registration — right for an autoscaler baking one host at a
-              time. A <span class="font-medium text-zinc-300">reusable</span>
-              key keeps enrolling hosts until it expires or hits its max-uses cap — right for a
-              stable fleet or an image bake.
-            </p>
-            <p>
-              <span class="font-medium text-zinc-300">Revoking is safe.</span>
-              It blocks new registrations with this key — a host presenting a revoked key gets a 401.
-              Runners already enrolled keep running under their own tokens; revoke never disconnects
-              or deletes them.
+              time; a <span class="font-medium text-zinc-300">reusable</span>
+              key keeps enrolling until it expires or hits its max-uses cap, for a stable fleet or
+              image bake. <span class="font-medium text-zinc-300">Revoking is safe</span>
+              either way — it blocks new registrations (a revoked key gets a 401), but hosts already
+              enrolled keep running on their own tokens.
             </p>
             <p class="pt-1">
               <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
@@ -490,7 +486,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             </.list_row>
           </:item>
           <:empty>
-            <.empty_state variant={:bare} icon="hero-key" title="No enrollment keys yet.">
+            <.empty_state icon="hero-key" title="No enrollment keys yet.">
               An enrollment key is the bearer secret a fresh host enrolls with — mint a
               reusable one for image bakes and cloud-init fleets. The install
               wizard's one-time keys appear here too, revocable until used.

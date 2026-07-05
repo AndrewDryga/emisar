@@ -201,7 +201,7 @@ defmodule EmisarWeb.RunnersLive do
         <% @show_wizard? and not Runners.subject_can_install_runners?(@current_subject) -> %>
           <%!-- Zero fleet, no install permission: the pitch without a wizard
                whose mint can only fail. --%>
-          <.empty_state variant={:bare} icon="hero-server-stack" title="No runners yet.">
+          <.empty_state icon="hero-server-stack" title="No runners yet.">
             A runner is the emisar binary on one of your hosts — ask an operator,
             admin, or owner to connect the first one; its live state will appear
             here.

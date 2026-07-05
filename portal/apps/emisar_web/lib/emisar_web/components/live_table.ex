@@ -148,9 +148,9 @@ defmodule EmisarWeb.LiveTable do
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <%!-- The empty follows its wrapper: a CANVAS list's zero state sits
-             naked under the section hairline (a boxed "nothing" is a stray
-             island); the island chrome remains only for island lists. --%>
+        <%!-- Just padding around the slot: a truly-empty slot renders a
+             dashed-border `empty_state` placeholder that brings its own frame;
+             a filtered one-liner sits quietly in the padding. --%>
         <div id={"#{@id}-empty"} class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-500"]}>
           {render_slot(@empty) || "Nothing to show."}
         </div>
@@ -213,9 +213,11 @@ defmodule EmisarWeb.LiveTable do
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <%!-- The dense table sits on the canvas, so its zero state does too —
-             a boxed "nothing" was a stray island. --%>
-        <div id={"#{@id}-empty"} class="border-t border-zinc-800/70 py-8 text-sm text-zinc-500">
+        <%!-- No top hairline: a truly-empty slot renders a dashed-border
+             `empty_state` placeholder that brings its own frame, and a stray
+             solid rule above it reads as a broken table edge. A filtered
+             one-liner just sits in the padding. --%>
+        <div id={"#{@id}-empty"} class="py-8 text-sm text-zinc-500">
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>

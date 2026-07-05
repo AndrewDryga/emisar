@@ -1148,7 +1148,6 @@ defmodule EmisarWeb.TeamLive do
           <:empty>
             <.empty_state
               :if={@load_error?}
-              variant={:bare}
               tone={:danger}
               icon="hero-exclamation-triangle"
               title="Couldn't load your team"
@@ -1162,7 +1161,6 @@ defmodule EmisarWeb.TeamLive do
                  accidentally land as a mystery blank panel. --%>
             <.empty_state
               :if={not @load_error?}
-              variant={:bare}
               icon="hero-users"
               title="No team members yet."
             >

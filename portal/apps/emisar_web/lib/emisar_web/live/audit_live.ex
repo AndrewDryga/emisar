@@ -501,7 +501,6 @@ defmodule EmisarWeb.AuditLive do
           <%= cond do %>
             <% @load_error? -> %>
               <.empty_state
-                variant={:bare}
                 tone={:danger}
                 icon="hero-exclamation-triangle"
                 title="Couldn't load the audit log"
@@ -512,7 +511,7 @@ defmodule EmisarWeb.AuditLive do
             <% any_filter_active?(@filter_params, @filters) -> %>
               <span class="text-zinc-500">No events match these filters.</span>
             <% true -> %>
-              <.empty_state variant={:bare} icon="hero-document-text" title="No audit events yet.">
+              <.empty_state icon="hero-document-text" title="No audit events yet.">
                 They appear as soon as something happens — a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
