@@ -114,6 +114,27 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     assert confirm_button_disabled?(html)
   end
 
+  test "no token → plain confirm: no typed field, Confirm enabled immediately" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="revoke"
+        title="Revoke enrollment key"
+        confirm_label="Revoke key"
+        on_confirm="revoke"
+      >
+        <:body>Existing runners aren't affected.</:body>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    # A routine reversible action doesn't make the operator type anything.
+    refute html =~ ~s(name="confirm_token")
+    refute html =~ "to confirm"
+    refute confirm_button_disabled?(html)
+  end
+
   test "the token and title render escaped (IL-16 — operator/runner data)" do
     assigns = %{}
 
@@ -137,12 +158,12 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
   end
 
   # The Confirm button is the danger button labelled "Delete runner"/"Reject
-  # pack" (not "Cancel"). HEEx renders a bare `disabled` attribute when the
-  # button is disabled and omits it otherwise — so check whether the Confirm
-  # button's opening tag carries `disabled`.
+  # pack"/"Revoke key" (not "Cancel"). HEEx renders a bare `disabled` attribute
+  # when the button is disabled and omits it otherwise — so check whether the
+  # Confirm button's opening tag carries `disabled`.
   defp confirm_button_disabled?(html) do
     # The Confirm button's opening <button ...> tag through to its label.
-    [tag] = Regex.run(~r/<button[^>]*>\s*(?:Delete runner|Reject pack)/, html)
+    [tag] = Regex.run(~r/<button[^>]*>\s*(?:Delete runner|Reject pack|Revoke key)/, html)
 
     # The bare boolean attribute is `disabled` followed by a space or `>` — not
     # the Tailwind `disabled:` utility classes (which contain a colon).

@@ -121,10 +121,11 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "Could not create key"
   end
 
-  # The revoke happy path off the list: the typed-confirm dialog fires `revoke`
-  # once the prefix is typed, and the retired key drops out of the default
+  # The revoke happy path off the list: revoking is routine and reversible
+  # (issue a fresh key), so it's a PLAIN confirm — no type-to-confirm field; a
+  # single click fires `revoke` and the retired key drops out of the default
   # (status=active) list.
-  test "revoke retires a key through the typed-confirm dialog", %{conn: conn} do
+  test "revoke retires a key through a plain (no-typing) confirm dialog", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
@@ -135,7 +136,9 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "bootstrap for prod image"
 
     dialog = "revoke-key-#{key.id}"
-    type_confirm_token(lv, dialog, key.key_prefix)
+    # No type-the-token friction — the operator just confirms.
+    refute has_element?(lv, ~s(##{dialog} input[name="confirm_token"]))
+
     html = confirm_dialog(lv, dialog, "Revoke key")
 
     assert html =~ "Key revoked."
@@ -167,26 +170,6 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # Re-rendering (a tick / list reload) never brings the secret back.
     send(lv.pid, {:list_changed, :enrollment_key, "enrollment_key.created", Ecto.UUID.generate()})
     refute render(lv) =~ raw_secret
-  end
-
-  test "revoke's typed-confirm: Confirm stays disabled (and won't fire) until the prefix matches",
-       %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    {:ok, _raw, key} = Runners.create_enrollment_key(%{description: "guarded-key"}, subject)
-
-    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
-    dialog = "revoke-key-#{key.id}"
-
-    # Empty token → Confirm disabled; the dialog won't dispatch `revoke`.
-    assert_raise ArgumentError, ~r/disabled/, fn -> confirm_dialog(lv, dialog, "Revoke key") end
-
-    # Wrong token → still disabled, still won't fire.
-    type_confirm_token(lv, dialog, "not-the-prefix")
-    assert_raise ArgumentError, ~r/disabled/, fn -> confirm_dialog(lv, dialog, "Revoke key") end
-
-    # The key is untouched — a bypassing event was never fired.
-    assert render(lv) =~ "guarded-key"
   end
 
   test "a viewer cannot mint an auth key", %{conn: conn} do

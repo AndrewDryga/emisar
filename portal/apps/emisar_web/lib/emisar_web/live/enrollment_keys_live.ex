@@ -432,9 +432,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 </.meta_line>
               </:meta>
               <:actions>
-                <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm.
-                     The button only OPENS the dialog; `revoke` still fires from
-                     Confirm and stays server-authz-gated (subject_can_manage_enrollment_keys?). --%>
+                <%!-- Plain confirm — revoking doesn't disconnect anyone (existing
+                     runners keep their tokens) and is undone by issuing a fresh
+                     key, so it doesn't earn a type-to-confirm. The button only
+                     OPENS the dialog; `revoke` still fires from Confirm and stays
+                     server-authz-gated (subject_can_manage_enrollment_keys?). --%>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and
@@ -453,8 +455,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   id={"revoke-key-#{key.id}"}
                   title="Revoke enrollment key"
                   confirm_label="Revoke key"
-                  confirm_token={key.key_prefix}
-                  typed={@typed}
                   on_confirm={
                     JS.push("revoke", value: %{id: key.id})
                     |> hide_confirm_dialog("revoke-key-#{key.id}")

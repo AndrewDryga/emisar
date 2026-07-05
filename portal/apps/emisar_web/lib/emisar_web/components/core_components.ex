@@ -3611,7 +3611,12 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :string, required: true
   attr :title, :string, required: true
   attr :confirm_label, :string, required: true
-  attr :confirm_token, :string, required: true, doc: "the exact string the operator must type"
+  # Type-to-confirm is reserved for the genuinely catastrophic + irreversible
+  # (deleting an account, removing a member). A routine, reversible-by-reissue
+  # action (revoking a key that doesn't disconnect anyone) is a plain confirm —
+  # `confirm_token={nil}` (the default) drops the typed gate and Confirm is
+  # enabled immediately. A non-nil token requires the operator to type it.
+  attr :confirm_token, :string, default: nil, doc: "when set, the string the operator must type"
   attr :typed, :string, default: "", doc: "the live-typed value held by the page (@typed)"
   attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
   slot :body, required: true
@@ -3648,14 +3653,20 @@ defmodule EmisarWeb.CoreComponents do
             </div>
           </div>
 
-          <%!-- Typed-confirm: the page's "confirm_typed" handler holds this in
-               @typed; the Confirm button below is disabled until it equals the
-               token. Server authz is unaffected — this is friction only. The
-               token renders through HEEx escaped (IL-16) — it's operator data.
-               The input lives in a form so `phx-change` serializes it; Enter
-               (`phx-submit`) just re-stores the value — it never dispatches the
-               destructive event, which only fires from the Confirm button. --%>
-          <form phx-change="confirm_typed" phx-submit="confirm_typed" class="mt-4">
+          <%!-- Typed-confirm (only when a token is set): the page's
+               "confirm_typed" handler holds this in @typed; the Confirm button
+               below is disabled until it equals the token. Server authz is
+               unaffected — this is friction only. The token renders through
+               HEEx escaped (IL-16) — it's operator data. The input lives in a
+               form so `phx-change` serializes it; Enter (`phx-submit`) just
+               re-stores the value — it never dispatches the destructive event,
+               which only fires from the Confirm button. --%>
+          <form
+            :if={not is_nil(@confirm_token)}
+            phx-change="confirm_typed"
+            phx-submit="confirm_typed"
+            class="mt-4"
+          >
             <.label for={"#{@id}-input"} variant={:eyebrow}>
               Type <span class="font-mono text-rose-200">{@confirm_token}</span> to confirm
             </.label>
@@ -3679,15 +3690,17 @@ defmodule EmisarWeb.CoreComponents do
             >
               Cancel
             </.button>
-            <%!-- Enabled only when the typed value matches a NON-empty token —
-                 a blank token can never be confirmed, so a page-level dialog
-                 with no target selected yet stays inert. --%>
+            <%!-- `nil` token → plain confirm, enabled immediately. A blank-STRING
+                 token stays disabled (a page-level dialog with no target selected
+                 yet — packs' reject). A real token enables only once typed matches. --%>
             <.button
               variant={:secondary}
               tone={:rose}
               size={:md}
               type="button"
-              disabled={@confirm_token in ["", nil] or @typed != @confirm_token}
+              disabled={
+                @confirm_token == "" or (not is_nil(@confirm_token) and @typed != @confirm_token)
+              }
               phx-click={@on_confirm}
             >
               {@confirm_label}
@@ -3707,8 +3720,19 @@ defmodule EmisarWeb.CoreComponents do
   def show_confirm_dialog(js \\ %JS{}, id) do
     js
     |> JS.push("confirm_reset")
-    |> show("##{id}")
-    |> JS.focus(to: "##{id}-input")
+    # OPACITY-ONLY transition, never the shared `show/2` (which animates a
+    # `transform`): a transformed ancestor becomes the containing block for the
+    # dialog's `position: fixed` overlay, so during the animation it positions
+    # against this collapsed wrapper (jammed to the page edge) and only snaps
+    # centered once the transform clears. Fade the wrapper instead.
+    |> JS.show(
+      to: "##{id}",
+      time: 200,
+      transition: {"transition-opacity ease-out duration-200", "opacity-0", "opacity-100"}
+    )
+    # First focusable = the type-to-confirm input when present, else Cancel —
+    # never the destructive Confirm.
+    |> JS.focus_first(to: "##{id}")
   end
 
   @doc """
@@ -3717,7 +3741,11 @@ defmodule EmisarWeb.CoreComponents do
   """
   def hide_confirm_dialog(js \\ %JS{}, id) do
     js
-    |> hide("##{id}")
+    |> JS.hide(
+      to: "##{id}",
+      time: 150,
+      transition: {"transition-opacity ease-in duration-150", "opacity-100", "opacity-0"}
+    )
     |> JS.push("confirm_reset")
   end
 
