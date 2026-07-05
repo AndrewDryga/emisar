@@ -378,6 +378,22 @@ genuinely missing (then it's shared, not one-off).
   a table's **empty state is mandatory**, not optional — check it every time.
   The demo stack has accounts staged at each volume (`demo`=power, `acme`/`globex`=
   partial, `foo`/`helio`/`blank`=empty) — use them, or stage rows in the dev DB.
+- **A whole-page / table / section empty gets the gray DASHED-border placeholder
+  box (`empty_state`'s default `:boxed`); a SUB-SECTION empty the page already
+  frames stays naked (`:bare`).** A page whose primary list is empty otherwise
+  floats its icon+title in a black void ("way too empty"); the dashed box anchors
+  it as an intentional placeholder. But an empty a parent already frames — a
+  dashboard pillar's zero state (naked, the same shape as a live stat, above), a
+  runner-detail column, a role-gate notice — stays `:bare`, because a box there is
+  competing chrome. The dashed placeholder is the **sanctioned exception to §5's
+  naked-on-canvas**: dashed ≠ a solid island and it carries no wash, so it can't
+  be mistaken for one — don't "correct" it back to naked. A *pending* placeholder
+  (the runner-install "waiting for a runner" block) uses the same frame in AMBER
+  (`border-dashed border-amber-500/30`, no wash — pending, not an alarm). A
+  filtered "no match" one-liner stays unboxed (transient over-filter, not the
+  onboarding void). `:bare`'s old "sits inside a bordered card" premise died with
+  the card redesign — that's why whole-page empties wrongly floating on `:bare`
+  were the bug.
 - **Each line of a stacked shape carries a DISTINCT payload — never restate the
   label in the headline or the headline in the action.** The smell (shipped on
   the zero-state pillars): "LLM agents / Connect an LLM agent / Connect an
