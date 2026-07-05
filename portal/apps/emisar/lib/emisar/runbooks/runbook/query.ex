@@ -14,6 +14,11 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runbooks: r], r.account_id == ^account_id)
 
+  # All versions of one runbook share a slug within an account — deleting a
+  # runbook (as opposed to publishing one version) spans the whole family.
+  def by_slug(queryable, slug),
+    do: where(queryable, [runbooks: r], r.slug == ^slug)
+
   def ordered_by_title_version(queryable),
     do: order_by(queryable, [runbooks: r], asc: r.title, desc: r.version)
 

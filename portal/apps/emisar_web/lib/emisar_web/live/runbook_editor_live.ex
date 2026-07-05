@@ -267,6 +267,14 @@ defmodule EmisarWeb.RunbookEditorLive do
     )
   end
 
+  def handle_event("delete", _params, socket) do
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      &do_delete/1
+    )
+  end
+
   # phx-value step/arg indices are server-rendered, so they're valid in normal
   # use — but a crafted event with a non-numeric index would otherwise crash
   # this LV. Parse defensively, mapping bad input to an out-of-range index so
@@ -275,6 +283,23 @@ defmodule EmisarWeb.RunbookEditorLive do
     case Integer.parse(to_string(idx)) do
       {i, ""} when i >= 0 -> i
       _ -> 1_000_000_000
+    end
+  end
+
+  # No runbook to delete on the /new page — a crafted "delete" event no-ops
+  # rather than crashing the `%Runbook{}`-typed context call.
+  defp do_delete(%{assigns: %{runbook: nil}} = socket), do: {:noreply, socket}
+
+  defp do_delete(socket) do
+    case Runbooks.delete_runbook(socket.assigns.runbook, socket.assigns.current_subject) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Runbook deleted.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Couldn't delete this runbook.")}
     end
   end
 
@@ -631,6 +656,27 @@ defmodule EmisarWeb.RunbookEditorLive do
               Publish
             </.button>
           <% end %>
+
+          <%!-- Destructive, so it sits apart from the save actions (ml-auto) and
+               stays low-key (ghost/rose). Soft-delete of the whole slug family;
+               only for an existing runbook. --%>
+          <.confirm_button
+            :if={@runbook}
+            id="delete-runbook"
+            class="ml-auto"
+            title="Delete this runbook?"
+            confirm_label="Delete runbook"
+            icon="hero-trash"
+            variant={:ghost}
+            tone={:rose}
+            on_confirm={JS.push("delete")}
+          >
+            <:body>
+              Removes this runbook and all its versions. Runs already dispatched from it keep
+              their own audit trail.
+            </:body>
+            Delete runbook
+          </.confirm_button>
         </div>
       </div>
     </.dashboard_shell>

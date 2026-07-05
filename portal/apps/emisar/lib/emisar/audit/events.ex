@@ -469,6 +469,14 @@ defmodule Emisar.Audit.Events do
     })
   end
 
+  def runbook_deleted(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do
+    runbook_event(subject, runbook, "runbook.deleted", %{
+      name: runbook.name,
+      title: runbook.title,
+      version: runbook.version
+    })
+  end
+
   def runbook_updated(
         %Subject{} = subject,
         %Runbooks.Runbook{} = old,

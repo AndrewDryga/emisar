@@ -101,6 +101,13 @@ defmodule Emisar.Runbooks do
     )
   end
 
+  defp broadcast_runbook_deleted(%Runbook{} = runbook) do
+    Emisar.PubSub.broadcast(
+      account_runbooks_topic(runbook.account_id),
+      {:list_changed, :runbook, "runbook.deleted", runbook.id}
+    )
+  end
+
   def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -137,6 +144,37 @@ defmodule Emisar.Runbooks do
         audit: &Audit.Events.runbook_published(subject, &1),
         after_commit: &broadcast_runbook_published/1
       )
+    end
+  end
+
+  @doc """
+  Soft-deletes a runbook and ALL its versions (they share a slug within the
+  account). Requires `manage_runbooks` and that the subject owns the runbook's
+  account. Returns `{:ok, runbook}` or `{:error, :unauthorized | :not_found}`.
+  """
+  def delete_runbook(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      # Tombstone the whole family — a per-row delete would strand older
+      # versions (each version is its own not-deleted row) in the list.
+      queryable =
+        Runbook.Query.not_deleted()
+        |> Runbook.Query.by_account_id(runbook.account_id)
+        |> Runbook.Query.by_slug(runbook.slug)
+        |> Authorizer.for_subject(subject)
+
+      Multi.new()
+      |> Multi.update_all(:runbooks, queryable, set: [deleted_at: DateTime.utc_now()])
+      |> Multi.insert(:audit, Audit.Events.runbook_deleted(subject, runbook))
+      |> Repo.commit_multi(after_commit: fn _ -> broadcast_runbook_deleted(runbook) end)
+      |> case do
+        {:ok, _} -> {:ok, runbook}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

@@ -675,6 +675,61 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "delete_runbook/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "soft-deletes every version of the runbook and clears it from the list", %{
+      subject: subject
+    } do
+      v1 = draft_runbook!(subject, "retire-book")
+      {:ok, v2} = Runbooks.save_new_version(v1, %{"title" => "retire-book take two"}, subject)
+
+      assert {:ok, deleted} = Runbooks.delete_runbook(v2, subject)
+      assert deleted.id == v2.id
+
+      # Both versions share the slug, so deleting the runbook tombstones the
+      # whole family — neither row is fetchable and the list is empty.
+      assert {:error, :not_found} = Runbooks.fetch_runbook_by_id(v1.id, subject)
+      assert {:error, :not_found} = Runbooks.fetch_runbook_by_id(v2.id, subject)
+      assert {:ok, [], _} = Runbooks.list_runbooks(subject)
+    end
+
+    test "writes a runbook.deleted audit row + list broadcast", %{
+      account: account,
+      subject: subject
+    } do
+      runbook = draft_runbook!(subject, "audited-delete-book")
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, _} = Runbooks.delete_runbook(runbook, subject)
+      assert_receive {:list_changed, :runbook, "runbook.deleted", broadcast_id}
+      assert broadcast_id == runbook.id
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
+      deleted = Enum.find(events, &(&1.event_type == "runbook.deleted"))
+      assert deleted.target_id == runbook.id
+    end
+
+    test "a viewer (no manage permission) is refused", %{account: account, subject: subject} do
+      runbook = draft_runbook!(subject, "guard-delete-book")
+      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      assert {:error, :unauthorized} = Runbooks.delete_runbook(runbook, viewer)
+      assert {:ok, _} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
+    end
+
+    test "an owner of another account can't delete this runbook", %{subject: subject} do
+      runbook = draft_runbook!(subject, "owned-delete-book")
+      {_user, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} = Runbooks.delete_runbook(runbook, subject_b)
+      assert {:ok, _} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
+    end
+  end
+
   describe "expand/1" do
     test "returns the runbook's ordered step descriptors" do
       steps = [
