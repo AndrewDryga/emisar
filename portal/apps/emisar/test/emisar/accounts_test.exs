@@ -340,18 +340,25 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload!(account).settings.max_grant_lifetime_seconds
     end
 
-    test "the cap must be a positive number of seconds" do
+    test "the cap accepts 0 (standing grants disabled) but never a negative" do
       account = Fixtures.Accounts.create_account()
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
-      assert {:error, changeset} =
+      assert {:ok, %Account{settings: %{max_grant_lifetime_seconds: 0}}} =
                Accounts.update_account(
                  account,
                  %{settings: %{max_grant_lifetime_seconds: 0}},
                  owner_subject
                )
 
-      assert "must be greater than 0" in errors_on(changeset).settings.max_grant_lifetime_seconds
+      assert {:error, changeset} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{max_grant_lifetime_seconds: -1}},
+                 owner_subject
+               )
+
+      assert "must be greater than or equal to 0" in errors_on(changeset).settings.max_grant_lifetime_seconds
     end
 
     test "an owner of another account can't set this account's cap (cross-account)" do

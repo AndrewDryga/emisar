@@ -4,7 +4,7 @@ defmodule Emisar.Approvals.Grant do
   pending-approval gate. Created from an `Emisar.Approvals.Request`
   when an operator approves with a duration > "once-only".
 
-  Match rules (the `peek_matching_grant/4` lookup in `Emisar.Approvals`):
+  Match rules (the `peek_matching_grant/5` lookup in `Emisar.Approvals`):
 
     * `api_key_id` always matches the calling key exactly. Grants are
       scoped per key so that approving an action for one operator's

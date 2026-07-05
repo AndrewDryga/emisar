@@ -866,7 +866,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
               class="min-h-0 resize-none"
             />
 
-            <.disclosure :if={not @self_blocked?}>
+            <%!-- Standing grants disabled (account cap 0) → the reuse menu
+                 would be a dead one-option select; a quiet line says why the
+                 affordance is gone. --%>
+            <p
+              :if={not @self_blocked? and length(@grant_duration_options) <= 1}
+              class="text-[11px] leading-relaxed text-zinc-500"
+            >
+              Standing grants are disabled for this account — every approval is single-use.
+            </p>
+            <.disclosure :if={not @self_blocked? and length(@grant_duration_options) > 1}>
               <:summary>
                 <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
                 Allow the LLM to reuse this approval

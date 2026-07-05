@@ -2020,7 +2020,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "peek_matching_grant/4" do
+  describe "peek_matching_grant/5" do
     setup do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -2031,7 +2031,7 @@ defmodule Emisar.ApprovalsTest do
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Approvals.peek_matching_grant(key.id, "x.y", runner.id, "sha") == nil
+      assert Approvals.peek_matching_grant(account.id, key.id, "x.y", runner.id, "sha") == nil
     end
 
     test "wildcards: nil runner_id and nil args_sha256 match anything", %{
@@ -2045,10 +2045,22 @@ defmodule Emisar.ApprovalsTest do
       _ = insert_grant(account, key, action_id: "linux.uptime", granted_by_id: user.id)
 
       assert %Grant{} =
-               Approvals.peek_matching_grant(key.id, "linux.uptime", runner_a.id, "sha-a")
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key.id,
+                 "linux.uptime",
+                 runner_a.id,
+                 "sha-a"
+               )
 
       assert %Grant{} =
-               Approvals.peek_matching_grant(key.id, "linux.uptime", runner_b.id, "sha-b")
+               Approvals.peek_matching_grant(
+                 account.id,
+                 key.id,
+                 "linux.uptime",
+                 runner_b.id,
+                 "sha-b"
+               )
     end
 
     test "exact runner match: grant on runner_a doesn't match runner_b", %{
@@ -2062,8 +2074,8 @@ defmodule Emisar.ApprovalsTest do
       _ =
         insert_grant(account, key, action_id: "x", runner_id: runner_a.id, granted_by_id: user.id)
 
-      assert %Grant{} = Approvals.peek_matching_grant(key.id, "x", runner_a.id, "any")
-      assert Approvals.peek_matching_grant(key.id, "x", runner_b.id, "any") == nil
+      assert %Grant{} = Approvals.peek_matching_grant(account.id, key.id, "x", runner_a.id, "any")
+      assert Approvals.peek_matching_grant(account.id, key.id, "x", runner_b.id, "any") == nil
     end
 
     test "expired grant is filtered out", %{account: account, user: user} do
@@ -2080,7 +2092,7 @@ defmodule Emisar.ApprovalsTest do
           expires_at: past
         )
 
-      assert Approvals.peek_matching_grant(key.id, "x", runner.id, "sha") == nil
+      assert Approvals.peek_matching_grant(account.id, key.id, "x", runner.id, "sha") == nil
     end
 
     test "revoked grant is filtered out", %{account: account, user: user} do
@@ -2097,7 +2109,7 @@ defmodule Emisar.ApprovalsTest do
       grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
       {:ok, _} = Approvals.revoke_grant(grant, subject)
 
-      assert Approvals.peek_matching_grant(key.id, "x", nil, "sha") == nil
+      assert Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha") == nil
     end
 
     test "a different API key's grant doesn't leak", %{account: account, user: user} do
@@ -2106,8 +2118,24 @@ defmodule Emisar.ApprovalsTest do
 
       _ = insert_grant(account, key_a, action_id: "x", granted_by_id: user.id)
 
-      assert %Grant{} = Approvals.peek_matching_grant(key_a.id, "x", nil, "sha")
-      assert Approvals.peek_matching_grant(key_b.id, "x", nil, "sha") == nil
+      assert %Grant{} = Approvals.peek_matching_grant(account.id, key_a.id, "x", nil, "sha")
+      assert Approvals.peek_matching_grant(account.id, key_b.id, "x", nil, "sha") == nil
+    end
+
+    test "cap 0 (standing grants disabled) makes a live matching grant inert", %{
+      account: account,
+      user: user
+    } do
+      {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      _ = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+
+      # The grant matches while grants are enabled…
+      assert %Grant{} = Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha")
+
+      # …and stops matching the moment the account flips the kill switch —
+      # no revocation required.
+      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+      assert Approvals.peek_matching_grant(account.id, key.id, "x", nil, "sha") == nil
     end
   end
 
@@ -2364,6 +2392,17 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
     end
+
+    test "cap 0 (standing grants disabled) refuses every windowed duration, :once still works",
+         %{account: account, run: run, request: request, operator: operator} do
+      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+
+      assert {:error, :grant_exceeds_account_max_lifetime} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :one_hour})
+
+      assert {:ok, %Grant{}} =
+               Approvals.create_grant(request, run, operator.id, %{duration: :once})
+    end
   end
 
   describe "allowed_grant_durations/1" do
@@ -2379,6 +2418,10 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
 
       assert Approvals.allowed_grant_durations(account.id) == [:once, :one_hour, :one_day]
+
+      # Cap 0 = standing grants disabled — only single-use remains.
+      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+      assert Approvals.allowed_grant_durations(account.id) == [:once]
     end
 
     test "an unknown account id (no settings) imposes no cap — every duration offered" do

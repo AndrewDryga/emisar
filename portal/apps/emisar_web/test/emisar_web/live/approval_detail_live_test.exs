@@ -210,6 +210,19 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Next 90 days"
   end
 
+  test "cap 0 replaces the reuse menu with the standing-grants-disabled note", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+
+    request = pending_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # No dead one-option select — the note says why the affordance is gone.
+    refute html =~ "Allow the LLM to reuse this approval"
+    assert html =~ "Standing grants are disabled for this account"
+  end
+
   test "the decide panel carries a live expiry countdown that lapses server-side", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

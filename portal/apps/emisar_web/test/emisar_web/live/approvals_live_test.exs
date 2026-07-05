@@ -393,6 +393,28 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 86_400
     end
 
+    test "an owner disables standing grants (cap 0) — the page flips to the disabled UX", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+      # Enabled: the normal zero state + the loose-end amber summary.
+      assert html =~ "No active grants."
+      assert html =~ "no cap"
+
+      html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "0"})
+
+      assert html =~ "Standing grants disabled — every approval is now single-use."
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 0
+
+      # The section speaks the disabled state everywhere the operator looks.
+      html = render(lv)
+      assert html =~ "Standing grants are disabled."
+      assert html =~ "Disabled for this account — every approval is single-use."
+      refute html =~ "No active grants."
+    end
+
     test "an owner removes the cap", %{conn: conn, account: account} do
       Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 3600})
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")

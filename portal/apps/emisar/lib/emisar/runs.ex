@@ -847,6 +847,7 @@ defmodule Emisar.Runs do
   # dispatch_with_grant), so a use is never burned without a durable run.
   defp lookup_grant(%{api_key_id: api_key_id} = attrs) when is_binary(api_key_id) do
     case Emisar.Approvals.peek_matching_grant(
+           attrs[:account_id],
            api_key_id,
            attrs[:action_id],
            attrs[:runner_id],

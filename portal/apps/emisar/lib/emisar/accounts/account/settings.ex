@@ -13,6 +13,8 @@ defmodule Emisar.Accounts.Account.Settings do
   embedded_schema do
     field :require_mfa, :boolean, default: false
     field :require_sso, :boolean, default: false
+    # nil = no cap · N = grants may live at most N seconds · 0 = standing
+    # grants DISABLED (mint + match both refuse; every approval is single-use)
     field :max_grant_lifetime_seconds, :integer
   end
 
@@ -21,6 +23,6 @@ defmodule Emisar.Accounts.Account.Settings do
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
     |> cast(attrs, @fields)
-    |> validate_number(:max_grant_lifetime_seconds, greater_than: 0)
+    |> validate_number(:max_grant_lifetime_seconds, greater_than_or_equal_to: 0)
   end
 end

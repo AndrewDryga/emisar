@@ -46,7 +46,7 @@ defmodule Emisar.Approvals.Grant.Query do
     do: where(queryable, [grants: g], is_nil(g.args_sha256) or g.args_sha256 == ^args_sha)
 
   @doc """
-  Candidates for `peek_matching_grant/4` — narrows by api_key + action
+  Candidates for `peek_matching_grant/5` — narrows by api_key + action
   + un-revoked + not-yet-expired. Caller composes runner / args_sha
   match on top.
   """

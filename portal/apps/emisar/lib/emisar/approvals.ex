@@ -7,7 +7,7 @@ defmodule Emisar.Approvals do
   Flow:
 
     1. `Runs.dispatch_run` evaluates policy → `:require_approval`.
-    2. It calls `Approvals.peek_matching_grant/4` for the calling API
+    2. It calls `Approvals.peek_matching_grant/5` for the calling API
        key. If a usable grant exists, dispatch fast-paths past
        approval (and increments the grant's use count).
     3. Otherwise `Approvals.create_request/3` files an approval row
@@ -807,15 +807,22 @@ defmodule Emisar.Approvals do
   the SQL pass — the SQL pre-filter narrows the candidate set, and
   `usable?/1` makes the final call.
   """
-  def peek_matching_grant(api_key_id, action_id, runner_id, args_sha256)
-      when is_binary(api_key_id) and is_binary(action_id) do
-    now = DateTime.utc_now()
+  def peek_matching_grant(account_id, api_key_id, action_id, runner_id, args_sha256)
+      when is_binary(account_id) and is_binary(api_key_id) and is_binary(action_id) do
+    # The account-level kill switch (cap = 0) lives HERE, inside matching —
+    # disabling standing grants makes existing rows inert immediately, and a
+    # future caller can't forget the check.
+    if account_grant_lifetime_cap(account_id) == 0 do
+      nil
+    else
+      now = DateTime.utc_now()
 
-    Grant.Query.candidates_for_dispatch(api_key_id, action_id, now)
-    |> Grant.Query.by_runner_or_wildcard(runner_id)
-    |> Grant.Query.by_args_sha_or_wildcard(args_sha256)
-    |> Repo.all()
-    |> Enum.find(&Grant.usable?(&1, now))
+      Grant.Query.candidates_for_dispatch(api_key_id, action_id, now)
+      |> Grant.Query.by_runner_or_wildcard(runner_id)
+      |> Grant.Query.by_args_sha_or_wildcard(args_sha256)
+      |> Repo.all()
+      |> Enum.find(&Grant.usable?(&1, now))
+    end
   end
 
   @doc """
@@ -928,7 +935,9 @@ defmodule Emisar.Approvals do
   defp grant_duration_within_cap?(_duration, nil), do: true
   defp grant_duration_within_cap?(duration, cap), do: duration_seconds_for(duration) <= cap
 
-  # The account's grant-lifetime cap (nil = no cap). Reads the one settings
+  # The account's grant-lifetime cap (nil = no cap, 0 = standing grants
+  # DISABLED — no windowed duration fits inside 0, and matching short-circuits
+  # above). Reads the one settings
   # value Approvals enforces off `Accounts.fetch_account_settings/1`; a missing
   # account means no cap to apply on this path.
   defp account_grant_lifetime_cap(account_id) do

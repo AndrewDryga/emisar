@@ -268,12 +268,19 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp parse_grant_lifetime(raw) do
     case Integer.parse(raw) do
-      {seconds, ""} when seconds > 0 -> {:ok, seconds}
+      {seconds, ""} when seconds >= 0 -> {:ok, seconds}
       _ -> :error
     end
   end
 
+  # 0 is the kill switch: minting AND matching refuse account-wide.
+  defp grants_disabled?(account), do: account.settings.max_grant_lifetime_seconds == 0
+
   defp grant_lifetime_flash(nil), do: "Grant-lifetime cap removed — grants can use any window."
+
+  defp grant_lifetime_flash(0),
+    do: "Standing grants disabled — every approval is now single-use."
+
   defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
 
   defp grant_lifetime_label(3_600), do: "1 hour"
@@ -282,13 +289,20 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_lifetime_label(7_776_000), do: "90 days"
   defp grant_lifetime_label(seconds), do: "#{seconds} s"
 
+  # A strict→loose scale: disabled (no standing grants at all) up to no cap.
   defp grant_lifetime_options(current) do
     [
-      %{value: "", label: "No cap", selected: is_nil(current), disabled: false},
+      %{
+        value: "0",
+        label: "Disabled — approvals are always single-use",
+        selected: current == 0,
+        disabled: false
+      },
       %{value: "3600", label: "1 hour", selected: current == 3_600, disabled: false},
       %{value: "86400", label: "1 day", selected: current == 86_400, disabled: false},
       %{value: "2592000", label: "30 days", selected: current == 2_592_000, disabled: false},
-      %{value: "7776000", label: "90 days", selected: current == 7_776_000, disabled: false}
+      %{value: "7776000", label: "90 days", selected: current == 7_776_000, disabled: false},
+      %{value: "", label: "No cap", selected: is_nil(current), disabled: false}
     ]
   end
 
@@ -413,8 +427,28 @@ defmodule EmisarWeb.ApprovalsLive do
         <%!-- 2. STANDING GRANTS --%>
         <section>
           <.section_header title="Standing grants">
-            <:subtitle>Approvals that auto-allow follow-up calls for a bounded window.</:subtitle>
+            <:subtitle :if={not grants_disabled?(@current_account)}>
+              Approvals that auto-allow follow-up calls for a bounded window.
+            </:subtitle>
+            <:subtitle :if={grants_disabled?(@current_account)}>
+              Disabled for this account — every approval is single-use.
+            </:subtitle>
           </.section_header>
+
+          <%!-- The kill switch leaves existing rows LISTED but inert (matching
+               refuses account-wide) — say so, or the table below reads as live
+               capabilities. --%>
+          <.status_note
+            :if={grants_disabled?(@current_account) and @grants != []}
+            icon="hero-no-symbol"
+            tone={:amber}
+            title="These grants are inert"
+            class="mb-6"
+          >
+            Standing grants are disabled, so nothing matches them at dispatch — agents
+            re-ask for approval every time. Revoke them below to tidy up, or re-enable
+            grants under Maximum grant lifetime.
+          </.status_note>
 
           <LiveTable.live_table
             layout={:cards}
@@ -487,7 +521,21 @@ defmodule EmisarWeb.ApprovalsLive do
               </.list_row>
             </:item>
             <:empty>
-              <.empty_state variant={:bare} icon="hero-key" title="No active grants.">
+              <.empty_state
+                :if={grants_disabled?(@current_account)}
+                variant={:bare}
+                icon="hero-no-symbol"
+                title="Standing grants are disabled."
+              >
+                Every approval is single-use — agents re-ask each time. An owner or
+                admin can re-enable them under Maximum grant lifetime below.
+              </.empty_state>
+              <.empty_state
+                :if={not grants_disabled?(@current_account)}
+                variant={:bare}
+                icon="hero-key"
+                title="No active grants."
+              >
                 Grants appear when you approve a run with a duration other than
                 <em>just this call</em>
                 — they let the same LLM client re-run the same action
@@ -520,8 +568,14 @@ defmodule EmisarWeb.ApprovalsLive do
                   — each grant keeps the lifetime it was approved with
                 </span>
               </span>
+              <span :if={grants_disabled?(@current_account)} class="text-xs text-zinc-400">
+                disabled
+                <span class="hidden text-zinc-500 sm:inline">
+                  — every approval is single-use
+                </span>
+              </span>
               <span
-                :if={@current_account.settings.max_grant_lifetime_seconds}
+                :if={(@current_account.settings.max_grant_lifetime_seconds || 0) > 0}
                 class="text-xs text-zinc-400"
               >
                 {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
