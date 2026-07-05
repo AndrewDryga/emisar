@@ -556,6 +556,14 @@ after being taught, so every one is checked EVERY time, mechanically:
 6. **Same-shape → shared component** — before styling anything, grep for the
    component that already renders this shape (`secret_reveal`, `disclosure`,
    `section_header`, `empty_state`, …).
+7. **Copy that points must point at something rendered** — "the scope you set
+   above", "the list below", "re-click Step 3": verify the referenced control
+   actually renders on THAT tab/branch/state, in pixels. Conditional branches
+   drift (the Custom key tab warned about a scope picker that only existed on
+   the quick-mint tabs; the picker cited a step numbering that was long gone).
+   Check: for each `above/below/Step N/the X control` in template copy, find
+   the referenced element in the SAME render branch — and after any layout
+   rework, grep the surface's copy for stale spatial/step references.
 
 ---
 
