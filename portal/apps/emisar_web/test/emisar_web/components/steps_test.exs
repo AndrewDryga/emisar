@@ -41,9 +41,10 @@ defmodule EmisarWeb.Components.StepsTest do
         </CoreComponents.steps>
         """)
 
-      assert html =~ "divide-y divide-zinc-900"
+      assert html =~ "divide-y divide-zinc-800/70"
       assert html =~ "h-6 w-6"
-      assert html =~ "px-5 py-3"
+      # No horizontal padding — the plan list sits on the canvas, not in a panel.
+      assert html =~ "gap-3 py-3"
       assert html =~ "restart nginx"
       assert html =~ ~r{>\s*2\s*</span>}
     end

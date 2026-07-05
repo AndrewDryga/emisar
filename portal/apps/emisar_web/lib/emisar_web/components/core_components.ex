@@ -549,7 +549,7 @@ defmodule EmisarWeb.CoreComponents do
   def input(%{type: "select"} = assigns) do
     ~H"""
     <div>
-      <.label for={@id} variant={@label_variant}>{@label}</.label>
+      <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
       <select
         id={@id}
         name={@name}
@@ -558,7 +558,8 @@ defmodule EmisarWeb.CoreComponents do
           input_size(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          input_ring(@errors, @tone)
+          input_ring(@errors, @tone),
+          @class
         ]}
         multiple={@multiple}
         {@rest}
@@ -2740,12 +2741,14 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp steps_list_class(:guide), do: "space-y-3 text-sm leading-relaxed text-zinc-400"
-  defp steps_list_class(:plan), do: "divide-y divide-zinc-900"
+  defp steps_list_class(:plan), do: "divide-y divide-zinc-800/70"
 
   # Baseline-aligned: the guide marker is TYPE (a quiet "1."), not a widget,
   # so it sits on the text baseline like any numeral.
   defp steps_row_class(:guide), do: "flex items-baseline gap-2.5"
-  defp steps_row_class(:plan), do: "flex items-start gap-3 px-5 py-3"
+  # No horizontal padding — the plan list sits on the canvas (runbook run
+  # page), not inside a panel gutter.
+  defp steps_row_class(:plan), do: "flex items-start gap-3 py-3"
 
   # A bare ordered-list numeral — a filled disc per row read as chrome and
   # outweighed the instructions it was numbering.

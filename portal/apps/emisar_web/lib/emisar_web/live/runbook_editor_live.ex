@@ -680,7 +680,10 @@ defmodule EmisarWeb.RunbookEditorLive do
              named. --%>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
         <div>
-          <div class="flex items-center justify-between gap-2">
+          <%!-- Every label row in the step grid is the same h-6 flex so the
+               boxes below start in register — the risk pill otherwise inflates
+               only this row and knocks the columns out of line. --%>
+          <div class="flex h-6 items-center justify-between gap-2">
             <.label variant={:eyebrow}>
               Action
             </.label>
@@ -708,13 +711,15 @@ defmodule EmisarWeb.RunbookEditorLive do
         </div>
 
         <div>
-          <.label
-            variant={:eyebrow}
-            for={"step-#{@index}-id"}
-            title="Referenced by other steps; auto-derives from Action"
-          >
-            Step ID
-          </.label>
+          <div class="flex h-6 items-center">
+            <.label
+              variant={:eyebrow}
+              for={"step-#{@index}-id"}
+              title="Referenced by other steps; auto-derives from Action"
+            >
+              Step ID
+            </.label>
+          </div>
           <.input
             id={"step-#{@index}-id"}
             name="step_id"
@@ -728,31 +733,41 @@ defmodule EmisarWeb.RunbookEditorLive do
 
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div class="sm:col-span-1">
+          <div class="flex h-6 items-center">
+            <.label variant={:eyebrow} for={"step-#{@index}-selector-kind"}>
+              Run on
+            </.label>
+          </div>
+          <%!-- text-xs matches the sibling text inputs — the select otherwise
+               keeps the compact size's text-sm and renders a taller box. --%>
           <.input
             id={"step-#{@index}-selector-kind"}
             name="selector_kind"
             type="select"
-            label="Run on"
-            label_variant={:eyebrow}
             size={:compact}
+            class="text-xs"
             value={@step["selector_kind"]}
             options={[{"group", "group"}, {"runner", "runner_id"}]}
           />
         </div>
         <div class="sm:col-span-2">
-          <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
-            Targets
-          </.label>
+          <div class="flex h-6 items-center">
+            <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
+              Targets
+            </.label>
+          </div>
           <% selected = @step["selector_values"] || [] %>
           <% options =
             selector_options(@step["selector_kind"], @groups, @runners, selected)
             |> Enum.map(fn {label, value} ->
               %{value: value, label: label, disabled: false, selected: value in selected}
             end) %>
+          <%!-- mt-1 matches the gap every compact input carries under its label. --%>
           <.checkbox_list
             id={"step-#{@index}-selector-values"}
             name="selector_values[]"
             options={options}
+            class="mt-1"
           />
           <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
             {if @step["selector_kind"] == "runner_id",

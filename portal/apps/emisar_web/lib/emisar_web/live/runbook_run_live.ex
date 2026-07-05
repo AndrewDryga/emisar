@@ -525,12 +525,10 @@ defmodule EmisarWeb.RunbookRunLive do
     |> Enum.map(&Map.get(names, &1, "a runner"))
   end
 
-  defp offline_preflight_message([name]),
-    do: "Target runner #{name} is offline — its steps will queue until it reconnects."
+  defp offline_preflight_title([name]), do: "Target runner #{name} is offline"
 
-  defp offline_preflight_message(names) do
-    "#{length(names)} target runners are offline (#{Enum.join(names, ", ")}) — those steps will queue until they reconnect."
-  end
+  defp offline_preflight_title(names),
+    do: "#{length(names)} target runners are offline (#{Enum.join(names, ", ")})"
 
   defp pluralize(1, word), do: word
   defp pluralize(_, word), do: word <> "s"
@@ -623,7 +621,7 @@ defmodule EmisarWeb.RunbookRunLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
-      width={:form}
+      width={:table}
     >
       <:title>
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
@@ -634,10 +632,10 @@ defmodule EmisarWeb.RunbookRunLive do
         </.detail_header>
       </:title>
 
-      <div class="space-y-6">
+      <div class="mt-4 space-y-12">
         <%!-- How-it-works strip — short paragraph, replaces the
              stranded `-mt-4` lead-in that fought the page padding. --%>
-        <p class="text-sm leading-relaxed text-zinc-400">
+        <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
           Steps dispatch in parallel waves, each against the runner — or group — it
           targets. A failed run stops the waves behind it.
         </p>
@@ -647,55 +645,56 @@ defmodule EmisarWeb.RunbookRunLive do
              and dispatch form (which would flash, then flip to the live run). --%>
         <.loading_state :if={not @loaded?} />
 
-        <%!-- One table, not two. Idle: the plan (numbered steps). Once
-             dispatched: the live runs replace those rows in place, while
-             the planned-step count stays in the header for context — a
-             step fans out to one run per targeted runner, so there can be
-             more runs than steps. --%>
-        <.panel
-          :if={@loaded?}
-          id="execution"
-          variant={:split}
-          title={if @execution, do: "Execution", else: "Plan"}
-        >
-          <%!-- Headline risk: the most-severe step's risk, so the operator
-               sees the worst this runbook can do at a glance. Hidden when no
-               step's action is in the catalog yet (never a false low). --%>
-          <:badge>
-            <.risk_pill
-              :if={plan_max_risk(@action_risk, @steps)}
-              risk={plan_max_risk(@action_risk, @steps)}
-              class="flex-none"
-            />
-          </:badge>
-          <:annotation>
-            {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-            <span :if={!@execution && @blast_radius.total} class="text-zinc-400">
-              → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
-                @blast_radius.waves,
-                "wave"
-              )}
-            </span>
-            <span :if={@execution}>
-              · {finished_count(@run_statuses)}/{@execution.total} finished
-              <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
-                · {failed_count(@run_statuses)} failed
+        <%!-- One list, not two, NAKED on the canvas. Idle: the plan (numbered
+             steps). Once dispatched: the live runs replace those rows in
+             place, while the planned-step count stays in the header for
+             context — a step fans out to one run per targeted runner, so
+             there can be more runs than steps. --%>
+        <section :if={@loaded?} id="execution">
+          <.section_header title={if @execution, do: "Execution", else: "Plan"}>
+            <:actions>
+              <%!-- Headline risk: the most-severe step's risk, so the operator
+                   sees the worst this runbook can do at a glance. Hidden when no
+                   step's action is in the catalog yet (never a false low). --%>
+              <.risk_pill
+                :if={plan_max_risk(@action_risk, @steps)}
+                risk={plan_max_risk(@action_risk, @steps)}
+                class="flex-none"
+              />
+              <span class="text-xs text-zinc-500">
+                {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
+                <span :if={!@execution && @blast_radius.total} class="text-zinc-400">
+                  → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
+                    @blast_radius.waves,
+                    "wave"
+                  )}
+                </span>
+                <span :if={@execution}>
+                  · {finished_count(@run_statuses)}/{@execution.total} finished
+                  <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
+                    · {failed_count(@run_statuses)} failed
+                  </span>
+                </span>
               </span>
-            </span>
-          </:annotation>
+            </:actions>
+          </.section_header>
 
           <%!-- The engine stops launching waves after a failed/denied run, so
                the remaining placeholder rows never dispatch — without this they
                sit grey and the page reads as stuck/broken. In-flight runs still
                finish; only the un-launched waves are dropped. --%>
-          <.callout
+          <.event_block
             :if={@execution && halted_count(@run_statuses, @execution.total) > 0}
+            icon="hero-hand-raised"
             tone={:amber}
-            variant={:strip}
+            title={"Halted — #{halted_count(@run_statuses, @execution.total)} planned #{pluralize(halted_count(@run_statuses, @execution.total), "run")} won't dispatch"}
+            class="mb-6"
           >
-            Halted — {halted_count(@run_statuses, @execution.total)} of the planned runs won't
-            dispatch because an earlier step failed. Any in-flight runs will still finish.
-          </.callout>
+            <:body>
+              An earlier step failed, so the engine stops launching the waves behind it.
+              Any in-flight runs will still finish.
+            </:body>
+          </.event_block>
 
           <%!-- Live runs once dispatched. Each row updates in place as its
                run transitions (the status badge flips to success / failed). --%>
@@ -705,11 +704,7 @@ defmodule EmisarWeb.RunbookRunLive do
             phx-update="stream"
             class="divide-y divide-zinc-800/70"
           >
-            <li
-              :for={{dom_id, row} <- @streams.execution_runs}
-              id={dom_id}
-              class="px-5 py-2.5 text-sm"
-            >
+            <li :for={{dom_id, row} <- @streams.execution_runs} id={dom_id} class="py-3 text-sm">
               <div class="flex items-center gap-3">
                 <.status_badge status={row.status} />
                 <div class="min-w-0 flex-1">
@@ -747,31 +742,38 @@ defmodule EmisarWeb.RunbookRunLive do
                 </.link>
               </div>
               <%!-- Tail of the run's output once it finishes — a glanceable
-                   preview; the full terminal is on the run-detail page. --%>
-              <.output_preview events={row.output} class="ml-9 mt-1.5 max-h-32" />
+                   preview spanning the full row (the artifact wants the width);
+                   the full terminal is on the run-detail page. --%>
+              <.output_preview events={row.output} class="mt-2 max-h-32" />
             </li>
           </ul>
 
           <%!-- A group step that resolves to zero active runners makes dispatch
                refuse the whole runbook — surface that here, before Start. --%>
-          <.callout :if={!@execution && @blast_radius.no_runners_step} tone={:amber} variant={:strip}>
-            Step {@blast_radius.no_runners_step}'s target has no active runners — dispatch
-            will refuse it until one connects.
-          </.callout>
+          <.status_note
+            :if={!@execution && @blast_radius.no_runners_step}
+            icon="hero-signal-slash"
+            tone={:amber}
+            title={"Step #{@blast_radius.no_runners_step}'s target has no active runners"}
+            class="mb-6"
+          >
+            Dispatch will refuse the runbook until one connects.
+          </.status_note>
 
           <%!-- Offline preflight: a planned target that's offline queues (doesn't
                fail) until it reconnects — surface it before Start so a half-dark
                fleet isn't a surprise mid-run. --%>
           <% offline_targets =
             offline_planned_runners(@blast_radius.plan, @runners, @current_account.id) %>
-          <.callout
+          <.status_note
             :if={!@execution && offline_targets != []}
-            tone={:amber}
-            variant={:strip}
             icon="hero-signal-slash"
+            tone={:amber}
+            title={offline_preflight_title(offline_targets)}
+            class="mb-6"
           >
-            {offline_preflight_message(offline_targets)}
-          </.callout>
+            Dispatch queues their steps until they reconnect — a heads-up, not a blocker.
+          </.status_note>
 
           <%!-- Plan steps, shown until the first dispatch. --%>
           <.steps :if={!@execution && @steps != []} variant={:plan}>
@@ -825,10 +827,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <%!-- Nothing to run — nudge to the editor instead of dispatching
                an empty runbook. --%>
-          <div
-            :if={!@execution && @steps == []}
-            class="px-5 py-10 text-center text-sm text-zinc-500"
-          >
+          <p :if={!@execution && @steps == []} class="py-4 text-sm text-zinc-500">
             No steps defined.
             <.link
               navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
@@ -837,14 +836,16 @@ defmodule EmisarWeb.RunbookRunLive do
               Edit the runbook
             </.link>
             first.
-          </div>
-        </.panel>
+          </p>
+        </section>
 
-        <%!-- Dispatch form — full width below the plan; doubles as the re-run
-             form once a run settles. Hidden while a run is IN PROGRESS so a
-             stray submit can't double-dispatch mid-run (a "running" note takes
-             its place); it returns when every run finishes or the run halts. --%>
-        <.panel :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} title="Run">
+        <%!-- Dispatch form — NAKED below the plan (forms are naked, §8.1),
+             capped at a reading width; doubles as the re-run form once a run
+             settles. Hidden while a run is IN PROGRESS so a stray submit can't
+             double-dispatch mid-run (a "running" note takes its place); it
+             returns when every run finishes or the run halts. --%>
+        <section :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} class="max-w-3xl">
+          <.section_header title="Run" />
           <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
               <%!-- Non-FormField field: `reason` posts a top-level key and its
@@ -876,16 +877,17 @@ defmodule EmisarWeb.RunbookRunLive do
               Run runbook
             </.button>
           </form>
-        </.panel>
+        </section>
 
         <%!-- Stands in for the dispatch form while a run is in progress, so the
              form's absence reads as intentional rather than missing. --%>
-        <.panel :if={@loaded? and run_in_progress?(@execution, @run_statuses)} title="Run">
+        <section :if={@loaded? and run_in_progress?(@execution, @run_statuses)}>
+          <.section_header title="Run" />
           <p class="flex items-center gap-2 text-sm text-zinc-400">
             <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-brand-400" />
             Runbook is running — you can start another run once it finishes.
           </p>
-        </.panel>
+        </section>
       </div>
     </.dashboard_shell>
     """

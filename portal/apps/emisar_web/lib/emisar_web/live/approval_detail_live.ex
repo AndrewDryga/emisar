@@ -595,7 +595,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             icon={verdict_icon(verdict)}
             tone={verdict_tone(verdict)}
             title={verdict_title(verdict)}
-            class="mt-8"
+            class="mt-8 max-w-4xl"
           >
             <:body>
               <%= case verdict do %>
@@ -620,9 +620,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </.event_block>
         </div>
 
+        <%!-- On the pending state the 340px rail already caps the record column
+             (~4xl at the 7xl page width); a decided page has no rail, so cap the
+             record itself — a one-line command in a 7xl-wide artifact box reads
+             stretched on a large screen. --%>
         <div class={[
           "grid grid-cols-1 gap-x-12 gap-y-12",
-          verdict == :pending && "lg:grid-cols-[minmax(0,1fr)_340px]"
+          if(verdict == :pending, do: "lg:grid-cols-[minmax(0,1fr)_340px]", else: "max-w-4xl")
         ]}>
           <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>

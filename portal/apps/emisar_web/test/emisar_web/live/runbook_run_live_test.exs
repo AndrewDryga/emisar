@@ -157,7 +157,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       html = render(lv)
       assert html =~ "Halted"
-      assert html =~ "an earlier step failed"
+      assert html =~ "An earlier step failed"
     end
 
     test "a partial first-wave dispatch failure marks the failed row, one honest flash", %{
@@ -591,7 +591,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert html =~ "sleepy"
-      assert html =~ "will queue until"
+      assert html =~ "queues their steps until they reconnect"
     end
 
     test "a fan-out beyond the cap is refused with a humanized flash, not a raw atom", %{
