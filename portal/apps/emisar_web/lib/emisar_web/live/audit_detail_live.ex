@@ -141,8 +141,11 @@ defmodule EmisarWeb.AuditDetailLive do
 
           <%!-- Actor → Target, NAKED clusters (no cards): the arrow still
                draws the relationship ("user X acted ON runner Y") between
-               the two field-key columns. --%>
-          <div class="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-start sm:gap-6">
+               the two field-key columns. The actor track hugs its content
+               (max-content, shrinkable under pressure) so the arrow sits
+               BETWEEN the clusters — a 1fr left column left it hanging
+               mid-page in empty space. --%>
+          <div class="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-[minmax(0,max-content)_auto_minmax(0,1fr)] sm:items-start sm:gap-x-10">
             <.entity_card
               role="Actor"
               kind={@event.actor_kind}
