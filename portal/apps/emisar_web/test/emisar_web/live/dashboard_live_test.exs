@@ -115,7 +115,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "dispatch an action from its catalog"
 
       # A solo account (just the owner) reports its honest member count and
-      # nudges an invite — never the premature "give everyone their own sign-in"
+      # nudges an invite — never the premature "Enable SSO"
       # SSO pitch, which waits for a team to exist.
       assert html =~ "1<span class=\"text-2xl text-zinc-500\"> member</span>"
 
@@ -125,7 +125,7 @@ defmodule EmisarWeb.DashboardLiveTest do
                "Invite team members"
              )
 
-      refute html =~ "Give everyone their own sign-in"
+      refute html =~ "Enable SSO"
     end
 
     test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
@@ -155,12 +155,12 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
       assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
-      assert html =~ "Give everyone their own sign-in"
+      assert html =~ "Enable SSO"
 
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/settings/sso"}']",
-               "Give everyone their own sign-in"
+               "Enable SSO"
              )
 
       refute html =~ "Invite team members"

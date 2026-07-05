@@ -763,7 +763,7 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/settings/sso"}
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
-      <:action>Give everyone their own sign-in</:action>
+      <:action>Enable SSO</:action>
     </.pillar>
     """
   end
