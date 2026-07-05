@@ -194,7 +194,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event("remove_step", %{"index" => idx}, socket) do
     i = safe_index(idx)
-    {:noreply, assign(socket, :steps, List.delete_at(socket.assigns.steps, i))}
+    {:noreply, socket |> assign(:steps, List.delete_at(socket.assigns.steps, i)) |> mark_dirty()}
   end
 
   def handle_event("move_step", %{"index" => idx, "dir" => dir}, socket) do
@@ -441,7 +441,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
-      width={:detail}
+      width={:table}
     >
       <:title>
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
@@ -466,143 +466,162 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.button>
       </:actions>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <section>
-          <%!-- ONE add affordance: the dashed composer row below the list
+      <div class="mt-4">
+        <div class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <section>
+            <%!-- ONE add affordance: the dashed composer row below the list
                (where the next step lands) — a twin title-row button
                double-stated the action. --%>
-          <.section_header title="Steps" />
+            <.section_header title="Steps" />
 
-          <div class="space-y-3">
             <%!-- A structural save error (e.g. a blank/invalid `definition`)
-                 has no metadata input to bind to, so it surfaces here on the
-                 Steps panel rather than in a top flash banner. --%>
-            <.callout :if={msg = save_error_message(@form)} tone={:rose}>{msg}</.callout>
-
-            <.empty_state :if={@steps == []} variant={:hint}>
-              No steps yet — add the first one below.
-            </.empty_state>
+               has no metadata input to bind to, so it surfaces here above
+               the steps rather than in a top flash banner. --%>
+            <.event_block
+              :if={msg = save_error_message(@form)}
+              icon="hero-exclamation-triangle"
+              tone={:rose}
+              title={msg}
+              class="mb-8"
+            >
+              <:body>Fix the steps below, then save again.</:body>
+            </.event_block>
 
             <datalist id="catalog-actions">
               <option :for={a <- @catalog_actions} value={a}></option>
             </datalist>
 
             <%!-- Per-action arg datalists. Each renders separately so
-                 the arg_editor input can target the right one via its
-                 `list=` attribute, and the dropdown only suggests args
-                 actually defined for that step's action. --%>
+               the arg_editor input can target the right one via its
+               `list=` attribute, and the dropdown only suggests args
+               actually defined for that step's action. --%>
             <%= for {action_id, arg_names} <- @args_by_action do %>
               <datalist id={"args-#{datalist_id(action_id)}"}>
                 <option :for={name <- arg_names} value={name}></option>
               </datalist>
             <% end %>
 
-            <%= for {step, idx} <- Enum.with_index(@steps) do %>
-              <.step_card
-                step={step}
-                index={idx}
-                total={length(@steps)}
-                args_by_action={@args_by_action}
-                risk={@risk_by_action[step["action_id"]]}
-                catalog_actions={@catalog_actions}
-                groups={@groups}
-                runners={@runners}
-              />
-            <% end %>
+            <%!-- Steps are naked form units on the canvas — a hairline between
+               them, never a wash box (§8.1: forms are naked). The datalists
+               above stay OUTSIDE this stack: divide-y's sibling selector
+               would draw a phantom rule against them. --%>
+            <div class="divide-y divide-zinc-800/70">
+              <div :for={{step, idx} <- Enum.with_index(@steps)} class="py-10 first:pt-0 last:pb-0">
+                <.step_unit
+                  step={step}
+                  index={idx}
+                  total={length(@steps)}
+                  args_by_action={@args_by_action}
+                  risk={@risk_by_action[step["action_id"]]}
+                  catalog_actions={@catalog_actions}
+                  groups={@groups}
+                  runners={@runners}
+                />
+              </div>
+            </div>
 
             <%!-- Composer standard: the add affordance lives where the next
-                 step goes, so a 3-card list doesn't scroll back to the
-                 header's button. --%>
-            <.add_row label="Add step" phx-click="add_action_step" />
-          </div>
-        </section>
+               step goes, so a 3-card list doesn't scroll back to the
+               header's button. With zero steps it IS the empty state — a
+               "no steps yet" hint above it would double the dashed chrome. --%>
+            <div class="mt-8">
+              <.add_row label="Add step" phx-click="add_action_step" />
+            </div>
+          </section>
 
-        <aside class="space-y-8">
-          <section>
-            <.section_header title="Details" />
-            <form phx-change="meta_change" class="space-y-4">
-              <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
+          <%!-- Details first on phones: naming the runbook is the first thing
+             a new one asks for, and the rail is three compact fields — the
+             step list below it can run long. --%>
+          <aside class="order-first space-y-8 lg:order-none">
+            <section>
+              <.section_header title="Details" />
+              <form phx-change="meta_change" class="space-y-4">
+                <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
                    form posts top-level keys that `meta_change` reads directly;
                    the `field=` only supplies the value + the post-validate error
                    display, which `<.input>` gates via `used_input?`. --%>
-              <.input
-                field={@form[:title]}
-                name="title"
-                id="runbook_title"
-                label="Title"
-                label_variant={:eyebrow}
-                size={:compact}
-                required
-                placeholder="e.g. Cassandra: rolling repair"
-              />
-              <.input
-                field={@form[:slug]}
-                name="slug"
-                id="runbook_slug"
-                label="Slug"
-                label_variant={:eyebrow}
-                size={:compact}
-                class="font-mono text-xs"
-                placeholder="auto from title"
-              />
-              <.input
-                field={@form[:description]}
-                type="textarea"
-                name="description"
-                id="runbook_description"
-                label="Description"
-                label_variant={:eyebrow}
-                size={:compact}
-                rows="4"
-                placeholder="Optional human-readable summary."
-              />
-            </form>
-          </section>
+                <.input
+                  field={@form[:title]}
+                  name="title"
+                  id="runbook_title"
+                  label="Title"
+                  label_variant={:eyebrow}
+                  size={:compact}
+                  required
+                  placeholder="e.g. Cassandra: rolling repair"
+                />
+                <.input
+                  field={@form[:slug]}
+                  name="slug"
+                  id="runbook_slug"
+                  label="Slug"
+                  label_variant={:eyebrow}
+                  size={:compact}
+                  class="font-mono text-xs"
+                  placeholder="auto from title"
+                />
+                <.input
+                  field={@form[:description]}
+                  type="textarea"
+                  name="description"
+                  id="runbook_description"
+                  label="Description"
+                  label_variant={:eyebrow}
+                  size={:compact}
+                  rows="4"
+                  placeholder="Optional human-readable summary."
+                />
+              </form>
+            </section>
 
-          <section :if={@runbook}>
-            <.section_header title="Version" />
-            <dl class="space-y-2 text-xs text-zinc-400">
-              <.kv label="Current">v{@runbook.version}</.kv>
-              <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-              <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
-            </dl>
-            <p :if={@runbook.status == :published} class="mt-4 text-xs text-zinc-500 leading-relaxed">
-              Published runbooks are immutable — saving creates a new draft version.
-            </p>
-          </section>
-        </aside>
-      </div>
+            <section :if={@runbook}>
+              <.section_header title="Version" />
+              <dl class="space-y-2 text-xs text-zinc-400">
+                <.kv label="Current">v{@runbook.version}</.kv>
+                <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+                <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
+              </dl>
+              <p
+                :if={@runbook.status == :published}
+                class="mt-4 text-xs text-zinc-500 leading-relaxed"
+              >
+                Published runbooks are immutable — saving creates a new draft version.
+              </p>
+            </section>
+          </aside>
+        </div>
 
-      <%!-- Page-level footer: Save/Publish govern the WHOLE runbook (the
-           Title lives in the right column), so they sit below the grid —
-           inside the Steps panel, mobile stacking rendered Publish above
-           the very field it validates. --%>
-      <% ready_to_publish = publishable?(@steps) %>
-      <%!-- Save draft leads until every step can actually run (has an action AND
-           a target) — publishing an unrunnable runbook is a footgun on a
-           brand-new one. The PRIMARY always holds the first slot, so the
-           hierarchy reads the same in both states. --%>
-      <div class="mt-6 flex items-center gap-3 border-t border-zinc-900 pt-4">
-        <%= if ready_to_publish do %>
-          <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
-            Publish
-          </.button>
-          <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
-            Save draft
-          </.button>
-        <% else %>
-          <.button type="button" phx-click="save" phx-disable-with="Saving...">
-            Save draft
-          </.button>
-          <.button
-            variant={:secondary}
-            type="button"
-            phx-click="publish"
-            phx-disable-with="Publishing..."
-          >
-            Publish
-          </.button>
-        <% end %>
+        <%!-- Page-level footer: Save/Publish govern the WHOLE runbook (the
+             Title lives in the right column), so they sit below the grid —
+             inside the Steps panel, mobile stacking rendered Publish above
+             the very field it validates. --%>
+        <% ready_to_publish = publishable?(@steps) %>
+        <%!-- Save draft leads until every step can actually run (has an action AND
+             a target) — publishing an unrunnable runbook is a footgun on a
+             brand-new one. The PRIMARY always holds the first slot, so the
+             hierarchy reads the same in both states. --%>
+        <div class="mt-10 flex items-center gap-3 border-t border-zinc-800/70 pt-5">
+          <%= if ready_to_publish do %>
+            <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
+              Publish
+            </.button>
+            <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
+              Save draft
+            </.button>
+          <% else %>
+            <.button type="button" phx-click="save" phx-disable-with="Saving...">
+              Save draft
+            </.button>
+            <.button
+              variant={:secondary}
+              type="button"
+              phx-click="publish"
+              phx-disable-with="Publishing..."
+            >
+              Publish
+            </.button>
+          <% end %>
+        </div>
       </div>
     </.dashboard_shell>
     """
@@ -617,155 +636,155 @@ defmodule EmisarWeb.RunbookEditorLive do
   attr :groups, :list, required: true
   attr :runners, :list, required: true
 
-  defp step_card(assigns) do
+  defp step_unit(assigns) do
     ~H"""
-    <div class="rounded-lg bg-black/30 p-4 ring-1 ring-white/[0.08]">
-      <div class="flex items-center justify-between gap-3">
-        <span class="font-mono text-xs text-zinc-500">Step #{@index + 1}</span>
-        <div class="flex items-center gap-1">
-          <.icon_button
-            icon="hero-arrow-up"
-            label="Move up"
-            phx-click="move_step"
-            phx-value-index={@index}
-            phx-value-dir="up"
-            disabled={@index == 0}
-          />
-          <.icon_button
-            icon="hero-arrow-down"
-            label="Move down"
-            phx-click="move_step"
-            phx-value-index={@index}
-            phx-value-dir="down"
-            disabled={@index == @total - 1}
-          />
-          <.icon_button
-            icon="hero-trash"
-            label="Remove step"
-            tone={:rose}
-            phx-click="remove_step"
-            phx-value-index={@index}
-            data-confirm="Remove this step?"
-          />
-        </div>
+    <div class="flex items-center justify-between gap-3">
+      <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        Step {@index + 1}
+      </span>
+      <div class="flex items-center gap-1">
+        <.icon_button
+          icon="hero-arrow-up"
+          label="Move up"
+          phx-click="move_step"
+          phx-value-index={@index}
+          phx-value-dir="up"
+          disabled={@index == 0}
+        />
+        <.icon_button
+          icon="hero-arrow-down"
+          label="Move down"
+          phx-click="move_step"
+          phx-value-index={@index}
+          phx-value-dir="down"
+          disabled={@index == @total - 1}
+        />
+        <.icon_button
+          icon="hero-trash"
+          label="Remove step"
+          tone={:rose}
+          phx-click="remove_step"
+          phx-value-index={@index}
+          data-confirm="Remove this step?"
+        />
       </div>
+    </div>
 
-      <form phx-change="step_change" class="mt-3 space-y-3">
-        <input type="hidden" name="index" value={@index} />
+    <form phx-change="step_change" class="mt-3 space-y-3">
+      <input type="hidden" name="index" value={@index} />
 
-        <%!-- Action is the primary question the operator is answering
+      <%!-- Action is the primary question the operator is answering
              ("what does this step DO"). Putting it first lets Step ID
              auto-derive from the chosen action below, instead of asking
              the operator to invent a name before they know what they
              named. --%>
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
-          <div>
-            <div class="flex items-center justify-between gap-2">
-              <.label variant={:eyebrow}>
-                Action
-              </.label>
-              <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
-            </div>
-            <.input
-              name="action_id"
-              value={@step["action_id"]}
-              list="catalog-actions"
-              placeholder="linux.uptime"
-              size={:compact}
-              class="font-mono text-xs"
-            />
-            <%!-- A typo'd/unknown action previously failed SILENTLY (the risk
-                 pill just never appeared) until dispatch refused the runbook. --%>
-            <p
-              :if={
-                @step["action_id"] not in [nil, ""] and
-                  @step["action_id"] not in @catalog_actions
-              }
-              class="mt-1 text-[11px] text-amber-400/80"
-            >
-              Not in your catalog — no runner advertises this action.
-            </p>
-          </div>
-
-          <div>
-            <.label
-              variant={:eyebrow}
-              for={"step-#{@index}-id"}
-              title="Referenced by other steps; auto-derives from Action"
-            >
-              Step ID
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
+        <div>
+          <div class="flex items-center justify-between gap-2">
+            <.label variant={:eyebrow}>
+              Action
             </.label>
-            <.input
-              id={"step-#{@index}-id"}
-              name="step_id"
-              value={@step["id"]}
-              placeholder="auto from action"
-              size={:compact}
-              class="font-mono text-xs"
-            />
+            <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
           </div>
+          <.input
+            name="action_id"
+            value={@step["action_id"]}
+            list="catalog-actions"
+            placeholder="linux.uptime"
+            size={:compact}
+            class="font-mono text-xs"
+          />
+          <%!-- A typo'd/unknown action previously failed SILENTLY (the risk
+                 pill just never appeared) until dispatch refused the runbook. --%>
+          <p
+            :if={
+              @step["action_id"] not in [nil, ""] and
+                @step["action_id"] not in @catalog_actions
+            }
+            class="mt-1 text-[11px] text-amber-400/80"
+          >
+            Not in your catalog — no runner advertises this action.
+          </p>
         </div>
 
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div class="sm:col-span-1">
-            <.input
-              id={"step-#{@index}-selector-kind"}
-              name="selector_kind"
-              type="select"
-              label="Run on"
-              label_variant={:eyebrow}
-              size={:compact}
-              value={@step["selector_kind"]}
-              options={[{"group", "group"}, {"runner", "runner_id"}]}
-            />
-          </div>
-          <div class="sm:col-span-2">
-            <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
-              Targets
-            </.label>
-            <% selected = @step["selector_values"] || [] %>
-            <% options =
-              selector_options(@step["selector_kind"], @groups, @runners, selected)
-              |> Enum.map(fn {label, value} ->
-                %{value: value, label: label, disabled: false, selected: value in selected}
-              end) %>
-            <.checkbox_list
-              id={"step-#{@index}-selector-values"}
-              name="selector_values[]"
-              options={options}
-            />
-            <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
-              {if @step["selector_kind"] == "runner_id",
-                do: "No runners connected yet.",
-                else: "No runner groups yet."}
-            </p>
-            <%!-- Mirror the run view's "no target set": a step with nothing
+        <div>
+          <.label
+            variant={:eyebrow}
+            for={"step-#{@index}-id"}
+            title="Referenced by other steps; auto-derives from Action"
+          >
+            Step ID
+          </.label>
+          <.input
+            id={"step-#{@index}-id"}
+            name="step_id"
+            value={@step["id"]}
+            placeholder="auto from action"
+            size={:compact}
+            class="font-mono text-xs"
+          />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div class="sm:col-span-1">
+          <.input
+            id={"step-#{@index}-selector-kind"}
+            name="selector_kind"
+            type="select"
+            label="Run on"
+            label_variant={:eyebrow}
+            size={:compact}
+            value={@step["selector_kind"]}
+            options={[{"group", "group"}, {"runner", "runner_id"}]}
+          />
+        </div>
+        <div class="sm:col-span-2">
+          <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
+            Targets
+          </.label>
+          <% selected = @step["selector_values"] || [] %>
+          <% options =
+            selector_options(@step["selector_kind"], @groups, @runners, selected)
+            |> Enum.map(fn {label, value} ->
+              %{value: value, label: label, disabled: false, selected: value in selected}
+            end) %>
+          <.checkbox_list
+            id={"step-#{@index}-selector-values"}
+            name="selector_values[]"
+            options={options}
+          />
+          <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
+            {if @step["selector_kind"] == "runner_id",
+              do: "No runners connected yet.",
+              else: "No runner groups yet."}
+          </p>
+          <%!-- Mirror the run view's "no target set": a step with nothing
                  selected won't dispatch — flag it inline now, not only when
                  publish/dispatch refuses the whole runbook. (Hidden when there's
                  nothing to pick — the message above already explains that.) --%>
-            <p
-              :if={options != [] and (@step["selector_values"] || []) == []}
-              class="mt-1 text-[11px] text-amber-400/80"
-            >
-              No target set — this step won't run until you pick one.
-            </p>
-          </div>
+          <p
+            :if={options != [] and (@step["selector_values"] || []) == []}
+            class="mt-1 text-[11px] text-amber-400/80"
+          >
+            No target set — this step won't run until you pick one.
+          </p>
         </div>
-      </form>
+      </div>
+    </form>
 
-      <%!-- Args live in a SIBLING form, not a nested one. Browsers
+    <%!-- Args live in a SIBLING form, not a nested one. Browsers
            auto-close the outer <form> on encountering a nested
            <form>, which would shred the layout for everything after
            the first inner form. Keeping it sibling means each arg
            row's phx-change "arg_change" routes correctly without
            collateral on the step form. --%>
-      <.arg_editor
-        index={@index}
-        args={@step["args"] || []}
-        action_id={@step["action_id"]}
-        known_args={Map.get(@args_by_action, @step["action_id"], [])}
-      />
-    </div>
+    <.arg_editor
+      index={@index}
+      args={@step["args"] || []}
+      action_id={@step["action_id"]}
+      known_args={Map.get(@args_by_action, @step["action_id"], [])}
+    />
     """
   end
 
@@ -827,17 +846,15 @@ defmodule EmisarWeb.RunbookEditorLive do
                 class="text-xs"
               />
             </div>
-            <button
-              type="button"
+            <.icon_button
+              icon="hero-trash"
+              label="Remove arg"
+              tone={:rose}
               phx-click="remove_arg"
               phx-value-index={@index}
               phx-value-arg={j}
-              class="grid h-9 w-9 place-items-center rounded-lg border border-zinc-800 text-zinc-500 hover:border-rose-700 hover:text-rose-300"
-              title="Remove arg"
-              aria-label="Remove arg"
-            >
-              <.icon name="hero-trash" class="h-3.5 w-3.5" />
-            </button>
+              class="grid h-9 w-9 place-items-center"
+            />
           </form>
         <% end %>
       </div>
@@ -846,7 +863,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   # A `definition` error comes from the structured step builder, not a metadata
-  # input — surface it as one concise line on the Steps panel. nil → nothing to
+  # input — surface it as one concise line above the steps. nil → nothing to
   # show (no save attempted, or only field errors that already render inline,
   # which `<.input>` paints under their own inputs once the changeset has an
   # `:action`). The metadata text fields now route through `<.input>`, so this
@@ -857,7 +874,9 @@ defmodule EmisarWeb.RunbookEditorLive do
     errors = Enum.map(form[:definition].errors, &translate_error/1)
 
     case errors do
-      [msg | _] -> "Steps: #{msg}"
+      # Sentence-case the changeset fragment — it renders as the error block's
+      # title directly under the Steps header, so a "Steps:" prefix would stutter.
+      [msg | _] -> String.capitalize(msg)
       [] -> nil
     end
   end

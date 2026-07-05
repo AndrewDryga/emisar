@@ -414,8 +414,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       html = render_click(lv, "save", %{})
 
-      assert html =~ "Steps: a step targets too many runners or groups (max 50)"
-      # Not a flash banner — the structural error lives on the Steps panel.
+      assert html =~ "A step targets too many runners or groups (max 50)"
+      # Not a flash banner — the structural error lives above the steps.
       refute html =~ ~s(id="flash-error")
       # Nothing persisted — the bound definition was rejected.
       assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
@@ -672,16 +672,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert length(runbook.definition["steps"]) == 2
     end
 
-    test "adding from an empty list replaces the empty-state", %{lv: lv} do
-      # Drop the single seeded step → the Steps panel shows its empty-state.
+    test "adding from an empty list brings the first step back", %{lv: lv} do
+      # Drop the single seeded step → only the Add step composer remains.
       empty = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(empty) == 0
-      assert empty =~ "No steps yet — add the first one below."
+      assert empty =~ "Add step"
 
-      # Adding one brings the first card back and clears the empty-state line.
       filled = render_click(lv, "add_action_step", %{})
       assert count_step_cards(filled) == 1
-      refute filled =~ "No steps yet — add the first one below."
     end
   end
 
@@ -696,11 +694,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ ~s(data-confirm="Remove this step?")
     end
 
-    test "removing the only step returns the empty-state", %{lv: lv} do
-      # A fresh :new editor seeds exactly one step; removing it leaves none.
+    test "removing the only step leaves just the composer", %{lv: lv} do
+      # A fresh :new editor seeds exactly one step; removing it leaves none —
+      # the dashed Add step composer IS the empty state.
       html = render_click(lv, "remove_step", %{"index" => "0"})
       assert count_step_cards(html) == 0
-      assert html =~ "No steps yet — add the first one below."
+      assert html =~ "Add step"
     end
   end
 
@@ -1211,7 +1210,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # title/slug/description, so meta_change surfaces no Steps error.
       html = render_change(lv, "meta_change", %{"title" => "Form only", "slug" => "form-only"})
 
-      refute html =~ "Steps:"
+      refute html =~ "Fix the steps below, then save again."
       refute html =~ "has invalid format"
       refute html =~ "can&#39;t be blank"
       refute html =~ "can't be blank"
