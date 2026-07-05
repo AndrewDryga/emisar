@@ -8,13 +8,13 @@ defmodule EmisarWeb.PoliciesLive do
     * **Targeted rulesets** — an inline list of per-runner / per-group
       policies. Add one, pick a runner or group, edit its rules. A ruleset
       **replaces** the default policy for that target (most specific wins:
-      runner > group > account), it doesn't layer on top — so what a card
+      runner > group > account), it doesn't layer on top — so what a unit
       shows is exactly what runs there.
 
-  Each card is its own form with its own Save (a scoped ruleset is its own
-  policy row, version, and audit entry). Events carry an `editor`
+  Each editor unit is its own form with its own Save (a scoped ruleset is its
+  own policy row, version, and audit entry). Events carry an `editor`
   discriminator — `"account"` or a ruleset uid — so one set of handlers
-  drives every card.
+  drives every unit.
   """
   use EmisarWeb, :live_view
   alias Emisar.Policies
@@ -641,23 +641,25 @@ defmodule EmisarWeb.PoliciesLive do
 
       <.loading_state :if={@loading?} />
 
-      <div :if={not @loading?} class="space-y-6">
-        <.page_intro>
-          Each action's risk tier meets your default policy — allow, require approval,
-          or deny — with overrides and targeted rulesets for the exceptions.
-          <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
-        </.page_intro>
+      <div :if={not @loading?} class="mt-4 space-y-12">
+        <div class="space-y-4">
+          <.page_intro>
+            Each action's risk tier meets your default policy — allow, require approval,
+            or deny — with overrides and targeted rulesets for the exceptions.
+            <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
+          </.page_intro>
 
-        <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an
-             actionable warning (§8.1). --%>
-        <p :if={not @can_manage?} class="text-xs text-zinc-500">
-          You can view the policy, but only owners and admins can change it.
-        </p>
+          <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an
+               actionable warning (§8.1). --%>
+          <p :if={not @can_manage?} class="text-xs text-zinc-500">
+            You can view the policy, but only owners and admins can change it.
+          </p>
+        </div>
 
-        <%!-- CONTENT ON CANVAS: the page-level editor sits naked — its inner
-             functional groups (tier inputs, the approval knob group, the
-             verdict box) carry their own containment. Targeted rulesets keep
-             their cards below: N discrete deletable instances earn islands. --%>
+        <%!-- CONTENT ON CANVAS: the editor sits naked — the only boxes are the
+             self-contained controls (selects, inputs, choice cards) and the
+             earned amber warnings. Rulesets are naked units under hairlines,
+             the same grammar as the runbook editor's steps. --%>
         <section>
           <.section_header title="Default policy">
             <:subtitle>
@@ -677,26 +679,13 @@ defmodule EmisarWeb.PoliciesLive do
           />
         </section>
 
-        <section class="space-y-4">
-          <.section_header title="Targeted rulesets" class="mb-0">
+        <section>
+          <.section_header title="Targeted rulesets">
             <:subtitle>
               A ruleset <strong class="text-zinc-300">replaces</strong>
               the default policy for one runner or group. Most specific wins — runner,
               then group, then the default policy.
             </:subtitle>
-            <:actions>
-              <.button
-                :if={@can_manage?}
-                variant={:secondary}
-                size={:md}
-                type="button"
-                phx-click="add_ruleset"
-                icon="hero-plus"
-                disabled={not addable_any?(@runners, @groups, @rulesets)}
-              >
-                Add ruleset
-              </.button>
-            </:actions>
           </.section_header>
 
           <.empty_state
@@ -709,26 +698,40 @@ defmodule EmisarWeb.PoliciesLive do
             Refresh the page; if it persists, your access to this account may have changed.
           </.empty_state>
 
-          <.empty_state
-            :if={not @load_error? and @rulesets == []}
-            icon="hero-adjustments-horizontal"
-            title="No targeted rulesets yet"
+          <%!-- Viewer with nothing to see gets the quiet fact; for a manager
+               the Add-ruleset composer below IS the empty state (the runbook
+               precedent — no dashed hint above a dashed composer). --%>
+          <p
+            :if={not @load_error? and @rulesets == [] and not @can_manage?}
+            class="text-sm text-zinc-500"
           >
-            Every runner uses the default policy above.
-            <span :if={@can_manage?}>
-              Add one to give a specific runner or group its own rules.
-            </span>
-          </.empty_state>
+            No targeted rulesets — every runner uses the default policy above.
+          </p>
 
-          <.ruleset_card
-            :for={ruleset <- @rulesets}
-            ruleset={ruleset}
-            account_approval={@account.approval}
-            runners={@runners}
-            groups={@groups}
-            rulesets={@rulesets}
-            can_manage={@can_manage?}
-          />
+          <div :if={@rulesets != []} class="divide-y divide-zinc-800/70">
+            <div :for={ruleset <- @rulesets} class="py-10 first:pt-0 last:pb-0">
+              <.ruleset_unit
+                ruleset={ruleset}
+                account_approval={@account.approval}
+                runners={@runners}
+                groups={@groups}
+                rulesets={@rulesets}
+                can_manage={@can_manage?}
+              />
+            </div>
+          </div>
+
+          <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
+            <.add_row
+              label="Add ruleset"
+              phx-click="add_ruleset"
+              disabled={not addable_any?(@runners, @groups, @rulesets)}
+              title={
+                if not addable_any?(@runners, @groups, @rulesets),
+                  do: "Every runner and group already has a ruleset (or none exist yet)"
+              }
+            />
+          </div>
         </section>
       </div>
     </.dashboard_shell>
@@ -742,76 +745,77 @@ defmodule EmisarWeb.PoliciesLive do
   attr :rulesets, :list, required: true
   attr :can_manage, :boolean, required: true
 
-  defp ruleset_card(assigns) do
+  # A NAKED unit in the rulesets stack (the runbook step grammar) — the
+  # hairline + header row delimit it; a card wash around a whole editor was
+  # the island §8.1 bans.
+  defp ruleset_unit(assigns) do
     ~H"""
-    <.card>
-      <header class="flex items-start justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <%= if @ruleset.policy do %>
-            <div class="flex items-center gap-2">
-              <.chip upcase>{@ruleset.scope_type}</.chip>
-              <span class="truncate text-sm font-semibold text-zinc-100">
-                {target_name(@ruleset, @runners)}
-              </span>
-            </div>
-            <p class="mt-1 text-xs text-zinc-500">
-              Replaces the default policy for this {@ruleset.scope_type}.
-            </p>
-          <% else %>
-            <%!-- A form (not a lone select) so the uid rides along as a hidden
-                 field on the change event, the same shape as the team page. --%>
-            <form phx-change="set_target" class="sm:max-w-xs">
-              <input type="hidden" name="uid" value={@ruleset.uid} />
-              <%!-- One tree: each group is a selectable header with its runners
-                   indented beneath it. A native <optgroup> label can't be picked,
-                   so groups are plain options; a target another ruleset already
-                   claims is shown disabled. --%>
-              <.select
-                name="target"
-                label="Apply this ruleset to"
-                label_variant={:eyebrow}
-                disabled={not @can_manage}
-                prompt="Choose a runner or group…"
-                prompt_selected={is_nil(@ruleset.scope_type)}
-                options={target_options(@runners, @groups, @ruleset, @rulesets)}
-              />
-            </form>
-          <% end %>
-        </div>
+    <header class="flex items-start justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <%= if @ruleset.policy do %>
+          <div class="flex items-center gap-2">
+            <.chip upcase>{@ruleset.scope_type}</.chip>
+            <span class="truncate text-sm font-semibold text-zinc-100">
+              {target_name(@ruleset, @runners)}
+            </span>
+          </div>
+          <p class="mt-1 text-xs text-zinc-500">
+            Replaces the default policy for this {@ruleset.scope_type}.
+          </p>
+        <% else %>
+          <%!-- A form (not a lone select) so the uid rides along as a hidden
+               field on the change event, the same shape as the team page. --%>
+          <form phx-change="set_target" class="sm:max-w-xs">
+            <input type="hidden" name="uid" value={@ruleset.uid} />
+            <%!-- One tree: each group is a selectable header with its runners
+                 indented beneath it. A native <optgroup> label can't be picked,
+                 so groups are plain options; a target another ruleset already
+                 claims is shown disabled. --%>
+            <.select
+              name="target"
+              label="Apply this ruleset to"
+              label_variant={:eyebrow}
+              disabled={not @can_manage}
+              prompt="Choose a runner or group…"
+              prompt_selected={is_nil(@ruleset.scope_type)}
+              options={target_options(@runners, @groups, @ruleset, @rulesets)}
+            />
+          </form>
+        <% end %>
+      </div>
 
-        <.button
-          :if={@can_manage}
-          variant={:secondary}
-          size={:md}
-          type="button"
-          phx-click="remove_ruleset"
-          phx-value-uid={@ruleset.uid}
-          icon="hero-trash"
-          data-confirm={
-            @ruleset.policy &&
-              "Remove this ruleset? That #{@ruleset.scope_type} falls back to the default policy."
-          }
-        >
-          Remove
-        </.button>
-      </header>
+      <.button
+        :if={@can_manage}
+        variant={:secondary}
+        size={:sm}
+        type="button"
+        phx-click="remove_ruleset"
+        phx-value-uid={@ruleset.uid}
+        icon="hero-trash"
+        data-confirm={
+          @ruleset.policy &&
+            "Remove this ruleset? That #{@ruleset.scope_type} falls back to the default policy."
+        }
+      >
+        Remove
+      </.button>
+    </header>
 
-      <.policy_fields
-        :if={@ruleset.scope_type}
-        editor_id={@ruleset.uid}
-        defaults={@ruleset.defaults}
-        overrides={@ruleset.overrides}
-        approval={@ruleset.approval}
-        approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
-        rules_errors={@ruleset.rules_errors}
-        can_manage={@can_manage}
-        save_label="Save ruleset"
-        dirty={@ruleset[:dirty?] || false}
-      />
-      <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
-        Pick a runner or group above, then set its rules.
-      </p>
-    </.card>
+    <.policy_fields
+      :if={@ruleset.scope_type}
+      editor_id={@ruleset.uid}
+      defaults={@ruleset.defaults}
+      overrides={@ruleset.overrides}
+      approval={@ruleset.approval}
+      approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
+      rules_errors={@ruleset.rules_errors}
+      can_manage={@can_manage}
+      save_label="Save ruleset"
+      dirty={@ruleset[:dirty?] || false}
+    />
+    <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
+      Pick a runner or group above, then set its rules.
+    </p>
     """
   end
 
@@ -854,8 +858,8 @@ defmodule EmisarWeb.PoliciesLive do
            policy". The tier grid is the card's primary content; the panel subtitle
            labels it ("by risk tier") and the tier cards are self-evident. --%>
       <div>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <.tier_card
+        <div class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+          <.tier_field
             :for={tier <- ["low", "medium", "high", "critical"]}
             tier={tier}
             value={@defaults[tier]}
@@ -869,52 +873,52 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
 
       <div>
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div>
-            <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              Per-action overrides
-            </h3>
-            <p class="mt-0.5 text-xs text-zinc-500">
-              First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
-            </p>
-          </div>
-          <.button
-            :if={@can_manage}
-            variant={:secondary}
-            size={:md}
-            type="button"
-            phx-click="add_override"
-            phx-value-editor={@editor_id}
-            icon="hero-plus"
-          >
-            Add override
-          </.button>
-        </div>
+        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Per-action overrides
+        </h3>
+        <p class="mt-0.5 text-xs text-zinc-500">
+          First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
+        </p>
 
-        <.empty_state :if={@overrides == []} variant={:hint} class="mt-4">
-          No overrides. The tier defaults above decide every action.
-        </.empty_state>
+        <%!-- Viewer's empty fact; a manager's empty state IS the composer below. --%>
+        <p :if={@overrides == [] and not @can_manage} class="mt-4 text-xs text-zinc-500">
+          No overrides — the tier defaults above decide every action.
+        </p>
 
-        <div :if={@overrides != []} class="mt-4 space-y-3">
+        <div :if={@overrides != []} class="mt-2 divide-y divide-zinc-800/70">
           <%!-- First-match wins, so an override whose glob is subsumed by an
                earlier one is dead. Surface it inline (display-only, pure CPU on
                the in-memory rows) so an operator doesn't believe a deny they
                buried under a broader allow is in force. --%>
-          <.override_card
+          <div
             :for={{override, idx} <- Enum.with_index(@overrides)}
-            editor_id={@editor_id}
-            override={override}
-            index={idx}
-            shadowed_by={shadowed_by(@overrides, idx)}
-            can_manage={@can_manage}
-          />
+            class="py-4 first:pt-0 last:pb-0"
+          >
+            <.override_row
+              editor_id={@editor_id}
+              override={override}
+              index={idx}
+              shadowed_by={shadowed_by(@overrides, idx)}
+              can_manage={@can_manage}
+            />
+          </div>
+        </div>
+
+        <%!-- Composer standard: the add affordance sits where the next row
+             lands — no twin header button, no dashed hint above a dashed
+             composer. --%>
+        <div :if={@can_manage} class="mt-4">
+          <.add_row label="Add override" phx-click="add_override" phx-value-editor={@editor_id} />
         </div>
       </div>
 
       <%!-- Approval requirements: WHO may approve (allow_self_approval) and HOW MANY
-           (min_approvals) — two independent knobs, plus an amber callout only when the
-           pair is weak (self-approval + one approval). Defaults to self-approval allowed
-           + 1 approval; buyers require a different operator for real separation of duties. --%>
+           (min_approvals) — two independent NAKED knobs (the choice cards and the
+           count input are self-contained controls; the recessed wash that used to
+           group them was one more island). Selection stays color-neutral on
+           purpose — emerald and amber are reserved for the verdict below, the one
+           place who + count are judged together, so the risky self-approval choice
+           never wears the safe color. The verdict resolves the pair into English. --%>
       <div>
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Approval requirements
@@ -922,77 +926,55 @@ defmodule EmisarWeb.PoliciesLive do
         <p class="mt-0.5 text-xs text-zinc-500">
           Applies to any action this policy sends to the approval queue.
         </p>
-        <%!-- Two orthogonal knobs — WHO may approve (allow_self_approval) and HOW
-             MANY (min_approvals) — grouped in one recessed surface so they read as a
-             single policy. Each "who" card wraps an sr-only radio (the card IS the
-             control): a meaning icon, a title, a one-line rationale, and a neutral
-             check when picked. Selection stays color-neutral on purpose — emerald and
-             amber are reserved for the verdict below, the one place who + count are
-             judged together, so the risky self-approval choice never wears the safe
-             color. The verdict resolves the pair into English. --%>
-        <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed knob surface (approval-editor redesign) --%>
-        <div class="mt-3 space-y-4 rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/5">
-          <div>
-            <.label variant={:eyebrow}>Who can approve</.label>
-            <.choice_cards
-              name="policy[approval][allow_self_approval]"
-              value={@approval["allow_self_approval"]}
-              disabled={!@can_manage}
-              columns={2}
-              class="mt-2"
-            >
-              <:card value="false" icon="hero-user-group" title="A different operator">
-                No signing off on your own request.
-              </:card>
-              <:card value="true" icon="hero-user" title="Anyone, incl. requester">
-                The requester's own approval can count.
-              </:card>
-            </.choice_cards>
-          </div>
 
-          <%!-- Count, hairline-divided from the who-choice but in the same surface —
-               a small centered field reading inline as part of one rule. --%>
-          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-white/5 pt-4">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              Required approvals
-            </span>
-            <input
-              type="number"
-              name="policy[approval][min_approvals]"
-              value={@approval["min_approvals"]}
-              min="1"
-              step="1"
-              disabled={!@can_manage}
-              class="w-14 rounded-lg border-0 bg-black/40 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
-            />
-            <span class="text-xs text-zinc-500">
-              {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
-            </span>
-          </div>
+        <div class="mt-3">
+          <.label variant={:eyebrow}>Who can approve</.label>
+          <.choice_cards
+            name="policy[approval][allow_self_approval]"
+            value={@approval["allow_self_approval"]}
+            disabled={!@can_manage}
+            columns={2}
+            class="mt-2"
+          >
+            <:card value="false" icon="hero-user-group" title="A different operator">
+              No signing off on your own request.
+            </:card>
+            <:card value="true" icon="hero-user" title="Anyone, incl. requester">
+              The requester's own approval can count.
+            </:card>
+          </.choice_cards>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Required approvals
+          </span>
+          <input
+            type="number"
+            name="policy[approval][min_approvals]"
+            value={@approval["min_approvals"]}
+            min="1"
+            step="1"
+            disabled={!@can_manage}
+            class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
+          />
+          <span class="text-xs text-zinc-500">
+            {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
+          </span>
         </div>
 
         <%!-- The callout earns its space only as a WARNING — when self-approval plus a
              single approval lets the requester sign off on their own request. A healthy
              gate shows no box: the cards + count already say what it does, and a green
              "all good" callout is just noise that trains operators to ignore boxes. --%>
-        <div
-          :if={@single_reviewer?}
-          class="mt-4 flex items-start gap-3 rounded-xl bg-amber-500/[0.07] p-4 ring-1 ring-amber-500/30"
-        >
-          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
-            <.icon name="hero-shield-exclamation" class="h-4 w-4" />
-          </span>
-          <div class="min-w-0 flex-1 text-sm leading-relaxed">
-            <p class="text-amber-50">
-              <span class="font-semibold">In effect —</span>
-              a single approval is enough, and the requester may approve their own request.
-            </p>
-            <%!-- The remedy line instructs an EDIT — only for roles that can. --%>
-            <p :if={@can_manage} class="mt-1 text-xs text-amber-200/80">
-              Choose a different operator, or raise the count, to add independent review.
-            </p>
-          </div>
-        </div>
+        <.callout :if={@single_reviewer?} tone={:amber} icon="hero-shield-exclamation" class="mt-4">
+          <span class="font-semibold">In effect —</span>
+          a single approval is enough, and the requester may approve their own request.
+          <%!-- The remedy line instructs an EDIT — only for roles that can. --%>
+          <p :if={@can_manage} class="mt-1 text-xs opacity-80">
+            Choose a different operator, or raise the count, to add independent review.
+          </p>
+        </.callout>
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval
@@ -1009,9 +991,11 @@ defmodule EmisarWeb.PoliciesLive do
         </.callout>
       </div>
 
-      <div :if={@can_manage} class="flex items-center justify-end gap-3 border-t border-zinc-900 pt-4">
-        <.chip :if={@dirty} tone={:amber}>Unsaved changes</.chip>
+      <%!-- The editor footer grammar: hairline, primary leading, the dirty
+           chip trailing as its status. --%>
+      <div :if={@can_manage} class="flex items-center gap-3 border-t border-zinc-800/70 pt-5">
         <.button type="submit" phx-disable-with="Saving...">{@save_label}</.button>
+        <.chip :if={@dirty} tone={:amber}>Unsaved changes</.chip>
       </div>
     </form>
     """
@@ -1022,14 +1006,15 @@ defmodule EmisarWeb.PoliciesLive do
   attr :floor_rank, :integer, required: true
   attr :can_manage, :boolean, required: true
 
-  defp tier_card(assigns) do
+  # NAKED tier field (§8.1: fields are self-contained controls) — a box around
+  # one labelled select was an island. The wrapping <label> keeps the
+  # click-to-focus association; eyebrows stay zinc — tone lives in the
+  # select's value, not the header (HIGH vs CRITICAL read as two barely
+  # distinct reds).
+  defp tier_field(assigns) do
     ~H"""
-    <label class={["block rounded-lg border bg-black/30 p-3", tier_border(@tier)]}>
-      <%!-- Eyebrows stay zinc — tone lives in the select's value, not the
-           header (and HIGH vs CRITICAL read as two barely distinct reds). --%>
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
-      </div>
+    <label class="block">
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
       <%!-- Options below the floor are disabled — they'd make this tier
            more permissive than a lower-risk one, which the server rejects.
            Kept visible (not hidden) so the operator sees why. --%>
@@ -1057,76 +1042,78 @@ defmodule EmisarWeb.PoliciesLive do
   attr :shadowed_by, :integer, required: true
   attr :can_manage, :boolean, required: true
 
-  defp override_card(assigns) do
+  # A NAKED override row — compact fields in the runbook-editor grid grammar,
+  # a hairline between rows; the wash box around each row was an island.
+  defp override_row(assigns) do
     ~H"""
-    <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed control surface (override editor row) --%>
-    <div class="rounded-lg bg-black/30 p-3 ring-1 ring-white/[0.08]">
-      <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
-        <div class="sm:col-span-3">
-          <.input
-            name={"policy[overrides][#{@index}][name]"}
-            value={@override["name"]}
-            label="Name"
-            label_variant={:eyebrow}
-            placeholder="optional"
-            disabled={!@can_manage}
-          />
-        </div>
-        <div class="sm:col-span-5">
-          <.input
-            name={"policy[overrides][#{@index}][action]"}
-            value={@override["action"]}
-            label="Action (glob ok)"
-            label_variant={:eyebrow}
-            placeholder="e.g. cassandra.repair or linux.*"
-            disabled={!@can_manage}
-          />
-        </div>
-        <div class="sm:col-span-3">
-          <.input
-            name={"policy[overrides][#{@index}][decision]"}
-            type="select"
-            label="Decision"
-            label_variant={:eyebrow}
-            value={@override["decision"]}
-            options={decision_options()}
-            disabled={!@can_manage}
-          />
-        </div>
-        <div class="sm:col-span-1 sm:flex sm:justify-end">
-          <button
-            :if={@can_manage}
-            type="button"
-            phx-click="remove_override"
-            phx-value-editor={@editor_id}
-            phx-value-index={@index}
-            class="grid h-8 w-8 place-items-center rounded-lg border border-zinc-800 text-zinc-500 hover:border-rose-700 hover:text-rose-300"
-            title="Remove override"
-            aria-label="Remove override"
-          >
-            <.icon name="hero-trash" class="h-4 w-4" />
-          </button>
-        </div>
+    <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
+      <div class="sm:col-span-3">
+        <.input
+          name={"policy[overrides][#{@index}][name]"}
+          value={@override["name"]}
+          label="Name"
+          label_variant={:eyebrow}
+          size={:compact}
+          placeholder="optional"
+          disabled={!@can_manage}
+        />
       </div>
-
-      <%!-- A dead rule (its glob is covered by an earlier one) — advisory, not
-           blocking. `shadowed_by` is the 0-based index of the earlier rule, so
-           +1 for the operator's 1-based count. Sharpen the copy for a deny:
-           that's the case where the operator believes they blocked something. --%>
-      <p
-        :if={@shadowed_by != nil}
-        class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
-      >
-        <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
-        <span :if={@override["decision"] == "deny"}>
-          Shadowed by rule {@shadowed_by + 1} above — this <strong>deny</strong>
-          never applies (first match wins).
-        </span>
-        <span :if={@override["decision"] != "deny"}>
-          Shadowed by rule {@shadowed_by + 1} above — this rule never applies (first match wins).
-        </span>
-      </p>
+      <div class="sm:col-span-5">
+        <.input
+          name={"policy[overrides][#{@index}][action]"}
+          value={@override["action"]}
+          label="Action (glob ok)"
+          label_variant={:eyebrow}
+          size={:compact}
+          class="font-mono text-xs"
+          placeholder="e.g. cassandra.repair or linux.*"
+          disabled={!@can_manage}
+        />
+      </div>
+      <div class="sm:col-span-3">
+        <.input
+          name={"policy[overrides][#{@index}][decision]"}
+          type="select"
+          label="Decision"
+          label_variant={:eyebrow}
+          size={:compact}
+          class="text-xs"
+          value={@override["decision"]}
+          options={decision_options()}
+          disabled={!@can_manage}
+        />
+      </div>
+      <div class="sm:col-span-1 sm:flex sm:justify-end">
+        <.icon_button
+          :if={@can_manage}
+          icon="hero-trash"
+          label="Remove override"
+          tone={:rose}
+          phx-click="remove_override"
+          phx-value-editor={@editor_id}
+          phx-value-index={@index}
+          class="grid h-9 w-9 place-items-center"
+        />
+      </div>
     </div>
+
+    <%!-- A dead rule (its glob is covered by an earlier one) — advisory, not
+         blocking. `shadowed_by` is the 0-based index of the earlier rule, so
+         +1 for the operator's 1-based count. Sharpen the copy for a deny:
+         that's the case where the operator believes they blocked something. --%>
+    <p
+      :if={@shadowed_by != nil}
+      class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
+    >
+      <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+      <span :if={@override["decision"] == "deny"}>
+        Shadowed by rule {@shadowed_by + 1} above — this <strong>deny</strong>
+        never applies (first match wins).
+      </span>
+      <span :if={@override["decision"] != "deny"}>
+        Shadowed by rule {@shadowed_by + 1} above — this rule never applies (first match wins).
+      </span>
+    </p>
     """
   end
 
@@ -1150,15 +1137,4 @@ defmodule EmisarWeb.PoliciesLive do
   defp tier_floor_rank(defaults, "medium"), do: Policies.decision_rank(defaults["low"])
   defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
   defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
-
-  # Risk is a SEVERITY ramp, not a policy outcome — so it climbs neutral → amber
-  # → rose → deeper-rose (low isn't "passed the gate"; green is reserved for an
-  # allow decision, which the tier's own dropdown shows). Matches `risk_pill`
-  # (`risk_classes/1`) one-for-one so a tier reads the same color here and on the
-  # action/pack lists. No sky — there is no fifth accent hue.
-  # One quiet border for every tier: the tinted ramp read wrong (HIGH's
-  # rose/20 was invisible between MEDIUM and CRITICAL, and amber on an
-  # "Allow" card read as a warning about the setting). The dot + label
-  # carry severity.
-  defp tier_border(_tier), do: "border-zinc-700/50"
 end

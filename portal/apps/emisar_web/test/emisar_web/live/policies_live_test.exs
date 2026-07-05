@@ -30,9 +30,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ ~s(name="policy[defaults][high]")
       assert html =~ ~s(name="policy[defaults][critical]")
 
-      # The seeded default has no overrides and no rulesets → both placeholders.
-      assert html =~ "No overrides"
-      assert html =~ "No targeted rulesets"
+      # The seeded default has no overrides and no rulesets — for a manager
+      # the dashed composers ARE the empty states (no placeholder hints).
+      assert html =~ "Add override"
+      assert html =~ "Add ruleset"
     end
 
     test "a tier select disables decisions below its floor and pre-selects the current value", %{
@@ -581,8 +582,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       refute html =~ "account-b-only-runner"
       refute html =~ "b-secret-group"
-      # A's own page shows the no-rulesets placeholder, not B's ruleset.
-      assert html =~ "No targeted rulesets"
+      # A's own page shows an empty ruleset stack (just the composer), not
+      # B's ruleset.
+      assert html =~ "Add ruleset"
+      refute html =~ "Replaces the default policy for this"
     end
 
     test "remove_override with a non-integer index is a no-op", %{conn: conn} do
