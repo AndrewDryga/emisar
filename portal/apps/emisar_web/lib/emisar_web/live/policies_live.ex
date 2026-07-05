@@ -636,7 +636,7 @@ defmodule EmisarWeb.PoliciesLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:policies}
-      width={:settings}
+      width={:table}
     >
       <:title>Policy</:title>
 
@@ -709,8 +709,8 @@ defmodule EmisarWeb.PoliciesLive do
             No targeted rulesets — every runner uses the default policy above.
           </p>
 
-          <div :if={@rulesets != []} class="divide-y divide-zinc-800/70">
-            <div :for={ruleset <- @rulesets} class="py-10 first:pt-0 last:pb-0">
+          <div :if={@rulesets != []} class="space-y-8">
+            <div :for={ruleset <- @rulesets}>
               <.ruleset_unit
                 ruleset={ruleset}
                 account_approval={@account.approval}
@@ -851,11 +851,14 @@ defmodule EmisarWeb.PoliciesLive do
     assigns = assign(assigns, :single_reviewer?, single_reviewer_gate?(assigns.approval))
 
     ~H"""
+    <%!-- Each policy — the default and every targeted ruleset — is a dashed
+         card (the runbook-editor section grammar). A dashed frame with no wash
+         is the sanctioned placeholder shape, not a solid island (§8.1). --%>
     <form
       id={"policy-form-" <> @editor_id}
       phx-change="form_change"
       phx-submit="save"
-      class="mt-6 space-y-8"
+      class="mt-6 space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"
     >
       <input type="hidden" name="editor" value={@editor_id} />
 
@@ -879,9 +882,6 @@ defmodule EmisarWeb.PoliciesLive do
             can_manage={@can_manage}
           />
         </div>
-        <p class="mt-2 text-xs text-zinc-500">
-          Higher-risk tiers can't be more permissive than lower ones.
-        </p>
       </div>
 
       <div>
@@ -935,44 +935,44 @@ defmodule EmisarWeb.PoliciesLive do
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Approval requirements
         </h3>
-        <p class="mt-0.5 text-xs text-zinc-500">
-          Applies to any action this policy sends to the approval queue.
-        </p>
 
-        <div class="mt-4">
-          <.label variant={:eyebrow}>Who can approve</.label>
-          <.choice_cards
-            name="policy[approval][allow_self_approval]"
-            value={@approval["allow_self_approval"]}
-            disabled={!@can_manage}
-            columns={2}
-            class="mt-2"
-          >
-            <:card value="false" icon="hero-user-group" title="A different operator">
-              No signing off on your own request.
-            </:card>
-            <:card value="true" icon="hero-user" title="Anyone, incl. requester">
-              The requester's own approval can count.
-            </:card>
-          </.choice_cards>
-        </div>
+        <%!-- The two cards name WHO may approve — self-labeling, so no separate
+             "Who can approve" eyebrow above them (under the section h3 it read as
+             a second title in a row). --%>
+        <.choice_cards
+          name="policy[approval][allow_self_approval]"
+          value={@approval["allow_self_approval"]}
+          disabled={!@can_manage}
+          columns={2}
+          class="mt-3"
+        >
+          <:card value="false" icon="hero-user-group" title="A different operator">
+            No signing off on your own request.
+          </:card>
+          <:card value="true" icon="hero-user" title="Anyone, incl. requester">
+            The requester's own approval can count.
+          </:card>
+        </.choice_cards>
 
-        <div class="mt-6 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Required approvals
-          </span>
-          <input
-            type="number"
-            name="policy[approval][min_approvals]"
-            value={@approval["min_approvals"]}
-            min="1"
-            step="1"
-            disabled={!@can_manage}
-            class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
-          />
-          <span class="text-xs text-zinc-500">
-            {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
-          </span>
+        <div class="mt-6">
+          <.label variant={:eyebrow}>Required approvals</.label>
+          <%!-- The eyebrow labels from above; the input and the trailing clause
+               share one centered row so they align — an inline eyebrow beside the
+               input never lined up with the trailing text. --%>
+          <div class="mt-2 flex items-center gap-x-2.5">
+            <input
+              type="number"
+              name="policy[approval][min_approvals]"
+              value={@approval["min_approvals"]}
+              min="1"
+              step="1"
+              disabled={!@can_manage}
+              class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
+            />
+            <span class="text-xs text-zinc-500">
+              {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
+            </span>
+          </div>
         </div>
 
         <%!-- The verdict earns its space only as a WARNING — when self-approval plus a
@@ -1014,7 +1014,7 @@ defmodule EmisarWeb.PoliciesLive do
            chip trailing as its status. --%>
       <div :if={@can_manage} class="flex items-center gap-3 border-t border-zinc-800/70 pt-5">
         <.button type="submit" phx-disable-with="Saving...">{@save_label}</.button>
-        <.chip :if={@dirty} tone={:amber}>Unsaved changes</.chip>
+        <.chip :if={@dirty} tone={:amber} class="ml-auto">Unsaved changes</.chip>
       </div>
     </form>
     """
@@ -1027,33 +1027,79 @@ defmodule EmisarWeb.PoliciesLive do
 
   # NAKED tier field (§8.1: fields are self-contained controls) — a box around
   # one labelled select was an island. The wrapping <label> keeps the
-  # click-to-focus association; eyebrows stay zinc — tone lives in the
-  # select's value, not the header (HIGH vs CRITICAL read as two barely
-  # distinct reds).
+  # click-to-focus association. A decision-colored dot beside the eyebrow reads
+  # the tier's verdict at a glance (allow=brand, require approval=amber,
+  # deny=rose), the same pass/pending/deny palette as everywhere else.
   defp tier_field(assigns) do
     ~H"""
     <label class="block">
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
-      <%!-- Options below the floor are disabled — they'd make this tier
-           more permissive than a lower-risk one, which the server rejects.
-           Kept visible (not hidden) so the operator sees why. --%>
-      <.select
-        name={"policy[defaults][#{@tier}]"}
-        disabled={!@can_manage}
-        options={
-          Enum.map(decision_options(), fn {label, value} ->
-            %{
-              value: value,
-              label: label,
-              disabled: Policies.decision_rank(value) < @floor_rank,
-              selected: @value == value
-            }
-          end)
-        }
+      <span class="flex items-center gap-1.5">
+        <.status_dot tone={decision_tone(@value)} />
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{@tier}</span>
+      </span>
+      <%!-- Options below the floor are disabled — they'd make this tier more
+           permissive than a lower-risk one, which the server rejects. Kept
+           visible (not hidden) so the operator sees why. When the floor leaves
+           exactly ONE choice, the whole select locks (no click on a foregone
+           decision) and a hover tooltip carries the why — the rule that used to
+           sit as a standing line under the grid. --%>
+      <%!-- flex-col so the select (a block wrapper) stretches to the tooltip's
+           full width on the cross axis — the tooltip's own inline-flex row would
+           shrink it to content. --%>
+      <.tooltip
+        :if={locked_tier?(@floor_rank)}
+        text="Higher-risk tiers can't be more permissive than lower ones."
+        class="w-full flex-col"
+      >
+        <.tier_select tier={@tier} value={@value} floor_rank={@floor_rank} can_manage={@can_manage} />
+      </.tooltip>
+      <.tier_select
+        :if={not locked_tier?(@floor_rank)}
+        tier={@tier}
+        value={@value}
+        floor_rank={@floor_rank}
+        can_manage={@can_manage}
       />
     </label>
     """
   end
+
+  attr :tier, :string, required: true
+  attr :value, :string, required: true
+  attr :floor_rank, :integer, required: true
+  attr :can_manage, :boolean, required: true
+
+  # The tier's decision select. A locked tier (only one legal choice) is
+  # disabled even for a manager — the value is already forced by monotonic
+  # enforcement, so a non-posting disabled select stays correct on save.
+  defp tier_select(assigns) do
+    ~H"""
+    <.select
+      name={"policy[defaults][#{@tier}]"}
+      disabled={!@can_manage or locked_tier?(@floor_rank)}
+      options={
+        Enum.map(decision_options(), fn {label, value} ->
+          %{
+            value: value,
+            label: label,
+            disabled: Policies.decision_rank(value) < @floor_rank,
+            selected: @value == value
+          }
+        end)
+      }
+    />
+    """
+  end
+
+  # One legal choice left — every decision below the floor is disabled, and the
+  # three decisions span ranks 0/1/2, so a floor at the top rank (deny) leaves
+  # only deny.
+  defp locked_tier?(floor_rank), do: floor_rank >= 2
+
+  defp decision_tone("allow"), do: :brand
+  defp decision_tone("require_approval"), do: :amber
+  defp decision_tone("deny"), do: :rose
+  defp decision_tone(_), do: :neutral
 
   attr :editor_id, :string, required: true
   attr :override, :map, required: true
@@ -1066,7 +1112,7 @@ defmodule EmisarWeb.PoliciesLive do
   defp override_row(assigns) do
     ~H"""
     <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
-      <div class="sm:col-span-3">
+      <div class="sm:col-span-2">
         <.input
           name={"policy[overrides][#{@index}][name]"}
           value={@override["name"]}
@@ -1077,7 +1123,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-5">
+      <div class="sm:col-span-7">
         <.input
           name={"policy[overrides][#{@index}][action]"}
           value={@override["action"]}
@@ -1089,7 +1135,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-3">
+      <div class="sm:col-span-2">
         <.input
           name={"policy[overrides][#{@index}][decision]"}
           type="select"
@@ -1102,7 +1148,9 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-1 sm:flex sm:justify-end">
+      <%!-- Trash sits right after Decision (justify-start), not floated to the
+           far edge of its cell. --%>
+      <div class="sm:col-span-1 sm:flex sm:justify-start">
         <.icon_button
           :if={@can_manage}
           icon="hero-trash"
