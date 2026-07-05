@@ -188,9 +188,11 @@ defmodule EmisarWeb.ApprovalsLive do
 
   # -- Grant helpers (moved from old GrantsLive) ---------------------
 
-  defp grant_key_label(%{api_key: %{name: n, key_prefix: p}}) when is_binary(n),
-    do: "#{n} (#{p}…)"
-
+  # The key NAME is the identity — a truncated prefix rendered the same shared
+  # literal on every row (the agents list dropped it for the same reason); the
+  # prefix survives only as the fallback for a name-less key, where it's all
+  # there is.
+  defp grant_key_label(%{api_key: %{name: n}}) when is_binary(n) and n != "", do: n
   defp grant_key_label(%{api_key: %{key_prefix: p}}) when is_binary(p), do: "#{p}…"
   defp grant_key_label(_), do: "(deleted key)"
 
@@ -493,7 +495,55 @@ defmodule EmisarWeb.ApprovalsLive do
                always exempt. Server-enforced in Approvals.create_grant. BELOW the
                grants it governs (list first, settings after); collapsed — the
                current cap rides in the header. Choice→consequence: an UNCAPPED
-               account wears amber with what that means; a set cap is quiet. --%>
+               account wears amber with what that means; a set cap is quiet.
+               mt-8 groups it INTO this section (the wrapper's 48px stays for
+               real section breaks). --%>
+          <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime" class="mt-8">
+            <:summary>
+              <%!-- Status = dot + word; the explanation rides as quiet prose
+                   (a sentence-long amber pill shouted, and read as contradicting
+                   the per-grant "expires …" rows below — this is the ACCOUNT
+                   cap, not those grants). --%>
+              <span
+                :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
+                class="flex items-center gap-1.5 text-xs"
+              >
+                <.status_dot tone={:amber} size={:sm} />
+                <span class="text-amber-300">no cap</span>
+                <span class="hidden text-zinc-500 sm:inline">
+                  — each grant keeps the lifetime it was approved with
+                </span>
+              </span>
+              <span
+                :if={@current_account.settings.max_grant_lifetime_seconds}
+                class="text-xs text-zinc-400"
+              >
+                {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
+              </span>
+            </:summary>
+
+            <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
+              Cap how long an approved grant can keep skipping the prompt. Single-use
+              ("once") approvals are always allowed; the limit is enforced server-side.
+            </p>
+
+            <%= cond do %>
+              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <p class="text-[11px] text-zinc-600">
+                  Owner/admin only — the current cap is shown above.
+                </p>
+              <% true -> %>
+                <form phx-change="set_max_grant_lifetime" class="max-w-xs">
+                  <.select
+                    name="seconds"
+                    aria-label="Maximum grant lifetime"
+                    options={
+                      grant_lifetime_options(@current_account.settings.max_grant_lifetime_seconds)
+                    }
+                  />
+                </form>
+            <% end %>
+          </.collapsible_section>
         </section>
 
         <%!-- 3. RECENT DECISIONS --%>
@@ -554,56 +604,6 @@ defmodule EmisarWeb.ApprovalsLive do
             </:empty>
           </LiveTable.live_table>
         </section>
-        <.collapsible_section
-          id="approvals-grant-cap"
-          title="Maximum grant lifetime"
-          class="mt-2"
-        >
-          <:summary>
-            <%!-- Status = dot + word; the explanation rides as quiet prose
-                   (a sentence-long amber pill shouted, and read as contradicting
-                   the per-grant "expires …" rows below — this is the ACCOUNT
-                   cap, not those grants). --%>
-            <span
-              :if={is_nil(@current_account.settings.max_grant_lifetime_seconds)}
-              class="flex items-center gap-1.5 text-xs"
-            >
-              <.status_dot tone={:amber} size={:sm} />
-              <span class="text-amber-300">no cap</span>
-              <span class="hidden text-zinc-500 sm:inline">
-                — each grant keeps the lifetime it was approved with
-              </span>
-            </span>
-            <span
-              :if={@current_account.settings.max_grant_lifetime_seconds}
-              class="text-xs text-zinc-400"
-            >
-              {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
-            </span>
-          </:summary>
-
-          <p class="mb-4 max-w-prose text-xs leading-relaxed text-zinc-400">
-            Cap how long an approved grant can keep skipping the prompt. Single-use
-            ("once") approvals are always allowed; the limit is enforced server-side.
-          </p>
-
-          <%= cond do %>
-            <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-              <p class="text-[11px] text-zinc-600">
-                Owner/admin only — the current cap is shown above.
-              </p>
-            <% true -> %>
-              <form phx-change="set_max_grant_lifetime" class="max-w-xs">
-                <.select
-                  name="seconds"
-                  aria-label="Maximum grant lifetime"
-                  options={
-                    grant_lifetime_options(@current_account.settings.max_grant_lifetime_seconds)
-                  }
-                />
-              </form>
-          <% end %>
-        </.collapsible_section>
       </div>
     </.dashboard_shell>
     """

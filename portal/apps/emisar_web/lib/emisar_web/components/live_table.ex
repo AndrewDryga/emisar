@@ -809,7 +809,10 @@ defmodule EmisarWeb.LiveTable do
     "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07] px-5 py-10 text-center"
   end
 
-  defp cards_empty_class(_wrapper_class), do: "border-t border-zinc-800/70 py-8"
+  # No top rule: the populated list starts flush under its section header
+  # (c3dd1fb1 dropped the orphaned rule there), so the zero state must too —
+  # an empty list wearing a hairline the rows don't reads as a stray divider.
+  defp cards_empty_class(_wrapper_class), do: "py-8"
 
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps
