@@ -479,14 +479,54 @@ defmodule EmisarWeb.PacksLive do
                    floating in the vertical middle of its three lines (which read
                    as a too-tall row). --%>
               <div class="flex flex-wrap items-start gap-x-4 gap-y-1">
-                <div class="flex min-w-0 items-center gap-3">
-                  <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
-                  <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
-                    sha256:{short_hash(v.hash)}
-                  </span>
-                  <%!-- If this exact trusted hash is a published pack version,
-                       link out to its public registry page (opens in a new tab). --%>
-                  <.registry_link version={v} />
+                <div class="flex min-w-0 flex-col gap-2">
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
+                    <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
+                      sha256:{short_hash(v.hash)}
+                    </span>
+                    <%!-- If this exact trusted hash is a published pack version,
+                         link out to its public registry page (opens in a new tab). --%>
+                    <.registry_link version={v} />
+                  </div>
+                  <%!-- "View contents" sits directly under the version line (in
+                       the left column), NOT below the taller trust/timestamps
+                       column — otherwise it floated at the row bottom, detached
+                       from the version it belongs to. A trusted version's
+                       contents stay auditable via this collapsed disclosure (one
+                       lazy query on first open — see `inspect_pack`). --%>
+                  <details
+                    :if={v.trust_state == :trusted}
+                    open={MapSet.member?(@open_versions, v.id)}
+                    class="group"
+                  >
+                    <summary
+                      phx-click="inspect_pack"
+                      phx-value-id={v.id}
+                      phx-value-pack-id={pack.id}
+                      phx-value-version={v.version}
+                      class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
+                    >
+                      <.icon
+                        name="hero-chevron-right"
+                        class="h-3 w-3 transition-transform group-open:rotate-90"
+                      />
+                      <span class="group-open:hidden">View contents</span>
+                      <span class="hidden group-open:inline">Trusted contents</span>
+                    </summary>
+                    <div class="mt-2 pl-4">
+                      <p :if={is_nil(@inspected_actions[v.id])} class="text-[11px] text-zinc-500">
+                        Loading…
+                      </p>
+                      <p :if={@inspected_actions[v.id] == []} class="text-[11px] text-zinc-500">
+                        No actions advertised for this version right now.
+                      </p>
+                      <.pack_action_list
+                        :if={@inspected_actions[v.id] not in [nil, []]}
+                        actions={@inspected_actions[v.id]}
+                      />
+                    </div>
+                  </details>
                 </div>
                 <%!-- The meta column caps with the trust state (dot + word, not a
                      filled pill — the run/runner status grammar), then the
@@ -658,49 +698,6 @@ defmodule EmisarWeb.PacksLive do
                   </.button>
                 </div>
               </div>
-
-              <%!-- A trusted version's contents stay auditable after the Trust
-                   decision: a collapsed disclosure that lazily loads the
-                   action + risk set (one query when first opened — see
-                   `inspect_pack`) so an operator can re-inspect what's
-                   authorized without waiting for a re-advertise. --%>
-              <details
-                :if={v.trust_state == :trusted}
-                open={MapSet.member?(@open_versions, v.id)}
-                class="group"
-              >
-                <%!-- A disclosure LINE, not a boxed inset — the audit
-                     Filters-line grammar. --%>
-                <summary
-                  phx-click="inspect_pack"
-                  phx-value-id={v.id}
-                  phx-value-pack-id={pack.id}
-                  phx-value-version={v.version}
-                  class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
-                >
-                  <.icon
-                    name="hero-chevron-right"
-                    class="h-3 w-3 transition-transform group-open:rotate-90"
-                  />
-                  <span class="group-open:hidden">View contents</span>
-                  <span class="hidden group-open:inline">Trusted contents</span>
-                </summary>
-                <div class="mt-2 pl-4">
-                  <p :if={is_nil(@inspected_actions[v.id])} class="text-[11px] text-zinc-500">
-                    Loading…
-                  </p>
-                  <p
-                    :if={@inspected_actions[v.id] == []}
-                    class="text-[11px] text-zinc-500"
-                  >
-                    No actions advertised for this version right now.
-                  </p>
-                  <.pack_action_list
-                    :if={@inspected_actions[v.id] not in [nil, []]}
-                    actions={@inspected_actions[v.id]}
-                  />
-                </div>
-              </details>
             </li>
           </ul>
         </li>
