@@ -820,23 +820,30 @@ defmodule EmisarWeb.AgentsLive do
         </span>
       </div>
 
-      <%!-- Rotation success — the successor's one-time secret in the shared
-           reveal (the enrollment-keys grammar: the box is EARNED, it holds the
-           secret + copy affordance), right above the list where the old key
-           still shows for the final revoke step. --%>
-      <.secret_reveal
-        :if={@live_action == :index and @rotated}
-        id="rotated-key"
-        title="Key rotated — copy the new key now; it won't be shown again."
-        secret={@rotated.secret}
-      >
-        Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
-        with this key. The old key keeps working until you revoke it below — swap first,
-        then revoke.
-        <:actions>
+      <%!-- Rotation success — the SAME "here's your key" grammar as the connect
+           flow (naked amber status line + the secret in a recessed code
+           artifact), right above the list where the old key still shows for
+           the final revoke step. Not the boxed secret_reveal banner: that
+           variant is keys-new's form-replacing success step, and two grammars
+           for one event on one surface read as two designs. --%>
+      <div :if={@live_action == :index and @rotated}>
+        <.minted_note title="Key rotated — copy the new key now; it won't be shown again">
+          Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
+          with this key. The old key keeps working until you revoke it below — swap first,
+          then revoke.
+        </.minted_note>
+        <.code_panel
+          id="rotated-key"
+          label="API key (bearer token)"
+          copy
+          copy_label="Copy key"
+          code={@rotated.secret}
+          class="mt-4"
+        />
+        <div class="mt-4">
           <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
-        </:actions>
-      </.secret_reveal>
+        </div>
+      </div>
 
       <%!-- The empty state IS the connect flow (the runners install-wizard
            pattern): no agents → the panel renders right here, no detour. It
@@ -1274,7 +1281,9 @@ defmodule EmisarWeb.AgentsLive do
   # The one-time-key note as STATUS GRAMMAR, not a boxed callout (the
   # install-wizard credential-note precedent): amber key icon lead, naked on
   # the canvas — a box around non-actionable prose would outshout the
-  # artifact below that actually carries the secret.
+  # artifact below that actually carries the secret. ONE grammar for every
+  # "here's your key" moment on this page — quick mints and rotation alike.
+  attr :title, :string, default: "New key minted — it's live now"
   slot :inner_block, required: true
 
   defp minted_note(assigns) do
@@ -1282,7 +1291,7 @@ defmodule EmisarWeb.AgentsLive do
     <div class="flex items-start gap-3">
       <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
       <div class="min-w-0">
-        <div class="text-sm font-medium text-zinc-200">New key minted — it's live now</div>
+        <div class="text-sm font-medium text-zinc-200">{@title}</div>
         <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
       </div>
     </div>

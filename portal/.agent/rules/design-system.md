@@ -523,7 +523,11 @@ after being taught, so every one is checked EVERY time, mechanically:
 3. **No new wash boxes** — a box is EARNED by a secret (`secret_reveal`), a
    form, a code artifact, or an actionable warning. A NOTE is status grammar:
    icon lead + medium title + zinc body, naked on canvas (§5). Check the diff
-   for added `bg-*/ring-*` on prose.
+   for added `bg-*/ring-*` on prose. The boxed `secret_reveal` banner is ONLY
+   the form-replacing success step on a dedicated create page (keys/new, MFA
+   enroll); anywhere else a key reveal = the naked status line + the secret in
+   a recessed `code_panel` (the agents quick-mint/rotation grammar) — never
+   two grammars for one event on one surface.
 4. **Rhythm is owned once** — by the shell's `space-y-6` or by ONE page
    wrapper (`space-y-12`); never per-block `mt-*`/`pb-*` on shell children
    (§3.3 — they silently lose to the shell).
