@@ -829,37 +829,28 @@ defmodule EmisarWeb.AgentsLive do
            (LiveTable's card_spine pending tone) binds note + artifact + Done
            into one transient block — without it the three pieces blended into
            the page around them. --%>
-      <div :if={@live_action == :index and @rotated} class="flex gap-4">
-        <%!-- The amber key icon CAPS the spine (a timeline node, not two amber
-             elements side by side): icon up top, a quiet descender beneath it
-             — the icon's own hue faded way back, so the icon stays the loud
-             element and the line just carries the containment. --%>
-        <div class="flex w-4 flex-col items-center" aria-hidden="true">
-          <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-          <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/40"></div>
+      <.event_block
+        :if={@live_action == :index and @rotated}
+        icon="hero-key"
+        title="Key rotated — copy the new key now; it won't be shown again"
+      >
+        <:body>
+          Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
+          with this key. The old key keeps working until you revoke it below — swap first,
+          then revoke.
+        </:body>
+        <.code_panel
+          id="rotated-key"
+          label="API key (bearer token)"
+          copy
+          copy_label="Copy key"
+          code={@rotated.secret}
+          class="mt-4"
+        />
+        <div class="mt-4">
+          <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
         </div>
-        <div class="min-w-0 flex-1">
-          <div class="text-sm font-medium text-zinc-200">
-            Key rotated — copy the new key now; it won't be shown again
-          </div>
-          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-            Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
-            with this key. The old key keeps working until you revoke it below — swap first,
-            then revoke.
-          </p>
-          <.code_panel
-            id="rotated-key"
-            label="API key (bearer token)"
-            copy
-            copy_label="Copy key"
-            code={@rotated.secret}
-            class="mt-4"
-          />
-          <div class="mt-4">
-            <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
-          </div>
-        </div>
-      </div>
+      </.event_block>
 
       <%!-- The empty state IS the connect flow (the runners install-wizard
            pattern): no agents → the panel renders right here, no detour. It
@@ -1288,22 +1279,16 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  # The one-time-key note as STATUS GRAMMAR, not a boxed callout (the
-  # install-wizard credential-note precedent): amber key icon lead, naked on
-  # the canvas — a box around non-actionable prose would outshout the
-  # artifact below that actually carries the secret. (The index's rotation
-  # reveal shares the words-grammar but hand-rolls its icon as the spine cap.)
+  # Thin wrapper over the shared <.status_note> so the "New key minted"
+  # phrase + its key/amber identity live in ONE place for the three quick-mint
+  # branches.
   slot :inner_block, required: true
 
   defp minted_note(assigns) do
     ~H"""
-    <div class="flex items-start gap-3">
-      <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-      <div class="min-w-0">
-        <div class="text-sm font-medium text-zinc-200">New key minted — it's live now</div>
-        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
-      </div>
-    </div>
+    <.status_note icon="hero-key" tone={:amber} title="New key minted — it's live now">
+      {render_slot(@inner_block)}
+    </.status_note>
     """
   end
 
@@ -1574,16 +1559,15 @@ defmodule EmisarWeb.AgentsLive do
            quick-mint affordance); the allowlist narrows ACTIONS, not runners.
            The reach is a security fact, so it reads as the amber status line,
            not another wash box. --%>
-      <div class="mt-5 flex items-start gap-3">
-        <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-        <div class="min-w-0">
-          <div class="text-sm font-medium text-zinc-200">Fleet-wide reach</div>
-          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-            This key can read and execute every action your trusted packs expose on every
-            runner; risky actions still require policy approval.
-          </p>
-        </div>
-      </div>
+      <.status_note
+        icon="hero-exclamation-triangle"
+        tone={:amber}
+        title="Fleet-wide reach"
+        class="mt-5"
+      >
+        This key can read and execute every action your trusted packs expose on every
+        runner; risky actions still require policy approval.
+      </.status_note>
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
         <.input

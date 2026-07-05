@@ -1032,6 +1032,84 @@ defmodule EmisarWeb.CoreComponents do
   defp callout_icon(:rose), do: "hero-exclamation-triangle-mini"
 
   @doc """
+  Naked status note — the canvas grammar for a note ABOUT the surface it sits
+  on (a credential warning, a posture fact, a reach statement): toned icon
+  lead + title + body, no box. The boxed `<.callout>` is for actionable
+  interruptions; a box around non-actionable prose outshouts the content it
+  annotates (design-system §8.1 draws the line). `tone` colors the ICON only —
+  the words stay neutral. `primary` lifts the title to the page's strongest
+  status voice (semibold/zinc-100); the default is the supporting-note tier
+  (medium/zinc-200) that reads one level below it.
+
+      <.status_note icon="hero-key" tone={:amber} title="Live credential — won't be shown again">
+        Treat it like a password — paste it straight onto the host.
+      </.status_note>
+  """
+  attr :icon, :string, required: true
+  attr :tone, :atom, default: :neutral, values: [:amber, :brand, :rose, :neutral]
+  attr :title, :string, required: true
+  attr :primary, :boolean, default: false, doc: "the page's strongest status voice"
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def status_note(assigns) do
+    ~H"""
+    <div class={["flex items-start gap-3", @class]}>
+      <.icon name={@icon} class={"mt-0.5 h-4 w-4 shrink-0 #{status_note_icon_class(@tone)}"} />
+      <div class="min-w-0">
+        <div class={[
+          "text-sm",
+          if(@primary, do: "font-semibold text-zinc-100", else: "font-medium text-zinc-200")
+        ]}>
+          {@title}
+        </div>
+        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
+      </div>
+    </div>
+    """
+  end
+
+  defp status_note_icon_class(:amber), do: "text-amber-300"
+  defp status_note_icon_class(:brand), do: "text-brand-400"
+  defp status_note_icon_class(:rose), do: "text-rose-400"
+  defp status_note_icon_class(:neutral), do: "text-zinc-400"
+
+  @doc """
+  Transient event block — a completed action's one-time result (the agents
+  key-rotation reveal) interrupting a page whose main content is something
+  else. The amber icon CAPS a quiet spine (its own hue faded back) that binds
+  title, body, and payload into ONE contained unit — §8.1's containment
+  grammar without a wash box. The payload (a `code_panel`, a dismiss button)
+  renders in the default slot beneath the body; give payload children their
+  own `mt-*`.
+
+      <.event_block icon="hero-key" title="Key rotated — copy the new key now">
+        <:body>Update the client config, then revoke the old key below.</:body>
+        <.code_panel id="new-key" label="API key" copy code={@secret} class="mt-4" />
+      </.event_block>
+  """
+  attr :icon, :string, required: true
+  attr :title, :string, required: true
+  slot :body, required: true
+  slot :inner_block
+
+  def event_block(assigns) do
+    ~H"""
+    <div class="flex gap-4">
+      <div class="flex w-4 flex-col items-center" aria-hidden="true">
+        <.icon name={@icon} class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/40"></div>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-sm font-medium text-zinc-200">{@title}</div>
+        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@body)}</p>
+        {render_slot(@inner_block)}
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
   Banner shown above a billing surface when the account's Paddle subscription
   needs attention (past_due / paused / canceled). Healthy/nil/unknown status →
   renders nothing. Shared by the billing page and the dashboard so the copy +
@@ -3878,20 +3956,17 @@ defmodule EmisarWeb.CoreComponents do
                          "live" here), medium lead, naked on canvas — a box
                          around non-actionable prose would outshout the
                          credential itself. --%>
-                  <div class="mt-5 flex items-start gap-3">
-                    <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                    <div class="min-w-0">
-                      <div class="text-sm font-medium text-zinc-200">
-                        Live credential — won't be shown again
-                      </div>
-                      <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-                        The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                        and carries a <span class="font-medium text-zinc-200">one-time</span>
-                        key: it enrolls exactly one host, then expires. Treat it like a password —
-                        paste it straight onto the host, never into a chat or ticket.
-                      </p>
-                    </div>
-                  </div>
+                  <.status_note
+                    icon="hero-key"
+                    tone={:amber}
+                    title="Live credential — won't be shown again"
+                    class="mt-5"
+                  >
+                    The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                    and carries a <span class="font-medium text-zinc-200">one-time</span>
+                    key: it enrolls exactly one host, then expires. Treat it like a password —
+                    paste it straight onto the host, never into a chat or ticket.
+                  </.status_note>
                   <%!-- The alternate path is routing, not warning — it lives
                          outside the credential note, right after the one-time
                          story it forks from. --%>

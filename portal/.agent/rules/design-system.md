@@ -527,13 +527,12 @@ after being taught, so every one is checked EVERY time, mechanically:
    the form-replacing success step on a dedicated create page (keys/new, MFA
    enroll); anywhere else a key reveal = the naked status line + the secret in
    a recessed `code_panel` (the agents quick-mint/rotation grammar) — never
-   two grammars for one event on one surface. A transient event block that
-   INTERRUPTS a page whose main content is something else (the rotation
-   reveal above the agents list) additionally carries the status-toned SPINE
-   — `border-l-2 border-l-amber-500 pl-5 sm:pl-6`, LiveTable's card_spine
-   grammar — so its pieces read as one contained unit instead of blending
-   into the page; a note that's a step INSIDE the flow the operator just
-   initiated (the connect page's minted note) stays spineless.
+   two grammars for one event on one surface. Both grammars are COMPONENTS —
+   never hand-roll them: `<.status_note icon= tone= title= primary>` is the
+   naked note (a step inside the operator's own flow stays a bare note);
+   `<.event_block icon= title=>` is the note plus the icon-capped quiet spine,
+   for a transient action result that INTERRUPTS a page whose main content is
+   something else (the agents rotation reveal is the template).
 4. **Rhythm is owned once** — by the shell's `space-y-6` or by ONE page
    wrapper (`space-y-12`); never per-block `mt-*`/`pb-*` on shell children
    (§3.3 — they silently lose to the shell).

@@ -275,21 +275,21 @@ defmodule EmisarWeb.RunnerDetailLive do
         <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
            this runner's posture (it's signed-only), the shield lead carrying
            the brand tint, aligned with everything else below. --%>
-        <div :if={@runner.enforce_signatures} class="flex items-start gap-3">
-          <.icon name="hero-shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
-          <div class="min-w-0">
-            <div class="text-sm font-semibold text-zinc-100">Signed dispatch only</div>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              This runner verifies a client signature on every run and refuses unsigned ones, so
-              the portal can't dispatch to it. Runs and runbooks must come from an MCP client
-              configured with a signing key and certificate — mint them with
-              <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
-                emisar signing init
-              </code>
-              on the host.
-            </p>
-          </div>
-        </div>
+        <.status_note
+          :if={@runner.enforce_signatures}
+          icon="hero-shield-check"
+          tone={:brand}
+          title="Signed dispatch only"
+          primary
+        >
+          This runner verifies a client signature on every run and refuses unsigned ones, so
+          the portal can't dispatch to it. Runs and runbooks must come from an MCP client
+          configured with a signing key and certificate — mint them with
+          <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
+            emisar signing init
+          </code>
+          on the host.
+        </.status_note>
 
         <.loading_state :if={@loading?} />
 
