@@ -476,7 +476,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
-      width={:detail}
+      width={:table}
     >
       <:title>
         <%!-- No "Approval ·" prefix — the breadcrumb already says where you are;
@@ -489,135 +489,149 @@ defmodule EmisarWeb.ApprovalDetailLive do
         />
       </:title>
       <:actions>
-        <%!-- The decision trail for this request (requested / approved / denied /
-             expired), beyond the votes shown below. Subject-scoped by the audit
-             page, so the link only pre-filters. --%>
-        <.link
+        <%!-- BUTTONS, one grammar per actions row (the run/runner-detail
+             correction): the run this request gates, and its audit-trail
+             slice (requested / approved / denied / expired — subject-scoped
+             by the audit page, the link only pre-filters). --%>
+        <.button
+          :if={@run}
+          navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
+          variant={:secondary}
+          size={:md}
+        >
+          View run
+        </.button>
+        <.button
           navigate={
             ~p"/app/#{@current_account}/audit?#{[target_kind: "approval_request", target_id: @request.id]}"
           }
-          class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+          variant={:secondary}
+          size={:md}
         >
-          View activity <.cta_arrow class="h-3 w-3" />
-        </.link>
+          View activity
+        </.button>
       </:actions>
-      <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
-           as RunDetail / RunnerDetail — then action, runner,
-           requester, when. --%>
-      <.meta_strip cols={5}>
-        <.meta_field label="Status">
-          <.status_badge status={@request.status} />
-        </.meta_field>
-        <%!-- Never clip the action on the decision screen — an approver must read
+      <%!-- The page owns its rhythm (§3.3): ONE space-y-12 child, mt-4 for air
+           under the title; the STATUS block groups the naked meta row with the
+           verdict that elaborates it. --%>
+      <div class="mt-4 space-y-12">
+        <div>
+          <%!-- Request facts on the CANVAS — the naked meta row (run-detail
+               grammar), no island. Status leads; one flex row at sm+, 2-col
+               grid on phones (the action id + forensic timestamp span both
+               columns via `wrap`). --%>
+          <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+            <.meta_field label="Status">
+              <.status_badge status={@request.status} />
+            </.meta_field>
+            <%!-- Never clip the action on the decision screen — an approver must read
              the full action id before deciding. `wrap` gives it the full row on
              mobile and wraps rather than truncating; the risk pill flows after. --%>
-        <.meta_field label="Action" wrap>
-          <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span class="font-mono text-zinc-200">{@request.context["action_id"] || "—"}</span>
-            <.risk_pill :if={@action_risk} risk={@action_risk} />
-          </span>
-        </.meta_field>
-        <.meta_field label="Runner">
-          <%= if @run && @run.runner do %>
-            <%!-- Identity only — run-detail's Runner meta is the same shape.
+            <.meta_field label="Action" wrap>
+              <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="font-mono text-zinc-200">{@request.context["action_id"] || "—"}</span>
+                <.risk_pill :if={@action_risk} risk={@action_risk} />
+              </span>
+            </.meta_field>
+            <.meta_field label="Runner">
+              <%= if @run && @run.runner do %>
+                <%!-- Identity only — run-detail's Runner meta is the same shape.
                  A wordless colored dot said "connectivity" by color alone;
                  the offline case already escalates in the Decide panel. --%>
-            <.link
-              navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
-              class="truncate text-zinc-200 hover:text-brand-300"
-            >
-              {@run.runner.name}
-            </.link>
-          <% else %>
-            <span class="truncate font-mono text-xs text-zinc-400">
-              {truncated_runner_id(@request.context["runner_id"])}
-            </span>
-          <% end %>
-        </.meta_field>
-        <%!-- Who (the accountable human) AND what asked: a request from an
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
+                  class="truncate text-zinc-200 hover:text-brand-300"
+                >
+                  {@run.runner.name}
+                </.link>
+              <% else %>
+                <span class="truncate font-mono text-xs text-zinc-400">
+                  {truncated_runner_id(@request.context["runner_id"])}
+                </span>
+              <% end %>
+            </.meta_field>
+            <%!-- Who (the accountable human) AND what asked: a request from an
              autonomous LLM agent (MCP) is the reason the gate exists and
              warrants more scrutiny than an operator's own dispatch. --%>
-        <.meta_field label="Requested by">
-          <span class="inline-flex min-w-0 items-center gap-1.5">
-            <span class="truncate text-zinc-200">
-              {user_label(@requested_by, @request.requested_by_id)}
-            </span>
-            <.chip
-              :if={@run && @run.source != :operator}
-              icon={dispatch_source_icon(@run.source)}
-              title={dispatch_source_title(@run.source)}
-              class="flex-none"
-            >
-              {dispatch_source_label(@run.source)}
-            </.chip>
-          </span>
-        </.meta_field>
-        <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes
+            <.meta_field label="Requested by">
+              <span class="inline-flex min-w-0 items-center gap-1.5">
+                <span class="truncate text-zinc-200">
+                  {user_label(@requested_by, @request.requested_by_id)}
+                </span>
+                <.chip
+                  :if={@run && @run.source != :operator}
+                  icon={dispatch_source_icon(@run.source)}
+                  title={dispatch_source_title(@run.source)}
+                  class="flex-none"
+                >
+                  {dispatch_source_label(@run.source)}
+                </.chip>
+              </span>
+            </.meta_field>
+            <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes
              the full row and wraps rather than clipping to "…" (and never leaves
              the adjacent half-cell empty while truncating). --%>
-        <.meta_field label="When" wrap>
-          <.local_time
-            value={@request.requested_at}
-            mode={:forensic}
-            class="tabular-nums text-zinc-200"
-          />
-        </.meta_field>
-        <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
+            <.meta_field label="When" wrap>
+              <.local_time
+                value={@request.requested_at}
+                mode={:forensic}
+                class="tabular-nums text-zinc-200"
+              />
+            </.meta_field>
+            <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
              request reads no differently than the single-approver flow. --%>
-        <.meta_field :if={@request.min_approvals > 1} label="Approvals">
-          <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
-        </.meta_field>
-        <%!-- Expiry isn't a meta field: for a held request the live countdown owns
-             it in the decide panel (more prominent + ticking); a decided request's
-             expiry is moot. --%>
-      </.meta_strip>
+            <.meta_field :if={@request.min_approvals > 1} label="Approvals">
+              <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
+            </.meta_field>
+            <%!-- Expiry isn't a meta field: for a held request the live countdown
+               owns it in the decide panel (more prominent + ticking); a decided
+               request's expiry is moot. --%>
+          </div>
 
-      <% verdict = verdict_status(@request) %>
+          <% verdict = verdict_status(@request) %>
 
-      <%!-- Lead with the verdict. A decided request buried its outcome in a
-           right-rail panel below the fold on mobile; now the outcome — colored
-           to the decision, with decider + time + note — is the first thing under
-           the meta strip. Rendered for every non-pending state (a lapsed-but-not-
-           yet-swept request reads as expired). --%>
-      <.callout
-        :if={verdict != :pending}
-        tone={verdict_tone(verdict)}
-        icon={verdict_icon(verdict)}
-        title={verdict_title(verdict)}
-        class="mt-4"
-      >
-        <%= case verdict do %>
-          <% :expired -> %>
-            <p class="leading-relaxed">
-              This request expired before anyone decided, so it was auto-denied — the action will
-              not run. The requester can re-issue it if it's still needed.
-            </p>
-          <% :cancelled -> %>
-            <p class="leading-relaxed">
-              This request was withdrawn before a decision, so the action did not run.
-            </p>
-          <% _ -> %>
-            <p :if={@request.decided_at} class="leading-relaxed">
-              by {user_label(@decided_by, @request.decided_by_id)} ·
-              <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
-            </p>
-            <p
-              :if={@request.decision_reason && @request.decision_reason != ""}
-              class="mt-1.5 text-sm leading-relaxed opacity-90"
-            >
-              “{@request.decision_reason}”
-            </p>
-        <% end %>
-      </.callout>
+          <%!-- Lead with the verdict — anchored to the status it elaborates
+               (the run-detail correction), as an EVENT BLOCK, not a wash box:
+               brand = approved, rose = denied/expired/cancelled. Decider +
+               time + note ride the body. --%>
+          <.event_block
+            :if={verdict != :pending}
+            icon={verdict_icon(verdict)}
+            tone={verdict_tone(verdict)}
+            title={verdict_title(verdict)}
+            class="mt-8"
+          >
+            <:body>
+              <%= case verdict do %>
+                <% :expired -> %>
+                  This request expired before anyone decided, so it was auto-denied — the
+                  action will not run. The requester can re-issue it if it's still needed.
+                <% :cancelled -> %>
+                  This request was withdrawn before a decision, so the action did not run.
+                <% _ -> %>
+                  <span :if={@request.decided_at}>
+                    by {user_label(@decided_by, @request.decided_by_id)} ·
+                    <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
+                  </span>
+                  <span
+                    :if={@request.decision_reason && @request.decision_reason != ""}
+                    class="mt-1.5 block"
+                  >
+                    “{@request.decision_reason}”
+                  </span>
+              <% end %>
+            </:body>
+          </.event_block>
+        </div>
 
-      <div class={[
-        "mt-6 grid grid-cols-1 gap-6",
-        verdict == :pending && "lg:grid-cols-[1fr_320px]"
-      ]}>
-        <%!-- Left: the decision record — the artifact (what will run), the raw
+        <div class={[
+          "grid grid-cols-1 gap-x-12 gap-y-12",
+          verdict == :pending && "lg:grid-cols-[minmax(0,1fr)_340px]"
+        ]}>
+          <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>
-        <div class="space-y-4">
-          <%!-- THE ARTIFACT — the single most decision-relevant fact on the page,
+          <div class="space-y-10">
+            <%!-- THE ARTIFACT — the single most decision-relevant fact on the page,
                one altitude above every supporting panel (surface step + white
                ring, not another identical hairline box): the plain-English effect
                from the pack manifest as its caption, then the exact command the
@@ -626,142 +640,136 @@ defmodule EmisarWeb.ApprovalDetailLive do
                provably the runner's (pinned hash, or advertised version);
                otherwise the raw arguments ARE the artifact and render in its
                place. Sensitive args are masked. --%>
-          <section
-            :if={@executed_command || @action_description || (@run && @run.args != %{})}
-            class="overflow-hidden rounded-xl bg-zinc-900/[0.85] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.12]"
-          >
-            <header class="flex items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
-              <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-                {if @executed_command, do: "Command", else: "Arguments"}
-              </h2>
-              <span class="text-xs text-zinc-500">
-                {if @executed_command,
-                  do: "what the runner will execute",
-                  else: "what the runner will receive"}
-              </span>
-            </header>
-            <%!-- Caption one step of gray BELOW the command — the brightest thing
-                 in the artifact must be the thing the runner will execute. --%>
-            <p
-              :if={@action_description}
-              class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-400"
+            <section
+              :if={@executed_command || @action_description || (@run && @run.args != %{})}
+              class="overflow-hidden rounded-xl bg-zinc-900/[0.85] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.12]"
             >
-              {@action_description}
-            </p>
-            <pre
-              :if={@executed_command}
-              class="overflow-x-auto bg-black/50 py-4 pl-5 pr-8 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
-            ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
-            <pre
-              :if={is_nil(@executed_command) && @run && @run.args != %{}}
-              class="max-h-64 overflow-auto bg-black/50 px-5 py-4 font-mono text-xs leading-relaxed text-zinc-300"
-            >{format_json(@run.args)}</pre>
-          </section>
+              <header class="flex items-center justify-between gap-3 border-b border-white/5 px-5 py-3">
+                <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+                  {if @executed_command, do: "Command", else: "Arguments"}
+                </h2>
+                <span class="text-xs text-zinc-500">
+                  {if @executed_command,
+                    do: "what the runner will execute",
+                    else: "what the runner will receive"}
+                </span>
+              </header>
+              <%!-- Caption one step of gray BELOW the command — the brightest thing
+                 in the artifact must be the thing the runner will execute. --%>
+              <p
+                :if={@action_description}
+                class="border-b border-white/5 px-5 py-3 text-sm leading-relaxed text-zinc-400"
+              >
+                {@action_description}
+              </p>
+              <pre
+                :if={@executed_command}
+                class="overflow-x-auto bg-black/50 py-4 pl-5 pr-8 font-mono text-sm leading-relaxed text-zinc-50 [font-variant-ligatures:none]"
+              ><span class="select-none text-zinc-600">$ </span>{@executed_command}</pre>
+              <pre
+                :if={is_nil(@executed_command) && @run && @run.args != %{}}
+                class="max-h-64 overflow-auto bg-black/50 px-5 py-4 font-mono text-xs leading-relaxed text-zinc-300"
+              >{format_json(@run.args)}</pre>
+            </section>
 
-          <%!-- The raw args stay one click away once the command carries the
+            <%!-- The raw args stay one click away once the command carries the
                detail — redundant with the resolved template, but the approver
                verifying the exact payload (against its logged sha) needs them. --%>
-          <.disclosure
-            :if={@executed_command && @run && @run.args != %{}}
-            id={"approval-args-#{@request.id}"}
-          >
-            <:summary>
-              Raw arguments
-              <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-500">
-                sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
-              </span>
-            </:summary>
-            <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@run.args)}</pre>
-          </.disclosure>
+            <.disclosure
+              :if={@executed_command && @run && @run.args != %{}}
+              id={"approval-args-#{@request.id}"}
+              class="-mt-7"
+            >
+              <:summary>
+                Raw arguments
+                <span :if={@request.context["args_sha256"]} class="ml-1 font-mono text-zinc-500">
+                  sha256:{String.slice(@request.context["args_sha256"], 0, 16)}…
+                </span>
+              </:summary>
+              <pre class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300">{format_json(@run.args)}</pre>
+            </.disclosure>
 
-          <%!-- ONE why-cluster: the reason given and what gated it, together —
+            <%!-- ONE why-cluster: the reason given and what gated it, together —
                not a Reason card and a policy callout competing at equal weight.
                Eyebrows stay zinc (R2) — urgency lives in the verdict panel. --%>
-          <.panel
-            :if={(@request.reason && @request.reason != "") || (@run && @run.policy_reason)}
-            title="Why"
-            padding="p-5"
-          >
-            <dl class="space-y-4">
-              <div :if={@request.reason && @request.reason != ""}>
-                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Reason
-                </dt>
-                <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
-              </div>
-              <div :if={@run && @run.policy_reason}>
-                <dt class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
-                </dt>
-                <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.policy_reason}</dd>
-                <dd
-                  :if={@run.matched_rules && @run.matched_rules != []}
-                  class="mt-1.5 text-xs text-zinc-500"
-                >
-                  Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
-                </dd>
-              </div>
-            </dl>
-          </.panel>
+            <%!-- ONE why-cluster ON THE CANVAS (the run-detail grammar) — plain
+               field keys, both alike (one icon on one label read as two kinds
+               of fact). --%>
+            <section :if={(@request.reason && @request.reason != "") || (@run && @run.policy_reason)}>
+              <.section_header title="Why" />
+              <dl class="space-y-5">
+                <div :if={@request.reason && @request.reason != ""}>
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Reason
+                  </dt>
+                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@request.reason}”</dd>
+                </div>
+                <div :if={@run && @run.policy_reason}>
+                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Policy
+                  </dt>
+                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.policy_reason}</dd>
+                  <dd
+                    :if={@run.matched_rules && @run.matched_rules != []}
+                    class="mt-1.5 text-xs text-zinc-500"
+                  >
+                    Matched rules:
+                    <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
+                  </dd>
+                </div>
+              </dl>
+            </section>
 
-          <%!-- Who has voted so far — surfaced for any multi-approver gate so
+            <%!-- Who has voted so far — surfaced for any multi-approver gate so
                an approver sees who's already signed off (and that a deny
                finalized). A single-approver request shows it only once decided
                (the decision-history panel covers the lone vote). --%>
-          <.panel
-            :if={@decisions != [] and @request.min_approvals > 1}
-            variant={:split}
-            title="Decisions"
-          >
-            <:annotation>{@approved_count} of {@request.min_approvals} approvals</:annotation>
-            <ul class="divide-y divide-zinc-800/70">
-              <li :for={decision <- @decisions} class="flex items-center gap-3 px-4 py-2 text-sm">
-                <.icon
-                  name={decision_icon(decision.decision)}
-                  class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
-                />
-                <span class="min-w-0 flex-1 truncate text-zinc-200">
-                  {user_label(decision.decider, decision.decider_id)}
-                </span>
-                <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
-                <.local_time
-                  value={decision.decided_at}
-                  mode={:forensic}
-                  class="text-xs tabular-nums text-zinc-500"
-                />
-              </li>
-            </ul>
-          </.panel>
-
-          <div :if={@run}>
-            <.link
-              navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-              class="group inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
-            >
-              View run details <.cta_arrow />
-            </.link>
+            <%!-- The vote trail ON THE CANVAS — hairline rows under a section
+               header (the approvals-list grammar), not a boxed split panel. --%>
+            <section :if={@decisions != [] and @request.min_approvals > 1}>
+              <.section_header title="Decisions">
+                <:subtitle>{@approved_count} of {@request.min_approvals} approvals</:subtitle>
+              </.section_header>
+              <ul class="divide-y divide-zinc-800/70">
+                <li :for={decision <- @decisions} class="flex items-center gap-3 py-2.5 text-sm">
+                  <.icon
+                    name={decision_icon(decision.decision)}
+                    class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
+                  />
+                  <span class="min-w-0 flex-1 truncate text-zinc-200">
+                    {user_label(decision.decider, decision.decider_id)}
+                  </span>
+                  <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
+                  <.local_time
+                    value={decision.decided_at}
+                    mode={:forensic}
+                    class="text-xs tabular-nums text-zinc-500"
+                  />
+                </li>
+              </ul>
+            </section>
           </div>
-        </div>
 
-        <%!-- Right: the decision panel, only while the request is genuinely live
+          <%!-- Right: the decision panel, only while the request is genuinely live
              (sticky on desktop so it stays in reach past a long args/reason). A
              decided or lapsed request has no rail — its outcome leads the page in
              the verdict callout above, so the column goes full-width. --%>
-        <aside :if={verdict == :pending} class="lg:sticky lg:top-6 lg:self-start">
-          <.decision_panel
-            can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
-            grant_duration={@grant_duration}
-            grant_duration_options={@grant_duration_options}
-            runner_state={@runner_connection}
-            self_blocked?={@self_blocked?}
-            already_decided?={@already_decided?}
-            approved_count={@approved_count}
-            min_approvals={@request.min_approvals}
-            expires_at={@request.expires_at}
-            request_id={@request.id}
-            current_account={@current_account}
-          />
-        </aside>
+          <aside :if={verdict == :pending} class="lg:sticky lg:top-6 lg:self-start">
+            <.decision_panel
+              can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
+              grant_duration={@grant_duration}
+              grant_duration_options={@grant_duration_options}
+              runner_state={@runner_connection}
+              self_blocked?={@self_blocked?}
+              already_decided?={@already_decided?}
+              approved_count={@approved_count}
+              min_approvals={@request.min_approvals}
+              expires_at={@request.expires_at}
+              request_id={@request.id}
+              current_account={@current_account}
+            />
+          </aside>
+        </div>
       </div>
     </.dashboard_shell>
     """
