@@ -3628,7 +3628,7 @@ defmodule EmisarWeb.CoreComponents do
       class="relative z-50 hidden"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={"#{@id}-title"}
+      aria-label={@title}
       phx-window-keydown={hide_confirm_dialog(@id)}
       phx-key="escape"
     >
@@ -3641,17 +3641,19 @@ defmodule EmisarWeb.CoreComponents do
       >
       </div>
 
+      <%!-- Neutral raised surface (the console dropdown recipe) — NOT a
+           rose-washed box. Danger reads from the toned icon + the destructive
+           button + the copy, never an alarm frame around the whole dialog
+           (design-system §8.1: tone the icon, keep the surface + words calm). --%>
       <div class="fixed inset-0 flex items-center justify-center p-4">
-        <div class="w-full max-w-md rounded-xl border border-rose-900/50 bg-zinc-950 p-6 shadow-2xl">
-          <div class="flex items-start gap-3">
-            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-500/15 text-rose-300">
-              <.icon name="hero-exclamation-triangle" class="h-5 w-5" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <h2 id={"#{@id}-title"} class="text-sm font-semibold text-rose-100">{@title}</h2>
-              <p class="mt-1 text-xs leading-relaxed text-rose-300/70">{render_slot(@body)}</p>
-            </div>
-          </div>
+        <div class="w-full max-w-md rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10">
+          <%!-- The header IS a status_note (the shared note grammar): a bare
+               rose icon lead, a zinc title, zinc body — one voice with every
+               other note in the console. The dialog takes its accessible name
+               from `aria-label={@title}` above. --%>
+          <.status_note icon="hero-exclamation-triangle" tone={:rose} title={@title} primary>
+            {render_slot(@body)}
+          </.status_note>
 
           <%!-- Typed-confirm (only when a token is set): the page's
                "confirm_typed" handler holds this in @typed; the Confirm button
@@ -3665,10 +3667,10 @@ defmodule EmisarWeb.CoreComponents do
             :if={not is_nil(@confirm_token)}
             phx-change="confirm_typed"
             phx-submit="confirm_typed"
-            class="mt-4"
+            class="mt-5"
           >
             <.label for={"#{@id}-input"} variant={:eyebrow}>
-              Type <span class="font-mono text-rose-200">{@confirm_token}</span> to confirm
+              Type <span class="font-mono text-zinc-200">{@confirm_token}</span> to confirm
             </.label>
             <.input
               id={"#{@id}-input"}
