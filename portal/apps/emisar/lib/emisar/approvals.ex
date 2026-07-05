@@ -989,6 +989,31 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Revokes EVERY un-revoked grant in the subject's account — the "disable
+  standing grants" sweep. Each grant goes through `revoke_grant/2` (its own
+  row lock + audit event), so the trail records every capability that was
+  cut. Returns `{:ok, count}`. `%Subject{}` needs `manage_grants`.
+  """
+  def revoke_all_grants(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_grants_permission()
+           ) do
+      grants =
+        Grant.Query.not_revoked()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      Enum.each(grants, fn grant ->
+        {:ok, _} = revoke_grant(grant, subject)
+      end)
+
+      {:ok, length(grants)}
+    end
+  end
+
+  @doc """
   Lists active (un-revoked) grants for an account. `opts[:include_expired]`
   defaults to false. Grants are returned with `api_key`, `runner`,
   `granted_by` and `approval_request: :run` preloaded so the LV table can

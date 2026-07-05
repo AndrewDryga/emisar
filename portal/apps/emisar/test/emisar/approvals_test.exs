@@ -2571,6 +2571,62 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "revoke_all_grants/1" do
+    test "revokes every un-revoked grant in the account, each with its audit row" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      insert_grant(account, key, action_id: "a.one", granted_by_id: user.id)
+      insert_grant(account, key, action_id: "a.two", granted_by_id: user.id)
+
+      # Cross-account isolation: B's grant survives A's sweep.
+      account_b = Fixtures.Accounts.create_account()
+      user_b = Fixtures.Users.create_user()
+
+      {_, key_b} =
+        Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
+
+      grant_b = insert_grant(account_b, key_b, action_id: "b.one", granted_by_id: user_b.id)
+
+      assert Approvals.revoke_all_grants(subject) == {:ok, 2}
+
+      assert Grant.Query.not_revoked() |> Grant.Query.by_account_id(account.id) |> Repo.all() ==
+               []
+
+      refute Repo.reload!(grant_b).revoked_at
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject)
+      revoked = Enum.filter(events, &(&1.event_type == "approval.grant_revoked"))
+      assert length(revoked) == 2
+
+      # Idempotent on an already-clean account.
+      assert Approvals.revoke_all_grants(subject) == {:ok, 0}
+    end
+
+    test "an operator (no manage_grants) is refused" do
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert Approvals.revoke_all_grants(operator_subject) == {:error, :unauthorized}
+    end
+  end
+
   describe "list_grants_for_account/2" do
     test "applies every preload and the include_expired filter (an empty account is fine)" do
       subject = operator_subject(Fixtures.Accounts.create_account())

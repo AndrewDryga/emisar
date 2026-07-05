@@ -244,6 +244,32 @@ defmodule EmisarWeb.ApprovalsLive do
     {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}
   end
 
+  # Disabling is a SWEEP, not just a cap: every active grant is revoked (each
+  # with its own audit row) so nothing lingers as a listed-but-inert
+  # capability; the matching kill switch stays as the backstop for races.
+  defp apply_grant_lifetime_cap(socket, {:ok, 0}) do
+    case Accounts.update_account(
+           socket.assigns.current_account,
+           %{settings: %{max_grant_lifetime_seconds: 0}},
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:ok, revoked} = Approvals.revoke_all_grants(socket.assigns.current_subject)
+
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> load(socket.assigns.filter_params)
+         |> put_flash(:info, grants_disabled_flash(revoked))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
+    end
+  end
+
   defp apply_grant_lifetime_cap(socket, {:ok, seconds}) do
     case Accounts.update_account(
            socket.assigns.current_account,
@@ -277,11 +303,16 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grants_disabled?(account), do: account.settings.max_grant_lifetime_seconds == 0
 
   defp grant_lifetime_flash(nil), do: "Grant-lifetime cap removed — grants can use any window."
+  defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
 
-  defp grant_lifetime_flash(0),
+  defp grants_disabled_flash(0),
     do: "Standing grants disabled — every approval is now single-use."
 
-  defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
+  defp grants_disabled_flash(1),
+    do: "Standing grants disabled — 1 active grant revoked; every approval is now single-use."
+
+  defp grants_disabled_flash(n),
+    do: "Standing grants disabled — #{n} active grants revoked; every approval is now single-use."
 
   defp grant_lifetime_label(3_600), do: "1 hour"
   defp grant_lifetime_label(86_400), do: "1 day"
@@ -435,21 +466,6 @@ defmodule EmisarWeb.ApprovalsLive do
             </:subtitle>
           </.section_header>
 
-          <%!-- The kill switch leaves existing rows LISTED but inert (matching
-               refuses account-wide) — say so, or the table below reads as live
-               capabilities. --%>
-          <.status_note
-            :if={grants_disabled?(@current_account) and @grants != []}
-            icon="hero-no-symbol"
-            tone={:amber}
-            title="These grants are inert"
-            class="mb-6"
-          >
-            Standing grants are disabled, so nothing matches them at dispatch — agents
-            re-ask for approval every time. Revoke them below to tidy up, or re-enable
-            grants under Maximum grant lifetime.
-          </.status_note>
-
           <LiveTable.live_table
             layout={:cards}
             id="grants"
@@ -568,8 +584,12 @@ defmodule EmisarWeb.ApprovalsLive do
                   — each grant keeps the lifetime it was approved with
                 </span>
               </span>
-              <span :if={grants_disabled?(@current_account)} class="text-xs text-zinc-400">
-                disabled
+              <span
+                :if={grants_disabled?(@current_account)}
+                class="flex items-center gap-1.5 text-xs"
+              >
+                <.status_dot tone={:brand} size={:sm} />
+                <span class="text-brand-300">disabled</span>
                 <span class="hidden text-zinc-500 sm:inline">
                   — every approval is single-use
                 </span>

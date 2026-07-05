@@ -393,26 +393,34 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 86_400
     end
 
-    test "an owner disables standing grants (cap 0) — the page flips to the disabled UX", %{
-      conn: conn,
-      account: account
-    } do
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    test "an owner disables standing grants (cap 0) — active grants are swept, the page flips",
+         %{conn: conn, account: account} do
+      # A live grant, minted the real way (approve with a window).
+      user = Fixtures.Users.create_user()
 
-      # Enabled: the normal zero state + the loose-end amber summary.
-      assert html =~ "No active grants."
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      request = pending_mcp_request!(account, user, "grant me a day")
+      {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
+      assert html =~ "linux.reboot"
       assert html =~ "no cap"
 
       html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "0"})
 
-      assert html =~ "Standing grants disabled — every approval is now single-use."
+      # The sweep revoked the grant (flash counts it), the setting stuck, and
+      # the section speaks the disabled state everywhere the operator looks.
+      assert html =~ "Standing grants disabled — 1 active grant revoked"
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 0
-
-      # The section speaks the disabled state everywhere the operator looks.
-      html = render(lv)
       assert html =~ "Standing grants are disabled."
       assert html =~ "Disabled for this account — every approval is single-use."
-      refute html =~ "No active grants."
+      assert {:ok, [], _} = Approvals.list_grants_for_account(subject)
     end
 
     test "an owner removes the cap", %{conn: conn, account: account} do
