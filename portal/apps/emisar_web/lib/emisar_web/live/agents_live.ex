@@ -831,11 +831,12 @@ defmodule EmisarWeb.AgentsLive do
            the page around them. --%>
       <div :if={@live_action == :index and @rotated} class="flex gap-4">
         <%!-- The amber key icon CAPS the spine (a timeline node, not two amber
-             elements side by side): icon up top, the 2px pending-tone line
-             descending beneath it for the block's full height. --%>
+             elements side by side): icon up top, a quiet descender beneath it
+             — the icon's own hue faded way back, so the icon stays the loud
+             element and the line just carries the containment. --%>
         <div class="flex w-4 flex-col items-center" aria-hidden="true">
           <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-          <div class="mt-2 w-0.5 flex-1 rounded-full bg-amber-500"></div>
+          <div class="mt-3 w-0.5 flex-1 rounded-full bg-amber-300/25"></div>
         </div>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-medium text-zinc-200">
