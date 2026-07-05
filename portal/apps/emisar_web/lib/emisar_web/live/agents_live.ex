@@ -825,8 +825,14 @@ defmodule EmisarWeb.AgentsLive do
            artifact), right above the list where the old key still shows for
            the final revoke step. Not the boxed secret_reveal banner: that
            variant is keys-new's form-replacing success step, and two grammars
-           for one event on one surface read as two designs. --%>
-      <div :if={@live_action == :index and @rotated}>
+           for one event on one surface read as two designs. The amber SPINE
+           (LiveTable's card_spine pending tone) binds note + artifact + Done
+           into one transient block — without it the three pieces blended into
+           the page around them. --%>
+      <div
+        :if={@live_action == :index and @rotated}
+        class="border-l-2 border-l-amber-500 pl-5 sm:pl-6"
+      >
         <.minted_note title="Key rotated — copy the new key now; it won't be shown again">
           Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
           with this key. The old key keeps working until you revoke it below — swap first,
