@@ -472,8 +472,12 @@ defmodule EmisarWeb.PacksLive do
           </header>
 
           <ul class="divide-y divide-zinc-800/70">
-            <li :for={v <- pack.versions} class="flex flex-col gap-3 py-3">
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <li :for={v <- pack.versions} class="flex flex-col gap-3 py-2.5">
+              <%!-- items-start: the one-line version/hash/registry sits at the TOP,
+                   in register with the meta column's trust badge, instead of
+                   floating in the vertical middle of its three lines (which read
+                   as a too-tall row). --%>
+              <div class="flex flex-wrap items-start gap-x-4 gap-y-1">
                 <div class="flex min-w-0 items-center gap-3">
                   <span class="font-mono text-sm text-zinc-200">v{v.version}</span>
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
