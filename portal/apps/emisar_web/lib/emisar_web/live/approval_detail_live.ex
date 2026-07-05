@@ -791,9 +791,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
          (the runbook editor / every create flow already sit boxless); the
          panel island read as one more wash box. --%>
     <section>
-      <.section_header title="Decide">
-        <:subtitle>Logged to the audit trail.</:subtitle>
-      </.section_header>
+      <%!-- No subtitle: the note field's own placeholder already says the
+           decision is logged — a header line restating it is double copy. --%>
+      <.section_header title="Decide" />
 
       <%!-- Live countdown so the operator decides against the clock, not a static
            "expires in 3h". Ticks client-side (ExpiryCountdown hook); at zero it
