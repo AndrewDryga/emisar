@@ -183,9 +183,13 @@ defmodule EmisarWeb.RunnerDetailLive do
         <%!-- Runners / {group} / {name}. The name is a hostname-ish machine id,
              so it renders mono like every identifier-titled detail page. --%>
         <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
-        <.back_link navigate={~p"/app/#{@current_account}/runners?#{[group: @runner.group]}"}>
-          {@runner.group}
-        </.back_link>
+        <%!-- The group is CONTEXT, not a link — there's no per-group page and the
+             runners list has no group filter, so a link would go nowhere. Render
+             it dimmer than the clickable "Runners" so it doesn't read as one. --%>
+        <span class="inline-flex items-center text-zinc-500">
+          <span class="font-medium">{@runner.group}</span>
+          <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
+        </span>
         <span class="font-mono text-lg tracking-tight text-zinc-50 sm:text-xl">{@runner.name}</span>
       </:title>
       <:actions>
