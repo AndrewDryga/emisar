@@ -506,6 +506,33 @@ Hand-rolled card/chip/stat/table. ❌ Glow/grain/glass/gate-device in the consol
 ❌ Motion that isn't reduced-motion safe. ❌ A table full of rose. ❌ A second
 accent hue or a second green. ❌ Overriding the global focus ring.
 
+### 8.1 The console pre-commit GATE (MANDATORY — run before EVERY console-page commit)
+
+Not a reference list — a gate, like `mix test`. Each item has been violated
+after being taught, so every one is checked EVERY time, mechanically:
+
+1. **Width** — the page's `width=` matches its section siblings; a subpage
+   reached from a list keeps that list's width so the header never jumps
+   (keys/new, runner detail, agents/connect precedents). `width={if ...}`
+   inside one LV is BANNED. Check: `grep -rn "width={" live/*.ex` and diff
+   against the section's other pages.
+2. **All states, rendered pixels** — empty/onboarding, partial, power, error,
+   secret-reveal, denial, and every `handle_event` that changes what renders
+   (Rotate! not just the happy list). Screenshot desktop AND mobile for
+   create/connect flows.
+3. **No new wash boxes** — a box is EARNED by a secret (`secret_reveal`), a
+   form, a code artifact, or an actionable warning. A NOTE is status grammar:
+   icon lead + medium title + zinc body, naked on canvas (§5). Check the diff
+   for added `bg-*/ring-*` on prose.
+4. **Rhythm is owned once** — by the shell's `space-y-6` or by ONE page
+   wrapper (`space-y-12`); never per-block `mt-*`/`pb-*` on shell children
+   (§3.3 — they silently lose to the shell).
+5. **Copy sells with examples** — a pitch line names concrete things
+   (Claude, ChatGPT, Cursor, Codex) over abstract category words.
+6. **Same-shape → shared component** — before styling anything, grep for the
+   component that already renders this shape (`secret_reveal`, `disclosure`,
+   `section_header`, `empty_state`, …).
+
 ---
 
 ## 9. Source of truth (read the code, not just this)

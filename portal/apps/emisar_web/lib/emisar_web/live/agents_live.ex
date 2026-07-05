@@ -71,6 +71,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> ConfirmDialog.init()
      |> assign(:revoke_target, nil)
+     |> assign(:rotated, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
@@ -183,6 +184,9 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
 
+  def handle_event("dismiss_rotated", _params, socket),
+    do: {:noreply, assign(socket, :rotated, nil)}
+
   def handle_event("revoke", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
@@ -261,20 +265,12 @@ defmodule EmisarWeb.AgentsLive do
   defp do_rotate(socket, id) do
     with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject),
          {:ok, raw, _new_key} <- ApiKeys.rotate_api_key(key, socket.assigns.current_subject) do
-      # Reveal the successor's secret in the custom panel (the working one-time
-      # reveal) and tell the operator the old key still works until they revoke.
-      {:noreply,
-       socket
-       |> assign(:selected_client, "custom")
-       |> assign(:quick_secret, raw)
-       # The reveal renders inside the connect panel — quick_secret being set
-       # pins the inline panel open on the index (see assign_connect_inline).
-       |> put_flash(
-         :info,
-         "Key rotated. Copy the new key below and update your agent — the old key keeps " <>
-           "working until you revoke it."
-       )
-       |> reload()}
+      # The successor's one-time secret shows in a compact reveal banner right
+      # here on the index — never by dumping the whole connect panel + custom
+      # key form onto the list page. No flash: the banner IS the confirmation,
+      # and it stays until dismissed (a flash would auto-close over the only
+      # copy of the secret's instructions).
+      {:noreply, socket |> assign(:rotated, %{name: key.name, secret: raw}) |> reload()}
     else
       {:error, :not_found} -> {:noreply, socket}
       {:error, _} -> {:noreply, put_flash(socket, :error, "Could not rotate the key.")}
@@ -714,7 +710,7 @@ defmodule EmisarWeb.AgentsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:agents}
-      width={if @live_action == :connect, do: :form, else: :table}
+      width={:table}
     >
       <:title>
         <%!-- The connect flow is a title-row CTA (the Runners "Connect a runner" /
@@ -742,8 +738,8 @@ defmodule EmisarWeb.AgentsLive do
       </:actions>
 
       <.page_intro :if={@live_action == :index}>
-        Connect an LLM agent over MCP to dispatch gated, audited actions — each agent's key is
-        scoped to runners and capabilities, and revocable in one click.
+        Connect Claude, ChatGPT, Cursor, Codex — any MCP agent — to dispatch gated, audited
+        actions. Each key is scoped to runners and capabilities, and revocable in one click.
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
@@ -785,9 +781,11 @@ defmodule EmisarWeb.AgentsLive do
       <%!-- Activity posture — only once agents exist. In onboarding (no keys)
            "0 active now" is a fact about nothing; the connect flow below is the
            whole story until the first agent lands. --%>
+      <%!-- No hand-rolled pb here: the shell's space-y owns the gap on BOTH
+           sides, so the bar sits evenly between the intro and the list. --%>
       <div
         :if={@live_action == :index and @issued_count > 0}
-        class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
+        class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs"
       >
         <span class="flex items-center gap-1.5" title="called an action in the last 5 minutes">
           <%!-- The dot signals only when something IS active — a green dot
@@ -822,10 +820,28 @@ defmodule EmisarWeb.AgentsLive do
         </span>
       </div>
 
+      <%!-- Rotation success — the successor's one-time secret in the shared
+           reveal (the enrollment-keys grammar: the box is EARNED, it holds the
+           secret + copy affordance), right above the list where the old key
+           still shows for the final revoke step. --%>
+      <.secret_reveal
+        :if={@live_action == :index and @rotated}
+        id="rotated-key"
+        title="Key rotated — copy the new key now; it won't be shown again."
+        secret={@rotated.secret}
+      >
+        Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
+        with this key. The old key keeps working until you revoke it below — swap first,
+        then revoke.
+        <:actions>
+          <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
+        </:actions>
+      </.secret_reveal>
+
       <%!-- The empty state IS the connect flow (the runners install-wizard
            pattern): no agents → the panel renders right here, no detour. It
-           also pins open while a one-time secret is on screen (quick mint /
-           rotation reveal), so the reload can't hide the only copy. --%>
+           also pins open while a quick-mint secret is on screen, so the
+           reload can't hide the only copy. --%>
       <section :if={@live_action == :index and @show_connect_inline?}>
         <.section_header title="Connect an agent" />
         <%!-- A role that can't mint gets the honest note, not a picker whose
@@ -1060,163 +1076,215 @@ defmodule EmisarWeb.AgentsLive do
     assigns = assign(assigns, :config, config)
 
     ~H"""
-    <div>
-      <%!-- Client picker on the canvas — grouped into two transport families.
+    <%!-- CONTENT ON CANVAS, task + rail (the install-wizard / keys-new
+         grammar) at the same 7xl column as the list it's reached from, so the
+         header never jumps: the picker + per-client setup are the task on the
+         left; the "how keys work" explainer fills the rail on the right. --%>
+    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-16">
+      <div>
+        <%!-- Client picker on the canvas — grouped into two transport families.
            Cloud first (the no-install path most new users want); Local below
            for IDE / desktop clients that go through the stdio bridge. Small
            group labels organize the tabs; the pick step is framed by the page
            intro / section header above, so the picker carries no header. --%>
-      <div>
-        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-          Cloud
-          <span class="ml-1 normal-case tracking-normal text-zinc-600">
-            — hosted LLMs: no install, URL + token
-          </span>
-        </p>
-        <div class="mt-2.5 flex flex-wrap gap-1.5">
-          <.client_tab
-            :for={id <- remote_client_ids()}
-            id={id}
-            label={client_label(id)}
-            selected={id == @selected_client}
-          />
+        <div>
+          <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+            Cloud
+            <span class="ml-1 normal-case tracking-normal text-zinc-600">
+              — hosted LLMs: no install, URL + token
+            </span>
+          </p>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <.client_tab
+              :for={id <- remote_client_ids()}
+              id={id}
+              label={client_label(id)}
+              selected={id == @selected_client}
+            />
+          </div>
+
+          <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+            Local / IDE clients
+            <span class="ml-1 normal-case tracking-normal text-zinc-600">
+              — uses the stdio bridge
+            </span>
+          </p>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <.client_tab
+              :for={id <- local_client_ids()}
+              id={id}
+              label={client_label(id)}
+              selected={id == @selected_client}
+            />
+          </div>
+
+          <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+            Roll your own
+          </p>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <.client_tab
+              id="custom"
+              label="Custom key (advanced)"
+              selected={"custom" == @selected_client}
+            />
+          </div>
         </div>
 
-        <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-          Local / IDE clients
-          <span class="ml-1 normal-case tracking-normal text-zinc-600">— uses the stdio bridge</span>
-        </p>
-        <div class="mt-2.5 flex flex-wrap gap-1.5">
-          <.client_tab
-            :for={id <- local_client_ids()}
-            id={id}
-            label={client_label(id)}
-            selected={id == @selected_client}
-          />
-        </div>
-
-        <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-          Roll your own
-        </p>
-        <div class="mt-2.5 flex flex-wrap gap-1.5">
-          <.client_tab
-            id="custom"
-            label="Custom key (advanced)"
-            selected={"custom" == @selected_client}
-          />
-        </div>
-      </div>
-
-      <%!-- Body. Empty state until the operator picks. Once picked we
+        <%!-- Body. Empty state until the operator picks. Once picked we
            render the per-transport setup section — for local clients
            that's "install + paste snippet", for remote it's
            "URL + bearer header + per-host steps". Scope picker only
            appears AFTER a client is chosen too; it's part of the
            per-client setup, not a standalone step. --%>
-      <%= cond do %>
-        <% is_nil(@selected_client) -> %>
-          <%!-- Nothing picked → nothing rendered: the picker is the prompt;
+        <%= cond do %>
+          <% is_nil(@selected_client) -> %>
+            <%!-- Nothing picked → nothing rendered: the picker is the prompt;
                480px of reserved dead space buried the agents list. --%>
-          <span></span>
-        <% @selected_client == "custom" -> %>
-          <div class="mt-10 space-y-6">
-            <%= if @quick_secret do %>
-              <.callout tone={:amber}>
-                <span class="font-semibold">New key minted — it's live now.</span>
-                Copy the bearer token below before you leave this page; we won't show it
-                again. If you lose it, create another key.
-              </.callout>
+            <span></span>
+          <% @selected_client == "custom" -> %>
+            <div class="mt-10 space-y-6">
+              <%= if @quick_secret do %>
+                <.minted_note>
+                  Copy the bearer token below before you leave this page; we won't show it
+                  again. If you lose it, create another key.
+                </.minted_note>
 
-              <.code_panel
-                id="custom-secret"
-                label="API key (bearer token)"
-                copy
-                copy_label="Copy key"
-                code={@quick_secret}
+                <.code_panel
+                  id="custom-secret"
+                  label="API key (bearer token)"
+                  copy
+                  copy_label="Copy key"
+                  code={@quick_secret}
+                />
+              <% end %>
+
+              <.custom_key_panel
+                form={@form}
+                action_scope_text={@action_scope_text}
+                runners={@runners}
+                selected_runner_ids={@selected_runner_ids}
+                selected_runner_groups={@selected_runner_groups}
               />
-            <% end %>
-
-            <.custom_key_panel
-              form={@form}
-              action_scope_text={@action_scope_text}
-              runners={@runners}
-              selected_runner_ids={@selected_runner_ids}
-              selected_runner_groups={@selected_runner_groups}
-            />
-          </div>
-        <% @config && @config.kind == :remote -> %>
-          <div class="mt-10 space-y-8">
-            <%= if @quick_secret do %>
-              <.callout tone={:amber}>
-                <span class="font-semibold">New key minted — it's live now.</span>
-                Copy the bearer token below before you leave this page; we won't show it
-                again. If you lose it, pick the client again to mint a new one.
-              </.callout>
-            <% end %>
-
-            <.remote_mcp_panel
-              client_id={@selected_client}
-              client_label={client_label(@selected_client)}
-              rpc_url={@config.rpc_url}
-              auth_header={@config.auth_header}
-              steps={@config.steps}
-            />
-
-            <.scope_block
-              runners={@runners}
-              selected_runner_ids={@selected_runner_ids}
-              selected_runner_groups={@selected_runner_groups}
-            />
-          </div>
-        <% @config -> %>
-          <div class="mt-10 space-y-8">
-            <%= if @quick_secret do %>
-              <.callout tone={:amber}>
-                <span class="font-semibold">New key minted — it's live now.</span>
-                The snippet below contains it — copy the whole snippet, not just part. We
-                won't show this key again after you leave the page; pick the client again to
-                mint a new one.
-              </.callout>
-            <% end %>
-
-            <.local_install_block />
-
-            <div>
-              <.section_header title={"Paste this into #{client_label(@selected_client)}"}>
-                <:subtitle><span class="font-mono">{@config.location}</span></:subtitle>
-              </.section_header>
-              <.code_panel
-                id={"snippet-#{@selected_client}"}
-                label="Snippet"
-                annotation="contains your API key"
-                copy
-                copy_label="Copy snippet"
-                code={@config.body}
-              />
-              <p class="mt-2 text-xs text-zinc-500">
-                Restart {client_label(@selected_client)} after pasting.
-                <.link
-                  href={~p"/docs/connect-an-llm"}
-                  class="group text-brand-400 hover:text-brand-300"
-                >
-                  Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
-                </.link>
-              </p>
             </div>
+          <% @config && @config.kind == :remote -> %>
+            <div class="mt-10 space-y-8">
+              <%= if @quick_secret do %>
+                <.minted_note>
+                  Copy the bearer token below before you leave this page; we won't show it
+                  again. If you lose it, pick the client again to mint a new one.
+                </.minted_note>
+              <% end %>
 
-            <.auto_permit_block
-              client_id={@selected_client}
-              client_label={client_label(@selected_client)}
-              auto_permit={Map.get(@config, :auto_permit)}
-            />
+              <.remote_mcp_panel
+                client_id={@selected_client}
+                client_label={client_label(@selected_client)}
+                rpc_url={@config.rpc_url}
+                auth_header={@config.auth_header}
+                steps={@config.steps}
+              />
 
-            <.scope_block
-              runners={@runners}
-              selected_runner_ids={@selected_runner_ids}
-              selected_runner_groups={@selected_runner_groups}
-            />
-          </div>
-      <% end %>
+              <.scope_block
+                runners={@runners}
+                selected_runner_ids={@selected_runner_ids}
+                selected_runner_groups={@selected_runner_groups}
+              />
+            </div>
+          <% @config -> %>
+            <div class="mt-10 space-y-8">
+              <%= if @quick_secret do %>
+                <.minted_note>
+                  The snippet below contains it — copy the whole snippet, not just part. We
+                  won't show this key again after you leave the page; pick the client again to
+                  mint a new one.
+                </.minted_note>
+              <% end %>
+
+              <.local_install_block />
+
+              <div>
+                <.section_header title={"Paste this into #{client_label(@selected_client)}"}>
+                  <:subtitle><span class="font-mono">{@config.location}</span></:subtitle>
+                </.section_header>
+                <.code_panel
+                  id={"snippet-#{@selected_client}"}
+                  label="Snippet"
+                  annotation="contains your API key"
+                  copy
+                  copy_label="Copy snippet"
+                  code={@config.body}
+                />
+                <p class="mt-2 text-xs text-zinc-500">
+                  Restart {client_label(@selected_client)} after pasting.
+                  <.link
+                    href={~p"/docs/connect-an-llm"}
+                    class="group text-brand-400 hover:text-brand-300"
+                  >
+                    Troubleshooting <.cta_arrow class="ml-0.5 h-3 w-3" />
+                  </.link>
+                </p>
+              </div>
+
+              <.auto_permit_block
+                client_id={@selected_client}
+                client_label={client_label(@selected_client)}
+                auto_permit={Map.get(@config, :auto_permit)}
+              />
+
+              <.scope_block
+                runners={@runners}
+                selected_runner_ids={@selected_runner_ids}
+                selected_runner_groups={@selected_runner_groups}
+              />
+            </div>
+        <% end %>
+      </div>
+
+      <%!-- The reading rail — how agent keys work, so the operator minting a
+           credential understands its reach and lifecycle before handing it to
+           an LLM (the keys-new explainer pattern). --%>
+      <aside class="mt-12 lg:mt-0">
+        <.section_header title="How agent keys work" />
+        <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
+          <p>
+            Each key is a bearer credential for
+            <span class="font-medium text-zinc-300">one MCP client</span>
+            — the agent presents it on every call, and its activity lands in Runs and
+            the audit trail under the key's name.
+          </p>
+          <p>
+            A key never widens what's allowed: every action still passes your
+            <span class="font-medium text-zinc-300">policy</span>
+            — risky ones pause for human approval, out-of-policy ones are denied.
+          </p>
+          <p>
+            Scope a key before minting — runner groups, specific runners, or a per-action
+            allowlist on custom keys — to cap the blast radius if it leaks.
+          </p>
+          <p>
+            Quick-connect keys don't expire; revoke one from the agents list when its
+            client no longer needs access. Custom keys default to a 30-day expiry.
+            Rotating mints a successor — the old key keeps working until you revoke it.
+          </p>
+        </div>
+      </aside>
+    </div>
+    """
+  end
+
+  # The one-time-key note as STATUS GRAMMAR, not a boxed callout (the
+  # install-wizard credential-note precedent): amber key icon lead, naked on
+  # the canvas — a box around non-actionable prose would outshout the
+  # artifact below that actually carries the secret.
+  slot :inner_block, required: true
+
+  defp minted_note(assigns) do
+    ~H"""
+    <div class="flex items-start gap-3">
+      <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+      <div class="min-w-0">
+        <div class="text-sm font-medium text-zinc-200">New key minted — it's live now</div>
+        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
+      </div>
     </div>
     """
   end
@@ -1406,12 +1474,6 @@ defmodule EmisarWeb.AgentsLive do
           />
         </div>
       </.disclosure>
-      <p class="mt-2 flex items-start gap-1.5 px-1 text-[11px] text-zinc-500">
-        <.icon name="hero-clock" class="mt-0.5 h-3 w-3 flex-none" />
-        <span>
-          Quick-connect keys don't expire — revoke one from the list below when its agent no longer needs access.
-        </span>
-      </p>
     </div>
     """
   end
@@ -1484,7 +1546,7 @@ defmodule EmisarWeb.AgentsLive do
   defp custom_key_panel(assigns) do
     ~H"""
     <div>
-      <p class="text-xs text-zinc-500">
+      <p class="text-sm leading-relaxed text-zinc-400">
         Mints an MCP key with the standard <code class="font-mono text-zinc-300">actions:read</code>
         + <code class="font-mono text-zinc-300">actions:execute</code>
         scopes — the same shape the per-client tabs above use. The form adds a name,
@@ -1492,11 +1554,18 @@ defmodule EmisarWeb.AgentsLive do
       </p>
       <%!-- Custom keys reach the whole fleet (no runner picker here — that's a
            quick-mint affordance); the allowlist narrows ACTIONS, not runners.
-           Make the reach explicit so the operator knows what they're granting. --%>
-      <p class="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-500/20">
-        This key can read and execute every action your trusted packs expose on every
-        runner; risky actions still require policy approval.
-      </p>
+           The reach is a security fact, so it reads as the amber status line,
+           not another wash box. --%>
+      <div class="mt-5 flex items-start gap-3">
+        <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-zinc-200">Fleet-wide reach</div>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            This key can read and execute every action your trusted packs expose on every
+            runner; risky actions still require policy approval.
+          </p>
+        </div>
+      </div>
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">
         <.input
@@ -1592,8 +1661,10 @@ defmodule EmisarWeb.AgentsLive do
       )
 
     ~H"""
-    <div class="overflow-hidden rounded-lg bg-zinc-950/40 ring-1 ring-white/[0.06]">
-      <form phx-change="update_scope" class="space-y-3 p-4">
+    <%!-- Naked inside the disclosure — the disclosure already IS the contained
+         surface; a second box (island-in-island) just adds chrome. --%>
+    <div>
+      <form phx-change="update_scope" class="space-y-3">
         <div>
           <p class="text-sm font-medium text-zinc-200">Allowed runners</p>
           <p class="mt-1 text-xs text-zinc-500">
@@ -1604,9 +1675,7 @@ defmodule EmisarWeb.AgentsLive do
         </div>
 
         <%= if @runners == [] do %>
-          <p class="rounded-lg bg-zinc-900/60 p-3 text-xs text-zinc-400">
-            No runners registered yet.
-          </p>
+          <p class="text-xs text-zinc-500">No runners registered yet.</p>
         <% else %>
           <.runner_scope_select
             name="scope[]"
