@@ -1142,18 +1142,21 @@ defmodule EmisarWeb.AgentsLive do
                   copy_label="Copy snippet"
                   code={@config.body}
                 />
-                <%!-- The fresh-mint note sits UNDER the snippet that holds the key:
-                     copy the snippet, then the reminder that it won't show again. --%>
-                <.minted_note :if={@quick_secret} class="mt-4">
-                  Copy the whole snippet above now — it holds your key, and you won't see it
-                  again. Lost it later? Pick this client again for a fresh key.
-                </.minted_note>
-                <p class="mt-2 text-xs text-zinc-500">
+                <%!-- Mechanical next step sits right under the snippet: paste or
+                     run it, then restart. --%>
+                <p class="mt-3 text-xs text-zinc-500">
                   {if config_target_is_file?(@config),
                     do: "Restart #{client_label(@selected_client)} after saving.",
                     else: "Start a fresh #{client_label(@selected_client)} session to use it."}
                   <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
                 </p>
+                <%!-- The fresh-mint key reminder is the last thing before the
+                     operator leaves — set off with space so it reads as a distinct
+                     "save your key now" callout, not another setup step. --%>
+                <.minted_note :if={@quick_secret} class="mt-6">
+                  Copy the whole snippet above now — it holds your key, and you won't see it
+                  again. Lost it later? Pick this client again for a fresh key.
+                </.minted_note>
               </div>
 
               <.auto_permit_block
