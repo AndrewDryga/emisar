@@ -111,7 +111,7 @@ defmodule EmisarWeb.RunDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runs}
-      width={:detail}
+      width={:table}
     >
       <:title>
         <.detail_header
@@ -159,271 +159,284 @@ defmodule EmisarWeb.RunDetailLive do
         </.button>
       </:actions>
 
-      <%!-- Single horizontal meta strip — status leads (so a glance
-           tells you the run state without hunting the top-right
-           corner), then runner, source, duration, exit, when. Request
-           ID used to live in the last cell — it was low-signal debug
-           trace; status earns the slot. --%>
-      <.meta_strip cols={6}>
-        <.meta_field label="Status">
-          <.status_badge status={@run.status} />
-        </.meta_field>
-        <.meta_field label="Runner">
-          <.link
-            navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
-            class="truncate text-zinc-200 hover:text-brand-300"
-          >
-            {runner_label(@run.runner)}
-          </.link>
-        </.meta_field>
-        <.meta_field label="Source">
-          <span class="block truncate">
-            <span class="text-zinc-200">{run_actor(@run)}</span>
-            <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
-            <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
-          </span>
-          <span
-            :if={@run.mcp_session_id}
-            class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
-            title={@run.mcp_session_id}
-          >
-            session {String.slice(@run.mcp_session_id, 0, 8)}
-          </span>
-        </.meta_field>
-        <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
-             (text-zinc-500) — never the value span's brighter/monospace styling,
-             or the two "no value" cells look mismatched. --%>
-        <.meta_field label="Duration">
-          <span :if={@run.duration_ms} class="text-zinc-200">
-            {format_duration(@run.duration_ms)}
-          </span>
-          <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
-        </.meta_field>
-        <.meta_field label="Exit code">
-          <span
-            :if={is_integer(@run.exit_code)}
-            class={["font-mono", exit_code_class(@run.exit_code)]}
-          >
-            {@run.exit_code}
-          </span>
-          <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
-        </.meta_field>
-        <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
-             sibling detail pages describing the same event in two datetime
-             dialects read as two authors. wrap: the machine value takes the full
-             row on a phone rather than clipping. --%>
-        <.meta_field label="Started" wrap>
-          <.local_time value={@run.inserted_at} mode={:forensic} class="tabular-nums text-zinc-200" />
-        </.meta_field>
-      </.meta_strip>
-
-      <%!-- Approval banner — the run is held on a human decision. Loud amber
-           + a one-click jump to the approval page. --%>
-      <.callout
-        :if={@run.status == :pending_approval and @approval_request}
-        tone={:amber}
-        icon="hero-hand-raised"
-        title="Waiting on approval"
-        class="mt-4"
-      >
-        This run is held until an approver decides.
-        <:action>
-          <.button
-            tone={:amber}
-            size={:md}
-            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-          >
-            View approval →
-          </.button>
-        </:action>
-      </.callout>
-
-      <%!-- Cancelled-with-reason banner — an approver's denial cancels the run
-           and writes "approval denied: …" into reason_text; a bare grey badge
-           would drop that reason, leaving the requester with no "why didn't it
-           run". Driven by the run (not the approval row, which a prune may have
-           removed), with a best-effort jump to the decision. --%>
-      <.callout
-        :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-        tone={:rose}
-        icon="hero-no-symbol"
-        title="Cancelled"
-        class="mt-4"
-      >
-        <span class="whitespace-pre-wrap">{@run.reason_text}</span>
-        <:action :if={@approval_request}>
-          <.button
-            variant={:secondary}
-            tone={:rose}
-            size={:md}
-            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-          >
-            View approval →
-          </.button>
-        </:action>
-      </.callout>
-
-      <%!-- Error banner — only when terminal-failed and we got a message back. --%>
-      <.callout :if={@run.error_message} tone={:rose} title="Error" class="mt-4">
-        <span class="whitespace-pre-wrap">{@run.error_message}</span>
-      </.callout>
-
-      <%!-- Runner-dropped warning — the run is in flight but its runner's
-           socket is gone. Don't fake a terminal status; just flag that the
-           output may be incomplete until it reconnects (or the dispatch
-           timeout sweep errors the run). --%>
-      <.offline_notice
-        :if={@run.status in [:sent, :running] and @runner_connection == :offline}
-        severity={:caution}
-        title="Runner disconnected"
-        class="mt-4"
-      >
-        Its socket dropped while this run was in flight — output may be incomplete.
-        The run is marked errored if the runner doesn't reconnect shortly.
-      </.offline_notice>
-
-      <%!-- Queued but its target runner is offline — the run can't dispatch
-           until the runner reconnects (or the timeout sweep errors it). The
-           in-flight banner above ("output may be incomplete") is wrong here:
-           nothing's running yet, so say what's actually blocking it. --%>
-      <.offline_notice
-        :if={@run.status == :pending and @runner_connection == :offline}
-        severity={:caution}
-        title="Queued — runner offline"
-        class="mt-4"
-      >
-        Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
-        It's marked errored if the runner doesn't return before the dispatch timeout.
-      </.offline_notice>
-
-      <%!-- ONE why-cluster — who asked and what policy said, together (same
-           decision-record shape as the approval detail), not a Reason card and
-           a Policy card competing at equal weight. The verdict is told ONCE by
-           the status badge above; this carries the WHY plus the matched-rules/
-           version audit trail. Policy hidden for `allow` (the boring default
-           the run wouldn't exist without). --%>
-      <.panel
-        :if={@run.reason not in [nil, ""] or show_policy?(@run)}
-        title="Why"
-        padding="p-5"
-        class="mt-4"
-      >
-        <dl class="space-y-4">
-          <div :if={@run.reason && @run.reason != ""}>
-            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Reason
-            </dt>
-            <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
-          </div>
-          <div :if={show_policy?(@run)}>
-            <dt class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
-            </dt>
-            <dd
-              :if={@run.policy_reason && @run.policy_reason != ""}
-              class="mt-1 text-sm leading-relaxed text-zinc-200"
+      <%!-- The page owns its rhythm (design-system §3.3): ONE space-y-12 child
+           neutralizes the shell's space-y-6 and sets 48px between the major
+           blocks (mt-4 = breathing room under the title); the attention stack
+           keeps its own tight inner rhythm. --%>
+      <div class="mt-4 space-y-12">
+        <%!-- Run facts on the CANVAS — the naked meta row (the runner-detail
+             grammar), no island. Status leads; ONE row at sm+ (natural widths
+             fit the 7xl column); phones keep the tidy 2-col grid, the forensic
+             timestamp spanning both columns via `wrap`. --%>
+        <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+          <.meta_field label="Status">
+            <.status_badge status={@run.status} />
+          </.meta_field>
+          <.meta_field label="Runner">
+            <.link
+              navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
+              class="truncate text-zinc-200 hover:text-brand-300"
             >
-              {@run.policy_reason}
-            </dd>
-            <dd
-              :if={matched_rules_label(@run.matched_rules) != "—" or is_integer(@run.policy_version)}
-              class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
-            >
-              <span :if={matched_rules_label(@run.matched_rules) != "—"}>
-                Matched
-                <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
-              </span>
-              <span :if={is_integer(@run.policy_version)}>
-                Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
-              </span>
-            </dd>
-          </div>
-        </dl>
-      </.panel>
-
-      <%!-- Arguments before output. Operators read the page top→down:
-           "what was called → what came back". Putting args first
-           groups all the input context (reason, policy, args) above
-           the result, so the operator doesn't have to scroll past a
-           tall output panel to recall what was actually invoked. --%>
-      <.code_panel
-        :if={@run.args && @run.args != %{}}
-        label="Arguments"
-        annotation={@run.args_sha256 && "sha256:#{String.slice(@run.args_sha256, 0, 16)}…"}
-        max_h="max-h-64"
-        code={format_json(@run.args)}
-        class="mt-6"
-      />
-
-      <%!-- The exact shell command the runner ran. Sensitive arg values
-           are redacted runner-side (shown as [REDACTED]) — this is the
-           audit-grade record of what actually executed. --%>
-      <.code_panel
-        :if={@run.executed_command && @run.executed_command != ""}
-        label="Executed command"
-        annotation="secrets redacted"
-        code={@run.executed_command}
-        class="mt-6"
-      />
-
-      <%!-- Output stream — the main event. Full width, large, dark
-           terminal-style background. Stderr lines render in rose so
-           a failure jumps out. Hidden entirely for statuses where
-           the panel would just be blank (cancelled, denied, anything
-           still awaiting approval) — saves the operator from staring
-           at an empty terminal. The one sanctioned hand-rolled code
-           surface (console-ux §1): it streams chunk spans into the
-           <pre>, which `<.code_panel>`'s static `code` attr can't. --%>
-      <.card
-        :if={show_output?(@run, @output_present?)}
-        class="mt-6 overflow-hidden"
-        padding=""
-      >
-        <header class="flex items-center justify-between border-b border-zinc-800/70 bg-black/30 px-4 py-2">
-          <div class="flex items-center gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Output
-            </h3>
-            <%!-- Streaming affordance — a pulsing pill while the run is still
-                 in flight, so an idle terminal reads as "more is coming",
-                 not "this is the final output". Gone once terminal. --%>
-            <span
-              :if={@run.status in [:sent, :running]}
-              class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30"
-            >
-              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
+              {runner_label(@run.runner)}
+            </.link>
+          </.meta_field>
+          <.meta_field label="Dispatched by">
+            <span class="block truncate">
+              <span class="text-zinc-200">{run_actor(@run)}</span>
+              <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
+              <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
             </span>
-          </div>
-          <span class="text-[11px] text-zinc-500">stderr in rose</span>
-        </header>
-        <%!-- Each chunk already carries its trailing newline (the runner
-             streams line-by-line via ReadBytes('\n')), so output is one
-             pre-formatted block with chunks as inline spans — they
-             concatenate and only the real newlines break lines. Block
-             elements or template indentation here would double the
-             spacing, since <pre> makes all whitespace significant. --%>
-        <%!-- A terminal run that streamed nothing gets one quiet line instead
-             of a 24rem black void (the in-flight min-height stays — more may
-             be coming). --%>
-        <p
-          :if={not @output_present? and @run.status not in [:sent, :running]}
-          class="bg-black p-4 font-mono text-xs text-zinc-600"
+            <span
+              :if={@run.mcp_session_id}
+              class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
+              title={@run.mcp_session_id}
+            >
+              session {String.slice(@run.mcp_session_id, 0, 8)}
+            </span>
+          </.meta_field>
+          <%!-- Empty Duration / Exit code render the same muted em-dash placeholder
+               (text-zinc-500) — never the value span's brighter/monospace styling,
+               or the two "no value" cells look mismatched. --%>
+          <.meta_field label="Duration">
+            <span :if={@run.duration_ms} class="text-zinc-200">
+              {format_duration(@run.duration_ms)}
+            </span>
+            <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
+          </.meta_field>
+          <.meta_field label="Exit code">
+            <span
+              :if={is_integer(@run.exit_code)}
+              class={["font-mono", exit_code_class(@run.exit_code)]}
+            >
+              {@run.exit_code}
+            </span>
+            <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
+          </.meta_field>
+          <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
+               sibling detail pages describing the same event in two datetime
+               dialects read as two authors. --%>
+          <.meta_field label="Started" wrap>
+            <.local_time
+              value={@run.inserted_at}
+              mode={:forensic}
+              class="tabular-nums text-zinc-200"
+            />
+          </.meta_field>
+        </div>
+
+        <%!-- The ATTENTION stack — every conditional banner in one tight group
+             (they're all facts about the same held/failed/offline moment), so
+             two banners never sit 48px apart while the wrapper spaces the
+             page's real blocks. Boxes are earned here: each carries an action
+             or a warning-grade consequence. --%>
+        <div :if={attention?(@run, @approval_request, @runner_connection)} class="space-y-3">
+          <%!-- Approval hold — the run is waiting on a human decision. --%>
+          <.callout
+            :if={@run.status == :pending_approval and @approval_request}
+            tone={:amber}
+            icon="hero-hand-raised"
+            title="Waiting on approval"
+          >
+            This run is held until an approver decides.
+            <:action>
+              <.button
+                tone={:amber}
+                size={:md}
+                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+              >
+                View approval →
+              </.button>
+            </:action>
+          </.callout>
+
+          <%!-- Cancelled-with-reason — an approver's denial cancels the run and
+               writes "approval denied: …" into reason_text; a bare grey badge
+               would drop that reason. Driven by the run (not the approval row,
+               which a prune may have removed). --%>
+          <.callout
+            :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
+            tone={:rose}
+            icon="hero-no-symbol"
+            title="Cancelled"
+          >
+            <span class="whitespace-pre-wrap">{@run.reason_text}</span>
+            <:action :if={@approval_request}>
+              <.button
+                variant={:secondary}
+                tone={:rose}
+                size={:md}
+                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+              >
+                View approval →
+              </.button>
+            </:action>
+          </.callout>
+
+          <%!-- Error — only when terminal-failed and we got a message back. --%>
+          <.callout :if={@run.error_message} tone={:rose} title="Error">
+            <span class="whitespace-pre-wrap">{@run.error_message}</span>
+          </.callout>
+
+          <%!-- Runner-dropped warning — in flight but its runner's socket is
+               gone. Don't fake a terminal status; flag that output may be
+               incomplete until it reconnects (or the timeout sweep errors it). --%>
+          <.offline_notice
+            :if={@run.status in [:sent, :running] and @runner_connection == :offline}
+            severity={:caution}
+            title="Runner disconnected"
+          >
+            Its socket dropped while this run was in flight — output may be incomplete.
+            The run is marked errored if the runner doesn't reconnect shortly.
+          </.offline_notice>
+
+          <%!-- Queued but its target runner is offline — nothing's running yet,
+               so say what's actually blocking it. --%>
+          <.offline_notice
+            :if={@run.status == :pending and @runner_connection == :offline}
+            severity={:caution}
+            title="Queued — runner offline"
+          >
+            Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
+            It's marked errored if the runner doesn't return before the dispatch timeout.
+          </.offline_notice>
+        </div>
+
+        <%!-- ONE why-cluster on the canvas — who asked and what policy said,
+             together (the decision-record grammar), not a boxed card. The
+             verdict is told ONCE by the status badge above; this carries the
+             WHY plus the matched-rules/version audit trail. Policy hidden for
+             `allow` (the boring default the run wouldn't exist without). --%>
+        <section :if={@run.reason not in [nil, ""] or show_policy?(@run)}>
+          <.section_header title="Why" />
+          <dl class="space-y-5">
+            <div :if={@run.reason && @run.reason != ""}>
+              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Reason
+              </dt>
+              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">“{@run.reason}”</dd>
+            </div>
+            <div :if={show_policy?(@run)}>
+              <dt class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Policy
+              </dt>
+              <dd
+                :if={@run.policy_reason && @run.policy_reason != ""}
+                class="mt-1 text-sm leading-relaxed text-zinc-200"
+              >
+                {@run.policy_reason}
+              </dd>
+              <dd
+                :if={
+                  matched_rules_label(@run.matched_rules) != "—" or
+                    is_integer(@run.policy_version)
+                }
+                class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
+              >
+                <span :if={matched_rules_label(@run.matched_rules) != "—"}>
+                  Matched
+                  <span class="font-mono text-zinc-400">
+                    {matched_rules_label(@run.matched_rules)}
+                  </span>
+                </span>
+                <span :if={is_integer(@run.policy_version)}>
+                  Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
+                </span>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <%!-- Arguments before output. Operators read the page top→down:
+             "what was called → what came back" — all input context above the
+             result. The code panels ARE the earned artifact boxes. --%>
+        <.code_panel
+          :if={@run.args && @run.args != %{}}
+          label="Arguments"
+          annotation={@run.args_sha256 && "sha256:#{String.slice(@run.args_sha256, 0, 16)}…"}
+          max_h="max-h-64"
+          code={format_json(@run.args)}
+        />
+
+        <%!-- The exact shell command the runner ran. Sensitive arg values are
+             redacted runner-side — the audit-grade record of what executed. --%>
+        <.code_panel
+          :if={@run.executed_command && @run.executed_command != ""}
+          label="Executed command"
+          annotation="secrets redacted"
+          code={@run.executed_command}
+        />
+
+        <%!-- Output stream — the main event, in the code_panel ARTIFACT frame
+             (island fill + solid zinc-800 edge + 16px title) but hand-rolled:
+             it streams chunk spans into the <pre>, which code_panel's static
+             `code` attr can't (the one sanctioned hand-roll, console-ux §1).
+             Hidden for statuses where the panel would just be blank. --%>
+        <div
+          :if={show_output?(@run, @output_present?)}
+          class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800"
         >
-          No output captured.
-        </p>
-        <pre
-          :if={@output_present? or @run.status in [:sent, :running]}
-          id="run-output"
-          phx-update="stream"
-          class="max-h-[60vh] min-h-[24rem] overflow-auto whitespace-pre-wrap break-all bg-black p-4 font-mono text-xs leading-normal text-zinc-300"
-        ><span
-            :for={{id, event} <- @streams.events}
-            id={id}
-            class={event.stream == "stderr" && "text-rose-300"}
-          >{event_chunk(event)}</span></pre>
-      </.card>
+          <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
+            <div class="flex shrink-0 items-center gap-2">
+              <h3 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+                Output
+              </h3>
+              <%!-- Streaming affordance — a pulsing pill while the run is still
+                   in flight, so an idle terminal reads as "more is coming",
+                   not "this is the final output". Gone once terminal. --%>
+              <span
+                :if={@run.status in [:sent, :running]}
+                class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30"
+              >
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
+              </span>
+            </div>
+            <span class="font-mono text-[11px] text-zinc-500">stderr in rose</span>
+          </header>
+          <%!-- Each chunk already carries its trailing newline (the runner
+               streams line-by-line via ReadBytes('\n')), so output is one
+               pre-formatted block with chunks as inline spans — they
+               concatenate and only the real newlines break lines. Block
+               elements or template indentation here would double the
+               spacing, since <pre> makes all whitespace significant. --%>
+          <%!-- A terminal run that streamed nothing gets one quiet line instead
+               of a 24rem black void (the in-flight min-height stays — more may
+               be coming). --%>
+          <p
+            :if={not @output_present? and @run.status not in [:sent, :running]}
+            class="bg-black/60 p-4 font-mono text-xs text-zinc-600"
+          >
+            No output captured.
+          </p>
+          <%!-- min-height only while IN FLIGHT (room for chunks to stream into);
+               a terminal run's panel hugs its real output instead of padding a
+               two-line result with a 24rem void. --%>
+          <pre
+            :if={@output_present? or @run.status in [:sent, :running]}
+            id="run-output"
+            phx-update="stream"
+            class={[
+              "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4",
+              "font-mono text-xs leading-normal text-zinc-300",
+              @run.status in [:sent, :running] && "min-h-[24rem]"
+            ]}
+          ><span
+              :for={{id, event} <- @streams.events}
+              id={id}
+              class={event.stream == "stderr" && "text-rose-300"}
+            >{event_chunk(event)}</span></pre>
+        </div>
+      </div>
     </.dashboard_shell>
     """
+  end
+
+  # Whether any attention banner renders — the stack's wrapper must vanish with
+  # them, or its empty div would double the wrapper's 48px gap.
+  defp attention?(run, approval_request, runner_connection) do
+    (run.status == :pending_approval and approval_request != nil) or
+      (run.status == :cancelled and run.reason_text not in [nil, ""]) or
+      run.error_message != nil or
+      (run.status in [:sent, :running, :pending] and runner_connection == :offline)
   end
 
   # Only ever called with an integer exit code — the nil case renders `<.blank>`.
