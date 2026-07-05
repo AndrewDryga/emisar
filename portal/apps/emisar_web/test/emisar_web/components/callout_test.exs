@@ -159,6 +159,7 @@ defmodule EmisarWeb.Components.CalloutTest do
     test "maps severity to the tone ramp with the signal-slash icon" do
       assigns = %{}
 
+      # `:info` is a posture fact — the NAKED note grammar, no box wash.
       info =
         rendered_to_string(~H"""
         <CoreComponents.offline_notice severity={:info} title="Runner offline">
@@ -167,7 +168,8 @@ defmodule EmisarWeb.Components.CalloutTest do
         """)
 
       assert info =~ "hero-signal-slash"
-      assert info =~ "bg-zinc-900/40"
+      refute info =~ "bg-zinc-900/40"
+      refute info =~ "ring-1"
 
       critical =
         rendered_to_string(~H"""

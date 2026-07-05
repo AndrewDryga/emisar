@@ -1079,52 +1079,50 @@ defmodule EmisarWeb.SSOSettingsLive do
             count={length(@pending_requests)}
             count_tone={:amber}
           />
-          <.card padding="p-0">
-            <ul class="divide-y divide-zinc-800/70">
-              <li
-                :for={request <- @pending_requests}
-                class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-              >
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate text-sm text-zinc-200">
-                      {request.full_name || request.email || "Unknown user"}
-                    </span>
-                    <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
-                  </div>
-                  <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    <span :if={request.email}>{request.email}</span>
-                    <span :if={request.email} class="text-zinc-600">·</span>
-                    <span class="font-mono">{request.provider_identifier}</span>
-                  </div>
-                  <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
-                    Approving lets this connection sign in as the existing {request.email} account.
-                  </p>
+          <ul class="divide-y divide-zinc-800/70">
+            <li
+              :for={request <- @pending_requests}
+              class="flex flex-wrap items-center justify-between gap-3 py-3.5"
+            >
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="truncate text-sm text-zinc-200">
+                    {request.full_name || request.email || "Unknown user"}
+                  </span>
+                  <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
                 </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <.button
-                    variant={:secondary}
-                    size={:sm}
-                    phx-click="approve_request"
-                    phx-value-id={request.id}
-                    data-confirm={approve_confirm(request)}
-                  >
-                    Approve
-                  </.button>
-                  <.button
-                    variant={:ghost}
-                    tone={:rose}
-                    size={:sm}
-                    phx-click="dismiss_request"
-                    phx-value-id={request.id}
-                    data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
-                  >
-                    Dismiss
-                  </.button>
+                <div class="mt-0.5 truncate text-xs text-zinc-500">
+                  <span :if={request.email}>{request.email}</span>
+                  <span :if={request.email} class="text-zinc-600">·</span>
+                  <span class="font-mono">{request.provider_identifier}</span>
                 </div>
-              </li>
-            </ul>
-          </.card>
+                <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
+                  Approving lets this connection sign in as the existing {request.email} account.
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <.button
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="approve_request"
+                  phx-value-id={request.id}
+                  data-confirm={approve_confirm(request)}
+                >
+                  Approve
+                </.button>
+                <.button
+                  variant={:ghost}
+                  tone={:rose}
+                  size={:sm}
+                  phx-click="dismiss_request"
+                  phx-value-id={request.id}
+                  data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
+                >
+                  Dismiss
+                </.button>
+              </div>
+            </li>
+          </ul>
         </section>
 
         <%!-- ── Connections (overview) ──────────────────────────────────────
@@ -1133,37 +1131,38 @@ defmodule EmisarWeb.SSOSettingsLive do
         <section :if={@live_action == :index}>
           <.section_header title="Connections" count={length(@providers)} count_tone={:neutral} />
 
-          <.card :if={@providers != []} padding="p-0">
-            <ul class="divide-y divide-zinc-800/70">
-              <li :for={provider <- @providers}>
-                <.link
-                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-white/[0.04]"
-                >
-                  <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                    <.icon name="hero-identification" class="h-4 w-4" />
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="truncate font-medium text-zinc-100">{provider.name}</span>
-                      <.chip>{kind_label(provider.kind)}</.chip>
-                      <.status_badge :if={provider.enabled} status="enabled" />
-                      <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
-                      <.chip :if={provider.scim_enabled}>Directory sync</.chip>
-                    </div>
-                    <div class="mt-1 truncate text-xs text-zinc-500">
-                      {provider.issuer} · {provisioner_label(provider.provisioner)}
-                    </div>
-                    <.sync_meta
-                      provider={provider}
-                      stats={Map.get(@sync_stats, provider.id, %{users: 0, groups: 0})}
-                    />
+          <%!-- NAKED hairline rows on the canvas — the row-hover wash is the
+               click affordance (the runners/audit row grammar), never a card
+               around the list. --%>
+          <ul :if={@providers != []} class="divide-y divide-zinc-800/70">
+            <li :for={provider <- @providers}>
+              <.link
+                navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                class="group -mx-2 flex items-center gap-4 rounded-md px-2 py-4 transition hover:bg-white/[0.04]"
+              >
+                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
+                  <.icon name="hero-identification" class="h-4 w-4" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="truncate font-medium text-zinc-100">{provider.name}</span>
+                    <.chip>{kind_label(provider.kind)}</.chip>
+                    <.status_badge :if={provider.enabled} status="enabled" />
+                    <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
+                    <.chip :if={provider.scim_enabled}>Directory sync</.chip>
                   </div>
-                  <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-600" />
-                </.link>
-              </li>
-            </ul>
-          </.card>
+                  <div class="mt-1 truncate text-xs text-zinc-500">
+                    {provider.issuer} · {provisioner_label(provider.provisioner)}
+                  </div>
+                  <.sync_meta
+                    provider={provider}
+                    stats={Map.get(@sync_stats, provider.id, %{users: 0, groups: 0})}
+                  />
+                </div>
+                <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-600" />
+              </.link>
+            </li>
+          </ul>
 
           <.empty_state
             :if={@loaded? and @providers == []}
@@ -1178,27 +1177,29 @@ defmodule EmisarWeb.SSOSettingsLive do
 
         <%!-- The branded sign-in link to hand to the team — a quiet utility, so it
              sits at the bottom and lets the needs-attention block lead. Always
-             useful (email sign-in works without SSO), so it's not gated on providers. --%>
-        <.card :if={@live_action == :index} padding="p-5">
+             useful (email sign-in works without SSO), so it's not gated on
+             providers. NAKED — the code_line is the artifact. --%>
+        <section :if={@live_action == :index}>
           <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
           <p class="mt-1 text-xs leading-relaxed text-zinc-500">
             Share this with your members — it opens this team's sign-in page with your SSO
             connections (and email sign-in as a fallback).
           </p>
-          <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
-        </.card>
+          <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3 max-w-2xl" />
+        </section>
 
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
              group→role). @providers holds exactly the one handle_params loaded. --%>
         <%!-- Back crumb + entity name live in the shell header (detail_header),
              like every other detail page. --%>
-        <div :if={@live_action == :show} class="space-y-6">
-          <div :for={provider <- @providers} class="space-y-5">
-            <%!-- Connection island — identity + the config readout. Editing is
-                 its own page (/edit), so this card is a clean read view. The
-                 shell title already carries the name; this row is the status. --%>
-            <.card padding="p-5">
+        <div :if={@live_action == :show} class="mt-4 space-y-6">
+          <div :for={provider <- @providers} class="space-y-12">
+            <%!-- The connection record, NAKED on the canvas (the detail-page
+                 meta grammar) — status chips + Edit lead, the facts flow as a
+                 naked meta row. Editing is its own page (/edit). The shell
+                 title already carries the name; this block is the status. --%>
+            <section>
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <.chip>{kind_label(provider.kind)}</.chip>
@@ -1218,11 +1219,11 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </.button>
               </div>
 
-              <div class="mt-5 space-y-4 border-t border-zinc-800/70 pt-4">
+              <div class="mt-6 space-y-6">
                 <.meta_field label="Issuer" wrap>
                   <span class="font-mono text-zinc-300">{provider.issuer}</span>
                 </.meta_field>
-                <div class="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div class="grid grid-cols-2 gap-x-10 gap-y-6">
                   <.meta_field label="New users">
                     <span class="text-zinc-300">{provisioner_label(provider.provisioner)}</span>
                   </.meta_field>
@@ -1243,9 +1244,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </.meta_field>
                 </div>
               </div>
-            </.card>
+            </section>
 
-            <.scim_panel
+            <.scim_section
               :if={@can_configure_directory_sync?}
               provider={provider}
               scim_base_url={@scim_base_url}
@@ -1264,12 +1265,12 @@ defmodule EmisarWeb.SSOSettingsLive do
               adding_mapping={@adding_mapping}
             />
 
-            <.synced_groups_card
+            <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
             />
 
-            <.synced_users_card
+            <.synced_users_section
               members={@synced_members}
               member_role_options={@member_role_options}
               can_manage_team?={@can_manage_team?}
@@ -1277,25 +1278,27 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_enabled={provider.scim_enabled}
             />
 
-            <.card :if={!@can_configure_directory_sync?} padding="p-5">
-              <p class="text-sm leading-relaxed text-zinc-400">
-                <span class="font-medium text-zinc-200">SCIM directory sync</span>
-                — automatic provisioning and offboarding from your IdP, plus group→role mapping —
-                is available on the Enterprise plan.
-                <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
-                  See plans
-                </.link>
-                or <a
-                  href="mailto:sales@emisar.dev"
-                  class="font-medium text-brand-400 hover:text-brand-300"
-                >talk to us</a>.
-              </p>
-            </.card>
+            <%!-- A plan-posture fact, naked — not a boxed interruption. --%>
+            <p
+              :if={!@can_configure_directory_sync?}
+              class="max-w-prose text-sm leading-relaxed text-zinc-400"
+            >
+              <span class="font-medium text-zinc-200">SCIM directory sync</span>
+              — automatic provisioning and offboarding from your IdP, plus group→role mapping —
+              is available on the Enterprise plan.
+              <.link navigate={~p"/pricing"} class="font-medium text-brand-400 hover:text-brand-300">
+                See plans
+              </.link>
+              or <a
+                href="mailto:sales@emisar.dev"
+                class="font-medium text-brand-400 hover:text-brand-300"
+              >talk to us</a>.
+            </p>
 
             <%!-- Danger zone at the bottom — the destructive action lives apart
                  from the routine config above (its own canvas section) and still
-                 runs the typed confirm. --%>
-            <section class="mt-10">
+                 runs the typed confirm. The space-y-12 wrapper owns the rhythm. --%>
+            <section>
               <.section_header title="Danger zone" />
               <div class="divide-y divide-zinc-800/70">
                 <.confirm_zone
@@ -1414,17 +1417,19 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :callback_url, :string, required: true
   attr :editing?, :boolean, default: false
 
-  # The connection form's fields, grouped into sibling islands (Provider · OIDC
-  # connection · User provisioning · Security) so /new and /edit read like the
-  # rest of the console — never one giant card. Shared by both actions; the outer
-  # <.simple_form> spaces the islands and renders the submit footer.
+  # The connection form's fields, grouped into NAKED sibling sections (Provider ·
+  # OIDC connection · User provisioning · Security) — §8.1: the fields are the
+  # controls; a panel per group was an island per group. Shared by both actions;
+  # the outer <.simple_form> spaces the sections and renders the submit footer.
   defp provider_fields(assigns) do
     assigns = assign(assigns, :kind, form_kind(assigns.form, assigns.kind_options))
 
     ~H"""
-    <div class="space-y-5">
-      <.panel title="Provider">
-        <:subtitle>Which identity provider this is, and what to call it here.</:subtitle>
+    <div class="space-y-10">
+      <section>
+        <.section_header title="Provider">
+          <:subtitle>Which identity provider this is, and what to call it here.</:subtitle>
+        </.section_header>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <%!-- Provider type is create-only: Changeset.update/2 never casts :kind
                (it's the IdP preset + half of the (account, kind) uniqueness). So on
@@ -1455,12 +1460,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             placeholder={name_placeholder(@kind)}
           />
         </div>
-      </.panel>
+      </section>
 
-      <.panel title="OIDC connection">
-        <:subtitle>
-          The issuer we fetch discovery from, and the OAuth client we authenticate as.
-        </:subtitle>
+      <section>
+        <.section_header title="OIDC connection">
+          <:subtitle>
+            The issuer we fetch discovery from, and the OAuth client we authenticate as.
+          </:subtitle>
+        </.section_header>
         <%!-- Setup steps for the SELECTED provider — what to create at the IdP and
              what to paste back here. --%>
         <.provider_setup_guide
@@ -1506,10 +1513,12 @@ defmodule EmisarWeb.SSOSettingsLive do
             </p>
           </div>
         </div>
-      </.panel>
+      </section>
 
-      <.panel title="User provisioning">
-        <:subtitle>How members map in when they sign in through this connection.</:subtitle>
+      <section>
+        <.section_header title="User provisioning">
+          <:subtitle>How members map in when they sign in through this connection.</:subtitle>
+        </.section_header>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="sm:col-span-2">
             <.input
@@ -1558,12 +1567,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             </p>
           </div>
         </div>
-      </.panel>
+      </section>
 
-      <.panel title="Security & activation">
-        <:subtitle>
-          Whether this provider satisfies 2FA, and whether members can use it yet.
-        </:subtitle>
+      <section>
+        <.section_header title="Security & activation">
+          <:subtitle>
+            Whether this provider satisfies 2FA, and whether members can use it yet.
+          </:subtitle>
+        </.section_header>
         <div class="space-y-3">
           <div>
             <.input
@@ -1596,7 +1607,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             label="Enabled (members can sign in through this connection)"
           />
         </div>
-      </.panel>
+      </section>
     </div>
     """
   end
@@ -1779,7 +1790,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # intent, the live sync-status signal, the base URL, the once-shown bearer, and
   # the IdP setup steps. The bearer is write-only (shown once on enable/rotate).
   # Group→role is its own island card, not nested here.
-  defp scim_panel(assigns) do
+  defp scim_section(assigns) do
     provider_id = assigns.provider.id
 
     revealed_token =
@@ -1791,7 +1802,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
-    <.card padding="p-5">
+    <section>
       <.section_header title="Directory sync (SCIM)">
         <:actions>
           <.status_badge :if={@provider.scim_enabled} status="enabled" />
@@ -1920,7 +1931,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </p>
         </details>
       </div>
-    </.card>
+    </section>
     """
   end
 
@@ -1940,7 +1951,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # branch authz on it).
   defp group_mapping_section(assigns) do
     ~H"""
-    <.card padding="p-5">
+    <section>
       <.section_header title="Group → role mapping" count={length(@mappings)} count_tone={:neutral}>
         <:actions>
           <.button
@@ -2100,7 +2111,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </:actions>
         </.simple_form>
       </div>
-    </.card>
+    </section>
     """
   end
 
@@ -2111,9 +2122,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   # group→role mapping config above. It surfaces groups that sync but aren't
   # mapped (their members stay at the connection's default role), which the
   # mapping list can't show.
-  defp synced_groups_card(assigns) do
+  defp synced_groups_section(assigns) do
     ~H"""
-    <.card padding="p-5">
+    <section>
       <.section_header title="Synced groups" count={length(@synced_groups)} count_tone={:neutral} />
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         The groups your IdP pushes over SCIM, with how many synced users are in each. A group with
@@ -2153,7 +2164,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
         with their member counts.
       </.empty_state>
-    </.card>
+    </section>
     """
   end
 
@@ -2171,9 +2182,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   # suspend/reactivate. The controls act on the Accounts membership (manage_team,
   # which enforces owner / last-owner / self); someone removed from the account
   # whose identity lingers shows "Removed" with no actions.
-  defp synced_users_card(assigns) do
+  defp synced_users_section(assigns) do
     ~H"""
-    <.card padding="p-5">
+    <section>
       <.section_header title="Synced users" count={length(@members)} count_tone={:neutral} />
       <p class="max-w-prose text-sm leading-6 text-zinc-400">
         People provisioned through this connection — by directory sync, an SSO first sign-in, or an
@@ -2289,7 +2300,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         No one has been provisioned through this connection yet. Users appear here after they sign in
         through it, or after directory sync provisions them.
       </.empty_state>
-    </.card>
+    </section>
     """
   end
 

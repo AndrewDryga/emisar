@@ -40,22 +40,6 @@ defmodule EmisarWeb.Components.PageIntroTest do
       assert html =~ "shrink-0"
     end
 
-    test "help slot renders a 'How this works' card below the subtitle" do
-      assigns = %{}
-
-      html =
-        rendered_to_string(~H"""
-        <CoreComponents.page_intro>
-          <:help>Every action has a risk tier from the catalog.</:help>
-        </CoreComponents.page_intro>
-        """)
-
-      assert html =~ "How this works"
-      assert html =~ "Every action has a risk tier from the catalog."
-      # The help body rides on the canonical panel/card (island) surface.
-      assert html =~ "bg-zinc-900/60"
-    end
-
     test "renders nothing when no slot is given" do
       assigns = %{}
 

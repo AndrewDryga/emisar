@@ -6,7 +6,7 @@ its Tailwind. The canonical surfaces:
 
 | Shape | Component | Never hand-roll |
 |---|---|---|
-| Bordered section card | `<.card>` (bare) / `<.panel title=>` (card + title header; `variant={:split}` for the bordered `px-5 py-3` header over an unpadded `divide-y` body; `title_variant={:eyebrow}` for the uppercase content label; `:badge`/`:annotation` slots) | `rounded-xl border border-zinc-900 bg-zinc-950/40`, and any `<header>` hand-built inside a `<.card>` |
+| Canvas section | `<section>` + `<.section_header title=>` (subtitle/actions/count slots) — `.card`/`.panel` are DELETED (§8.1: boxes only for secrets/code/actionable warnings; `Emisar.Checks.NoIslandContainers` enforces) | resurrecting a wash card/panel around content, or a hand-built `<header>` over a section |
 | Bare section heading | `<.section_header title= count=>` (+`:subtitle`, right-aligned `:actions`) above an unbordered list | a raw `<h2 class="font-display…">` row |
 | Inline label / status tag | `<.chip>` (`tone={:neutral\|:brand\|:amber\|:rose}`, `mono`, `upcase` for the uppercase status look) | a bespoke `rounded px-1.5 py-0.5 text-[10px]` span (and there is no `<.tag>` — it merged into `<.chip upcase>`) |
 | Tinted callout / banner | `<.callout tone= title= icon=>` (`variant={:strip}` for flush in-card/shell rows; `navigate` makes the whole box a link) — `offline_notice`/`subscription_banner` are its only wrappers, and they map domain state to tone/copy only | a hand-rolled `flex … rounded-lg … bg-amber-500/10 ring-1` box (and `notice`/`error_banner`/`attention_banner` are DELETED — they were this shape) |
@@ -53,10 +53,12 @@ hand-rolling shapes that already had a home.
 ```heex
 <.code_panel label="Arguments" annotation={"sha256:" <> sha} max_h="max-h-64" code={json} />
 
-<.panel variant={:split} title="Recent runs">
-  <:actions><.link navigate={~p"/…/runs"}>View all</.link></:actions>
-  <ul class="divide-y divide-zinc-900">…</ul>
-</.panel>
+<section>
+  <.section_header title="Recent runs">
+    <:actions><.link navigate={~p"/…/runs"}>View all</.link></:actions>
+  </.section_header>
+  <ul class="divide-y divide-zinc-800/70">…</ul>
+</section>
 
 <.chip upcase tone={:brand}>Trusted</.chip>
 <.callout tone={:amber}>Copy the token now — we won't show it again.</.callout>

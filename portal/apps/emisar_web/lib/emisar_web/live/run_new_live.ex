@@ -241,12 +241,14 @@ defmodule EmisarWeb.RunNewLive do
         </.back_link>
         Run <span class="font-mono text-base">{@action.action_id}</span>
       </:title>
-      <div class="space-y-6">
-        <%!-- About this action — ONE island for everything the operator
-             reads before deciding: description prose, side effects, and
-             the pack's canonical examples. The meta strip below carries
-             risk/kind/pack, so the risk pill renders exactly once. --%>
-        <.panel title={@action.title}>
+      <div class="mt-4 space-y-12">
+        <%!-- About this action, NAKED on the canvas — everything the operator
+             reads before deciding: description prose, side effects, and the
+             pack's canonical examples (the example frames are the earned
+             artifacts). The meta row below carries risk/kind/pack, so the
+             risk pill renders exactly once. --%>
+        <section>
+          <.section_header title={@action.title} />
           <p
             :if={@action.description && @action.description != ""}
             class="text-sm leading-relaxed text-zinc-400"
@@ -298,19 +300,21 @@ defmodule EmisarWeb.RunNewLive do
               </li>
             </ul>
           </div>
-        </.panel>
 
-        <.meta_strip cols={3}>
-          <.meta_field label="Risk">
-            <.risk_pill risk={@action.risk} />
-          </.meta_field>
-          <.meta_field label="Kind">
-            <span class="text-zinc-200">{@action.kind}</span>
-          </.meta_field>
-          <.meta_field label="Pack">
-            <span class="truncate text-zinc-200">{@action.pack_id || "—"}</span>
-          </.meta_field>
-        </.meta_strip>
+          <%!-- The action's facts as the NAKED meta row (the detail grammar),
+               not a boxed strip. --%>
+          <div class="mt-8 grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+            <.meta_field label="Risk">
+              <.risk_pill risk={@action.risk} />
+            </.meta_field>
+            <.meta_field label="Kind">
+              <span class="text-zinc-200">{@action.kind}</span>
+            </.meta_field>
+            <.meta_field label="Pack">
+              <span class="truncate text-zinc-200">{@action.pack_id || "—"}</span>
+            </.meta_field>
+          </div>
+        </section>
 
         <%!-- Offline-runner notice. The runner is only looked up on the
              connected render, so this stays quiet on the dead pass. We
@@ -327,19 +331,20 @@ defmodule EmisarWeb.RunNewLive do
           and executes when the runner reconnects.
         </.offline_notice>
 
-        <%!-- Signed-only runner — the portal is locked out. Takes precedence over
-             the offline notice above (whose "you can still dispatch" copy would
-             contradict this), and replaces the Dispatch button below. --%>
-        <.callout
+        <%!-- Signed-only runner — the portal is locked out. A posture FACT of
+             this runner (naked note), taking precedence over the offline note
+             above (whose "you can still dispatch" copy would contradict it);
+             it also replaces the Dispatch button below. --%>
+        <.status_note
           :if={signed_only?(@runner)}
-          tone={:brand}
           icon="hero-shield-check"
+          tone={:brand}
           title="Signed dispatch only"
         >
           {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
           the portal can't dispatch to it. Run this action from an MCP client configured with the
           runner's signing key.
-        </.callout>
+        </.status_note>
 
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the
@@ -348,7 +353,8 @@ defmodule EmisarWeb.RunNewLive do
              Same progressive-disclosure rule as elsewhere: don't show
              a section just to tell the operator there's nothing in
              it. --%>
-        <.panel title={if(@args_schema == [], do: "Dispatch", else: "Arguments")}>
+        <section>
+          <.section_header title={if(@args_schema == [], do: "Dispatch", else: "Arguments")} />
           <.simple_form
             for={@form}
             id="dispatch_form"
@@ -379,7 +385,6 @@ defmodule EmisarWeb.RunNewLive do
                    TARGET, so a mis-aimed dispatch is caught at the click. --%>
               <.button
                 :if={@can_dispatch? and not signed_only?(@runner)}
-                class="w-full"
                 phx-disable-with="Dispatching..."
                 data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
@@ -387,23 +392,18 @@ defmodule EmisarWeb.RunNewLive do
                 <span aria-hidden="true">→</span>
               </.button>
               <%!-- Signed-only runner — the run would be refused, so there's no
-                   Dispatch button; point the operator at their MCP client. --%>
-              <.callout
-                :if={@can_dispatch? and signed_only?(@runner)}
-                tone={:neutral}
-                icon={false}
-                class="text-center"
-              >
+                   Dispatch button; the quiet fact points at the MCP client. --%>
+              <p :if={@can_dispatch? and signed_only?(@runner)} class="text-sm text-zinc-500">
                 This runner only runs signed dispatches — run it from your MCP client.
-              </.callout>
+              </p>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>
-              <.callout :if={not @can_dispatch?} tone={:neutral} icon={false} class="text-center">
+              <p :if={not @can_dispatch?} class="text-sm text-zinc-500">
                 Your role can't dispatch runs. Ask an operator, admin, or owner to run this.
-              </.callout>
+              </p>
             </:actions>
           </.simple_form>
-        </.panel>
+        </section>
       </div>
     </.dashboard_shell>
     """

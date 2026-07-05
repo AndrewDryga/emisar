@@ -2359,133 +2359,11 @@ defmodule EmisarWeb.CoreComponents do
 
   # -- Generic page primitives ---------------------------------------
 
-  @doc """
-  Canonical "card" surface — the one place the dark border/background combo
-  lives, so every page picks it up. `bg-zinc-950/40` and the in-app `p-5`
-  density are the defaults; pass `padding` for a looser tile (stat, onboarding).
-
-      <.card>
-        ...
-      </.card>
-      <.card padding="p-6" class="lg:col-span-2">...</.card>
-  """
-  attr :class, :string, default: nil
-  attr :padding, :string, default: "p-5"
-  attr :rest, :global
-  slot :inner_block, required: true
-
-  def card(assigns) do
-    ~H"""
-    <%!-- The ISLAND surface: a zinc-900 step lifted off the black ground by a
-         low-opacity white ring (edge-as-light, not a gray line) and a 1px inset
-         top highlight. Elevation comes from the surface step — never a drop
-         shadow, which can't read on black. --%>
-    <div
-      class={[
-        "rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
-        @padding,
-        @class
-      ]}
-      {@rest}
-    >
-      {render_slot(@inner_block)}
-    </div>
-    """
-  end
-
-  @doc """
-  Section card with a header — a `<.card>` plus the canonical title row, so
-  every "panel with a heading" reads the same. A hand-rolled `<header>` inside
-  a `<.card>` is banned (console-ux §3) — this component IS that header.
-
-  Two variants: `:padded` (default) keeps the header inside the card padding;
-  `:split` is the bordered header row (`px-5 py-3` + hairline) over an
-  UNpadded body — the shape for `divide-y` lists and framed content.
-  `title_variant={:eyebrow}` renders the small uppercase content label (a
-  detail card's "Reason") instead of the display title. `:badge` renders
-  inline after the title (a `<.count_badge>`, a `<.risk_pill>`); `:annotation`
-  is the quiet right-side meta, before `:actions`.
-
-      <.panel title="Default policy">
-        <:subtitle>Applies to every runner unless a ruleset overrides it.</:subtitle>
-        <.policy_fields ... />
-      </.panel>
-
-      <.panel variant={:split} title="Recent runs">
-        <:actions><.link navigate={...}>View all</.link></:actions>
-        <ul class="divide-y divide-zinc-900">...</ul>
-      </.panel>
-
-      <.panel title="Reason" title_variant={:eyebrow} padding="p-4">
-        <p class="text-sm text-zinc-200">{@request.reason}</p>
-      </.panel>
-  """
-  attr :title, :string, default: nil
-  attr :title_variant, :atom, default: :default, values: [:default, :eyebrow]
-  attr :variant, :atom, default: :padded, values: [:padded, :split]
-  attr :class, :string, default: nil
-  attr :padding, :string, default: "p-5"
-  attr :rest, :global
-  slot :subtitle
-  slot :badge, doc: "inline after the title — a count badge, a risk pill"
-  slot :annotation, doc: "quiet right-side meta, before :actions"
-  slot :actions
-  slot :inner_block, required: true
-
-  def panel(%{variant: :split} = assigns) do
-    ~H"""
-    <.card padding="" class={"overflow-hidden #{@class}"} {@rest}>
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 px-5 py-3">
-        <div class="min-w-0">
-          <div class="flex min-w-0 items-center gap-2">
-            <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
-            {render_slot(@badge)}
-          </div>
-          <p :if={@subtitle != []} class="mt-0.5 text-xs leading-relaxed text-zinc-500">
-            {render_slot(@subtitle)}
-          </p>
-        </div>
-        <div class="flex min-w-0 shrink-0 items-center gap-3">
-          <div :if={@annotation != []} class="text-xs text-zinc-500">{render_slot(@annotation)}</div>
-          {render_slot(@actions)}
-        </div>
-      </header>
-      {render_slot(@inner_block)}
-    </.card>
-    """
-  end
-
-  def panel(assigns) do
-    ~H"""
-    <.card padding={@padding} class={@class} {@rest}>
-      <header
-        :if={@title || @subtitle != [] || @actions != []}
-        class="mb-4 flex items-start justify-between gap-4"
-      >
-        <div class="min-w-0">
-          <div class="flex min-w-0 items-center gap-2">
-            <h2 :if={@title} class={panel_title_class(@title_variant)}>{@title}</h2>
-            {render_slot(@badge)}
-          </div>
-          <p :if={@subtitle != []} class="mt-1 text-xs leading-relaxed text-zinc-500">
-            {render_slot(@subtitle)}
-          </p>
-        </div>
-        <div class="flex shrink-0 items-center gap-3">
-          <div :if={@annotation != []} class="text-xs text-zinc-500">{render_slot(@annotation)}</div>
-          {render_slot(@actions)}
-        </div>
-      </header>
-      {render_slot(@inner_block)}
-    </.card>
-    """
-  end
-
-  defp panel_title_class(:default),
-    do: "font-display text-base font-semibold tracking-[-0.012em] text-zinc-100"
-
-  defp panel_title_class(:eyebrow),
-    do: "text-xs font-semibold uppercase tracking-wider text-zinc-400"
+  # `.card`/`.panel` are GONE (§8.1 content-on-canvas): every console surface
+  # is a naked `<section>` + `<.section_header>`; boxes are earned by secrets
+  # (`secret_reveal`), code artifacts (`code_panel`), or actionable warnings
+  # (`callout`). The stat tile below keeps the one sanctioned island surface
+  # inline (the dashboard pillar grammar).
 
   @doc """
   The ONE `<details>` disclosure — a bordered box whose summary row toggles a
@@ -3069,20 +2947,16 @@ defmodule EmisarWeb.CoreComponents do
   attr :class, :string, default: nil
   slot :inner_block, doc: "the subtitle lead line (rich inline markup allowed)"
   slot :actions, doc: "right-aligned buttons beside the subtitle"
-  slot :help, doc: "a longer how-it-works body, rendered in a card below"
 
   def page_intro(assigns) do
     ~H"""
-    <div :if={@inner_block != [] or @actions != [] or @help != []} class={["space-y-4", @class]}>
-      <div :if={@inner_block != [] or @actions != []} class="flex items-start justify-between gap-4">
+    <div :if={@inner_block != [] or @actions != []} class={["space-y-4", @class]}>
+      <div class="flex items-start justify-between gap-4">
         <p :if={@inner_block != []} class="max-w-2xl text-sm leading-relaxed text-zinc-400">
           {render_slot(@inner_block)}
         </p>
         <div :if={@actions != []} class="shrink-0">{render_slot(@actions)}</div>
       </div>
-      <.panel :if={@help != []} title="How this works">
-        <p class="text-sm leading-relaxed text-zinc-400">{render_slot(@help)}</p>
-      </.panel>
     </div>
     """
   end
@@ -3156,8 +3030,8 @@ defmodule EmisarWeb.CoreComponents do
   defp plan_badge_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
 
   @doc """
-  The bare heading-row above an UNbordered list/table section (distinct from
-  `<.panel>`, which owns a bordered header). A `text-sm` section title, an
+  The bare heading-row above a canvas section — the console's ONE section
+  heading (boxed panels are dead, §8.1). A `text-sm` section title, an
   optional inline `<.count_badge>`, an optional `:subtitle` line, and a
   right-aligned `:actions` slot.
 
@@ -3858,13 +3732,20 @@ defmodule EmisarWeb.CoreComponents do
 
   def stat(assigns) do
     ~H"""
-    <.card padding="p-6" class={@class}>
+    <%!-- The ONE sanctioned island surface (the dashboard pillar tile): a
+         zinc-900 step lifted off the black ground by a low-opacity white ring
+         (edge-as-light) and a 1px inset top highlight — never a drop shadow,
+         which can't read on black. --%>
+    <div class={[
+      "rounded-xl bg-zinc-900/60 p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
+      @class
+    ]}>
       <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
       <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
         {stat_value(@value)}
       </div>
       <div :if={@hint} class={["mt-1 text-xs", stat_hint_tone(@hint_tone)]}>{@hint}</div>
-    </.card>
+    </div>
     """
   end
 
@@ -4311,6 +4192,17 @@ defmodule EmisarWeb.CoreComponents do
   slot :inner_block, required: true
   slot :action
 
+  # `:info` is a posture FACT (dispatch still works) — the naked note grammar,
+  # per §8.1's callout-vs-note line; caution/critical are interruptions that
+  # earn the box.
+  def offline_notice(%{severity: :info} = assigns) do
+    ~H"""
+    <.status_note icon="hero-signal-slash" tone={:neutral} title={@title} class={@class}>
+      {render_slot(@inner_block)}
+    </.status_note>
+    """
+  end
+
   def offline_notice(assigns) do
     assigns = assign(assigns, :tone, offline_tone(assigns.severity))
 
@@ -4322,10 +4214,9 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # The severity → tone convention this wrapper exists to encode: informational
-  # offline (dispatch still works, the run queues) is a quiet note; caution
+  # The severity → tone convention this wrapper exists to encode: caution
   # names an affected run/action; critical means the whole fleet is down.
-  defp offline_tone(:info), do: :neutral
+  # (`:info` never reaches here — it renders as the naked note above.)
   defp offline_tone(:caution), do: :amber
   defp offline_tone(:critical), do: :rose
 

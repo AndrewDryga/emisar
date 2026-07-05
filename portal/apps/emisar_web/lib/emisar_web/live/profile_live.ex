@@ -379,20 +379,22 @@ defmodule EmisarWeb.ProfileLive do
         <.doc_link href="/security">Security overview</.doc_link>
       </.page_intro>
 
-      <%!-- Sibling panel islands per concern — the console's ONE settings
-           archetype (console-ux §3 bans the label-left divider table this
-           page used to be). --%>
-      <div class="mt-6 space-y-6">
-        <.panel title="Display name">
-          <:subtitle>How you appear to other members.</:subtitle>
+      <%!-- CONTENT ON CANVAS: one naked section per concern (§8.1 — the
+           fields, the enrollment block, and the reveal card are the only
+           surfaces; a panel around a form was an island). --%>
+      <div class="mt-4 max-w-2xl space-y-12">
+        <section>
+          <.section_header title="Display name">
+            <:subtitle>How you appear to other members.</:subtitle>
+          </.section_header>
           <.simple_form
             for={@profile_form}
             id="profile_form"
             phx-change="validate_profile"
             phx-submit="save_profile"
           >
-            <%!-- No field label — the panel title already says "Display name"
-                 (one voice on a single-field panel); aria-label keeps the
+            <%!-- No field label — the section title already says "Display name"
+                 (one voice on a single-field section); aria-label keeps the
                  accessible name. --%>
             <.input
               field={@profile_form[:full_name]}
@@ -404,13 +406,15 @@ defmodule EmisarWeb.ProfileLive do
               <.button variant={:secondary} phx-disable-with="Saving...">Save</.button>
             </:actions>
           </.simple_form>
-        </.panel>
+        </section>
 
-        <.panel title="Email">
-          <:subtitle>
-            Used to sign in — every future sign-in link goes to it, so a change is
-            confirmed with a second step.
-          </:subtitle>
+        <section>
+          <.section_header title="Email">
+            <:subtitle>
+              Used to sign in — every future sign-in link goes to it, so a change is
+              confirmed with a second step.
+            </:subtitle>
+          </.section_header>
           <%= case @email_step do %>
             <% :idle -> %>
               <.simple_form
@@ -476,19 +480,21 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
           <% end %>
-        </.panel>
+        </section>
 
-        <.panel title="Two-factor authentication">
-          <:subtitle>
-            Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
-          </:subtitle>
-          <:badge>
-            <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
-            <span :if={not @mfa_enabled?} class="flex items-center gap-1.5 text-xs">
-              <.status_dot tone={:neutral} size={:sm} />
-              <span class="text-zinc-500">off</span>
-            </span>
-          </:badge>
+        <section>
+          <.section_header title="Two-factor authentication">
+            <:subtitle>
+              Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
+            </:subtitle>
+            <:actions>
+              <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
+              <span :if={not @mfa_enabled?} class="flex items-center gap-1.5 text-xs">
+                <.status_dot tone={:neutral} size={:sm} />
+                <span class="text-zinc-500">off</span>
+              </span>
+            </:actions>
+          </.section_header>
 
           <%= cond do %>
             <% @mfa_recovery_codes -> %>
@@ -577,25 +583,27 @@ defmodule EmisarWeb.ProfileLive do
                 Set up 2FA
               </.button>
           <% end %>
-        </.panel>
+        </section>
 
-        <.panel title="Active sessions">
-          <:subtitle>
-            Each row is one signed-in browser or device. Sign out of any you don't
-            recognize — your current device stays signed in.
-          </:subtitle>
-          <:actions>
-            <.button
-              :if={length(@sessions) > 1}
-              variant={:secondary}
-              tone={:rose}
-              size={:sm}
-              phx-click="revoke_other_sessions"
-              data-confirm="Sign out of every other browser and device?"
-            >
-              Sign out everywhere else
-            </.button>
-          </:actions>
+        <section>
+          <.section_header title="Active sessions">
+            <:subtitle>
+              Each row is one signed-in browser or device. Sign out of any you don't
+              recognize — your current device stays signed in.
+            </:subtitle>
+            <:actions>
+              <.button
+                :if={length(@sessions) > 1}
+                variant={:secondary}
+                tone={:rose}
+                size={:sm}
+                phx-click="revoke_other_sessions"
+                data-confirm="Sign out of every other browser and device?"
+              >
+                Sign out everywhere else
+              </.button>
+            </:actions>
+          </.section_header>
 
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
                sliver that read as a rendering bug; "Sign out everywhere else"
@@ -639,11 +647,11 @@ defmodule EmisarWeb.ProfileLive do
                 </.button>
               </:actions>
             </.list_row>
-            <li :if={@sessions == []} class="px-4 py-6 text-center text-xs text-zinc-500">
+            <li :if={@sessions == []} class="py-6 text-xs text-zinc-500">
               No active sessions.
             </li>
           </ul>
-        </.panel>
+        </section>
       </div>
     </.dashboard_shell>
     """
