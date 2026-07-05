@@ -772,7 +772,6 @@ defmodule EmisarWeb.DashboardLive do
       label="Team"
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/sso"}
-      prominent_action
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Enable SSO</:action>
@@ -786,7 +785,6 @@ defmodule EmisarWeb.DashboardLive do
       label="Team"
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/sso"}
-      prominent_action
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Manage SSO providers</:action>
@@ -804,7 +802,6 @@ defmodule EmisarWeb.DashboardLive do
   # A live pillar carries EITHER a posture line (`:status` — dot + fact, tinted
   # by status_tone) OR a forward action (`:action` — a quiet brand link with the
   # house arrow). Runners/LLM report posture; Team nudges an action.
-  attr :prominent_action, :boolean, default: false
   slot :status
   slot :action
 
@@ -846,23 +843,16 @@ defmodule EmisarWeb.DashboardLive do
              healthy/neutral line has nowhere urgent to go, so no arrow. --%>
         <.cta_arrow :if={@status_tone != :neutral} class="h-3.5 w-3.5" />
       </div>
-      <%!-- The action line reads as the pillar_cta's affordance — quiet brand,
+      <%!-- The action line reads as the pillar's affordance — quiet brand,
            the house arrow — since the WHOLE pillar is the link to its target.
-           `prominent_action` upgrades it to a button-SHAPED span (the tile
-           stays one link, so a nested real button would be invalid): for the
-           common destinations that a quiet text line undersells. --%>
+           A tile action is a LINK, never a button chip: the button chrome
+           reads as a form submit, and the whole tile is already the link. --%>
       <div
-        :if={@action != [] and not @prominent_action}
+        :if={@action != []}
         class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
       >
         {render_slot(@action)}
         <.cta_arrow />
-      </div>
-      <div :if={@action != [] and @prominent_action} class="mt-3">
-        <span class="inline-flex items-center gap-1.5 rounded-lg bg-brand-500/10 px-3 py-1.5 text-[13px] font-semibold text-brand-300 ring-1 ring-brand-500/30 transition group-hover:bg-brand-500/[0.18]">
-          {render_slot(@action)}
-          <.cta_arrow />
-        </span>
       </div>
     </.link>
     """
