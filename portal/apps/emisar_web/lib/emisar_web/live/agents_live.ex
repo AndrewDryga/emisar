@@ -874,18 +874,24 @@ defmodule EmisarWeb.AgentsLive do
                 >
                   View activity
                 </.button>
-                <.button
+                <.confirm_button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
                   }
+                  id={"rotate-#{key.id}"}
+                  title="Rotate this key?"
+                  confirm_label="Rotate key"
                   variant={:ghost}
+                  tone={:neutral}
                   size={:sm}
-                  phx-click="rotate"
-                  phx-value-id={key.id}
-                  data-confirm="Rotate this key? A new key with the same scope is minted; this one keeps working until the new key's first use, then it's revoked automatically."
+                  on_confirm={JS.push("rotate", value: %{id: key.id})}
                 >
+                  <:body>
+                    A new key with the same scope is minted; this one keeps working until the new
+                    key's first use, then it's revoked automatically.
+                  </:body>
                   Rotate
-                </.button>
+                </.confirm_button>
                 <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
                      as enrollment keys (one ladder for one action class). --%>
                 <.button

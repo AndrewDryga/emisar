@@ -433,10 +433,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
-      html =
-        lv
-        |> element(~s(button[phx-click="rotate"][phx-value-id="#{key.id}"]))
-        |> render_click()
+      html = render_click(lv, "rotate", %{"id" => key.id})
 
       assert html =~ "Key rotated"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/

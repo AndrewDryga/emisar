@@ -438,9 +438,11 @@ defmodule EmisarWeb.RunnerDetailLive do
           <div class="divide-y divide-zinc-800/70">
             <.confirm_zone
               :if={is_nil(@runner.disabled_at)}
+              id="disable-runner"
               title="Disable this runner"
-              confirm="Disable this runner? It will not be able to reconnect."
-              phx-click="disable"
+              confirm="It will not be able to reconnect until you enable it again. Audit history is preserved."
+              confirm_label="Disable runner"
+              on_confirm={JS.push("disable")}
             >
               <:body>
                 Removes it from the catalog and rejects future reconnects. Audit history is preserved.

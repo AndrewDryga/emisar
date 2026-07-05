@@ -157,6 +157,56 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     assert html =~ "&lt;script&gt;"
   end
 
+  describe "confirm_button/1 — the plain-modal drop-in for data-confirm" do
+    test "renders a trigger + a plain (no-typing) modal, and NEVER a native data-confirm" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.confirm_button
+          id="disable-runner"
+          title="Disable this runner?"
+          confirm_label="Disable runner"
+          on_confirm={Phoenix.LiveView.JS.push("disable")}
+        >
+          <:body>Stops new dispatches.</:body>
+          Disable
+        </CoreComponents.confirm_button>
+        """)
+
+      # The trigger OPENS the modal (no native browser dialog anywhere).
+      refute html =~ "data-confirm"
+      # The modal is present (its heading + Confirm label), with NO typed field.
+      assert html =~ "Disable this runner?"
+      assert html =~ "Disable runner"
+      refute html =~ ~s(name="confirm_token")
+      refute html =~ "to confirm"
+    end
+
+    test "a :neutral trigger still gets a rose (distinct-from-Cancel) modal Confirm" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.confirm_button
+          id="suspend"
+          title="Suspend this member?"
+          confirm_label="Suspend member"
+          tone={:neutral}
+          on_confirm={Phoenix.LiveView.JS.push("suspend")}
+        >
+          <:body>They're signed out until restored.</:body>
+          Suspend
+        </CoreComponents.confirm_button>
+        """)
+
+      # The modal's Confirm button carries the destructive rose face so it can
+      # never look identical to the neutral Cancel beside it.
+      [confirm_tag] = Regex.run(~r/<button[^>]*>\s*Suspend member/, html)
+      assert confirm_tag =~ "text-rose-200"
+    end
+  end
+
   # The Confirm button is the danger button labelled "Delete runner"/"Reject
   # pack"/"Revoke key" (not "Cancel"). HEEx renders a bare `disabled` attribute
   # when the button is disabled and omits it otherwise — so check whether the

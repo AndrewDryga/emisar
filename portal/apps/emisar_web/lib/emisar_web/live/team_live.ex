@@ -1326,9 +1326,7 @@ defmodule EmisarWeb.TeamLive do
           <.menu_item
             :if={not Emisar.Accounts.Membership.disabled?(@membership)}
             tone={:amber}
-            phx-click="suspend"
-            phx-value-membership_id={@membership.id}
-            data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
+            phx-click={open_confirm("suspend-#{@membership.id}")}
           >
             Suspend access
           </.menu_item>
@@ -1352,17 +1350,11 @@ defmodule EmisarWeb.TeamLive do
           <.menu_item
             :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
             tone={:amber}
-            phx-click="reset_mfa"
-            phx-value-membership_id={@membership.id}
-            data-confirm={"Reset 2FA for #{@membership.user.email}? Their authenticator and recovery codes are wiped and they'll enroll a NEW factor on next sign-in. Only do this for someone you've confirmed is locked out — a new factor is an account-takeover vector if you're wrong about who's asking."}
+            phx-click={open_confirm("reset-2fa-#{@membership.id}")}
           >
             Reset 2FA
           </.menu_item>
-          <.menu_item
-            phx-click="end_sessions"
-            phx-value-membership_id={@membership.id}
-            data-confirm="End every active session for this member?"
-          >
+          <.menu_item phx-click={open_confirm("end-sessions-#{@membership.id}")}>
             End all sessions
           </.menu_item>
           <div class="my-1 border-t border-zinc-800/70"></div>
@@ -1373,6 +1365,55 @@ defmodule EmisarWeb.TeamLive do
             Remove from team
           </.menu_item>
         </.dropdown>
+
+        <%!-- Plain (no-typing) styled confirm modals for the dropdown's
+             reversible destructive actions — the drop-in for a native
+             data-confirm: the menu row's `phx-click` runs `open_confirm/1`,
+             the Confirm here dispatches the event and closes. Same pattern as
+             the typed Remove dialog below; each mirrors its trigger's `:if`
+             so no orphan dialog renders when the action isn't offered. --%>
+        <.confirm_dialog
+          :if={not Emisar.Accounts.Membership.disabled?(@membership)}
+          id={"suspend-#{@membership.id}"}
+          title="Suspend this member?"
+          confirm_label="Suspend member"
+          on_confirm={
+            JS.push("suspend", value: %{membership_id: @membership.id})
+            |> close_confirm("suspend-#{@membership.id}")
+          }
+        >
+          <:body>They're signed out and can't sign back in until you restore them.</:body>
+        </.confirm_dialog>
+
+        <.confirm_dialog
+          :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
+          id={"reset-2fa-#{@membership.id}"}
+          title="Reset this member's 2FA?"
+          confirm_label="Reset 2FA"
+          on_confirm={
+            JS.push("reset_mfa", value: %{membership_id: @membership.id})
+            |> close_confirm("reset-2fa-#{@membership.id}")
+          }
+        >
+          <:body>
+            Their authenticator and recovery codes are wiped and they'll enroll a NEW
+            factor on next sign-in. Only do this for someone you've confirmed is locked
+            out — a new factor is an account-takeover vector if you're wrong about
+            who's asking.
+          </:body>
+        </.confirm_dialog>
+
+        <.confirm_dialog
+          id={"end-sessions-#{@membership.id}"}
+          title="End all sessions for this member?"
+          confirm_label="End sessions"
+          on_confirm={
+            JS.push("end_sessions", value: %{membership_id: @membership.id})
+            |> close_confirm("end-sessions-#{@membership.id}")
+          }
+        >
+          <:body>Signs them out of every device; they can sign back in right away.</:body>
+        </.confirm_dialog>
 
         <.confirm_dialog
           id={"remove-member-#{@membership.id}"}

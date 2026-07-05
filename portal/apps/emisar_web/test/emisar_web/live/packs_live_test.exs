@@ -50,9 +50,11 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "acme-tools"
-      # Trust stays a direct click; Reject (irreversible-feeling) now opens the
-      # typed-confirm dialog instead of dispatching `reject` straight away.
-      assert html =~ "phx-click=\"trust\""
+      # Trust opens a plain (amber) confirm modal — trusting adopts code
+      # fleet-wide; Reject (irreversible-feeling) opens the typed-confirm dialog.
+      # Neither dispatches straight away.
+      assert html =~ "Trust pack"
+      assert has_element?(lv, ~s([id^="trust-"]))
       assert html =~ "open_reject"
       assert has_element?(lv, "#reject-pack")
     end

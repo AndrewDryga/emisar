@@ -8,6 +8,7 @@ defmodule EmisarWeb.AuditExportLive do
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Billing}
   alias EmisarWeb.{Permissions, UrlHelpers}
+  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     cond do
@@ -196,18 +197,20 @@ defmodule EmisarWeb.AuditExportLive do
                 </.meta_line>
               </:meta>
               <:actions>
-                <.button
+                <.confirm_button
                   :if={is_nil(key.revoked_at)}
+                  id={"revoke-export-#{key.id}"}
+                  title="Revoke this export token?"
+                  confirm_label="Revoke"
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
                   class="shrink-0"
-                  phx-click="revoke_export_key"
-                  phx-value-id={key.id}
-                  data-confirm="Revoke this export token? Any active SIEM collector using it will start receiving 401s."
+                  on_confirm={JS.push("revoke_export_key", value: %{id: key.id})}
                 >
+                  <:body>Any active SIEM collector using it will start receiving 401s.</:body>
                   Revoke
-                </.button>
+                </.confirm_button>
               </:actions>
             </.list_row>
           </ul>

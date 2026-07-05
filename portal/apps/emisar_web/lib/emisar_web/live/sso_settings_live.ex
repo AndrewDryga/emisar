@@ -1110,16 +1110,18 @@ defmodule EmisarWeb.SSOSettingsLive do
                 >
                   Approve
                 </.button>
-                <.button
+                <.confirm_button
+                  id={"dismiss-request-#{request.id}"}
+                  title="Dismiss this request?"
+                  confirm_label="Dismiss"
                   variant={:ghost}
                   tone={:rose}
                   size={:sm}
-                  phx-click="dismiss_request"
-                  phx-value-id={request.id}
-                  data-confirm="Dismiss this access request? They'll need to sign in again to re-request."
+                  on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
                 >
+                  <:body>They'll need to sign in again to re-request.</:body>
                   Dismiss
-                </.button>
+                </.confirm_button>
               </div>
             </li>
           </ul>
@@ -1817,27 +1819,32 @@ defmodule EmisarWeb.SSOSettingsLive do
             >
               Enable
             </.button>
-            <.button
+            <.confirm_button
               :if={@provider.scim_enabled}
+              id={"rotate-scim-#{@provider.id}"}
+              title="Rotate the SCIM token?"
+              confirm_label="Rotate token"
               variant={:secondary}
+              tone={:neutral}
               size={:sm}
-              phx-click="rotate_scim"
-              phx-value-id={@provider.id}
-              data-confirm="Rotate the SCIM token? Your IdP will lose access until you paste the new one."
+              on_confirm={JS.push("rotate_scim", value: %{id: @provider.id})}
             >
+              <:body>Your IdP will lose access until you paste the new one.</:body>
               Rotate token
-            </.button>
-            <.button
+            </.confirm_button>
+            <.confirm_button
               :if={@provider.scim_enabled}
+              id={"disable-scim-#{@provider.id}"}
+              title="Disable directory sync?"
+              confirm_label="Disable sync"
               variant={:ghost}
               tone={:rose}
               size={:sm}
-              phx-click="disable_scim"
-              phx-value-id={@provider.id}
-              data-confirm="Disable directory sync? Your IdP can no longer provision or deprovision members through it."
+              on_confirm={JS.push("disable_scim", value: %{id: @provider.id})}
             >
+              <:body>Your IdP can no longer provision or deprovision members through it.</:body>
               Disable
-            </.button>
+            </.confirm_button>
           </div>
         </:actions>
       </.section_header>
@@ -2000,19 +2007,22 @@ defmodule EmisarWeb.SSOSettingsLive do
                 Edit
               </.button>
               <%!-- Reversible config (re-addable; members keep their role until
-                   the next sync) — a native confirm fits the tier, not a
+                   the next sync) — a plain confirm fits the tier, not a
                    typed-confirm. `delete_mapping` stays server-authz-gated. --%>
-              <.button
+              <.confirm_button
+                id={"delete-mapping-#{mapping.id}"}
+                title="Delete this group mapping?"
+                confirm_label="Delete mapping"
                 variant={:ghost}
                 tone={:rose}
                 size={:sm}
-                type="button"
-                phx-click="delete_mapping"
-                phx-value-id={mapping.id}
-                data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
+                on_confirm={JS.push("delete_mapping", value: %{id: mapping.id})}
               >
+                <:body>
+                  Members keep their current role until the next sync recomputes it from their remaining mapped groups.
+                </:body>
                 Delete
-              </.button>
+              </.confirm_button>
             </div>
           </div>
 
@@ -2261,16 +2271,21 @@ defmodule EmisarWeb.SSOSettingsLive do
               </form>
               <%!-- Suspend is reversible (Reactivate undoes it), so it stays a
                    neutral ghost — rose is reserved for the irreversible Delete. --%>
-              <.button
+              <.confirm_button
                 :if={not Accounts.Membership.disabled?(member.membership)}
+                id={"suspend-scim-#{member.membership.id}"}
+                title="Suspend this member?"
+                confirm_label="Suspend member"
                 variant={:ghost}
+                tone={:neutral}
                 size={:sm}
-                phx-click="suspend_member"
-                phx-value-membership_id={member.membership.id}
-                data-confirm="Suspend this member? They're signed out and blocked until reactivated — and directory sync may reactivate them if your IdP still lists them."
+                on_confirm={JS.push("suspend_member", value: %{membership_id: member.membership.id})}
               >
+                <:body>
+                  They're signed out and blocked until reactivated — and directory sync may reactivate them if your IdP still lists them.
+                </:body>
                 Suspend
-              </.button>
+              </.confirm_button>
               <.button
                 :if={Accounts.Membership.disabled?(member.membership) and member.identity.scim_active}
                 variant={:ghost}

@@ -139,10 +139,10 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
       siem_card = lv |> element("#siem-export") |> render()
 
-      # The active key offers a Revoke button keyed to its id…
-      assert siem_card =~ ~s(phx-value-id="#{active.id}")
-      # …the revoked key does NOT (no button keyed to it) but shows the chip.
-      refute siem_card =~ ~s(phx-value-id="#{to_revoke.id}")
+      # The active key offers a Revoke control keyed to its id…
+      assert siem_card =~ ~s(id="revoke-export-#{active.id}")
+      # …the revoked key does NOT (no control keyed to it) but shows the chip.
+      refute siem_card =~ ~s(id="revoke-export-#{to_revoke.id}")
       assert siem_card =~ "revoked"
     end
 

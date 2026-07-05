@@ -690,8 +690,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       %{conn: conn, account: account, lv: lv, html: html}
     end
 
-    test "the trash button carries a confirm", %{html: html} do
-      assert html =~ ~s(data-confirm="Remove this step?")
+    test "the trash button opens a styled confirm modal", %{html: html} do
+      assert html =~ ~s(id="remove-step-0")
+      assert html =~ "Remove this step?"
     end
 
     test "removing the only step leaves just the composer", %{lv: lv} do

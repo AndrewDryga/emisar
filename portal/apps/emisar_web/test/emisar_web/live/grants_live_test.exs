@@ -126,7 +126,9 @@ defmodule EmisarWeb.GrantsLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
-    html = lv |> element("button", "Revoke") |> render_click()
+    # Revoke goes through our confirm modal: the row's "Revoke" trigger opens the
+    # dialog (client-side); the real event fires from the dialog's Confirm.
+    html = lv |> element("#revoke-grant-#{g.id} button", "Revoke grant") |> render_click()
     assert html =~ "Grant revoked"
     refute html =~ "cassandra.repair"
 

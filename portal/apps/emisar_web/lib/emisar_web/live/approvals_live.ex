@@ -16,6 +16,7 @@ defmodule EmisarWeb.ApprovalsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Approvals, Catalog, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
+  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     if connected?(socket),
@@ -522,17 +523,21 @@ defmodule EmisarWeb.ApprovalsLive do
                   </.meta_line>
                 </:meta>
                 <:actions>
-                  <.button
+                  <.confirm_button
                     :if={Approvals.subject_can_manage_grants?(@current_subject)}
+                    id={"revoke-grant-#{g.id}"}
+                    title="Revoke this grant?"
+                    confirm_label="Revoke grant"
                     variant={:secondary}
                     tone={:rose}
                     size={:sm}
-                    phx-click="revoke_grant"
-                    phx-value-id={g.id}
-                    data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}
+                    on_confirm={JS.push("revoke_grant", value: %{id: g.id})}
                   >
+                    <:body>
+                      Calls to {g.action_id} from {(g.api_key && g.api_key.name) || "the key"} will require fresh approval.
+                    </:body>
                     Revoke
-                  </.button>
+                  </.confirm_button>
                 </:actions>
               </.list_row>
             </:item>

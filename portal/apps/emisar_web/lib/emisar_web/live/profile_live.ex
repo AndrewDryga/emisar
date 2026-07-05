@@ -2,6 +2,7 @@ defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
   alias EmisarWeb.UserAgent
+  alias Phoenix.LiveView.JS
 
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
@@ -511,15 +512,18 @@ defmodule EmisarWeb.ProfileLive do
                 Each code works once if you can't reach your authenticator. Store them in a
                 password manager — we can't show them again.
                 <:actions>
-                  <.button
+                  <.confirm_button
+                    id="ack-recovery-codes"
+                    title="Stored them somewhere safe?"
+                    confirm_label="I've saved them"
                     variant={:secondary}
+                    tone={:neutral}
                     size={:sm}
-                    type="button"
-                    phx-click="dismiss_recovery_codes"
-                    data-confirm="Got them stored somewhere safe?"
+                    on_confirm={JS.push("dismiss_recovery_codes")}
                   >
+                    <:body>Once this closes we can't show these recovery codes again.</:body>
                     I've saved them
-                  </.button>
+                  </.confirm_button>
                 </:actions>
               </.secret_reveal>
             <% @mfa_enabled? -> %>
@@ -541,23 +545,30 @@ defmodule EmisarWeb.ProfileLive do
                   Regenerate for a fresh set before a lost authenticator locks you out.</span>
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
-                <.button
+                <.confirm_button
+                  id="regen-codes"
+                  title="Generate a new set of recovery codes?"
+                  confirm_label="Regenerate codes"
                   variant={:secondary}
+                  tone={:neutral}
                   size={:md}
-                  phx-click="regenerate_recovery_codes"
-                  data-confirm="Generate a new set of recovery codes? Old codes will stop working."
+                  on_confirm={JS.push("regenerate_recovery_codes")}
                 >
+                  <:body>Old codes will stop working.</:body>
                   Regenerate recovery codes
-                </.button>
-                <.button
+                </.confirm_button>
+                <.confirm_button
+                  id="disable-2fa"
+                  title="Disable 2FA on your account?"
+                  confirm_label="Disable 2FA"
                   variant={:secondary}
                   tone={:rose}
                   size={:md}
-                  phx-click="disable_mfa"
-                  data-confirm="Disable 2FA on your account?"
+                  on_confirm={JS.push("disable_mfa")}
                 >
+                  <:body>A leaked sign-in link alone will then be enough to sign in.</:body>
                   Disable 2FA
-                </.button>
+                </.confirm_button>
               </div>
             <% @mfa_uri -> %>
               <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
@@ -592,16 +603,19 @@ defmodule EmisarWeb.ProfileLive do
               recognize — your current device stays signed in.
             </:subtitle>
             <:actions>
-              <.button
+              <.confirm_button
                 :if={length(@sessions) > 1}
+                id="signout-others"
+                title="Sign out of every other browser and device?"
+                confirm_label="Sign out everywhere else"
                 variant={:secondary}
                 tone={:rose}
                 size={:sm}
-                phx-click="revoke_other_sessions"
-                data-confirm="Sign out of every other browser and device?"
+                on_confirm={JS.push("revoke_other_sessions")}
               >
+                <:body>Your current device stays signed in.</:body>
                 Sign out everywhere else
-              </.button>
+              </.confirm_button>
             </:actions>
           </.section_header>
 
@@ -634,17 +648,20 @@ defmodule EmisarWeb.ProfileLive do
                 <%!-- Neutral, not rose — a routine self-service sign-out shouldn't
                      read as dangerous as the account-wide "Sign out everywhere else"
                      (which keeps the danger tone). --%>
-                <.button
+                <.confirm_button
                   :if={not current_session?(session, @current_session_digest)}
+                  id={"signout-session-#{session.id}"}
+                  title="Sign out this session?"
+                  confirm_label="Sign out"
                   variant={:ghost}
+                  tone={:neutral}
                   size={:sm}
-                  phx-click="revoke_session"
-                  phx-value-id={session.id}
-                  data-confirm="Sign out this session?"
                   class="shrink-0"
+                  on_confirm={JS.push("revoke_session", value: %{id: session.id})}
                 >
+                  <:body>That browser or device will need to sign in again.</:body>
                   Sign out
-                </.button>
+                </.confirm_button>
               </:actions>
             </.list_row>
             <li :if={@sessions == []} class="py-6 text-xs text-zinc-500">

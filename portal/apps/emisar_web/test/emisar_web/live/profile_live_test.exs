@@ -238,7 +238,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       user: user,
       account: account
     } do
-      # Two devices: one current, one other. The other carries a Revoke button;
+      # Two devices: one current, one other. The other carries a sign-out control;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
       other_raw = Emisar.Auth.create_session_token!(user, :magic_link, false)
@@ -251,12 +251,9 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert has_element?(lv, "button[phx-click='revoke_session'][phx-value-id='#{other.id}']")
+      assert has_element?(lv, "#signout-session-#{other.id}")
 
-      refute has_element?(
-               lv,
-               "button[phx-click='revoke_session'][phx-value-id='#{current.id}']"
-             )
+      refute has_element?(lv, "#signout-session-#{current.id}")
     end
 
     test "revoke_other_sessions with nothing to revoke says so", %{conn: conn, account: account} do

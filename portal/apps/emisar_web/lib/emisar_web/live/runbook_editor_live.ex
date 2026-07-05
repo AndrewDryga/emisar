@@ -10,6 +10,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runbooks, Runners}
   alias EmisarWeb.Permissions
+  alias Phoenix.LiveView.JS
 
   def mount(params, _session, socket) do
     # The editor is a manage surface — rendering a live form to a role whose
@@ -659,14 +660,19 @@ defmodule EmisarWeb.RunbookEditorLive do
           phx-value-dir="down"
           disabled={@index == @total - 1}
         />
-        <.icon_button
+        <.confirm_button
+          id={"remove-step-#{@index}"}
+          title="Remove this step?"
+          confirm_label="Remove step"
           icon="hero-trash"
-          label="Remove step"
+          variant={:ghost}
+          size={:sm}
           tone={:rose}
-          phx-click="remove_step"
-          phx-value-index={@index}
-          data-confirm="Remove this step?"
-        />
+          on_confirm={JS.push("remove_step", value: %{index: @index})}
+        >
+          <:body>It's dropped from the runbook; save to keep the change.</:body>
+          Remove step
+        </.confirm_button>
       </div>
     </div>
 

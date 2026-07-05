@@ -784,18 +784,29 @@ defmodule EmisarWeb.PoliciesLive do
         <% end %>
       </div>
 
+      <%!-- A configured ruleset confirms through the modal (removing it loses the
+           overrides); an empty one removes directly — nothing to lose. --%>
+      <.confirm_button
+        :if={@can_manage and not is_nil(@ruleset.policy)}
+        id={"remove-ruleset-#{@ruleset.uid}"}
+        title="Remove this ruleset?"
+        confirm_label="Remove ruleset"
+        variant={:secondary}
+        size={:sm}
+        icon="hero-trash"
+        on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
+      >
+        <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
+        Remove
+      </.confirm_button>
       <.button
-        :if={@can_manage}
+        :if={@can_manage and is_nil(@ruleset.policy)}
         variant={:secondary}
         size={:sm}
         type="button"
         phx-click="remove_ruleset"
         phx-value-uid={@ruleset.uid}
         icon="hero-trash"
-        data-confirm={
-          @ruleset.policy &&
-            "Remove this ruleset? That #{@ruleset.scope_type} falls back to the default policy."
-        }
       >
         Remove
       </.button>

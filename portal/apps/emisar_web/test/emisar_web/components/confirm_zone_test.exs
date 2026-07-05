@@ -1,26 +1,27 @@
 defmodule EmisarWeb.Components.ConfirmZoneTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.confirm_zone/1` and asserts it builds the
-  action `<.button>` itself — carrying the caller's `phx-click`, and (for the
-  danger tone) the `data-confirm` guard — so a detail page declares the action,
-  not the button markup. The `data-confirm` dialog is a real safety mechanism on
-  disable/delete, so its presence is part of the danger contract; the `:success`
-  twin (enable/restore) is the same structure with no confirm.
+  action `<.button>` itself — so a detail page declares the action, not the
+  button markup. A destructive action (`on_confirm`) fires behind OUR styled
+  modal, NEVER a native `data-confirm`; the `:success` twin (enable/restore) is
+  the same row with a direct `phx-click` and no modal.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
 
-  test "danger tone (default) builds a danger button carrying the confirm guard and phx-click" do
+  test "danger tone fires behind our modal — a rose button + a plain confirm_dialog, never data-confirm" do
     assigns = %{}
 
     html =
       rendered_to_string(~H"""
       <CoreComponents.confirm_zone
+        id="disable-runner"
         title="Disable this runner"
-        confirm="Disable this runner? It cannot reconnect."
-        phx-click="disable"
+        confirm="It cannot reconnect until you enable it again."
+        confirm_label="Disable runner"
+        on_confirm={Phoenix.LiveView.JS.push("disable")}
       >
         <:body>Removes it from the catalog.</:body>
         Disable runner
@@ -31,12 +32,15 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
     assert html =~ "Removes it from the catalog."
     assert html =~ "Disable runner"
     # Canvas row: neutral title, the danger carried by the ROSE button (not a
-    # tinted frame), with the confirm dialog + the action wired through.
+    # tinted frame). The confirmation is OUR modal (its body copy renders), never
+    # the native browser dialog.
     assert html =~ "text-zinc-100"
     assert html =~ "text-rose-200"
-    assert html =~ "data-confirm"
-    assert html =~ "Disable this runner? It cannot reconnect."
-    assert html =~ ~s(phx-click="disable")
+    refute html =~ "data-confirm"
+    assert html =~ "It cannot reconnect until you enable it again."
+    # The trigger OPENS the dialog (a JS show targeting the dialog id), and the
+    # real "disable" event lives on the dialog's Confirm.
+    assert html =~ "disable-runner"
   end
 
   test "success tone is the emerald twin with no confirm dialog (safe restore)" do

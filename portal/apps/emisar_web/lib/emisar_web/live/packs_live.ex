@@ -612,21 +612,27 @@ defmodule EmisarWeb.PacksLive do
                   :if={Catalog.subject_can_manage_packs?(@current_subject)}
                   class="mt-3 flex flex-wrap gap-2"
                 >
-                  <.button
+                  <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
+                       not a destruction, so the modal is amber, not rose. --%>
+                  <.confirm_button
+                    id={"trust-#{v.id}"}
+                    variant={:primary}
                     tone={:amber}
                     size={:sm}
-                    phx-click="trust"
-                    phx-value-id={v.id}
-                    data-confirm={
-                      if is_nil(v.hash) do
-                        "Trust #{pack.id} v#{v.version}? Cloud will allow its actions to run on #{length(@advertising[v.id] || [])} advertising runner(s)."
-                      else
-                        "Adopt the new hash as trusted for #{pack.id} v#{v.version}? It authorizes dispatch on #{length(@advertising[v.id] || [])} advertising runner(s)."
-                      end
+                    title={
+                      if is_nil(v.hash),
+                        do: "Trust #{pack.id} v#{v.version}?",
+                        else: "Adopt the new hash for #{pack.id} v#{v.version}?"
                     }
+                    confirm_label={if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
+                    on_confirm={JS.push("trust", value: %{id: v.id})}
                   >
+                    <:body>
+                      Cloud will allow its actions to run on {length(@advertising[v.id] || [])} advertising
+                      runner(s). Trusting adopts this exact code fleet-wide.
+                    </:body>
                     {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
-                  </.button>
+                  </.confirm_button>
                   <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
                        data-confirm. The button only OPENS the page-level dialog
                        (stashing this version as the target); `reject` still fires

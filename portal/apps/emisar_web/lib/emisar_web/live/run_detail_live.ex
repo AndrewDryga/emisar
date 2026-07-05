@@ -151,19 +151,19 @@ defmodule EmisarWeb.RunDetailLive do
         >
           View activity
         </.button>
-        <.button
+        <.confirm_button
           :if={
             @run.status in [:sent, :running, :pending] and
               Runs.subject_can_cancel_run?(@current_subject)
           }
-          variant={:secondary}
-          tone={:rose}
-          size={:md}
-          phx-click="cancel"
-          data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
+          id="cancel-run"
+          title="Cancel this run?"
+          confirm_label="Cancel run"
+          on_confirm={JS.push("cancel")}
         >
+          <:body>The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.</:body>
           Cancel run
-        </.button>
+        </.confirm_button>
       </:actions>
 
       <%!-- The page owns its rhythm (design-system §3.3): ONE space-y-12 child

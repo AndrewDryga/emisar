@@ -815,15 +815,14 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      refute has_element?(lv, "button[phx-click='reset_mfa']")
+      # The Reset 2FA action now opens our styled confirm modal instead of a native
+      # data-confirm; its per-member dialog is present iff the action is offered.
+      refute has_element?(lv, "#reset-2fa-#{membership.id}")
 
       enroll_mfa(member)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(
-               lv,
-               "button[phx-click='reset_mfa'][phx-value-membership_id='#{membership.id}']"
-             )
+      assert has_element?(lv, "#reset-2fa-#{membership.id}")
     end
 
     test "an owner resets the member's 2FA and they must re-enroll", %{

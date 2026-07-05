@@ -272,6 +272,12 @@ defmodule EmisarWeb.CoreComponents do
     "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
   end
 
+  # The caution twin — bordered amber for a consequential-but-not-destructive
+  # confirm (trusting a pack's new code), where rose would over-read as danger.
+  defp button_face(:secondary, :amber) do
+    "border border-amber-500/40 font-medium text-amber-200 hover:bg-amber-500/10 focus-visible:outline-amber-400"
+  end
+
   # Ghost: a text-only button tinted by tone, for low-prominence inline
   # actions (remove, revoke, suspend, restore).
   defp button_face(:ghost, :neutral),
@@ -3506,14 +3512,26 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Confirmation-zone card — a bordered container with title + body + a `<.button>`
-  it renders itself from the slot label and the button's `phx-click` (so call
-  sites don't hand-roll the button). `tone` colors it and picks the button
+  it renders itself from the slot label. `tone` colors it and picks the button
   variant: `:danger` (rose — disable/delete, the default) or `:success` (brand-green
-  — enable/restore), so every consequential-action panel reads alike. Pass
-  `confirm` for a destructive action's `data-confirm` dialog; omit it for a safe
-  restorative one. Used on detail pages (runner detail, team member remove, etc.).
+  — enable/restore), so every consequential-action panel reads alike. Used on
+  detail pages (runner detail, SSO provider, etc.), stacked under a "Danger zone"
+  section header in a `divide-y` list.
 
-      <.confirm_zone title="Disable this runner" confirm="Disable? It can't reconnect." phx-click="disable">
+  A **destructive** action confirms through OUR styled modal, never the native
+  browser dialog: pass `id` + `confirm` (the modal body) + `on_confirm` (the JS
+  the modal's Confirm runs) and this renders a self-contained plain
+  `<.confirm_dialog>`. A **restorative** action (`tone={:success}`) just fires
+  its `phx-click`. For the rare irreversible + high-blast action, wire the button
+  to open a TYPED `<.confirm_dialog>` you render yourself (`phx-click={show_confirm_dialog(id)}`).
+
+      <.confirm_zone
+        id="disable-runner"
+        title="Disable this runner"
+        confirm="Removes it from the catalog and rejects future reconnects."
+        confirm_label="Disable runner"
+        on_confirm={JS.push("disable")}
+      >
         <:body>Removes from catalog and rejects future reconnects.</:body>
         Disable runner
       </.confirm_zone>
@@ -3527,16 +3545,17 @@ defmodule EmisarWeb.CoreComponents do
   slot :inner_block, required: true
   attr :title, :string, required: true
   attr :tone, :atom, default: :danger, values: [:danger, :success]
-  attr :confirm, :string, default: nil
+  attr :id, :string, default: nil, doc: "modal id — required with :on_confirm"
+  attr :confirm, :string, default: nil, doc: "the modal body — set with :on_confirm"
+  attr :confirm_label, :string, default: nil, doc: "the modal's Confirm button text"
+  attr :on_confirm, :any, default: nil, doc: "JS the modal's Confirm runs (self-contained)"
   attr :rest, :global
 
-  def confirm_zone(assigns) do
+  # CONTENT ON CANVAS — a destructive/restorative action is a hairline row
+  # (title · consequence · toned button), NOT a rose-boxed island. The danger
+  # lives on the ROSE button + the modal it fires, never a tinted frame.
+  def confirm_zone(%{on_confirm: on_confirm} = assigns) when not is_nil(on_confirm) do
     ~H"""
-    <%!-- CONTENT ON CANVAS — a destructive/restorative action is a hairline row
-         (title · consequence · toned button), NOT a rose-boxed island. The
-         danger lives on the ROSE button + the typed/data confirm it fires, not
-         a tinted frame. Callers stack these under a "Danger zone" section header
-         in a `divide-y` list. --%>
     <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
         <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
@@ -3547,7 +3566,36 @@ defmodule EmisarWeb.CoreComponents do
         variant={confirm_zone_button_variant(@tone)}
         tone={confirm_zone_button_tone(@tone)}
         size={:md}
-        data-confirm={@confirm}
+        type="button"
+        phx-click={open_confirm(@id)}
+        {@rest}
+      >
+        {render_slot(@inner_block)}
+      </.button>
+    </div>
+    <.confirm_dialog
+      id={@id}
+      title={@title}
+      confirm_label={@confirm_label || @title}
+      on_confirm={@on_confirm |> close_confirm(@id)}
+    >
+      <:body>{@confirm}</:body>
+    </.confirm_dialog>
+    """
+  end
+
+  def confirm_zone(assigns) do
+    ~H"""
+    <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div class="min-w-0">
+        <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-500">{render_slot(@body)}</p>
+      </div>
+      <.button
+        class="shrink-0 self-start sm:self-auto"
+        variant={confirm_zone_button_variant(@tone)}
+        tone={confirm_zone_button_tone(@tone)}
+        size={:md}
         {@rest}
       >
         {render_slot(@inner_block)}
@@ -3619,9 +3667,22 @@ defmodule EmisarWeb.CoreComponents do
   attr :confirm_token, :string, default: nil, doc: "when set, the string the operator must type"
   attr :typed, :string, default: "", doc: "the live-typed value held by the page (@typed)"
   attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
+  # `:rose` (default) is a DESTRUCTIVE confirm; `:amber` a caution-approve one
+  # (trusting a pack's new code fleet-wide) where rose would over-read as danger.
+  attr :tone, :atom, default: :rose, values: [:rose, :amber]
   slot :body, required: true
 
   def confirm_dialog(assigns) do
+    # A PLAIN dialog (no token) closes client-side with no `confirm_reset` push,
+    # so it needs zero page wiring; a TYPED one resets the page's `@typed` on
+    # every close. Cancel / backdrop / Escape all use this.
+    close =
+      if is_nil(assigns.confirm_token),
+        do: close_confirm(assigns.id),
+        else: hide_confirm_dialog(assigns.id)
+
+    assigns = assign(assigns, :close_dialog, close)
+
     ~H"""
     <div
       id={@id}
@@ -3629,14 +3690,14 @@ defmodule EmisarWeb.CoreComponents do
       role="dialog"
       aria-modal="true"
       aria-label={@title}
-      phx-window-keydown={hide_confirm_dialog(@id)}
+      phx-window-keydown={@close_dialog}
       phx-key="escape"
     >
-      <%!-- Backdrop — clicking it closes the dialog (and resets the typed value). --%>
+      <%!-- Backdrop — clicking it closes the dialog. --%>
       <div
         id={"#{@id}-backdrop"}
         class="fixed inset-0 bg-black/70 backdrop-blur-sm"
-        phx-click={hide_confirm_dialog(@id)}
+        phx-click={@close_dialog}
         aria-hidden="true"
       >
       </div>
@@ -3651,7 +3712,7 @@ defmodule EmisarWeb.CoreComponents do
                rose icon lead, a zinc title, zinc body — one voice with every
                other note in the console. The dialog takes its accessible name
                from `aria-label={@title}` above. --%>
-          <.status_note icon="hero-exclamation-triangle" tone={:rose} title={@title} primary>
+          <.status_note icon="hero-exclamation-triangle" tone={@tone} title={@title} primary>
             {render_slot(@body)}
           </.status_note>
 
@@ -3688,7 +3749,7 @@ defmodule EmisarWeb.CoreComponents do
               variant={:secondary}
               size={:md}
               type="button"
-              phx-click={hide_confirm_dialog(@id)}
+              phx-click={@close_dialog}
             >
               Cancel
             </.button>
@@ -3697,7 +3758,7 @@ defmodule EmisarWeb.CoreComponents do
                  yet — packs' reject). A real token enables only once typed matches. --%>
             <.button
               variant={:secondary}
-              tone={:rose}
+              tone={@tone}
               size={:md}
               type="button"
               disabled={
@@ -3714,19 +3775,13 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  @doc """
-  Opens a `<.confirm_dialog>` by id — reveals it, resets the page's typed value
-  (so a prior entry can't pre-enable Confirm), and focuses the type-to-confirm
-  input. Wire it to the trigger's `phx-click`.
-  """
-  def show_confirm_dialog(js \\ %JS{}, id) do
+  # OPACITY-ONLY fades, never the shared `show/2` (which animates a `transform`):
+  # a transformed ancestor becomes the containing block for the dialog's
+  # `position: fixed` overlay, so during the animation it positions against the
+  # collapsed wrapper (jammed to the page edge) and only snaps centered once the
+  # transform clears. Fade the wrapper instead.
+  defp fade_dialog_in(js, id) do
     js
-    |> JS.push("confirm_reset")
-    # OPACITY-ONLY transition, never the shared `show/2` (which animates a
-    # `transform`): a transformed ancestor becomes the containing block for the
-    # dialog's `position: fixed` overlay, so during the animation it positions
-    # against this collapsed wrapper (jammed to the page edge) and only snaps
-    # centered once the transform clears. Fade the wrapper instead.
     |> JS.show(
       to: "##{id}",
       time: 200,
@@ -3737,19 +3792,105 @@ defmodule EmisarWeb.CoreComponents do
     |> JS.focus_first(to: "##{id}")
   end
 
-  @doc """
-  Closes a `<.confirm_dialog>` by id and resets the page's typed value. Used by
-  Cancel, the backdrop, and Escape.
-  """
-  def hide_confirm_dialog(js \\ %JS{}, id) do
-    js
-    |> JS.hide(
+  defp fade_dialog_out(js, id) do
+    JS.hide(js,
       to: "##{id}",
       time: 150,
       transition: {"transition-opacity ease-in duration-150", "opacity-100", "opacity-0"}
     )
-    |> JS.push("confirm_reset")
   end
+
+  @doc """
+  Opens a PLAIN `<.confirm_dialog>` (no typed token) — pure client-side, no
+  server round-trip and no `@typed`/`confirm_reset` wiring on the page. This is
+  the drop-in for a `data-confirm`; wire it to the trigger's `phx-click`.
+  """
+  def open_confirm(js \\ %JS{}, id), do: fade_dialog_in(js, id)
+
+  @doc "Closes a PLAIN `<.confirm_dialog>` — client-side, no push. Cancel / backdrop / Escape / on_confirm."
+  def close_confirm(js \\ %JS{}, id), do: fade_dialog_out(js, id)
+
+  @doc """
+  A destructive button that fires its action behind OUR styled confirm modal —
+  the drop-in for `data-confirm` (a dangerous action must never use the native
+  browser confirm). Renders the trigger `<.button>` + a PLAIN `<.confirm_dialog>`
+  (no typed token, no page wiring — fully client-side); on confirm it runs
+  `on_confirm` and closes. For the rare irreversible + high-blast-radius action
+  (delete runner, remove member, revoke agent key, reject pack), reach for the
+  typed `<.confirm_dialog>` directly instead (console-ux §5).
+
+      <.confirm_button
+        id={"disable-runner"}
+        title="Disable this runner?"
+        confirm_label="Disable runner"
+        icon="hero-no-symbol"
+        on_confirm={JS.push("disable")}
+      >
+        <:body>Stops new dispatches; in-flight runs finish. Re-enable any time.</:body>
+        Disable
+      </.confirm_button>
+  """
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :confirm_label, :string, required: true
+  attr :on_confirm, :any, required: true, doc: "JS for the action; the close is appended for you"
+  attr :variant, :atom, default: :secondary
+  # `tone` colors the TRIGGER — `:rose` (destructive, default), `:amber` (a
+  # caution-approve like pack trust), or `:neutral` (a low-key action the page
+  # deliberately doesn't shout — suspend, rotate). The MODAL's Confirm button is
+  # ALWAYS toned (rose, or amber) so it can never look identical to Cancel — a
+  # neutral trigger still gets a rose confirm; the confirmation moment is where
+  # the consequence is emphasized.
+  attr :tone, :atom, default: :rose, values: [:rose, :amber, :neutral]
+  attr :size, :atom, default: :md
+  attr :icon, :string, default: nil
+  attr :class, :any, default: nil
+  attr :rest, :global, doc: "trigger passthrough — phx-disable-with, aria-label, disabled, :if"
+  slot :body, required: true, doc: "the consequence copy, shown in the modal"
+  slot :inner_block, required: true, doc: "the trigger label"
+
+  def confirm_button(assigns) do
+    assigns = assign(assigns, :modal_tone, if(assigns.tone == :amber, do: :amber, else: :rose))
+
+    ~H"""
+    <.button
+      variant={@variant}
+      tone={@tone}
+      size={@size}
+      icon={@icon}
+      class={@class}
+      type="button"
+      phx-click={open_confirm(@id)}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </.button>
+    <.confirm_dialog
+      id={@id}
+      title={@title}
+      confirm_label={@confirm_label}
+      tone={@modal_tone}
+      on_confirm={@on_confirm |> close_confirm(@id)}
+    >
+      <:body>{render_slot(@body)}</:body>
+    </.confirm_dialog>
+    """
+  end
+
+  @doc """
+  Opens a TYPED `<.confirm_dialog>` by id — reveals it, resets the page's typed
+  value (so a prior entry can't pre-enable Confirm), and focuses the
+  type-to-confirm input. Wire it to the trigger's `phx-click`.
+  """
+  def show_confirm_dialog(js \\ %JS{}, id),
+    do: js |> JS.push("confirm_reset") |> fade_dialog_in(id)
+
+  @doc """
+  Closes a TYPED `<.confirm_dialog>` by id and resets the page's typed value.
+  Used by Cancel, the backdrop, and Escape.
+  """
+  def hide_confirm_dialog(js \\ %JS{}, id),
+    do: js |> fade_dialog_out(id) |> JS.push("confirm_reset")
 
   @doc ~S"""
   Statistic **tile** — a big number in its own card, for the dashboard's metrics
