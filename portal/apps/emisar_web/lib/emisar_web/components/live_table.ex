@@ -649,6 +649,9 @@ defmodule EmisarWeb.LiveTable do
   end
 
   defp face_label(_group, "group:" <> _, label), do: label
+  # A FLAT options list (the runs Runner/Agent filters) normalizes with a nil
+  # group — no prefix, or the face reads "· Claude Code" with an orphaned dot.
+  defp face_label(nil, _value, label), do: label
   defp face_label(group, _value, label), do: "#{group} · #{label}"
 
   # Filter option tuples are {value, label} or {value, label, description}.
