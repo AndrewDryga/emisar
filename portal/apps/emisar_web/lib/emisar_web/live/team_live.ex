@@ -57,10 +57,14 @@ defmodule EmisarWeb.TeamLive do
       %Accounts.Membership{user: user} when not is_nil(user) ->
         params = %{"full_name" => user.full_name || ""}
 
+        # One inline editor at a time — the naked editors would otherwise
+        # stack into one unreadable run under the same row.
         {:noreply,
          socket
          |> assign(:editing_id, id)
-         |> assign(:edit_form, to_form(params, as: "user"))}
+         |> assign(:edit_form, to_form(params, as: "user"))
+         |> assign(:scope_editing_id, nil)
+         |> assign(:scope_draft, [])}
     end
   end
 
@@ -76,7 +80,9 @@ defmodule EmisarWeb.TeamLive do
     {:noreply,
      socket
      |> assign(:scope_editing_id, id)
-     |> assign(:scope_draft, RunnerScope.to_values(groups, runner_ids))}
+     |> assign(:scope_draft, RunnerScope.to_values(groups, runner_ids))
+     |> assign(:editing_id, nil)
+     |> assign(:edit_form, nil)}
   end
 
   def handle_event("cancel_scope_edit", _params, socket) do
@@ -676,8 +682,10 @@ defmodule EmisarWeb.TeamLive do
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
            readable radio-card per role (name + what it can do), and a real
-           success step (Invite another / Back to members) instead of a flash. --%>
-      <div :if={@live_action == :new} class="mx-auto max-w-2xl space-y-5">
+           success step (Invite another / Back to members) instead of a flash.
+           NAKED on the canvas (§8.1: forms are naked — the inputs and the
+           role cards are the controls; the panel around them was an island). --%>
+      <div :if={@live_action == :new} class="mt-4 max-w-2xl">
         <.empty_state
           :if={not can_manage?(assigns)}
           variant={:bare}
@@ -688,38 +696,36 @@ defmodule EmisarWeb.TeamLive do
           Only owners and admins can invite members. Ask an owner or admin to add someone.
         </.empty_state>
 
-        <%!-- Sent: confirm it, then the two next moves — no vanishing flash. --%>
-        <.panel :if={can_manage?(assigns) and @invited_email}>
-          <div class="flex flex-col items-center py-6 text-center">
-            <span class="grid h-12 w-12 place-items-center rounded-full bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/30">
-              <.icon name="hero-paper-airplane" class="h-6 w-6" />
-            </span>
-            <h2 class="mt-4 font-display text-lg font-semibold tracking-[-0.01em] text-zinc-100">
-              Invitation sent
-            </h2>
-            <p class="mt-1.5 max-w-sm text-pretty text-sm leading-relaxed text-zinc-400">
-              We emailed a join link to <span class="font-medium text-zinc-200">{@invited_email}</span>. They'll show in the
-              roster as pending until they accept.
-            </p>
+        <%!-- Sent: confirm it, then the two next moves — no vanishing flash.
+             The transient event grammar (icon-capped spine), brand = a
+             positive terminal that carries real content: the recipient and
+             the next actions. --%>
+        <.event_block
+          :if={can_manage?(assigns) and @invited_email}
+          icon="hero-paper-airplane"
+          tone={:brand}
+          title="Invitation sent"
+        >
+          <:body>
+            We emailed a join link to <span class="font-medium text-zinc-200">{@invited_email}</span>. They'll show in the
+            roster as pending until they accept.
+          </:body>
 
-            <.callout :if={@invite_suppressed?} tone={:amber} class="mt-4 max-w-sm text-left">
-              We couldn't email {@invited_email} — it bounced or was marked spam. Send them the
-              join link another way, or invite a different address.
-            </.callout>
+          <.callout :if={@invite_suppressed?} tone={:amber} class="mt-4">
+            We couldn't email {@invited_email} — it bounced or was marked spam. Send them the
+            join link another way, or invite a different address.
+          </.callout>
 
-            <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
-              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
-                Back to members
-              </.button>
-            </div>
+          <div class="mt-6 flex flex-wrap items-center gap-3">
+            <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
+            <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
+              Back to members
+            </.button>
           </div>
-        </.panel>
+        </.event_block>
 
-        <%!-- No panel title — the shell title already says "Invite a member"
-             (never a stacked near-synonym pair); the lead line carries intent. --%>
-        <.panel :if={can_manage?(assigns) and is_nil(@invited_email)}>
-          <p class="mb-5 text-sm leading-relaxed text-zinc-400">
+        <div :if={can_manage?(assigns) and is_nil(@invited_email)}>
+          <p class="text-sm leading-relaxed text-zinc-400">
             We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They'll sign in
             with a magic link or SSO — no password — and land in this workspace.
           </p>
@@ -729,7 +735,7 @@ defmodule EmisarWeb.TeamLive do
             id="invite_form"
             phx-change="validate"
             phx-submit="invite"
-            class="space-y-5"
+            class="mt-6 space-y-5"
           >
             <.input
               field={@form[:email]}
@@ -768,7 +774,7 @@ defmodule EmisarWeb.TeamLive do
               </.button>
             </:actions>
           </.simple_form>
-        </.panel>
+        </div>
       </div>
 
       <.page_intro :if={@live_action == :index}>
@@ -972,13 +978,10 @@ defmodule EmisarWeb.TeamLive do
                 </div>
               </div>
 
-              <%!-- Edit form appears inline under the row. No bolted-
-                   on table column; just normal flow. --%>
-              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed control surface (inline row editor, the policy-knob family) --%>
-              <div
-                :if={@editing_id == membership.id and @edit_form}
-                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"
-              >
+              <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
+                   are naked — the fields are the controls) — indented to the
+                   row's content column and bounded by the row's own hairline. --%>
+              <div :if={@editing_id == membership.id and @edit_form} class="mt-4 max-w-xl sm:pl-14">
                 <.simple_form
                   for={@edit_form}
                   id={"edit-form-#{membership.id}"}
@@ -1001,14 +1004,12 @@ defmodule EmisarWeb.TeamLive do
               </div>
 
               <%!-- Inline scope editor — appears under the row when "Set runner
-                   scope" is clicked. ONE grouped multi-select (groups with their
-                   runners nested beneath); selecting a group disables its runners
-                   (already covered). Empty selection = "all runners" default. --%>
-              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recessed control surface (inline row editor, the policy-knob family) --%>
-              <div
-                :if={@scope_editing_id == membership.id}
-                class="mt-4 rounded-lg bg-zinc-900/40 p-4 ring-1 ring-white/[0.08]"
-              >
+                   scope" is clicked, NAKED like the edit form above (the
+                   runner-scope tree is its own bordered control). ONE grouped
+                   multi-select (groups with their runners nested beneath);
+                   selecting a group disables its runners (already covered).
+                   Empty selection = "all runners" default. --%>
+              <div :if={@scope_editing_id == membership.id} class="mt-4 max-w-xl sm:pl-14">
                 <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
                   <input type="hidden" name="membership_id" value={membership.id} />
                   <p class="text-xs text-zinc-400">
