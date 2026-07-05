@@ -502,12 +502,16 @@ defmodule EmisarWeb.RunbookEditorLive do
               </datalist>
             <% end %>
 
-            <%!-- Steps are naked form units on the canvas — a hairline between
-               them, never a wash box (§8.1: forms are naked). The datalists
-               above stay OUTSIDE this stack: divide-y's sibling selector
-               would draw a phantom rule against them. --%>
-            <div class="divide-y divide-zinc-800/70">
-              <div :for={{step, idx} <- Enum.with_index(@steps)} class="py-10 first:pt-0 last:pb-0">
+            <%!-- Each step is a dashed-bordered section — the frame groups a
+               step's controls (action, targets, args) into one unit so a long
+               runbook parses at a glance. Dashed, not a wash box (§8.1): an
+               outline groups without filling. The datalists stay OUTSIDE this
+               stack so they don't pick up the box chrome. --%>
+            <div class="space-y-4">
+              <div
+                :for={{step, idx} <- Enum.with_index(@steps)}
+                class="rounded-xl border border-dashed border-zinc-800 p-5"
+              >
                 <.step_unit
                   step={step}
                   index={idx}
@@ -536,7 +540,10 @@ defmodule EmisarWeb.RunbookEditorLive do
           <aside class="order-first space-y-8 lg:order-none">
             <section>
               <.section_header title="Details" />
-              <form phx-change="meta_change" class="space-y-4">
+              <form
+                phx-change="meta_change"
+                class="space-y-4 rounded-xl border border-dashed border-zinc-800 p-5"
+              >
                 <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
                    form posts top-level keys that `meta_change` reads directly;
                    the `field=` only supplies the value + the post-validate error
@@ -577,17 +584,19 @@ defmodule EmisarWeb.RunbookEditorLive do
 
             <section :if={@runbook}>
               <.section_header title="Version" />
-              <dl class="space-y-2 text-xs text-zinc-400">
-                <.kv label="Current">v{@runbook.version}</.kv>
-                <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-                <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
-              </dl>
-              <p
-                :if={@runbook.status == :published}
-                class="mt-4 text-xs text-zinc-500 leading-relaxed"
-              >
-                Published runbooks are immutable — saving creates a new draft version.
-              </p>
+              <div class="rounded-xl border border-dashed border-zinc-800 p-5">
+                <dl class="space-y-2 text-xs text-zinc-400">
+                  <.kv label="Current">v{@runbook.version}</.kv>
+                  <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+                  <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
+                </dl>
+                <p
+                  :if={@runbook.status == :published}
+                  class="mt-4 text-xs text-zinc-500 leading-relaxed"
+                >
+                  Published runbooks are immutable — saving creates a new draft version.
+                </p>
+              </div>
             </section>
           </aside>
         </div>
@@ -841,7 +850,9 @@ defmodule EmisarWeb.RunbookEditorLive do
           Add
         </.button>
       </div>
-      <div :if={@args != []} class="mt-2 space-y-1.5">
+      <%!-- A key + short value pair doesn't need the step's full width — cap it
+           at half so the row reads as a compact field, not a stretched bar. --%>
+      <div :if={@args != []} class="mt-2 space-y-1.5 sm:w-1/2">
         <%= for {arg, j} <- Enum.with_index(@args) do %>
           <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5">
             <input type="hidden" name="index" value={@index} />
