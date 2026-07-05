@@ -2851,7 +2851,19 @@ defmodule EmisarWeb.CoreComponents do
 
   def code_panel(assigns) do
     ~H"""
-    <.card class={"overflow-hidden #{@class}"} padding="" {@rest}>
+    <%!-- The island recipe, but with the ARTIFACT edge: a solid zinc-800 ring
+         (the install-wizard command-box grammar) instead of the faint
+         white/[0.07] surface ring — a code panel usually sits directly on the
+         black canvas, where the light ring + a near-black code recess made the
+         body blend into the page. --%>
+    <div
+      class={[
+        "overflow-hidden rounded-xl bg-zinc-900/60",
+        "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800",
+        @class
+      ]}
+      {@rest}
+    >
       <%!-- The label eyebrow is short by design, so it holds its width; the
            annotation cluster is the one that shrinks — its truncate ellipsizes
            a long value (a sha256, an event id) instead of colliding with the
@@ -2890,7 +2902,7 @@ defmodule EmisarWeb.CoreComponents do
           @max_h
         ]}
       ><span :if={@prompt} class="select-none text-zinc-600">$ </span>{@code}</pre>
-    </.card>
+    </div>
     """
   end
 

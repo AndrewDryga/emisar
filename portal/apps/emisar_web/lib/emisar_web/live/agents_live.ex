@@ -363,8 +363,8 @@ defmodule EmisarWeb.AgentsLive do
   defp owner_label(%{created_by: %{} = user}), do: user.full_name || user.email
   defp owner_label(_), do: "Auto-minted"
 
-  # Page rows sorted by owner so `group_by` emits one header per person
-  # (within a group the context's recent-first order is preserved).
+  # Rows sorted by owner so one person's keys cluster together (the row meta
+  # names the owner; within a cluster the context's recent-first order holds).
   defp sort_by_owner(keys), do: Enum.sort_by(keys, &owner_label/1)
 
   defp count_status(keys, status),
@@ -829,25 +829,34 @@ defmodule EmisarWeb.AgentsLive do
            (LiveTable's card_spine pending tone) binds note + artifact + Done
            into one transient block — without it the three pieces blended into
            the page around them. --%>
-      <div
-        :if={@live_action == :index and @rotated}
-        class="border-l-2 border-l-amber-500 pl-5 sm:pl-6"
-      >
-        <.minted_note title="Key rotated — copy the new key now; it won't be shown again">
-          Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
-          with this key. The old key keeps working until you revoke it below — swap first,
-          then revoke.
-        </.minted_note>
-        <.code_panel
-          id="rotated-key"
-          label="API key (bearer token)"
-          copy
-          copy_label="Copy key"
-          code={@rotated.secret}
-          class="mt-4"
-        />
-        <div class="mt-4">
-          <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
+      <div :if={@live_action == :index and @rotated} class="flex gap-4">
+        <%!-- The amber key icon CAPS the spine (a timeline node, not two amber
+             elements side by side): icon up top, the 2px pending-tone line
+             descending beneath it for the block's full height. --%>
+        <div class="flex w-4 flex-col items-center" aria-hidden="true">
+          <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <div class="mt-2 w-0.5 flex-1 rounded-full bg-amber-500"></div>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-medium text-zinc-200">
+            Key rotated — copy the new key now; it won't be shown again
+          </div>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
+            with this key. The old key keeps working until you revoke it below — swap first,
+            then revoke.
+          </p>
+          <.code_panel
+            id="rotated-key"
+            label="API key (bearer token)"
+            copy
+            copy_label="Copy key"
+            code={@rotated.secret}
+            class="mt-4"
+          />
+          <div class="mt-4">
+            <.button variant={:secondary} size={:sm} phx-click="dismiss_rotated">Done</.button>
+          </div>
         </div>
       </div>
 
@@ -904,29 +913,23 @@ defmodule EmisarWeb.AgentsLive do
           filter_params={@filter_params}
           filters={@filters}
           wrapper_class="divide-y divide-zinc-800/70"
-          group_by={&owner_label/1}
         >
-          <%!-- Grouped by OWNER (the runners-group grammar): the page's real
-               subject is people and the credentials they've issued. --%>
-          <:group_header :let={owner}>
-            <.list_group_header label={owner} />
-          </:group_header>
-
           <:item :let={key}>
             <.list_row padding="py-4">
               <:title>
                 <span class="truncate font-medium text-zinc-100">{key.name}</span>
                 <.client_status_pill key={key} />
               </:title>
-              <:chips>
-                <.chip :for={scope <- key.scopes || []} tone={:neutral} mono>{scope}</.chip>
-              </:chips>
               <:meta>
-                <%!-- Identity + liveness only. No key prefix: truncated it
-                     rendered the SAME shared literal on every row (the
-                     distinguishing tail is exactly what got cut) — the name,
-                     owner group, and client already identify the credential. --%>
+                <%!-- Identity + liveness only. The OWNER leads — whose
+                     credential this is, the fact an operator audits by (the
+                     scopes are a fixed MCP shape nobody manages here, so they
+                     earned no chips). No key prefix: truncated it rendered the
+                     SAME shared literal on every row. --%>
                 <.meta_line class="text-[11px]">
+                  <:seg>
+                    owner <span class="text-zinc-300">{owner_label(key)}</span>
+                  </:seg>
                   <:seg :if={reported_client(key)}>
                     client <span class="text-zinc-300">{reported_client(key)}</span>
                   </:seg>
@@ -1287,9 +1290,8 @@ defmodule EmisarWeb.AgentsLive do
   # The one-time-key note as STATUS GRAMMAR, not a boxed callout (the
   # install-wizard credential-note precedent): amber key icon lead, naked on
   # the canvas — a box around non-actionable prose would outshout the
-  # artifact below that actually carries the secret. ONE grammar for every
-  # "here's your key" moment on this page — quick mints and rotation alike.
-  attr :title, :string, default: "New key minted — it's live now"
+  # artifact below that actually carries the secret. (The index's rotation
+  # reveal shares the words-grammar but hand-rolls its icon as the spine cap.)
   slot :inner_block, required: true
 
   defp minted_note(assigns) do
@@ -1297,7 +1299,7 @@ defmodule EmisarWeb.AgentsLive do
     <div class="flex items-start gap-3">
       <.icon name="hero-key" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
       <div class="min-w-0">
-        <div class="text-sm font-medium text-zinc-200">{@title}</div>
+        <div class="text-sm font-medium text-zinc-200">New key minted — it's live now</div>
         <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
       </div>
     </div>

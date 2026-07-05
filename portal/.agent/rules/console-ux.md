@@ -173,6 +173,12 @@ one of them is wrong.
   disclosure (`disclosure` component — advanced/optional settings collapse).
 - A row carries **≤4 chips**; past that the chips aren't statuses anymore, they're a
   detail page trying to happen.
+- **A row shows facts the operator ACTS on or identifies by — never system constants.**
+  A value that's the same on every row and that no one here manages (the agents keys'
+  fixed `actions:read`+`actions:execute` MCP scope pair) is noise wearing a chip;
+  delete it and spend the space on an identifying fact instead (the key's OWNER —
+  whose credential is this — leads the meta line). Sweep: any chip/meta segment whose
+  value is invariant across the account's rows.
 
 ## 7. Graduated house rules (formerly memory-only — now doctrine)
 
