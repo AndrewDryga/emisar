@@ -252,25 +252,31 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.meta_field>
           </div>
 
-          <%!-- Labels + last-disconnect reason on their own hairline row (labels
-           when set, the reason only while the runner is down — else it's stale
-           noise from the last drop), not a second bordered band. --%>
+          <%!-- Why it's down — a status fact that EXPLAINS the Status badge in
+               the grid above, so it lives in the connection register right under
+               it, NOT tucked beside the identity labels (labels say what the
+               runner IS; this says why it dropped). Only while it's down — else
+               it's stale noise from the last drop. --%>
           <div
-            :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
+            :if={disconnect_note?(@runner)}
+            class="mt-4 flex items-center gap-1.5 text-rose-300/90"
+          >
+            <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+            <span class="text-xs">
+              Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
+            </span>
+          </div>
+
+          <%!-- Labels on their own hairline row — identity metadata, not a
+               status event; a naked chip strip, not a second bordered band. --%>
+          <div
+            :if={runner_labels(@runner) != []}
             class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/70 pt-5"
           >
-            <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Labels
-              </span>
-              <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
-            </div>
-            <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
-              <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
-              <span class="text-xs">
-                Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
-              </span>
-            </div>
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Labels
+            </span>
+            <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
           </div>
         </div>
 
