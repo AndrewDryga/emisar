@@ -40,6 +40,7 @@ defmodule EmisarWeb.PoliciesLive do
   # runner/group rulesets, and the runner/group pickers new rulesets target.
   defp load_all(socket) do
     subject = socket.assigns.current_subject
+    runners = list_runners(subject)
 
     account_policy =
       case Policies.fetch_policy(subject) do
@@ -51,8 +52,13 @@ defmodule EmisarWeb.PoliciesLive do
     # list — "No targeted rulesets yet" would wrongly imply none are configured.
     {rulesets, load_error?} =
       case Policies.list_scoped_policies(subject) do
-        {:ok, policies} -> {Enum.map(policies, &build_ruleset_editor/1), false}
-        {:error, _} -> {[], true}
+        {:ok, policies} ->
+          {Enum.map(policies, fn policy ->
+             policy |> build_ruleset_editor() |> put_ruleset_breakdown(runners, subject)
+           end), false}
+
+        {:error, _} ->
+          {[], true}
       end
 
     socket
@@ -61,7 +67,7 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
     |> assign(:account, build_account_editor(account_policy))
     |> assign(:rulesets, rulesets)
-    |> assign(:runners, list_runners(subject))
+    |> assign(:runners, runners)
     |> assign(:groups, list_groups(subject))
     |> assign(:risk_breakdown, load_risk_breakdown(subject))
   end
@@ -75,6 +81,27 @@ defmodule EmisarWeb.PoliciesLive do
       {:error, _} -> empty_breakdown()
     end
   end
+
+  # A ruleset's OWN target catalog, bucketed by risk — so the operator sees what
+  # CRITICAL/HIGH mean for that specific runner or group, not just account-wide.
+  # A group resolves to its runners' ids from the already-loaded @runners.
+  defp put_ruleset_breakdown(ruleset, runners, subject) do
+    breakdown =
+      case Catalog.risk_breakdown_for_runner_ids(ruleset_runner_ids(ruleset, runners), subject) do
+        {:ok, breakdown} -> breakdown
+        {:error, _} -> empty_breakdown()
+      end
+
+    Map.put(ruleset, :breakdown, breakdown)
+  end
+
+  defp ruleset_runner_ids(%{scope_type: :runner, scope_value: runner_id}, _runners),
+    do: [runner_id]
+
+  defp ruleset_runner_ids(%{scope_type: :group, scope_value: group}, runners),
+    do: runners |> Enum.filter(&(&1.group == group)) |> Enum.map(& &1.id)
+
+  defp ruleset_runner_ids(_ruleset, _runners), do: []
 
   defp empty_breakdown,
     do: Map.new(@tiers, &{&1, %{count: 0, examples: []}})
@@ -132,6 +159,8 @@ defmodule EmisarWeb.PoliciesLive do
       overrides: account.overrides,
       approval: account.approval,
       baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
+      # Filled in once a target is picked (set_target); no target = no catalog.
+      breakdown: empty_breakdown(),
       policy: nil,
       rules_errors: []
     }
@@ -192,7 +221,8 @@ defmodule EmisarWeb.PoliciesLive do
 
     {:noreply,
      update_editor(socket, uid, fn editor ->
-       %{editor | scope_type: scope_type, scope_value: scope_value}
+       editor = %{editor | scope_type: scope_type, scope_value: scope_value}
+       put_ruleset_breakdown(editor, socket.assigns.runners, socket.assigns.current_subject)
      end)}
   end
 
@@ -289,7 +319,10 @@ defmodule EmisarWeb.PoliciesLive do
     do: assign(socket, :account, build_account_editor(policy))
 
   defp replace_saved(socket, old_uid, policy) do
-    rebuilt = build_ruleset_editor(policy)
+    rebuilt =
+      policy
+      |> build_ruleset_editor()
+      |> put_ruleset_breakdown(socket.assigns.runners, socket.assigns.current_subject)
 
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
@@ -915,6 +948,8 @@ defmodule EmisarWeb.PoliciesLive do
       </header>
     <% end %>
 
+    <.target_risk_summary :if={@ruleset.scope_type} breakdown={@ruleset.breakdown} />
+
     <.policy_fields
       :if={@ruleset.scope_type}
       editor_id={@ruleset.uid}
@@ -930,6 +965,45 @@ defmodule EmisarWeb.PoliciesLive do
     <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
       Pick a runner or group above, then set its rules.
     </p>
+    """
+  end
+
+  attr :breakdown, :map, required: true
+
+  # A ruleset's OWN target catalog, bucketed by risk — a compact strip under the
+  # picker (naked, the same tier grammar as the page rail) so an operator sees
+  # what CRITICAL/HIGH mean for THIS runner/group before setting its tiers. An
+  # empty target (a group with no runners, or a runner advertising nothing yet)
+  # shows a quiet line instead of four zeros.
+  defp target_risk_summary(assigns) do
+    total = assigns.breakdown |> Map.values() |> Enum.map(& &1.count) |> Enum.sum()
+    assigns = assign(assigns, :total, total)
+
+    ~H"""
+    <div class="mt-4">
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+        This target's catalog by risk
+      </div>
+      <p :if={@total == 0} class="mt-1.5 text-xs text-zinc-500">
+        No actions advertised on this target yet.
+      </p>
+      <div :if={@total > 0} class="mt-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <div :for={tier <- ["critical", "high", "medium", "low"]}>
+          <% stat = @breakdown[tier] %>
+          <div class="flex items-center gap-1.5">
+            <.risk_pill risk={tier} />
+            <span class="text-xs text-zinc-400">{stat.count}</span>
+          </div>
+          <p
+            :if={stat.examples != []}
+            class="mt-1 truncate font-mono text-[10px] text-zinc-500"
+            title={Enum.join(stat.examples, ", ")}
+          >
+            {Enum.join(stat.examples, ", ")}
+          </p>
+        </div>
+      </div>
+    </div>
     """
   end
 

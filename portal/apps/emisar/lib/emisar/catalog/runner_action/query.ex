@@ -13,6 +13,9 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_runner_id(queryable, runner_id),
     do: where(queryable, [runner_actions: a], a.runner_id == ^runner_id)
 
+  def by_runner_ids(queryable, runner_ids) when is_list(runner_ids),
+    do: where(queryable, [runner_actions: a], a.runner_id in ^runner_ids)
+
   def by_action_id(queryable, action_id),
     do: where(queryable, [runner_actions: a], a.action_id == ^action_id)
 

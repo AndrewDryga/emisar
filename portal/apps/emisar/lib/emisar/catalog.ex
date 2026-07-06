@@ -625,19 +625,52 @@ defmodule Emisar.Catalog do
   """
   def action_risk_breakdown(%Subject{} = subject) do
     with {:ok, actions} <- list_all_actions_for_account(subject) do
-      ids_by_risk =
-        actions
-        |> most_severe_risk_by_action()
-        |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
-
-      breakdown =
-        Map.new([:low, :medium, :high, :critical], fn risk ->
-          ids = ids_by_risk |> Map.get(risk, []) |> Enum.sort()
-          {Atom.to_string(risk), %{count: length(ids), examples: Enum.take(ids, 3)}}
-        end)
-
-      {:ok, breakdown}
+      {:ok, risk_breakdown_of(actions)}
     end
+  end
+
+  @doc """
+  The same tier breakdown as `action_risk_breakdown/1`, but scoped to a set of
+  runners — the policy page uses it per targeted ruleset so the operator sees
+  what CRITICAL/HIGH mean for THAT runner or group (a group resolves to its
+  runners' ids at the call site). `view_catalog` gated + account-scoped
+  (`for_subject`, so a foreign runner id contributes nothing); an empty id list
+  is the empty breakdown, still gated. Returns `{:ok, %{"low" => %{count,
+  examples}, …}}`.
+  """
+  def risk_breakdown_for_runner_ids([], %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      {:ok, risk_breakdown_of([])}
+    end
+  end
+
+  def risk_breakdown_for_runner_ids(runner_ids, %Subject{} = subject) when is_list(runner_ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_runner_ids(runner_ids)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, risk_breakdown_of(actions)}
+    end
+  end
+
+  # Buckets already-fetched RunnerAction rows into the per-tier
+  # `%{count, examples}` map — most-severe risk wins when an action_id appears at
+  # mixed risk. All four tiers are present (0/[] for a tier no action carries).
+  defp risk_breakdown_of(actions) do
+    ids_by_risk =
+      actions
+      |> most_severe_risk_by_action()
+      |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
+
+    Map.new([:low, :medium, :high, :critical], fn risk ->
+      ids = ids_by_risk |> Map.get(risk, []) |> Enum.sort()
+      {Atom.to_string(risk), %{count: length(ids), examples: Enum.take(ids, 3)}}
+    end)
   end
 
   @doc """

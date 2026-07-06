@@ -1008,6 +1008,82 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "risk_breakdown_for_runner_ids/2" do
+    setup do
+      {account, subject} = account_with_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "scopes to the given runners, worst risk winning across them", %{
+      account: account,
+      subject: subject
+    } do
+      r1 = Fixtures.Runners.create_runner(account_id: account.id)
+      r2 = Fixtures.Runners.create_runner(account_id: account.id)
+      other = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          r1,
+          state_payload(
+            actions: [action("shared.op", risk: "low"), action("r1.only", risk: "high")]
+          )
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(r2, state_payload(actions: [action("shared.op", risk: "critical")]))
+
+      {:ok, _} =
+        Catalog.observe_state(
+          other,
+          state_payload(actions: [action("elsewhere.op", risk: "critical")])
+        )
+
+      # A "group" of r1 + r2: shared.op dedups to its worst (critical); the
+      # `other` runner's action is out of scope.
+      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([r1.id, r2.id], subject)
+      assert breakdown["critical"] == %{count: 1, examples: ["shared.op"]}
+      assert breakdown["high"] == %{count: 1, examples: ["r1.only"]}
+      assert breakdown["medium"] == %{count: 0, examples: []}
+      assert breakdown["low"] == %{count: 0, examples: []}
+
+      # One runner sees only its own rows — shared.op is low on r1 alone.
+      assert {:ok, r1_only} = Catalog.risk_breakdown_for_runner_ids([r1.id], subject)
+      assert r1_only["low"] == %{count: 1, examples: ["shared.op"]}
+      assert r1_only["high"] == %{count: 1, examples: ["r1.only"]}
+      assert r1_only["critical"] == %{count: 0, examples: []}
+    end
+
+    test "an empty runner-id list is the empty breakdown", %{subject: subject} do
+      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([], subject)
+
+      for tier <- ["low", "medium", "high", "critical"] do
+        assert breakdown[tier] == %{count: 0, examples: []}
+      end
+    end
+
+    test "is account-scoped — a foreign runner id contributes nothing", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("secret.op", risk: "critical")])
+        )
+
+      {_other_account, other_subject} = account_with_owner()
+      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([runner.id], other_subject)
+      assert breakdown["critical"] == %{count: 0, examples: []}
+    end
+
+    test "a subject without view_catalog is denied — empty and non-empty", %{account: account} do
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert {:error, :unauthorized} = Catalog.risk_breakdown_for_runner_ids(["r"], no_view)
+      assert {:error, :unauthorized} = Catalog.risk_breakdown_for_runner_ids([], no_view)
+    end
+  end
+
   describe "fetch_action_by_id/3" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
