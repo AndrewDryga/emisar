@@ -641,7 +641,12 @@ defmodule EmisarWeb.RunbookEditorLive do
             <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
               Publish
             </.button>
-            <.button variant={:secondary} type="button" phx-click="save" phx-disable-with="Saving...">
+            <.button
+              variant={:secondary}
+              type="button"
+              phx-click="save"
+              phx-disable-with="Saving..."
+            >
               Save draft
             </.button>
           <% else %>
@@ -887,8 +892,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         </div>
         <.button
           type="button"
-          variant={:ghost}
-          tone={:brand}
+          variant={:secondary}
           size={:sm}
           icon="hero-plus"
           phx-click="add_arg"
@@ -925,15 +929,18 @@ defmodule EmisarWeb.RunbookEditorLive do
                 class="text-xs"
               />
             </div>
-            <.icon_button
-              icon="hero-trash"
-              label="Remove arg"
+            <.button
+              type="button"
+              variant={:secondary}
               tone={:rose}
+              size={:sm}
+              icon="hero-trash"
               phx-click="remove_arg"
               phx-value-index={@index}
               phx-value-arg={j}
-              class="grid h-9 w-9 place-items-center"
-            />
+            >
+              <span class="sr-only">Remove arg</span>
+            </.button>
           </form>
         <% end %>
       </div>
