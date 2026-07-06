@@ -405,7 +405,14 @@ defmodule EmisarWeb.ProfileLive do
               placeholder="Ada Lovelace"
             />
             <:actions>
-              <.button variant={:secondary} phx-disable-with="Saving...">Save</.button>
+              <%!-- Emerald once edited, quiet outlined while clean — the Save
+                   button IS the unsaved-changes signal (house pattern). --%>
+              <.button
+                variant={if @profile_form.source.changes == %{}, do: :secondary, else: :primary}
+                phx-disable-with="Saving..."
+              >
+                Save
+              </.button>
             </:actions>
           </.simple_form>
         </section>
@@ -435,7 +442,12 @@ defmodule EmisarWeb.ProfileLive do
                   required
                 />
                 <:actions>
-                  <.button variant={:secondary} phx-disable-with="Checking...">Update email</.button>
+                  <.button
+                    variant={if @email_form.source.changes == %{}, do: :secondary, else: :primary}
+                    phx-disable-with="Checking..."
+                  >
+                    Update email
+                  </.button>
                 </:actions>
               </.simple_form>
             <% step -> %>

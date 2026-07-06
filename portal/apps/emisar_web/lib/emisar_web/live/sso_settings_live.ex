@@ -1057,7 +1057,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                 editing?
               />
               <:actions>
-                <.button phx-disable-with="Saving...">Save changes</.button>
+                <%!-- Emerald once edited, quiet outlined while clean (house
+                     pattern — the button is the unsaved-changes signal). --%>
+                <.button
+                  variant={if @edit_form.source.changes == %{}, do: :secondary, else: :primary}
+                  phx-disable-with="Saving..."
+                >
+                  Save changes
+                </.button>
                 <.button
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
                   variant={:ghost}
