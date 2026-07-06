@@ -925,7 +925,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:team}
-      width={:settings}
+      width={:table}
     >
       <:title>
         <%!-- The detail view titles itself with the connection, like every
@@ -980,7 +980,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- Adding a connection is its own view (/settings/sso/new): a bare
              sub-header over sibling field islands (Provider · OIDC · …), never
              one giant card. --%>
-        <div :if={@live_action == :new} class="space-y-5">
+        <div :if={@live_action == :new} class="max-w-3xl space-y-5">
           <%!-- The shell title carries the job + the ONE back affordance; no
                second in-body title. --%>
           <p class="max-w-prose text-sm leading-relaxed text-zinc-500">
@@ -1023,7 +1023,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- Editing is its own view (/settings/sso/:id/edit), like /new — a bare
              sub-header over the same sibling field islands, never an inline
              collapsed block and never one giant card. --%>
-        <div :if={@live_action == :edit} class="space-y-5">
+        <div :if={@live_action == :edit} class="max-w-3xl space-y-5">
           <div :for={provider <- @providers} class="space-y-5">
             <div>
               <.link

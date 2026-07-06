@@ -536,6 +536,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runners_by_id, %{})
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
+        |> assign(:providers, [])
         |> assign(:require_sso_available?, false)
         |> assign(:enabled_sso_provider_count, 0)
         |> assign(:load_error?, true)
@@ -555,19 +556,25 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # SSO enforcement state for the Single sign-on panel: the number of enabled
-  # identity providers (drives the count / "Not configured" status), and whether
-  # requiring SSO is even possible (≥1 enabled provider — guards the lockout).
+  # SSO state for the Single sign-on rail: the providers themselves (listed
+  # right there — Subject-gated, so a non-SSO-admin sees the enforcement status
+  # but not the connections), the enabled count (drives the status / lockout
+  # guard, read ungated so every member sees the same stance), and whether
+  # requiring SSO is even possible (≥1 enabled provider).
   defp assign_sso_state(socket) do
     count = length(SSO.list_enabled_providers_for_account(socket.assigns.current_account.id))
 
+    providers =
+      case SSO.list_providers_for_account(socket.assigns.current_subject) do
+        {:ok, providers, _meta} -> providers
+        _ -> []
+      end
+
     socket
+    |> assign(:providers, providers)
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
   end
-
-  defp sso_provider_label(1), do: "1 provider"
-  defp sso_provider_label(count), do: "#{count} providers"
 
   # The set of member emails on the deliverability suppression list — drives
   # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
@@ -660,7 +667,7 @@ defmodule EmisarWeb.TeamLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:team}
-      width={:settings}
+      width={:table}
     >
       <:title>
         <%= if @live_action == :new do %>
@@ -789,396 +796,432 @@ defmodule EmisarWeb.TeamLive do
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
-      <div :if={@live_action == :index and not @loading?} class="space-y-6">
-        <%!-- Security posture — one slim row per control (2FA + SSO):
-             title · live fact · control on the right. ABOVE the roster (the
-             founder's call): the account's security stance is the first thing
-             an admin should meet on this page. Explainer prose lives in each
-             toggle's confirm dialog. --%>
-        <section>
-          <.section_header title="Security" />
-          <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-zinc-100">Two-factor authentication</div>
-                <%!-- ONE line, one severity: the count wears amber only while
-                     someone is unenrolled (the dashboard pillar's grammar).
-                     Full enrollment renders silence — no green "all good". --%>
-                <% n = @mfa_stats.total - @mfa_stats.enrolled %>
-                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span class="flex items-center gap-1.5 tabular-nums">
-                    <.status_dot :if={n > 0} tone={:amber} size={:sm} />
-                    <span class={if n > 0, do: "text-amber-300", else: "text-zinc-400"}>
-                      {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
-                    </span>
-                  </span>
-                  <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
-                </div>
-              </div>
-              <%= cond do %>
-                <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <.switch
-                    on={@current_account.settings.require_mfa}
-                    on_label="Stop enforcing 2FA"
-                    off_label="Enforce 2FA"
-                    phx-click="toggle_require_mfa"
-                    aria-label="Enforce 2FA account-wide"
-                    data-confirm={
-                      if @current_account.settings.require_mfa,
-                        do: "Stop enforcing 2FA account-wide?",
-                        else:
-                          "Enforce 2FA for everyone on this account? #{@mfa_stats.total - @mfa_stats.enrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be funneled to set it up before they can use the account again. You can't enable this until you've enrolled yourself."
-                    }
-                  />
-                <% true -> %>
-                  <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
-              <% end %>
-            </li>
-
-            <%!-- SSO can't be required without an enabled connection (that would
-                 lock everyone out), so the control becomes the set-up link. --%>
-            <li class="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-zinc-100">Single sign-on</div>
-                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <%= cond do %>
-                    <% @current_account.settings.require_sso -> %>
-                      <span class="text-zinc-400">
-                        Members sign in through your identity provider
-                      </span>
-                      <.chip tone={:brand}>Required</.chip>
-                    <% @enabled_sso_provider_count > 0 -> %>
-                      <.chip>{sso_provider_label(@enabled_sso_provider_count)}</.chip>
-                    <% true -> %>
-                      <.chip>not configured</.chip>
-                  <% end %>
-                  <%!-- SSO's ONE console door — its nav item is gone (a
-                       rare-touch, admin-only surface lives behind its owning
-                       page, like enrollment keys behind Runners). With no provider
-                       yet, the right-side "Set up SSO" control IS the door —
-                       two links to the same place read as a glitch. --%>
-                  <.link
-                    :if={
-                      @enabled_sso_provider_count > 0 and
-                        Accounts.subject_can_manage_account_security?(@current_subject)
-                    }
-                    navigate={~p"/app/#{@current_account}/settings/sso"}
-                    class="group inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    Manage providers <.cta_arrow />
-                  </.link>
-                </div>
-              </div>
-              <%= cond do %>
-                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="shrink-0 text-[11px] text-zinc-600">Owner/admin only</span>
-                <% not @require_sso_available? and not @current_account.settings.require_sso -> %>
-                  <.link
-                    navigate={~p"/app/#{@current_account}/settings/sso"}
-                    class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    {if SSO.subject_can_configure_sso?(@current_subject),
-                      do: "Set up SSO →",
-                      else: "Set up SSO · Team →"}
-                  </.link>
-                <% true -> %>
-                  <.switch
-                    on={@current_account.settings.require_sso}
-                    on_label="Stop requiring SSO"
-                    off_label="Require SSO"
-                    phx-click="toggle_require_sso"
-                    aria-label="Require single sign-on account-wide"
-                    data-confirm={
-                      if @current_account.settings.require_sso do
-                        "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
-                      else
-                        "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
-                      end
-                    }
-                  />
-              <% end %>
-            </li>
-          </ul>
-        </section>
-
-        <%!-- Member list — naked hairline rows; the per-row `<details>`
+      <%!-- :table width so the roster leads the main column and the Security
+           rail sits beside it (below, on a phone) — the same main+aside grammar
+           as Billing. Security moved off the top band into that rail: the stance
+           stays visible while the members get the room. --%>
+      <div
+        :if={@live_action == :index and not @loading?}
+        class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start"
+      >
+        <div class="lg:col-span-3">
+          <%!-- Member list — naked hairline rows; the per-row `<details>`
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
              below the top-line content, keeping the natural flow per row. --%>
-        <.section_header title="Members" />
+          <.section_header title="Members" />
 
-        <LiveTable.live_table
-          layout={:cards}
-          id="members"
-          path={~p"/app/#{@current_account}/settings/team"}
-          rows={@memberships}
-          metadata={@metadata}
-          filter_params={@filter_params}
-          wrapper_class="divide-y divide-zinc-800/70"
-        >
-          <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
+          <LiveTable.live_table
+            layout={:cards}
+            id="members"
+            path={~p"/app/#{@current_account}/settings/team"}
+            rows={@memberships}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            wrapper_class="divide-y divide-zinc-800/70"
+          >
+            <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
                avatar stays — it's the ONE identity disc, not decoration. --%>
-          <:item :let={membership}>
-            <li class="py-4">
-              <%!-- On a phone the role/Actions controls stack BELOW the
+            <:item :let={membership}>
+              <li class="py-4">
+                <%!-- On a phone the role/Actions controls stack BELOW the
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <div class={[
-                  "flex min-w-0 flex-1 items-start gap-4",
-                  Accounts.Membership.disabled?(membership) && "opacity-60"
-                ]}>
-                  <.avatar name={
-                    (membership.user && (membership.user.full_name || membership.user.email)) ||
-                      "?"
-                  } />
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div class={[
+                    "flex min-w-0 flex-1 items-start gap-4",
+                    Accounts.Membership.disabled?(membership) && "opacity-60"
+                  ]}>
+                    <.avatar name={
+                      (membership.user && (membership.user.full_name || membership.user.email)) ||
+                        "?"
+                    } />
 
-                  <div class="min-w-0 flex-1">
-                    <%!-- flex-wrap: the member's name is their identity — on a
+                    <div class="min-w-0 flex-1">
+                      <%!-- flex-wrap: the member's name is their identity — on a
                          phone the status chips wrap to the next line instead of
                          crushing the name to "Theo A…". --%>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="truncate font-medium text-zinc-100">
-                        {(membership.user && (membership.user.full_name || membership.user.email)) ||
-                          "(unknown)"}
-                      </span>
-                      <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
-                        Suspended
-                      </.chip>
-                      <%!-- Unconfirmed = signed up but never clicked the
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="truncate font-medium text-zinc-100">
+                          {(membership.user && (membership.user.full_name || membership.user.email)) ||
+                            "(unknown)"}
+                        </span>
+                        <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
+                          Suspended
+                        </.chip>
+                        <%!-- Unconfirmed = signed up but never clicked the
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
-                      <.chip
-                        :if={membership.user && is_nil(membership.user.confirmed_at)}
-                        tone={:amber}
-                        title="This user signed up but hasn't confirmed their email."
-                      >
-                        Unconfirmed
-                      </.chip>
-                      <%!-- Email on the deliverability suppression list (a hard
+                        <.chip
+                          :if={membership.user && is_nil(membership.user.confirmed_at)}
+                          tone={:amber}
+                          title="This user signed up but hasn't confirmed their email."
+                        >
+                          Unconfirmed
+                        </.chip>
+                        <%!-- Email on the deliverability suppression list (a hard
                          bounce or spam complaint) — invites and notifications
                          to this address are silently dropped, so it's the real
                          answer to "why didn't they get the invite?". We expose
                          no un-suppress control; clearing it is a support action
                          (per the product call), hence the tooltip copy. --%>
-                      <.chip
-                        :if={
-                          membership.user && MapSet.member?(@suppressed_emails, membership.user.email)
-                        }
-                        tone={:rose}
-                        title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
-                      >
-                        Email bouncing
-                      </.chip>
-                      <%!-- MFA status. Three states worth distinguishing:
+                        <.chip
+                          :if={
+                            membership.user &&
+                              MapSet.member?(@suppressed_emails, membership.user.email)
+                          }
+                          tone={:rose}
+                          title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
+                        >
+                          Email bouncing
+                        </.chip>
+                        <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet brand check, the happy
                          default; (2) not enrolled, account doesn't
                          enforce — neutral grey "No 2FA" hint; (3) not
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
-                      <.mfa_badge
-                        user={membership.user}
-                        require_mfa?={@current_account.settings.require_mfa}
-                      />
-                      <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
+                        <.mfa_badge
+                          user={membership.user}
+                          require_mfa?={@current_account.settings.require_mfa}
+                        />
+                        <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
                          it, so an admin can see where this member came from and
                          jump to the provider. Renders nothing for a manually-added
                          member (or when the viewer can't read SSO). --%>
-                      <.sync_badge
-                        identity={Map.get(@identity_by_user_id, membership.user_id)}
-                        account={@current_account}
-                      />
-                      <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
-                        You
-                      </.chip>
-                    </div>
-                    <%!-- Both timestamps render through <.local_time> (viewer-local,
+                        <.sync_badge
+                          identity={Map.get(@identity_by_user_id, membership.user_id)}
+                          account={@current_account}
+                        />
+                        <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
+                          You
+                        </.chip>
+                      </div>
+                      <%!-- Both timestamps render through <.local_time> (viewer-local,
                        hoverable, live); {" "} guards the space the formatter would
                        otherwise let HEEx trim before each component tag. --%>
-                    <%!-- Wraps below sm — single-line truncation ate the
+                      <%!-- Wraps below sm — single-line truncation ate the
                          sign-in-recency tail on every long email. --%>
-                    <div class="text-xs text-zinc-500 sm:truncate">
-                      {membership.user && membership.user.email} · joined{" "}<.local_time
-                        value={membership.inserted_at}
-                        mode={:relative}
-                      /> ·{" "}<.sign_in_status user={membership.user} />
-                    </div>
-                    <%!-- Per-user runner ACLs (#238): show what runners
+                      <div class="text-xs text-zinc-500 sm:truncate">
+                        {membership.user && membership.user.email} · joined{" "}<.local_time
+                          value={membership.inserted_at}
+                          mode={:relative}
+                        /> ·{" "}<.sign_in_status user={membership.user} />
+                      </div>
+                      <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
                        Group/runner scopes appear as inline chips. --%>
-                    <%!-- All-runners is the DEFAULT — render nothing (default ≠
+                      <%!-- All-runners is the DEFAULT — render nothing (default ≠
                        signal); only a narrowed scope earns chips. --%>
-                    <div
-                      :if={Map.get(@scopes_by_membership, membership.id, []) != []}
-                      class="mt-1 flex flex-wrap items-center gap-1"
-                    >
-                      <span class="text-[10px] uppercase tracking-wider text-zinc-400">
-                        scope:
-                      </span>
-                      <.chip
-                        :for={scope <- Map.get(@scopes_by_membership, membership.id, [])}
-                        tone={:neutral}
+                      <div
+                        :if={Map.get(@scopes_by_membership, membership.id, []) != []}
+                        class="mt-1 flex flex-wrap items-center gap-1"
                       >
-                        {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
-                      </.chip>
+                        <span class="text-[10px] uppercase tracking-wider text-zinc-400">
+                          scope:
+                        </span>
+                        <.chip
+                          :for={scope <- Map.get(@scopes_by_membership, membership.id, [])}
+                          tone={:neutral}
+                        >
+                          {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
+                        </.chip>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                  <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
-                  <%= cond do %>
-                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed?(identity) -> %>
-                      <%!-- Synced role: the IdP owns it (a group→role mapping, or the
+                  <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
+                    <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
+                    <%= cond do %>
+                      <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed?(identity) -> %>
+                        <%!-- Synced role: the IdP owns it (a group→role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
                          change actually sticks — the identity provider. --%>
-                      <.tooltip
-                        class="shrink-0"
-                        text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
-                      >
-                        <.chip icon="hero-lock-closed-mini">
-                          {Emisar.Auth.Role.label(membership.role)}
-                        </.chip>
-                      </.tooltip>
-                    <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
-                      <%!-- A role change is a privilege grant — a dropdown (same skin as
+                        <.tooltip
+                          class="shrink-0"
+                          text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
+                        >
+                          <.chip icon="hero-lock-closed-mini">
+                            {Emisar.Auth.Role.label(membership.role)}
+                          </.chip>
+                        </.tooltip>
+                      <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
+                        <%!-- A role change is a privilege grant — a dropdown (same skin as
                          the Actions menu beside it) whose items each carry their own
                          confirm, so the dialog fires only when you pick a DIFFERENT role,
                          never just on opening the control. The handler still authorizes
                          (IL-15). Suspension does NOT lock this — editability tracks
                          permission, not access-state. --%>
-                      <.dropdown
-                        class="inline-block shrink-0 text-left"
-                        summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                        panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
-                      >
-                        <:trigger>
-                          {Emisar.Auth.Role.label(membership.role)}
-                          <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                        </:trigger>
-                        <.menu_item
-                          :for={role <- @roles}
-                          :if={role != to_string(membership.role)}
-                          phx-click="change_role"
-                          phx-value-membership_id={membership.id}
-                          phx-value-role={role}
-                          data-confirm={
-                            role_change_confirm(member_name(membership) || "this member", role)
-                          }
+                        <.dropdown
+                          class="inline-block shrink-0 text-left"
+                          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                          panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                         >
-                          {Emisar.Auth.Role.label(role)}
-                        </.menu_item>
-                      </.dropdown>
-                    <% true -> %>
-                      <.chip class="shrink-0">
-                        {Emisar.Auth.Role.label(membership.role)}
-                      </.chip>
-                  <% end %>
+                          <:trigger>
+                            {Emisar.Auth.Role.label(membership.role)}
+                            <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                          </:trigger>
+                          <.menu_item
+                            :for={role <- @roles}
+                            :if={role != to_string(membership.role)}
+                            phx-click="change_role"
+                            phx-value-membership_id={membership.id}
+                            phx-value-role={role}
+                            data-confirm={
+                              role_change_confirm(member_name(membership) || "this member", role)
+                            }
+                          >
+                            {Emisar.Auth.Role.label(role)}
+                          </.menu_item>
+                        </.dropdown>
+                      <% true -> %>
+                        <.chip class="shrink-0">
+                          {Emisar.Auth.Role.label(membership.role)}
+                        </.chip>
+                    <% end %>
 
-                  <.member_actions
-                    membership={membership}
-                    current_user_id={@current_user.id}
-                    can_manage?={can_manage?(assigns)}
-                    current_account={@current_account}
-                    typed={@typed}
-                    name_locked?={directory_managed?(identity)}
-                  />
+                    <.member_actions
+                      membership={membership}
+                      current_user_id={@current_user.id}
+                      can_manage?={can_manage?(assigns)}
+                      current_account={@current_account}
+                      typed={@typed}
+                      name_locked?={directory_managed?(identity)}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
+                <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
                    are naked — the fields are the controls) — indented to the
                    row's content column and bounded by the row's own hairline. --%>
-              <div :if={@editing_id == membership.id and @edit_form} class="mt-4 max-w-xl sm:pl-14">
-                <.simple_form
-                  for={@edit_form}
-                  id={"edit-form-#{membership.id}"}
-                  phx-submit="save_edit"
-                  class="space-y-3"
-                >
-                  <input type="hidden" name="membership_id" value={membership.id} />
-                  <.input field={@edit_form[:full_name]} type="text" label="Full name" />
-                  <p class="text-xs text-zinc-500">
-                    Only display name can be changed from here. Members
-                    update their own sign-in email on their Profile page.
-                  </p>
-                  <:actions>
-                    <.button phx-disable-with="Saving...">Save</.button>
-                    <.button variant={:ghost} type="button" phx-click="cancel_edit">
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
-              </div>
+                <div :if={@editing_id == membership.id and @edit_form} class="mt-4 max-w-xl sm:pl-14">
+                  <.simple_form
+                    for={@edit_form}
+                    id={"edit-form-#{membership.id}"}
+                    phx-submit="save_edit"
+                    class="space-y-3"
+                  >
+                    <input type="hidden" name="membership_id" value={membership.id} />
+                    <.input field={@edit_form[:full_name]} type="text" label="Full name" />
+                    <p class="text-xs text-zinc-500">
+                      Only display name can be changed from here. Members
+                      update their own sign-in email on their Profile page.
+                    </p>
+                    <:actions>
+                      <.button phx-disable-with="Saving...">Save</.button>
+                      <.button variant={:ghost} type="button" phx-click="cancel_edit">
+                        Cancel
+                      </.button>
+                    </:actions>
+                  </.simple_form>
+                </div>
 
-              <%!-- Inline scope editor — appears under the row when "Set runner
+                <%!-- Inline scope editor — appears under the row when "Set runner
                    scope" is clicked, NAKED like the edit form above (the
                    runner-scope tree is its own bordered control). ONE grouped
                    multi-select (groups with their runners nested beneath);
                    selecting a group disables its runners (already covered).
                    Empty selection = "all runners" default. --%>
-              <div :if={@scope_editing_id == membership.id} class="mt-4 max-w-xl sm:pl-14">
-                <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
-                  <input type="hidden" name="membership_id" value={membership.id} />
-                  <p class="text-xs text-zinc-400">
-                    Restrict this member to specific runner groups or individual runners. Selecting a
-                    group covers every runner in it. Leave everything unselected to grant access to
-                    <strong>all runners</strong>
-                    in the account.
-                  </p>
+                <div :if={@scope_editing_id == membership.id} class="mt-4 max-w-xl sm:pl-14">
+                  <form phx-change="scope_changed" phx-submit="save_scopes" class="space-y-4">
+                    <input type="hidden" name="membership_id" value={membership.id} />
+                    <p class="text-xs text-zinc-400">
+                      Restrict this member to specific runner groups or individual runners. Selecting a
+                      group covers every runner in it. Leave everything unselected to grant access to
+                      <strong>all runners</strong>
+                      in the account.
+                    </p>
 
-                  <.runner_scope_select
-                    name="scope[]"
-                    label="Runner scope"
-                    runners={@runners}
-                    selected={@scope_draft}
-                  />
+                    <.runner_scope_select
+                      name="scope[]"
+                      label="Runner scope"
+                      runners={@runners}
+                      selected={@scope_draft}
+                    />
 
-                  <div class="flex items-center gap-3">
-                    <.button phx-disable-with="Saving...">Save scope</.button>
-                    <.button variant={:ghost} type="button" phx-click="cancel_scope_edit">
-                      Cancel
-                    </.button>
-                  </div>
-                </form>
-              </div>
-            </li>
-          </:item>
-          <:empty>
-            <.empty_state
-              :if={@load_error?}
-              tone={:danger}
-              icon="hero-exclamation-triangle"
-              title="Couldn't load your team"
-            >
-              This is a load error, not an empty team — you're always a member of your own.
-              Refresh the page; if it persists, your access to this account may have changed.
-            </.empty_state>
-            <%!-- The non-error empty is defensive — the current user is always a
+                    <div class="flex items-center gap-3">
+                      <.button phx-disable-with="Saving...">Save scope</.button>
+                      <.button variant={:ghost} type="button" phx-click="cancel_scope_edit">
+                        Cancel
+                      </.button>
+                    </div>
+                  </form>
+                </div>
+              </li>
+            </:item>
+            <:empty>
+              <.empty_state
+                :if={@load_error?}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load your team"
+              >
+                This is a load error, not an empty team — you're always a member of your own.
+                Refresh the page; if it persists, your access to this account may have changed.
+              </.empty_state>
+              <%!-- The non-error empty is defensive — the current user is always a
                  member of the account they're viewing, so an entirely empty list
                  shouldn't happen. Keep meaningful copy anyway so it can never
                  accidentally land as a mystery blank panel. --%>
-            <.empty_state
-              :if={not @load_error?}
-              icon="hero-users"
-              title="No team members yet."
-            >
-              Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
-              <:cta
-                :if={can_manage?(assigns)}
-                navigate={~p"/app/#{@current_account}/settings/team/invite"}
+              <.empty_state
+                :if={not @load_error?}
+                icon="hero-users"
+                title="No team members yet."
               >
-                Invite member
-              </:cta>
-            </.empty_state>
-          </:empty>
-        </LiveTable.live_table>
+                Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
+                <:cta
+                  :if={can_manage?(assigns)}
+                  navigate={~p"/app/#{@current_account}/settings/team/invite"}
+                >
+                  Invite member
+                </:cta>
+              </.empty_state>
+            </:empty>
+          </LiveTable.live_table>
 
-        <p :if={not can_manage?(assigns)} class="text-xs text-zinc-500">
-          Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
-        </p>
+          <p :if={not can_manage?(assigns)} class="mt-6 text-xs text-zinc-500">
+            Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
+          </p>
+        </div>
+
+        <%!-- ===== Security rail ===== 2FA enforcement, then the SSO
+             connections listed inline (few of them) with Add + Require. --%>
+        <aside class="space-y-8 lg:col-span-1">
+          <div>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Two-factor
+            </h3>
+            <% unenrolled = @mfa_stats.total - @mfa_stats.enrolled %>
+            <%!-- ONE line, one severity: the count wears amber only while someone
+                 is unenrolled; full enrollment renders silence, no green box. --%>
+            <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <span class="flex items-center gap-1.5 tabular-nums">
+                <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
+                <span class={if unenrolled > 0, do: "text-amber-300", else: "text-zinc-300"}>
+                  {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
+                </span>
+              </span>
+              <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
+            </p>
+            <div :if={Accounts.subject_can_manage_account_security?(@current_subject)} class="mt-3">
+              <.switch
+                on={@current_account.settings.require_mfa}
+                on_label="Stop enforcing 2FA"
+                off_label="Enforce 2FA"
+                phx-click="toggle_require_mfa"
+                aria-label="Enforce 2FA account-wide"
+                data-confirm={
+                  if @current_account.settings.require_mfa,
+                    do: "Stop enforcing 2FA account-wide?",
+                    else:
+                      "Enforce 2FA for everyone on this account? #{unenrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be funneled to set it up before they can use the account again. You can't enable this until you've enrolled yourself."
+                }
+              />
+            </div>
+            <p
+              :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
+              class="mt-3 text-[11px] text-zinc-600"
+            >
+              Owner/admin only
+            </p>
+          </div>
+
+          <div>
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Single sign-on
+              </h3>
+              <%!-- The full SSO surface (sign-in link, directory sync, group→role)
+                   lives on its own page; the rail is the quick view + Add. --%>
+              <.link
+                :if={@enabled_sso_provider_count > 0}
+                navigate={~p"/app/#{@current_account}/settings/sso"}
+                class="text-[11px] font-medium text-zinc-500 hover:text-zinc-300"
+              >
+                Settings
+              </.link>
+            </div>
+
+            <%!-- The connections themselves — few enough to list here (a brand dot
+                 is enabled, amber is disabled); each links to its detail. --%>
+            <ul :if={@providers != []} class="mt-3 space-y-0.5">
+              <li :for={provider <- @providers}>
+                <.link
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                  class="group -mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
+                >
+                  <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
+                  <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{provider.name}</span>
+                  <.icon
+                    name="hero-chevron-right"
+                    class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-zinc-400"
+                  />
+                </.link>
+              </li>
+            </ul>
+
+            <p
+              :if={@providers == [] and @enabled_sso_provider_count == 0}
+              class="mt-3 text-sm leading-relaxed text-zinc-500"
+            >
+              Not configured — members sign in with a magic link.
+            </p>
+
+            <%!-- The rail is SSO's console door (no nav item of its own): Add a
+                 provider once the plan allows it, else the plan-gated setup link
+                 for an admin who'd need to upgrade first. --%>
+            <%= cond do %>
+              <% SSO.subject_can_configure_sso?(@current_subject) -> %>
+                <.button
+                  navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                  variant={:secondary}
+                  size={:sm}
+                  icon="hero-plus"
+                  class="mt-3 w-full"
+                >
+                  Add provider
+                </.button>
+              <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <.link
+                  navigate={~p"/app/#{@current_account}/settings/sso"}
+                  class="group mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Set up SSO · Team <.cta_arrow />
+                </.link>
+              <% true -> %>
+            <% end %>
+
+            <%!-- Require SSO — only once an enabled connection exists; requiring it
+                 with none would lock everyone out (the handler guards it too). --%>
+            <div
+              :if={
+                @current_account.settings.require_sso or
+                  (Accounts.subject_can_manage_account_security?(@current_subject) and
+                     @require_sso_available?)
+              }
+              class="mt-4 flex flex-wrap items-center gap-2"
+            >
+              <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
+              <.switch
+                :if={Accounts.subject_can_manage_account_security?(@current_subject)}
+                on={@current_account.settings.require_sso}
+                on_label="Stop requiring SSO"
+                off_label="Require SSO"
+                phx-click="toggle_require_sso"
+                aria-label="Require single sign-on account-wide"
+                data-confirm={
+                  if @current_account.settings.require_sso do
+                    "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
+                  else
+                    "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
+                  end
+                }
+              />
+            </div>
+          </div>
+        </aside>
       </div>
     </.dashboard_shell>
     """

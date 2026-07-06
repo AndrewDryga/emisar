@@ -20,21 +20,22 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Only owners and admins can invite"
     end
 
-    test "the Security panel is SSO's one console door (its nav item is gone)", %{conn: conn} do
+    test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Free plan, no provider: ONE door — the right-side setup link, honest
-      # about the plan gate ("Manage providers" appears only once a provider
-      # exists).
+      # Free plan, no provider: ONE door — the plan-gated setup link into the SSO
+      # page (which carries the upsell). No provider yet, so nothing to list.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Set up SSO · Team"
       assert html =~ ~p"/app/#{account}/settings/sso"
-      refute html =~ "Manage providers"
 
-      # With the plan (still no provider), setup reads as plain setup.
+      # With the plan (still no provider), the door becomes the real Add button
+      # into /new — the plan gate is cleared.
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Set up SSO →"
+      assert html =~ "Add provider"
+      assert html =~ ~p"/app/#{account}/settings/sso/new"
+      refute html =~ "Set up SSO · Team"
     end
   end
 
@@ -1037,7 +1038,7 @@ defmodule EmisarWeb.TeamLiveTest do
       send(lv.pid, {:some_unrelated_event, :payload})
 
       # The process survived and still renders — render/1 raises if the socket died.
-      assert render(lv) =~ "Two-factor authentication"
+      assert render(lv) =~ "Two-factor"
     end
 
     test "the disconnected (dead) render shows the loading state, never the roster", %{conn: conn} do
