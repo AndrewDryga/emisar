@@ -905,7 +905,10 @@ defmodule EmisarWeb.RunbookEditorLive do
            at half so the row reads as a compact field, not a stretched bar. --%>
       <div :if={@args != []} class="mt-2 space-y-1.5 sm:w-1/2">
         <%= for {arg, j} <- Enum.with_index(@args) do %>
-          <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5">
+          <%!-- items-end (not center): the compact inputs carry a mt-1 that sits
+               them at the BOTTOM of their cell, so bottom-aligning the h-7 remove
+               button lines it up with the input boxes exactly. --%>
+          <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-end gap-1.5">
             <input type="hidden" name="index" value={@index} />
             <input type="hidden" name="arg" value={j} />
             <%!-- min-w-0 rides the grid-item wrapper (not <.input>'s inner
@@ -929,17 +932,20 @@ defmodule EmisarWeb.RunbookEditorLive do
                 class="text-xs"
               />
             </div>
-            <%!-- size={:md} matches the compact inputs' 32px box so the button
-                 lines up with the key/value row (sm left it short + floating). --%>
+            <%!-- The key/value inputs are text-xs — a 28px box (h-7). Pin the
+                 button to that exact height so it lines up in the items-center
+                 row; an icon-only button's natural height came out a couple px
+                 off and read as misaligned. --%>
             <.button
               type="button"
               variant={:secondary}
               tone={:rose}
-              size={:md}
+              size={:sm}
               icon="hero-trash"
               phx-click="remove_arg"
               phx-value-index={@index}
               phx-value-arg={j}
+              class="h-7"
             >
               <span class="sr-only">Remove arg</span>
             </.button>
