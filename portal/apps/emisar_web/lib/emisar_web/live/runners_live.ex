@@ -225,9 +225,11 @@ defmodule EmisarWeb.RunnersLive do
         <% true -> %>
           <%!-- :table width leaves the fleet list too narrow-of-content and wide
                of page — pair it with a docs rail (the main+aside grammar): the
-               fleet leads, a plain-terms "what's a runner" teaches beside it. --%>
-          <div class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start">
-            <div class="lg:col-span-3">
+               fleet leads, a plain-terms "what's a runner" teaches beside it. The
+               rail is a FIXED 22rem track that only splits off at xl (so its prose
+               never squeezes to 3 words a line); below xl it stacks full-width. --%>
+          <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+            <div class="min-w-0">
               <%!-- Fleet-dark escalation: runners exist but none are reachable, so
                    nothing can be dispatched right now. Escalate the quiet band into a
                    loud banner (the dashboard's all-offline notice, on the fleet page). --%>

@@ -3006,7 +3006,8 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   A short teaching rail for a list page — "what is this, in plain terms" beside
   the list (the aside of a main+aside grid), ended with a link into the full
-  docs. It fills the width a compact table leaves and teaches customers in it.
+  docs. The caller gives it a fixed 22rem track that only splits off at xl, so
+  its prose never squeezes; below xl it stacks full-width under the list.
 
       <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
         <p>A runner is the small emisar agent on one of your hosts…</p>
@@ -3018,8 +3019,11 @@ defmodule EmisarWeb.CoreComponents do
   slot :inner_block, required: true
 
   def docs_rail(assigns) do
+    # No column span — the caller's grid gives this a FIXED 22rem track (never a
+    # squeezed fraction), and the whole thing stacks full-width below the list on
+    # anything narrower than the split. Nothing is hidden; it just reflows.
     ~H"""
-    <aside class="lg:col-span-1">
+    <aside>
       <h3 class="text-sm font-semibold text-zinc-200">{@title}</h3>
       <div class="mt-3 space-y-3 text-sm leading-relaxed text-zinc-400">
         {render_slot(@inner_block)}

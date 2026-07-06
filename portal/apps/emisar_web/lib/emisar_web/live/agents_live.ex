@@ -831,12 +831,14 @@ defmodule EmisarWeb.AgentsLive do
             not (@show_connect_inline? and @api_keys == [] and
                    not LiveTable.has_active_filters?(@filter_params, @filters))
         }
-        class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start"
+        class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
       >
         <%!-- :table leaves the agents list narrow-of-content and wide-of-page;
              pair it with a docs rail (main+aside) — the list leads, a plain-terms
-             "what's an LLM agent" teaches beside it. --%>
-        <div class="lg:col-span-3">
+             "what's an LLM agent" teaches beside it. The rail is a FIXED 22rem
+             track that only splits off at xl (its prose never squeezes); below
+             xl it stacks full-width. --%>
+        <div class="min-w-0">
           <LiveTable.live_table
             layout={:cards}
             id="agents"
