@@ -3049,56 +3049,46 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Upsell marker for a plan-gated feature in the docs: names the plan(s) that
-  include it and links to pricing, so a reader on a lower plan sees at a glance
-  that the feature isn't on theirs (and where to get it). `tier: :team` →
-  available on Team and Enterprise; `tier: :enterprise` → Enterprise only.
+  Plan-gate note for a documented feature: a quiet trailing sentence — "Only
+  available on <tier>" — that goes at the END of the feature's paragraph (not a
+  badge by the heading), the tier name linking to pricing so a reader on a lower
+  plan sees it's not on theirs. `tier: :team` → Team and Enterprise;
+  `tier: :enterprise` → Enterprise only.
 
-  Pass `link={false}` for the non-linking `<span>` variant when the badge sits
-  INSIDE another anchor (a docs index card), since anchors can't nest.
+  Pass `link={false}` for the compact, non-linking tag used INSIDE another anchor
+  (a docs-index card) — anchors can't nest.
 
-      <h2>Directory sync <.plan_badge tier={:enterprise} /></h2>
+      <p>… what the feature does. <.plan_note tier={:enterprise} /></p>
   """
   attr :tier, :atom, required: true, values: [:team, :enterprise]
   attr :link, :boolean, default: true
   attr :class, :string, default: nil
 
-  def plan_badge(%{link: false} = assigns) do
+  def plan_note(%{link: false} = assigns) do
     ~H"""
-    <span title={plan_badge_title(@tier)} class={[plan_badge_class(), @class]}>
-      {plan_badge_label(@tier)}
+    <span title={plan_note_title(@tier)} class={["text-xs font-medium text-amber-400/70", @class]}>
+      {plan_note_label(@tier)}
     </span>
     """
   end
 
-  def plan_badge(assigns) do
+  def plan_note(assigns) do
     ~H"""
-    <.link
-      href={~p"/pricing"}
-      title={plan_badge_title(@tier)}
-      class={[
-        plan_badge_class(),
-        "underline decoration-amber-400/25 underline-offset-2 hover:text-amber-300 hover:decoration-amber-400/60",
-        @class
-      ]}
-    >
-      {plan_badge_label(@tier)}
-    </.link>
+    <span class={["text-zinc-500", @class]}>
+      Only available on <.link
+        href={~p"/pricing"}
+        title={plan_note_title(@tier)}
+        class="font-medium text-amber-400/80 underline decoration-amber-400/25 underline-offset-2 transition-colors hover:text-amber-300 hover:decoration-amber-400/60"
+      >{plan_note_label(@tier)}</.link>.
+    </span>
     """
   end
 
-  # A subtle inline marker, not a pill: no fill/ring/padding — just small
-  # muted-amber text so a plan-gate note sits quietly beside a heading instead of
-  # shouting like a button. The linking variant adds a faint underline.
-  defp plan_badge_class do
-    "whitespace-nowrap align-middle text-xs font-medium text-amber-400/70 transition-colors"
-  end
+  defp plan_note_label(:team), do: "Team & Enterprise"
+  defp plan_note_label(:enterprise), do: "Enterprise"
 
-  defp plan_badge_label(:team), do: "Team & Enterprise"
-  defp plan_badge_label(:enterprise), do: "Enterprise"
-
-  defp plan_badge_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
-  defp plan_badge_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
+  defp plan_note_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
+  defp plan_note_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
 
   @doc """
   The bare heading-row above a canvas section — the console's ONE section

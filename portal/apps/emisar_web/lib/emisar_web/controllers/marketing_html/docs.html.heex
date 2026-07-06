@@ -89,7 +89,7 @@
                   <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
                     {title}
                   </h3>
-                  <.plan_badge :if={plan_tiers[href]} tier={plan_tiers[href]} link={false} />
+                  <.plan_note :if={plan_tiers[href]} tier={plan_tiers[href]} link={false} />
                 </div>
                 <p class="mt-2 text-sm text-zinc-400">{desc}</p>
                 <p class="mt-4 text-sm font-semibold text-brand-300">

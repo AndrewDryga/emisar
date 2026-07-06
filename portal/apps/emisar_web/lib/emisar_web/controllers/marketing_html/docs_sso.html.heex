@@ -37,15 +37,15 @@
         </p>
       </div>
 
-      <h2 class="mt-12 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-2xl font-semibold text-zinc-50 text-balance">
-        Setting up SSO login <.plan_badge tier={:team} />
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Setting up SSO login
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        You need an emisar owner or admin on a
-        <strong class="text-zinc-200">Team or Enterprise</strong>
-        plan. Open <strong class="text-zinc-200">Settings → Single sign-on</strong>
+        You need an emisar owner or admin. Open
+        <strong class="text-zinc-200">Settings → Single sign-on</strong>
         and click <strong class="text-zinc-200">Add connection</strong>; the form fills the
         right-hand side and walks you through the provider-side app as you pick a provider type.
+        <.plan_note tier={:team} />
       </p>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
@@ -237,15 +237,14 @@
         as usual.
       </p>
 
-      <h2 class="mt-12 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-2xl font-semibold text-zinc-50 text-balance">
-        Directory sync (SCIM 2.0) <.plan_badge tier={:enterprise} />
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Directory sync (SCIM 2.0)
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        On a configured connection (Enterprise plan), enable
-        <strong class="text-zinc-200">directory sync</strong>
+        On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
         and JumpCloud all speak as a provisioning client. The directory-sync panel lives right under
-        each connection on the same Single sign-on page.
+        each connection on the same Single sign-on page. <.plan_note tier={:enterprise} />
       </p>
 
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">

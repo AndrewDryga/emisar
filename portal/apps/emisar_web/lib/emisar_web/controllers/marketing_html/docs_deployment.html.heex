@@ -156,10 +156,9 @@
         </li>
         <li>
           <strong class="text-zinc-200">Wire identity.</strong>
-          Require MFA account-wide. On Team and up, add SSO so people sign in through your IdP; on
+          Require MFA account-wide. Add SSO so people sign in through your IdP; on
           Enterprise, add SCIM so offboarding someone in the directory suspends them here —
-          sessions killed, keys revoked — with no checklist.
-          <.plan_badge tier={:team} class="ml-1" />
+          sessions killed, keys revoked — with no checklist. <.plan_note tier={:team} />
         </li>
         <li>
           <strong class="text-zinc-200">Ship the audit to your SIEM.</strong>
@@ -306,16 +305,14 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
           <span>
-            <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-              Wire your directory. <.plan_badge tier={:team} />
-            </span>
+            <strong class="text-zinc-200">Wire your directory.</strong>
             SSO binds people to your IdP by issuer and subject, never by email. On Enterprise, SCIM
             lets the IdP drive the whole lifecycle: deactivate someone there and emisar suspends
             them here, kills their sessions, and revokes their keys — offboarding stops being a
             thing you can forget. See <.link
               navigate={~p"/docs/sso"}
               class="text-brand-400 hover:text-brand-300"
-            >single sign-on &amp; directory sync</.link>.
+            >single sign-on &amp; directory sync</.link>. <.plan_note tier={:team} />
           </span>
         </li>
         <li class="flex items-start gap-2.5">
