@@ -751,6 +751,51 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "simulate_outcome/2" do
+    test "buckets each catalog action by its decision under the live rules" do
+      rules = %{
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        # An override moves a specific action to a different bucket than its tier.
+        "overrides" => [
+          %{"name" => "reads", "action" => "linux.uptime", "decision" => "require_approval"}
+        ]
+      }
+
+      catalog = %{
+        # low → allow by tier, but the override sends it to require_approval
+        "linux.uptime" => :low,
+        "docker.ps" => :low,
+        "nginx.reload" => :medium,
+        "linux.reboot_host" => :high,
+        "wipe.disk" => :critical
+      }
+
+      outcome = Policies.simulate_outcome(rules, catalog)
+
+      assert outcome["allow"] == %{count: 2, examples: ["docker.ps", "nginx.reload"]}
+
+      assert outcome["require_approval"] == %{
+               count: 2,
+               examples: ["linux.reboot_host", "linux.uptime"]
+             }
+
+      assert outcome["deny"] == %{count: 1, examples: ["wipe.disk"]}
+    end
+
+    test "every decision is present — an empty catalog is 0/[] across the board" do
+      outcome = Policies.simulate_outcome(Policies.default_rules(), %{})
+
+      for decision <- ["allow", "require_approval", "deny"] do
+        assert outcome[decision] == %{count: 0, examples: []}
+      end
+    end
+  end
+
   describe "diff_rules/2" do
     test "reports only the tiers and overrides that actually moved" do
       before_rules = %{

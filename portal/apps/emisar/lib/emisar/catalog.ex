@@ -615,37 +615,35 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Risk breakdown of the account's advertised catalog: per risk tier, how many
-  DISTINCT actions carry it (most-severe wins when the same action is advertised
-  at mixed risk across runners) plus a few example action ids. Powers the policy
-  page's "what CRITICAL/HIGH means in your env" rail. Inherits
-  `list_all_actions_for_account/1`'s `view_catalog` gate + account scope; returns
-  `{:ok, %{"low" => %{count: n, examples: [action_id]}, …}}` with all four tiers
-  present (0/[] for a tier no action carries).
+  The account's advertised catalog as `%{action_id => risk}` — DISTINCT actions,
+  most-severe risk winning when one action is advertised at mixed risk across
+  runners. The policy page derives BOTH the risk breakdown (`risk_breakdown_of/1`)
+  and the live policy outcome (`Policies.simulate_outcome/2`) from it. Inherits
+  `list_all_actions_for_account/1`'s `view_catalog` gate + account scope;
+  `{:ok, %{action_id => risk}}`.
   """
-  def action_risk_breakdown(%Subject{} = subject) do
+  def action_risks_for_account(%Subject{} = subject) do
     with {:ok, actions} <- list_all_actions_for_account(subject) do
-      {:ok, risk_breakdown_of(actions)}
+      {:ok, most_severe_risk_by_action(actions)}
     end
   end
 
   @doc """
-  The same tier breakdown as `action_risk_breakdown/1`, but scoped to a set of
-  runners — the policy page uses it per targeted ruleset so the operator sees
-  what CRITICAL/HIGH mean for THAT runner or group (a group resolves to its
-  runners' ids at the call site). `view_catalog` gated + account-scoped
-  (`for_subject`, so a foreign runner id contributes nothing); an empty id list
-  is the empty breakdown, still gated. Returns `{:ok, %{"low" => %{count,
-  examples}, …}}`.
+  Same as `action_risks_for_account/1` but scoped to a set of runners — the
+  policy page uses it per targeted ruleset (a group resolves to its runners'
+  ids at the call site) so the rail speaks for THAT runner or group.
+  `view_catalog` gated + account-scoped (`for_subject`, so a foreign runner id
+  contributes nothing); an empty id list is the empty map, still gated.
+  `{:ok, %{action_id => risk}}`.
   """
-  def risk_breakdown_for_runner_ids([], %Subject{} = subject) do
+  def action_risks_for_runner_ids([], %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      {:ok, risk_breakdown_of([])}
+      {:ok, %{}}
     end
   end
 
-  def risk_breakdown_for_runner_ids(runner_ids, %Subject{} = subject) when is_list(runner_ids) do
+  def action_risks_for_runner_ids(runner_ids, %Subject{} = subject) when is_list(runner_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       actions =
@@ -654,18 +652,17 @@ defmodule Emisar.Catalog do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, risk_breakdown_of(actions)}
+      {:ok, most_severe_risk_by_action(actions)}
     end
   end
 
-  # Buckets already-fetched RunnerAction rows into the per-tier
-  # `%{count, examples}` map — most-severe risk wins when an action_id appears at
-  # mixed risk. All four tiers are present (0/[] for a tier no action carries).
-  defp risk_breakdown_of(actions) do
-    ids_by_risk =
-      actions
-      |> most_severe_risk_by_action()
-      |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
+  @doc """
+  The per-tier `%{count, examples}` breakdown of an `%{action_id => risk}` map
+  (from `action_risks_for_*`). Pure — no gate; the caller already fetched the
+  map. All four tiers are present (0/[] for a tier no action carries).
+  """
+  def risk_breakdown_of(action_risks) when is_map(action_risks) do
+    ids_by_risk = Enum.group_by(action_risks, &elem(&1, 1), &elem(&1, 0))
 
     Map.new([:low, :medium, :high, :critical], fn risk ->
       ids = ids_by_risk |> Map.get(risk, []) |> Enum.sort()

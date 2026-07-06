@@ -927,13 +927,13 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "action_risk_breakdown/1" do
+  describe "action_risks_for_account/1" do
     setup do
       {account, subject} = account_with_owner()
       %{account: account, subject: subject}
     end
 
-    test "counts distinct actions per tier with examples, worst risk winning", %{
+    test "distinct action => risk, worst risk winning across runners", %{
       account: account,
       subject: subject
     } do
@@ -946,10 +946,8 @@ defmodule Emisar.CatalogTest do
           state_payload(
             actions: [
               action("linux.uptime", risk: "low"),
-              action("docker.ps", risk: "low"),
               action("nginx.reload", risk: "medium"),
-              action("linux.reboot_host", risk: "high"),
-              # advertised low here, critical on r2 below → the worst wins.
+              # low here, critical on r2 below → the worst wins.
               action("docker.stop", risk: "low")
             ]
           )
@@ -961,31 +959,17 @@ defmodule Emisar.CatalogTest do
           state_payload(actions: [action("docker.stop", risk: "critical")])
         )
 
-      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
+      assert {:ok, risks} = Catalog.action_risks_for_account(subject)
 
-      assert breakdown["low"] == %{count: 2, examples: ["docker.ps", "linux.uptime"]}
-      assert breakdown["medium"] == %{count: 1, examples: ["nginx.reload"]}
-      assert breakdown["high"] == %{count: 1, examples: ["linux.reboot_host"]}
-      # docker.stop counts ONCE, at its worst (critical) — never double-counted as low.
-      assert breakdown["critical"] == %{count: 1, examples: ["docker.stop"]}
+      assert risks == %{
+               "linux.uptime" => :low,
+               "nginx.reload" => :medium,
+               "docker.stop" => :critical
+             }
     end
 
-    test "caps examples at three but keeps the full count", %{account: account, subject: subject} do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      lows = for n <- 1..5, do: action("low.op_#{n}", risk: "low")
-      {:ok, _} = Catalog.observe_state(runner, state_payload(actions: lows))
-
-      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
-      assert breakdown["low"].count == 5
-      assert length(breakdown["low"].examples) == 3
-    end
-
-    test "every tier is present — an empty tier is 0/[]", %{subject: subject} do
-      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
-
-      for tier <- ["low", "medium", "high", "critical"] do
-        assert breakdown[tier] == %{count: 0, examples: []}
-      end
+    test "is empty for a fresh account", %{subject: subject} do
+      assert {:ok, %{}} = Catalog.action_risks_for_account(subject)
     end
 
     test "is account-scoped — another account's actions don't leak", %{account: account} do
@@ -998,17 +982,16 @@ defmodule Emisar.CatalogTest do
         )
 
       {_other_account, other_subject} = account_with_owner()
-      assert {:ok, breakdown} = Catalog.action_risk_breakdown(other_subject)
-      assert breakdown["critical"] == %{count: 0, examples: []}
+      assert {:ok, %{}} = Catalog.action_risks_for_account(other_subject)
     end
 
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
-      assert {:error, :unauthorized} = Catalog.action_risk_breakdown(no_view)
+      assert {:error, :unauthorized} = Catalog.action_risks_for_account(no_view)
     end
   end
 
-  describe "risk_breakdown_for_runner_ids/2" do
+  describe "action_risks_for_runner_ids/2" do
     setup do
       {account, subject} = account_with_owner()
       %{account: account, subject: subject}
@@ -1039,27 +1022,17 @@ defmodule Emisar.CatalogTest do
           state_payload(actions: [action("elsewhere.op", risk: "critical")])
         )
 
-      # A "group" of r1 + r2: shared.op dedups to its worst (critical); the
-      # `other` runner's action is out of scope.
-      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([r1.id, r2.id], subject)
-      assert breakdown["critical"] == %{count: 1, examples: ["shared.op"]}
-      assert breakdown["high"] == %{count: 1, examples: ["r1.only"]}
-      assert breakdown["medium"] == %{count: 0, examples: []}
-      assert breakdown["low"] == %{count: 0, examples: []}
+      # A "group" of r1 + r2: shared.op dedups to its worst (critical); `other` is out of scope.
+      assert {:ok, risks} = Catalog.action_risks_for_runner_ids([r1.id, r2.id], subject)
+      assert risks == %{"shared.op" => :critical, "r1.only" => :high}
 
       # One runner sees only its own rows — shared.op is low on r1 alone.
-      assert {:ok, r1_only} = Catalog.risk_breakdown_for_runner_ids([r1.id], subject)
-      assert r1_only["low"] == %{count: 1, examples: ["shared.op"]}
-      assert r1_only["high"] == %{count: 1, examples: ["r1.only"]}
-      assert r1_only["critical"] == %{count: 0, examples: []}
+      assert {:ok, r1_only} = Catalog.action_risks_for_runner_ids([r1.id], subject)
+      assert r1_only == %{"shared.op" => :low, "r1.only" => :high}
     end
 
-    test "an empty runner-id list is the empty breakdown", %{subject: subject} do
-      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([], subject)
-
-      for tier <- ["low", "medium", "high", "critical"] do
-        assert breakdown[tier] == %{count: 0, examples: []}
-      end
+    test "an empty runner-id list is the empty map", %{subject: subject} do
+      assert {:ok, %{}} = Catalog.action_risks_for_runner_ids([], subject)
     end
 
     test "is account-scoped — a foreign runner id contributes nothing", %{account: account} do
@@ -1072,15 +1045,45 @@ defmodule Emisar.CatalogTest do
         )
 
       {_other_account, other_subject} = account_with_owner()
-      assert {:ok, breakdown} = Catalog.risk_breakdown_for_runner_ids([runner.id], other_subject)
-      assert breakdown["critical"] == %{count: 0, examples: []}
+      assert {:ok, %{}} = Catalog.action_risks_for_runner_ids([runner.id], other_subject)
     end
 
     test "a subject without view_catalog is denied — empty and non-empty", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Catalog.risk_breakdown_for_runner_ids(["r"], no_view)
-      assert {:error, :unauthorized} = Catalog.risk_breakdown_for_runner_ids([], no_view)
+      assert {:error, :unauthorized} = Catalog.action_risks_for_runner_ids(["r"], no_view)
+      assert {:error, :unauthorized} = Catalog.action_risks_for_runner_ids([], no_view)
+    end
+  end
+
+  describe "risk_breakdown_of/1" do
+    test "buckets an action => risk map into per-tier counts + capped examples" do
+      risks = %{
+        "docker.ps" => :low,
+        "linux.uptime" => :low,
+        "z.low" => :low,
+        "aaa.low" => :low,
+        "nginx.reload" => :medium,
+        "linux.reboot_host" => :high,
+        "wipe.disk" => :critical
+      }
+
+      breakdown = Catalog.risk_breakdown_of(risks)
+
+      assert breakdown["low"].count == 4
+      # sorted, capped at three examples.
+      assert breakdown["low"].examples == ["aaa.low", "docker.ps", "linux.uptime"]
+      assert breakdown["medium"] == %{count: 1, examples: ["nginx.reload"]}
+      assert breakdown["high"] == %{count: 1, examples: ["linux.reboot_host"]}
+      assert breakdown["critical"] == %{count: 1, examples: ["wipe.disk"]}
+    end
+
+    test "every tier is present — an empty map is 0/[] across the board" do
+      breakdown = Catalog.risk_breakdown_of(%{})
+
+      for tier <- ["low", "medium", "high", "critical"] do
+        assert breakdown[tier] == %{count: 0, examples: []}
+      end
     end
   end
 

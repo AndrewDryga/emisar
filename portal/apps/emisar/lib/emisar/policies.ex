@@ -420,6 +420,36 @@ defmodule Emisar.Policies do
     end
   end
 
+  @doc """
+  Applies `rules` (a rules map — e.g. a live editor's `to_rules`) to a catalog
+  `%{action_id => risk}` and buckets each action by the decision it would get,
+  running `evaluate/3` per action so overrides + tier defaults apply exactly as
+  dispatch would. Pure — no gate; the catalog is already fetched + authorized.
+  Powers the policy page's live "what this policy allows / needs approval /
+  denies" rail. Returns `%{"allow" => %{count, examples}, "require_approval" =>
+  …, "deny" => …}` with all three present (0/[] for an empty one).
+  """
+  def simulate_outcome(rules, action_risks) when is_map(rules) and is_map(action_risks) do
+    policy = %Policy{rules: rules}
+
+    ids_by_decision =
+      Enum.group_by(
+        action_risks,
+        fn {action_id, risk} ->
+          {decision, _matched, _reason} =
+            evaluate(policy, %{"action_id" => action_id, "risk" => to_string(risk)}, %{})
+
+          decision
+        end,
+        fn {action_id, _risk} -> action_id end
+      )
+
+    Map.new([:allow, :require_approval, :deny], fn decision ->
+      ids = ids_by_decision |> Map.get(decision, []) |> Enum.sort()
+      {Atom.to_string(decision), %{count: length(ids), examples: Enum.take(ids, 3)}}
+    end)
+  end
+
   defp find_override(overrides, action_id) when is_list(overrides),
     do: Enum.find(overrides, &override_matches?(&1, action_id))
 

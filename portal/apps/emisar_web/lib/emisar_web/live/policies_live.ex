@@ -48,13 +48,16 @@ defmodule EmisarWeb.PoliciesLive do
         {:error, _} -> nil
       end
 
+    account_editor =
+      account_policy |> build_account_editor() |> Map.put(:catalog, load_account_catalog(subject))
+
     # A failed scoped-policy read must read as an error, not an empty ruleset
     # list — "No targeted rulesets yet" would wrongly imply none are configured.
     {rulesets, load_error?} =
       case Policies.list_scoped_policies(subject) do
         {:ok, policies} ->
           {Enum.map(policies, fn policy ->
-             policy |> build_ruleset_editor() |> put_ruleset_breakdown(runners, subject)
+             policy |> build_ruleset_editor() |> put_ruleset_catalog(runners, subject)
            end), false}
 
         {:error, _} ->
@@ -65,34 +68,34 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:loading?, false)
     |> assign(:load_error?, load_error?)
     |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
-    |> assign(:account, build_account_editor(account_policy))
+    |> assign(:account, account_editor)
     |> assign(:rulesets, rulesets)
     |> assign(:runners, runners)
     |> assign(:groups, list_groups(subject))
-    |> assign(:risk_breakdown, load_risk_breakdown(subject))
   end
 
-  # The account's advertised catalog, bucketed by risk tier — powers the rail
-  # that makes "what CRITICAL means here" concrete. A failed read degrades to an
-  # empty breakdown (the rail shows the connect-a-runner hint), never a crash.
-  defp load_risk_breakdown(subject) do
-    case Catalog.action_risk_breakdown(subject) do
-      {:ok, breakdown} -> breakdown
-      {:error, _} -> empty_breakdown()
+  # The catalog the account default governs — every advertised action's worst
+  # risk as `%{action_id => risk}`; the rail turns it into a live allow / needs-
+  # approval / deny outcome. A failed read is an empty catalog (the rail shows
+  # the connect-a-runner hint), never a crash.
+  defp load_account_catalog(subject) do
+    case Catalog.action_risks_for_account(subject) do
+      {:ok, catalog} -> catalog
+      {:error, _} -> %{}
     end
   end
 
-  # A ruleset's OWN target catalog, bucketed by risk — so the operator sees what
-  # CRITICAL/HIGH mean for that specific runner or group, not just account-wide.
-  # A group resolves to its runners' ids from the already-loaded @runners.
-  defp put_ruleset_breakdown(ruleset, runners, subject) do
-    breakdown =
-      case Catalog.risk_breakdown_for_runner_ids(ruleset_runner_ids(ruleset, runners), subject) do
-        {:ok, breakdown} -> breakdown
-        {:error, _} -> empty_breakdown()
+  # The target catalog a ruleset governs (its runner, or its group's runners) —
+  # so the rail speaks for THAT target, not account-wide. A group resolves to its
+  # runners' ids from the already-loaded @runners.
+  defp put_ruleset_catalog(ruleset, runners, subject) do
+    catalog =
+      case Catalog.action_risks_for_runner_ids(ruleset_runner_ids(ruleset, runners), subject) do
+        {:ok, catalog} -> catalog
+        {:error, _} -> %{}
       end
 
-    Map.put(ruleset, :breakdown, breakdown)
+    Map.put(ruleset, :catalog, catalog)
   end
 
   defp ruleset_runner_ids(%{scope_type: :runner, scope_value: runner_id}, _runners),
@@ -102,9 +105,6 @@ defmodule EmisarWeb.PoliciesLive do
     do: runners |> Enum.filter(&(&1.group == group)) |> Enum.map(& &1.id)
 
   defp ruleset_runner_ids(_ruleset, _runners), do: []
-
-  defp empty_breakdown,
-    do: Map.new(@tiers, &{&1, %{count: 0, examples: []}})
 
   defp build_account_editor(policy) do
     rules = (policy && policy.rules) || Policies.default_rules()
@@ -160,7 +160,7 @@ defmodule EmisarWeb.PoliciesLive do
       approval: account.approval,
       baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
       # Filled in once a target is picked (set_target); no target = no catalog.
-      breakdown: empty_breakdown(),
+      catalog: %{},
       policy: nil,
       rules_errors: []
     }
@@ -222,7 +222,7 @@ defmodule EmisarWeb.PoliciesLive do
     {:noreply,
      update_editor(socket, uid, fn editor ->
        editor = %{editor | scope_type: scope_type, scope_value: scope_value}
-       put_ruleset_breakdown(editor, socket.assigns.runners, socket.assigns.current_subject)
+       put_ruleset_catalog(editor, socket.assigns.runners, socket.assigns.current_subject)
      end)}
   end
 
@@ -315,14 +315,21 @@ defmodule EmisarWeb.PoliciesLive do
   # Swap the just-saved editor for one rebuilt from the returned row (a new
   # ruleset's uid flips from `new-…` to the policy id), leaving every other
   # card's in-progress edits untouched — no full reload, no lost work.
+  # Saving the policy doesn't change the FLEET's catalog, so carry the existing
+  # one onto the rebuilt editor rather than re-reading it.
   defp replace_saved(socket, "account", policy),
-    do: assign(socket, :account, build_account_editor(policy))
+    do:
+      assign(
+        socket,
+        :account,
+        Map.put(build_account_editor(policy), :catalog, socket.assigns.account.catalog)
+      )
 
   defp replace_saved(socket, old_uid, policy) do
     rebuilt =
       policy
       |> build_ruleset_editor()
-      |> put_ruleset_breakdown(socket.assigns.runners, socket.assigns.current_subject)
+      |> put_ruleset_catalog(socket.assigns.runners, socket.assigns.current_subject)
 
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
@@ -725,19 +732,20 @@ defmodule EmisarWeb.PoliciesLive do
           </p>
         </div>
 
-        <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
-          <div class="space-y-12 lg:col-span-3">
-            <%!-- CONTENT ON CANVAS: the editor sits naked — the only boxes are the
-                 self-contained controls (selects, inputs, choice cards) and the
-                 earned amber warnings. Rulesets are naked units under hairlines,
-                 the same grammar as the runbook editor's steps. --%>
-            <section>
-              <.section_header title="Default policy">
-                <:subtitle>
-                  The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
-                </:subtitle>
-              </.section_header>
+        <%!-- Each policy — the default and every targeted ruleset — pairs its
+             editor with a rail that PREVIEWS the decision: the live rules run
+             over that target's catalog, shown as allow / needs-approval / deny.
+             The editor sits naked on the canvas; the only boxes are the
+             self-contained controls and the earned amber warnings. --%>
+        <section>
+          <.section_header title="Default policy">
+            <:subtitle>
+              The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+            </:subtitle>
+          </.section_header>
 
+          <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
+            <div class="lg:col-span-3">
               <.policy_fields
                 editor_id="account"
                 defaults={@account.defaults}
@@ -748,124 +756,171 @@ defmodule EmisarWeb.PoliciesLive do
                 save_label="Save default policy"
                 dirty={editor_dirty?(@account)}
               />
-            </section>
+            </div>
+            <aside class="lg:col-span-1">
+              <.policy_rail
+                catalog={@account.catalog}
+                defaults={@account.defaults}
+                overrides={@account.overrides}
+                approval={@account.approval}
+                target="your fleet"
+              />
+            </aside>
+          </div>
+        </section>
 
-            <section>
-              <.section_header title="Targeted rulesets">
-                <:subtitle>
-                  A ruleset <strong class="text-zinc-300">replaces</strong>
-                  the default policy for one runner or group. Most specific wins — runner,
-                  then group, then the default policy.
-                </:subtitle>
-              </.section_header>
+        <section>
+          <.section_header title="Targeted rulesets">
+            <:subtitle>
+              A ruleset <strong class="text-zinc-300">replaces</strong>
+              the default policy for one runner or group. Most specific wins — runner,
+              then group, then the default policy.
+            </:subtitle>
+          </.section_header>
 
-              <.empty_state
-                :if={@load_error? and @rulesets == []}
-                tone={:danger}
-                icon="hero-exclamation-triangle"
-                title="Couldn't load targeted rulesets"
-              >
-                This is a load error, not an empty configuration — rulesets may well be set.
-                Refresh the page; if it persists, your access to this account may have changed.
-              </.empty_state>
+          <.empty_state
+            :if={@load_error? and @rulesets == []}
+            tone={:danger}
+            icon="hero-exclamation-triangle"
+            title="Couldn't load targeted rulesets"
+          >
+            This is a load error, not an empty configuration — rulesets may well be set.
+            Refresh the page; if it persists, your access to this account may have changed.
+          </.empty_state>
 
-              <%!-- Viewer with nothing to see gets the quiet fact; for a manager
+          <%!-- Viewer with nothing to see gets the quiet fact; for a manager
                the Add-ruleset composer below IS the empty state (the runbook
                precedent — no dashed hint above a dashed composer). --%>
-              <p
-                :if={not @load_error? and @rulesets == [] and not @can_manage?}
-                class="text-sm text-zinc-500"
-              >
-                No targeted rulesets — every runner uses the default policy above.
-              </p>
+          <p
+            :if={not @load_error? and @rulesets == [] and not @can_manage?}
+            class="text-sm text-zinc-500"
+          >
+            No targeted rulesets — every runner uses the default policy above.
+          </p>
 
-              <div :if={@rulesets != []} class="space-y-8">
-                <div :for={ruleset <- @rulesets}>
-                  <.ruleset_unit
-                    ruleset={ruleset}
-                    account_approval={@account.approval}
-                    runners={@runners}
-                    groups={@groups}
-                    rulesets={@rulesets}
-                    can_manage={@can_manage?}
-                  />
-                </div>
-              </div>
-
-              <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
-                <.add_row
-                  label="Add ruleset"
-                  phx-click="add_ruleset"
-                  disabled={not addable_any?(@runners, @groups, @rulesets)}
-                  title={
-                    if not addable_any?(@runners, @groups, @rulesets),
-                      do: "Every runner and group already has a ruleset (or none exist yet)"
-                  }
-                />
-              </div>
-            </section>
+          <div :if={@rulesets != []} class="space-y-8">
+            <div :for={ruleset <- @rulesets}>
+              <.ruleset_unit
+                ruleset={ruleset}
+                account_approval={@account.approval}
+                runners={@runners}
+                groups={@groups}
+                rulesets={@rulesets}
+                can_manage={@can_manage?}
+              />
+            </div>
           </div>
 
-          <%!-- Right rail (billing-grammar): the account's catalog bucketed by
-               risk tier, so "CRITICAL"/"HIGH" read as concrete actions in THIS
-               environment, not abstractions. --%>
-          <aside class="lg:col-span-1">
-            <.risk_rail breakdown={@risk_breakdown} />
-          </aside>
-        </div>
+          <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
+            <.add_row
+              label="Add ruleset"
+              phx-click="add_ruleset"
+              disabled={not addable_any?(@runners, @groups, @rulesets)}
+              title={
+                if not addable_any?(@runners, @groups, @rulesets),
+                  do: "Every runner and group already has a ruleset (or none exist yet)"
+              }
+            />
+          </div>
+        </section>
       </div>
     </.dashboard_shell>
     """
   end
 
-  attr :breakdown, :map, required: true
+  attr :catalog, :map, required: true, doc: "%{action_id => risk} the policy governs"
+  attr :defaults, :map, required: true
+  attr :overrides, :list, required: true
+  attr :approval, :map, required: true
 
-  # The billing-style right rail: the account's advertised catalog bucketed by
-  # risk tier (count + a few example action ids), most-severe first, so an
-  # operator sees what CRITICAL/HIGH mean in THIS environment. An empty catalog
-  # shows the connect-a-runner hint instead of four empty rows.
-  defp risk_rail(assigns) do
-    total = assigns.breakdown |> Map.values() |> Enum.map(& &1.count) |> Enum.sum()
-    assigns = assign(assigns, :total, total)
+  attr :target, :string,
+    required: true,
+    doc: "who this policy applies to, e.g. \"your fleet\" or a group name"
+
+  # The side rail: apply the LIVE rules to the target's catalog and preview the
+  # decision — allow / needs-approval / deny, with a few example actions — so the
+  # operator sees what the policy DOES, live as they edit. Below it, the catalog's
+  # risk profile. Recomputes on every render (pure, in-memory).
+  defp policy_rail(assigns) do
+    rules = to_rules(assigns.defaults, assigns.overrides, assigns.approval)
+
+    assigns =
+      assign(assigns,
+        outcome: Policies.simulate_outcome(rules, assigns.catalog),
+        breakdown: Catalog.risk_breakdown_of(assigns.catalog),
+        total: map_size(assigns.catalog)
+      )
 
     ~H"""
-    <div>
-      <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-        What the tiers mean here
-      </h3>
-      <p class="mt-1 text-xs text-zinc-500">
-        Your catalog bucketed by risk — how many actions carry each tier, and a few examples.
+    <div class="space-y-5">
+      <div>
+        <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">In effect</h3>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+          What this policy decides for {@target}'s
+          <span class="font-medium text-zinc-300">{@total}</span>
+          {ngettext_action(@total)}.
+        </p>
+      </div>
+
+      <p :if={@total == 0} class="text-xs leading-relaxed text-zinc-500">
+        No actions advertised on this target yet — decisions appear once a runner reports its catalog.
       </p>
 
-      <p :if={@total == 0} class="mt-4 text-xs text-zinc-500">
-        No actions advertised yet — connect a runner and its catalog buckets into these tiers here.
-      </p>
+      <div :if={@total > 0} class="space-y-3">
+        <.outcome_row tone={:brand} label="Allowed" stat={@outcome["allow"]} />
+        <.outcome_row tone={:amber} label="Needs approval" stat={@outcome["require_approval"]} />
+        <.outcome_row tone={:rose} label="Denied" stat={@outcome["deny"]} />
+      </div>
 
-      <div :if={@total > 0} class="mt-4 space-y-4">
-        <div :for={tier <- ["critical", "high", "medium", "low"]}>
-          <% stat = @breakdown[tier] %>
-          <div class="flex items-center justify-between gap-2">
-            <.risk_pill risk={tier} />
-            <span class="text-xs font-medium text-zinc-400">{action_count(stat.count)}</span>
-          </div>
-          <p
-            :if={stat.examples != []}
-            class="mt-1.5 truncate font-mono text-[11px] text-zinc-500"
-            title={Enum.join(stat.examples, ", ")}
+      <%!-- The catalog's danger profile — the counts the tier decisions above act
+           on. Compact: pill + count, most-severe first. --%>
+      <div :if={@total > 0} class="border-t border-zinc-800/70 pt-4">
+        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Catalog by risk
+        </h3>
+        <dl class="mt-3 space-y-2">
+          <div
+            :for={tier <- ["critical", "high", "medium", "low"]}
+            class="flex items-center justify-between"
           >
-            {Enum.join(stat.examples, ", ")}
-          </p>
-          <p :if={stat.examples == []} class="mt-1.5 text-[11px] text-zinc-600">
-            None here yet.
-          </p>
-        </div>
+            <dt><.risk_pill risk={tier} /></dt>
+            <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier].count}</dd>
+          </div>
+        </dl>
       </div>
     </div>
     """
   end
 
-  defp action_count(1), do: "1 action"
-  defp action_count(n), do: "#{n} actions"
+  attr :tone, :atom, required: true
+  attr :label, :string, required: true
+  attr :stat, :map, required: true, doc: "%{count, examples}"
+
+  # One decision line in the rail: a semantic dot + label + count, with a muted
+  # mono example line under it (the WHICH, not just how many).
+  defp outcome_row(assigns) do
+    ~H"""
+    <div>
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <.status_dot tone={@tone} />
+          <span class="text-sm text-zinc-300">{@label}</span>
+        </div>
+        <span class="text-sm font-semibold tabular-nums text-zinc-100">{@stat.count}</span>
+      </div>
+      <p
+        :if={@stat.examples != []}
+        class="mt-1 truncate pl-4 font-mono text-[10px] text-zinc-600"
+        title={Enum.join(@stat.examples, ", ")}
+      >
+        {Enum.join(@stat.examples, ", ")}
+      </p>
+    </div>
+    """
+  end
+
+  defp ngettext_action(1), do: "action"
+  defp ngettext_action(_), do: "actions"
 
   attr :ruleset, :map, required: true
   attr :account_approval, :map, required: true
@@ -879,130 +934,102 @@ defmodule EmisarWeb.PoliciesLive do
   # the island §8.1 bans.
   defp ruleset_unit(assigns) do
     ~H"""
-    <%= if @ruleset.policy do %>
-      <%!-- Saved ruleset: entity chip + name, and a red modal-confirmed Remove
+    <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
+      <div class="lg:col-span-3">
+        <%= if @ruleset.policy do %>
+          <%!-- Saved ruleset: entity chip + name, and a red modal-confirmed Remove
            (removing it loses the overrides, so it earns the confirm). --%>
-      <header class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <.chip upcase>{@ruleset.scope_type}</.chip>
-            <span class="truncate text-sm font-semibold text-zinc-100">
-              {target_name(@ruleset, @runners)}
-            </span>
-          </div>
-          <p class="mt-1 text-xs text-zinc-500">
-            Replaces the default policy for this {@ruleset.scope_type}.
-          </p>
-        </div>
-        <.confirm_button
-          :if={@can_manage}
-          id={"remove-ruleset-#{@ruleset.uid}"}
-          title="Remove this ruleset?"
-          confirm_label="Remove ruleset"
-          variant={:secondary}
-          tone={:rose}
-          size={:lg}
-          icon="hero-trash"
-          class="h-10"
-          on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
-        >
-          <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
-          Remove
-        </.confirm_button>
-      </header>
-    <% else %>
-      <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
+          <header class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <.chip upcase>{@ruleset.scope_type}</.chip>
+                <span class="truncate text-sm font-semibold text-zinc-100">
+                  {target_name(@ruleset, @runners)}
+                </span>
+              </div>
+              <p class="mt-1 text-xs text-zinc-500">
+                Replaces the default policy for this {@ruleset.scope_type}.
+              </p>
+            </div>
+            <.confirm_button
+              :if={@can_manage}
+              id={"remove-ruleset-#{@ruleset.uid}"}
+              title="Remove this ruleset?"
+              confirm_label="Remove ruleset"
+              variant={:secondary}
+              tone={:rose}
+              size={:lg}
+              icon="hero-trash"
+              class="h-10"
+              on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
+            >
+              <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
+              Remove
+            </.confirm_button>
+          </header>
+        <% else %>
+          <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
            select box (items-end + matching size). Nothing's persisted, so Remove
            drops the card directly — no confirm modal. A form (not a lone select)
            carries the uid as a hidden field on the change event. --%>
-      <header class="flex items-end gap-3">
-        <form phx-change="set_target" class="w-full sm:max-w-xs">
-          <input type="hidden" name="uid" value={@ruleset.uid} />
-          <%!-- One tree: each group is a selectable header with its runners
+          <header class="flex items-end gap-3">
+            <form phx-change="set_target" class="w-full sm:max-w-xs">
+              <input type="hidden" name="uid" value={@ruleset.uid} />
+              <%!-- One tree: each group is a selectable header with its runners
                indented beneath it. A native <optgroup> label can't be picked,
                so groups are plain options; a target another ruleset already
                claims is shown disabled. --%>
-          <.select
-            name="target"
-            label="Apply this ruleset to"
-            label_variant={:eyebrow}
-            disabled={not @can_manage}
-            prompt="Choose a runner or group…"
-            prompt_selected={is_nil(@ruleset.scope_type)}
-            options={target_options(@runners, @groups, @ruleset, @rulesets)}
-          />
-        </form>
-        <.button
-          :if={@can_manage}
-          variant={:secondary}
-          tone={:rose}
-          size={:lg}
-          type="button"
-          phx-click="remove_ruleset"
-          phx-value-uid={@ruleset.uid}
-          icon="hero-trash"
-          class="h-10"
-        >
-          Remove
-        </.button>
-      </header>
-    <% end %>
+              <.select
+                name="target"
+                label="Apply this ruleset to"
+                label_variant={:eyebrow}
+                disabled={not @can_manage}
+                prompt="Choose a runner or group…"
+                prompt_selected={is_nil(@ruleset.scope_type)}
+                options={target_options(@runners, @groups, @ruleset, @rulesets)}
+              />
+            </form>
+            <.button
+              :if={@can_manage}
+              variant={:secondary}
+              tone={:rose}
+              size={:lg}
+              type="button"
+              phx-click="remove_ruleset"
+              phx-value-uid={@ruleset.uid}
+              icon="hero-trash"
+              class="h-10"
+            >
+              Remove
+            </.button>
+          </header>
+        <% end %>
 
-    <.target_risk_summary :if={@ruleset.scope_type} breakdown={@ruleset.breakdown} />
-
-    <.policy_fields
-      :if={@ruleset.scope_type}
-      editor_id={@ruleset.uid}
-      defaults={@ruleset.defaults}
-      overrides={@ruleset.overrides}
-      approval={@ruleset.approval}
-      approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
-      rules_errors={@ruleset.rules_errors}
-      can_manage={@can_manage}
-      save_label="Save ruleset"
-      dirty={editor_dirty?(@ruleset)}
-    />
-    <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
-      Pick a runner or group above, then set its rules.
-    </p>
-    """
-  end
-
-  attr :breakdown, :map, required: true
-
-  # A ruleset's OWN target catalog, bucketed by risk — a compact strip under the
-  # picker (naked, the same tier grammar as the page rail) so an operator sees
-  # what CRITICAL/HIGH mean for THIS runner/group before setting its tiers. An
-  # empty target (a group with no runners, or a runner advertising nothing yet)
-  # shows a quiet line instead of four zeros.
-  defp target_risk_summary(assigns) do
-    total = assigns.breakdown |> Map.values() |> Enum.map(& &1.count) |> Enum.sum()
-    assigns = assign(assigns, :total, total)
-
-    ~H"""
-    <div class="mt-4">
-      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-        This target's catalog by risk
+        <.policy_fields
+          :if={@ruleset.scope_type}
+          editor_id={@ruleset.uid}
+          defaults={@ruleset.defaults}
+          overrides={@ruleset.overrides}
+          approval={@ruleset.approval}
+          approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
+          rules_errors={@ruleset.rules_errors}
+          can_manage={@can_manage}
+          save_label="Save ruleset"
+          dirty={editor_dirty?(@ruleset)}
+        />
+        <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
+          Pick a runner or group above, then set its rules.
+        </p>
       </div>
-      <p :if={@total == 0} class="mt-1.5 text-xs text-zinc-500">
-        No actions advertised on this target yet.
-      </p>
-      <div :if={@total > 0} class="mt-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-        <div :for={tier <- ["critical", "high", "medium", "low"]}>
-          <% stat = @breakdown[tier] %>
-          <div class="flex items-center gap-1.5">
-            <.risk_pill risk={tier} />
-            <span class="text-xs text-zinc-400">{stat.count}</span>
-          </div>
-          <p
-            :if={stat.examples != []}
-            class="mt-1 truncate font-mono text-[10px] text-zinc-500"
-            title={Enum.join(stat.examples, ", ")}
-          >
-            {Enum.join(stat.examples, ", ")}
-          </p>
-        </div>
-      </div>
+      <aside :if={@ruleset.scope_type} class="lg:col-span-1">
+        <.policy_rail
+          catalog={@ruleset.catalog}
+          defaults={@ruleset.defaults}
+          overrides={@ruleset.overrides}
+          approval={@ruleset.approval}
+          target={target_name(@ruleset, @runners)}
+        />
+      </aside>
     </div>
     """
   end
