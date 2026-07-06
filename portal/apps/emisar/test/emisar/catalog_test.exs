@@ -1255,6 +1255,54 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "pack_actions_index/1" do
+    test "keys every pack version's deduped actions by {pack_id, pack_version}" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "acme" => %{"version" => "2.0", "hash" => "h"},
+              "linux" => %{"version" => "1.0", "hash" => "h2"}
+            },
+            actions: [
+              action("acme.reload", pack_id: "acme", risk: "high"),
+              action("acme.status", pack_id: "acme", risk: "low"),
+              action("linux.reboot", pack_id: "linux", risk: "critical")
+            ]
+          )
+        )
+
+      assert {:ok, index} = Catalog.pack_actions_index(subject)
+
+      assert index |> Map.keys() |> Enum.sort() == [{"acme", "2.0"}, {"linux", "1.0"}]
+      # Deduped + ordered by action_id within a pack version.
+      assert Enum.map(index[{"acme", "2.0"}], & &1.action_id) == ["acme.reload", "acme.status"]
+      assert Enum.map(index[{"linux", "1.0"}], & &1.risk) == [:critical]
+    end
+
+    test "another account's actions never leak into the index" do
+      {account, _subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "2.0", "hash" => "h"}},
+            actions: [action("acme.reload", pack_id: "acme", risk: "high")]
+          )
+        )
+
+      {_other, other_subject} = account_with_owner()
+      assert {:ok, index} = Catalog.pack_actions_index(other_subject)
+      assert index == %{}
+    end
+  end
+
   describe "action_set_changes/2" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

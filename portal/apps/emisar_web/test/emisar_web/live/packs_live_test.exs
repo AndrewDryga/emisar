@@ -750,4 +750,105 @@ defmodule EmisarWeb.PacksLiveTest do
                "Nothing pending on that pack."
     end
   end
+
+  describe "filtering by action" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      # postgres carries a low + a high action; nginx is low-only — enough for the
+      # risk filter to include/exclude and for action-name search to bite.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            action_payload("postgres.activity", "postgres", "low"),
+            action_payload("postgres.kill_backend", "postgres", "high"),
+            action_payload("nginx.reload", "nginx", "low")
+          ],
+          "packs" => %{
+            "postgres" => %{"version" => "1.0", "hash" => "hp"},
+            "nginx" => %{"version" => "1.0", "hash" => "hn"}
+          }
+        })
+
+      # Trust both so each renders as a trusted row with a View-contents disclosure.
+      {:ok, versions, _} = Emisar.Catalog.list_pack_versions(subject)
+      for v <- versions, do: {:ok, _} = Emisar.Catalog.trust_pack_version(v.id, subject)
+
+      %{conn: conn, account: account}
+    end
+
+    defp action_payload(id, pack, risk) do
+      %{
+        "id" => id,
+        "pack_id" => pack,
+        "title" => id,
+        "kind" => "exec",
+        "risk" => risk,
+        "description" => "d",
+        "args" => []
+      }
+    end
+
+    defp filter(lv, name, risk) do
+      lv
+      |> form("form[phx-change=filter]", %{"name" => name, "risk" => risk})
+      |> render_change()
+    end
+
+    test "risk filter keeps only packs with an action at that tier and auto-expands them", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      # Unfiltered: both packs, contents collapsed.
+      html = render(lv)
+      assert html =~ "postgres"
+      assert html =~ "nginx"
+      refute html =~ "postgres.kill_backend"
+
+      # Filter to high: postgres has a high action, nginx (low-only) drops. The
+      # match auto-expands, listing the high action without a manual click.
+      html = filter(lv, "", "high")
+      assert html =~ "postgres.kill_backend"
+      refute html =~ "nginx.reload"
+      assert has_element?(lv, "details[open]")
+    end
+
+    test "search matches an action id and surfaces its pack, expanded", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      # The pack id "postgres" doesn't contain "postgres.activity" — the ACTION does.
+      html = filter(lv, "postgres.activity", "")
+      assert html =~ "postgres.activity"
+      refute html =~ "nginx.reload"
+    end
+
+    test "search still matches a pack id (and drops non-matches)", %{conn: conn, account: account} do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      html = filter(lv, "nginx", "")
+      assert html =~ "nginx.reload"
+      refute html =~ "postgres.kill_backend"
+    end
+
+    test "a filter with no matches shows the filtered-empty line, not the account-empty state", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      html = filter(lv, "", "critical")
+      assert html =~ "No packs advertise a critical-risk action."
+      refute html =~ "No packs reported yet."
+    end
+  end
 end

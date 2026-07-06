@@ -45,7 +45,14 @@ defmodule EmisarWeb.PacksLive do
     # being rejected from `@reject_target`, set by the `open_reject` event.
     socket = socket |> ConfirmDialog.init() |> assign(:reject_target, nil)
 
+    # Two filters narrow the list. `name_filter` searches pack id AND action id
+    # (so "postgres.activity" surfaces the postgres pack); `risk_filter` keeps
+    # only packs advertising an action at that tier. Both filter on the account's
+    # action index, loaded (once) only while a filter is active — see `load_packs`.
     socket = assign(socket, :name_filter, "")
+    socket = assign(socket, :risk_filter, "")
+    socket = assign(socket, :pack_action_index, %{})
+    socket = assign(socket, :matched_actions, %{})
 
     if connected?(socket) do
       {:ok, socket |> load_packs() |> assign(:loading?, false)}
@@ -76,20 +83,29 @@ defmodule EmisarWeb.PacksLive do
     case fetch_rows(socket) do
       {:ok, rows} ->
         # Pending counts + the sidebar badge reflect the ACCOUNT, not the
-        # current name filter — only the rendered groups narrow.
+        # current filter — only the rendered groups narrow.
         pending = Enum.count(rows, &(&1.trust_state == :pending))
-        visible_rows = filter_rows(rows, socket.assigns.name_filter)
+        index = load_action_index(socket)
+        socket = assign(socket, :pack_action_index, index)
+        {visible_rows, matched} = filter_view(rows, socket)
         groups = group_by_pack(visible_rows)
 
         socket
         |> assign(:load_error?, false)
-        |> assign(:pack_count, length(groups))
+        |> assign(:pack_count, count_packs(visible_rows))
         |> assign(:version_count, length(visible_rows))
         |> assign(:pending_count, pending)
         # Keep the sidebar badge in step after Trust/Reject on this page.
         |> assign(:pending_packs_count, pending)
         |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
         |> assign_pending_pack_actions(rows)
+        |> assign(:matched_actions, matched)
+        # A filter drives what's expanded: auto-open every version it matched
+        # (via risk/action) and pre-load those action lists so they render at
+        # once. A manual open (`inspect_pack`) then adds to this set until the
+        # next filter change re-seeds it.
+        |> assign(:open_versions, MapSet.new(Map.keys(matched)))
+        |> update(:inspected_actions, &seed_action_lists(&1, visible_rows, index, matched))
         |> stream(:packs, groups, reset: true)
 
       # A failed read must read as an error, not an empty inventory — "No packs
@@ -103,19 +119,97 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:advertising, %{})
         |> assign(:pack_actions, %{})
         |> assign(:pack_diffs, %{})
+        |> assign(:pack_action_index, %{})
+        |> assign(:matched_actions, %{})
         |> stream(:packs, [], reset: true)
     end
   end
 
-  # Real catalogs run dozens of packs — the filter narrows by pack id,
-  # case-insensitive contains. The rows live in the stream (not an assign,
-  # by design), so filtering re-reads; same DB-per-change model as
-  # LiveTable's filter bar, debounced at the input.
-  defp filter_rows(rows, ""), do: rows
+  @risk_tiers ~w(low medium high critical)
+  defp normalize_risk(risk) when risk in @risk_tiers, do: risk
+  defp normalize_risk(_), do: ""
 
-  defp filter_rows(rows, name_filter) do
-    needle = String.downcase(name_filter)
-    Enum.filter(rows, &String.contains?(String.downcase(&1.pack_id), needle))
+  defp filter_active?(socket),
+    do: socket.assigns.name_filter != "" or socket.assigns.risk_filter != ""
+
+  # The account's whole pack→action index — one read, only while a filter is
+  # live (an unfiltered page keeps the lazy per-disclosure loading it always had).
+  defp load_action_index(socket) do
+    if filter_active?(socket) do
+      case Catalog.pack_actions_index(socket.assigns.current_subject) do
+        {:ok, index} -> index
+        _ -> %{}
+      end
+    else
+      %{}
+    end
+  end
+
+  # Apply the active filters to freshly-read rows using the cached index:
+  # `{visible_rows, matched}` where `matched` is `%{version_id => MapSet of the
+  # action_ids that matched}` (the reason a version is shown, for auto-open +
+  # highlight). With no filter active every row survives and nothing is matched.
+  defp filter_view(rows, socket) do
+    apply_filters(
+      rows,
+      socket.assigns.name_filter,
+      socket.assigns.risk_filter,
+      socket.assigns.pack_action_index
+    )
+  end
+
+  defp apply_filters(rows, "", "", _index), do: {rows, %{}}
+
+  defp apply_filters(rows, name, risk, index) do
+    needle = String.downcase(name)
+    name? = name != ""
+    risk? = risk != ""
+
+    {kept, matched} =
+      Enum.reduce(rows, {[], %{}}, fn v, {kept, matched} ->
+        actions = Map.get(index, {v.pack_id, v.version}, [])
+        pack_hit? = name? and String.contains?(String.downcase(v.pack_id), needle)
+        action_hit? = &String.contains?(String.downcase(&1.action_id), needle)
+
+        name_ok = not name? or pack_hit? or Enum.any?(actions, action_hit?)
+        risk_ok = not risk? or Enum.any?(actions, &(to_string(&1.risk) == risk))
+
+        if name_ok and risk_ok do
+          # An action is a "match" — it drives auto-open + the matched-only
+          # contents view — when it satisfies every ACTIVE axis at the ACTION
+          # level: its risk is the filtered tier, and its id carries the needle.
+          # A pack matched only by its id (no action carries the needle) has no
+          # matched action, so it stays collapsed — nothing specific to surface.
+          matched_ids =
+            for a <- actions,
+                not risk? or to_string(a.risk) == risk,
+                not name? or action_hit?.(a),
+                into: MapSet.new(),
+                do: a.action_id
+
+          matched =
+            if Enum.empty?(matched_ids), do: matched, else: Map.put(matched, v.id, matched_ids)
+
+          {[v | kept], matched}
+        else
+          {kept, matched}
+        end
+      end)
+
+    {Enum.reverse(kept), matched}
+  end
+
+  defp count_packs(rows), do: rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
+
+  # Pre-load the action list for each matched version so its auto-opened
+  # disclosure renders immediately (the index already holds them) — merged over
+  # whatever `inspect_pack` lazily cached.
+  defp seed_action_lists(inspected, visible_rows, index, matched) do
+    visible_rows
+    |> Enum.filter(&Map.has_key?(matched, &1.id))
+    |> Enum.reduce(inspected, fn v, acc ->
+      Map.put(acc, v.id, Map.get(index, {v.pack_id, v.version}, []))
+    end)
   end
 
   # What trusting each pending version authorizes, keyed by pack_version id
@@ -190,8 +284,12 @@ defmodule EmisarWeb.PacksLive do
   defp pending_review_title(1), do: "1 pack version needs trust review."
   defp pending_review_title(count), do: "#{count} pack versions need trust review."
 
-  def handle_event("filter", %{"name" => name}, socket) do
-    {:noreply, socket |> assign(:name_filter, String.trim(name)) |> load_packs()}
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:name_filter, String.trim(params["name"] || ""))
+     |> assign(:risk_filter, normalize_risk(params["risk"]))
+     |> load_packs()}
   end
 
   def handle_event("trust", %{"id" => id}, socket) do
@@ -302,7 +400,8 @@ defmodule EmisarWeb.PacksLive do
   defp reinsert_pack_group(socket, pack_id) do
     case fetch_rows(socket) do
       {:ok, rows} ->
-        versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
+        {visible_rows, _matched} = filter_view(rows, socket)
+        versions = visible_rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
 
         if versions == [] do
           socket
@@ -325,16 +424,22 @@ defmodule EmisarWeb.PacksLive do
     case fetch_rows(socket) do
       {:ok, rows} ->
         pending = Enum.count(rows, &(&1.trust_state == :pending))
-        pack_count = rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
-        versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
+        {visible_rows, matched} = filter_view(rows, socket)
+        versions = visible_rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
 
         socket =
           socket
-          |> assign(:pack_count, pack_count)
+          |> assign(:pack_count, count_packs(visible_rows))
+          |> assign(:version_count, length(visible_rows))
           |> assign(:pending_count, pending)
           |> assign(:pending_packs_count, pending)
           |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
           |> assign_pending_pack_actions(rows)
+          |> assign(:matched_actions, matched)
+          |> update(
+            :inspected_actions,
+            &seed_action_lists(&1, visible_rows, socket.assigns.pack_action_index, matched)
+          )
 
         if versions == [] do
           stream_delete(socket, :packs, %{id: pack_id})
@@ -358,17 +463,83 @@ defmodule EmisarWeb.PacksLive do
   # both render the identical list. `action_id`/`title` are runner-advertised
   # (attacker-influenced); they render through escaped HEEx, never `raw/1`.
   attr :actions, :list, required: true
+  attr :matched, :any, default: nil, doc: "MapSet of action_ids the active filter matched"
 
   defp pack_action_list(assigns) do
     ~H"""
     <ul class="mt-1 space-y-1">
-      <li :for={action <- @actions} class="flex items-center gap-2 text-[11px]">
+      <li
+        :for={action <- @actions}
+        class={[
+          "flex items-center gap-2 border-l-2 pl-2 text-[11px]",
+          (matched?(@matched, action.action_id) && "border-brand-500") || "border-transparent"
+        ]}
+      >
         <.risk_pill risk={action.risk} class="flex-none" />
-        <span class="font-mono text-zinc-300">{action.action_id}</span>
+        <span class={[
+          "font-mono",
+          (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
+        ]}>
+          {action.action_id}
+        </span>
         <span :if={action.title} class="truncate text-zinc-500">{action.title}</span>
       </li>
     </ul>
     """
+  end
+
+  defp matched?(nil, _action_id), do: false
+  defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)
+
+  attr :version, :map, required: true
+  attr :pack_id, :string, required: true
+  attr :inspected, :any, required: true, doc: "nil (unloaded), [] (none), or the action list"
+  attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
+  attr :open, :boolean, required: true
+
+  # A trusted version's auditable contents. Unfiltered it's the full set behind a
+  # "View contents" disclosure (one lazy query on first open — see `inspect_pack`).
+  # While a filter is active it auto-opens and shows ONLY the actions that matched
+  # (the pack's other actions are noise then), labelled with the count.
+  defp trusted_disclosure(assigns) do
+    assigns = assign(assigns, :shown, filtered_contents(assigns.inspected, assigns.matched))
+
+    ~H"""
+    <details open={@open} class="group">
+      <summary
+        phx-click="inspect_pack"
+        phx-value-id={@version.id}
+        phx-value-pack-id={@pack_id}
+        phx-value-version={@version.version}
+        class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
+      >
+        <.icon name="hero-chevron-right" class="h-3 w-3 transition-transform group-open:rotate-90" />
+        <span :if={@matched} class="text-brand-300">{match_count_label(@shown)}</span>
+        <span :if={!@matched} class="group-open:hidden">View contents</span>
+        <span :if={!@matched} class="hidden group-open:inline">Trusted contents</span>
+      </summary>
+      <div class="mt-2 pl-4">
+        <p :if={is_nil(@inspected)} class="text-[11px] text-zinc-500">Loading…</p>
+        <p :if={@inspected == []} class="text-[11px] text-zinc-500">
+          No actions advertised for this version right now.
+        </p>
+        <.pack_action_list :if={@shown not in [nil, []]} actions={@shown} />
+      </div>
+    </details>
+    """
+  end
+
+  # The contents a disclosure renders: everything when unfiltered, only the
+  # matched actions when a filter is active (nil stays nil — still loading).
+  defp filtered_contents(nil, _matched), do: nil
+  defp filtered_contents(actions, nil), do: actions
+
+  defp filtered_contents(actions, matched),
+    do: Enum.filter(actions, &matched?(matched, &1.action_id))
+
+  defp match_count_label(shown) do
+    n = length(shown || [])
+    "#{n} matching #{if n == 1, do: "action", else: "actions"}"
   end
 
   def render(assigns) do
@@ -419,7 +590,10 @@ defmodule EmisarWeb.PacksLive do
       </.empty_state>
 
       <.empty_state
-        :if={@pack_count == 0 and @name_filter == "" and not @load_error? and not @loading?}
+        :if={
+          @pack_count == 0 and @name_filter == "" and @risk_filter == "" and not @load_error? and
+            not @loading?
+        }
         icon="hero-cube"
         title="No packs reported yet."
         class="mt-8"
@@ -434,24 +608,28 @@ defmodule EmisarWeb.PacksLive do
         and the packs it loads appear here to trust or reject.
       </.empty_state>
 
-      <%!-- Matches the shared LiveTable filter field (label + brand active-state,
-           sm:w-48) so search reads the same across the console. --%>
+      <%!-- Inline filter row (shared LiveTable field grammar: label + brand
+           active-state, sm:w-48). Search spans pack AND action ids; Risk keeps
+           packs advertising an action at that tier. --%>
       <form
-        :if={not @loading? and not @load_error? and (@pack_count > 0 or @name_filter != "")}
+        :if={
+          not @loading? and not @load_error? and
+            (@pack_count > 0 or @name_filter != "" or @risk_filter != "")
+        }
         phx-change="filter"
-        class="mt-6 w-full sm:w-48"
+        class="mt-6 flex flex-wrap items-end gap-3"
       >
         <label class={[
-          "flex w-full flex-col text-xs font-medium",
+          "flex w-full flex-col text-xs font-medium sm:w-56",
           (@name_filter != "" && "text-brand-300") || "text-zinc-400"
         ]}>
-          <span class="mb-1">Pack</span>
+          <span class="mb-1">Pack or action</span>
           <input
             type="text"
             name="name"
             value={@name_filter}
             phx-debounce="300"
-            placeholder="e.g. cassandra"
+            placeholder="e.g. postgres.activity"
             class={[
               "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600",
               (@name_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
@@ -459,14 +637,40 @@ defmodule EmisarWeb.PacksLive do
             ]}
           />
         </label>
+        <label class={[
+          "flex w-full flex-col text-xs font-medium sm:w-40",
+          (@risk_filter != "" && "text-brand-300") || "text-zinc-400"
+        ]}>
+          <span class="mb-1">Risk</span>
+          <select
+            name="risk"
+            class={[
+              "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200",
+              (@risk_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
+                "border-zinc-700"
+            ]}
+          >
+            <option value="" selected={@risk_filter == ""}>All risk</option>
+            <option
+              :for={tier <- ~w(low medium high critical)}
+              value={tier}
+              selected={@risk_filter == tier}
+            >
+              {String.capitalize(tier)}
+            </option>
+          </select>
+        </label>
       </form>
 
       <%!-- Filter-empty ≠ account-empty: a quiet line, the filter stays live. --%>
       <p
-        :if={@pack_count == 0 and @name_filter != "" and not @load_error? and not @loading?}
+        :if={
+          @pack_count == 0 and (@name_filter != "" or @risk_filter != "") and not @load_error? and
+            not @loading?
+        }
         class="mt-6 text-sm text-zinc-500"
       >
-        No packs match "{@name_filter}".
+        {no_match_copy(@name_filter, @risk_filter)}
       </p>
 
       <ul id="packs" phx-update="stream" class="mt-4">
@@ -507,38 +711,14 @@ defmodule EmisarWeb.PacksLive do
                        from the version it belongs to. A trusted version's
                        contents stay auditable via this collapsed disclosure (one
                        lazy query on first open — see `inspect_pack`). --%>
-                  <details
+                  <.trusted_disclosure
                     :if={v.trust_state == :trusted}
+                    version={v}
+                    pack_id={pack.id}
+                    inspected={@inspected_actions[v.id]}
+                    matched={@matched_actions[v.id]}
                     open={MapSet.member?(@open_versions, v.id)}
-                    class="group"
-                  >
-                    <summary
-                      phx-click="inspect_pack"
-                      phx-value-id={v.id}
-                      phx-value-pack-id={pack.id}
-                      phx-value-version={v.version}
-                      class="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300"
-                    >
-                      <.icon
-                        name="hero-chevron-right"
-                        class="h-3 w-3 transition-transform group-open:rotate-90"
-                      />
-                      <span class="group-open:hidden">View contents</span>
-                      <span class="hidden group-open:inline">Trusted contents</span>
-                    </summary>
-                    <div class="mt-2 pl-4">
-                      <p :if={is_nil(@inspected_actions[v.id])} class="text-[11px] text-zinc-500">
-                        Loading…
-                      </p>
-                      <p :if={@inspected_actions[v.id] == []} class="text-[11px] text-zinc-500">
-                        No actions advertised for this version right now.
-                      </p>
-                      <.pack_action_list
-                        :if={@inspected_actions[v.id] not in [nil, []]}
-                        actions={@inspected_actions[v.id]}
-                      />
-                    </div>
-                  </details>
+                  />
                 </div>
                 <%!-- The meta column caps with the trust state (dot + word, not a
                      filled pill — the run/runner status grammar), then the
@@ -658,7 +838,7 @@ defmodule EmisarWeb.PacksLive do
                   <div class="text-[11px] font-semibold text-amber-100/80">
                     Trusting authorizes {length(@pack_actions[v.id])} action(s):
                   </div>
-                  <.pack_action_list actions={@pack_actions[v.id]} />
+                  <.pack_action_list actions={@pack_actions[v.id]} matched={@matched_actions[v.id]} />
                 </div>
                 <%!-- Trust/Reject mutate authorization state — owner/admin
                      only. The context gate (manage_catalog) is defense in
@@ -769,6 +949,16 @@ defmodule EmisarWeb.PacksLive do
     packs = if pack_count == 1, do: "pack", else: "packs"
     versions = if version_count == 1, do: "version", else: "versions"
     "#{pack_count} #{packs} · #{version_count} #{versions}"
+  end
+
+  # The filtered-empty line names whichever axes are active, so a no-match reads
+  # as "nothing matched THESE filters", not an empty inventory.
+  defp no_match_copy(name, risk) do
+    cond do
+      name != "" and risk != "" -> ~s(No #{risk}-risk packs match "#{name}".)
+      name != "" -> ~s(No packs or actions match "#{name}".)
+      true -> "No packs advertise a #{risk}-risk action."
+    end
   end
 
   # The stored hash already carries the "sha256:" prefix the template

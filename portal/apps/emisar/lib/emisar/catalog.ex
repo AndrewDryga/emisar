@@ -759,6 +759,28 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Every pack version's advertised actions across the account in ONE read, keyed
+  by `{pack_id, pack_version}` and deduped to one row per `action_id`. The Packs
+  page uses it to filter packs by risk tier or action name without a per-version
+  query. Account-scoped via the subject. Returns
+  `{:ok, %{{pack_id, pack_version} => [%RunnerAction{}]}}`.
+  """
+  def pack_actions_index(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      index =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.ordered_by_action()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+        |> Map.new(fn {key, actions} -> {key, Enum.uniq_by(actions, & &1.action_id)} end)
+
+      {:ok, index}
+    end
+  end
+
+  @doc """
   Diff a pending pack version's NEWLY-advertised action set against the
   `trusted_manifest` snapshotted when its hash was last trusted — so the
   re-trust UI shows what changed (added / removed / risk-or-kind-changed),
