@@ -85,23 +85,26 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       assert html =~ "Get to your first gated run"
-      assert html =~ "1 of 2 done"
+      assert html =~ "1 of 3 done"
       assert html =~ "1 runner connected"
       assert html =~ ~p"/app/#{account}/agents/connect"
       refute html =~ "Recent runs"
     end
 
-    test "renders the operational dashboard once both connections exist", %{conn: conn} do
+    test "renders the operational dashboard once a run exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
           %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
           subject
         )
+
+      # The checklist owns the whole path to the first run; a landed run hands off.
+      first_run(account, runner)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -110,9 +113,6 @@ defmodule EmisarWeb.DashboardLiveTest do
       # not connected in a test) and the runs section returns.
       assert html =~ "/ 1 connected"
       assert html =~ "Recent runs"
-      # Both connected, nothing dispatched yet: the runs zero state
-      # deep-links the first runner's catalog as the dispatch nudge.
-      assert html =~ "dispatch an action from its catalog"
 
       # A solo account (just the owner) reports its honest member count and
       # nudges an invite — never the premature "Enable SSO"
@@ -132,15 +132,17 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      # Both connections exist so the operational dashboard (not the checklist)
-      # renders its pillars.
-      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+      # A landed run puts the account on the operational dashboard (not the
+      # checklist), so its pillars render.
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
           %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
           subject
         )
+
+      first_run(account, runner)
 
       # A second member turns "solo" into a team.
       member = Fixtures.Users.create_user()
@@ -169,13 +171,15 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
           %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
           subject
         )
+
+      first_run(account, runner)
 
       member = Fixtures.Users.create_user()
 
@@ -200,7 +204,7 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
-    test "the dispatch nudge appears with connections-but-no-runs and clears after the first run",
+    test "both connected but nothing run: the checklist's run step carries the example prompt",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
@@ -212,23 +216,18 @@ defmodule EmisarWeb.DashboardLiveTest do
           subject
         )
 
+      # Both connections done, no run yet: the checklist stays, its third step now
+      # current, carrying the exact prompt to send an agent.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "dispatch an action from its catalog"
-      # Deep-linked to the runner's own catalog, not the runners list.
-      assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
+      assert html =~ "Get to your first gated run"
+      assert html =~ "Ask your agent to run an action"
+      assert html =~ "load, memory, disk, and any failed services"
 
-      {:ok, _run} =
-        Emisar.Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          args: %{},
-          reason: "first run",
-          source: "operator"
-        })
-
+      # The first run hands off to the pillars — the checklist is gone.
+      first_run(account, runner)
       {:ok, _lv2, html2} = live(conn, ~p"/app/#{account}")
-      refute html2 =~ "dispatch an action from its catalog"
+      refute html2 =~ "Get to your first gated run"
+      assert html2 =~ "Recent runs"
     end
 
     # every sub-read on the dashboard flows through
@@ -325,11 +324,11 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       send(lv.pid, %{event: "presence_diff"})
       send(lv.pid, :reload_dashboard)
-      assert render(lv) =~ "1 of 2 done"
+      assert render(lv) =~ "1 of 3 done"
 
       # Unrelated message shapes are ignored, never a crash.
       send(lv.pid, :stray_message)
-      assert render(lv) =~ "1 of 2 done"
+      assert render(lv) =~ "1 of 3 done"
     end
   end
 
@@ -475,5 +474,19 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/audit"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']")
     end
+  end
+
+  # A landed run pushes an account past the onboarding checklist into the
+  # operational dashboard — the checklist owns everything up to the first run.
+  defp first_run(account, runner) do
+    {:ok, _run} =
+      Emisar.Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "first run",
+        source: "operator"
+      })
   end
 end

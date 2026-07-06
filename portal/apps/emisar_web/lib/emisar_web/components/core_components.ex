@@ -2833,6 +2833,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :copy_label, :string, default: "Copy"
   attr :prompt, :boolean, default: false, doc: ~S(render a select-none "$ " shell prompt)
   attr :max_h, :string, default: nil, doc: ~S(scroll clamp on the pre, e.g. "max-h-64")
+
+  attr :wrap, :boolean,
+    default: false,
+    doc: "wrap long lines instead of scrolling — for prose-y content like an example prompt"
+
   attr :class, :string, default: nil
   attr :rest, :global
   slot :badge, doc: "header extras next to the label (e.g. a streaming pill)"
@@ -2886,7 +2891,8 @@ defmodule EmisarWeb.CoreComponents do
       <pre
         id={@id}
         class={[
-          "overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
+          "bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
+          if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-auto"),
           @max_h
         ]}
       ><span :if={@prompt} class="select-none text-zinc-600">$ </span>{@code}</pre>

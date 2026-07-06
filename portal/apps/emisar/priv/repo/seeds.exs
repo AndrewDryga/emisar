@@ -1598,3 +1598,72 @@ end
 # An empty Free account — to see the onboarding / empty-state surfaces.
 _ = seed_plan_account.("Blank Workspace Demo", "blank", "free")
 IO.puts(IO.ANSI.cyan() <> "✓ Blank Workspace Demo (slug=blank, free) — empty" <> IO.ANSI.reset())
+
+# A "both connected, nothing run" account — one runner AND one agent, no runs —
+# so the onboarding checklist's third step (the first run, with its example
+# prompt) shows without dispatching anything. Demo-owned, reachable by switching
+# accounts as demo. Existence-checked, so it just adds the missing agent key to
+# the account demo already made by hand rather than duplicating its runner.
+both_connected_account =
+  case Repo.fetch(
+         Account.Query.not_deleted() |> Account.Query.by_slug("both-connected"),
+         Account.Query
+       ) do
+    {:error, :not_found} ->
+      {:ok, created} =
+        Accounts.create_account_with_owner(
+          %{name: "Both Connected Co", slug: "both-connected"},
+          user
+        )
+
+      created
+
+    {:ok, existing} ->
+      existing
+  end
+
+{:ok, bc_membership} = Accounts.fetch_membership_for_session(user, both_connected_account.id)
+bc_subject = Subject.for_user(user, both_connected_account, bc_membership)
+
+case Runners.list_all_runners_for_account(bc_subject) do
+  {:ok, [_ | _]} ->
+    :ok
+
+  _ ->
+    {:ok, bc_runner} =
+      insert_seed_runner.(both_connected_account.id, %{
+        name: "both-connected-prod-1",
+        group: "prod"
+      })
+
+    bc_runner
+    |> Ecto.Changeset.change(
+      hostname: "both-connected-prod-1.example",
+      last_connected_at: mins_ago.(20),
+      runner_version: "0.4.2"
+    )
+    |> Repo.update!()
+    |> advertise.(linux_actions)
+end
+
+case ApiKeys.list_api_keys_for_account(bc_subject, page: [limit: 10]) do
+  {:ok, [_ | _], _} ->
+    :ok
+
+  _ ->
+    {:ok, _raw, _key} =
+      ApiKeys.create_key(
+        %{
+          name: "Claude Code",
+          description: "MCP client for triage",
+          scopes: ["actions:read", "actions:execute"],
+          runner_group_filter: []
+        },
+        bc_subject
+      )
+end
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Both Connected Co (slug=both-connected) — runner + agent, no runs" <> IO.ANSI.reset()
+)

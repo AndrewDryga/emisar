@@ -55,7 +55,6 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
-    |> assign(:first_runner_id, first_runner_id(runners))
     |> assign(
       :recent_runs,
       # :api_key so the source badge names the actual agent ("Claude Code -
@@ -77,13 +76,16 @@ defmodule EmisarWeb.DashboardLive do
     |> assign_setup_state(subject)
   end
 
-  # First-run: until the account has BOTH connections (or has actually run
-  # something), the dashboard's job is onboarding — an ordered checklist to
-  # the first gated run — not posture over data that doesn't exist yet.
+  # First-run: until the account has actually RUN something, the dashboard's job
+  # is onboarding — an ordered checklist that runs all the way to the first run
+  # (connect a runner, connect an agent, then ask the agent to run one) — not
+  # posture over data that doesn't exist yet. It stays through the "both
+  # connected, nothing run" phase, where its third step is the run itself, and
+  # hands off to the pillars the moment a run lands.
   # Sequenced, not locked: any step stays clickable in any order.
   defp assign_setup_state(socket, subject) do
-    %{runners_total: runners_total, agents: agents, recent_runs: recent_runs} = socket.assigns
-    show_setup? = recent_runs == [] and (runners_total == 0 or agents.total == 0)
+    %{recent_runs: recent_runs} = socket.assigns
+    show_setup? = recent_runs == []
 
     socket
     |> assign(:show_setup?, show_setup?)
@@ -138,9 +140,6 @@ defmodule EmisarWeb.DashboardLive do
   defp unwrap_ok({:ok, value}), do: value
   defp unwrap_ok(_), do: nil
 
-  defp first_runner_id([runner | _]), do: runner.id
-  defp first_runner_id([]), do: nil
-
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -168,7 +167,6 @@ defmodule EmisarWeb.DashboardLive do
         pending_approvals={@pending_approvals}
         pending_approvals_count={@pending_approvals_count}
         recent_runs={@recent_runs}
-        first_runner_id={@first_runner_id}
         run_stats={@run_stats}
         agents={@agents}
         billing={@billing}
@@ -209,7 +207,6 @@ defmodule EmisarWeb.DashboardLive do
   attr :pending_approvals, :list, required: true
   attr :pending_approvals_count, :integer, required: true
   attr :recent_runs, :list, required: true
-  attr :first_runner_id, :string, default: nil
   attr :run_stats, :map, required: true
   attr :agents, :map, required: true
   attr :billing, :map, required: true
@@ -255,7 +252,7 @@ defmodule EmisarWeb.DashboardLive do
          but the product does nothing until a runner AND an agent are connected
          — team is genuinely optional. The zero state is an ordered checklist
          to the first gated run instead; it self-replaces with the pillars the
-         moment both connections exist (or anything has run). --%>
+         moment anything has run. --%>
     <.setup_checklist
       :if={@show_setup?}
       runners_total={@runners_total}
@@ -353,10 +350,9 @@ defmodule EmisarWeb.DashboardLive do
             </span>
           </span>
         </div>
-        <%!-- Gated on runs existing — at zero it dead-ended into an equally
-             empty page. --%>
+        <%!-- The runs section renders only once a run exists (the checklist owns
+             the whole path to the first run), so this always resolves. --%>
         <.link
-          :if={@recent_runs != []}
           navigate={~p"/app/#{@current_account}/runs"}
           class="group text-xs font-medium text-brand-400 hover:text-brand-300"
         >
@@ -364,52 +360,17 @@ defmodule EmisarWeb.DashboardLive do
         </.link>
       </div>
 
-      <%= if @recent_runs == [] do %>
-        <%!-- The "dispatch your first action" step lives HERE — it's the runs
-             surface's own zero state. Two shapes: a connected fleet points at
-             the first runner's catalog; no fleet points back at the pillars. --%>
-        <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet." class="px-5 py-10">
-          <%= if @first_runner_id do %>
-            Open
-            <.link
-              navigate={~p"/app/#{@current_account}/runners/#{@first_runner_id}"}
-              class="text-brand-400 hover:text-brand-300"
-            >
-              your runner
-            </.link>
-            and dispatch an action from its catalog — or ask a connected
-            <.link
-              navigate={~p"/app/#{@current_account}/agents"}
-              class="text-brand-400 hover:text-brand-300"
-            >
-              agent
-            </.link>
-            to. Every run lands here, gated and audited.
-          <% else %>
-            Install a
-            <.link
-              navigate={~p"/app/#{@current_account}/runners/install"}
-              class="text-brand-400 hover:text-brand-300"
-            >
-              runner
-            </.link>
-            first — actions dispatch to your own hosts, and every run lands here,
-            gated and audited.
-          <% end %>
-        </.empty_state>
-      <% else %>
-        <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-          <li :for={run <- @recent_runs}>
-            <.run_row
-              run={run}
-              show_runner
-              show_source
-              padding="-mx-2 px-2 py-3.5"
-              current_account={@current_account}
-            />
-          </li>
-        </ul>
-      <% end %>
+      <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+        <li :for={run <- @recent_runs}>
+          <.run_row
+            run={run}
+            show_runner
+            show_source
+            padding="-mx-2 px-2 py-3.5"
+            current_account={@current_account}
+          />
+        </li>
+      </ul>
     </section>
     """
   end
@@ -448,15 +409,28 @@ defmodule EmisarWeb.DashboardLive do
     runner_done? = assigns.runners_total > 0
     agent_done? = assigns.agents_total > 0
 
+    both_connected? = runner_done? and agent_done?
+
     assigns =
       assigns
       |> assign(:runner_done?, runner_done?)
       |> assign(:agent_done?, agent_done?)
+      |> assign(:both_connected?, both_connected?)
+      # of 3: the third step is the first run itself. done_count tracks the two
+      # connections (max 2) — a landed run hides the whole checklist, so it never
+      # reads "3 of 3"; the count tops out at "2 of 3", i.e. "set up, now run one".
       |> assign(:done_count, Enum.count([runner_done?, agent_done?], & &1))
-      |> assign(:current_step, if(runner_done?, do: 2, else: 1))
-      # A concrete, copy-pasteable prompt so a fresh operator sees exactly what
-      # to SAY to their agent — the health check reads as obviously safe and maps
-      # to real actions (load / memory / disk / failed units).
+      |> assign(
+        :current_step,
+        cond do
+          both_connected? -> 3
+          runner_done? -> 2
+          true -> 1
+        end
+      )
+      # The exact words to send an agent, so a first-timer isn't left guessing.
+      # A read-only health check: it maps to real actions (load / memory / disk /
+      # failed units) and can't change anything, so it's a safe first run.
       |> assign(
         :example_prompt,
         "Check my production runners with emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
@@ -469,12 +443,12 @@ defmodule EmisarWeb.DashboardLive do
           Get to your first gated run
         </h2>
         <span :if={@done_count > 0} class="text-xs tabular-nums text-brand-300">
-          {@done_count} of 2 done
+          {@done_count} of 3 done
         </span>
       </div>
       <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
-        Connect a runner and an agent, and any MCP client can run gated, audited actions
-        on your own hosts.
+        Two connections, then ask any MCP client — Claude, Cursor, Codex — to run an action
+        on your own hosts. Every call is checked against policy first.
       </p>
 
       <ol class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
@@ -505,30 +479,40 @@ defmodule EmisarWeb.DashboardLive do
         >
           Give Claude, Cursor, or any MCP client a scoped, revocable key.
         </.setup_step>
-        <%!-- Step 3 — the payoff, and the intuition a fresh operator lacks most:
-             WHAT do I actually say? Not a tracked toggle (the checklist hands off
-             to the pillars the moment anything runs) — a preview of the "now try
-             it" moment, carrying a copy-pasteable example prompt. Custom <li>
-             rather than <.setup_step>: its body is a quote block, not one line. --%>
+        <%!-- Step 3 — the run itself, and the thing a first-timer most needs
+             spelled out: the exact words to send. Becomes the current step once
+             both connections exist; it never toggles to done — a landed run hides
+             the whole checklist. Custom <li> (not <.setup_step>) so the body can
+             carry a real code_panel instead of one line. --%>
         <li class="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:gap-5">
-          <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold text-zinc-500 ring-1 ring-zinc-800">
+          <span class={[
+            "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ring-1",
+            if(@both_connected?,
+              do: "bg-zinc-800 text-zinc-100 ring-zinc-600",
+              else: "text-zinc-500 ring-zinc-800"
+            )
+          ]}>
             3
           </span>
           <div class="min-w-0 flex-1">
-            <span class="font-medium text-zinc-300">Ask your agent to run an action</span>
+            <span class={[
+              "font-medium",
+              if(@both_connected?, do: "text-zinc-100", else: "text-zinc-300")
+            ]}>
+              Ask your agent to run an action
+            </span>
             <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
-              The payoff: ask your MCP client in plain language and emisar turns it into a
-              gated, audited action on your fleet. Try a health check —
+              Ask in plain English — your agent picks the matching action from the catalog and
+              runs it on the host. A read-only health check is a safe first run:
             </p>
-            <%!-- The example prompt reads as a QUOTE (left rule + italic), not a
-                 boxed artifact that would outshout the checklist steps. Copy
-                 hands the exact text to paste into the agent. --%>
-            <div class="mt-3 flex items-start gap-3 border-l-2 border-brand-500/40 pl-3 sm:max-w-prose">
-              <p class="min-w-0 flex-1 text-sm italic leading-relaxed text-zinc-300">
-                {@example_prompt}
-              </p>
-              <.copy_button text={@example_prompt} class="shrink-0">Copy</.copy_button>
-            </div>
+            <.code_panel
+              id="onboarding-example-prompt"
+              label="Example prompt"
+              copy
+              wrap
+              class="mt-3 sm:max-w-prose"
+              code={@example_prompt}
+            />
           </div>
         </li>
         <.setup_step
