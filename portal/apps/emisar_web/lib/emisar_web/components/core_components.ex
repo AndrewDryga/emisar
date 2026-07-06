@@ -3042,18 +3042,23 @@ defmodule EmisarWeb.CoreComponents do
   available on Team and Enterprise; `tier: :enterprise` → Enterprise only.
 
   Pass `link={false}` for the non-linking `<span>` variant when the badge sits
-  INSIDE another anchor (a docs index card), since anchors can't nest.
+  INSIDE another anchor (a docs index card, or a gated in-app control), since
+  anchors can't nest. Pass `compact` for the short in-app label (`Team` /
+  `Enterprise`, the minimum plan to unlock) instead of the docs form that spells
+  out every plan the feature is on — the pill that marks a locked button or link.
 
       <h2>Directory sync <.plan_badge tier={:enterprise} /></h2>
+      <.button navigate={billing}>Export CSV <.plan_badge tier={:team} compact link={false} /></.button>
   """
   attr :tier, :atom, required: true, values: [:team, :enterprise]
   attr :link, :boolean, default: true
+  attr :compact, :boolean, default: false, doc: "short label for an in-app gate pill"
   attr :class, :string, default: nil
 
   def plan_badge(%{link: false} = assigns) do
     ~H"""
     <span title={plan_badge_title(@tier)} class={[plan_badge_class(), @class]}>
-      {plan_badge_label(@tier)}
+      {plan_badge_label(@tier, @compact)}
     </span>
     """
   end
@@ -3065,7 +3070,7 @@ defmodule EmisarWeb.CoreComponents do
       title={plan_badge_title(@tier)}
       class={[plan_badge_class(), "hover:bg-amber-500/20 hover:text-amber-200", @class]}
     >
-      {plan_badge_label(@tier)}
+      {plan_badge_label(@tier, @compact)}
     </.link>
     """
   end
@@ -3076,8 +3081,9 @@ defmodule EmisarWeb.CoreComponents do
       "ring-1 ring-amber-500/25 transition-colors"
   end
 
-  defp plan_badge_label(:team), do: "Team & Enterprise"
-  defp plan_badge_label(:enterprise), do: "Enterprise"
+  defp plan_badge_label(:team, true), do: "Team"
+  defp plan_badge_label(:team, false), do: "Team & Enterprise"
+  defp plan_badge_label(:enterprise, _compact), do: "Enterprise"
 
   defp plan_badge_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
   defp plan_badge_title(:enterprise), do: "Available on the Enterprise plan — see pricing"

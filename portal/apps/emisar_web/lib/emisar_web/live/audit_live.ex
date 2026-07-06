@@ -292,8 +292,7 @@ defmodule EmisarWeb.AuditLive do
              button to hold its own beside the H1. Export downloads the CURRENT
              FILTERED VIEW as CSV; both export surfaces are Team+ (the console
              trail is on every plan — taking the data OUT is paid). On a free
-             plan the button wears a LOCK + hover tooltip and walks to Billing —
-             the gate reads at a glance, without a clumsy "· Team" label suffix. --%>
+             plan the button wears the amber plan pill and walks to Billing. --%>
         <%= if Billing.audit_export_available?(@current_account) do %>
           <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
             Export CSV
@@ -301,7 +300,7 @@ defmodule EmisarWeb.AuditLive do
         <% else %>
           <.upgrade_button
             account={@current_account}
-            tip="Audit export is on the Team plan — upgrade to turn it on"
+            title="CSV export is on the Team plan — upgrade to turn it on"
           >
             Export CSV
           </.upgrade_button>
@@ -318,7 +317,7 @@ defmodule EmisarWeb.AuditLive do
           <% else %>
             <.upgrade_button
               account={@current_account}
-              tip="SIEM streaming is on the Team plan — upgrade to turn it on"
+              title="SIEM streaming is on the Team plan — upgrade to turn it on"
             >
               Stream to SIEM
             </.upgrade_button>
@@ -540,24 +539,23 @@ defmodule EmisarWeb.AuditLive do
   end
 
   attr :account, :any, required: true
-  attr :tip, :string, required: true
+  attr :title, :string, required: true
   slot :inner_block, required: true
 
-  # A plan-gated title-row action: a lock icon + hover tooltip naming the gate,
-  # routing to Billing to upgrade. The lock IS the "not on your plan" signal, so
-  # the label stays clean — no "· Team" suffix crowding it.
+  # A plan-gated title-row action: the clean label + the ONE upsell token — an
+  # amber `<.plan_badge>` pill (same grammar as the docs) — routing to Billing.
+  # The "why" rides a native `title` (browser-placed, so it can't clip off the
+  # top of the viewport the way the hover bubble did next to the H1).
   defp upgrade_button(assigns) do
     ~H"""
-    <.tooltip text={@tip}>
-      <.button
-        variant={:secondary}
-        size={:md}
-        icon="hero-lock-closed"
-        navigate={~p"/app/#{@account}/settings/billing"}
-      >
-        {render_slot(@inner_block)}
-      </.button>
-    </.tooltip>
+    <.button
+      variant={:secondary}
+      size={:md}
+      navigate={~p"/app/#{@account}/settings/billing"}
+      title={@title}
+    >
+      {render_slot(@inner_block)} <.plan_badge tier={:team} compact link={false} />
+    </.button>
     """
   end
 

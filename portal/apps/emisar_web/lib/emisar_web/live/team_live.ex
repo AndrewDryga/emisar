@@ -1212,10 +1212,11 @@ defmodule EmisarWeb.TeamLive do
                   </.button>
                 <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
                   <.link
-                    navigate={~p"/app/#{@current_account}/settings/sso"}
-                    class="group inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+                    navigate={~p"/app/#{@current_account}/settings/billing"}
+                    title="Single sign-on is on the Team plan — upgrade to enable it"
+                    class="group inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
                   >
-                    Set up SSO · Team <.cta_arrow />
+                    Set up SSO <.plan_badge tier={:team} compact link={false} /> <.cta_arrow />
                   </.link>
                 <% true -> %>
               <% end %>

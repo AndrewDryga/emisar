@@ -23,11 +23,11 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Free plan, no provider: ONE door — the plan-gated setup link into the SSO
-      # page (which carries the upsell). No provider yet, so nothing to list.
+      # Free plan, no provider: ONE door — the plan-gated setup link carrying the
+      # amber "Team" pill, routing to Billing to upgrade. No provider to list yet.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Set up SSO · Team"
-      assert html =~ ~p"/app/#{account}/settings/sso"
+      assert html =~ "Set up SSO"
+      assert html =~ ~p"/app/#{account}/settings/billing"
 
       # With the plan (still no provider), the door becomes the real Add button
       # into /new — the plan gate is cleared.
@@ -35,7 +35,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Add provider"
       assert html =~ ~p"/app/#{account}/settings/sso/new"
-      refute html =~ "Set up SSO · Team"
+      refute html =~ "Set up SSO"
     end
   end
 
