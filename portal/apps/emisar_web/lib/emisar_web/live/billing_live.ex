@@ -15,10 +15,21 @@ defmodule EmisarWeb.BillingLive do
        socket
        |> assign(:plans, ordered_plans())
        |> assign(:summary, fetch_summary(account, socket.assigns.current_subject))
-       |> assign(:member_count, member_count(socket))}
+       |> assign(:member_count, member_count(socket))
+       |> assign(:features, feature_states(account))}
     else
       {:ok, socket}
     end
+  end
+
+  # The plan's gated feature entitlements (Paddle custom_data overrides, else the
+  # plan-tier default) — rendered as an enabled/disabled list beside usage.
+  defp feature_states(account) do
+    %{
+      sso: Billing.sso_available?(account),
+      scim: Billing.directory_sync_available?(account),
+      audit_export: Billing.audit_export_available?(account)
+    }
   end
 
   defp fetch_summary(account, subject) do
@@ -248,8 +259,8 @@ defmodule EmisarWeb.BillingLive do
              and a help/support aside on the right — the create-page helper-rail
              grammar, so "what you have / what you're using / who to ask" read in
              one row. --%>
-        <section class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start">
-          <div class="space-y-6 lg:col-span-2">
+        <section class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
+          <div class="space-y-8 lg:col-span-3">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -340,11 +351,109 @@ defmodule EmisarWeb.BillingLive do
                 change your plan, ask about an invoice, or cancel — we'll take care of it.
               </:body>
             </.event_block>
+
+            <%!-- Plans sit in the main column (not full width under the rail).
+                 Picking a plan is the choice_cards concept — the current plan
+                 takes the selected treatment (bright ring), the rest quiet. --%>
+            <section>
+              <.section_header title="Plans" />
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <%!-- ONE card style for every plan — identity ("current") and merch
+                 ("most popular") are the CHIPS' job; per-plan border treatments
+                 read as three different products. --%>
+                <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = selected ring) --%>
+                <article
+                  :for={plan <- @plans}
+                  class={[
+                    "relative flex flex-col rounded-lg p-5",
+                    if(current_plan?(plan, @summary),
+                      do: "bg-white/[0.04] ring-2 ring-brand-400/70",
+                      else: "bg-black/20 ring-1 ring-zinc-800"
+                    )
+                  ]}
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
+                    <.chip :if={current_plan?(plan, @summary)} tone={:neutral}>current</.chip>
+                    <%!-- Upsell merch only reads as such BELOW the badged plan —
+                     a customer already above it gets silence. --%>
+                    <.chip :if={plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan)}>
+                      most popular
+                    </.chip>
+                  </div>
+
+                  <p class="mt-2 text-sm text-zinc-400">{price_label(plan)}</p>
+
+                  <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
+                    <li :for={f <- plan.features} class="flex items-start gap-2">
+                      <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                      <span class="leading-relaxed">{f}</span>
+                    </li>
+                  </ul>
+
+                  <%!-- No footer on the current plan: the chip + bright ring already
+                   say it — a disabled "You're here" button was a fake affordance. --%>
+                  <div :if={not current_plan?(plan, @summary)} class="mt-5">
+                    <%= cond do %>
+                      <% plan.key == "enterprise" -> %>
+                        <.button
+                          variant={:secondary}
+                          size={:md}
+                          class="w-full"
+                          phx-click="contact_sales"
+                        >
+                          Contact sales
+                        </.button>
+                      <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
+                        <%!-- Quiet fact for non-owners, not a gray slab that apes a
+                         disabled button. --%>
+                        <p class="py-2 text-center text-xs font-medium text-zinc-500">Owners only</p>
+                      <% @summary.plan == "enterprise" -> %>
+                        <%!-- On a custom Enterprise plan every other tier is a downgrade,
+                         and there's no self-serve path off it — the note above
+                         carries the one real action (contact support). --%>
+                        <.button
+                          variant={:ghost}
+                          size={:sm}
+                          class="w-full"
+                          href={support_mailto(@current_account)}
+                        >
+                          Contact support to switch
+                        </.button>
+                      <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
+                        <.button
+                          size={:md}
+                          class="w-full"
+                          phx-click="upgrade"
+                          phx-value-plan={plan.key}
+                          phx-disable-with="Starting checkout…"
+                        >
+                          Upgrade to {plan.name}
+                        </.button>
+                      <% true -> %>
+                        <%!-- Lower tier than the current plan — a downgrade. A downgrade
+                         isn't a checkout (that would open a second subscription); plan
+                         changes + cancellations live in the Paddle customer portal, so
+                         route there instead of mislabeling it "Upgrade to Free". --%>
+                        <.button
+                          variant={:secondary}
+                          size={:md}
+                          class="w-full"
+                          phx-click="manage_billing"
+                          phx-disable-with="Opening portal…"
+                        >
+                          Downgrade to {plan.name}
+                        </.button>
+                    <% end %>
+                  </div>
+                </article>
+              </div>
+            </section>
           </div>
 
-          <%!-- Right rail — current limits + where to get help, the create-page
-             helper-column grammar. --%>
-          <aside class="space-y-8 lg:border-l lg:border-zinc-800/70 lg:pl-8">
+          <%!-- Right rail — current limits, plan features, and where to get help
+             (the create-page helper-column grammar), no framing line. --%>
+          <aside class="space-y-8">
             <div>
               <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Usage
@@ -369,6 +478,17 @@ defmodule EmisarWeb.BillingLive do
             </div>
             <div>
               <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Features
+              </h3>
+              <%!-- Plan-gated features (entitlement-aware) — what this plan turns on. --%>
+              <ul class="mt-4 space-y-2 text-sm">
+                <.feature_line enabled={@features.sso} label="Single sign-on (OIDC)" />
+                <.feature_line enabled={@features.scim} label="SCIM directory sync" />
+                <.feature_line enabled={@features.audit_export} label="Audit export (CSV + SIEM)" />
+              </ul>
+            </div>
+            <div>
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Need help?
               </h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-400">
@@ -384,102 +504,25 @@ defmodule EmisarWeb.BillingLive do
             </div>
           </aside>
         </section>
-
-        <%!-- Plan cards. Three across on desktop, single column on
-             phones. Picking a plan is the choice_cards concept, so the cards
-             wear that recipe: the current plan takes the selected treatment
-             (bright ring), the rest the quiet one. --%>
-        <section>
-          <.section_header title="Plans" />
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <%!-- ONE card style for every plan — identity ("current") and merch
-                 ("most popular") are the CHIPS' job; per-plan border treatments
-                 read as three different products. --%>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = selected ring) --%>
-            <article
-              :for={plan <- @plans}
-              class={[
-                "relative flex flex-col rounded-lg p-5",
-                if(current_plan?(plan, @summary),
-                  do: "bg-white/[0.04] ring-2 ring-brand-400/70",
-                  else: "bg-black/20 ring-1 ring-zinc-800"
-                )
-              ]}
-            >
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
-                <.chip :if={current_plan?(plan, @summary)} tone={:neutral}>current</.chip>
-                <%!-- Upsell merch only reads as such BELOW the badged plan —
-                     a customer already above it gets silence. --%>
-                <.chip :if={plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan)}>
-                  most popular
-                </.chip>
-              </div>
-
-              <p class="mt-2 text-sm text-zinc-400">{price_label(plan)}</p>
-
-              <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
-                <li :for={f <- plan.features} class="flex items-start gap-2">
-                  <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-                  <span class="leading-relaxed">{f}</span>
-                </li>
-              </ul>
-
-              <%!-- No footer on the current plan: the chip + bright ring already
-                   say it — a disabled "You're here" button was a fake affordance. --%>
-              <div :if={not current_plan?(plan, @summary)} class="mt-5">
-                <%= cond do %>
-                  <% plan.key == "enterprise" -> %>
-                    <.button variant={:secondary} size={:md} class="w-full" phx-click="contact_sales">
-                      Contact sales
-                    </.button>
-                  <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
-                    <%!-- Quiet fact for non-owners, not a gray slab that apes a
-                         disabled button. --%>
-                    <p class="py-2 text-center text-xs font-medium text-zinc-500">Owners only</p>
-                  <% @summary.plan == "enterprise" -> %>
-                    <%!-- On a custom Enterprise plan every other tier is a downgrade,
-                         and there's no self-serve path off it — the note above
-                         carries the one real action (contact support). --%>
-                    <.button
-                      variant={:ghost}
-                      size={:sm}
-                      class="w-full"
-                      href={support_mailto(@current_account)}
-                    >
-                      Contact support to switch
-                    </.button>
-                  <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
-                    <.button
-                      size={:md}
-                      class="w-full"
-                      phx-click="upgrade"
-                      phx-value-plan={plan.key}
-                      phx-disable-with="Starting checkout…"
-                    >
-                      Upgrade to {plan.name}
-                    </.button>
-                  <% true -> %>
-                    <%!-- Lower tier than the current plan — a downgrade. A downgrade
-                         isn't a checkout (that would open a second subscription); plan
-                         changes + cancellations live in the Paddle customer portal, so
-                         route there instead of mislabeling it "Upgrade to Free". --%>
-                    <.button
-                      variant={:secondary}
-                      size={:md}
-                      class="w-full"
-                      phx-click="manage_billing"
-                      phx-disable-with="Opening portal…"
-                    >
-                      Downgrade to {plan.name}
-                    </.button>
-                <% end %>
-              </div>
-            </article>
-          </div>
-        </section>
       </div>
     </.dashboard_shell>
+    """
+  end
+
+  attr :enabled, :boolean, required: true
+  attr :label, :string, required: true
+
+  # One plan-feature line in the billing rail: a check when the plan turns it
+  # on, a muted dash when it doesn't.
+  defp feature_line(assigns) do
+    ~H"""
+    <li class="flex items-center gap-2">
+      <.icon
+        name={if @enabled, do: "hero-check-circle-mini", else: "hero-minus-circle-mini"}
+        class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-600")}
+      />
+      <span class={(@enabled && "text-zinc-300") || "text-zinc-500"}>{@label}</span>
+    </li>
     """
   end
 
