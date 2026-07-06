@@ -674,9 +674,8 @@ defmodule EmisarWeb.AgentsLive do
       </:actions>
 
       <.page_intro :if={@live_action == :index}>
-        The LLM clients connected to this workspace over MCP — Claude, ChatGPT, Cursor, Codex, or
-        any MCP agent. Each holds its own revocable key that dispatches only gated, audited actions
-        and reaches only the runners its operator can.
+        The agents connected to this workspace, and the key behind each — connect a new one, or
+        revoke access in one click.
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>

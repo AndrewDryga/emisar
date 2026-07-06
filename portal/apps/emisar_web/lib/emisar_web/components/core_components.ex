@@ -1577,8 +1577,12 @@ defmodule EmisarWeb.CoreComponents do
              the page title is the first line of the content, set large, and the
              page begins. --%>
         <header class="px-4 pb-2 pt-7 sm:px-8 sm:pt-9">
+          <%!-- items-center, not items-start: a taller action button (a :md
+               control beside the H1) would otherwise stretch the row's bottom
+               below the title and inflate the gap to the page intro — the gap
+               read larger on Audit / Runbooks than on action-less pages. --%>
           <div class={[
-            "mx-auto flex w-full flex-wrap items-start gap-x-3 gap-y-3",
+            "mx-auto flex w-full flex-wrap items-center gap-x-3 gap-y-3",
             shell_width(@width)
           ]}>
             <%!-- Mobile hamburger (hidden on lg) — the 36px button centers on
@@ -1604,7 +1608,7 @@ defmodule EmisarWeb.CoreComponents do
             </h1>
             <%!-- ml-auto: actions hold the RIGHT edge on the shared row AND
                  when they wrap to their own line on a phone. --%>
-            <div class="ml-auto flex shrink-0 flex-wrap items-center gap-2 pt-1.5 sm:gap-3">
+            <div class="ml-auto flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
               {render_slot(@actions)}
             </div>
           </div>
@@ -4033,25 +4037,30 @@ defmodule EmisarWeb.CoreComponents do
         Two minutes — pick a Linux or macOS host, paste the one-liner.
       </p>
 
-      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-x-20">
+      <div class="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-x-12">
         <div>
           <%= cond do %>
             <% is_binary(@install_command) -> %>
-              <div class="space-y-10">
+              <div class="space-y-8">
                 <section>
                   <.section_header title="Run this on the host" />
                   <%!-- No wrap: a token broken mid-word ("EMIS AR_URL") reads
                        as corruption in the very command we're asking the
                        operator to trust — scroll on narrow screens; Copy is
                        the real path. --%>
-                  <div class="flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                    <pre class="flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
+                  <%!-- Terminal-artifact styling (the code_panel edge — a solid
+                       ring + a hairline inset highlight, softer than a flat
+                       border) with a decorative "$" prompt. The $ is select-none
+                       and never copied; Copy hands over the literal command. --%>
+                  <div class="flex items-center gap-3 rounded-xl bg-zinc-900/60 p-4 font-mono text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800">
+                    <span class="select-none text-zinc-600">$</span>
+                    <pre class="min-w-0 flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
                     <%!-- Copy the literal string, not the rendered element's
                            innerText: the leading space (HISTCONTROL=ignorespace)
                            is significant and the selector path would strip it. --%>
                     <.copy_button
                       text={@install_command}
-                      class="self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
+                      class="shrink-0 self-center bg-brand-500/20 px-2.5 text-brand-200 hover:bg-brand-500/30 font-semibold"
                     >
                       Copy
                     </.copy_button>
@@ -4166,7 +4175,7 @@ defmodule EmisarWeb.CoreComponents do
              true for every wizard state (a failed mint still deserves the
              manual-install door). Quiet rows on the canvas, never island
              cards competing with the task. --%>
-        <aside class="mt-10 space-y-10 lg:mt-0">
+        <aside class="mt-10 space-y-8 lg:mt-0">
           <%!-- Beginner framing first — someone installing their first runner
                needs "what is this and why" before "what the script does". --%>
           <section>
