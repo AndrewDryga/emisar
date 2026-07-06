@@ -636,7 +636,7 @@ defmodule EmisarWeb.RunbookEditorLive do
              a target) — publishing an unrunnable runbook is a footgun on a
              brand-new one. The PRIMARY always holds the first slot, so the
              hierarchy reads the same in both states. --%>
-        <div class="mt-10 flex items-center gap-3 border-t border-zinc-800/70 pt-5">
+        <div class="mt-10 flex items-center gap-3">
           <%= if ready_to_publish do %>
             <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
               Publish
