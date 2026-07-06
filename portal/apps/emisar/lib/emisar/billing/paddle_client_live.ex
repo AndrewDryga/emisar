@@ -93,6 +93,18 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  # Paddle mints the invoice PDF on demand — a short-lived signed URL, fetched
+  # per transaction (never in the list response), so this backs a click, not the
+  # page load.
+  def get_transaction_invoice(transaction_id) do
+    case get("/transactions/#{transaction_id}/invoice") do
+      {:ok, %{"data" => %{"url" => url}}} when is_binary(url) -> {:ok, url}
+      {:ok, _} -> {:error, :no_invoice_url}
+      other -> other
+    end
+  end
+
+  @impl true
   def construct_webhook_event(payload, signature, secret) do
     with :ok <- verify_signature(payload, signature, secret),
          {:ok, event} <- Jason.decode(payload) do

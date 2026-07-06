@@ -416,6 +416,27 @@ defmodule Emisar.Billing do
     end
   end
 
+  @doc """
+  The signed, short-lived URL of one transaction's invoice PDF, so a billing
+  manager can download an invoice inline instead of opening the portal. Gated on
+  view-billing; the transaction is re-checked against the account's own recent
+  invoices first, so a crafted id can't pull another account's PDF —
+  `{:error, :not_found}` otherwise.
+  """
+  def invoice_pdf_url(%Accounts.Account{} = account, transaction_id, %Subject{} = subject)
+      when is_binary(transaction_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_billing_permission()),
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, invoices} <- do_list_recent_invoices(account, limit: 24),
+         true <- Enum.any?(invoices, &(&1.id == transaction_id)) do
+      Emisar.Billing.PaddleClient.get_transaction_invoice(transaction_id)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
   defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: nil}, _opts), do: {:ok, []}
 
   defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: customer_id}, opts)

@@ -275,6 +275,26 @@ defmodule EmisarWeb.BillingLiveTest do
       assert is_binary(url) and url =~ "stub-portal"
     end
 
+    test "an invoice's PDF link fetches a signed URL and redirects to it", %{
+      conn: conn,
+      account: account
+    } do
+      account = attach_customer(account, "ctm_invoices_lv_01")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # Recent invoices render (stub txn_stub_1..3), each with a PDF download.
+      assert html =~ "Recent invoices"
+      assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
+
+      # Clicking it redirects out to the (stub) signed PDF URL.
+      assert {:error, {:redirect, redirect}} =
+               render_click(lv, "download_invoice", %{"id" => "txn_stub_1"})
+
+      url = redirect[:to] || redirect[:external]
+      assert is_binary(url) and url =~ "txn_stub_1"
+    end
+
     test "a manage event on a no-customer account flashes :no_customer, no redirect", %{
       conn: conn,
       account: account

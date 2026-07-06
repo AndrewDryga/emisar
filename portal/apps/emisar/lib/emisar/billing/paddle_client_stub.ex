@@ -103,6 +103,10 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def get_transaction_invoice(transaction_id),
+    do: {:ok, "https://stub.paddle.test/invoice/#{transaction_id}.pdf"}
+
+  @impl true
   def construct_webhook_event(payload, _signature, _secret) do
     case Jason.decode(payload) do
       {:ok, event} -> {:ok, event}

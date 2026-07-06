@@ -17,6 +17,7 @@ defmodule Emisar.Billing.PaddleClient do
   @callback retrieve_subscription(String.t()) :: {:ok, map()} | {:error, term()}
   @callback list_products() :: {:ok, [map()]} | {:error, term()}
   @callback list_transactions(map()) :: {:ok, [map()]} | {:error, term()}
+  @callback get_transaction_invoice(String.t()) :: {:ok, String.t()} | {:error, term()}
   @callback construct_webhook_event(String.t(), String.t(), String.t()) ::
               {:ok, map()} | {:error, term()}
 
@@ -28,6 +29,7 @@ defmodule Emisar.Billing.PaddleClient do
   def retrieve_subscription(id), do: client().retrieve_subscription(id)
   def list_products, do: client().list_products()
   def list_transactions(attrs), do: client().list_transactions(attrs)
+  def get_transaction_invoice(id), do: client().get_transaction_invoice(id)
 
   def construct_webhook_event(payload, sig, secret),
     do: client().construct_webhook_event(payload, sig, secret)

@@ -119,6 +119,24 @@ defmodule EmisarWeb.BillingLive do
     )
   end
 
+  # Download one invoice's PDF — Billing re-checks the transaction against the
+  # account's own invoices + view-billing, then Paddle mints a short-lived signed
+  # URL we redirect to (it's served as a download, so the page stays put).
+  def handle_event("download_invoice", %{"id" => id}, socket) do
+    case Billing.invoice_pdf_url(
+           socket.assigns.current_account,
+           id,
+           socket.assigns.current_subject
+         ) do
+      {:ok, url} ->
+        {:noreply, redirect(socket, external: url)}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Couldn't open that invoice: #{humanize_reason(reason)}")}
+    end
+  end
+
   defp ordered_plans do
     all = Billing.plans()
 
@@ -369,21 +387,34 @@ defmodule EmisarWeb.BillingLive do
                   <.local_time
                     :if={invoice.billed_at}
                     value={invoice.billed_at}
-                    class="w-28 shrink-0 text-zinc-400"
+                    class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
                   />
-                  <span class="font-medium tabular-nums text-zinc-200">
+                  <span class="w-16 font-medium tabular-nums text-zinc-200">
                     {format_total(invoice.amount_cents)}
                   </span>
                   <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-500">
                     {invoice.invoice_number}
                   </span>
-                  <.chip
-                    :if={invoice.status != "completed"}
-                    class="ml-auto"
-                    tone={if invoice.status == "past_due", do: :rose, else: :neutral}
-                  >
-                    {invoice_status_label(invoice.status)}
-                  </.chip>
+                  <div class="ml-auto flex items-center gap-4">
+                    <.chip
+                      :if={invoice.status != "completed"}
+                      tone={if invoice.status == "past_due", do: :rose, else: :neutral}
+                    >
+                      {invoice_status_label(invoice.status)}
+                    </.chip>
+                    <%!-- Paddle mints the PDF on demand — a phx-click, not an href,
+                         since we fetch the signed URL server-side then redirect. --%>
+                    <button
+                      type="button"
+                      phx-click="download_invoice"
+                      phx-value-id={invoice.id}
+                      phx-disable-with="Opening…"
+                      class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+                      title={"Download invoice #{invoice.invoice_number} (PDF)"}
+                    >
+                      <.icon name="hero-arrow-down-tray" class="h-3.5 w-3.5" /> PDF
+                    </button>
+                  </div>
                 </li>
               </ul>
             </section>

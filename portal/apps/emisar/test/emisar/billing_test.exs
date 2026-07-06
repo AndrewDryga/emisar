@@ -23,6 +23,8 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def list_products, do: {:error, :paddle_unavailable}
 
   @impl true
+  def get_transaction_invoice(_id), do: {:error, :unused}
+
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :invalid_payload}
 end
 
@@ -512,6 +514,35 @@ defmodule Emisar.BillingTest do
       account = %{account | paddle_customer_id: "ctm_invoices_01"}
 
       assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject_b)
+    end
+  end
+
+  describe "invoice_pdf_url/3" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: %{account | paddle_customer_id: "ctm_invoices_01"}, subject: subject}
+    end
+
+    test "returns a signed PDF URL for one of the account's own invoices", %{
+      account: account,
+      subject: subject
+    } do
+      # The stub's list_transactions returns txn_stub_1..3 for any customer.
+      assert {:ok, url} = Billing.invoice_pdf_url(account, "txn_stub_1", subject)
+      assert url =~ "txn_stub_1"
+    end
+
+    test "a transaction not among the account's invoices is not found (no cross-account PDF)", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:error, :not_found} =
+               Billing.invoice_pdf_url(account, "txn_from_account_b", subject)
+    end
+
+    test "an owner of another account is refused", %{account: account} do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:error, :unauthorized} = Billing.invoice_pdf_url(account, "txn_stub_1", subject_b)
     end
   end
 
@@ -1969,6 +2000,8 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   end
 
   @impl true
+  def get_transaction_invoice(_id), do: {:error, :unused}
+
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
