@@ -1277,6 +1277,25 @@ defmodule EmisarWeb.AgentsLive do
            credential understands its reach and lifecycle before handing it to
            an LLM (the keys-new explainer pattern). --%>
       <aside class="mt-12 lg:mt-0">
+        <%!-- Beginner framing first — connecting your first agent needs "what is
+             this" before "how keys work". --%>
+        <div class="mb-10">
+          <.section_header title="What's an LLM agent?" />
+          <div class="space-y-3 text-sm leading-relaxed text-zinc-400">
+            <p>
+              An agent is any LLM client — <span class="text-zinc-300">Claude, ChatGPT, Cursor,
+                Codex</span>
+              — you connect to emisar over <span class="text-zinc-300">MCP</span>, the Model Context
+              Protocol.
+            </p>
+            <p>
+              emisar exposes your runners and their action catalog as an MCP server, so the agent
+              can only request actions that are <span class="text-zinc-300">in the catalog</span>
+              — never a raw shell. Every call is gated by policy, may need an approval, and lands in
+              the audit trail.
+            </p>
+          </div>
+        </div>
         <.section_header title="How agent keys work" />
         <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
           <p>

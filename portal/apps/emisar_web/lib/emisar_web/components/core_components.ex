@@ -4148,6 +4148,27 @@ defmodule EmisarWeb.CoreComponents do
              manual-install door). Quiet rows on the canvas, never island
              cards competing with the task. --%>
         <aside class="mt-10 space-y-10 lg:mt-0">
+          <%!-- Beginner framing first — someone installing their first runner
+               needs "what is this and why" before "what the script does". --%>
+          <section>
+            <.section_header title="What's a runner?" />
+            <div class="space-y-3 text-sm leading-relaxed text-zinc-400">
+              <p>
+                A runner is the small <span class="text-zinc-200">emisar agent</span>
+                you're installing here — a service on this host that carries out actions for you.
+              </p>
+              <p>
+                The cloud never touches your hosts directly. It dispatches a gated, audited action
+                to the runner, which runs only the vetted actions in its trusted packs and reports
+                back — no inbound access, no SSH keys handed out.
+              </p>
+              <p>
+                Install one on each host you want to operate. Once it connects it appears on the
+                Runners page, ready to receive actions.
+              </p>
+            </div>
+          </section>
+
           <section>
             <.section_header title="What the script does" />
             <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
