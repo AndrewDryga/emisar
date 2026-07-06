@@ -899,26 +899,22 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(account).settings.require_mfa
     end
 
-    test "the toggle is a role=switch with aria-checked reflecting state, and still fires",
+    test "enforcing 2FA is a confirm-modal button (our modal) that fires the handler",
          %{conn: conn, owner: owner, account: account} do
       enroll_mfa(owner)
 
-      # Off: a screen reader announces it as an unchecked switch.
+      # Off: the trigger reads "Enforce 2FA" and opens our confirm dialog.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      switch = element(lv, ~s(button[phx-click="toggle_require_mfa"]))
-      assert html =~ ~s(role="switch")
-      assert render(switch) =~ ~s(aria-checked="false")
-      # The accessible name names the control (a placeholder/visible label
-      # would otherwise be the only cue).
-      assert html =~ ~s(aria-label="Enforce 2FA account-wide")
+      assert html =~ "Enforce 2FA"
+      assert has_element?(lv, "#enforce-mfa")
 
-      # Clicking the switch fires the (server-authz-gated) handler.
-      assert render_click(switch) =~ "Account-wide MFA enforced."
+      # Confirming fires the (server-authz-gated) handler.
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
       assert Emisar.Repo.reload!(account).settings.require_mfa
 
-      # On: the switch now reports aria-checked="true".
+      # On: the trigger flips to the turn-off action.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ ~s(aria-checked="true")
+      assert html =~ "Stop enforcing 2FA"
     end
   end
 
@@ -939,9 +935,9 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
       # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
-      assert html =~ "1 of 2 enrolled"
-      # ONE line, one severity — the enrolled count wears amber, no twin chip.
-      assert html =~ "1 of 2 enrolled"
+      assert html =~ "2FA enrolled:"
+      assert html =~ "1 of 2"
+      assert html =~ "1 without 2FA"
     end
   end
 

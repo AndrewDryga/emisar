@@ -787,15 +787,200 @@ defmodule EmisarWeb.TeamLive do
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
-      <%!-- :table width so the roster leads the main column and the Security
-           rail sits beside it (below, on a phone) — the same main+aside grammar
-           as Billing. Security moved off the top band into that rail: the stance
-           stays visible while the members get the room. --%>
-      <div
-        :if={@live_action == :index and not @loading?}
-        class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start"
-      >
-        <div class="lg:col-span-3">
+      <div :if={@live_action == :index and not @loading?} class="space-y-12">
+        <%!-- Security leads the page: 2FA, the SSO connections, and Require SSO,
+             each a rich row (title · what it does · control) on the canvas — the
+             account's security stance is the first thing an admin should meet.
+             Enforcement toggles route through OUR confirm modal (confirm_button),
+             never native data-confirm. --%>
+        <section>
+          <.section_header title="Security" />
+          <div class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+            <%!-- ── Two-factor authentication ── --%>
+            <div class="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between">
+              <% unenrolled = @mfa_stats.total - @mfa_stats.enrolled %>
+              <div class="max-w-2xl">
+                <h3 class="text-sm font-medium text-zinc-100">Two-factor authentication</h3>
+                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                  When enforced, members without 2FA are funneled to their profile to set it up
+                  before they can use the rest of the app. You can't enable this until you've
+                  enrolled yourself — prevents lock-outs.
+                </p>
+                <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                  <span class="flex items-center gap-1.5">
+                    <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
+                    <span class="text-zinc-400">
+                      2FA enrolled:
+                      <span class={[
+                        "tabular-nums",
+                        (unenrolled > 0 && "font-medium text-amber-300") ||
+                          "font-medium text-zinc-200"
+                      ]}>
+                        {@mfa_stats.enrolled}
+                      </span>
+                      of
+                      <span class="font-medium tabular-nums text-zinc-200">{@mfa_stats.total}</span>
+                    </span>
+                  </span>
+                  <.chip :if={unenrolled > 0} tone={:neutral}>{unenrolled} without 2FA</.chip>
+                  <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
+                </p>
+              </div>
+              <div class="shrink-0">
+                <.confirm_button
+                  :if={Accounts.subject_can_manage_account_security?(@current_subject)}
+                  id="enforce-mfa"
+                  variant={:secondary}
+                  tone={:amber}
+                  title={
+                    if @current_account.settings.require_mfa,
+                      do: "Stop enforcing 2FA account-wide?",
+                      else: "Enforce 2FA for everyone on this account?"
+                  }
+                  confirm_label={
+                    if @current_account.settings.require_mfa,
+                      do: "Stop enforcing",
+                      else: "Enforce 2FA"
+                  }
+                  on_confirm={JS.push("toggle_require_mfa")}
+                >
+                  <:body>
+                    <%= if @current_account.settings.require_mfa do %>
+                      Members will be able to use the account without 2FA again.
+                    <% else %>
+                      {unenrolled} of {@mfa_stats.total} members aren't enrolled yet — they'll be
+                      funneled to set it up before they can use the account again. You can't enable
+                      this until you've enrolled yourself.
+                    <% end %>
+                  </:body>
+                  {if @current_account.settings.require_mfa,
+                    do: "Stop enforcing 2FA",
+                    else: "Enforce 2FA"}
+                </.confirm_button>
+                <span
+                  :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
+                  class="text-[11px] text-zinc-600"
+                >
+                  Owner/admin only
+                </span>
+              </div>
+            </div>
+
+            <%!-- ── Single sign-on connections ── --%>
+            <div class="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between">
+              <div class="max-w-2xl">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-medium text-zinc-100">Single sign-on</h3>
+                  <.link
+                    :if={@enabled_sso_provider_count > 0}
+                    navigate={~p"/app/#{@current_account}/settings/sso"}
+                    class="text-[11px] font-medium text-zinc-500 hover:text-zinc-300"
+                  >
+                    Settings
+                  </.link>
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                  Connect your organization's identity provider so members sign in through it. New
+                  users are provisioned on first sign-in; you choose the role they land with.
+                </p>
+                <ul :if={@providers != []} class="mt-3 space-y-0.5">
+                  <li :for={provider <- @providers}>
+                    <.link
+                      navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                      class="group -mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
+                    >
+                      <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
+                      <span class="truncate text-sm text-zinc-200">{provider.name}</span>
+                      <.icon
+                        name="hero-chevron-right"
+                        class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-zinc-400"
+                      />
+                    </.link>
+                  </li>
+                </ul>
+                <p
+                  :if={@providers == [] and @enabled_sso_provider_count == 0}
+                  class="mt-3 text-sm text-zinc-500"
+                >
+                  Not configured — members sign in with a magic link.
+                </p>
+              </div>
+              <div class="shrink-0">
+                <%= cond do %>
+                  <% SSO.subject_can_configure_sso?(@current_subject) -> %>
+                    <.button
+                      navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                      variant={:secondary}
+                      size={:sm}
+                      icon="hero-plus"
+                    >
+                      Add provider
+                    </.button>
+                  <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                    <.link
+                      navigate={~p"/app/#{@current_account}/settings/sso"}
+                      class="group inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+                    >
+                      Set up SSO · Team <.cta_arrow />
+                    </.link>
+                  <% true -> %>
+                <% end %>
+              </div>
+            </div>
+
+            <%!-- ── Require single sign-on (its own row + doc) ── --%>
+            <div class="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between">
+              <div class="max-w-2xl">
+                <h3 class="text-sm font-medium text-zinc-100">Require single sign-on</h3>
+                <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+                  When required, members sign in through this account's identity provider —
+                  magic-link sign-ins are bounced to SSO. Needs an enabled SSO connection.
+                </p>
+                <p :if={@current_account.settings.require_sso} class="mt-3">
+                  <.chip tone={:brand}>Required</.chip>
+                </p>
+              </div>
+              <div class="shrink-0">
+                <%= cond do %>
+                  <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                    <span class="text-[11px] text-zinc-600">Owner/admin only</span>
+                  <% @current_account.settings.require_sso -> %>
+                    <.confirm_button
+                      id="require-sso"
+                      variant={:secondary}
+                      tone={:amber}
+                      title="Stop requiring single sign-on?"
+                      confirm_label="Stop requiring"
+                      on_confirm={JS.push("toggle_require_sso")}
+                    >
+                      <:body>Members will be able to sign in with a magic link again.</:body>
+                      Stop requiring SSO
+                    </.confirm_button>
+                  <% @require_sso_available? -> %>
+                    <.confirm_button
+                      id="require-sso"
+                      variant={:secondary}
+                      tone={:amber}
+                      title="Require single sign-on for everyone?"
+                      confirm_label="Require SSO"
+                      on_confirm={JS.push("toggle_require_sso")}
+                    >
+                      <:body>
+                        Members without a linked SSO identity are signed out and must sign in through
+                        your provider — if it's misconfigured, they're locked out. Confirm SSO works
+                        first.
+                      </:body>
+                      Require SSO
+                    </.confirm_button>
+                  <% true -> %>
+                    <span class="text-[11px] text-zinc-600">Add an enabled connection first</span>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
           <%!-- Member list — naked hairline rows; the per-row `<details>`
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
@@ -1082,144 +1267,7 @@ defmodule EmisarWeb.TeamLive do
           <p :if={not can_manage?(assigns)} class="mt-6 text-xs text-zinc-500">
             Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
           </p>
-        </div>
-
-        <%!-- ===== Security rail ===== 2FA enforcement, then the SSO
-             connections listed inline (few of them) with Add + Require. --%>
-        <aside class="space-y-8 lg:col-span-1">
-          <div>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              Two-factor
-            </h3>
-            <% unenrolled = @mfa_stats.total - @mfa_stats.enrolled %>
-            <%!-- ONE line, one severity: the count wears amber only while someone
-                 is unenrolled; full enrollment renders silence, no green box. --%>
-            <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-              <span class="flex items-center gap-1.5 tabular-nums">
-                <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
-                <span class={if unenrolled > 0, do: "text-amber-300", else: "text-zinc-300"}>
-                  {@mfa_stats.enrolled} of {@mfa_stats.total} enrolled
-                </span>
-              </span>
-              <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
-            </p>
-            <div :if={Accounts.subject_can_manage_account_security?(@current_subject)} class="mt-3">
-              <.switch
-                on={@current_account.settings.require_mfa}
-                on_label="Stop enforcing 2FA"
-                off_label="Enforce 2FA"
-                phx-click="toggle_require_mfa"
-                aria-label="Enforce 2FA account-wide"
-                data-confirm={
-                  if @current_account.settings.require_mfa,
-                    do: "Stop enforcing 2FA account-wide?",
-                    else:
-                      "Enforce 2FA for everyone on this account? #{unenrolled} of #{@mfa_stats.total} members aren't enrolled yet — they'll be funneled to set it up before they can use the account again. You can't enable this until you've enrolled yourself."
-                }
-              />
-            </div>
-            <p
-              :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
-              class="mt-3 text-[11px] text-zinc-600"
-            >
-              Owner/admin only
-            </p>
-          </div>
-
-          <div>
-            <div class="flex items-baseline justify-between gap-2">
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                Single sign-on
-              </h3>
-              <%!-- The full SSO surface (sign-in link, directory sync, group→role)
-                   lives on its own page; the rail is the quick view + Add. --%>
-              <.link
-                :if={@enabled_sso_provider_count > 0}
-                navigate={~p"/app/#{@current_account}/settings/sso"}
-                class="text-[11px] font-medium text-zinc-500 hover:text-zinc-300"
-              >
-                Settings
-              </.link>
-            </div>
-
-            <%!-- The connections themselves — few enough to list here (a brand dot
-                 is enabled, amber is disabled); each links to its detail. --%>
-            <ul :if={@providers != []} class="mt-3 space-y-0.5">
-              <li :for={provider <- @providers}>
-                <.link
-                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="group -mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
-                >
-                  <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
-                  <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{provider.name}</span>
-                  <.icon
-                    name="hero-chevron-right"
-                    class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-zinc-400"
-                  />
-                </.link>
-              </li>
-            </ul>
-
-            <p
-              :if={@providers == [] and @enabled_sso_provider_count == 0}
-              class="mt-3 text-sm leading-relaxed text-zinc-500"
-            >
-              Not configured — members sign in with a magic link.
-            </p>
-
-            <%!-- The rail is SSO's console door (no nav item of its own): Add a
-                 provider once the plan allows it, else the plan-gated setup link
-                 for an admin who'd need to upgrade first. --%>
-            <%= cond do %>
-              <% SSO.subject_can_configure_sso?(@current_subject) -> %>
-                <.button
-                  navigate={~p"/app/#{@current_account}/settings/sso/new"}
-                  variant={:secondary}
-                  size={:sm}
-                  icon="hero-plus"
-                  class="mt-3 w-full"
-                >
-                  Add provider
-                </.button>
-              <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                <.link
-                  navigate={~p"/app/#{@current_account}/settings/sso"}
-                  class="group mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-                >
-                  Set up SSO · Team <.cta_arrow />
-                </.link>
-              <% true -> %>
-            <% end %>
-
-            <%!-- Require SSO — only once an enabled connection exists; requiring it
-                 with none would lock everyone out (the handler guards it too). --%>
-            <div
-              :if={
-                @current_account.settings.require_sso or
-                  (Accounts.subject_can_manage_account_security?(@current_subject) and
-                     @require_sso_available?)
-              }
-              class="mt-4 flex flex-wrap items-center gap-2"
-            >
-              <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
-              <.switch
-                :if={Accounts.subject_can_manage_account_security?(@current_subject)}
-                on={@current_account.settings.require_sso}
-                on_label="Stop requiring SSO"
-                off_label="Require SSO"
-                phx-click="toggle_require_sso"
-                aria-label="Require single sign-on account-wide"
-                data-confirm={
-                  if @current_account.settings.require_sso do
-                    "Stop requiring single sign-on? Members will be able to sign in with a magic link again."
-                  else
-                    "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
-                  end
-                }
-              />
-            </div>
-          </div>
-        </aside>
+        </section>
       </div>
     </.dashboard_shell>
     """
