@@ -714,7 +714,7 @@ defmodule EmisarWeb.PoliciesLive do
 
       <.loading_state :if={@loading?} />
 
-      <div :if={not @loading?} class="mt-4 space-y-12">
+      <div :if={not @loading?} class="space-y-12">
         <div class="space-y-4">
           <.page_intro>
             Each action's risk tier meets your default policy — allow, require approval,
