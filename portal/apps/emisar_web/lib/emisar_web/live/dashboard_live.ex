@@ -433,7 +433,7 @@ defmodule EmisarWeb.DashboardLive do
       # failed units) and can't change anything, so it's a safe first run.
       |> assign(
         :example_prompt,
-        "Check my production runners with emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
+        "Check my production via emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
       )
 
     ~H"""
