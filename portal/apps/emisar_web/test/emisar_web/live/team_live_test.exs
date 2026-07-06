@@ -62,6 +62,19 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "the connection lists in the Security panel with the sign-in link", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta prod")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      # The connection row links straight to its detail page; the branded sign-in
+      # link shows once a connection exists.
+      assert html =~ "Okta prod"
+      assert html =~ ~p"/app/#{account}/settings/sso/#{provider.id}"
+      assert html =~ "Team sign-in link"
+    end
+
     test "pending requests stay hidden without the SSO plan/permission", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       # Free plan: the pending-request read is plan-gated, so the queue never loads.

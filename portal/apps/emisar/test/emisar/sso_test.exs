@@ -657,7 +657,7 @@ defmodule Emisar.SSOTest do
 
       assert "must be an https URL" in errors_on(changeset).issuer
       # The stored issuer is unchanged.
-      assert Repo.reload!(provider).issuer == "https://idp.test"
+      assert Repo.reload!(provider).issuer == provider.issuer
     end
 
     test "setting :owner as the default_role is rejected on update" do

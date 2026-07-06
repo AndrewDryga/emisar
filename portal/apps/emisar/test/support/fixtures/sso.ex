@@ -19,8 +19,10 @@ defmodule Emisar.Fixtures.SSO do
         %{
           kind: :okta,
           name: "Okta #{Emisar.Fixtures.Random.unique_int()}",
-          issuer: "https://idp.test",
-          client_id: "cid",
+          # Unique per call so a test can mint several providers on one account
+          # without tripping the per-account issuer/client_id uniqueness.
+          issuer: "https://idp-#{Emisar.Fixtures.Random.unique_int()}.test",
+          client_id: "cid-#{Emisar.Fixtures.Random.unique_int()}",
           client_secret: "secret",
           enabled: true,
           default_role: :viewer

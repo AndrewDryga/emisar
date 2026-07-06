@@ -20,6 +20,11 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:edit_form, nil)
      |> assign(:scope_editing_id, nil)
      |> assign(:scope_draft, [])
+     # The branded sign-in link is a per-account constant to hand to members.
+     |> assign(
+       :sign_in_url,
+       Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
+     )
      |> ConfirmDialog.init()
      |> assign_form(invite_changeset())}
   end
@@ -1306,28 +1311,32 @@ defmodule EmisarWeb.TeamLive do
           <%!-- ── Single sign-on connections ── --%>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
-            <div class="flex items-center justify-between gap-2">
-              <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
-              <.link
-                :if={@enabled_sso_provider_count > 0}
-                navigate={~p"/app/#{@current_account}/settings/sso"}
-                class="text-[11px] font-medium text-zinc-500 hover:text-zinc-300"
-              >
-                Settings
-              </.link>
-            </div>
+            <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               Connect your organization's identity provider so members sign in through it. New
               users are provisioned on first sign-in; you choose the role they land with.
             </p>
+            <%!-- The whole list fits: a connection is unique per provider kind
+                 (one Okta, one Google, …), so there are at most a handful. --%>
             <ul :if={@providers != []} class="mt-3 space-y-0.5">
               <li :for={provider <- @providers}>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="group -mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
+                  class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition hover:bg-white/[0.04]"
                 >
                   <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
-                  <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{provider.name}</span>
+                  <div class="min-w-0 flex-1">
+                    <span class="block truncate text-sm text-zinc-200">{provider.name}</span>
+                    <span :if={provider.scim_enabled} class="text-[11px]">
+                      <span :if={provider.scim_last_seen_at} class="text-brand-300/90">
+                        Directory sync · synced
+                        <.local_time value={provider.scim_last_seen_at} mode={:relative} />
+                      </span>
+                      <span :if={is_nil(provider.scim_last_seen_at)} class="text-amber-300/90">
+                        Directory sync · never synced
+                      </span>
+                    </span>
+                  </div>
                   <.icon
                     name="hero-chevron-right"
                     class="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-zinc-400"
@@ -1362,6 +1371,15 @@ defmodule EmisarWeb.TeamLive do
                   </.link>
                 <% true -> %>
               <% end %>
+            </div>
+            <%!-- The branded sign-in link to hand to members — only once there's a
+                 connection to sign in through. --%>
+            <div :if={@providers != []} class="mt-4 border-t border-zinc-800/70 pt-3">
+              <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-500">
+                Share this — it opens this team's sign-in page with your SSO connections.
+              </p>
+              <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
             </div>
           </div>
 
