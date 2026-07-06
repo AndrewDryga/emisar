@@ -929,11 +929,13 @@ defmodule EmisarWeb.RunbookEditorLive do
                 class="text-xs"
               />
             </div>
+            <%!-- size={:md} matches the compact inputs' 32px box so the button
+                 lines up with the key/value row (sm left it short + floating). --%>
             <.button
               type="button"
               variant={:secondary}
               tone={:rose}
-              size={:sm}
+              size={:md}
               icon="hero-trash"
               phx-click="remove_arg"
               phx-value-index={@index}
