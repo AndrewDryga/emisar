@@ -314,15 +314,23 @@ defmodule Emisar.Audit do
   the same way the table's actor column does; an id whose row is gone (deleted
   since the event, or only resolvable in another account) is dropped. Returns
   `{:ok, [{id, label}]}` or `{:error, :unauthorized}`.
+
+  `opts[:ensure]` forces an actor id into the option set even with zero events
+  (a Team "View activity" link for a member who hasn't acted yet), so the picker
+  can SELECT it instead of falling back to All. An id that resolves to no label
+  (not a member of this account) is still dropped.
   """
-  def list_actor_options(actor_kind, %Subject{} = subject) when is_binary(actor_kind) do
+  def list_actor_options(actor_kind, %Subject{} = subject, opts \\ [])
+      when is_binary(actor_kind) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      ids =
+      logged_ids =
         Event.Query.all()
         |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
+
+      ids = Enum.uniq(logged_ids ++ List.wrap(opts[:ensure]))
 
       labels =
         %{actor_kind => ids}

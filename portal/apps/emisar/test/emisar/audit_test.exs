@@ -949,6 +949,30 @@ defmodule Emisar.AuditTest do
       assert bob_id == bob.id
     end
 
+    test "ensure: forces a zero-event member into the options (View-activity click-through)", %{
+      account: account,
+      subject: subject
+    } do
+      # A member who has never acted — not in the log, so absent by default.
+      quiet = Fixtures.Users.create_user(email: "quiet@example.com")
+      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: quiet.id)
+
+      assert {:ok, []} = Audit.list_actor_options("user", subject)
+
+      # ensure them in so the picker SELECTS them instead of falling back to All.
+      assert {:ok, [{id, "quiet@example.com"}]} =
+               Audit.list_actor_options("user", subject, ensure: quiet.id)
+
+      assert id == quiet.id
+
+      # An id that isn't a member of this account resolves to no label → dropped.
+      stranger = Fixtures.Users.create_user(email: "stranger@example.com")
+      assert {:ok, []} = Audit.list_actor_options("user", subject, ensure: stranger.id)
+
+      # nil ensure is a no-op.
+      assert {:ok, []} = Audit.list_actor_options("user", subject, ensure: nil)
+    end
+
     test "scopes to the requested kind only", %{
       account: account,
       owner: owner,

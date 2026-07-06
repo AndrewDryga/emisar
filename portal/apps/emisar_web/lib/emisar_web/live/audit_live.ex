@@ -167,8 +167,12 @@ defmodule EmisarWeb.AuditLive do
   # the opts path below, so it appears on demand instead of an always-empty
   # dropdown.
   defp actor_kind_filter(params, subject) do
+    # `ensure` the currently-filtered actor into the options so a click-through
+    # from Team "View activity" selects the member even when they have no events
+    # yet (otherwise the picker would fall back to All).
     with kind when is_binary(kind) <- blank_to_nil(params["actor_kind"]),
-         {:ok, [_ | _] = options} <- Audit.list_actor_options(kind, subject) do
+         {:ok, [_ | _] = options} <-
+           Audit.list_actor_options(kind, subject, ensure: blank_to_nil(params["actor_id"])) do
       [Audit.Event.Query.actor_filter(options)]
     else
       _ -> []
