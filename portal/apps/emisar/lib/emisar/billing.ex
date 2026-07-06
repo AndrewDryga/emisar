@@ -34,7 +34,7 @@ defmodule Emisar.Billing do
         "Unlimited users",
         "Single sign-on (OIDC)",
         "90-day audit retention",
-        "Audit export (CSV + SIEM API)",
+        "Audit export (CSV + SIEM)",
         "Email support"
       ]
     },
