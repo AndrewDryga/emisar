@@ -674,8 +674,9 @@ defmodule EmisarWeb.AgentsLive do
       </:actions>
 
       <.page_intro :if={@live_action == :index}>
-        Connect Claude, ChatGPT, Cursor, Codex — any MCP agent — to dispatch gated, audited
-        actions. Each key is scoped to runners and capabilities, and revocable in one click.
+        The LLM clients connected to this workspace over MCP — Claude, ChatGPT, Cursor, Codex, or
+        any MCP agent. Each holds a key scoped to runners and capabilities, dispatches only gated,
+        audited actions, and is revocable in one click.
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
