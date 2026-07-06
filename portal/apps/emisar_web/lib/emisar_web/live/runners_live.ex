@@ -186,7 +186,7 @@ defmodule EmisarWeb.RunnersLive do
 
       <.page_intro :if={not @show_wizard?}>
         Live connection state for every host in your fleet — a runner must be connected before you
-        can dispatch an action to it. <.doc_link href="/docs/runners">Runner docs</.doc_link>
+        can dispatch an action to it.
       </.page_intro>
 
       <%= cond do %>
@@ -223,138 +223,169 @@ defmodule EmisarWeb.RunnersLive do
                live socket confirms there really are no runners. --%>
           <.loading_state />
         <% true -> %>
-          <%!-- Fleet-dark escalation: runners exist but none are reachable, so
-               nothing can be dispatched right now. Escalate the quiet band into a
-               loud banner (the dashboard's all-offline notice, on the fleet page). --%>
-          <.offline_notice
-            :if={@fleet.online == 0 and @fleet.offline > 0}
-            severity={:critical}
-            title="All runners offline"
-            class="mb-4"
-          >
-            Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
-            until one reconnects. Check the hosts, or the runner service on them.
-          </.offline_notice>
-          <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
+          <%!-- :table width leaves the fleet list too narrow-of-content and wide
+               of page — pair it with a docs rail (the main+aside grammar): the
+               fleet leads, a plain-terms "what's a runner" teaches beside it. --%>
+          <div class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start">
+            <div class="lg:col-span-3">
+              <%!-- Fleet-dark escalation: runners exist but none are reachable, so
+                   nothing can be dispatched right now. Escalate the quiet band into a
+                   loud banner (the dashboard's all-offline notice, on the fleet page). --%>
+              <.offline_notice
+                :if={@fleet.online == 0 and @fleet.offline > 0}
+                severity={:critical}
+                title="All runners offline"
+                class="mb-4"
+              >
+                Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
+                until one reconnects. Check the hosts, or the runner service on them.
+              </.offline_notice>
+              <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
                portal is locked out account-wide. Surface it once here instead of leaving
                the operator to infer it from N per-runner chips + failed dispatches. --%>
-          <.callout
-            :if={@fleet_signed?}
-            tone={:brand}
-            icon="hero-shield-check"
-            title="Fleet is signed-only"
-            class="mb-4"
-          >
-            Every runner in this account verifies a client signature and refuses unsigned runs, so
-            the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
-            configured with each runner's signing key.
-          </.callout>
-          <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
+              <.callout
+                :if={@fleet_signed?}
+                tone={:brand}
+                icon="hero-shield-check"
+                title="Fleet is signed-only"
+                class="mb-4"
+              >
+                Every runner in this account verifies a client signature and refuses unsigned runs, so
+                the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
+                configured with each runner's signing key.
+              </.callout>
+              <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group headers below),
              counted from presence. NAKED posture line, not a boxed band — the
              dashboard pillar grammar: healthy counts stay quiet, offline wears
              amber (needs attention, not failed — the ONE tone the fact wears
              everywhere). --%>
-          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
-            <span class="flex items-center gap-1.5">
-              <.status_dot tone={:brand} size={:sm} />
-              <span class="tabular-nums text-zinc-400">{@fleet.online} connected</span>
-            </span>
-            <span :if={@fleet.offline > 0} class="flex items-center gap-1.5">
-              <.status_dot tone={:amber} size={:sm} />
-              <span class="tabular-nums text-amber-300">{@fleet.offline} offline</span>
-            </span>
-            <span :if={@fleet.pending > 0} class="flex items-center gap-1.5">
-              <.status_dot tone={:amber} size={:sm} />
-              <span class="tabular-nums text-amber-300">{@fleet.pending} pending</span>
-            </span>
-            <span :if={@fleet.disabled > 0} class="flex items-center gap-1.5">
-              <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-500">{@fleet.disabled} disabled</span>
-            </span>
-          </div>
+              <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+                <span class="flex items-center gap-1.5">
+                  <.status_dot tone={:brand} size={:sm} />
+                  <span class="tabular-nums text-zinc-400">{@fleet.online} connected</span>
+                </span>
+                <span :if={@fleet.offline > 0} class="flex items-center gap-1.5">
+                  <.status_dot tone={:amber} size={:sm} />
+                  <span class="tabular-nums text-amber-300">{@fleet.offline} offline</span>
+                </span>
+                <span :if={@fleet.pending > 0} class="flex items-center gap-1.5">
+                  <.status_dot tone={:amber} size={:sm} />
+                  <span class="tabular-nums text-amber-300">{@fleet.pending} pending</span>
+                </span>
+                <span :if={@fleet.disabled > 0} class="flex items-center gap-1.5">
+                  <.status_dot tone={:neutral} size={:sm} />
+                  <span class="tabular-nums text-zinc-500">{@fleet.disabled} disabled</span>
+                </span>
+              </div>
 
-          <%!-- Group sidebar shows whole-account totals; the runners
+              <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per
              group than the count next to the header. That's
              intentional — operators expect group counts to be
              source-of-truth, not "what fits on this page". --%>
-          <%!-- CONTENT ON CANVAS (the audit/runs language): rows under hairlines,
+              <%!-- CONTENT ON CANVAS (the audit/runs language): rows under hairlines,
                group labels as naked uppercase text — no island, no banded fills. --%>
-          <LiveTable.live_table
-            layout={:cards}
-            id="runners"
-            path={~p"/app/#{@current_account}/runners"}
-            rows={sort_by_group(@runners)}
-            metadata={@metadata}
-            filter_params={@filter_params}
-            wrapper_class="divide-y divide-zinc-800/70"
-            group_by={fn runner -> runner.group || "(no group)" end}
-          >
-            <:group_header :let={group_label}>
-              <.list_group_header label={group_label}>
-                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
-                  do: "runner",
-                  else: "runners"} total
-              </.list_group_header>
-            </:group_header>
+              <LiveTable.live_table
+                layout={:cards}
+                id="runners"
+                path={~p"/app/#{@current_account}/runners"}
+                rows={sort_by_group(@runners)}
+                metadata={@metadata}
+                filter_params={@filter_params}
+                wrapper_class="divide-y divide-zinc-800/70"
+                group_by={fn runner -> runner.group || "(no group)" end}
+              >
+                <:group_header :let={group_label}>
+                  <.list_group_header label={group_label}>
+                    {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
+                      do: "runner",
+                      else: "runners"} total
+                  </.list_group_header>
+                </:group_header>
 
-            <:item :let={runner}>
-              <% state = connection_status(Runners.connection_state(runner)) %>
-              <li>
-                <.link
-                  navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
-                  class="-mx-2 flex items-center gap-4 rounded-md px-2 py-3 transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <%!-- flex-wrap: the runner's name is its identity (often name
+                <:item :let={runner}>
+                  <% state = connection_status(Runners.connection_state(runner)) %>
+                  <li>
+                    <.link
+                      navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
+                      class="-mx-2 flex items-center gap-4 rounded-md px-2 py-3 transition hover:bg-white/[0.04]"
+                    >
+                      <div class="min-w-0 flex-1">
+                        <%!-- flex-wrap: the runner's name is its identity (often name
                          == hostname, so it's the only copy of it) — on a phone the
                          version + signed-only chip wrap below instead of crushing
                          it to "signed…". --%>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="truncate font-medium text-zinc-100">{runner.name}</span>
-                      <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
-                        v{runner.runner_version}
-                      </span>
-                      <%!-- Hardened runners are scannable at a glance — the portal
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="truncate font-medium text-zinc-100">{runner.name}</span>
+                          <span
+                            :if={runner.runner_version}
+                            class="font-mono text-[11px] text-zinc-500"
+                          >
+                            v{runner.runner_version}
+                          </span>
+                          <%!-- Hardened runners are scannable at a glance — the portal
                            can't dispatch to them; only signed MCP calls run. --%>
-                      <.chip
-                        :if={runner.enforce_signatures}
-                        tone={:neutral}
-                        icon="hero-shield-check"
-                        title="Runs only signed dispatches — the portal can't dispatch to this runner"
-                      >
-                        signed-only
-                      </.chip>
-                    </div>
-                    <.meta_line class="mt-0.5 text-xs text-zinc-500">
-                      <%!-- When name == hostname the title already says it —
+                          <.chip
+                            :if={runner.enforce_signatures}
+                            tone={:neutral}
+                            icon="hero-shield-check"
+                            title="Runs only signed dispatches — the portal can't dispatch to this runner"
+                          >
+                            signed-only
+                          </.chip>
+                        </div>
+                        <.meta_line class="mt-0.5 text-xs text-zinc-500">
+                          <%!-- When name == hostname the title already says it —
                            don't restate the identifier one line down. --%>
-                      <:seg :if={(runner.hostname || runner.external_id || "no host") != runner.name}>
-                        {runner.hostname || runner.external_id || "no host"}
-                      </:seg>
-                      <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
-                    </.meta_line>
-                  </div>
+                          <:seg :if={
+                            (runner.hostname || runner.external_id || "no host") != runner.name
+                          }>
+                            {runner.hostname || runner.external_id || "no host"}
+                          </:seg>
+                          <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
+                        </.meta_line>
+                      </div>
 
-                  <div class="flex items-center gap-4 text-right">
-                    <%!-- Zero is the default, not a signal — muted em-dash;
+                      <div class="flex items-center gap-4 text-right">
+                        <%!-- Zero is the default, not a signal — muted em-dash;
                          "N active runs" only when something is running. --%>
-                    <div class="hidden w-20 text-xs tabular-nums text-zinc-400 sm:block">
-                      <%!-- Blank at zero, not an em-dash: with every runner idle this column
+                        <div class="hidden w-20 text-xs tabular-nums text-zinc-400 sm:block">
+                          <%!-- Blank at zero, not an em-dash: with every runner idle this column
                            rendered a stack of dashes that read as a BUG, not data (the
                            muted-dash rule is for an occasionally-empty cell, not a
                            usually-empty column). The w-20 slot keeps pills aligned. --%>
-                      <span :if={runner.action_load > 0} class="tabular-nums">
-                        {runner.action_load} active runs
-                      </span>
-                    </div>
-                    <.status_badge status={state} class="shrink-0" />
-                  </div>
-                </.link>
-              </li>
-            </:item>
-          </LiveTable.live_table>
+                          <span :if={runner.action_load > 0} class="tabular-nums">
+                            {runner.action_load} active runs
+                          </span>
+                        </div>
+                        <.status_badge status={state} class="shrink-0" />
+                      </div>
+                    </.link>
+                  </li>
+                </:item>
+              </LiveTable.live_table>
+            </div>
+
+            <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
+              <p>
+                A runner is the small <span class="text-zinc-200">emisar agent</span>
+                installed on one of your hosts — a server, VM, or container.
+              </p>
+              <p>
+                It's what actually runs an action. The cloud never touches your hosts directly: it
+                dispatches to a runner, which executes only the vetted actions in its trusted packs
+                and reports the result back.
+              </p>
+              <p>
+                A host needs a connected runner before you can dispatch to it. Give runners a
+                <span class="font-mono text-[13px] text-zinc-300">group</span>
+                (like <span class="font-mono text-[13px] text-zinc-300">web</span>
+                or <span class="font-mono text-[13px] text-zinc-300">cassandra-prod</span>) so
+                policies, runbooks, and an LLM's fan-out can target a whole tier at once.
+              </p>
+            </.docs_rail>
+          </div>
       <% end %>
     </.dashboard_shell>
     """

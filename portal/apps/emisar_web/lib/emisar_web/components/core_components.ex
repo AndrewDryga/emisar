@@ -3004,6 +3004,34 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A short teaching rail for a list page — "what is this, in plain terms" beside
+  the list (the aside of a main+aside grid), ended with a link into the full
+  docs. It fills the width a compact table leaves and teaches customers in it.
+
+      <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
+        <p>A runner is the small emisar agent on one of your hosts…</p>
+      </.docs_rail>
+  """
+  attr :title, :string, required: true
+  attr :doc_href, :string, required: true
+  attr :doc_label, :string, required: true
+  slot :inner_block, required: true
+
+  def docs_rail(assigns) do
+    ~H"""
+    <aside class="lg:col-span-1">
+      <h3 class="text-sm font-semibold text-zinc-200">{@title}</h3>
+      <div class="mt-3 space-y-3 text-sm leading-relaxed text-zinc-400">
+        {render_slot(@inner_block)}
+      </div>
+      <p class="mt-4">
+        <.doc_link href={@doc_href}>{@doc_label}</.doc_link>
+      </p>
+    </aside>
+    """
+  end
+
+  @doc """
   Upsell marker for a plan-gated feature in the docs: names the plan(s) that
   include it and links to pricing, so a reader on a lower plan sees at a glance
   that the feature isn't on theirs (and where to get it). `tier: :team` →

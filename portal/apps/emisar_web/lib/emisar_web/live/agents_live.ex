@@ -676,7 +676,6 @@ defmodule EmisarWeb.AgentsLive do
       <.page_intro :if={@live_action == :index}>
         Connect Claude, ChatGPT, Cursor, Codex — any MCP agent — to dispatch gated, audited
         actions. Each key is scoped to runners and capabilities, and revocable in one click.
-        <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
@@ -825,169 +824,206 @@ defmodule EmisarWeb.AgentsLive do
            "No agents connected yet" hairline under it was pure noise. An
            ACTIVE filter keeps the section: filter-empty needs its live bar
            (and the clear link) to escape back to the full set. --%>
-      <section :if={
-        @live_action == :index and
-          not (@show_connect_inline? and @api_keys == [] and
-                 not LiveTable.has_active_filters?(@filter_params, @filters))
-      }>
-        <LiveTable.live_table
-          layout={:cards}
-          id="agents"
-          path={~p"/app/#{@current_account}/settings/agents"}
-          rows={sort_by_owner(@api_keys)}
-          metadata={@metadata}
-          filter_params={@filter_params}
-          filters={@filters}
-          wrapper_class="divide-y divide-zinc-800/70"
-        >
-          <:item :let={key}>
-            <.list_row padding="py-4">
-              <:title>
-                <span class="truncate font-medium text-zinc-100">{key.name}</span>
-                <.client_status_pill key={key} />
-              </:title>
-              <:meta>
-                <%!-- Identity + liveness only. The OWNER leads — whose
+      <section
+        :if={
+          @live_action == :index and
+            not (@show_connect_inline? and @api_keys == [] and
+                   not LiveTable.has_active_filters?(@filter_params, @filters))
+        }
+        class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-4 lg:items-start"
+      >
+        <%!-- :table leaves the agents list narrow-of-content and wide-of-page;
+             pair it with a docs rail (main+aside) — the list leads, a plain-terms
+             "what's an LLM agent" teaches beside it. --%>
+        <div class="lg:col-span-3">
+          <LiveTable.live_table
+            layout={:cards}
+            id="agents"
+            path={~p"/app/#{@current_account}/settings/agents"}
+            rows={sort_by_owner(@api_keys)}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            filters={@filters}
+            wrapper_class="divide-y divide-zinc-800/70"
+          >
+            <:item :let={key}>
+              <.list_row padding="py-4">
+                <:title>
+                  <span class="truncate font-medium text-zinc-100">{key.name}</span>
+                  <.client_status_pill key={key} />
+                </:title>
+                <:meta>
+                  <%!-- Identity + liveness only. The OWNER leads — whose
                      credential this is, the fact an operator audits by (the
                      scopes are a fixed MCP shape nobody manages here, so they
                      earned no chips). No key prefix: truncated it rendered the
                      SAME shared literal on every row. --%>
-                <.meta_line class="text-[11px]">
-                  <:seg>
-                    owner <span class="text-zinc-300">{owner_label(key)}</span>
-                  </:seg>
-                  <:seg :if={reported_client(key)}>
-                    client <span class="text-zinc-300">{reported_client(key)}</span>
-                  </:seg>
-                  <%!-- Rotation lineage — the successor names the key it
+                  <.meta_line class="text-[11px]">
+                    <:seg>
+                      owner <span class="text-zinc-300">{owner_label(key)}</span>
+                    </:seg>
+                    <:seg :if={reported_client(key)}>
+                      client <span class="text-zinc-300">{reported_client(key)}</span>
+                    </:seg>
+                    <%!-- Rotation lineage — the successor names the key it
                        replaces by prefix (successors inherit the NAME, so the
                        prefix is the distinguisher). Amber while the old key is
                        still live: the swap isn't proven until this key's first
                        use auto-revokes it. --%>
-                  <:seg :if={key.replaces_id}>
-                    <span
-                      :if={swap_pending?(key)}
-                      class="text-amber-300/90"
-                      title="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
-                    >
-                      replaces <span class="font-mono">{replaced_key_label(key)}</span> · swap pending
-                    </span>
-                    <span
-                      :if={not swap_pending?(key)}
-                      title="Minted by rotation — the key it replaced has been revoked"
-                    >
-                      replaced <span class="font-mono">{replaced_key_label(key)}</span>
-                    </span>
-                  </:seg>
-                  <:seg>
-                    last call{" "}<.local_time
-                      value={key.last_used_at}
-                      mode={:relative}
-                      placeholder="never"
-                    />
-                  </:seg>
-                  <:seg :if={key.expires_at}>
-                    <span class={expiry_class(key)}>
-                      {if expired?(key), do: "expired", else: "expires"}
-                      <.local_time value={key.expires_at} mode={:relative} />
-                    </span>
-                  </:seg>
-                </.meta_line>
-              </:meta>
-              <:actions>
-                <%!-- What this agent actually did — deep-link the audit log
+                    <:seg :if={key.replaces_id}>
+                      <span
+                        :if={swap_pending?(key)}
+                        class="text-amber-300/90"
+                        title="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
+                      >
+                        replaces <span class="font-mono">{replaced_key_label(key)}</span>
+                        · swap pending
+                      </span>
+                      <span
+                        :if={not swap_pending?(key)}
+                        title="Minted by rotation — the key it replaced has been revoked"
+                      >
+                        replaced <span class="font-mono">{replaced_key_label(key)}</span>
+                      </span>
+                    </:seg>
+                    <:seg>
+                      last call{" "}<.local_time
+                        value={key.last_used_at}
+                        mode={:relative}
+                        placeholder="never"
+                      />
+                    </:seg>
+                    <:seg :if={key.expires_at}>
+                      <span class={expiry_class(key)}>
+                        {if expired?(key), do: "expired", else: "expires"}
+                        <.local_time value={key.expires_at} mode={:relative} />
+                      </span>
+                    </:seg>
+                  </.meta_line>
+                </:meta>
+                <:actions>
+                  <%!-- What this agent actually did — deep-link the audit log
                      filtered to this key's actor. Shown for revoked keys too:
                      that's exactly when "what did it do" matters. Every role
                      that can see this page also holds view_audit. --%>
-                <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
+                  <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
                      audit actor filter is empty for an api_key (terminal run events
                      are engine-attributed), so this pivots to the runs feed. Both
                      params: source picks the Dispatched-by kind, api_key_id the
                      agent — the bar lands with the pair visibly active. --%>
-                <.button
-                  navigate={~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"}
-                  variant={:ghost}
-                  size={:sm}
-                >
-                  View activity
-                </.button>
-                <.confirm_button
-                  :if={
-                    is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
-                  }
-                  id={"rotate-#{key.id}"}
-                  title="Rotate this key?"
-                  confirm_label="Rotate key"
-                  variant={:ghost}
-                  tone={:neutral}
-                  size={:sm}
-                  on_confirm={JS.push("rotate", value: %{id: key.id})}
-                >
-                  <:body>
-                    A new key with the same scope is minted; this one keeps working until the new
-                    key's first use, then it's revoked automatically.
-                  </:body>
-                  Rotate
-                </.confirm_button>
-                <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
+                  <.button
+                    navigate={
+                      ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
+                    }
+                    variant={:ghost}
+                    size={:sm}
+                  >
+                    View activity
+                  </.button>
+                  <.confirm_button
+                    :if={
+                      is_nil(key.revoked_at) and
+                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                    }
+                    id={"rotate-#{key.id}"}
+                    title="Rotate this key?"
+                    confirm_label="Rotate key"
+                    variant={:ghost}
+                    tone={:neutral}
+                    size={:sm}
+                    on_confirm={JS.push("rotate", value: %{id: key.id})}
+                  >
+                    <:body>
+                      A new key with the same scope is minted; this one keeps working until the new
+                      key's first use, then it's revoked automatically.
+                    </:body>
+                    Rotate
+                  </.confirm_button>
+                  <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
                      as enrollment keys (one ladder for one action class). --%>
-                <.button
-                  :if={
-                    is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
-                  }
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
-                >
-                  Revoke
-                </.button>
-                <%!-- Per-row typed dialog with the key's name baked in at render,
+                  <.button
+                    :if={
+                      is_nil(key.revoked_at) and
+                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                    }
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
+                  >
+                    Revoke
+                  </.button>
+                  <%!-- Per-row typed dialog with the key's name baked in at render,
                      so it opens already-populated. A single page-level dialog
                      filled by an "open_revoke" round-trip flashed a blank
                      name/token for one round-trip before the server filled it. --%>
-                <.confirm_dialog
-                  :if={is_nil(key.revoked_at)}
-                  id={"revoke-agent-key-#{key.id}"}
-                  title="Revoke this agent key"
-                  confirm_label="Revoke key"
-                  confirm_token={key.name}
-                  typed={@typed}
-                  on_confirm={
-                    JS.push("revoke", value: %{id: key.id})
-                    |> hide_confirm_dialog("revoke-agent-key-#{key.id}")
-                  }
-                >
-                  <:body>
-                    Permanently revokes
-                    <span class="font-mono font-medium text-zinc-200">{key.name}</span>
-                    — the connected client gets 401s on its next call. This can't be undone;
-                    connect the client again to mint a fresh key.
-                  </:body>
-                </.confirm_dialog>
-              </:actions>
-            </.list_row>
-          </:item>
-          <:empty>
-            <.empty_state
-              :if={@load_error?}
-              tone={:danger}
-              icon="hero-exclamation-triangle"
-              title="Couldn't load your agents"
-            >
-              This is a load error, not an empty list — your connected agents may well be here.
-              Refresh the page; if it persists, your access to this account may have changed.
-            </.empty_state>
-            <.empty_state
-              :if={not @load_error?}
-              icon="hero-cpu-chip"
-              title="No agents connected yet."
-            >
-              Pick a client above — we mint a key + pre-fill the snippet (local) or
-              URL + token (cloud). The agent shows up here on its first MCP call.
-            </.empty_state>
-          </:empty>
-        </LiveTable.live_table>
+                  <.confirm_dialog
+                    :if={is_nil(key.revoked_at)}
+                    id={"revoke-agent-key-#{key.id}"}
+                    title="Revoke this agent key"
+                    confirm_label="Revoke key"
+                    confirm_token={key.name}
+                    typed={@typed}
+                    on_confirm={
+                      JS.push("revoke", value: %{id: key.id})
+                      |> hide_confirm_dialog("revoke-agent-key-#{key.id}")
+                    }
+                  >
+                    <:body>
+                      Permanently revokes
+                      <span class="font-mono font-medium text-zinc-200">{key.name}</span>
+                      — the connected client gets 401s on its next call. This can't be undone;
+                      connect the client again to mint a fresh key.
+                    </:body>
+                  </.confirm_dialog>
+                </:actions>
+              </.list_row>
+            </:item>
+            <:empty>
+              <.empty_state
+                :if={@load_error?}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load your agents"
+              >
+                This is a load error, not an empty list — your connected agents may well be here.
+                Refresh the page; if it persists, your access to this account may have changed.
+              </.empty_state>
+              <.empty_state
+                :if={not @load_error?}
+                icon="hero-cpu-chip"
+                title="No agents connected yet."
+              >
+                Pick a client above — we mint a key + pre-fill the snippet (local) or
+                URL + token (cloud). The agent shows up here on its first MCP call.
+              </.empty_state>
+            </:empty>
+          </LiveTable.live_table>
+        </div>
+
+        <.docs_rail
+          title="What's an LLM agent?"
+          doc_href="/docs/connect-an-llm"
+          doc_label="Connect an agent docs"
+        >
+          <p>
+            An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
+              Codex</span>
+            — connected to emisar over <span class="text-zinc-200">MCP</span>, the Model Context
+            Protocol.
+          </p>
+          <p>
+            emisar exposes your runners and their action catalog as an MCP server, so an agent can
+            only request actions that are <span class="text-zinc-200">in the catalog</span>
+            — never a raw shell. Every call is gated by policy, may need an approval, and lands in
+            the audit trail.
+          </p>
+          <p>
+            Each connection gets its own key, scoped to specific runners and revocable in one click.
+            Cloud LLMs like Claude.ai and ChatGPT connect with just a URL over OAuth — no token to
+            manage.
+          </p>
+        </.docs_rail>
       </section>
     </.dashboard_shell>
     """
