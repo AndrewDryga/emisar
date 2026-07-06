@@ -178,10 +178,11 @@ defmodule EmisarWeb.BillingLive do
 
   defp humanize_reason(_), do: "unknown error"
 
-  # mailto for Enterprise billing changes — prefilled subject carrying the
-  # account name so support can route it without a round-trip.
+  # mailto for a billing support request — prefilled subject carrying the
+  # account name so support can route it without a round-trip. General enough
+  # for any plan (the aside "Contact support" link and the Enterprise note).
   defp support_mailto(account) do
-    subject = URI.encode("Enterprise billing change — #{account.name}")
+    subject = URI.encode("Billing question — #{account.name}")
     "mailto:support@emisar.dev?subject=#{subject}"
   end
 
@@ -203,12 +204,13 @@ defmodule EmisarWeb.BillingLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:billing}
-      width={:settings}
+      width={:table}
     >
       <:title>Billing</:title>
 
       <.page_intro>
-        Your plan and usage against its limits. <.doc_link href="/pricing">Compare plans</.doc_link>
+        Your plan and usage against its limits.
+        <.doc_link href="/pricing#compare">Compare plans</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@loading?} />
@@ -241,132 +243,146 @@ defmodule EmisarWeb.BillingLive do
             </.button>
           </:cta>
         </.subscription_banner>
-        <%!-- Current-plan strip across the top — NAKED on the canvas (content,
-             not a framed widget): plan facts left, the money actions right,
-             usage meters below. --%>
-        <section>
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                Current plan
-              </div>
-              <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>
-                <span class="text-sm text-zinc-500">·</span>
-                <span class="text-sm text-zinc-400">
-                  {format_total(@summary.monthly_total_cents)}/mo
-                </span>
-                <span class="text-sm text-zinc-500">·</span>
-                <span class="text-sm text-zinc-400">
-                  {@summary.audit_retention_days}-day audit retention
-                </span>
-              </div>
-              <%!-- Subscription cycle notes — only rendered when the
+        <%!-- Current-plan strip on the canvas: plan facts + self-serve money
+             actions in the wide left column; the usage meters (current limits)
+             and a help/support aside on the right — the create-page helper-rail
+             grammar, so "what you have / what you're using / who to ask" read in
+             one row. --%>
+        <section class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start">
+          <div class="space-y-6 lg:col-span-2">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Current plan
+                </div>
+                <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>
+                  <span class="text-sm text-zinc-500">·</span>
+                  <span class="text-sm text-zinc-400">
+                    {format_total(@summary.monthly_total_cents)}/mo
+                  </span>
+                  <span class="text-sm text-zinc-500">·</span>
+                  <span class="text-sm text-zinc-400">
+                    {@summary.audit_retention_days}-day audit retention
+                  </span>
+                </div>
+                <%!-- Subscription cycle notes — only rendered when the
                    underlying Paddle subscription has the matching state.
                    Cancel-at-period-end is the loud case (you keep your
                    plan until the date, then revert to free); trial_end
                    shows during trial; current_period_end always shows
                    on a paid plan so the operator knows "next charge
                    on …". --%>
-              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <.chip
-                  :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
-                  tone={:amber}
+                <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <.chip
+                    :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
+                    tone={:amber}
+                  >
+                    Cancels on <.local_time value={@summary.current_period_end} class="inline" />
+                  </.chip>
+                  <.chip :if={@summary.trial_end} tone={:brand}>
+                    Trial ends <.local_time value={@summary.trial_end} class="inline" />
+                  </.chip>
+                  <span
+                    :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
+                    class="text-zinc-500"
+                  >
+                    Next charge <.local_time value={@summary.current_period_end} class="inline" />
+                  </span>
+                </div>
+              </div>
+
+              <%!-- Self-serve money actions; the Team plan CARD below carries the
+                 one brand-filled upgrade, so these stay quiet (secondary). --%>
+              <div class="flex flex-wrap gap-2">
+                <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
+                <.button
+                  :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
+                  variant={:secondary}
+                  phx-click="upgrade"
+                  phx-value-plan={upgrade_to.key}
+                  phx-disable-with="Starting checkout…"
                 >
-                  Cancels on <.local_time value={@summary.current_period_end} class="inline" />
-                </.chip>
-                <.chip :if={@summary.trial_end} tone={:brand}>
-                  Trial ends <.local_time value={@summary.trial_end} class="inline" />
-                </.chip>
-                <span
-                  :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
-                  class="text-zinc-500"
+                  Upgrade to {upgrade_to.name}
+                </.button>
+                <%!-- "Manage subscription" surfaces the Paddle Customer Portal —
+                   invoices, payment method, plan change, cancellation. Available
+                   once the account has a Paddle customer attached. --%>
+                <.button
+                  :if={
+                    @current_account.paddle_customer_id &&
+                      Billing.subject_can_manage_billing?(@current_subject)
+                  }
+                  variant={:secondary}
+                  phx-click="manage_billing"
+                  phx-disable-with="Opening portal…"
+                  icon="hero-credit-card"
                 >
-                  Next charge <.local_time value={@summary.current_period_end} class="inline" />
-                </span>
+                  Manage subscription
+                </.button>
               </div>
             </div>
 
-            <%!-- The hero upgrade CTA tracks @plan_order instead of a hardcoded
-                 "team": the next priced plan up, or nil at the top / when the
-                 only step up is a contact-sales tier (enterprise). --%>
-            <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
-            <%!-- Quiet on purpose: the Team plan CARD below carries the one
-                 brand-filled upgrade — two identical green CTAs double-stated
-                 the same action. --%>
-            <.button
-              :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
-              variant={:secondary}
-              phx-click="upgrade"
-              phx-value-plan={upgrade_to.key}
-              phx-disable-with="Starting checkout…"
+            <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
+               plan + billing changes go through our team. The icon-caps-a-spine
+               grammar (event_block) — a vertical line drops from the lifebuoy —
+               marks it a standing posture note; the action is the aside's
+               "Contact support". --%>
+            <.event_block
+              :if={@summary.plan == "enterprise"}
+              icon="hero-lifebuoy"
+              tone={:neutral}
+              title="Custom Enterprise plan"
+              class="max-w-prose"
             >
-              Upgrade to {upgrade_to.name}
-            </.button>
-            <%!-- "Manage subscription" surfaces the Paddle Customer
-                 Portal — invoices, payment method, plan change,
-                 cancellation. Available once the account has a
-                 Paddle customer attached (any paid plan or
-                 previous paid plan). --%>
-            <.button
-              :if={
-                @current_account.paddle_customer_id &&
-                  Billing.subject_can_manage_billing?(@current_subject)
-              }
-              variant={:secondary}
-              phx-click="manage_billing"
-              phx-disable-with="Opening portal…"
-              icon="hero-credit-card"
-            >
-              Manage subscription
-            </.button>
-            <%!-- Enterprise is sales-led — support IS the money action, in the
-                 same hero slot the self-serve states put theirs. --%>
-            <.button
-              :if={
-                @summary.plan == "enterprise" and
-                  Billing.subject_can_manage_billing?(@current_subject)
-              }
-              variant={:secondary}
-              href={support_mailto(@current_account)}
-            >
-              Contact support
-            </.button>
+              <:body>
+                Your plan and billing are handled with our team, not self-serve. Contact support to
+                change your plan, ask about an invoice, or cancel — we'll take care of it.
+              </:body>
+            </.event_block>
           </div>
 
-          <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
-               plan + billing changes go through our team — a downgrade here would
-               route to a Paddle portal the account has no customer in. A posture
-               fact about this surface, not an interruption: the naked note
-               grammar, with the action up in the hero row. --%>
-          <.status_note
-            :if={@summary.plan == "enterprise"}
-            icon="hero-lifebuoy"
-            tone={:neutral}
-            title="Custom Enterprise plan"
-            class="mt-6 max-w-prose"
-          >
-            Your plan and billing are handled with our team, not self-serve. Contact support to
-            change your plan, ask about an invoice, or cancel — we'll take care of it.
-          </.status_note>
-
-          <%!-- The summary limits are entitlement-aware (Paddle product
-               custom_data overrides the compiled plan defaults) — never
-               re-derive them from the plans map by name. --%>
-          <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <.usage_meter
-              label="Runners"
-              count={@summary.runner_count}
-              limit_label={limit_label(@summary.runner_limit)}
-              pct={usage_pct(@summary.runner_count, @summary.runner_limit)}
-            />
-            <.usage_meter
-              label="Team members"
-              count={@member_count}
-              limit_label={limit_label(@summary.member_limit)}
-              pct={usage_pct(@member_count, @summary.member_limit)}
-            />
-          </div>
+          <%!-- Right rail — current limits + where to get help, the create-page
+             helper-column grammar. --%>
+          <aside class="space-y-8 lg:border-l lg:border-zinc-800/70 lg:pl-8">
+            <div>
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Usage
+              </h3>
+              <%!-- The summary limits are entitlement-aware (Paddle product
+                 custom_data overrides the compiled plan defaults) — never
+                 re-derive them from the plans map by name. --%>
+              <div class="mt-4 space-y-4">
+                <.usage_meter
+                  label="Runners"
+                  count={@summary.runner_count}
+                  limit_label={limit_label(@summary.runner_limit)}
+                  pct={usage_pct(@summary.runner_count, @summary.runner_limit)}
+                />
+                <.usage_meter
+                  label="Team members"
+                  count={@member_count}
+                  limit_label={limit_label(@summary.member_limit)}
+                  pct={usage_pct(@member_count, @summary.member_limit)}
+                />
+              </div>
+            </div>
+            <div>
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Need help?
+              </h3>
+              <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+                Questions about your plan, an invoice, or your limits? Our team can help — and can set
+                up a custom plan if you're outgrowing these.
+              </p>
+              <a
+                href={support_mailto(@current_account)}
+                class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+              >
+                Contact support <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+              </a>
+            </div>
+          </aside>
         </section>
 
         <%!-- Plan cards. Three across on desktop, single column on
@@ -383,10 +399,10 @@ defmodule EmisarWeb.BillingLive do
             <article
               :for={plan <- @plans}
               class={[
-                "relative flex flex-col rounded-lg p-5 ring-1",
+                "relative flex flex-col rounded-lg p-5",
                 if(current_plan?(plan, @summary),
-                  do: "bg-white/[0.04] ring-white/25",
-                  else: "bg-black/20 ring-zinc-800"
+                  do: "bg-white/[0.04] ring-2 ring-brand-400/70",
+                  else: "bg-black/20 ring-1 ring-zinc-800"
                 )
               ]}
             >

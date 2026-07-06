@@ -1098,7 +1098,7 @@ defmodule EmisarWeb.CoreComponents do
       </.event_block>
   """
   attr :icon, :string, required: true
-  attr :tone, :atom, default: :amber, values: [:amber, :rose, :brand]
+  attr :tone, :atom, default: :amber, values: [:amber, :rose, :brand, :neutral]
   attr :title, :string, required: true
   attr :class, :string, default: nil
   slot :body, required: true
@@ -1123,6 +1123,7 @@ defmodule EmisarWeb.CoreComponents do
   defp event_block_spine_class(:amber), do: "bg-amber-300/40"
   defp event_block_spine_class(:rose), do: "bg-rose-400/40"
   defp event_block_spine_class(:brand), do: "bg-brand-400/40"
+  defp event_block_spine_class(:neutral), do: "bg-zinc-700"
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
