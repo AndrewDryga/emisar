@@ -357,8 +357,8 @@ defmodule EmisarWeb.ApprovalsLive do
       <:title>Approvals</:title>
 
       <.page_intro>
-        Gated actions wait here for a human decision before they run — approve or deny,
-        with the reason logged to the audit trail.
+        Risky actions pause here before they run. You review the resolved command — the exact
+        action and arguments the runner will execute — then approve or deny; your reason is logged.
         <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
       </.page_intro>
 

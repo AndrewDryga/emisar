@@ -675,8 +675,8 @@ defmodule EmisarWeb.AgentsLive do
 
       <.page_intro :if={@live_action == :index}>
         The LLM clients connected to this workspace over MCP — Claude, ChatGPT, Cursor, Codex, or
-        any MCP agent. Each holds a key scoped to runners and capabilities, dispatches only gated,
-        audited actions, and is revocable in one click.
+        any MCP agent. Each holds its own revocable key that dispatches only gated, audited actions
+        and reaches only the runners its operator can.
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
@@ -1022,9 +1022,10 @@ defmodule EmisarWeb.AgentsLive do
             the audit trail.
           </p>
           <p>
-            Each connection gets its own key, scoped to specific runners and revocable in one click.
-            Cloud LLMs like Claude.ai and ChatGPT connect with just a URL over OAuth — no token to
-            manage.
+            Each connection gets its own key, revocable in one click. A key reaches only the runners
+            the operator who created it can reach — it never outgrows the person behind it, and
+            narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
+            Claude.ai and ChatGPT connect with just a URL over OAuth — no token to manage.
           </p>
         </.docs_rail>
       </section>

@@ -119,8 +119,10 @@ defmodule EmisarWeb.RunbooksLive do
       </:actions>
 
       <.page_intro>
-        Published playbooks your operators and LLMs can run as one gated sequence; drafts stay
-        private until you publish them. <.doc_link href="/docs/runbooks">Runbook docs</.doc_link>
+        Playbooks your operators and agents run as one ordered sequence — every step still clears
+        its own policy check and approval, so a runbook groups the steps without skipping a gate.
+        Drafts stay private until you publish.
+        <.doc_link href="/docs/runbooks">Runbook docs</.doc_link>
       </.page_intro>
 
       <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no

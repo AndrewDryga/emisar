@@ -222,8 +222,9 @@ defmodule EmisarWeb.BillingLive do
       <:title>Billing</:title>
 
       <.page_intro>
-        Your plan and usage against its limits.
-        <.doc_link href="/pricing#compare">Compare plans</.doc_link>
+        Your plan sets this account's limits — how many runners connect, how long the audit log is
+        kept, and which features are on. Track usage against them, change plan, and manage payment
+        here. <.doc_link href="/pricing#compare">Compare plans</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@loading?} />
