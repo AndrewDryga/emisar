@@ -1776,7 +1776,7 @@ defmodule EmisarWeb.CoreComponents do
       </.nav_link>
       <.nav_link
         :if={@can_view_agents?}
-        to={~p"/app/#{@current_account}/settings/agents"}
+        to={~p"/app/#{@current_account}/agents"}
         active={@section == :agents}
         icon="hero-sparkles"
         alert={@no_agents?}

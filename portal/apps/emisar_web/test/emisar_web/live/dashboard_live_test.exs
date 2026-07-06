@@ -83,7 +83,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Get to your first gated run"
       assert html =~ "1 of 2 done"
       assert html =~ "1 runner connected"
-      assert html =~ ~p"/app/#{account}/settings/agents/connect"
+      assert html =~ ~p"/app/#{account}/agents/connect"
       refute html =~ "Recent runs"
     end
 
@@ -292,7 +292,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert has_element?(
                lv,
-               "a[href='#{~p"/app/#{account}/settings/agents/connect"}']",
+               "a[href='#{~p"/app/#{account}/agents/connect"}']",
                "Connect an agent"
              )
 

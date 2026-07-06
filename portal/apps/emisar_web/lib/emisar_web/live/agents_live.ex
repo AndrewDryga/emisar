@@ -72,7 +72,7 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply,
      LiveTable.apply_filter(
        socket,
-       ~p"/app/#{socket.assigns.current_account}/settings/agents",
+       ~p"/app/#{socket.assigns.current_account}/agents",
        params
      )}
   end
@@ -654,7 +654,7 @@ defmodule EmisarWeb.AgentsLive do
              the page (onboarding / a secret reveal), where a second CTA to the
              same flow would just duplicate it. --%>
         <%= if @live_action == :connect do %>
-          <.back_link navigate={~p"/app/#{@current_account}/settings/agents"}>LLM agents</.back_link>
+          <.back_link navigate={~p"/app/#{@current_account}/agents"}>LLM agents</.back_link>
           Connect an agent
         <% else %>
           LLM agents
@@ -665,7 +665,7 @@ defmodule EmisarWeb.AgentsLive do
           ApiKeys.subject_can_issue_quick_key?(@current_subject)
       }>
         <.button
-          navigate={~p"/app/#{@current_account}/settings/agents/connect"}
+          navigate={~p"/app/#{@current_account}/agents/connect"}
           size={:md}
           icon="hero-plus"
         >
@@ -840,7 +840,7 @@ defmodule EmisarWeb.AgentsLive do
           <LiveTable.live_table
             layout={:cards}
             id="agents"
-            path={~p"/app/#{@current_account}/settings/agents"}
+            path={~p"/app/#{@current_account}/agents"}
             rows={sort_by_owner(@api_keys)}
             metadata={@metadata}
             filter_params={@filter_params}
@@ -1245,7 +1245,7 @@ defmodule EmisarWeb.AgentsLive do
                 <p class="mt-1 text-sm leading-relaxed text-zinc-400">
                   Its first call just landed. Every request now shows under its name in
                   <.link
-                    navigate={~p"/app/#{@current_account}/settings/agents"}
+                    navigate={~p"/app/#{@current_account}/agents"}
                     class="text-brand-400 hover:text-brand-300"
                   >
                     agents

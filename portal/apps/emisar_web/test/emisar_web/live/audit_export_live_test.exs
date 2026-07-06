@@ -402,7 +402,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       refute siem_card =~ "ZZ-mcp-bridge-token"
 
       # The agents page lists the MCP token, not the export one.
-      {:ok, _lv, agents_html} = live(conn, ~p"/app/#{account}/settings/agents")
+      {:ok, _lv, agents_html} = live(conn, ~p"/app/#{account}/agents")
       assert agents_html =~ "ZZ-mcp-bridge-token"
       refute agents_html =~ "ZZ-siem-export-token"
     end

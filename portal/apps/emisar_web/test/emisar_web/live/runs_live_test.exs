@@ -336,7 +336,7 @@ defmodule EmisarWeb.RunsLiveTest do
     test "is suppressed on the agents page itself (where the operator would act)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       refute html =~ "No LLM connected yet"
     end

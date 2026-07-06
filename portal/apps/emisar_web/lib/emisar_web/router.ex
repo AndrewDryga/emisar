@@ -257,8 +257,8 @@ defmodule EmisarWeb.Router do
         get "/audit/download", AuditDownloadController, :download
         live "/audit/:id", AuditDetailLive, :show
 
-        live "/settings/agents", AgentsLive, :index
-        live "/settings/agents/connect", AgentsLive, :connect
+        live "/agents", AgentsLive, :index
+        live "/agents/connect", AgentsLive, :connect
         live "/settings/team", TeamLive, :index
         live "/settings/team/invite", TeamLive, :new
         live "/settings/sso", SSOSettingsLive, :index

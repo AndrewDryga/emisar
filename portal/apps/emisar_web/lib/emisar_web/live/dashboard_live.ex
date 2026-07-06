@@ -379,7 +379,7 @@ defmodule EmisarWeb.DashboardLive do
             </.link>
             and dispatch an action from its catalog — or ask a connected
             <.link
-              navigate={~p"/app/#{@current_account}/settings/agents"}
+              navigate={~p"/app/#{@current_account}/agents"}
               class="text-brand-400 hover:text-brand-300"
             >
               agent
@@ -491,8 +491,8 @@ defmodule EmisarWeb.DashboardLive do
           title="Connect an LLM agent"
           done_text={"#{@agents_total} #{if @agents_total == 1, do: "agent", else: "agents"} connected"}
           action_label="Connect an agent"
-          navigate={~p"/app/#{@current_account}/settings/agents/connect"}
-          done_navigate={~p"/app/#{@current_account}/settings/agents"}
+          navigate={~p"/app/#{@current_account}/agents/connect"}
+          done_navigate={~p"/app/#{@current_account}/agents"}
           can_act?={@can_issue_agent_key?}
         >
           Give Claude, Cursor, or any MCP client a scoped, revocable key.
@@ -675,7 +675,7 @@ defmodule EmisarWeb.DashboardLive do
       label="LLM agents"
       title="Connect any MCP client"
       cta="Mint a scoped key"
-      navigate={~p"/app/#{@current_account}/settings/agents"}
+      navigate={~p"/app/#{@current_account}/agents"}
     />
     """
   end
@@ -685,7 +685,7 @@ defmodule EmisarWeb.DashboardLive do
     <.pillar
       label="LLM agents"
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
-      navigate={~p"/app/#{@current_account}/settings/agents"}
+      navigate={~p"/app/#{@current_account}/agents"}
     >
       <:value>
         {@agents.total}<span class="text-2xl text-zinc-500">

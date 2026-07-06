@@ -233,7 +233,7 @@ defmodule EmisarWeb.RunsLive do
                 >runbook</.link>.
                 Runs from an
                 <.link
-                  navigate={~p"/app/#{@current_account}/settings/agents"}
+                  navigate={~p"/app/#{@current_account}/agents"}
                   class="text-brand-400 hover:text-brand-300"
                 >
                   LLM agent
