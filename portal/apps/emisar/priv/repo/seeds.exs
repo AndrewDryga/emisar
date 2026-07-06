@@ -1534,6 +1534,16 @@ for {name, slug, plan} <- [
     ] do
   {acct, owner, subject} = seed_plan_account.(name, slug, plan)
 
+  # Give the paid (Globex/Team) account a Paddle customer so its billing page
+  # shows the full self-serve surface — the "Manage subscription" portal button
+  # (payment method + plan change) and the inline Recent invoices (the stub
+  # PaddleClient serves fake transactions). Free/enterprise accounts have none.
+  if plan == "team" do
+    acct
+    |> Ecto.Changeset.change(paddle_customer_id: "ctm_dev_#{slug}")
+    |> Repo.update!()
+  end
+
   runner_name = "#{slug}-prod-1"
 
   runner =

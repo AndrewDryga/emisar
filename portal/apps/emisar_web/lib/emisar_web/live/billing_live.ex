@@ -435,8 +435,8 @@ defmodule EmisarWeb.BillingLive do
                          and there's no self-serve path off it — the note above
                          carries the one real action (contact support). --%>
                         <.button
-                          variant={:ghost}
-                          size={:sm}
+                          variant={:secondary}
+                          size={:md}
                           class="w-full"
                           href={support_mailto(@current_account)}
                         >
