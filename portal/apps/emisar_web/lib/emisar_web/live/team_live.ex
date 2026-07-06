@@ -1127,7 +1127,7 @@ defmodule EmisarWeb.TeamLive do
                 :if={Accounts.subject_can_manage_account_security?(@current_subject)}
                 id="enforce-mfa"
                 variant={:secondary}
-                tone={:amber}
+                tone={:neutral}
                 size={:sm}
                 title={
                   if @current_account.settings.require_mfa,
@@ -1242,7 +1242,7 @@ defmodule EmisarWeb.TeamLive do
                   <.confirm_button
                     id="require-sso"
                     variant={:secondary}
-                    tone={:amber}
+                    tone={:neutral}
                     size={:sm}
                     title="Stop requiring single sign-on?"
                     confirm_label="Stop requiring"
@@ -1255,7 +1255,7 @@ defmodule EmisarWeb.TeamLive do
                   <.confirm_button
                     id="require-sso"
                     variant={:secondary}
-                    tone={:amber}
+                    tone={:neutral}
                     size={:sm}
                     title="Require single sign-on for everyone?"
                     confirm_label="Require SSO"
