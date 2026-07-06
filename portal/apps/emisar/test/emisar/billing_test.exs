@@ -391,21 +391,33 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "start_checkout/3" do
+  describe "start_checkout/4" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
     test "rejects a plan name we do not sell", %{account: account, subject: subject} do
-      assert {:error, :unknown_plan} = Billing.start_checkout(account, "platinum", subject)
+      assert {:error, :unknown_plan} =
+               Billing.start_checkout(account, "platinum", :month, subject)
     end
 
-    test "resolves the price from the (stub) catalog and returns the checkout URL", %{
+    test "resolves the monthly price from the (stub) catalog and returns the checkout URL", %{
       account: account,
       subject: subject
     } do
-      assert {:ok, url} = Billing.start_checkout(account, "team", subject)
+      assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+      assert url =~ "stub.paddle.test/checkout"
+    end
+
+    test "the annual cycle also resolves against the catalog", %{
+      account: account,
+      subject: subject
+    } do
+      # The stub Team product lists both a monthly and an annual price, so an
+      # annual checkout resolves too (the price selection is asserted precisely
+      # in BillingCheckoutArgsTest against the capturing client).
+      assert {:ok, url} = Billing.start_checkout(account, "team", :year, subject)
       assert url =~ "stub.paddle.test/checkout"
     end
 
@@ -423,7 +435,9 @@ defmodule Emisar.BillingTest do
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:error, :unauthorized} = Billing.start_checkout(account, "team", admin_subject)
+      assert {:error, :unauthorized} =
+               Billing.start_checkout(account, "team", :month, admin_subject)
+
       assert {:error, :unauthorized} = Billing.open_billing_portal(account, admin_subject)
     end
 
@@ -433,7 +447,9 @@ defmodule Emisar.BillingTest do
       {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} = Billing.start_checkout(account_a, "team", subject_b)
+      assert {:error, :unauthorized} =
+               Billing.start_checkout(account_a, "team", :month, subject_b)
+
       assert {:error, :unauthorized} = Billing.open_billing_portal(account_a, subject_b)
     end
   end
@@ -529,7 +545,7 @@ defmodule Emisar.BillingTest do
   describe "ensure_paddle_customer/2 — internal helper has no own Subject gate" do
     test "it takes a %Subject{} for its email only — authz is the start_checkout caller's" do
       # ensure_paddle_customer/2 runs NO ensure_has_permissions of its own: by
-      # design the manage_billing gate lives in its caller (start_checkout/3), and
+      # design the manage_billing gate lives in its caller (start_checkout/4), and
       # the helper just threads the acting user's email onto the Paddle customer.
       # The contract is arity-2 (account, subject) with no permission-bearing
       # arity-3 variant, and it succeeds for any owner subject without a gate of
@@ -1783,7 +1799,7 @@ defmodule Emisar.BillingVendorErrorTest do
     :ok
   end
 
-  describe "start_checkout/3 — vendor failures" do
+  describe "start_checkout/4 — vendor failures" do
     test "a vendor error on checkout-session creation bubbles up" do
       # The catalog read fails first on this client — its {:error, term}
       # propagates out of start_checkout unchanged (the LV turns it into a
@@ -1791,7 +1807,8 @@ defmodule Emisar.BillingVendorErrorTest do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
-      assert {:error, :paddle_unavailable} = Billing.start_checkout(account, "team", subject)
+      assert {:error, :paddle_unavailable} =
+               Billing.start_checkout(account, "team", :month, subject)
     end
 
     test "a vendor error creating the customer short-circuits before any checkout" do
@@ -1801,7 +1818,8 @@ defmodule Emisar.BillingVendorErrorTest do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       refute account.paddle_customer_id
 
-      assert {:error, :paddle_unavailable} = Billing.start_checkout(account, "team", subject)
+      assert {:error, :paddle_unavailable} =
+               Billing.start_checkout(account, "team", :month, subject)
 
       # The failed create left no customer linked on the account row.
       assert {:ok, reloaded} = Emisar.Accounts.fetch_account_by_id(account.id)
@@ -1845,7 +1863,7 @@ end
 
 # A Paddle client that captures the attrs each call receives by sending them to
 # a registered test pid, then returns a successful shape — so the args
-# `start_checkout/3` / `ensure_paddle_customer/2` build (per-seat quantity,
+# `start_checkout/4` / `ensure_paddle_customer/2` build (per-seat quantity,
 # success/cancel URLs, the verbatim email + name) can be asserted without the
 # live HTTP layer.
 defmodule Emisar.BillingTest.CapturingPaddleClient do
@@ -1877,8 +1895,8 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   def retrieve_subscription(_id), do: {:error, :unused}
 
   @impl true
-  # The canned catalog carries the same price id the old env mapping used, so
-  # the captured create_checkout_session args keep asserting on pri_team_01.
+  # The canned catalog carries both cycles, so the captured
+  # create_checkout_session args assert the cycle→price selection.
   def list_products do
     {:ok,
      [
@@ -1893,6 +1911,12 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
              "status" => "active",
              "billing_cycle" => %{"interval" => "month", "frequency" => 1},
              "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+           },
+           %{
+             "id" => "pri_team_annual_01",
+             "status" => "active",
+             "billing_cycle" => %{"interval" => "year", "frequency" => 1},
+             "unit_price" => %{"amount" => "20000", "currency_code" => "USD"}
            }
          ]
        }
@@ -1905,7 +1929,7 @@ end
 
 defmodule Emisar.BillingCheckoutArgsTest do
   @moduledoc """
-  The exact args `start_checkout/3` + `ensure_paddle_customer/2` hand to the
+  The exact args `start_checkout/4` + `ensure_paddle_customer/2` hand to the
   Paddle client — per-seat quantity, the success/cancel return URLs, and the
   verbatim email/name. Swaps the process-global `:paddle_client` (and registers
   a capture pid the client reports to), so `async: false`.
@@ -1941,16 +1965,29 @@ defmodule Emisar.BillingCheckoutArgsTest do
     account = %{account | paddle_customer_id: "ctm_seat_count_01"}
     for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-    assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
 
     assert_received {:create_checkout_session, %{quantity: 5, price_id: "pri_team_01"}}
+  end
+
+  test "the billing cycle selects the matching catalog price" do
+    # :month picks the monthly price, :year the annual one — both off the same
+    # product's `prices`, keyed on billing_cycle.interval.
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    account = %{account | paddle_customer_id: "ctm_cycle_price_01"}
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert_received {:create_checkout_session, %{price_id: "pri_team_01"}}
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :year, subject)
+    assert_received {:create_checkout_session, %{price_id: "pri_team_annual_01"}}
   end
 
   test "a zero-runner account checks out at quantity 1 — Paddle rejects 0" do
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_seat_floor_01"}
 
-    assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
 
     assert_received {:create_checkout_session, %{quantity: 1}}
   end
@@ -1963,7 +2000,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_urls_01"}
 
-    assert {:ok, _url} = Billing.start_checkout(account, "team", subject)
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
 
     assert_received {:create_checkout_session, attrs}
     refute Map.has_key?(attrs, :checkout_url)
@@ -2009,7 +2046,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
 
     log =
       capture_log(fn ->
-        assert {:ok, _} = Billing.start_checkout(account, "team", subject)
+        assert {:ok, _} = Billing.start_checkout(account, "team", :month, subject)
         assert {:ok, _} = Billing.open_billing_portal(account, subject)
       end)
 

@@ -6,7 +6,8 @@ defmodule EmisarWeb.BillingLive do
   @plan_order ["free", "team", "enterprise"]
 
   def mount(_params, _session, socket) do
-    socket = assign(socket, page_title: "Billing", loading?: not connected?(socket))
+    socket =
+      assign(socket, page_title: "Billing", loading?: not connected?(socket), cycle: :month)
 
     if connected?(socket) do
       account = socket.assigns.current_account
@@ -49,7 +50,13 @@ defmodule EmisarWeb.BillingLive do
     end
   end
 
-  def handle_event("upgrade", %{"plan" => plan}, socket) do
+  # Pure UI state — flips the plan cards between monthly and annual pricing;
+  # the chosen cycle rides on the Upgrade click, so no re-fetch here.
+  def handle_event("set_cycle", %{"cycle" => cycle}, socket) do
+    {:noreply, assign(socket, :cycle, parse_cycle(cycle))}
+  end
+
+  def handle_event("upgrade", %{"plan" => plan} = params, socket) do
     Permissions.gated(
       socket,
       Billing.subject_can_manage_billing?(socket.assigns.current_subject),
@@ -58,6 +65,7 @@ defmodule EmisarWeb.BillingLive do
           case Billing.start_checkout(
                  socket.assigns.current_account,
                  plan,
+                 parse_cycle(params["cycle"]),
                  socket.assigns.current_subject
                ) do
             {:ok, url} ->
@@ -135,11 +143,26 @@ defmodule EmisarWeb.BillingLive do
   defp limit_label(n) when is_integer(n), do: Integer.to_string(n)
   defp limit_label(_), do: "—"
 
-  defp price_label(%{monthly_price_cents: nil}), do: "Custom pricing"
-  defp price_label(%{monthly_price_cents: 0}), do: "$0"
+  # Whitelist the cycle off the client (IL-14) — anything but "year" is monthly.
+  defp parse_cycle("year"), do: :year
+  defp parse_cycle(_), do: :month
 
-  defp price_label(%{monthly_price_cents: cents}),
+  defp price_label(%{monthly_price_cents: nil}, _cycle), do: "Custom pricing"
+  defp price_label(%{monthly_price_cents: 0}, _cycle), do: "$0"
+
+  defp price_label(%{annual_price_cents: cents}, :year) when is_integer(cents),
+    do: "$#{div(cents, 100)} / runner / year"
+
+  defp price_label(%{monthly_price_cents: cents}, :month),
     do: "$#{div(cents, 100)} / runner / month"
+
+  # "N months free" on the annual cycle when it beats 12× monthly; nil for
+  # free/enterprise or any plan whose annual price carries no discount.
+  defp savings_note(%{monthly_price_cents: m, annual_price_cents: a})
+       when is_integer(m) and m > 0 and is_integer(a) and a > 0 and a < m * 12,
+       do: "#{12 - div(a, m)} months free"
+
+  defp savings_note(_plan), do: nil
 
   defp current_plan?(%{key: key}, %{plan: current}), do: key == current
 
@@ -379,7 +402,31 @@ defmodule EmisarWeb.BillingLive do
                  Picking a plan is the choice_cards concept — the current plan
                  takes the selected treatment (bright ring), the rest quiet. --%>
             <section>
-              <.section_header title="Plans" />
+              <.section_header title="Plans">
+                <:actions>
+                  <%!-- Monthly/annual is pure UI state (set_cycle) — the chosen
+                       cycle rides on the Upgrade click. The saving shows per plan
+                       on the card, so the toggle itself stays neutral. --%>
+                  <div class="inline-flex rounded-lg p-0.5 text-xs font-medium ring-1 ring-zinc-800">
+                    <button
+                      :for={{value, label} <- [{"month", "Monthly"}, {"year", "Annual"}]}
+                      type="button"
+                      phx-click="set_cycle"
+                      phx-value-cycle={value}
+                      aria-pressed={to_string(@cycle) == value}
+                      class={[
+                        "rounded-md px-3 py-1.5 transition-colors",
+                        if(to_string(@cycle) == value,
+                          do: "bg-zinc-800 text-zinc-100",
+                          else: "text-zinc-400 hover:text-zinc-200"
+                        )
+                      ]}
+                    >
+                      {label}
+                    </button>
+                  </div>
+                </:actions>
+              </.section_header>
               <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <%!-- ONE card style for every plan — identity ("current") and merch
                  ("most popular") are the CHIPS' job; per-plan border treatments
@@ -405,7 +452,12 @@ defmodule EmisarWeb.BillingLive do
                     </.chip>
                   </div>
 
-                  <p class="mt-2 text-sm text-zinc-400">{price_label(plan)}</p>
+                  <p class="mt-2 text-sm text-zinc-400">
+                    {price_label(plan, @cycle)}
+                    <span :if={@cycle == :year and savings_note(plan)} class="text-brand-400">
+                      · {savings_note(plan)}
+                    </span>
+                  </p>
 
                   <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
                     <li :for={f <- plan.features} class="flex items-start gap-2">
@@ -449,6 +501,7 @@ defmodule EmisarWeb.BillingLive do
                           class="w-full"
                           phx-click="upgrade"
                           phx-value-plan={plan.key}
+                          phx-value-cycle={@cycle}
                           phx-disable-with="Starting checkout…"
                         >
                           Upgrade to {plan.name}

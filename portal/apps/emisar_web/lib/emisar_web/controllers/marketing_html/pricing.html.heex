@@ -26,8 +26,35 @@
         </p>
       </div>
 
+      <%!-- Monthly/annual toggle — plain-JS class swap (initPricingCycle), the
+           marketing bundle ships no LiveSocket. Only the Team card carries a
+           paid annual price; Free ($0) and Enterprise (Custom) don't change. --%>
+      <div class="mt-12 flex justify-center">
+        <div
+          data-cycle-toggle
+          class="inline-flex rounded-lg p-0.5 text-sm font-medium ring-1 ring-zinc-800"
+        >
+          <button
+            type="button"
+            data-cycle="month"
+            aria-pressed="true"
+            class="rounded-md bg-zinc-800 px-4 py-1.5 text-zinc-100 transition-colors"
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            data-cycle="year"
+            aria-pressed="false"
+            class="rounded-md px-4 py-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
+          >
+            Annual <span class="text-brand-400">· 2 months free</span>
+          </button>
+        </div>
+      </div>
+
       <%!-- Tiers --%>
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 lg:max-w-none lg:grid-cols-3 lg:gap-8">
+      <div class="mx-auto mt-10 grid max-w-5xl grid-cols-1 gap-6 lg:max-w-none lg:grid-cols-3 lg:gap-8">
         <%!-- Free --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <h2 class="text-lg font-semibold text-zinc-50">Free</h2>
@@ -74,9 +101,13 @@
           </span>
           <h2 class="text-lg font-semibold text-brand-300">Team</h2>
           <p class="mt-2 text-sm text-zinc-400">For production teams.</p>
-          <p class="mt-6 flex items-baseline gap-x-1">
+          <p class="mt-6 flex items-baseline gap-x-1" data-cycle-price="month">
             <span class="text-5xl font-bold tracking-tight text-zinc-50">$20</span>
             <span class="text-sm font-semibold text-zinc-400">/ runner / mo</span>
+          </p>
+          <p class="mt-6 flex hidden items-baseline gap-x-1" data-cycle-price="year">
+            <span class="text-5xl font-bold tracking-tight text-zinc-50">$200</span>
+            <span class="text-sm font-semibold text-zinc-400">/ runner / yr</span>
           </p>
           <.marketing_button href={~p"/sign_up"} size={:lg} block class="mt-8">
             Start free

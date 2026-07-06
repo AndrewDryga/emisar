@@ -196,6 +196,20 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "On-prem / self-hosted option"
   end
 
+  test "pricing page carries a monthly/annual toggle with both Team prices", %{conn: conn} do
+    html = conn |> get(~p"/pricing") |> html_response(200)
+
+    # The toggle (a plain-JS class swap — no LiveSocket on marketing) plus both
+    # per-cycle Team prices are server-rendered; the annual block starts hidden.
+    assert html =~ ~s(data-cycle-toggle)
+    assert html =~ ~s(data-cycle="year")
+    assert html =~ "$20"
+    assert html =~ "/ runner / mo"
+    assert html =~ "$200"
+    assert html =~ "/ runner / yr"
+    assert html =~ "2 months free"
+  end
+
   test "pricing page emits a FAQPage with the visible questions in sync", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
 

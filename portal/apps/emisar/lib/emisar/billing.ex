@@ -19,6 +19,7 @@ defmodule Emisar.Billing do
     "free" => %{
       name: "Free",
       monthly_price_cents: 0,
+      annual_price_cents: 0,
       runners_limit: 3,
       members_limit: 1,
       audit_retention_days: 7,
@@ -27,6 +28,9 @@ defmodule Emisar.Billing do
     "team" => %{
       name: "Team",
       monthly_price_cents: 2000,
+      # Two months free vs monthly ($240/runner/yr → $200) — the display
+      # figure; the charged price still comes from the live catalog at click.
+      annual_price_cents: 20_000,
       runners_limit: 100,
       members_limit: :unlimited,
       audit_retention_days: 90,
@@ -41,6 +45,7 @@ defmodule Emisar.Billing do
     "enterprise" => %{
       name: "Enterprise",
       monthly_price_cents: nil,
+      annual_price_cents: nil,
       runners_limit: :unlimited,
       members_limit: :unlimited,
       audit_retention_days: 365,
@@ -249,14 +254,15 @@ defmodule Emisar.Billing do
     do: Accounts.count_memberships(account_id)
 
   @doc """
-  Creates a Paddle Checkout (Transaction) for the chosen plan and returns
-  the URL the operator should be redirected to. The price comes from the
-  live Paddle catalog, so a new/changed price needs no deploy;
-  `{:error, :plan_not_in_catalog}` when no product identifies as the plan
-  or it has no active recurring price.
+  Creates a Paddle Checkout (Transaction) for the chosen plan + billing
+  `cycle` (`:month` | `:year`) and returns the URL the operator should be
+  redirected to. The price comes from the live Paddle catalog, so a
+  new/changed price needs no deploy; `{:error, :plan_not_in_catalog}` when
+  no product identifies as the plan or it has no active price for the
+  requested cycle (nor a recurring price to fall back to).
   """
-  def start_checkout(%Accounts.Account{} = account, plan_name, %Subject{} = subject)
-      when is_binary(plan_name) do
+  def start_checkout(%Accounts.Account{} = account, plan_name, cycle, %Subject{} = subject)
+      when is_binary(plan_name) and cycle in [:month, :year] do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -270,7 +276,7 @@ defmodule Emisar.Billing do
         # requires its own domain approval, while the default link is the
         # canonical mechanism. The post-payment redirect is the page's
         # successUrl setting, not a transaction field.
-        with {:ok, price_id} <- resolve_checkout_price_id(plan_name),
+        with {:ok, price_id} <- resolve_checkout_price_id(plan_name, cycle),
              {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
              {:ok, %{"url" => url}} <-
                Emisar.Billing.PaddleClient.create_checkout_session(%{
@@ -291,13 +297,12 @@ defmodule Emisar.Billing do
 
   # The live catalog is the checkout-price source — one extra API call per
   # human checkout click, deliberately uncached (always fresh, no staleness
-  # machinery). Prefers the monthly price so the default Upgrade action bills
-  # the smallest commitment; annual-only plans still resolve.
-  defp resolve_checkout_price_id(plan_name) do
+  # machinery).
+  defp resolve_checkout_price_id(plan_name, cycle) do
     with {:ok, products} <- Emisar.Billing.PaddleClient.list_products() do
       products
       |> Enum.find(&(product_plan_slug(&1) == plan_name))
-      |> checkout_price_of_product()
+      |> checkout_price_of_product(cycle)
     end
   end
 
@@ -314,18 +319,28 @@ defmodule Emisar.Billing do
 
   defp known_plan_from_name(_name), do: nil
 
-  defp checkout_price_of_product(%{"prices" => prices}) when is_list(prices) do
+  # Prefer the requested cycle's active price; fall back to any active
+  # recurring price so a catalog listing only one cycle still resolves
+  # (an annual-only plan asked for monthly, say).
+  defp checkout_price_of_product(%{"prices" => prices}, cycle) when is_list(prices) do
     active = Enum.filter(prices, &(&1["status"] == "active"))
-    monthly = Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == "month"))
-    annual = Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == "year"))
 
-    case monthly || annual do
+    requested =
+      Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == cycle_interval(cycle)))
+
+    fallback =
+      Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) in ["month", "year"]))
+
+    case requested || fallback do
       %{"id" => price_id} -> {:ok, price_id}
       _ -> {:error, :plan_not_in_catalog}
     end
   end
 
-  defp checkout_price_of_product(_product), do: {:error, :plan_not_in_catalog}
+  defp checkout_price_of_product(_product, _cycle), do: {:error, :plan_not_in_catalog}
+
+  defp cycle_interval(:month), do: "month"
+  defp cycle_interval(:year), do: "year"
 
   @doc """
   Creates a Paddle Customer Portal session for the account's customer and

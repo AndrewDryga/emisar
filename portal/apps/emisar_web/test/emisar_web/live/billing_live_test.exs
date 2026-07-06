@@ -59,11 +59,34 @@ defmodule EmisarWeb.BillingLiveTest do
       # team plan card both carry it).
       assert has_element?(lv, "button[phx-click='upgrade'][phx-value-plan='team']")
 
-      # `Billing.start_checkout/3` resolves the price from the (stub) catalog
+      # `Billing.start_checkout/4` resolves the price from the (stub) catalog
       # and returns the checkout URL; the LV redirects externally to it. Drive
       # the event by name to avoid matching the two identical "team" buttons.
       assert {:error, {:redirect, %{to: url}}} =
-               render_click(lv, "upgrade", %{"plan" => "team"})
+               render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "month"})
+
+      assert url =~ "stub.paddle.test/checkout"
+    end
+
+    test "the annual toggle swaps the plan card price and threads the cycle to checkout", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # Default is monthly; flipping to annual re-renders the Team card at the
+      # per-year price with its savings note.
+      assert render(lv) =~ "$20 / runner / month"
+
+      annual = render_click(lv, "set_cycle", %{"cycle" => "year"})
+      assert annual =~ "$200 / runner / year"
+      assert annual =~ "2 months free"
+      assert has_element?(lv, "button[phx-value-cycle='year'][phx-click='upgrade']")
+
+      # An annual upgrade still starts checkout (price selection is asserted in
+      # billing_test's capturing client).
+      assert {:error, {:redirect, %{to: url}}} =
+               render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "year"})
 
       assert url =~ "stub.paddle.test/checkout"
     end
