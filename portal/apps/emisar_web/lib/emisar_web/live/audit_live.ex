@@ -291,40 +291,39 @@ defmodule EmisarWeb.AuditLive do
         <%!-- :md, not :sm — a control on the 28px title row needs the full-size
              button to hold its own beside the H1. Export downloads the CURRENT
              FILTERED VIEW as CSV; both export surfaces are Team+ (the console
-             trail is on every plan — taking the data OUT is paid), so a free
-             plan's buttons walk to Billing instead of pretending. --%>
+             trail is on every plan — taking the data OUT is paid). On a free
+             plan the button wears a LOCK + hover tooltip and walks to Billing —
+             the gate reads at a glance, without a clumsy "· Team" label suffix. --%>
         <%= if Billing.audit_export_available?(@current_account) do %>
           <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
             Export CSV
           </.button>
         <% else %>
-          <.button
-            variant={:secondary}
-            size={:md}
-            navigate={~p"/app/#{@current_account}/settings/billing"}
-            title="Audit export is available on the Team plan"
+          <.upgrade_button
+            account={@current_account}
+            tip="Audit export is on the Team plan — upgrade to turn it on"
           >
-            Export CSV · Team
-          </.button>
+            Export CSV
+          </.upgrade_button>
         <% end %>
-        <.button
-          :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
-          variant={:secondary}
-          size={:md}
-          navigate={
-            if Billing.audit_export_available?(@current_account),
-              do: ~p"/app/#{@current_account}/audit/export",
-              else: ~p"/app/#{@current_account}/settings/billing"
-          }
-          title={
-            unless Billing.audit_export_available?(@current_account),
-              do: "Audit export is available on the Team plan"
-          }
-        >
-          {if Billing.audit_export_available?(@current_account),
-            do: "Stream to SIEM",
-            else: "Stream to SIEM · Team"}
-        </.button>
+        <%= if ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
+          <%= if Billing.audit_export_available?(@current_account) do %>
+            <.button
+              variant={:secondary}
+              size={:md}
+              navigate={~p"/app/#{@current_account}/audit/export"}
+            >
+              Stream to SIEM
+            </.button>
+          <% else %>
+            <.upgrade_button
+              account={@current_account}
+              tip="SIEM streaming is on the Team plan — upgrade to turn it on"
+            >
+              Stream to SIEM
+            </.upgrade_button>
+          <% end %>
+        <% end %>
       </:actions>
 
       <.page_intro>
@@ -537,6 +536,28 @@ defmodule EmisarWeb.AuditLive do
         </:empty>
       </LiveTable.live_table>
     </.dashboard_shell>
+    """
+  end
+
+  attr :account, :any, required: true
+  attr :tip, :string, required: true
+  slot :inner_block, required: true
+
+  # A plan-gated title-row action: a lock icon + hover tooltip naming the gate,
+  # routing to Billing to upgrade. The lock IS the "not on your plan" signal, so
+  # the label stays clean — no "· Team" suffix crowding it.
+  defp upgrade_button(assigns) do
+    ~H"""
+    <.tooltip text={@tip}>
+      <.button
+        variant={:secondary}
+        size={:md}
+        icon="hero-lock-closed"
+        navigate={~p"/app/#{@account}/settings/billing"}
+      >
+        {render_slot(@inner_block)}
+      </.button>
+    </.tooltip>
     """
   end
 
