@@ -66,14 +66,20 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp build_account_editor(policy) do
     rules = (policy && policy.rules) || Policies.default_rules()
+    defaults = normalize_defaults(rules["defaults"])
+    overrides = normalize_overrides(rules["overrides"])
+    approval = normalize_approval(rules)
 
     %{
       uid: "account",
       scope_type: :account,
       scope_value: "",
-      defaults: normalize_defaults(rules["defaults"]),
-      overrides: normalize_overrides(rules["overrides"]),
-      approval: normalize_approval(rules),
+      defaults: defaults,
+      overrides: overrides,
+      approval: approval,
+      # Snapshot of the saved rules: editor_dirty?/1 compares the live edits to
+      # this, so reverting a change back clears the Save button (not a one-way flag).
+      baseline_rules: to_rules(defaults, overrides, approval),
       policy: policy,
       rules_errors: []
     }
@@ -81,14 +87,18 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp build_ruleset_editor(%Policies.Policy{} = policy) do
     rules = policy.rules || Policies.default_rules()
+    defaults = normalize_defaults(rules["defaults"])
+    overrides = normalize_overrides(rules["overrides"])
+    approval = normalize_approval(rules)
 
     %{
       uid: policy.id,
       scope_type: policy.scope_type,
       scope_value: policy.scope_value,
-      defaults: normalize_defaults(rules["defaults"]),
-      overrides: normalize_overrides(rules["overrides"]),
-      approval: normalize_approval(rules),
+      defaults: defaults,
+      overrides: overrides,
+      approval: approval,
+      baseline_rules: to_rules(defaults, overrides, approval),
       policy: policy,
       rules_errors: []
     }
@@ -106,6 +116,7 @@ defmodule EmisarWeb.PoliciesLive do
       defaults: account.defaults,
       overrides: account.overrides,
       approval: account.approval,
+      baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
       policy: nil,
       rules_errors: []
     }
@@ -293,21 +304,30 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp find_ruleset(socket, uid), do: Enum.find(socket.assigns.rulesets, &(&1.uid == uid))
 
-  # Every mutation path runs through here, so the editor's dirty flag rides
-  # along for free — "Add override" LOOKED immediate but only persists on
-  # Save; the chip makes the draft boundary visible. replace_saved rebuilds
-  # the editor without the flag, clearing it on a successful save.
+  # Dirtiness isn't a stored flag — editor_dirty?/1 computes it against the
+  # editor's baseline_rules, so reverting an edit back to the saved value clears
+  # the Save button (a one-way latch left it stuck emerald).
   defp update_editor(socket, "account", fun),
-    do: assign(socket, :account, socket.assigns.account |> fun.() |> Map.put(:dirty?, true))
+    do: assign(socket, :account, fun.(socket.assigns.account))
 
   defp update_editor(socket, uid, fun) do
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
-        if ruleset.uid == uid, do: ruleset |> fun.() |> Map.put(:dirty?, true), else: ruleset
+        if ruleset.uid == uid, do: fun.(ruleset), else: ruleset
       end)
 
     assign(socket, :rulesets, rulesets)
   end
+
+  # The Save button is emerald only while the editor differs from what's saved: a
+  # new (unsaved) ruleset is always dirty; otherwise the live rules are compared
+  # to the baseline snapshot, so a revert flips it back to outlined.
+  defp editor_dirty?(%{scope_type: :account} = editor), do: rules_changed?(editor)
+  defp editor_dirty?(%{policy: nil}), do: true
+  defp editor_dirty?(editor), do: rules_changed?(editor)
+
+  defp rules_changed?(editor),
+    do: to_rules(editor.defaults, editor.overrides, editor.approval) != editor.baseline_rules
 
   defp apply_policy_params(socket, editor_id, params) when is_map(params) do
     update_editor(socket, editor_id, fn editor ->
@@ -676,7 +696,7 @@ defmodule EmisarWeb.PoliciesLive do
             rules_errors={@account.rules_errors}
             can_manage={@can_manage?}
             save_label="Save default policy"
-            dirty={@account[:dirty?] || false}
+            dirty={editor_dirty?(@account)}
           />
         </section>
 
@@ -751,9 +771,11 @@ defmodule EmisarWeb.PoliciesLive do
   # the island §8.1 bans.
   defp ruleset_unit(assigns) do
     ~H"""
-    <header class="flex items-start justify-between gap-4">
-      <div class="min-w-0 flex-1">
-        <%= if @ruleset.policy do %>
+    <%= if @ruleset.policy do %>
+      <%!-- Saved ruleset: entity chip + name, and a red modal-confirmed Remove
+           (removing it loses the overrides, so it earns the confirm). --%>
+      <header class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
           <div class="flex items-center gap-2">
             <.chip upcase>{@ruleset.scope_type}</.chip>
             <span class="truncate text-sm font-semibold text-zinc-100">
@@ -763,55 +785,58 @@ defmodule EmisarWeb.PoliciesLive do
           <p class="mt-1 text-xs text-zinc-500">
             Replaces the default policy for this {@ruleset.scope_type}.
           </p>
-        <% else %>
-          <%!-- A form (not a lone select) so the uid rides along as a hidden
-               field on the change event, the same shape as the team page. --%>
-          <form phx-change="set_target" class="sm:max-w-xs">
-            <input type="hidden" name="uid" value={@ruleset.uid} />
-            <%!-- One tree: each group is a selectable header with its runners
-                 indented beneath it. A native <optgroup> label can't be picked,
-                 so groups are plain options; a target another ruleset already
-                 claims is shown disabled. --%>
-            <.select
-              name="target"
-              label="Apply this ruleset to"
-              label_variant={:eyebrow}
-              disabled={not @can_manage}
-              prompt="Choose a runner or group…"
-              prompt_selected={is_nil(@ruleset.scope_type)}
-              options={target_options(@runners, @groups, @ruleset, @rulesets)}
-            />
-          </form>
-        <% end %>
-      </div>
-
-      <%!-- A configured ruleset confirms through the modal (removing it loses the
-           overrides); an empty one removes directly — nothing to lose. --%>
-      <.confirm_button
-        :if={@can_manage and not is_nil(@ruleset.policy)}
-        id={"remove-ruleset-#{@ruleset.uid}"}
-        title="Remove this ruleset?"
-        confirm_label="Remove ruleset"
-        variant={:secondary}
-        size={:sm}
-        icon="hero-trash"
-        on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
-      >
-        <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
-        Remove
-      </.confirm_button>
-      <.button
-        :if={@can_manage and is_nil(@ruleset.policy)}
-        variant={:secondary}
-        size={:sm}
-        type="button"
-        phx-click="remove_ruleset"
-        phx-value-uid={@ruleset.uid}
-        icon="hero-trash"
-      >
-        Remove
-      </.button>
-    </header>
+        </div>
+        <.confirm_button
+          :if={@can_manage}
+          id={"remove-ruleset-#{@ruleset.uid}"}
+          title="Remove this ruleset?"
+          confirm_label="Remove ruleset"
+          variant={:secondary}
+          tone={:rose}
+          size={:lg}
+          icon="hero-trash"
+          on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
+        >
+          <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
+          Remove
+        </.confirm_button>
+      </header>
+    <% else %>
+      <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
+           select box (items-end + matching size). Nothing's persisted, so Remove
+           drops the card directly — no confirm modal. A form (not a lone select)
+           carries the uid as a hidden field on the change event. --%>
+      <header class="flex items-end gap-3">
+        <form phx-change="set_target" class="w-full sm:max-w-xs">
+          <input type="hidden" name="uid" value={@ruleset.uid} />
+          <%!-- One tree: each group is a selectable header with its runners
+               indented beneath it. A native <optgroup> label can't be picked,
+               so groups are plain options; a target another ruleset already
+               claims is shown disabled. --%>
+          <.select
+            name="target"
+            label="Apply this ruleset to"
+            label_variant={:eyebrow}
+            disabled={not @can_manage}
+            prompt="Choose a runner or group…"
+            prompt_selected={is_nil(@ruleset.scope_type)}
+            options={target_options(@runners, @groups, @ruleset, @rulesets)}
+          />
+        </form>
+        <.button
+          :if={@can_manage}
+          variant={:secondary}
+          tone={:rose}
+          size={:lg}
+          type="button"
+          phx-click="remove_ruleset"
+          phx-value-uid={@ruleset.uid}
+          icon="hero-trash"
+        >
+          Remove
+        </.button>
+      </header>
+    <% end %>
 
     <.policy_fields
       :if={@ruleset.scope_type}
@@ -823,7 +848,7 @@ defmodule EmisarWeb.PoliciesLive do
       rules_errors={@ruleset.rules_errors}
       can_manage={@can_manage}
       save_label="Save ruleset"
-      dirty={@ruleset[:dirty?] || false}
+      dirty={editor_dirty?(@ruleset)}
     />
     <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
       Pick a runner or group above, then set its rules.
