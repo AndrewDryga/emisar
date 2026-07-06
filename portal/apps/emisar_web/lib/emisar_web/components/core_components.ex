@@ -3038,7 +3038,10 @@ defmodule EmisarWeb.CoreComponents do
       <div class="mt-3 space-y-3 text-sm leading-relaxed text-zinc-400">
         {render_slot(@inner_block)}
       </div>
-      <p class="mt-4">
+      <%!-- text-sm on the HOST, not the component: doc_link carries no text-*
+           (so it adapts to context), and this <p> would otherwise inherit the
+           dashboard's page-base 16px — bigger than the rail's text-sm prose. --%>
+      <p class="mt-4 text-sm">
         <.doc_link href={@doc_href}>{@doc_label}</.doc_link>
       </p>
     </aside>
