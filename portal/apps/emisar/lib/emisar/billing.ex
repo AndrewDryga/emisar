@@ -373,6 +373,69 @@ defmodule Emisar.Billing do
   end
 
   @doc """
+  Recent invoices (Paddle transactions) for the account's customer — number,
+  date, amount, status — so the billing page shows a payment history inline
+  without a trip to the portal (the portal still owns the full ledger + PDFs).
+  `{:ok, []}` for an account that's never been billed (no `paddle_customer_id`).
+  Gated on view-billing, like the summary. Returns `{:ok, [invoice_map]}`.
+  """
+  def list_recent_invoices(%Accounts.Account{} = account, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_billing_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+      do_list_recent_invoices(account, opts)
+    end
+  end
+
+  defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: nil}, _opts), do: {:ok, []}
+
+  defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: customer_id}, opts)
+       when is_binary(customer_id) do
+    limit = Keyword.get(opts, :limit, 6)
+
+    case Emisar.Billing.PaddleClient.list_transactions(%{customer: customer_id, limit: limit}) do
+      {:ok, txns} -> {:ok, Enum.map(txns, &to_invoice/1)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Paddle transaction → the flat shape the billing page renders. grand_total is
+  # a minor-unit STRING ("2000" = $20.00); billed_at is ISO-8601.
+  defp to_invoice(txn) do
+    %{
+      id: txn["id"],
+      invoice_number: txn["invoice_number"],
+      status: txn["status"],
+      currency: txn["currency_code"] || "USD",
+      amount_cents: parse_invoice_amount(get_in(txn, ["details", "totals", "grand_total"])),
+      billed_at: parse_invoice_datetime(txn["billed_at"])
+    }
+  end
+
+  defp parse_invoice_amount(v) when is_integer(v), do: v
+
+  defp parse_invoice_amount(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, _} -> n
+      :error -> 0
+    end
+  end
+
+  defp parse_invoice_amount(_), do: 0
+
+  defp parse_invoice_datetime(iso) when is_binary(iso) do
+    case DateTime.from_iso8601(iso) do
+      {:ok, dt, _} -> dt
+      _ -> nil
+    end
+  end
+
+  defp parse_invoice_datetime(_), do: nil
+
+  @doc """
   Ensures the account has a Paddle customer; returns the customer id.
   Idempotent — if the account already has one, just returns it.
 

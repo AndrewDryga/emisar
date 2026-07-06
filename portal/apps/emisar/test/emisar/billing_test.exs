@@ -466,6 +466,39 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "list_recent_invoices/3" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "an account that never subscribed has no invoices", %{account: account, subject: subject} do
+      assert {:ok, []} = Billing.list_recent_invoices(account, subject)
+    end
+
+    test "maps Paddle transactions to flat invoice rows for a customer", %{
+      account: account,
+      subject: subject
+    } do
+      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      assert {:ok, [first | _] = invoices} = Billing.list_recent_invoices(account, subject)
+      assert length(invoices) == 3
+      assert first.amount_cents == 2000
+      assert first.currency == "USD"
+      assert first.status == "completed"
+      assert %DateTime{} = first.billed_at
+      assert first.invoice_number =~ "EMISAR-"
+    end
+
+    test "an owner of another account is refused", %{account: account} do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject_b)
+    end
+  end
+
   describe "ensure_paddle_customer/2" do
     test "threads the acting user's email to Paddle on first creation" do
       # The test stub derives the customer id from the email it receives,

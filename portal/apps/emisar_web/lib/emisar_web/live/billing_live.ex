@@ -15,6 +15,7 @@ defmodule EmisarWeb.BillingLive do
        socket
        |> assign(:plans, ordered_plans())
        |> assign(:summary, fetch_summary(account, socket.assigns.current_subject))
+       |> assign(:invoices, fetch_invoices(account, socket.assigns.current_subject))
        |> assign(:member_count, member_count(socket))
        |> assign(:features, feature_states(account))}
     else
@@ -36,6 +37,15 @@ defmodule EmisarWeb.BillingLive do
     case Billing.billing_summary(account, subject) do
       {:ok, summary} -> summary
       {:error, _} -> nil
+    end
+  end
+
+  # Recent invoices for the payment-history list — [] on any error (a Paddle
+  # hiccup shouldn't take the page down; the portal link still works).
+  defp fetch_invoices(account, subject) do
+    case Billing.list_recent_invoices(account, subject) do
+      {:ok, invoices} -> invoices
+      {:error, _} -> []
     end
   end
 
@@ -148,6 +158,11 @@ defmodule EmisarWeb.BillingLive do
     pennies = rem(cents, 100)
     "$#{dollars}.#{String.pad_leading(Integer.to_string(pennies), 2, "0")}"
   end
+
+  # Only the non-paid statuses earn a label chip (a completed row stays silent).
+  defp invoice_status_label("billed"), do: "Billed"
+  defp invoice_status_label("past_due"), do: "Past due"
+  defp invoice_status_label(status), do: String.capitalize(status)
 
   # Returns 0..100 percent of `numerator / denominator`, capped at 100.
   # `nil` denominator means unlimited → return nil so the bar isn't
@@ -305,6 +320,41 @@ defmodule EmisarWeb.BillingLive do
                 </.button>
               </div>
             </div>
+
+            <%!-- Recent invoices — a payment history inline, so operators don't
+                 open the portal just to check the last charge. Manage subscription
+                 still owns the full ledger + PDF downloads. A paid row is silent
+                 (no green "Paid" chip); only past-due earns a tone. --%>
+            <section :if={@invoices != []}>
+              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Recent invoices
+              </h3>
+              <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+                <li
+                  :for={invoice <- @invoices}
+                  class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm"
+                >
+                  <.local_time
+                    :if={invoice.billed_at}
+                    value={invoice.billed_at}
+                    class="w-28 shrink-0 text-zinc-400"
+                  />
+                  <span class="font-medium tabular-nums text-zinc-200">
+                    {format_total(invoice.amount_cents)}
+                  </span>
+                  <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-500">
+                    {invoice.invoice_number}
+                  </span>
+                  <.chip
+                    :if={invoice.status != "completed"}
+                    class="ml-auto"
+                    tone={if invoice.status == "past_due", do: :rose, else: :neutral}
+                  >
+                    {invoice_status_label(invoice.status)}
+                  </.chip>
+                </li>
+              </ul>
+            </section>
 
             <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
                plan + billing changes go through our team. The icon-caps-a-spine

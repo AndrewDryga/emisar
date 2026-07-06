@@ -86,6 +86,23 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def list_transactions(_attrs) do
+    now = DateTime.utc_now()
+
+    {:ok,
+     for n <- 1..3 do
+       %{
+         "id" => "txn_stub_#{n}",
+         "status" => "completed",
+         "invoice_number" => "EMISAR-#{String.pad_leading(to_string(4 - n), 4, "0")}",
+         "currency_code" => "USD",
+         "billed_at" => now |> DateTime.add(-n * 30 * 86_400, :second) |> DateTime.to_iso8601(),
+         "details" => %{"totals" => %{"grand_total" => "2000"}}
+       }
+     end}
+  end
+
+  @impl true
   def construct_webhook_event(payload, _signature, _secret) do
     case Jason.decode(payload) do
       {:ok, event} -> {:ok, event}

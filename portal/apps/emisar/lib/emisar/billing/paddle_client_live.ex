@@ -76,6 +76,23 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def list_transactions(%{customer: customer_id} = attrs) do
+    limit = attrs[:limit] || 10
+
+    # Only the statuses that represent an actual invoice (a draft/canceled txn
+    # isn't one); newest first, a single page — this is "recent invoices", not
+    # a full ledger. The portal link owns the complete history + PDFs.
+    query =
+      "customer_id=#{customer_id}&status=billed,completed,past_due" <>
+        "&order_by=billed_at[DESC]&per_page=#{limit}"
+
+    case get("/transactions?#{query}") do
+      {:ok, %{"data" => txns}} -> {:ok, txns}
+      other -> other
+    end
+  end
+
+  @impl true
   def construct_webhook_event(payload, signature, secret) do
     with :ok <- verify_signature(payload, signature, secret),
          {:ok, event} <- Jason.decode(payload) do
