@@ -855,16 +855,17 @@ defmodule EmisarWeb.PoliciesLive do
     <div class="space-y-5">
       <div>
         <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">In effect</h3>
-        <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+        <p :if={@total > 0} class="mt-1 text-xs leading-relaxed text-zinc-500">
           What this policy decides for {@target}'s
           <span class="font-medium text-zinc-300">{@total}</span>
           {ngettext_action(@total)}.
         </p>
+        <%!-- No catalog yet: the empty note stands in as the subtitle — no
+             "…for your fleet's 0 actions." line to state a count of nothing. --%>
+        <p :if={@total == 0} class="mt-1 text-xs leading-relaxed text-zinc-500">
+          No actions advertised on this target yet — decisions appear once a runner reports its catalog.
+        </p>
       </div>
-
-      <p :if={@total == 0} class="text-xs leading-relaxed text-zinc-500">
-        No actions advertised on this target yet — decisions appear once a runner reports its catalog.
-      </p>
 
       <div :if={@total > 0} class="space-y-3">
         <.outcome_row tone={:brand} label="Allowed" stat={@outcome["allow"]} />
