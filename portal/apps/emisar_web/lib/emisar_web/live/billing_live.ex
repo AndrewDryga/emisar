@@ -110,19 +110,6 @@ defmodule EmisarWeb.BillingLive do
     end)
   end
 
-  # The next plan up from `current` in @plan_order, returned only when it's
-  # self-serve checkoutable (a real monthly price) — so the hero never offers
-  # a hardcoded "team", and never an enterprise "Upgrade" (it's contact-sales).
-  defp next_upgrade_plan(plans, current) do
-    case Enum.drop_while(plans, &(&1.key != current)) do
-      [_current, next | _] -> if checkoutable?(next), do: next, else: nil
-      _ -> nil
-    end
-  end
-
-  defp checkoutable?(%{monthly_price_cents: cents}) when is_integer(cents) and cents > 0, do: true
-  defp checkoutable?(_), do: false
-
   defp member_count(socket) do
     case Accounts.list_memberships_for_account(
            socket.assigns.current_account,
@@ -272,10 +259,6 @@ defmodule EmisarWeb.BillingLive do
                   <span class="text-sm text-zinc-400">
                     {format_total(@summary.monthly_total_cents)}/mo
                   </span>
-                  <span class="text-sm text-zinc-500">·</span>
-                  <span class="text-sm text-zinc-400">
-                    {@summary.audit_retention_days}-day audit retention
-                  </span>
                 </div>
                 <%!-- Subscription cycle notes — only rendered when the
                    underlying Paddle subscription has the matching state.
@@ -303,22 +286,11 @@ defmodule EmisarWeb.BillingLive do
                 </div>
               </div>
 
-              <%!-- Self-serve money actions; the Team plan CARD below carries the
-                 one brand-filled upgrade, so these stay quiet (secondary). --%>
+              <%!-- Manage subscription only — the plan CARDS below own
+                 upgrade/downgrade, so the strip never duplicates them. Surfaces
+                 the Paddle Customer Portal (invoices, payment method, plan
+                 change, cancellation) once a Paddle customer is attached. --%>
               <div class="flex flex-wrap gap-2">
-                <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
-                <.button
-                  :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
-                  variant={:secondary}
-                  phx-click="upgrade"
-                  phx-value-plan={upgrade_to.key}
-                  phx-disable-with="Starting checkout…"
-                >
-                  Upgrade to {upgrade_to.name}
-                </.button>
-                <%!-- "Manage subscription" surfaces the Paddle Customer Portal —
-                   invoices, payment method, plan change, cancellation. Available
-                   once the account has a Paddle customer attached. --%>
                 <.button
                   :if={
                     @current_account.paddle_customer_id &&
@@ -474,6 +446,14 @@ defmodule EmisarWeb.BillingLive do
                   limit_label={limit_label(@summary.member_limit)}
                   pct={usage_pct(@member_count, @summary.member_limit)}
                 />
+                <%!-- Audit retention is a plan cap too, but a duration not a
+                     count — a plain key/value row in the same rail as the meters. --%>
+                <div class="flex items-baseline justify-between text-xs">
+                  <span class="text-zinc-400">Audit retention</span>
+                  <span class="font-medium text-zinc-200">
+                    {@summary.audit_retention_days} days
+                  </span>
+                </div>
               </div>
             </div>
             <div>
