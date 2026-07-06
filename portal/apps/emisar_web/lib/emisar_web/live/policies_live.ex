@@ -752,6 +752,7 @@ defmodule EmisarWeb.PoliciesLive do
                 can_manage={@can_manage?}
                 save_label="Save default policy"
                 dirty={editor_dirty?(@account)}
+                top_margin="mt-0"
               />
             </div>
             <aside class="lg:col-span-1">
@@ -1061,6 +1062,11 @@ defmodule EmisarWeb.PoliciesLive do
   attr :save_label, :string, required: true
   attr :dirty, :boolean, default: false
 
+  attr :top_margin, :string,
+    default: "mt-6",
+    doc:
+      "top gap above the box. `mt-6` separates a ruleset box from its header; the default policy passes `mt-0` — its section header already spaces it (and it lines up with the rail)"
+
   defp policy_fields(assigns) do
     # Self-approval + a single approval adds no SECOND party — the one case worth an
     # amber callout (guidance folded in). A healthy gate shows none.
@@ -1074,7 +1080,7 @@ defmodule EmisarWeb.PoliciesLive do
       id={"policy-form-" <> @editor_id}
       phx-change="form_change"
       phx-submit="save"
-      class="mt-6 space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"
+      class={[@top_margin, "space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"]}
     >
       <input type="hidden" name="editor" value={@editor_id} />
 
