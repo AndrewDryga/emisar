@@ -885,7 +885,12 @@ defmodule EmisarWeb.LiveTable do
       )
 
     base = path_to_binary(path)
-    if query == %{}, do: base, else: base <> "?" <> URI.encode_query(query)
+    # Plug.Conn.Query.encode, not URI.encode_query — a list-valued filter (a
+    # multi-select, or a `group:<label>` event-type sentinel) is `["a", "b"]` in
+    # the params, which URI.encode_query REJECTS ("values cannot be lists"),
+    # 500-ing every paginated filtered list. This mirrors apply_filter/4, which
+    # builds the filter URL the same way.
+    if query == %{}, do: base, else: base <> "?" <> Plug.Conn.Query.encode(query)
   end
 
   defp path_to_binary(p) when is_binary(p), do: p

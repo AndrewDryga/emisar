@@ -278,6 +278,35 @@ defmodule EmisarWeb.LiveTableTest do
       refute html =~ "after=next-cursor&"
     end
 
+    test "paginator preserves a list-valued filter without crashing" do
+      assigns = %{}
+
+      # A multi-value filter (a multi-select, or a `group:<label>` event-type
+      # sentinel) is a LIST in the params. URI.encode_query RAISES on a list value
+      # ("values cannot be lists"), which 500-ed every paginated filtered list;
+      # page_link must build the URL with Plug.Conn.Query.encode, like apply_filter.
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          layout={:cards}
+          id="audit-events"
+          path="/audit"
+          rows={[%{id: 1}]}
+          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: "next-cursor"}}
+          filter_params={%{"event_type" => ["group:Run"]}}
+        >
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
+        </LiveTable.live_table>
+        """)
+
+      # It rendered (no raise), and the next-page link carries the list filter.
+      assert html =~ "after=next-cursor"
+      assert html =~ "event_type"
+      assert html =~ "group%3ARun"
+    end
+
     test "the default :cards wrapper is naked hairline rows — no island wash, no clipping" do
       assigns = %{}
 
