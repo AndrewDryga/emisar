@@ -1057,7 +1057,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "risk_breakdown_of/1" do
-    test "buckets an action => risk map into per-tier counts + capped examples" do
+    test "buckets an action => risk map into a per-tier count" do
       risks = %{
         "docker.ps" => :low,
         "linux.uptime" => :low,
@@ -1070,19 +1070,17 @@ defmodule Emisar.CatalogTest do
 
       breakdown = Catalog.risk_breakdown_of(risks)
 
-      assert breakdown["low"].count == 4
-      # sorted, capped at three examples.
-      assert breakdown["low"].examples == ["aaa.low", "docker.ps", "linux.uptime"]
-      assert breakdown["medium"] == %{count: 1, examples: ["nginx.reload"]}
-      assert breakdown["high"] == %{count: 1, examples: ["linux.reboot_host"]}
-      assert breakdown["critical"] == %{count: 1, examples: ["wipe.disk"]}
+      assert breakdown["low"] == 4
+      assert breakdown["medium"] == 1
+      assert breakdown["high"] == 1
+      assert breakdown["critical"] == 1
     end
 
-    test "every tier is present — an empty map is 0/[] across the board" do
+    test "every tier is present — an empty map is 0 across the board" do
       breakdown = Catalog.risk_breakdown_of(%{})
 
       for tier <- ["low", "medium", "high", "critical"] do
-        assert breakdown[tier] == %{count: 0, examples: []}
+        assert breakdown[tier] == 0
       end
     end
   end

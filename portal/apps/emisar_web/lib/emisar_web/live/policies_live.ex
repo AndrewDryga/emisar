@@ -317,13 +317,10 @@ defmodule EmisarWeb.PoliciesLive do
   # card's in-progress edits untouched — no full reload, no lost work.
   # Saving the policy doesn't change the FLEET's catalog, so carry the existing
   # one onto the rebuilt editor rather than re-reading it.
-  defp replace_saved(socket, "account", policy),
-    do:
-      assign(
-        socket,
-        :account,
-        Map.put(build_account_editor(policy), :catalog, socket.assigns.account.catalog)
-      )
+  defp replace_saved(socket, "account", policy) do
+    rebuilt = Map.put(build_account_editor(policy), :catalog, socket.assigns.account.catalog)
+    assign(socket, :account, rebuilt)
+  end
 
   defp replace_saved(socket, old_uid, policy) do
     rebuilt =
@@ -763,6 +760,7 @@ defmodule EmisarWeb.PoliciesLive do
                 defaults={@account.defaults}
                 overrides={@account.overrides}
                 approval={@account.approval}
+                catalog_path={~p"/app/#{@current_account}/packs"}
                 target="your fleet"
               />
             </aside>
@@ -807,6 +805,7 @@ defmodule EmisarWeb.PoliciesLive do
                 groups={@groups}
                 rulesets={@rulesets}
                 can_manage={@can_manage?}
+                catalog_path={~p"/app/#{@current_account}/packs"}
               />
             </div>
           </div>
@@ -832,6 +831,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
   attr :approval, :map, required: true
+  attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
 
   attr :target, :string,
     required: true,
@@ -873,18 +873,28 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
 
       <%!-- The catalog's danger profile — the counts the tier decisions above act
-           on. Compact: pill + count, most-severe first. --%>
+           on. Compact: pill + count, most-severe first. "View all" opens the full
+           action catalog (Packs) in a new tab, so an in-flight edit is untouched. --%>
       <div :if={@total > 0} class="border-t border-zinc-800/70 pt-4">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Catalog by risk
-        </h3>
+        <div class="flex items-baseline justify-between">
+          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Catalog by risk
+          </h3>
+          <.link
+            href={@catalog_path}
+            target="_blank"
+            class="inline-flex items-center gap-0.5 text-[10px] font-medium text-zinc-500 hover:text-zinc-300"
+          >
+            View all <.icon name="hero-arrow-top-right-on-square" class="h-2.5 w-2.5" />
+          </.link>
+        </div>
         <dl class="mt-3 space-y-2">
           <div
             :for={tier <- ["critical", "high", "medium", "low"]}
             class="flex items-center justify-between"
           >
             <dt><.risk_pill risk={tier} /></dt>
-            <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier].count}</dd>
+            <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier]}</dd>
           </div>
         </dl>
       </div>
@@ -928,6 +938,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :groups, :list, required: true
   attr :rulesets, :list, required: true
   attr :can_manage, :boolean, required: true
+  attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
 
   # A NAKED unit in the rulesets stack (the runbook step grammar) — the
   # hairline + header row delimit it; a card wash around a whole editor was
@@ -1027,6 +1038,7 @@ defmodule EmisarWeb.PoliciesLive do
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
           approval={@ruleset.approval}
+          catalog_path={@catalog_path}
           target={target_name(@ruleset, @runners)}
         />
       </aside>

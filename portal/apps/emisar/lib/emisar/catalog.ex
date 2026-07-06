@@ -657,16 +657,16 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  The per-tier `%{count, examples}` breakdown of an `%{action_id => risk}` map
-  (from `action_risks_for_*`). Pure — no gate; the caller already fetched the
-  map. All four tiers are present (0/[] for a tier no action carries).
+  The per-tier action count of an `%{action_id => risk}` map (from
+  `action_risks_for_*`) — `%{"low" => n, "medium" => n, "high" => n,
+  "critical" => n}`. Pure — no gate; the caller already fetched the map. All four
+  tiers are present (0 for a tier no action carries).
   """
   def risk_breakdown_of(action_risks) when is_map(action_risks) do
-    ids_by_risk = Enum.group_by(action_risks, &elem(&1, 1), &elem(&1, 0))
+    counts = Enum.frequencies_by(action_risks, fn {_id, risk} -> risk end)
 
     Map.new([:low, :medium, :high, :critical], fn risk ->
-      ids = ids_by_risk |> Map.get(risk, []) |> Enum.sort()
-      {Atom.to_string(risk), %{count: length(ids), examples: Enum.take(ids, 3)}}
+      {Atom.to_string(risk), Map.get(counts, risk, 0)}
     end)
   end
 
