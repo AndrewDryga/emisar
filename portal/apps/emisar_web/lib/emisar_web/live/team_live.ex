@@ -909,22 +909,17 @@ defmodule EmisarWeb.TeamLive do
                           mode={:relative}
                         /> ·{" "}<.sign_in_status user={membership.user} />
                       </div>
-                      <%!-- Per-user runner ACLs (#238): show what runners
-                       this member can reach. Empty = all (default).
-                       Group/runner scopes appear as inline chips. --%>
-                      <%!-- All-runners is the DEFAULT — render nothing (default ≠
-                       signal); only a narrowed scope earns chips. --%>
-                      <div
-                        :if={Map.get(@scopes_by_membership, membership.id, []) != []}
-                        class="mt-1 flex flex-wrap items-center gap-1"
-                      >
+                      <%!-- Per-user runner ACLs (#238): what runners this member
+                       can reach. Shown ALWAYS — an unset scope reads "all runners"
+                       explicitly, so a member's reach is stated, never inferred
+                       from an absent line (operator's call). --%>
+                      <% scopes = Map.get(@scopes_by_membership, membership.id, []) %>
+                      <div class="mt-1 flex flex-wrap items-center gap-1">
                         <span class="text-[10px] uppercase tracking-wider text-zinc-400">
                           scope:
                         </span>
-                        <.chip
-                          :for={scope <- Map.get(@scopes_by_membership, membership.id, [])}
-                          tone={:neutral}
-                        >
+                        <span :if={scopes == []} class="text-xs text-zinc-500">all runners</span>
+                        <.chip :for={scope <- scopes} tone={:neutral}>
                           {scope_type_label(scope.scope_type)}: {scope_label(scope, @runners_by_id)}
                         </.chip>
                       </div>
