@@ -3076,17 +3076,22 @@ defmodule EmisarWeb.CoreComponents do
     <.link
       href={~p"/pricing"}
       title={plan_badge_title(@tier)}
-      class={[plan_badge_class(), "hover:bg-amber-500/20 hover:text-amber-200", @class]}
+      class={[
+        plan_badge_class(),
+        "underline decoration-amber-400/25 underline-offset-2 hover:text-amber-300 hover:decoration-amber-400/60",
+        @class
+      ]}
     >
       {plan_badge_label(@tier)}
     </.link>
     """
   end
 
+  # A subtle inline marker, not a pill: no fill/ring/padding — just small
+  # muted-amber text so a plan-gate note sits quietly beside a heading instead of
+  # shouting like a button. The linking variant adds a faint underline.
   defp plan_badge_class do
-    "inline-flex items-center whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-0.5 " <>
-      "align-middle text-[11px] font-semibold uppercase tracking-wide text-amber-300 " <>
-      "ring-1 ring-amber-500/25 transition-colors"
+    "whitespace-nowrap align-middle text-xs font-medium text-amber-400/70 transition-colors"
   end
 
   defp plan_badge_label(:team), do: "Team & Enterprise"
