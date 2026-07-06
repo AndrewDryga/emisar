@@ -1377,7 +1377,7 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
-           far edge of its cell. h-8 matches the compact input's 32px box so,
+           far edge of its cell. h-7 matches the compact text-xs input's 28px box so,
            bottom-aligned (items-end), the icon lines up with the Decision select
            instead of overhanging it. --%>
       <div class="sm:col-span-1 sm:flex sm:items-end sm:justify-start">
@@ -1389,7 +1389,7 @@ defmodule EmisarWeb.PoliciesLive do
           phx-click="remove_override"
           phx-value-editor={@editor_id}
           phx-value-index={@index}
-          class="grid h-8 w-8 place-items-center"
+          class="grid h-7 w-7 place-items-center"
         />
       </div>
     </div>
