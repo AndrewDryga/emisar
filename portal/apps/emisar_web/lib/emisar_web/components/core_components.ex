@@ -22,7 +22,7 @@ defmodule EmisarWeb.CoreComponents do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
-  alias EmisarWeb.TimeHelpers
+  alias EmisarWeb.{MailTo, TimeHelpers}
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -1487,6 +1487,7 @@ defmodule EmisarWeb.CoreComponents do
         />
         <.shell_nav
           current_account={@current_account}
+          current_user={@current_user}
           current_subject={@current_subject}
           section={@section}
           pending_approvals_count={@pending_approvals_count}
@@ -1531,6 +1532,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
           <.shell_nav
             current_account={@current_account}
+            current_user={@current_user}
             current_subject={@current_subject}
             section={@section}
             pending_approvals_count={@pending_approvals_count}
@@ -1730,6 +1732,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :no_agents?, :boolean, default: false
   attr :onboarding_incomplete?, :boolean, default: false
   attr :current_account, :map, required: true
+  attr :current_user, :map, required: true
 
   defp shell_nav(assigns) do
     # One domain predicate per section — the nav shows only what the member
@@ -1747,6 +1750,22 @@ defmodule EmisarWeb.CoreComponents do
         can_view_packs?: Emisar.Catalog.subject_can_view_packs?(subject),
         can_view_policies?: Emisar.Policies.subject_can_view_policies?(subject),
         can_view_runbooks?: Emisar.Runbooks.subject_can_view_runbooks?(subject)
+      )
+
+    support_context =
+      MailTo.context(%{
+        current_account: assigns.current_account,
+        current_user: assigns.current_user
+      })
+
+    assigns =
+      assign(
+        assigns,
+        :support_mailto,
+        MailTo.support(
+          subject: "Support request - #{assigns.current_account.name}",
+          context: support_context
+        )
       )
 
     ~H"""
@@ -1874,7 +1893,7 @@ defmodule EmisarWeb.CoreComponents do
       >
         Status
       </.nav_link_external>
-      <.nav_link_external href="mailto:support@emisar.dev" icon="hero-lifebuoy">
+      <.nav_link_external href={@support_mailto} icon="hero-lifebuoy">
         Support
       </.nav_link_external>
     </nav>
@@ -5622,7 +5641,7 @@ defmodule EmisarWeb.CoreComponents do
                   </a>
                 </li>
                 <li>
-                  <a href="mailto:support@emisar.dev" class="text-zinc-400 hover:text-zinc-100">
+                  <a href={MailTo.support()} class="text-zinc-400 hover:text-zinc-100">
                     Contact
                   </a>
                 </li>

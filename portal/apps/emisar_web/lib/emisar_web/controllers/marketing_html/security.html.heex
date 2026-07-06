@@ -376,7 +376,7 @@
         <h2 class="text-4xl font-bold tracking-tight text-zinc-50">Responsible disclosure</h2>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
           Found a security issue? We want to hear about it. Email
-          <a href="mailto:security@emisar.dev" class="text-brand-300 hover:text-brand-200">
+          <a href={EmisarWeb.MailTo.security()} class="text-brand-300 hover:text-brand-200">
             security@emisar.dev
           </a>
           with a description and reproduction steps. We acknowledge within one business day
@@ -400,7 +400,7 @@
             Read SECURITY.md
           </.marketing_button>
           <a
-            href="mailto:security@emisar.dev"
+            href={EmisarWeb.MailTo.security()}
             class="text-sm font-semibold text-zinc-100 hover:text-brand-300"
           >
             Email security team <span aria-hidden="true">&rarr;</span>
@@ -414,7 +414,7 @@
     headline="Ready to evaluate emisar for your team?"
     subcopy="Start free on the Free plan, or book a walkthrough and bring your security team's questions."
     secondary_label="Talk to sales"
-    secondary_path="mailto:sales@emisar.dev"
+    secondary_path={EmisarWeb.MailTo.sales()}
   />
 
   <.marketing_footer />

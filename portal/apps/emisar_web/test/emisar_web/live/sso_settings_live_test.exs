@@ -886,6 +886,19 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Single sign-on is a paid feature"
       assert has_element?(lv, "#provider_form")
     end
+
+    test "the SCIM upsell sales link carries account/user context", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = insert_provider(account, %{})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "SCIM directory sync"
+      assert html =~ "mailto:sales@emisar.dev"
+      assert html =~ "subject=SCIM%20directory%20sync%20-%20Test%20Co"
+      assert html =~ "Account%20ID%3A%20#{account.id}"
+      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+    end
   end
 
   describe "as a non-admin member" do

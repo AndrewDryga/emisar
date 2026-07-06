@@ -355,7 +355,7 @@ defmodule EmisarWeb.MarketingHTML do
         headline="Give your AI agent production access — without the panic."
         subcopy="Start free on the Free plan, or book a walkthrough on your own infrastructure."
         secondary_label="Talk to sales"
-        secondary_path="mailto:sales@emisar.dev"
+        secondary_path={EmisarWeb.MailTo.sales()}
       />
 
       <.marketing_footer />

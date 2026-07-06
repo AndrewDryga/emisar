@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, SSO}
-  alias EmisarWeb.{ConfirmDialog, Permissions}
+  alias EmisarWeb.{ConfirmDialog, MailTo, Permissions}
   alias Phoenix.LiveView.JS
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
@@ -919,6 +919,15 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp kind_label(kind), do: Map.fetch!(@kind_labels, kind)
 
+  defp scim_sales_mailto(account, user) do
+    context = MailTo.context(%{current_account: account, current_user: user})
+
+    MailTo.sales(
+      subject: "SCIM directory sync - #{account.name}",
+      context: context
+    )
+  end
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -1328,7 +1337,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 See plans
               </.link>
               or <a
-                href="mailto:sales@emisar.dev"
+                href={scim_sales_mailto(@current_account, @current_user)}
                 class="font-medium text-brand-400 hover:text-brand-300"
               >talk to us</a>.
             </p>

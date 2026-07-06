@@ -44,7 +44,9 @@
     If you sign up for product updates from a form on our marketing site, we store
     the email address you enter and which page you submitted it from — nothing more.
     We use it only to email you about emisar product news; we do not sell it, share
-    it, or use it to train AI models, and you can ask us to remove you any time at <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
+    it, or use it to train AI models, and you can ask us to remove you any time at <a href={
+      EmisarWeb.MailTo.support()
+    }>support@emisar.dev</a>.
   </p>
 
   <h2 id="use">2. How we use it</h2>
@@ -97,7 +99,7 @@
   <p>
     We will update this list before adding new subprocessors. If you are on a paid
     plan and want notification before changes take effect, email
-    <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+    <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
     and we will add you to the list.
   </p>
 
@@ -106,12 +108,12 @@
     You can export your data at any time. Audit events stream out of the <code>/api/audit</code>
     endpoint as NDJSON for any SIEM that speaks HTTP, using any read-only audit API key. For a
     full account snapshot (audit + packs + configuration), email
-    <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+    <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
     and we'll generate it for you. We're working on a one-click export in the dashboard.
   </p>
   <p>
     You can delete your account at any time. Email
-    <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+    <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
     and deletion removes your data from the primary database within 24 hours
     and from encrypted backups within 30 days (after which the backups
     themselves expire). Ask for a deletion certificate or a copy of the
@@ -160,7 +162,7 @@
   <h2 id="contact">8. Contact</h2>
   <p>
     emisar is operated by Andrii Dryga, the data controller for the records described
-    in this policy. Questions, requests, or concerns: <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
-    For security issues specifically: <a href="mailto:security@emisar.dev">security@emisar.dev</a>.
+    in this policy. Questions, requests, or concerns: <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>.
+    For security issues specifically: <a href={EmisarWeb.MailTo.security()}>security@emisar.dev</a>.
   </p>
 </.legal_page>

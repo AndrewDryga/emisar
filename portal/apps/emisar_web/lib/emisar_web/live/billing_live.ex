@@ -1,7 +1,7 @@
 defmodule EmisarWeb.BillingLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Billing}
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{MailTo, Permissions}
 
   @plan_order ["free", "team", "enterprise"]
 
@@ -242,12 +242,15 @@ defmodule EmisarWeb.BillingLive do
 
   defp humanize_reason(_), do: "unknown error"
 
-  # mailto for a billing support request — prefilled subject carrying the
-  # account name so support can route it without a round-trip. General enough
-  # for any plan (the aside "Contact support" link and the Enterprise note).
-  defp support_mailto(account) do
-    subject = URI.encode("Billing question — #{account.name}")
-    "mailto:support@emisar.dev?subject=#{subject}"
+  # Billing mailto context rides the authed page assigns so support can route
+  # the request without asking which account or user sent it.
+  defp billing_support_mailto(account, user) do
+    context = MailTo.context(%{current_account: account, current_user: user})
+
+    MailTo.support(
+      subject: "Billing question - #{account.name}",
+      context: context
+    )
   end
 
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
@@ -530,7 +533,7 @@ defmodule EmisarWeb.BillingLive do
                           variant={:secondary}
                           size={:md}
                           class="w-full"
-                          href={support_mailto(@current_account)}
+                          href={billing_support_mailto(@current_account, @current_user)}
                         >
                           Contact support to switch
                         </.button>
@@ -619,7 +622,7 @@ defmodule EmisarWeb.BillingLive do
                 up a custom plan if you're outgrowing these.
               </p>
               <a
-                href={support_mailto(@current_account)}
+                href={billing_support_mailto(@current_account, @current_user)}
                 class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
               >
                 Contact support <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />

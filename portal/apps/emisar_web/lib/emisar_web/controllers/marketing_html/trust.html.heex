@@ -30,10 +30,10 @@
         handled, who our subprocessors are, and an honest read on formal compliance.
       </p>
       <div class="mt-8 flex flex-wrap gap-4">
-        <.marketing_button href="mailto:sales@emisar.dev" icon="hero-arrow-right">
+        <.marketing_button href={EmisarWeb.MailTo.sales()} icon="hero-arrow-right">
           Talk to our team
         </.marketing_button>
-        <.marketing_button variant={:secondary} href="mailto:security@emisar.dev">
+        <.marketing_button variant={:secondary} href={EmisarWeb.MailTo.security()}>
           security@emisar.dev
         </.marketing_button>
       </div>
@@ -226,7 +226,7 @@
         <h2 class="text-2xl font-bold text-white">Reporting a vulnerability</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Email <a
-            href="mailto:security@emisar.dev"
+            href={EmisarWeb.MailTo.security()}
             class="font-medium text-brand-300 hover:text-brand-200"
           >security@emisar.dev</a>. We'll acknowledge your report, keep you updated, and credit you if you'd like.
           Please give us a reasonable window to fix an issue before disclosing it publicly.
@@ -239,7 +239,7 @@
     headline="Bring your security team's questions."
     subcopy="A walkthrough on your own infrastructure, with straight answers on the trust model and your compliance requirements."
     secondary_label="Email security@emisar.dev"
-    secondary_path="mailto:security@emisar.dev"
+    secondary_path={EmisarWeb.MailTo.security()}
   />
 
   <.marketing_footer />

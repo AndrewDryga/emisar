@@ -18,11 +18,15 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as an owner" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      %{conn: conn, account: account}
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account, user: user}
     end
 
-    test "renders the current plan and usage meters", %{conn: conn, account: account} do
+    test "renders the current plan, usage meters, and contextual support nav", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # Free plan strip + the two usage meters.
@@ -32,6 +36,9 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Team members"
       # Owner sees the upgrade CTA (viewers don't — asserted below).
       assert html =~ "Upgrade to Team"
+      assert html =~ "subject=Support%20request%20-%20Test%20Co"
+      assert html =~ "Account%20ID%3A%20#{account.id}"
+      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
     end
 
     test "from a paid plan a lower plan reads as a Downgrade, never 'Upgrade to Free'", %{
@@ -109,7 +116,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
     test "an enterprise account can't self-downgrade — it surfaces contact-support", %{
       conn: conn,
-      account: account
+      account: account,
+      user: user
     } do
       insert_subscription_with(account, %{plan: "enterprise", status: "active"})
 
@@ -119,6 +127,9 @@ defmodule EmisarWeb.BillingLiveTest do
       # action — email support (a prefilled mailto), not a self-serve control.
       assert html =~ "Custom Enterprise plan"
       assert html =~ "mailto:support@emisar.dev"
+      assert html =~ "subject=Billing%20question%20-%20Test%20Co"
+      assert html =~ "Account%20ID%3A%20#{account.id}"
+      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
 
       # No self-serve downgrade off a custom plan: the lower tiers read "Contact
       # support to switch", never a "Downgrade to …" routing to a Paddle portal
