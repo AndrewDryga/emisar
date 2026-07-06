@@ -160,7 +160,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert has_element?(
                lv,
-               "a[href='#{~p"/app/#{account}/settings/sso"}']",
+               "a[href='#{~p"/app/#{account}/settings/team"}']",
                "Enable SSO"
              )
 
@@ -199,7 +199,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert has_element?(
                lv,
-               "a[href='#{~p"/app/#{account}/settings/sso"}']",
+               "a[href='#{~p"/app/#{account}/settings/team"}']",
                "Manage SSO providers"
              )
     end

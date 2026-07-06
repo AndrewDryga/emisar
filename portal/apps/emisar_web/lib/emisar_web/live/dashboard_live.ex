@@ -790,7 +790,7 @@ defmodule EmisarWeb.DashboardLive do
     <.pillar
       label="Team"
       tone={:neutral}
-      navigate={~p"/app/#{@current_account}/settings/sso"}
+      navigate={~p"/app/#{@current_account}/settings/team"}
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Enable SSO</:action>
@@ -803,7 +803,7 @@ defmodule EmisarWeb.DashboardLive do
     <.pillar
       label="Team"
       tone={:neutral}
-      navigate={~p"/app/#{@current_account}/settings/sso"}
+      navigate={~p"/app/#{@current_account}/settings/team"}
     >
       <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Manage SSO providers</:action>

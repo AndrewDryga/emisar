@@ -561,6 +561,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:require_sso_available?, false)
         |> assign(:enabled_sso_provider_count, 0)
         |> assign(:pending_requests, [])
+        |> assign(:sync_stats, %{})
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -601,11 +602,21 @@ defmodule EmisarWeb.TeamLive do
         _ -> []
       end
 
+    # Per-connection directory-sync counts (users + distinct groups), so a synced
+    # connection's row can show how much it's pulling in. Gated → {} for a
+    # non-SSO-admin, and JIT connections simply have no entry.
+    sync_stats =
+      case SSO.provider_sync_stats(socket.assigns.current_subject) do
+        {:ok, stats} -> stats
+        _ -> %{}
+      end
+
     socket
     |> assign(:providers, providers)
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
     |> assign(:pending_requests, pending_requests)
+    |> assign(:sync_stats, sync_stats)
   end
 
   # -- Pending SSO access requests (manual provisioning) ----------------
@@ -650,6 +661,8 @@ defmodule EmisarWeb.TeamLive do
 
   defp find_pending_request(socket, id),
     do: Enum.find(socket.assigns.pending_requests, &(&1.id == id))
+
+  defp sync_count(count, word), do: "#{count} #{word}#{if count == 1, do: "", else: "s"}"
 
   defp request_label(request),
     do: request.full_name || request.email || request.provider_identifier
@@ -1326,13 +1339,18 @@ defmodule EmisarWeb.TeamLive do
                   <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
                   <div class="min-w-0 flex-1">
                     <span class="block truncate text-sm text-zinc-200">{provider.name}</span>
-                    <span :if={provider.scim_enabled} class="text-[11px]">
+                    <%!-- Directory-sync status, one quiet line: how much the sync
+                         has pulled in (users + distinct groups) and how fresh it
+                         is. Only for a SCIM connection; JIT provisions on sign-in
+                         and has nothing to show here. --%>
+                    <span :if={provider.scim_enabled} class="text-[11px] text-zinc-500">
+                      <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
+                      {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
                       <span :if={provider.scim_last_seen_at} class="text-brand-300/90">
-                        Directory sync · synced
-                        <.local_time value={provider.scim_last_seen_at} mode={:relative} />
+                        · synced <.local_time value={provider.scim_last_seen_at} mode={:relative} />
                       </span>
                       <span :if={is_nil(provider.scim_last_seen_at)} class="text-amber-300/90">
-                        Directory sync · never synced
+                        · never synced
                       </span>
                     </span>
                   </div>

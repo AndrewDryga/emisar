@@ -118,6 +118,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Action-dependent data loads. mount runs before the action is settled for live
   # nav, and handle_params re-fires on navigation, so the per-action read lives
   # here. IL-18: the DB reads run only once connected; the dead pass renders chrome.
+  # The SSO overview folded into the Team page — /settings/sso is gone; its
+  # connections, pending requests, and sign-in link all live on Team now. The
+  # per-connection detail (/settings/sso/:id) and Add (/new) stay.
+  def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
+    {:noreply,
+     push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
+  end
+
   def handle_params(params, _uri, socket) do
     {:noreply, load_for_action(socket, params)}
   end
@@ -173,7 +181,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:error, :not_found} ->
         socket
         |> put_flash(:error, "Connection not found.")
-        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
     end
   end
 
@@ -221,7 +229,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:error, :not_found} ->
         socket
         |> put_flash(:error, "Connection not found.")
-        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
     end
   end
 
@@ -545,7 +553,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             {:noreply,
              socket
              |> put_flash(:info, "Connection deleted.")
-             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")}
+             |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, error_message(reason))}
