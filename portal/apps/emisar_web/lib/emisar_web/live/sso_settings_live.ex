@@ -1470,6 +1470,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             field={@form[:kind]}
             type="select"
             label="Provider type"
+            prompt="Select a provider…"
             options={@kind_options}
           />
           <div :if={@editing?}>
@@ -1507,16 +1508,33 @@ defmodule EmisarWeb.SSOSettingsLive do
         />
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="sm:col-span-2">
-            <.input
-              field={@form[:issuer]}
-              type="url"
-              label="Issuer URL"
-              placeholder={issuer_hint(@kind)}
-              class="font-mono"
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
-            </p>
+            <%= if fixed = fixed_issuer(@kind) do %>
+              <%!-- A constant for this provider — show it locked + prefilled, not
+                   an input the operator must copy exactly. --%>
+              <.label>Issuer URL</.label>
+              <%!-- Hidden field carries the constant on submit (a disabled input
+                   wouldn't), and keeps a provider[issuer] input in the form. --%>
+              <input type="hidden" name={@form[:issuer].name} value={fixed} />
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a control: the locked read-only field wears the input recipe --%>
+              <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/50 px-3 py-2.5 font-mono text-sm text-zinc-400 ring-1 ring-inset ring-zinc-800">
+                <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                {fixed}
+              </div>
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                Fixed for {setup_kind_label(@kind)} — the same for every org, so there's nothing to set.
+              </p>
+            <% else %>
+              <.input
+                field={@form[:issuer]}
+                type="url"
+                label="Issuer URL"
+                placeholder={issuer_hint(@kind)}
+                class="font-mono"
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
+              </p>
+            <% end %>
           </div>
           <.input field={@form[:client_id]} type="text" label="Client ID" />
           <.input
@@ -1664,7 +1682,9 @@ defmodule EmisarWeb.SSOSettingsLive do
           Register this <span class="text-zinc-300">redirect URI</span>
           on the app: <.code_line id={"sso-callback-#{@id}"} value={@callback_url} class="mt-1.5" />
         </:step>
-        <:step>
+        <%!-- Dropped for providers whose issuer is a constant — it's already
+             locked + prefilled below, so there's no step to follow. --%>
+        <:step :if={is_nil(fixed_issuer(@kind))}>
           Set the <span class="text-zinc-300">Issuer URL</span>
           below to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
           <span class="text-zinc-500">{issuer_where_hint(@kind)}</span>
@@ -1738,17 +1758,25 @@ defmodule EmisarWeb.SSOSettingsLive do
   # when that provider is picked and the operator hasn't typed one, so they don't
   # hunt for a value that's always the same. Switching to a non-fixed provider
   # clears an issuer we'd prefilled (never one they typed).
-  defp prefill_fixed_issuer(%{"kind" => kind} = params) do
-    fixed = %{
-      "google_workspace" => "https://accounts.google.com",
-      "jumpcloud" => "https://oauth.id.jumpcloud.com/"
-    }
+  # Providers whose OIDC issuer is one fixed value for every customer — no
+  # per-org URL to look up. The field is shown LOCKED + prefilled and its setup
+  # step is dropped, so the operator never types (or mistypes) a constant.
+  @fixed_issuers %{
+    "google_workspace" => "https://accounts.google.com",
+    "jumpcloud" => "https://oauth.id.jumpcloud.com/"
+  }
 
+  defp fixed_issuer(kind), do: Map.get(@fixed_issuers, kind)
+
+  defp prefill_fixed_issuer(%{"kind" => kind} = params) do
     current = Map.get(params, "issuer", "")
 
-    case Map.get(fixed, kind) do
-      nil -> if current in Map.values(fixed), do: Map.put(params, "issuer", ""), else: params
-      issuer -> if current in ["", nil], do: Map.put(params, "issuer", issuer), else: params
+    case fixed_issuer(kind) do
+      nil ->
+        if current in Map.values(@fixed_issuers), do: Map.put(params, "issuer", ""), else: params
+
+      issuer ->
+        if current in ["", nil], do: Map.put(params, "issuer", issuer), else: params
     end
   end
 
@@ -1798,9 +1826,12 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # The kind currently selected in the form (string), for the live setup guide;
   # defaults to the first option — what the select shows before any change.
-  defp form_kind(form, kind_options) do
+  # Blank on a fresh /new form (nothing picked yet) — the guide/hints fall back
+  # to generic and the issuer stays editable, rather than arbitrarily pre-picking
+  # the first provider (and locking its issuer before the operator has chosen).
+  defp form_kind(form, _kind_options) do
     case form[:kind].value do
-      blank when blank in [nil, ""] -> elem(hd(kind_options), 1)
+      blank when blank in [nil, ""] -> ""
       value -> to_string(value)
     end
   end
