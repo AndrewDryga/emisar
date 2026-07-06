@@ -454,6 +454,13 @@ defmodule EmisarWeb.DashboardLive do
       |> assign(:agent_done?, agent_done?)
       |> assign(:done_count, Enum.count([runner_done?, agent_done?], & &1))
       |> assign(:current_step, if(runner_done?, do: 2, else: 1))
+      # A concrete, copy-pasteable prompt so a fresh operator sees exactly what
+      # to SAY to their agent — the health check reads as obviously safe and maps
+      # to real actions (load / memory / disk / failed units).
+      |> assign(
+        :example_prompt,
+        "Check my production runners with emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
+      )
 
     ~H"""
     <section class="pt-2">
@@ -466,7 +473,8 @@ defmodule EmisarWeb.DashboardLive do
         </span>
       </div>
       <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-500">
-        Two steps, and any MCP client can run gated, audited actions on your own hosts.
+        Connect a runner and an agent, and any MCP client can run gated, audited actions
+        on your own hosts.
       </p>
 
       <ol class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
@@ -497,8 +505,34 @@ defmodule EmisarWeb.DashboardLive do
         >
           Give Claude, Cursor, or any MCP client a scoped, revocable key.
         </.setup_step>
+        <%!-- Step 3 — the payoff, and the intuition a fresh operator lacks most:
+             WHAT do I actually say? Not a tracked toggle (the checklist hands off
+             to the pillars the moment anything runs) — a preview of the "now try
+             it" moment, carrying a copy-pasteable example prompt. Custom <li>
+             rather than <.setup_step>: its body is a quote block, not one line. --%>
+        <li class="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:gap-5">
+          <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold text-zinc-500 ring-1 ring-zinc-800">
+            3
+          </span>
+          <div class="min-w-0 flex-1">
+            <span class="font-medium text-zinc-300">Ask your agent to run an action</span>
+            <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-500">
+              The payoff: ask your MCP client in plain language and emisar turns it into a
+              gated, audited action on your fleet. Try a health check —
+            </p>
+            <%!-- The example prompt reads as a QUOTE (left rule + italic), not a
+                 boxed artifact that would outshout the checklist steps. Copy
+                 hands the exact text to paste into the agent. --%>
+            <div class="mt-3 flex items-start gap-3 border-l-2 border-brand-500/40 pl-3 sm:max-w-prose">
+              <p class="min-w-0 flex-1 text-sm italic leading-relaxed text-zinc-300">
+                {@example_prompt}
+              </p>
+              <.copy_button text={@example_prompt} class="shrink-0">Copy</.copy_button>
+            </div>
+          </div>
+        </li>
         <.setup_step
-          number={3}
+          number={4}
           optional
           done={@team_total > 1}
           done_text={"#{@team_total} members"}

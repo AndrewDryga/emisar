@@ -62,6 +62,10 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Get to your first gated run"
       assert html =~ "Connect a runner"
       assert html =~ "Connect an LLM agent"
+      # Step 3 teaches the payoff with a concrete, copy-pasteable prompt so a
+      # fresh operator sees exactly what to ask — not just how to connect.
+      assert html =~ "Ask your agent to run an action"
+      assert html =~ "load, memory, disk, and any failed services"
       assert html =~ "Invite your team"
       assert html =~ "optional"
       # Step 1 is current — the page's ONE brand-filled action.
