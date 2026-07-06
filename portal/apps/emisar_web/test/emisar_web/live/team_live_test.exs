@@ -54,9 +54,11 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Dana Ops"
       assert html =~ "dana@corp.test"
 
-      # Approve provisions the captured identity and drops the request from the
-      # list — the only one, so the whole queue clears (name lingers in the flash).
-      lv |> element("button", "Approve") |> render_click()
+      # Approve is a styled confirm modal (not a native data-confirm); its Confirm
+      # dispatches approve_request. Provisioning drops the request from the list —
+      # the only one, so the whole queue clears (name lingers in the flash).
+      assert has_element?(lv, "#approve-request-#{request.id}")
+      render_click(lv, "approve_request", %{"id" => request.id})
       refute render(lv) =~ "Pending access requests"
       assert Emisar.Repo.reload(request) == nil
     end
@@ -248,10 +250,7 @@ defmodule EmisarWeb.TeamLiveTest do
         refute html =~ "Send invite"
         refute has_element?(lv, "summary", "Actions")
 
-        refute has_element?(
-                 lv,
-                 "button[phx-click='change_role'][phx-value-membership_id='#{teammate_membership.id}']"
-               )
+        refute has_element?(lv, "##{"change-role-#{teammate_membership.id}-operator"}")
 
         # The read-only footer names their role and points them at who can manage.
         assert html =~ "Only owners and admins can invite or manage members."
@@ -571,36 +570,32 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       membership: membership
     } do
-      # The member is seeded as a viewer; the role dropdown (a <.dropdown> matching
-      # the Actions menu) carries a change_role item for every role EXCEPT the
-      # current one. Scope to this member's items via phx-value-membership_id — the
-      # invite panel carries its own (unrelated) role <select>.
+      # The member is seeded as a viewer; the role dropdown carries an item for
+      # every role EXCEPT the current one, each OPENING a styled confirm modal —
+      # so a `#change-role-<membership>-<role>` dialog renders per offered role.
       assert membership.role == :viewer
 
       for role <- ~w(operator admin owner) do
-        assert has_element?(
-                 lv,
-                 "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][phx-value-role='#{role}']"
-               )
+        assert has_element?(lv, "##{"change-role-#{membership.id}-#{role}"}")
       end
 
-      # The current role is not offered as a change target.
-      refute has_element?(
-               lv,
-               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][phx-value-role='viewer']"
-             )
+      # The current role is not offered as a change target — no dialog for it.
+      refute has_element?(lv, "##{"change-role-#{membership.id}-viewer"}")
     end
 
     test "each role item confirms the privilege grant before changing", %{
       lv: lv,
       membership: membership
     } do
-      # Every other team action confirms; each role item must too, so an admin
-      # can't fat-finger an escalation. The dialog fires only on a real pick (the
-      # item's click), never on opening the control. The handler still authorizes.
-      assert has_element?(
+      # Every team action confirms through our own modal (never a native
+      # data-confirm), so an admin can't fat-finger an escalation. The role item
+      # opens the dialog; change_role fires only from its Confirm. The handler
+      # still authorizes.
+      assert has_element?(lv, "##{"change-role-#{membership.id}-operator"}")
+
+      refute has_element?(
                lv,
-               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][data-confirm]"
+               "[phx-value-membership_id='#{membership.id}'][data-confirm]"
              )
     end
 
@@ -618,15 +613,12 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       # Role editability tracks permission, not access-state: suspending a member
       # must NOT turn their role into a read-only chip (which, next to a synced
-      # member's SCIM badge, misreads as "locked because synced"). It stays a
-      # change_role control — matching the SSO synced-users list — and the change
-      # actually applies (you set the role they'll have on reinstate).
+      # member's SCIM badge, misreads as "locked because synced"). It stays the
+      # role picker — its confirm dialogs still render — and the change actually
+      # applies (you set the role they'll have on reinstate).
       assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~ "Suspended"
 
-      assert has_element?(
-               lv,
-               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}']"
-             )
+      assert has_element?(lv, "##{"change-role-#{membership.id}-operator"}")
 
       assert render_click(lv, "change_role", %{
                "membership_id" => membership.id,

@@ -667,13 +667,14 @@ defmodule EmisarWeb.TeamLive do
   defp request_label(request),
     do: request.full_name || request.email || request.provider_identifier
 
-  defp approve_confirm(%{matched_user_id: nil}) do
-    "Approve access for this user? They'll be able to sign in at the connection's default role."
-  end
+  defp approve_title(%{matched_user_id: nil}), do: "Approve access for this user?"
+  defp approve_title(%{email: email}), do: "Link this connection to #{email}?"
 
-  defp approve_confirm(%{email: email}) do
-    "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
-  end
+  defp approve_body(%{matched_user_id: nil}),
+    do: "They'll be able to sign in at the connection's default role."
+
+  defp approve_body(%{email: _email}),
+    do: "That IdP identity will then sign in as this existing user."
 
   # The set of member emails on the deliverability suppression list — drives
   # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
@@ -917,15 +918,18 @@ defmodule EmisarWeb.TeamLive do
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
-              <.button
+              <.confirm_button
+                id={"approve-request-#{request.id}"}
+                title={approve_title(request)}
+                confirm_label="Approve"
                 variant={:secondary}
+                tone={:amber}
                 size={:sm}
-                phx-click="approve_request"
-                phx-value-id={request.id}
-                data-confirm={approve_confirm(request)}
+                on_confirm={JS.push("approve_request", value: %{id: request.id})}
               >
+                <:body>{approve_body(request)}</:body>
                 Approve
-              </.button>
+              </.confirm_button>
               <.confirm_button
                 id={"dismiss-request-#{request.id}"}
                 title="Dismiss this request?"
@@ -1108,8 +1112,9 @@ defmodule EmisarWeb.TeamLive do
                           </.tooltip>
                         <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
                           <%!-- A role change is a privilege grant — a dropdown (same skin as
-                         the Actions menu beside it) whose items each carry their own
-                         confirm, so the dialog fires only when you pick a DIFFERENT role,
+                         the Actions menu beside it) whose items each OPEN their own styled
+                         confirm modal (not a native data-confirm — we use our own dialogs
+                         everywhere), so the modal fires only when you pick a DIFFERENT role,
                          never just on opening the control. The handler still authorizes
                          (IL-15). Suspension does NOT lock this — editability tracks
                          permission, not access-state. --%>
@@ -1125,12 +1130,7 @@ defmodule EmisarWeb.TeamLive do
                             <.menu_item
                               :for={role <- @roles}
                               :if={role != to_string(membership.role)}
-                              phx-click="change_role"
-                              phx-value-membership_id={membership.id}
-                              phx-value-role={role}
-                              data-confirm={
-                                role_change_confirm(member_name(membership) || "this member", role)
-                              }
+                              phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
                             >
                               {Emisar.Auth.Role.label(role)}
                             </.menu_item>
@@ -1151,6 +1151,28 @@ defmodule EmisarWeb.TeamLive do
                       />
                     </div>
                   </div>
+
+                  <%!-- Styled confirm modals for the role dropdown — our own dialog,
+                   NOT a native data-confirm. One per assignable role, each pushing
+                   change_role on Confirm; mirrors the dropdown's guard so no orphan
+                   dialog renders when the picker isn't shown. --%>
+                  <.confirm_dialog
+                    :for={role <- @roles}
+                    :if={
+                      can_manage?(assigns) and not self_owner?(membership, @current_user.id) and
+                        role != to_string(membership.role)
+                    }
+                    id={"change-role-#{membership.id}-#{role}"}
+                    tone={:amber}
+                    title={role_change_title(member_name(membership) || "this member", role)}
+                    confirm_label={"Change to #{Emisar.Auth.Role.label(role)}"}
+                    on_confirm={
+                      JS.push("change_role", value: %{membership_id: membership.id, role: role})
+                      |> close_confirm("change-role-#{membership.id}-#{role}")
+                    }
+                  >
+                    <:body>{role_change_body(role)}</:body>
+                  </.confirm_dialog>
 
                   <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
                    are naked — the fields are the controls) — indented to the
@@ -1338,12 +1360,17 @@ defmodule EmisarWeb.TeamLive do
                 >
                   <.status_dot tone={if provider.enabled, do: :brand, else: :amber} size={:sm} />
                   <div class="min-w-0 flex-1">
-                    <span class="block truncate text-sm text-zinc-200">{provider.name}</span>
-                    <%!-- Directory-sync status, one quiet line: how much the sync
-                         has pulled in (users + distinct groups) and how fresh it
-                         is. Only for a SCIM connection; JIT provisions on sign-in
-                         and has nothing to show here. --%>
-                    <span :if={provider.scim_enabled} class="text-[11px] text-zinc-500">
+                    <span class="block truncate text-sm leading-tight text-zinc-200">
+                      {provider.name}
+                    </span>
+                    <%!-- Directory-sync status, one quiet line pulled up snug under
+                         the name: how much the sync has pulled in (users + distinct
+                         groups) and how fresh it is. Only for a SCIM connection; JIT
+                         provisions on sign-in and has nothing to show here. --%>
+                    <span
+                      :if={provider.scim_enabled}
+                      class="mt-0.5 block text-[11px] leading-tight text-zinc-500"
+                    >
                       <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
                       {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
                       <span :if={provider.scim_last_seen_at} class="text-brand-300/90">
@@ -1730,23 +1757,28 @@ defmodule EmisarWeb.TeamLive do
   defp member_name(%Accounts.Membership{} = membership),
     do: membership.user && (membership.user.full_name || membership.user.email)
 
-  # Escalation/lock-out wording on a role change — promoting to a privileged role
-  # grants real power (and a new owner can act against you), so the confirm spells
-  # out the consequence; a lateral move or demotion keeps the plain prompt.
-  defp role_change_confirm(name, "owner") do
-    "Make #{name} an owner? Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
+  # Role-change confirm copy for our styled dialog — the title carries the
+  # escalation question, the body the consequence. Promoting to a privileged role
+  # grants real power (a new owner can act against you), so those spell it out; a
+  # demotion keeps the plain read-only note.
+  defp role_change_title(name, "owner"), do: "Make #{name} an owner?"
+  defp role_change_title(name, "admin"), do: "Make #{name} an admin?"
+  defp role_change_title(name, "operator"), do: "Make #{name} an operator?"
+  defp role_change_title(name, role), do: "Change #{name} to #{Emisar.Auth.Role.label(role)}?"
+
+  defp role_change_body("owner") do
+    "Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
   end
 
-  defp role_change_confirm(name, "admin") do
-    "Make #{name} an admin? Admins manage runners, policy, members, and approvals across the whole account."
-  end
+  defp role_change_body("admin"),
+    do: "Admins manage runners, policy, members, and approvals across the whole account."
 
-  defp role_change_confirm(name, "operator") do
-    "Make #{name} an operator? Operators can dispatch runs to your fleet and approve gated actions."
-  end
+  defp role_change_body("operator"),
+    do: "Operators can dispatch runs to your fleet and approve gated actions."
 
-  defp role_change_confirm(name, role),
-    do: "Change #{name}'s role to #{Emisar.Auth.Role.label(role)}?"
+  defp role_change_body(_role) do
+    "Read-only access — they can see runs, runners, and audit, but can't dispatch or change anything."
+  end
 
   # Two cases worth surfacing to admins: "active in the last 90 days"
   # is a no-op (don't clutter the row), "never signed in" hints at a
