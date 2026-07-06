@@ -677,15 +677,6 @@ defmodule EmisarWeb.TeamLive do
           Team
         <% end %>
       </:title>
-      <:actions :if={@live_action == :index and not @loading? and can_manage?(assigns)}>
-        <.button
-          navigate={~p"/app/#{@current_account}/settings/team/invite"}
-          size={:md}
-          icon="hero-plus"
-        >
-          Invite member
-        </.button>
-      </:actions>
 
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
@@ -809,7 +800,19 @@ defmodule EmisarWeb.TeamLive do
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
              below the top-line content, keeping the natural flow per row. --%>
-          <.section_header title="Members" />
+          <%!-- Invite lives on the Members header — the action belongs to the
+               roster it grows, not the page as a whole. --%>
+          <.section_header title="Members">
+            <:actions :if={can_manage?(assigns)}>
+              <.button
+                navigate={~p"/app/#{@current_account}/settings/team/invite"}
+                size={:sm}
+                icon="hero-plus"
+              >
+                Invite member
+              </.button>
+            </:actions>
+          </.section_header>
 
           <LiveTable.live_table
             layout={:cards}
