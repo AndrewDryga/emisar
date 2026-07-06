@@ -124,6 +124,17 @@ defmodule Emisar.Billing do
   defp plan_display_name(%{known_plan: %{name: name}}), do: name
   defp plan_display_name(%{plan_name: plan_name}), do: String.capitalize(plan_name)
 
+  # The subscription's billing cadence as an atom; a nil/monthly/unknown mirror
+  # (incl. no subscription) reads as :month — only an explicit "year" is annual.
+  defp subscription_cycle(%Subscription{billing_interval: "year"}), do: :year
+  defp subscription_cycle(_), do: :month
+
+  # Per-runner price for the cadence — the annual rate on :year, else monthly.
+  # nil for a plan this build doesn't know (custom pricing → no self-serve $).
+  defp per_runner_cents(%{known_plan: %{annual_price_cents: cents}}, :year), do: cents
+  defp per_runner_cents(%{known_plan: %{monthly_price_cents: cents}}, :month), do: cents
+  defp per_runner_cents(_posture, _cycle), do: nil
+
   @doc """
   Internal — Audit's per-row retention stamp: the account's audit-retention
   window, in days. An `audit_retention_days` entitlement mirrored from Paddle
@@ -616,6 +627,7 @@ defmodule Emisar.Billing do
           }
           |> put_present(:entitlements, Entitlements.from_paddle_subscription(subscription_data))
           |> put_present(:paddle_price_id, price_id)
+          |> put_present(:billing_interval, extract_billing_interval(subscription_data))
           |> put_present(:current_period_end, period_end(subscription_data, cancel_scheduled?))
           |> put_present(:current_period_start, extract_current_period_start(subscription_data))
           |> put_present(:quantity, extract_quantity(subscription_data))
@@ -658,6 +670,14 @@ defmodule Emisar.Billing do
     do: id
 
   defp extract_price_id(_), do: nil
+
+  # The billing cadence ("month" | "year") from the first item's price — the
+  # same item extract_price_id reads. Absent nesting (or no items) → nil, which
+  # billing_summary reads as monthly.
+  defp extract_billing_interval(%{"items" => [item | _]}),
+    do: get_in(item, ["price", "billing_cycle", "interval"])
+
+  defp extract_billing_interval(_), do: nil
 
   # nil-tolerant adapter: Paddle payloads may omit the customer id.
   defp peek_account_by_paddle_customer(customer_id) when is_binary(customer_id),
@@ -727,6 +747,10 @@ defmodule Emisar.Billing do
       # nil pricing for a plan this build doesn't know (a slug minted in
       # Paddle) — the UI treats it like custom pricing, not free's $0.
       monthly_cents = posture.known_plan && posture.known_plan.monthly_price_cents
+      # The mirrored cadence prices the period: an annual subscriber's summary
+      # must read "$X/yr" at the annual per-runner rate, not the monthly one.
+      cycle = subscription_cycle(subscription)
+      period_cents = per_runner_cents(posture, cycle)
 
       {:ok,
        %{
@@ -738,6 +762,8 @@ defmodule Emisar.Billing do
          member_limit: entitled_limit(posture, :members_limit),
          monthly_per_runner_cents: monthly_cents,
          monthly_total_cents: monthly_cents && monthly_cents * runner_count,
+         billing_interval: cycle,
+         period_total_cents: period_cents && period_cents * runner_count,
          audit_retention_days: entitled_retention_days(posture),
          # Subscription state mirrored from Paddle webhooks. nil when
          # the account is on a free plan and has never subscribed.

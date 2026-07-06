@@ -182,6 +182,16 @@ defmodule EmisarWeb.BillingLive do
     "$#{dollars}.#{String.pad_leading(Integer.to_string(pennies), 2, "0")}"
   end
 
+  # The current-plan strip price, cadence-aware: the annual subscriber reads
+  # "$X/yr" at the annual rate, monthly "$X/mo", and a custom (unknown-price)
+  # plan just "Custom" — no bare "Custom/mo" suffix.
+  defp period_price_label(%{period_total_cents: nil}), do: "Custom"
+
+  defp period_price_label(%{period_total_cents: cents, billing_interval: :year}),
+    do: "#{format_total(cents)}/yr"
+
+  defp period_price_label(%{period_total_cents: cents}), do: "#{format_total(cents)}/mo"
+
   # Only the non-paid statuses earn a label chip (a completed row stays silent).
   defp invoice_status_label("billed"), do: "Billed"
   defp invoice_status_label("past_due"), do: "Past due"
@@ -295,9 +305,7 @@ defmodule EmisarWeb.BillingLive do
                 <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>
                   <span class="text-sm text-zinc-500">·</span>
-                  <span class="text-sm text-zinc-400">
-                    {format_total(@summary.monthly_total_cents)}/mo
-                  </span>
+                  <span class="text-sm text-zinc-400">{period_price_label(@summary)}</span>
                 </div>
                 <%!-- Subscription cycle notes — only rendered when the
                    underlying Paddle subscription has the matching state.

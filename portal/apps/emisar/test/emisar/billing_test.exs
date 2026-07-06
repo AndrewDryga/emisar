@@ -645,6 +645,26 @@ defmodule Emisar.BillingTest do
       assert subscription.status == "active"
       assert subscription.paddle_subscription_id == "sub_evt_created_1"
       assert subscription.paddle_price_id == "pri_team_01"
+      # No billing_cycle in this payload → nil (billing_summary reads monthly).
+      refute subscription.billing_interval
+    end
+
+    test "mirrors the price's billing cadence so an annual subscriber is priced per year" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_annual_01"})
+
+      event =
+        subscription_created_event("evt_annual", account.paddle_customer_id, "pri_team_year_01",
+          cycle: "year"
+        )
+
+      assert :ok = Billing.record_and_apply_event("evt_annual", "subscription.created", event)
+
+      subscription =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
+
+      assert subscription.billing_interval == "year"
     end
 
     test "mirrors product custom_data into entitlements and takes the plan from its slug" do
@@ -1558,7 +1578,15 @@ defmodule Emisar.BillingTest do
   # (`product_custom_data:`). `product: false` models the lean shape carrying
   # no product identity at all.
   defp subscription_item(price_id, opts) do
-    item = %{"price" => %{"id" => price_id}}
+    price = %{"id" => price_id}
+
+    price =
+      case Keyword.get(opts, :cycle) do
+        nil -> price
+        interval -> Map.put(price, "billing_cycle", %{"interval" => interval})
+      end
+
+    item = %{"price" => price}
 
     if Keyword.get(opts, :product, true) do
       product = %{
@@ -1623,8 +1651,24 @@ defmodule Emisar.BillingTest do
       # Free plan is priced at 0, so the total is 0 — and the
       # never-subscribed mirror fields read nil.
       assert summary.monthly_total_cents == 0
+      # No subscription → the cadence reads monthly, priced at free's $0.
+      assert summary.billing_interval == :month
+      assert summary.period_total_cents == 0
       refute summary.subscription_status
       refute summary.current_period_end
+    end
+
+    test "an annual subscriber's summary is priced per year at the annual rate" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Accounts.create_subscription(account, "team", billing_interval: "year")
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.billing_interval == :year
+      # 2 runners × $200/runner/yr (annual_price_cents), not the monthly rate.
+      assert summary.period_total_cents == 40_000
+      # The monthly fields stay the monthly rate — both are exposed.
+      assert summary.monthly_per_runner_cents == 2000
     end
 
     test "entitlement limits surface in the summary instead of the compiled plan defaults" do
@@ -1660,6 +1704,7 @@ defmodule Emisar.BillingTest do
       # …and nil pricing (custom), never the free plan's $0.
       refute summary.monthly_per_runner_cents
       refute summary.monthly_total_cents
+      refute summary.period_total_cents
     end
 
     test "an owner of account B cannot read account A's summary (cross-account)" do

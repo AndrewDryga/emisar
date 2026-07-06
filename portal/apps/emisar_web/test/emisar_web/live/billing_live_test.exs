@@ -194,23 +194,44 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an enterprise account shows a Custom total and Unlimited meters", %{conn: conn} do
-      # Enterprise has monthly_price_cents nil → monthly_total_cents nil →
-      # format_total(nil) renders "Custom" (not a cents figure). Runner + member
-      # limits are :unlimited → limit_label "Unlimited" and usage_pct nil, so the
-      # meters render the gradient placeholder bar with no width/percentage.
+      # Enterprise has no self-serve price → period_total_cents nil →
+      # period_price_label renders bare "Custom" (no "/mo" or "/yr" suffix, which
+      # would read as "Custom/mo"). Runner + member limits are :unlimited →
+      # limit_label "Unlimited" and usage_pct nil, so the meters render the
+      # gradient placeholder bar with no width/percentage.
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "enterprise", status: "active"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Enterprise"
-      # The plan strip shows "Custom/mo", never a "$…" total for the enterprise tier.
-      assert html =~ "Custom/mo"
+      # The plan strip shows bare "Custom", never a "$…" total nor a "/mo" suffix.
+      assert html =~ "Custom"
+      refute html =~ "Custom/mo"
       # Both meters read "/ Unlimited" (no numeric ceiling).
       assert html =~ "/ Unlimited"
       # usage_pct is nil for an :unlimited limit → NO progress bar at all (a bar
       # with no cap to fill against is meaningless); just the "N / Unlimited" count.
       refute html =~ "style=\"width:"
+    end
+
+    test "an annual subscriber's plan strip is priced per year, not per month", %{conn: conn} do
+      # A team subscription mirrored as annual prices the strip at the annual
+      # rate with a "/yr" suffix — one runner × $200/runner/yr (the strip total
+      # carries cents via format_total) — never the monthly "/mo" suffix.
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id)
+
+      insert_subscription_with(account, %{
+        plan: "team",
+        status: "active",
+        billing_interval: "year"
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "$200.00/yr"
+      refute html =~ "/mo"
     end
 
     test "dead cycle-note fields (cancel_at/trial_end) render nothing", %{conn: conn} do

@@ -18,6 +18,12 @@ defmodule Emisar.Billing.Subscription do
     # inclusion (Subscription.Changeset); Paddle is the source of truth.
     field :plan, :string
     field :status, :string
+    # The billing cadence ("month" | "year"), mirrored from the Paddle price's
+    # billing_cycle.interval — :string for the same vendor-owned-value-space
+    # reason as `plan`/`status` above (Paddle could bill day/week too, and an
+    # unseen cadence must LOAD and degrade to monthly, not raise). nil = monthly
+    # (pre-annual rows). Read via `Billing.billing_summary` to price the period.
+    field :billing_interval, :string
     # Paddle-mirrored plan entitlements (the product's custom_data), validated
     # into canonical form by `Billing.Entitlements` at extraction — limits are
     # non-negative ints or the string "unlimited", feature flags booleans. A

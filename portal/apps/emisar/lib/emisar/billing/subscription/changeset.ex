@@ -3,9 +3,9 @@ defmodule Emisar.Billing.Subscription.Changeset do
   alias Emisar.Billing.Subscription
 
   @fields ~w[
-    account_id paddle_subscription_id paddle_price_id plan status entitlements
-    quantity current_period_start current_period_end cancel_at_period_end trial_end
-    paddle_updated_at
+    account_id paddle_subscription_id paddle_price_id plan status billing_interval
+    entitlements quantity current_period_start current_period_end cancel_at_period_end
+    trial_end paddle_updated_at
   ]a
 
   def upsert(subscription \\ %Subscription{}, attrs) do
