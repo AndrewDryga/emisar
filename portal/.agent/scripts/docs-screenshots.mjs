@@ -31,6 +31,14 @@ async function crop(page, target, name) {
   // construction, and puppeteer scrolls/stitches a tall element for us.
   const ok = await page.evaluate((t) => {
     let el = t.selector ? document.querySelector(t.selector) : null;
+    if (!el && t.classContains) {
+      // Tailwind arbitrary classes (brackets/parens) don't select via CSS —
+      // match the element whose className contains ALL the given substrings.
+      el =
+        [...document.querySelectorAll("div,section")].find((d) =>
+          t.classContains.every((c) => d.className.includes(c)),
+        ) || null;
+    }
     if (!el && t.heading) {
       // Tightest element (fewest descendants) whose text is exactly the heading —
       // handles a heading wrapping nested spans/icons.
@@ -120,6 +128,19 @@ await p.evaluate(() => {
 await settle(1400);
 await crop(p, { heading: "Directory sync (SCIM)", climb: "section" }, "sso-directory-sync");
 
+// LLM agents — the "Connect an agent" client picker (the /docs/connect-an-llm
+// hero): pick a client and it mints a pre-filled key + setup. Select one so the
+// per-client config shows beside the picker, not an empty prompt.
+await go("/app/demo/agents/connect");
+await p.evaluate(() => {
+  const tab = [...document.querySelectorAll("button, a, [phx-click]")].find(
+    (b) => b.textContent.trim() === "Claude.ai",
+  );
+  if (tab) tab.click();
+});
+await settle(900);
+await crop(p, { classContains: ["grid-cols-[minmax(0,1fr)_22rem]", "gap-x-16"] }, "connect-llm-agents");
+
 await b.close();
 
 // --- pad + convert to webp (part of the pipeline, so re-running regenerates the
@@ -138,6 +159,7 @@ const SHOTS = [
   { name: "team-page", out: "screenshots/team-page.webp" },
   { name: "sso-add-connection", out: "docs/sso/sso-add-connection.webp", topCss: 850 },
   { name: "sso-directory-sync", out: "docs/sso/sso-directory-sync.webp" },
+  { name: "connect-llm-agents", out: "screenshots/connect-llm-agents.webp", topCss: 720 },
 ];
 for (const s of SHOTS) {
   const png = `${OUT}/${s.name}.png`;
