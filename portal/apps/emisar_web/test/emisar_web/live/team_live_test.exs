@@ -37,6 +37,41 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ ~p"/app/#{account}/settings/sso/new"
       refute html =~ "Set up SSO"
     end
+
+    test "pending SSO access requests surface on Team, and approving clears one", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          full_name: "Dana Ops",
+          email: "dana@corp.test"
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert html =~ "Pending access requests"
+      assert html =~ "Dana Ops"
+      assert html =~ "dana@corp.test"
+
+      # Approve provisions the captured identity and drops the request from the
+      # list — the only one, so the whole queue clears (name lingers in the flash).
+      lv |> element("button", "Approve") |> render_click()
+      refute render(lv) =~ "Pending access requests"
+      assert Emisar.Repo.reload(request) == nil
+    end
+
+    test "pending requests stay hidden without the SSO plan/permission", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      # Free plan: the pending-request read is plan-gated, so the queue never loads.
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      refute html =~ "Pending access requests"
+      refute html =~ "Dana Ops"
+    end
   end
 
   describe "GET /app/settings/team/invite" do

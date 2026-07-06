@@ -31,4 +31,33 @@ defmodule Emisar.Fixtures.SSO do
     {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account_id, provider_attrs))
     provider
   end
+
+  @doc """
+  Creates a pending manual-link (access) request against a provider. Pass a
+  `:provider`, or an `:account_id` (a provider is minted on it). Returns the request.
+  """
+  def create_link_request(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    provider =
+      attrs[:provider] ||
+        create_identity_provider(if(id = attrs[:account_id], do: %{account_id: id}, else: %{}))
+
+    request_attrs =
+      Map.merge(
+        %{
+          provider_identifier: "sub-#{Emisar.Fixtures.Random.unique_int()}",
+          email: "pending#{Emisar.Fixtures.Random.unique_int()}@example.com",
+          full_name: "Pending Person"
+        },
+        Map.drop(attrs, [:account_id, :provider])
+      )
+
+    {:ok, request} =
+      Repo.insert(
+        Emisar.SSO.LinkRequest.Changeset.create(provider.account_id, provider.id, request_attrs)
+      )
+
+    request
+  end
 end

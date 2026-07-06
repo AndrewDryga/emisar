@@ -195,6 +195,22 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event("approve_request", %{"id" => id}, socket) do
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_approve_request(&1, id)
+    )
+  end
+
+  def handle_event("dismiss_request", %{"id" => id}, socket) do
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_dismiss_request(&1, id)
+    )
+  end
+
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
       %{groups: groups, runner_ids: runner_ids} =
@@ -539,6 +555,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:providers, [])
         |> assign(:require_sso_available?, false)
         |> assign(:enabled_sso_provider_count, 0)
+        |> assign(:pending_requests, [])
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -570,10 +587,74 @@ defmodule EmisarWeb.TeamLive do
         _ -> []
       end
 
+    # Manual-provisioning requests waiting on an admin, across every connection —
+    # the SSO hub now lives on Team, so its needs-attention queue does too. Gated
+    # (manage_sso + Team plan) inside the read, so a non-SSO-admin just gets [].
+    pending_requests =
+      case SSO.list_pending_link_requests_for_account(socket.assigns.current_subject) do
+        {:ok, requests, _meta} -> requests
+        _ -> []
+      end
+
     socket
     |> assign(:providers, providers)
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
+    |> assign(:pending_requests, pending_requests)
+  end
+
+  # -- Pending SSO access requests (manual provisioning) ----------------
+  # People blocked at sign-in until an admin approves. Gated on configure_sso;
+  # each acts on a request from the loaded list, then refreshes the SSO state.
+
+  defp do_approve_request(socket, id) do
+    case find_pending_request(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      request ->
+        case SSO.approve_link_request(request, socket.assigns.current_subject) do
+          {:ok, _result} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "#{request_label(request)} approved — they can sign in now.")
+             |> assign_sso_state()}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}
+        end
+    end
+  end
+
+  defp do_dismiss_request(socket, id) do
+    case find_pending_request(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      request ->
+        case SSO.dismiss_link_request(request, socket.assigns.current_subject) do
+          {:ok, _request} ->
+            {:noreply,
+             socket |> put_flash(:info, "Access request dismissed.") |> assign_sso_state()}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Couldn't dismiss that request.")}
+        end
+    end
+  end
+
+  defp find_pending_request(socket, id),
+    do: Enum.find(socket.assigns.pending_requests, &(&1.id == id))
+
+  defp request_label(request),
+    do: request.full_name || request.email || request.provider_identifier
+
+  defp approve_confirm(%{matched_user_id: nil}) do
+    "Approve access for this user? They'll be able to sign in at the connection's default role."
+  end
+
+  defp approve_confirm(%{email: email}) do
+    "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
   end
 
   # The set of member emails on the deliverability suppression list — drives
@@ -782,6 +863,67 @@ defmodule EmisarWeb.TeamLive do
       </.page_intro>
 
       <.loading_state :if={@live_action == :index and @loading?} />
+
+      <%!-- Pending SSO access requests — people blocked waiting for an admin,
+           across every connection. Time-sensitive, so it leads the page, full
+           width above the roster + Security panel. Only an SSO admin with
+           requests sees it (the read gates on manage_sso + plan → []). --%>
+      <section
+        :if={@live_action == :index and not @loading? and @pending_requests != []}
+        class="mb-8"
+      >
+        <.section_header
+          title="Pending access requests"
+          count={length(@pending_requests)}
+          count_tone={:amber}
+        />
+        <ul class="divide-y divide-zinc-800/70">
+          <li
+            :for={request <- @pending_requests}
+            class="flex flex-wrap items-center justify-between gap-3 py-3.5"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="truncate text-sm text-zinc-200">
+                  {request.full_name || request.email || "Unknown user"}
+                </span>
+                <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
+              </div>
+              <div class="mt-0.5 truncate text-xs text-zinc-500">
+                <span :if={request.email}>{request.email}</span>
+                <span :if={request.email} class="text-zinc-600">·</span>
+                <span class="font-mono">{request.provider_identifier}</span>
+              </div>
+              <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
+                Approving lets this connection sign in as the existing {request.email} account.
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <.button
+                variant={:secondary}
+                size={:sm}
+                phx-click="approve_request"
+                phx-value-id={request.id}
+                data-confirm={approve_confirm(request)}
+              >
+                Approve
+              </.button>
+              <.confirm_button
+                id={"dismiss-request-#{request.id}"}
+                title="Dismiss this request?"
+                confirm_label="Dismiss"
+                variant={:ghost}
+                tone={:rose}
+                size={:sm}
+                on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
+              >
+                <:body>They'll need to sign in again to re-request.</:body>
+                Dismiss
+              </.confirm_button>
+            </div>
+          </li>
+        </ul>
+      </section>
 
       <%!-- Single-column list. Each row is a member: avatar, name +
            email, role pill, joined, "..." menu. Inline edit form
