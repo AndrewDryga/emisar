@@ -4057,13 +4057,17 @@ defmodule EmisarWeb.CoreComponents do
                        and never copied; Copy hands over the literal command. --%>
                   <div class="flex items-center gap-3 rounded-xl bg-zinc-900/60 p-4 font-mono text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800">
                     <span class="select-none text-zinc-600">$</span>
-                    <pre class="min-w-0 flex-1 overflow-x-auto whitespace-pre text-zinc-300">{@install_command}</pre>
+                    <%!-- Clip + ellipsis, NOT overflow-x-auto: a horizontal
+                         scrollbar adds height to this line, and items-center then
+                         drops the $ and Copy below the command's baseline. The
+                         full command rides on Copy; the box only previews it. --%>
+                    <pre class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-pre text-zinc-300">{@install_command}</pre>
                     <%!-- Copy the literal string, not the rendered element's
                            innerText: the leading space (HISTCONTROL=ignorespace)
                            is significant and the selector path would strip it. --%>
                     <.copy_button
                       text={@install_command}
-                      class="shrink-0 self-center bg-brand-500/20 px-2.5 text-brand-200 hover:bg-brand-500/30 font-semibold"
+                      class="shrink-0 bg-brand-500/20 px-2.5 text-brand-200 hover:bg-brand-500/30 font-semibold"
                     >
                       Copy
                     </.copy_button>
