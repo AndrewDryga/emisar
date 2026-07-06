@@ -23,11 +23,10 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Free plan, no provider: ONE door — the plan-gated setup link carrying the
-      # amber "Team" pill, routing to Billing to upgrade. No provider to list yet.
+      # Free plan, no provider: SSO is plan-gated, shown as a quiet line (no pill,
+      # no link — Billing is in the nav). No provider to list yet.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Set up SSO"
-      assert html =~ ~p"/app/#{account}/settings/billing"
+      assert html =~ "Available on the Team and Enterprise plans"
 
       # With the plan (still no provider), the door becomes the real Add button
       # into /new — the plan gate is cleared.
@@ -35,7 +34,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Add provider"
       assert html =~ ~p"/app/#{account}/settings/sso/new"
-      refute html =~ "Set up SSO"
+      refute html =~ "Available on the Team and Enterprise plans"
     end
 
     test "pending SSO access requests surface on Team, and approving clears one", %{conn: conn} do
@@ -981,11 +980,10 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
-      # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
+      # Owner (unenrolled) + the enrolled member → 1 of 2. The counts come from
+      # Accounts.team_mfa_stats (account-wide), not @memberships.
       assert html =~ "2FA enrolled:"
       assert html =~ "1 of 2"
-      assert html =~ "1 without 2FA"
     end
   end
 

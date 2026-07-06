@@ -3048,23 +3048,18 @@ defmodule EmisarWeb.CoreComponents do
   available on Team and Enterprise; `tier: :enterprise` → Enterprise only.
 
   Pass `link={false}` for the non-linking `<span>` variant when the badge sits
-  INSIDE another anchor (a docs index card, or a gated in-app control), since
-  anchors can't nest. Pass `compact` for the short in-app label (`Team` /
-  `Enterprise`, the minimum plan to unlock) instead of the docs form that spells
-  out every plan the feature is on — the pill that marks a locked button or link.
+  INSIDE another anchor (a docs index card), since anchors can't nest.
 
       <h2>Directory sync <.plan_badge tier={:enterprise} /></h2>
-      <.button navigate={billing}>Export CSV <.plan_badge tier={:team} compact link={false} /></.button>
   """
   attr :tier, :atom, required: true, values: [:team, :enterprise]
   attr :link, :boolean, default: true
-  attr :compact, :boolean, default: false, doc: "short label for an in-app gate pill"
   attr :class, :string, default: nil
 
   def plan_badge(%{link: false} = assigns) do
     ~H"""
     <span title={plan_badge_title(@tier)} class={[plan_badge_class(), @class]}>
-      {plan_badge_label(@tier, @compact)}
+      {plan_badge_label(@tier)}
     </span>
     """
   end
@@ -3076,7 +3071,7 @@ defmodule EmisarWeb.CoreComponents do
       title={plan_badge_title(@tier)}
       class={[plan_badge_class(), "hover:bg-amber-500/20 hover:text-amber-200", @class]}
     >
-      {plan_badge_label(@tier, @compact)}
+      {plan_badge_label(@tier)}
     </.link>
     """
   end
@@ -3087,9 +3082,8 @@ defmodule EmisarWeb.CoreComponents do
       "ring-1 ring-amber-500/25 transition-colors"
   end
 
-  defp plan_badge_label(:team, true), do: "Team"
-  defp plan_badge_label(:team, false), do: "Team & Enterprise"
-  defp plan_badge_label(:enterprise, _compact), do: "Enterprise"
+  defp plan_badge_label(:team), do: "Team & Enterprise"
+  defp plan_badge_label(:enterprise), do: "Enterprise"
 
   defp plan_badge_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
   defp plan_badge_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
@@ -3407,17 +3401,21 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
-  Wraps a trigger element with a styled hover/focus tooltip — a dark bubble above
-  it carrying `text`, for the "why" a control is locked/disabled/limited. CSS-only
+  Wraps a trigger element with a styled hover/focus tooltip — a dark bubble
+  carrying `text`, for the "why" a control is locked/disabled/limited. CSS-only
   (named `group/tooltip`, so it's safe inside a row that has its own `group`); the
   bubble is right-anchored so it grows leftward and won't clip off a right-edge
-  badge. `text` also rides as `aria-label` for assistive tech.
+  badge. `placement` picks which side it opens on — default `:top`, but use
+  `:bottom` for a trigger near the top of the viewport (a title-row control),
+  where an upward bubble would clip off-screen. `text` also rides as `aria-label`.
 
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
       </.tooltip>
+      <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>
   """
   attr :text, :string, required: true
+  attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
@@ -3427,7 +3425,12 @@ defmodule EmisarWeb.CoreComponents do
       {render_slot(@inner_block)}
       <span
         role="tooltip"
-        class="pointer-events-none absolute bottom-full right-0 z-30 mb-2 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10 transition-opacity duration-100 group-hover/tooltip:opacity-100"
+        class={[
+          "pointer-events-none absolute right-0 z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
+          "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
+          "transition-opacity duration-100 group-hover/tooltip:opacity-100",
+          if(@placement == :bottom, do: "top-full mt-2", else: "bottom-full mb-2")
+        ]}
       >
         {@text}
       </span>

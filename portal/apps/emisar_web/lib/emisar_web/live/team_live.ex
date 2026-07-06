@@ -1266,7 +1266,6 @@ defmodule EmisarWeb.TeamLive do
                   of <span class="font-medium tabular-nums text-zinc-200">{@mfa_stats.total}</span>
                 </span>
               </span>
-              <.chip :if={unenrolled > 0} tone={:neutral}>{unenrolled} without 2FA</.chip>
               <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
             </p>
             <div class="mt-4">
@@ -1362,13 +1361,9 @@ defmodule EmisarWeb.TeamLive do
                     Add provider
                   </.button>
                 <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <.link
-                    navigate={~p"/app/#{@current_account}/settings/billing"}
-                    title="Single sign-on is on the Team plan — upgrade to enable it"
-                    class="group inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    Set up SSO <.plan_badge tier={:team} compact link={false} /> <.cta_arrow />
-                  </.link>
+                  <span class="text-[11px] text-zinc-600">
+                    Available on the Team and Enterprise plans
+                  </span>
                 <% true -> %>
               <% end %>
             </div>

@@ -298,10 +298,7 @@ defmodule EmisarWeb.AuditLive do
             Export CSV
           </.button>
         <% else %>
-          <.upgrade_button
-            account={@current_account}
-            title="CSV export is on the Team plan — upgrade to turn it on"
-          >
+          <.upgrade_button tip="CSV export is on the Team plan — upgrade to turn it on">
             Export CSV
           </.upgrade_button>
         <% end %>
@@ -315,10 +312,7 @@ defmodule EmisarWeb.AuditLive do
               Stream to SIEM
             </.button>
           <% else %>
-            <.upgrade_button
-              account={@current_account}
-              title="SIEM streaming is on the Team plan — upgrade to turn it on"
-            >
+            <.upgrade_button tip="SIEM streaming is on the Team plan — upgrade to turn it on">
               Stream to SIEM
             </.upgrade_button>
           <% end %>
@@ -538,24 +532,20 @@ defmodule EmisarWeb.AuditLive do
     """
   end
 
-  attr :account, :any, required: true
-  attr :title, :string, required: true
+  attr :tip, :string, required: true
   slot :inner_block, required: true
 
-  # A plan-gated title-row action: the clean label + the ONE upsell token — an
-  # amber `<.plan_badge>` pill (same grammar as the docs) — routing to Billing.
-  # The "why" rides a native `title` (browser-placed, so it can't clip off the
-  # top of the viewport the way the hover bubble did next to the H1).
+  # A plan-gated title-row action: the button is DISABLED and wears a lock icon —
+  # a clear "not on your plan" marker, no color noise. A hover tooltip names the
+  # gate; it opens DOWNWARD so it can't clip off the top of the viewport next to
+  # the H1 (the bug that sank the first pass). Upgrading is the Billing nav item.
   defp upgrade_button(assigns) do
     ~H"""
-    <.button
-      variant={:secondary}
-      size={:md}
-      navigate={~p"/app/#{@account}/settings/billing"}
-      title={@title}
-    >
-      {render_slot(@inner_block)} <.plan_badge tier={:team} compact link={false} />
-    </.button>
+    <.tooltip text={@tip} placement={:bottom} class="shrink-0">
+      <.button variant={:secondary} size={:md} icon="hero-lock-closed" disabled>
+        {render_slot(@inner_block)}
+      </.button>
+    </.tooltip>
     """
   end
 
