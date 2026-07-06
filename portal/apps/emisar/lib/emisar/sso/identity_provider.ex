@@ -47,6 +47,15 @@ defmodule Emisar.SSO.IdentityProvider do
   @doc "The supported provider kinds, for the config UI's select."
   def kinds, do: @kinds
 
+  @doc """
+  True when this provider kind can push SCIM directory sync to emisar's inbound
+  SCIM 2.0 endpoint. Google Workspace has no inbound SCIM for a custom app —
+  members provision on first sign-in — so its detail page hides the directory-
+  sync sections rather than offer a feature that can't connect.
+  """
+  def supports_scim?(:google_workspace), do: false
+  def supports_scim?(kind) when kind in @kinds, do: true
+
   @doc "The new-user provisioning modes (JIT auto-provision vs manual admin approval), for the config UI's select."
   def provisioners, do: @provisioners
 end

@@ -1260,11 +1260,25 @@ defmodule EmisarWeb.SSOSettingsLive do
             </section>
 
             <.scim_section
-              :if={@can_configure_directory_sync?}
+              :if={
+                @can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
+              }
               provider={provider}
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
+
+            <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
+                 instead of dangling an enable panel or an Enterprise upsell for a
+                 feature that could never connect. --%>
+            <p
+              :if={not SSO.IdentityProvider.supports_scim?(provider.kind)}
+              class="max-w-prose text-sm leading-relaxed text-zinc-400"
+            >
+              <span class="font-medium text-zinc-200">Directory sync (SCIM)</span>
+              isn't available for {kind_label(provider.kind)} — it has no inbound SCIM for a custom
+              app. Members are provisioned on their first sign-in through this connection.
+            </p>
 
             <.group_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -1291,9 +1305,12 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_enabled={provider.scim_enabled}
             />
 
-            <%!-- A plan-posture fact, naked — not a boxed interruption. --%>
+            <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
+                 kinds that CAN do SCIM; the note above covers the ones that can't. --%>
             <p
-              :if={!@can_configure_directory_sync?}
+              :if={
+                !@can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
+              }
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">SCIM directory sync</span>
