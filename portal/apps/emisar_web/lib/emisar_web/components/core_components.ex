@@ -4074,9 +4074,9 @@ defmodule EmisarWeb.CoreComponents do
                     key under
                     <.link
                       navigate={@keys_path}
-                      class="font-medium text-brand-400 hover:text-brand-300"
+                      class="group inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
                     >
-                      Enrollment keys →
+                      Enrollment keys <.cta_arrow />
                     </.link>
                   </p>
                 </section>
@@ -4201,7 +4201,7 @@ defmodule EmisarWeb.CoreComponents do
                 rel="noopener noreferrer"
                 class="text-brand-400 hover:text-brand-300"
               >
-                It's a plain shell script — read it first →
+                It's a plain shell script — read it first&nbsp;→
               </.link>
               <.link
                 href={~p"/trust" <> "#release-integrity"}
@@ -4209,7 +4209,7 @@ defmodule EmisarWeb.CoreComponents do
                 rel="noopener noreferrer"
                 class="text-brand-400 hover:text-brand-300"
               >
-                Verify the release's provenance →
+                Verify the release's provenance&nbsp;→
               </.link>
             </div>
           </section>
