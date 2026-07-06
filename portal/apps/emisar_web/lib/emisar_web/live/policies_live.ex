@@ -1010,11 +1010,17 @@ defmodule EmisarWeb.PoliciesLive do
         </.event_block>
       </div>
 
-      <%!-- The editor footer grammar: hairline, primary leading, the dirty
-           chip trailing as its status. --%>
-      <div :if={@can_manage} class="flex items-center gap-3 border-t border-zinc-800/70 pt-5">
-        <.button type="submit" phx-disable-with="Saving...">{@save_label}</.button>
-        <.chip :if={@dirty} tone={:amber} class="ml-auto">Unsaved changes</.chip>
+      <%!-- The Save button IS the dirty indicator: emerald (primary) when there
+           are unsaved edits, quiet outlined (secondary) when the form is clean —
+           the house pattern that replaced a trailing "Unsaved changes" chip. --%>
+      <div :if={@can_manage} class="flex items-center border-t border-zinc-800/70 pt-5">
+        <.button
+          type="submit"
+          variant={if @dirty, do: :primary, else: :secondary}
+          phx-disable-with="Saving..."
+        >
+          {@save_label}
+        </.button>
       </div>
     </form>
     """
@@ -1123,7 +1129,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-7">
+      <div class="sm:col-span-4">
         <.input
           name={"policy[overrides][#{@index}][action]"}
           value={@override["action"]}
@@ -1149,8 +1155,10 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
-           far edge of its cell. --%>
-      <div class="sm:col-span-1 sm:flex sm:justify-start">
+           far edge of its cell. h-8 matches the compact input's 32px box so,
+           bottom-aligned (items-end), the icon lines up with the Decision select
+           instead of overhanging it. --%>
+      <div class="sm:col-span-1 sm:flex sm:items-end sm:justify-start">
         <.icon_button
           :if={@can_manage}
           icon="hero-trash"
@@ -1159,7 +1167,7 @@ defmodule EmisarWeb.PoliciesLive do
           phx-click="remove_override"
           phx-value-editor={@editor_id}
           phx-value-index={@index}
-          class="grid h-9 w-9 place-items-center"
+          class="grid h-8 w-8 place-items-center"
         />
       </div>
     </div>
