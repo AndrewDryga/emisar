@@ -434,19 +434,31 @@ defmodule EmisarWeb.PacksLive do
         and the packs it loads appear here to trust or reject.
       </.empty_state>
 
+      <%!-- Matches the shared LiveTable filter field (label + brand active-state,
+           sm:w-48) so search reads the same across the console. --%>
       <form
         :if={not @loading? and not @load_error? and (@pack_count > 0 or @name_filter != "")}
         phx-change="filter"
-        class="mt-6"
+        class="mt-6 w-full sm:w-48"
       >
-        <.input
-          name="name"
-          value={@name_filter}
-          type="search"
-          placeholder="Filter by pack id…"
-          phx-debounce="300"
-          class="max-w-xs"
-        />
+        <label class={[
+          "flex w-full flex-col text-xs font-medium",
+          (@name_filter != "" && "text-brand-300") || "text-zinc-400"
+        ]}>
+          <span class="mb-1">Pack</span>
+          <input
+            type="text"
+            name="name"
+            value={@name_filter}
+            phx-debounce="300"
+            placeholder="e.g. cassandra"
+            class={[
+              "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600",
+              (@name_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
+                "border-zinc-700"
+            ]}
+          />
+        </label>
       </form>
 
       <%!-- Filter-empty ≠ account-empty: a quiet line, the filter stays live. --%>
