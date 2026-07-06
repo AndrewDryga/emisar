@@ -795,6 +795,7 @@ defmodule EmisarWeb.PoliciesLive do
           tone={:rose}
           size={:lg}
           icon="hero-trash"
+          class="h-10"
           on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
         >
           <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
@@ -832,6 +833,7 @@ defmodule EmisarWeb.PoliciesLive do
           phx-click="remove_ruleset"
           phx-value-uid={@ruleset.uid}
           icon="hero-trash"
+          class="h-10"
         >
           Remove
         </.button>
