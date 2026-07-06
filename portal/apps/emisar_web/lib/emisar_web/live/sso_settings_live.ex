@@ -934,6 +934,9 @@ defmodule EmisarWeb.SSOSettingsLive do
              to Team, its owning page (SSO has no nav item of its own). --%>
         <%= case {@live_action, @providers} do %>
           <% {:show, [provider | _]} -> %>
+            <%!-- Full crumb chain — SSO lives under Team, so the detail reads
+                 Team / Single sign-on / <provider>, not just Single sign-on / …. --%>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             <.detail_header
               back="Single sign-on"
               navigate={~p"/app/#{@current_account}/settings/sso"}
