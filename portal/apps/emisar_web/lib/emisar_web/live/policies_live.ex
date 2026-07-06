@@ -17,6 +17,7 @@ defmodule EmisarWeb.PoliciesLive do
   drives every unit.
   """
   use EmisarWeb, :live_view
+  alias Emisar.Catalog
   alias Emisar.Policies
   alias Emisar.Runners
   alias EmisarWeb.Permissions
@@ -62,7 +63,21 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:rulesets, rulesets)
     |> assign(:runners, list_runners(subject))
     |> assign(:groups, list_groups(subject))
+    |> assign(:risk_breakdown, load_risk_breakdown(subject))
   end
+
+  # The account's advertised catalog, bucketed by risk tier — powers the rail
+  # that makes "what CRITICAL means here" concrete. A failed read degrades to an
+  # empty breakdown (the rail shows the connect-a-runner hint), never a crash.
+  defp load_risk_breakdown(subject) do
+    case Catalog.action_risk_breakdown(subject) do
+      {:ok, breakdown} -> breakdown
+      {:error, _} -> empty_breakdown()
+    end
+  end
+
+  defp empty_breakdown,
+    do: Map.new(@tiers, &{&1, %{count: 0, examples: []}})
 
   defp build_account_editor(policy) do
     rules = (policy && policy.rules) || Policies.default_rules()
@@ -677,87 +692,147 @@ defmodule EmisarWeb.PoliciesLive do
           </p>
         </div>
 
-        <%!-- CONTENT ON CANVAS: the editor sits naked — the only boxes are the
-             self-contained controls (selects, inputs, choice cards) and the
-             earned amber warnings. Rulesets are naked units under hairlines,
-             the same grammar as the runbook editor's steps. --%>
-        <section>
-          <.section_header title="Default policy">
-            <:subtitle>
-              The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
-            </:subtitle>
-          </.section_header>
+        <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
+          <div class="space-y-12 lg:col-span-3">
+            <%!-- CONTENT ON CANVAS: the editor sits naked — the only boxes are the
+                 self-contained controls (selects, inputs, choice cards) and the
+                 earned amber warnings. Rulesets are naked units under hairlines,
+                 the same grammar as the runbook editor's steps. --%>
+            <section>
+              <.section_header title="Default policy">
+                <:subtitle>
+                  The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+                </:subtitle>
+              </.section_header>
 
-          <.policy_fields
-            editor_id="account"
-            defaults={@account.defaults}
-            overrides={@account.overrides}
-            approval={@account.approval}
-            rules_errors={@account.rules_errors}
-            can_manage={@can_manage?}
-            save_label="Save default policy"
-            dirty={editor_dirty?(@account)}
-          />
-        </section>
+              <.policy_fields
+                editor_id="account"
+                defaults={@account.defaults}
+                overrides={@account.overrides}
+                approval={@account.approval}
+                rules_errors={@account.rules_errors}
+                can_manage={@can_manage?}
+                save_label="Save default policy"
+                dirty={editor_dirty?(@account)}
+              />
+            </section>
 
-        <section>
-          <.section_header title="Targeted rulesets">
-            <:subtitle>
-              A ruleset <strong class="text-zinc-300">replaces</strong>
-              the default policy for one runner or group. Most specific wins — runner,
-              then group, then the default policy.
-            </:subtitle>
-          </.section_header>
+            <section>
+              <.section_header title="Targeted rulesets">
+                <:subtitle>
+                  A ruleset <strong class="text-zinc-300">replaces</strong>
+                  the default policy for one runner or group. Most specific wins — runner,
+                  then group, then the default policy.
+                </:subtitle>
+              </.section_header>
 
-          <.empty_state
-            :if={@load_error? and @rulesets == []}
-            tone={:danger}
-            icon="hero-exclamation-triangle"
-            title="Couldn't load targeted rulesets"
-          >
-            This is a load error, not an empty configuration — rulesets may well be set.
-            Refresh the page; if it persists, your access to this account may have changed.
-          </.empty_state>
+              <.empty_state
+                :if={@load_error? and @rulesets == []}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load targeted rulesets"
+              >
+                This is a load error, not an empty configuration — rulesets may well be set.
+                Refresh the page; if it persists, your access to this account may have changed.
+              </.empty_state>
 
-          <%!-- Viewer with nothing to see gets the quiet fact; for a manager
+              <%!-- Viewer with nothing to see gets the quiet fact; for a manager
                the Add-ruleset composer below IS the empty state (the runbook
                precedent — no dashed hint above a dashed composer). --%>
-          <p
-            :if={not @load_error? and @rulesets == [] and not @can_manage?}
-            class="text-sm text-zinc-500"
-          >
-            No targeted rulesets — every runner uses the default policy above.
-          </p>
+              <p
+                :if={not @load_error? and @rulesets == [] and not @can_manage?}
+                class="text-sm text-zinc-500"
+              >
+                No targeted rulesets — every runner uses the default policy above.
+              </p>
 
-          <div :if={@rulesets != []} class="space-y-8">
-            <div :for={ruleset <- @rulesets}>
-              <.ruleset_unit
-                ruleset={ruleset}
-                account_approval={@account.approval}
-                runners={@runners}
-                groups={@groups}
-                rulesets={@rulesets}
-                can_manage={@can_manage?}
-              />
-            </div>
+              <div :if={@rulesets != []} class="space-y-8">
+                <div :for={ruleset <- @rulesets}>
+                  <.ruleset_unit
+                    ruleset={ruleset}
+                    account_approval={@account.approval}
+                    runners={@runners}
+                    groups={@groups}
+                    rulesets={@rulesets}
+                    can_manage={@can_manage?}
+                  />
+                </div>
+              </div>
+
+              <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
+                <.add_row
+                  label="Add ruleset"
+                  phx-click="add_ruleset"
+                  disabled={not addable_any?(@runners, @groups, @rulesets)}
+                  title={
+                    if not addable_any?(@runners, @groups, @rulesets),
+                      do: "Every runner and group already has a ruleset (or none exist yet)"
+                  }
+                />
+              </div>
+            </section>
           </div>
 
-          <div :if={@can_manage? and not @load_error?} class={@rulesets != [] && "mt-8"}>
-            <.add_row
-              label="Add ruleset"
-              phx-click="add_ruleset"
-              disabled={not addable_any?(@runners, @groups, @rulesets)}
-              title={
-                if not addable_any?(@runners, @groups, @rulesets),
-                  do: "Every runner and group already has a ruleset (or none exist yet)"
-              }
-            />
-          </div>
-        </section>
+          <%!-- Right rail (billing-grammar): the account's catalog bucketed by
+               risk tier, so "CRITICAL"/"HIGH" read as concrete actions in THIS
+               environment, not abstractions. --%>
+          <aside class="lg:col-span-1">
+            <.risk_rail breakdown={@risk_breakdown} />
+          </aside>
+        </div>
       </div>
     </.dashboard_shell>
     """
   end
+
+  attr :breakdown, :map, required: true
+
+  # The billing-style right rail: the account's advertised catalog bucketed by
+  # risk tier (count + a few example action ids), most-severe first, so an
+  # operator sees what CRITICAL/HIGH mean in THIS environment. An empty catalog
+  # shows the connect-a-runner hint instead of four empty rows.
+  defp risk_rail(assigns) do
+    total = assigns.breakdown |> Map.values() |> Enum.map(& &1.count) |> Enum.sum()
+    assigns = assign(assigns, :total, total)
+
+    ~H"""
+    <div>
+      <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+        What the tiers mean here
+      </h3>
+      <p class="mt-1 text-xs text-zinc-500">
+        Your catalog bucketed by risk — how many actions carry each tier, and a few examples.
+      </p>
+
+      <p :if={@total == 0} class="mt-4 text-xs text-zinc-500">
+        No actions advertised yet — connect a runner and its catalog buckets into these tiers here.
+      </p>
+
+      <div :if={@total > 0} class="mt-4 space-y-4">
+        <div :for={tier <- ["critical", "high", "medium", "low"]}>
+          <% stat = @breakdown[tier] %>
+          <div class="flex items-center justify-between gap-2">
+            <.risk_pill risk={tier} />
+            <span class="text-xs font-medium text-zinc-400">{action_count(stat.count)}</span>
+          </div>
+          <p
+            :if={stat.examples != []}
+            class="mt-1.5 truncate font-mono text-[11px] text-zinc-500"
+            title={Enum.join(stat.examples, ", ")}
+          >
+            {Enum.join(stat.examples, ", ")}
+          </p>
+          <p :if={stat.examples == []} class="mt-1.5 text-[11px] text-zinc-600">
+            None here yet.
+          </p>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp action_count(1), do: "1 action"
+  defp action_count(n), do: "#{n} actions"
 
   attr :ruleset, :map, required: true
   attr :account_approval, :map, required: true

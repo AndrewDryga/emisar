@@ -927,6 +927,87 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "action_risk_breakdown/1" do
+    setup do
+      {account, subject} = account_with_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "counts distinct actions per tier with examples, worst risk winning", %{
+      account: account,
+      subject: subject
+    } do
+      r1 = Fixtures.Runners.create_runner(account_id: account.id)
+      r2 = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          r1,
+          state_payload(
+            actions: [
+              action("linux.uptime", risk: "low"),
+              action("docker.ps", risk: "low"),
+              action("nginx.reload", risk: "medium"),
+              action("linux.reboot_host", risk: "high"),
+              # advertised low here, critical on r2 below → the worst wins.
+              action("docker.stop", risk: "low")
+            ]
+          )
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          r2,
+          state_payload(actions: [action("docker.stop", risk: "critical")])
+        )
+
+      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
+
+      assert breakdown["low"] == %{count: 2, examples: ["docker.ps", "linux.uptime"]}
+      assert breakdown["medium"] == %{count: 1, examples: ["nginx.reload"]}
+      assert breakdown["high"] == %{count: 1, examples: ["linux.reboot_host"]}
+      # docker.stop counts ONCE, at its worst (critical) — never double-counted as low.
+      assert breakdown["critical"] == %{count: 1, examples: ["docker.stop"]}
+    end
+
+    test "caps examples at three but keeps the full count", %{account: account, subject: subject} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      lows = for n <- 1..5, do: action("low.op_#{n}", risk: "low")
+      {:ok, _} = Catalog.observe_state(runner, state_payload(actions: lows))
+
+      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
+      assert breakdown["low"].count == 5
+      assert length(breakdown["low"].examples) == 3
+    end
+
+    test "every tier is present — an empty tier is 0/[]", %{subject: subject} do
+      assert {:ok, breakdown} = Catalog.action_risk_breakdown(subject)
+
+      for tier <- ["low", "medium", "high", "critical"] do
+        assert breakdown[tier] == %{count: 0, examples: []}
+      end
+    end
+
+    test "is account-scoped — another account's actions don't leak", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("secret.op", risk: "critical")])
+        )
+
+      {_other_account, other_subject} = account_with_owner()
+      assert {:ok, breakdown} = Catalog.action_risk_breakdown(other_subject)
+      assert breakdown["critical"] == %{count: 0, examples: []}
+    end
+
+    test "a subject without view_catalog is denied", %{account: account} do
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+      assert {:error, :unauthorized} = Catalog.action_risk_breakdown(no_view)
+    end
+  end
+
   describe "fetch_action_by_id/3" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

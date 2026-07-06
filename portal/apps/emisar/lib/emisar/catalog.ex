@@ -615,6 +615,32 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Risk breakdown of the account's advertised catalog: per risk tier, how many
+  DISTINCT actions carry it (most-severe wins when the same action is advertised
+  at mixed risk across runners) plus a few example action ids. Powers the policy
+  page's "what CRITICAL/HIGH means in your env" rail. Inherits
+  `list_all_actions_for_account/1`'s `view_catalog` gate + account scope; returns
+  `{:ok, %{"low" => %{count: n, examples: [action_id]}, …}}` with all four tiers
+  present (0/[] for a tier no action carries).
+  """
+  def action_risk_breakdown(%Subject{} = subject) do
+    with {:ok, actions} <- list_all_actions_for_account(subject) do
+      ids_by_risk =
+        actions
+        |> most_severe_risk_by_action()
+        |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
+
+      breakdown =
+        Map.new([:low, :medium, :high, :critical], fn risk ->
+          ids = ids_by_risk |> Map.get(risk, []) |> Enum.sort()
+          {Atom.to_string(risk), %{count: length(ids), examples: Enum.take(ids, 3)}}
+        end)
+
+      {:ok, breakdown}
+    end
+  end
+
+  @doc """
   Lookup a single catalog action row by (runner, action_id) scoped to
   the subject's account.
   """
