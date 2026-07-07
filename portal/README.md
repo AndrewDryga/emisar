@@ -11,7 +11,7 @@ The cloud-side of [emisar](../README.md). Elixir/Phoenix umbrella that:
 
 ```
 apps/
-  emisar/          domain — contexts, schemas, Oban workers, Paddle glue
+  emisar/          domain — contexts, schemas, recurrent jobs, Paddle glue
   emisar_web/      Phoenix endpoint — UI, controllers, runner socket
 config/            shared config + per-env overrides + runtime.exs
 priv/repo/         migrations + seeds

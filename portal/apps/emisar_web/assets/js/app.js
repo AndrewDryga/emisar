@@ -199,7 +199,7 @@ setupCopyToClipboardDelegation()
 // Live expiry countdown for a held approval. Ticks "Expires in MM:SS" (or "Hh MMm"
 // when far out), shifting tone amber→rose as it nears zero. At zero it shows
 // "Expired" and pushes `data-lapsed-event` so the server re-renders the terminal
-// state immediately instead of waiting for the Oban sweeper — the server re-checks
+// state immediately instead of waiting for the expiry job — the server re-checks
 // expires_at on render, so a skewed client clock can only TRIGGER, never decide.
 const ExpiryCountdown = {
   mounted() {

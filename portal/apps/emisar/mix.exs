@@ -47,8 +47,6 @@ defmodule Emisar.MixProject do
       {:ecto_sql, "~> 3.14"},
       {:postgrex, ">= 0.0.0"},
 
-      # Background jobs (delivery retries, audit ingestion, etc.)
-      {:oban, "~> 2.23"},
       # Structured JSON logs for the prod log drain (configured in
       # config/runtime.exs; dev/test keep the human console format).
       {:logger_json, "~> 7.0"},

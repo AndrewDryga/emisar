@@ -1935,7 +1935,7 @@ defmodule Emisar.BillingVendorErrorTest do
   customer creation / portal open. These swap `:paddle_client` to a failing
   client via `Application.put_env` (process-global), so this module is
   `async: false`: a concurrent async test calling the Paddle client (e.g.
-  `Workers.BillingSync`) must not observe the failing client mid-run.
+  `Billing.Jobs.SyncSubscriptions`) must not observe the failing client mid-run.
   """
   use Emisar.DataCase, async: false
   alias Emisar.Billing

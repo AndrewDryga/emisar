@@ -22,7 +22,7 @@ defmodule Emisar.Release do
 
   def seed do
     # Start the whole application so seeds can call business contexts
-    # that need PubSub / Oban / etc. — `with_repo` only starts the Repo,
+    # that need PubSub / supervised jobs / etc. — `with_repo` only starts the Repo,
     # which is enough for migrations but not for seeds that exercise
     # the dispatch path (`Runs.create_run` broadcasts on `Emisar.PubSub`).
     {:ok, _} = Application.ensure_all_started(@app)

@@ -19,13 +19,23 @@ defmodule Emisar.Approvals do
        any) — those choices populate a new `Approvals.Grant` so the
        LLM doesn't have to ask again next time within that window.
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.ApiKeys
-  alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
+  alias Emisar.Approvals.{Authorizer, Decision, Grant, Jobs, Request}
   alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Auth.Subject
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([Jobs.ExpireOverdueRequests], strategy: :one_for_one)
+  end
 
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -1101,8 +1111,8 @@ defmodule Emisar.Approvals do
   # -- Expiry sweep ---------------------------------------------------
 
   @doc """
-  Internal — the Oban sweeper (`Emisar.Workers.ApprovalExpiry` cron,
-  system, no subject). Atomically transitions every pending request whose
+  Internal — the approval expiry job, system, no subject. Atomically
+  transitions every pending request whose
   `expires_at` has passed into `"expired"`, cancels the underlying run,
   and writes an audit row per expiry. Returns the count expired.
   Idempotent — runs every 5 minutes.

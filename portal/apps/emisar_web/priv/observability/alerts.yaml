@@ -42,16 +42,16 @@ groups:
           summary: "{{ $value }} runner(s) disconnected"
           description: "Runners whose last connection event was a disconnect: {{ $value }}. Actions targeting them will not dispatch until they reconnect."
 
-      # Jobs piling up in a queue — the background pipeline (dispatch sweeps,
-      # billing, approval fan-out) is falling behind.
-      - alert: EmisarObanQueueBacklog
-        expr: emisar_oban_queue_available > 100
+      # A recurrent job is crashing — the background pipeline (dispatch sweeps,
+      # billing, retention, approval expiry) needs attention.
+      - alert: EmisarJobFailures
+        expr: sum(increase(emisar_job_failed_count[10m])) > 0
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Oban queue {{ $labels.queue }} backlog above 100"
-          description: "{{ $value }} jobs are waiting in the {{ $labels.queue }} queue."
+          summary: "Recurrent background job failures"
+          description: "{{ $value }} recurrent job failure(s) recorded in the last 10 minutes."
 
       # A meaningful share of runs are failing ON THE HOST — genuine execution
       # failures, not policy denials (denied) or bad input (validation_failed /

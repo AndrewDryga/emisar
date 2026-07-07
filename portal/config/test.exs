@@ -23,14 +23,15 @@ config :emisar_web, EmisarWeb.Endpoint,
 # Print only warnings and errors during test
 config :logger, level: :warning
 
-# Background jobs disabled in tests; assert on side-effects inline. The
-# `queues: false, plugins: false` is required for sandboxed tests — without it
-# Oban tries to verify migrations during Application startup, holding
-# real (non-sandbox) connections and exhausting the pool.
-config :emisar, Oban,
-  testing: :inline,
-  queues: false,
-  plugins: false
+# Background jobs disabled in tests; job modules are executed directly so DB
+# work stays inside the caller's sandbox checkout.
+config :emisar, Emisar.Approvals.Jobs.ExpireOverdueRequests, enabled: false
+config :emisar, Emisar.Audit.Jobs.Retention, enabled: false
+config :emisar, Emisar.Billing.Jobs.SyncPaddleCustomers, enabled: false
+config :emisar, Emisar.Billing.Jobs.SyncSubscriptions, enabled: false
+config :emisar, Emisar.OAuth.Jobs.Cleanup, enabled: false
+config :emisar, Emisar.Runs.Jobs.DispatchTimeout, enabled: false
+config :emisar, Emisar.Runs.Jobs.EventRetention, enabled: false
 
 # Paddle is stubbed in tests so we never hit the network.
 config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub

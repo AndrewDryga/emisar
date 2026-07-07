@@ -13,7 +13,7 @@ defmodule Emisar.Accounts.Account.Query do
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 
-  # Keyset paging by id (UUIDv7, time-ordered) — the retention sweep's account
+  # Keyset paging by id (UUIDv7, time-ordered) — system sweep account
   # cursor: order by id, take a page, continue past the last id.
   def after_id(queryable, id),
     do: where(queryable, [accounts: a], a.id > ^id)

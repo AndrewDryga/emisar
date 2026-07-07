@@ -1,14 +1,14 @@
-defmodule Emisar.Workers.OAuthCleanupTest do
+defmodule Emisar.OAuth.Jobs.CleanupTest do
   @moduledoc """
   The daily sweep that prunes expired OAuth authorization codes (single-use,
-  60s artifacts). Drives the worker's `perform/1` end-to-end against a
+  60s artifacts). Drives the worker's `execute/1` end-to-end against a
   backdated code.
   """
   use Emisar.DataCase, async: true
   alias Emisar.Fixtures
   alias Emisar.OAuth
   alias Emisar.OAuth.{AuthorizationCode, Client}
-  alias Emisar.Workers.OAuthCleanup
+  alias Emisar.OAuth.Jobs.Cleanup
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
 
@@ -33,40 +33,40 @@ defmodule Emisar.Workers.OAuthCleanupTest do
       )
   end
 
-  test "perform/1 prunes expired authorization codes and returns :ok" do
+  test "execute/1 prunes expired authorization codes and returns :ok" do
     {_user, _account, subject} = Fixtures.Subjects.owner_subject()
     issue_code!(subject)
 
     # A freshly-issued code (60s TTL) isn't expired — the sweep is a no-op.
-    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    assert :ok = Cleanup.execute([])
     assert Repo.aggregate(AuthorizationCode.Query.all(), :count) == 1
 
     # Backdate it past expiry; now the worker prunes it.
     past = DateTime.add(DateTime.utc_now(), -120, :second)
     {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
 
-    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    assert :ok = Cleanup.execute([])
     refute Repo.exists?(AuthorizationCode.Query.all())
   end
 
-  test "perform/1 prunes abandoned never-authorized client registrations" do
+  test "execute/1 prunes abandoned never-authorized client registrations" do
     {:ok, client} =
       OAuth.register_client(%{"client_name" => "Drive-by", "redirect_uris" => [@redirect]})
 
     # A fresh registration is within the window — the sweep keeps it.
-    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    assert :ok = Cleanup.execute([])
     assert Repo.reload(client)
 
     # Backdate the registration past the 30-day abandonment window → pruned.
     past = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
     {1, _} = Client.Query.by_id(client.id) |> Repo.update_all(set: [inserted_at: past])
 
-    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    assert :ok = Cleanup.execute([])
     refute Repo.reload(client)
   end
 end
 
-defmodule Emisar.Workers.OAuthCleanupLogTest do
+defmodule Emisar.OAuth.Jobs.CleanupLogTest do
   @moduledoc """
   The swept-count log lines. `async: false` because it raises the global Logger
   level to `:info` (the test env defaults to `:warning`) to observe an info log.
@@ -76,7 +76,7 @@ defmodule Emisar.Workers.OAuthCleanupLogTest do
   alias Emisar.Fixtures
   alias Emisar.OAuth
   alias Emisar.OAuth.AuthorizationCode
-  alias Emisar.Workers.OAuthCleanup
+  alias Emisar.OAuth.Jobs.Cleanup
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
 
@@ -118,16 +118,16 @@ defmodule Emisar.Workers.OAuthCleanupLogTest do
   # deleted (each guarded by `if n > 0`). A no-op sweep over an empty/fresh table
   # (every daily tick when nothing aged out) stays silent rather than logging
   # "codes_swept 0 / unused_clients_swept 0"; a sweep that prunes a code logs it.
-  test "perform/1 logs swept counts only when rows were deleted" do
+  test "execute/1 logs swept counts only when rows were deleted" do
     # Nothing to delete (no codes, no abandoned clients) → silent.
-    silent = capture_log(fn -> assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}}) end)
+    silent = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
     refute silent =~ "oauth_cleanup.codes_swept"
     refute silent =~ "oauth_cleanup.unused_clients_swept"
 
     :ok = issue_expired_code!()
 
     # An expired code → the codes line is logged.
-    noisy = capture_log(fn -> assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}}) end)
+    noisy = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
     assert noisy =~ "oauth_cleanup.codes_swept"
   end
 end

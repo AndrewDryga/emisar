@@ -20,7 +20,7 @@ Read-only by default. With `--fix`, apply only the unambiguous mechanical fixes
 
 ## Step 1 — mechanical checks (Credo)
 
-Run `mix credo` from `portal/` and treat every finding as a failure — fix them all before reading further. The custom `Emisar.Checks.*` AST checks are the mechanical source of truth (IL-1, IL-2, IL-6, IL-7, IL-8, IL-12, IL-13, IL-14 + the house rules) and **replaced the old hand-grep battery**, so there is nothing to grep by hand. Details: `portal/AGENTS.md` → Enforcement.
+Run `mix credo` from `portal/` and treat every finding as a failure — fix them all before reading further. The custom `Emisar.Checks.*` AST checks are the mechanical source of truth (IL-1, IL-2, IL-6, IL-7, IL-8, IL-12, IL-14 + the house rules) and **replaced the old hand-grep battery**, so there is nothing to grep by hand. Details: `portal/AGENTS.md` → Enforcement.
 
 ## Step 2 — judgment checks (read the changed bodies)
 
@@ -37,8 +37,8 @@ controller file, read it and check:
   roles, and the new authorizer is in `auth/authorizer.ex`'s `@authorizers`.
 - **IL-10** — no `Repo.preload/2` in a context (route via Query `preloads/0`),
   except a post-commit email helper.
-- **IL-13** — Oban `perform` matches **string** keys; args carry IDs, not structs;
-  the job is safe to run twice.
+- **IL-13** — recurrent jobs derive work from durable rows, keep each tick
+  idempotent, and stay safe if a previous tick partially completed.
 - **IL-14** — `String.to_atom/1` only on code literals / bounded sets; **never** on
   request params, runner output, or MCP/LLM input (atom-table DoS). Trace the arg to
   its source before clearing it.

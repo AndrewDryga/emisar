@@ -43,45 +43,6 @@ config :emisar,
 # at the `config/runtime.exs`.
 config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
 
-# Background jobs — Oban runs delivery retries, audit retention, billing sync.
-config :emisar, Oban,
-  repo: Emisar.Repo,
-  plugins: [
-    # Rescue jobs stuck in `executing` because a node was shut down mid-run
-    # (e.g. a Fly deploy) back to `available`. Safe because our workers are
-    # idempotent (IL-13); rescue_after defaults to 60 minutes.
-    Oban.Plugins.Lifeline,
-    # Prune completed/cancelled/discarded jobs older than 7 days so the
-    # oban_jobs table stays bounded.
-    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},
-    # REINDEX CONCURRENTLY the oban_jobs indexes weekly to release the index
-    # bloat VACUUM leaves behind on a high-churn, frequently-pruned table.
-    {Oban.Plugins.Reindexer, schedule: "@weekly"},
-    {Oban.Plugins.Cron,
-     crontab: [
-       {"@daily", Emisar.Workers.AuditRetention},
-       # Staggered 15 min after AuditRetention so the two audit-queue
-       # sweeps don't contend on the same midnight tick.
-       {"15 0 * * *", Emisar.Workers.ActionRunEventRetention},
-       {"*/5 * * * *", Emisar.Workers.ApprovalExpiry},
-       # Prune expired OAuth authorization codes (single-use, 60s artifacts;
-       # no forensic value once expired — tokens are kept, not swept here).
-       {"@daily", Emisar.Workers.OAuthCleanup},
-       # Every minute — picks up runs that have been pending/sent past
-       # the 2-min grace window and forces them to a terminal state.
-       {"* * * * *", Emisar.Workers.RunDispatchTimeout},
-       {"*/15 * * * *", Emisar.Workers.PaddleCustomerSync},
-       {"0 * * * *", Emisar.Workers.BillingSync}
-     ]}
-  ],
-  queues: [
-    default: 10,
-    deliveries: 20,
-    billing: 5,
-    audit: 5,
-    mailers: 10
-  ]
-
 config :emisar_web,
   ecto_repos: [Emisar.Repo],
   generators: [context_app: :emisar, binary_id: true]

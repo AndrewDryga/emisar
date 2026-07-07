@@ -2,7 +2,7 @@ defmodule EmisarWeb.UserAuth do
   @moduledoc """
   Authentication plug + LiveView hooks. Sessions are signed cookies
   carrying a session-token; the token is looked up in `user_tokens` on
-  each request. Stale 60d => garbage-collect (handled by Oban).
+  each request. Stale session tokens are rejected by the Auth token expiry check.
   """
 
   use EmisarWeb, :verified_routes

@@ -221,8 +221,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
-  # panel replaces the Approve form right away instead of waiting for the Oban
-  # sweeper's broadcast. Server-authoritative: the re-fetch + render-time
+  # panel replaces the Approve form right away instead of waiting for the expiry
+  # job's broadcast. Server-authoritative: the re-fetch + render-time
   # request_expired?/1 decide using the server clock — a skewed client clock can
   # only trigger the re-check, never force the outcome (the decide context also
   # refuses an expired approve, IL-15).

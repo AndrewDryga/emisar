@@ -80,7 +80,6 @@
           {Emisar.Checks.IL07SchemaFieldsOnly, []},
           {Emisar.Checks.IL08ChangesetPure, []},
           {Emisar.Checks.IL12NoFloatMoney, []},
-          {Emisar.Checks.IL13ObanStringArgs, []},
           {Emisar.Checks.AcronymModuleCase, []},
           {Emisar.Checks.BroadcastEventAsData, []},
           {Emisar.Checks.ContextCryptoBoundary, []},

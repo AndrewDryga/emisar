@@ -2,7 +2,7 @@
 # succeeds (active, fresh period) for the rest — lets the sweep's
 # one-bad-row-doesn't-abort-the-batch behaviour be exercised deterministically.
 # The failing id is read from app env so the module stays stateless.
-defmodule Emisar.Workers.BillingSyncTest.PartialFailPaddleClient do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
   @impl true
@@ -39,24 +39,25 @@ defmodule Emisar.Workers.BillingSyncTest.PartialFailPaddleClient do
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
-defmodule Emisar.Workers.BillingSyncTest do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
   @moduledoc """
   The hourly Paddle reconciliation: every mirrored subscription is
   re-fetched from the vendor (the stub here) so a missed webhook can't
   leave an account on stale entitlements.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Billing, Repo}
+  alias Emisar.Billing
+  alias Emisar.Billing.Jobs.SyncSubscriptions
+  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient
   alias Emisar.Billing.Subscription
   alias Emisar.Fixtures
-  alias Emisar.Workers.BillingSync
-  alias Emisar.Workers.BillingSyncTest.PartialFailPaddleClient
+  alias Emisar.Repo
 
   setup do
     %{account: Fixtures.Accounts.create_account()}
   end
 
-  test "perform/1 refreshes status + period end from the vendor", %{account: account} do
+  test "execute/1 refreshes status + period end from the vendor", %{account: account} do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_sync_1",
@@ -65,7 +66,7 @@ defmodule Emisar.Workers.BillingSyncTest do
         current_period_end: nil
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
 
     synced = Repo.reload!(subscription)
     # The stub reports every subscription as active with a fresh period.
@@ -73,16 +74,16 @@ defmodule Emisar.Workers.BillingSyncTest do
     assert %DateTime{} = synced.current_period_end
   end
 
-  test "perform/1 skips a mirror row with no vendor subscription id", %{account: account} do
+  test "execute/1 skips a mirror row with no vendor subscription id", %{account: account} do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{plan: "free", status: "none"})
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
 
     assert %Subscription{status: "none"} = Repo.reload!(subscription)
   end
 
-  test "perform/1 reads string-key vendor payload (IL-13 round-trip safe)", %{account: account} do
+  test "execute/1 reads string-key vendor payload (IL-13 round-trip safe)", %{account: account} do
     # The stub returns a map with STRING keys ("status"/"next_billed_at"), as a
     # JSON-decoded Paddle payload would; the worker reads them by string key, so
     # there's no atom-key crash on the round-tripped vendor data.
@@ -94,18 +95,14 @@ defmodule Emisar.Workers.BillingSyncTest do
         current_period_end: nil
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
 
     synced = Repo.reload!(subscription)
     assert synced.status == "active"
     assert %DateTime{} = synced.current_period_end
   end
 
-  test "perform/1 accepts string-key Oban args without crashing (IL-13)", %{account: account} do
-    # (the args half)
-    # The scheduled job round-trips its args through the DB as string keys; the
-    # worker ignores them but must not pattern-match atom keys. A bare %{} and a
-    # string-keyed map both drive a clean sweep.
+  test "execute/1 accepts unused scheduler config without changing the sweep", %{account: account} do
     {:ok, _} =
       Billing.upsert_subscription(account.id, %{
         paddle_subscription_id: "sub_strkey_args_1",
@@ -113,22 +110,22 @@ defmodule Emisar.Workers.BillingSyncTest do
         status: "active"
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{"scheduled" => true}})
+    assert :ok = SyncSubscriptions.execute(scheduled: true)
   end
 
-  test "perform/1 runs Subject-less — it's a trusted server sweep, not a per-account read",
+  test "execute/1 runs Subject-less — it's a trusted server sweep, not a per-account read",
        %{account: account} do
     # The hourly reconciliation operates on already-trusted server context: it
     # reconciles every mirror row against the vendor with no per-account authz, so
-    # its contract is the Oban arity-1 perform/1 — no %Subject{} anywhere on the
-    # path. (Confirms the documented internal-sweep posture.)
+    # its contract is execute/1 — no %Subject{} anywhere on the path. Confirms the
+    # documented internal-sweep posture.
     #
     # function_exported?/3 reports false for a module that isn't loaded yet, which
     # the async suite doesn't guarantee — force the load so the arity probe is
     # deterministic rather than racing first-touch.
-    assert Code.ensure_loaded?(BillingSync)
-    assert function_exported?(BillingSync, :perform, 1)
-    refute function_exported?(BillingSync, :perform, 2)
+    assert Code.ensure_loaded?(SyncSubscriptions)
+    assert function_exported?(SyncSubscriptions, :execute, 1)
+    refute function_exported?(SyncSubscriptions, :execute, 2)
 
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{
@@ -137,12 +134,12 @@ defmodule Emisar.Workers.BillingSyncTest do
         status: "past_due"
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
     assert %Subscription{status: "active"} = Repo.reload!(subscription)
   end
 end
 
-defmodule Emisar.Workers.BillingSyncVendorFailTest do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
   @moduledoc """
   The sweep's one-bad-row-doesn't-abort-the-batch behaviour. Swaps
   `:paddle_client` (process-global) to a client that fails one specific
@@ -150,11 +147,12 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
   calling the Paddle client must not observe the failing client mid-run.
   """
   use Emisar.DataCase, async: false
-  alias Emisar.{Billing, Repo}
+  alias Emisar.Billing
+  alias Emisar.Billing.Jobs.SyncSubscriptions
+  alias Emisar.Billing.Jobs.SyncSubscriptionsTest.PartialFailPaddleClient
   alias Emisar.Billing.Subscription
   alias Emisar.Fixtures
-  alias Emisar.Workers.BillingSync
-  alias Emisar.Workers.BillingSyncTest.PartialFailPaddleClient
+  alias Emisar.Repo
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
@@ -176,7 +174,7 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
   test "a single retrieve failure is logged and the sweep continues to the next row" do
     # The first subscription's retrieve errors (logged with both ids, → Sentry);
     # the sweep does NOT abort — the second subscription is still refreshed from
-    # the vendor. perform/1 returns :ok regardless of the per-row failure.
+    # the vendor. execute/1 returns :ok regardless of the per-row failure.
     import ExUnit.CaptureLog
 
     failing_account = Fixtures.Accounts.create_account()
@@ -203,7 +201,7 @@ defmodule Emisar.Workers.BillingSyncVendorFailTest do
 
     log =
       capture_log(fn ->
-        assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+        assert :ok = SyncSubscriptions.execute([])
       end)
 
     # The failure surfaced (both ids logged for the operator / Sentry)…
@@ -220,7 +218,7 @@ end
 
 # A Paddle client that reports a status string this code has never modeled, so
 # the sweep's upsert of a vendor-owned status value can be exercised.
-defmodule Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
   @impl true
@@ -246,7 +244,7 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient 
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
-defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest do
   @moduledoc """
   The sweep persists whatever status Paddle reports. `Subscription.status` is
   deliberately an open `:string` (vendor-owned value space), so a status this
@@ -255,11 +253,12 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
   `:paddle_client`.
   """
   use Emisar.DataCase, async: false
-  alias Emisar.{Billing, Repo}
+  alias Emisar.Billing
+  alias Emisar.Billing.Jobs.SyncSubscriptions
+  alias Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPaddleClient
   alias Emisar.Billing.Subscription
   alias Emisar.Fixtures
-  alias Emisar.Workers.BillingSync
-  alias Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient
+  alias Emisar.Repo
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
@@ -278,7 +277,7 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
   # an unrecognized Paddle status string persists rather
   # than 500-ing the sweep (no inclusion list on the open `:string` column), so a
   # vendor that mints a new status can't wedge the hourly reconciliation.
-  test "perform/1 persists an unrecognized vendor status without crashing" do
+  test "execute/1 persists an unrecognized vendor status without crashing" do
     account = Fixtures.Accounts.create_account()
 
     {:ok, subscription} =
@@ -288,7 +287,7 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest do
         status: "active"
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
 
     assert %Subscription{status: "some_new_paddle_status"} = Repo.reload!(subscription)
   end
@@ -297,7 +296,7 @@ end
 # A Paddle client that reports a subscription with NO next-billed date (a
 # non-renewing / canceled sub), so the sweep's preserve-stored-period behaviour
 # can be exercised.
-defmodule Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
   @impl true
@@ -321,7 +320,7 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient do
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
-defmodule Emisar.Workers.BillingSyncNoPeriodTest do
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest do
   @moduledoc """
   When Paddle reports a subscription with no next-billed date (a non-renewing /
   canceled sub), the sweep must NOT NULL the stored current_period_end — a paying
@@ -329,10 +328,11 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest do
   process-global `:paddle_client`.
   """
   use Emisar.DataCase, async: false
-  alias Emisar.{Billing, Repo}
+  alias Emisar.Billing
+  alias Emisar.Billing.Jobs.SyncSubscriptions
+  alias Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   alias Emisar.Fixtures
-  alias Emisar.Workers.BillingSync
-  alias Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient
+  alias Emisar.Repo
 
   setup do
     prev_client = Application.get_env(:emisar, :paddle_client)
@@ -348,7 +348,7 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest do
     :ok
   end
 
-  test "perform/1 preserves a stored current_period_end when Paddle reports no next-billed date" do
+  test "execute/1 preserves a stored current_period_end when Paddle reports no next-billed date" do
     account = Fixtures.Accounts.create_account()
     stored = ~U[2026-09-01 00:00:00.000000Z]
 
@@ -360,7 +360,7 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest do
         current_period_end: stored
       })
 
-    assert :ok = BillingSync.perform(%Oban.Job{args: %{}})
+    assert :ok = SyncSubscriptions.execute([])
 
     synced = Repo.reload!(subscription)
     assert synced.status == "active"

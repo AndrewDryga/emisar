@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Write or improve ExUnit tests for portal/ the emisar way — DataCase/ConnCase, the real fixtures in test/support, and the mandatory happy / denial / cross-account paths (§7). Use when adding tests for a context/worker/LiveView, or when a change is missing its denial + cross-account coverage.
+description: Write or improve ExUnit tests for portal/ the emisar way — DataCase/ConnCase, the real fixtures in test/support, and the mandatory happy / denial / cross-account paths (§7). Use when adding tests for a context/job/LiveView, or when a change is missing its denial + cross-account coverage.
 effort: medium
 argument-hint: "<context / worker / module to test>"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
@@ -43,10 +43,10 @@ test. Follow that pattern; don't reach for a mocking library.
 - **No `Process.sleep`** for synchronization — `assert_receive {…}, 500` across
   process boundaries.
 
-## Oban / LiveView
+## Jobs / LiveView
 
-- Jobs: `Oban.Testing` `assert_enqueued` / `perform_job` (confirm it's configured in
-  test). Cover the idempotency path (run twice → second is a no-op).
+- Jobs: call `JobModule.execute([])` or `execute(keyword_config)` directly. Cover
+  the idempotency path (run twice → second is a no-op), plus pagination/batches for sweeps.
 - LiveView: `Phoenix.LiveViewTest` (`live/2`, `render_click`, `render_submit`); assert
   the authorized + denied event paths (IL-15).
 

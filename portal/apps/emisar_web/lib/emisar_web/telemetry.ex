@@ -114,15 +114,16 @@ defmodule EmisarWeb.Telemetry do
         reporter_options: [buckets: @db_buckets]
       ),
 
-      # Oban job metrics — surface stuck queues + retry storms.
-      distribution("oban.job.exception.duration",
+      # Recurrent job metrics — surface slow/failing background sweeps.
+      distribution("emisar.job.finished.duration",
         unit: {:native, :millisecond},
-        tags: [:queue, :worker, :state],
+        tags: [:job],
         reporter_options: [buckets: @latency_buckets]
       ),
-      distribution("oban.job.stop.duration",
+      counter("emisar.job.failed.count", tags: [:job, :kind]),
+      distribution("emisar.job.failed.duration",
         unit: {:native, :millisecond},
-        tags: [:queue, :worker, :state],
+        tags: [:job, :kind],
         reporter_options: [buckets: @latency_buckets]
       ),
 
@@ -169,13 +170,6 @@ defmodule EmisarWeb.Telemetry do
       last_value("emisar.runners.connection.disabled",
         description: "Disabled runners (gauge)"
       ),
-      # Oban queue backlog (sampled by Emisar.Telemetry.measure_oban_queues/0)
-      # — available (waiting) jobs per queue, the "jobs piling up" alert signal.
-      last_value("emisar.oban.queue.available",
-        tags: [:queue],
-        description: "Available (waiting) Oban jobs, by queue (gauge)"
-      ),
-
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
       # come free with telemetry_poller's default measurements; the
@@ -207,8 +201,7 @@ defmodule EmisarWeb.Telemetry do
       # Fleet-wide domain gauges — each reads an aggregate and emits; the
       # matching `last_value` metric is defined above. Fleet-wide / no account_id.
       {Emisar.Telemetry, :measure_approval_queue, []},
-      {Emisar.Telemetry, :measure_runner_connections, []},
-      {Emisar.Telemetry, :measure_oban_queues, []}
+      {Emisar.Telemetry, :measure_runner_connections, []}
     ]
   end
 end

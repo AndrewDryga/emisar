@@ -1,14 +1,15 @@
-defmodule Emisar.Workers.AuditRetentionTest do
+defmodule Emisar.Audit.Jobs.RetentionTest do
   @moduledoc """
   The nightly prune of audit events older than the account plan's
   retention window (free = 7 days).
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Repo}
+  alias Emisar.Audit
+  alias Emisar.Audit.Jobs.Retention
   alias Emisar.Fixtures
-  alias Emisar.Workers.AuditRetention
+  alias Emisar.Repo
 
-  test "perform/1 prunes events past the plan window and keeps fresh ones" do
+  test "execute/1 prunes events past the plan window and keeps fresh ones" do
     account = Fixtures.Accounts.create_account()
 
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
@@ -18,7 +19,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
 
     {:ok, fresh} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     refute Repo.reload(stale)
     assert Repo.reload(fresh)
@@ -35,7 +36,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     {:ok, within_team_window} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     # 10 days < the 90-day Team window → kept (the free plan would have pruned it).
     assert Repo.reload(within_team_window)
@@ -66,7 +67,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
         retain_until: DateTime.add(DateTime.utc_now(), -86_400, :second)
       )
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     # The wide-window row survives the Free-plan sweep (the OLD cutoff-from-current-
     # plan behaviour would have deleted it); the expired one is gone.
@@ -81,7 +82,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     {:ok, _stale} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     # The stale row is gone; a summary marker for the pruned account remains (and
     # its own retain_until keeps it from being pruned in the same pass).
@@ -99,7 +100,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     # A fresh row is within the Free window → nothing to prune, so no marker.
     {:ok, _fresh} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     events = Repo.all(Emisar.Audit.Event)
     refute Enum.any?(events, &(&1.event_type == "audit.retention_swept"))
@@ -119,7 +120,7 @@ defmodule Emisar.Workers.AuditRetentionTest do
     {:ok, stale} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     # 10 days > the free fallback's 7-day window → pruned.
     refute Repo.reload(stale)
@@ -140,12 +141,12 @@ defmodule Emisar.Workers.AuditRetentionTest do
     # account here, and the fixture way is to build the row state directly).
     account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
 
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = Retention.execute([])
 
     refute Repo.reload(stale)
   end
 
-  test "pages accounts via a continuation cursor and prunes them all" do
+  test "walks account pages and prunes them all" do
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
     accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
 
@@ -157,47 +158,10 @@ defmodule Emisar.Workers.AuditRetentionTest do
         event
       end
 
-    # `limit: 1` forces one account per page, so the run only completes by
-    # following its own continuation cursor account-to-account (inline test mode
-    # runs each enqueued follow-up synchronously). All three must be pruned.
-    assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 1}})
+    # `limit: 1` forces one account per page, so the sweep only completes by
+    # walking account-to-account inside the supervised job tick.
+    assert :ok = Retention.execute(limit: 1)
 
     for event <- stale, do: refute(Repo.reload(event))
-  end
-
-  # `maybe_continue` enqueues a cursor follow-up ONLY when a
-  # page comes back FULL (more accounts may be behind it). A short page means the
-  # account set is drained, so NO follow-up is enqueued. Run under `:manual`
-  # testing mode (instead of the suite's `:inline`) so a follow-up `Oban.insert`
-  # is persisted and observable via `all_enqueued`, rather than executed inline.
-  test "a short page enqueues no follow-up cursor job; a full page does" do
-    # Two accounts in the DB.
-    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
-
-    Oban.Testing.with_testing_mode(:manual, fn ->
-      # limit: 5 > 2 accounts → short page → drained → no continuation.
-      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 5}})
-      assert Oban.Testing.all_enqueued(repo: Repo, worker: AuditRetention) == []
-
-      # limit: 2 == 2 accounts → full page → a cursor follow-up IS enqueued
-      # (proves the assertion above has teeth — the absence is real).
-      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 2}})
-      assert [follow_up] = Oban.Testing.all_enqueued(repo: Repo, worker: AuditRetention)
-      assert Map.has_key?(follow_up.args, "after_account_id")
-    end)
-  end
-
-  test "a re-walk at the same cursor dedups the follow-up (no overlapping chains)" do
-    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
-
-    Oban.Testing.with_testing_mode(:manual, fn ->
-      # Two full-page walks from the same cursor produce the same last-account-id
-      # follow-up; the unique guard collapses them, so a slow chain and the next
-      # nightly tick can't double-walk the account set.
-      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 2}})
-      assert :ok = AuditRetention.perform(%Oban.Job{args: %{"limit" => 2}})
-
-      assert [_only_one] = Oban.Testing.all_enqueued(repo: Repo, worker: AuditRetention)
-    end)
   end
 end

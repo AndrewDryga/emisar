@@ -2,7 +2,7 @@
 
 Drop-in Grafana dashboard and Prometheus alerting rules for an emisar control
 plane. They chart and alert on the domain signals emisar emits — run outcomes,
-the approval SLO, runner fleet health, the Oban backlog, billing webhooks — plus
+the approval SLO, runner fleet health, recurrent job failures, billing webhooks — plus
 a few infrastructure lines (DB latency, the BEAM atom-table leak warning).
 
 These are **reference artifacts you import into your own stack**; the portal does
@@ -42,8 +42,8 @@ promtool check rules alerts.yaml
 ```
 
 The rules fire on the SLOs the code calls out: approvals waiting too long
-(`emisar_approvals_pending_oldest_age_seconds`), runners dropped, the Oban queue
-piling up, host run-failure rate, failing Paddle webhooks, and atom-table growth
+(`emisar_approvals_pending_oldest_age_seconds`), runners dropped, recurrent job
+failures, host run-failure rate, failing Paddle webhooks, and atom-table growth
 (the IL-14 early-warning line).
 
 ## 3. Import the dashboard

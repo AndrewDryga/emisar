@@ -149,15 +149,15 @@
     },
     {
       "id": 22,
-      "title": "Oban queue backlog (by queue)",
+      "title": "Job failures (by job)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "description": "Available (waiting) Oban jobs per queue (gauge) — the 'jobs piling up' signal.",
+      "description": "First-party recurrent job crashes over the last 5 minutes, grouped by job.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] }, "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "emisar_oban_queue_available", "legendFormat": "{{queue}}" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (job) (increase(emisar_job_failed_count[5m]))", "legendFormat": "{{job}}" }
       ]
     },
     {

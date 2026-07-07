@@ -10,7 +10,7 @@ defmodule Emisar.Checks.ContextPublicFnSubject do
       sanctioned subject-less path:
 
         * an already-authorized internal helper marked `@doc "Internal …"`
-          (or `@doc false`) — §1.4: runner-socket advertisers, Oban sweepers,
+          (or `@doc false`) — §1.4: runner-socket advertisers, recurrent jobs,
           the SCIM/auth lifecycle, session plumbing; or
         * a pre-auth path that threads a `%RequestContext{}` instead of a
           subject (sign-in, magic link, password reset, email confirm — §1.2).

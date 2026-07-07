@@ -22,11 +22,12 @@ defmodule Emisar.OAuth do
     * access token       — `emo-…`   (1 hour)
     * refresh token      — `emor-…`  (30 days, rotated on use)
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
-  alias Emisar.OAuth.{AuthorizationCode, Client, Token}
+  alias Emisar.OAuth.{AuthorizationCode, Client, Jobs, Token}
 
   @code_ttl_s 60
   @access_ttl_s 3_600
@@ -37,6 +38,15 @@ defmodule Emisar.OAuth do
   @unused_client_ttl_s 30 * 24 * 3_600
 
   @supported_scopes ~w(mcp offline_access)
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([Jobs.Cleanup], strategy: :one_for_one)
+  end
 
   # -- Dynamic Client Registration (RFC 7591) -------------------------
 
@@ -282,7 +292,7 @@ defmodule Emisar.OAuth do
   def resolve_access_token(_), do: {:error, :invalid}
 
   @doc """
-  Internal (Oban sweep) — delete authorization codes past their expiry.
+  Internal — delete authorization codes past their expiry.
   Codes are single-use, 60-second exchange artifacts (`emoc-`) with no
   audit or forensic value once expired, so they're pruned rather than
   retained. (Access/refresh tokens are deliberately NOT swept here — a
@@ -299,7 +309,7 @@ defmodule Emisar.OAuth do
   end
 
   @doc """
-  Internal (Oban sweep) — delete dynamically-registered clients that never
+  Internal — delete dynamically-registered clients that never
   completed consent and were registered over 30 days ago. A client is stamped
   `last_authorized_at` the moment an operator consents (`issue_code/3`), so this
   only ever removes abandoned drive-by registrations — never a live connection.

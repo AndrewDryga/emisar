@@ -1,9 +1,9 @@
-defmodule Emisar.Workers.ActionRunEventRetentionTest do
+defmodule Emisar.Runs.Jobs.EventRetentionTest do
   use Emisar.DataCase, async: true
   alias Emisar.Fixtures
   alias Emisar.Runs
+  alias Emisar.Runs.Jobs.EventRetention
   alias Emisar.Runs.RunEvent
-  alias Emisar.Workers.ActionRunEventRetention
 
   # The free plan retains 7 days; pick boundaries comfortably on either side.
   @beyond_window_days 30
@@ -60,7 +60,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     add_event(old_run, 1)
     add_event(old_run, 2)
 
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = EventRetention.execute([])
 
     assert event_ids(account.id) == MapSet.new()
   end
@@ -71,7 +71,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     recent_run = finished_run(account, runner, @within_window_days)
     kept = add_event(recent_run, 1)
 
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = EventRetention.execute([])
 
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
@@ -95,7 +95,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     unfinished |> Ecto.Changeset.change(inserted_at: old) |> Repo.update!()
     kept = add_event(unfinished, 1)
 
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = EventRetention.execute([])
 
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
@@ -111,7 +111,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     old_run = finished_run(account, runner, @beyond_window_days)
     add_event(old_run, 1)
 
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = EventRetention.execute([])
 
     # 30 days > the free fallback's 7-day window → pruned.
     assert event_ids(account.id) == MapSet.new()
@@ -131,7 +131,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     # tombstone state; no Subject path deletes an account in this test).
     account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
 
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+    assert :ok = EventRetention.execute([])
 
     assert event_ids(account.id) == MapSet.new()
   end
@@ -161,7 +161,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     assert event_ids(account_b.id) == MapSet.new([kept_b.id])
   end
 
-  test "pages accounts via a continuation cursor and prunes them all" do
+  test "walks account pages and prunes them all" do
     accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
 
     for account <- accounts do
@@ -170,27 +170,10 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
       add_event(old_run, 1)
     end
 
-    # `limit: 1` forces one account per page, so the run only completes by
-    # following its own continuation cursor account-to-account (inline test mode
-    # runs each enqueued follow-up synchronously). All three must be pruned.
-    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{"limit" => 1}})
+    # `limit: 1` forces one account per page, so the sweep only completes by
+    # walking account-to-account inside the supervised job tick.
+    assert :ok = EventRetention.execute(limit: 1)
 
     for account <- accounts, do: assert(event_ids(account.id) == MapSet.new())
-  end
-
-  test "a re-walk at the same cursor dedups the follow-up (no overlapping chains)" do
-    _accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
-
-    Oban.Testing.with_testing_mode(:manual, fn ->
-      # Two full-page walks from the same cursor produce the same last-account-id
-      # follow-up; the unique guard collapses them, so a slow chain and the next
-      # nightly tick can't double-walk the account set. No events needed — the
-      # cursor follow-up fires on a full *account* page.
-      assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{"limit" => 2}})
-      assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{"limit" => 2}})
-
-      assert [_only_one] =
-               Oban.Testing.all_enqueued(repo: Repo, worker: ActionRunEventRetention)
-    end)
   end
 end

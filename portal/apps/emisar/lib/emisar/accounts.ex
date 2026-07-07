@@ -1562,8 +1562,27 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — Billing worker: accounts whose Paddle customer is missing or
-  stale. The caller supplies string-key Oban args normalized to keyword opts:
+  Internal — system sweeps that must include tombstoned accounts. Returns a
+  bounded id-ordered page and accepts `:limit` plus optional `:after_account_id`.
+  """
+  def list_accounts_for_system_sweep(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
+
+    Account.Query.all()
+    |> after_system_sweep_account(Keyword.get(opts, :after_account_id))
+    |> Account.Query.ordered_by_id()
+    |> Account.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  defp after_system_sweep_account(queryable, id) when is_binary(id),
+    do: Account.Query.after_id(queryable, id)
+
+  defp after_system_sweep_account(queryable, _id), do: queryable
+
+  @doc """
+  Internal — Billing job: accounts whose Paddle customer is missing or
+  stale. The caller supplies keyword opts:
   `:limit` and optional `:after_account_id`.
   """
   def list_paddle_customer_sync_accounts(opts \\ []) do

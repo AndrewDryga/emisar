@@ -81,7 +81,7 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
     create index(:action_runs, [:requested_by_id])
 
     # Streamed progress chunks + runner-emitted state transitions.
-    # Many rows per run; we cap retention via Oban job.
+    # Many rows per run; we cap retention with a recurrent job.
     create table(:action_run_events, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :run_id, references(:action_runs, type: :binary_id, on_delete: :delete_all), null: false

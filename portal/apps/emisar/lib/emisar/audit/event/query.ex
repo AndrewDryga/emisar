@@ -418,11 +418,10 @@ defmodule Emisar.Audit.Event.Query do
     do: where(queryable, [events: e], e.retain_until < ^now)
 
   # The retention sweep deletes by id in bounded batches (not one long-locking
-  # DELETE): grab ≤ `limit` prunable ids, then delete that set. The `cutoff` the
-  # shared worker derives from the CURRENT plan is IGNORED here — per-row
+  # DELETE): grab ≤ `limit` prunable ids, then delete that set. Per-row
   # `retain_until` (stamped at write time) is the horizon, so a later downgrade
   # can't retroactively wipe rows written under a larger window.
-  def prunable_ids(account_id, %DateTime{} = _cutoff, limit) when is_integer(limit) do
+  def prunable_ids(account_id, limit) when is_integer(limit) do
     all()
     |> by_account_id(account_id)
     |> retention_expired(DateTime.utc_now())

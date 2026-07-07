@@ -24,6 +24,8 @@ defmodule Emisar.ContextCoverageTest do
     policies runbooks runners runs sso users
   ]a
 
+  @otp_lifecycle_callbacks MapSet.new([{"init", 1}, {"start_link", 1}])
+
   # Every function name covered by a `describe "name/arity …"` across the WHOLE
   # test tree (both apps) — a context's functions may be tested in sibling files.
   defp described_functions do
@@ -55,7 +57,7 @@ defmodule Emisar.ContextCoverageTest do
           {node, defs}
       end)
 
-    defs
+    MapSet.difference(defs, @otp_lifecycle_callbacks)
   end
 
   defp function_name_and_arity({:when, _meta, [head | _guards]}),

@@ -113,7 +113,7 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 Two kinds:
 
 - **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/spec`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
-- **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/oban`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
+- **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/recurrent-jobs`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
 For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan — it supersedes running `/security-review`, `/code-review`, and `/ship-review` separately, and the fix plan can be queued straight into `.agent/tasks/00_todo/` for `/sweep`.
 

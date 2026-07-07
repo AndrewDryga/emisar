@@ -220,7 +220,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # The dispatch-timeout sweep must leave a *connected* runner's run
       # alone, even past the grace window — this is what regressed.
       backdate_to_stale!(run)
-      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
 
@@ -239,7 +239,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       refute Runners.online?(account.id, runner.id)
 
       backdate_to_stale!(run)
-      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
 
       timed_out = Repo.get!(ActionRun, run.id)
       assert timed_out.status == :error

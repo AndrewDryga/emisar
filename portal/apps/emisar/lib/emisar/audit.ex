@@ -26,9 +26,19 @@ defmodule Emisar.Audit do
   explicitly on the pre-auth path. An event with no `:context` (system /
   engine origin) carries no request metadata, by construction.
   """
-  alias Emisar.Audit.{Authorizer, Event, Events}
+  use Supervisor
+  alias Emisar.Audit.{Authorizer, Event, Events, Jobs}
   alias Emisar.{Auth, Billing, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([Jobs.Retention], strategy: :one_for_one)
+  end
 
   # -- Recording (internal helper called by sibling contexts) ----------
 

@@ -1682,7 +1682,7 @@ defmodule Emisar.AuditTest do
     # exposes only inserts/reads (log / record / changeset / *_changeset / list_* /
     # fetch_* / resolve_references), and the Event.Changeset module exposes only
     # `create/1` — no update/delete transition. The single deletion path is the
-    # retention sweep (Workers.AuditRetention), by cutoff, never per-event. This
+    # retention job, by cutoff, never per-event. This
     # is a real surface assertion, not a vacuous one: a future `Audit.update_event`
     # or an `Event.Changeset.update` would fail this immediately.
     test "the Audit context exposes no update/delete-an-event function" do

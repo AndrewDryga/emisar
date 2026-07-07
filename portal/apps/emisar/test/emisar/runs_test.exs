@@ -1422,7 +1422,7 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
-      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
 
       reloaded = Repo.get!(ActionRun, run.id)
       assert reloaded.status == :error
@@ -1446,7 +1446,7 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
-      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
 
       assert Repo.get!(ActionRun, run.id).status == :sent
     end

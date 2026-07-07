@@ -9,11 +9,12 @@ defmodule Emisar.Billing do
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
+  use Supervisor
   import Emisar.Maps, only: [put_present: 3]
   alias Ecto.Multi
   alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
+  alias Emisar.Billing.{Authorizer, Entitlements, Jobs, PaddleClient, Subscription}
   require Logger
 
   @plans %{
@@ -60,6 +61,15 @@ defmodule Emisar.Billing do
       ]
     }
   }
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([Jobs.SyncPaddleCustomers, Jobs.SyncSubscriptions], strategy: :one_for_one)
+  end
 
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
@@ -187,7 +197,7 @@ defmodule Emisar.Billing do
   end
 
   @doc false
-  # Internal write — called from webhook handlers + `Workers.BillingSync`
+  # Internal write — called from webhook handlers and the subscription sync job,
   # which run on already-trusted server contexts. Subject-less because
   # the Paddle webhook signature is the auth gate at the edge.
   #
@@ -506,7 +516,7 @@ defmodule Emisar.Billing do
   @doc """
   Internal — sync one account's Paddle customer from the current account name
   and stable active owner contact. Called by checkout after its Subject gate and
-  by `Workers.PaddleCustomerSync` as a trusted server sweep.
+  by `Billing.Jobs.SyncPaddleCustomers` as a trusted server sweep.
   """
   def sync_paddle_customer_for_account(account_id) when is_binary(account_id) do
     with {:ok, %{account: account, owner: owner}} <-
@@ -837,7 +847,7 @@ defmodule Emisar.Billing do
 
   @doc """
   Internal — extracts the next billing time from a Paddle subscription
-  payload (used by the webhook upsert + `Workers.BillingSync`, no Subject).
+  payload (used by the webhook upsert + subscription sync job, no Subject).
   Paddle returns ISO8601 strings (not epoch ints). The top-level field
   is `next_billed_at`; some payloads put it under
   `current_billing_period.ends_at` — handle both.
@@ -853,7 +863,7 @@ defmodule Emisar.Billing do
 
   @doc """
   Internal — the subscription's Paddle `updated_at` (used by the webhook
-  upsert + `Workers.BillingSync`, no Subject). A monotonic per-subscription
+  upsert + subscription sync job, no Subject). A monotonic per-subscription
   timestamp the stale-update guard compares to drop an out-of-order delivery;
   present on both the webhook payload and the live `retrieve_subscription`.
   """

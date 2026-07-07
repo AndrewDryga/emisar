@@ -81,9 +81,9 @@ end
 transaction. Need a new transition? Add `archive/1` to the **Changeset** module
 (IL-8), don't build the changeset inline.
 
-### Internal / worker / socket helper (no Subject)
-Only for code already inside an authenticated process (runner socket, Oban
-sweeper, scheduler). Take `account_id`/`actor_id`, name it obviously
+### Internal / job / socket helper (no Subject)
+Only for code already inside an authenticated process (runner socket, recurrent
+job, scheduler). Take `account_id`/`actor_id`, name it obviously
 (`dispatch_runbook/4`), `@doc "Internal …"`, never expose to web/MCP (§1.4).
 
 ## Permissions

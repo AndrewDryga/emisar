@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Root-cause a crash, exception, stacktrace, failing test, or wrong behavior in portal/ — reproduce, read the real error, trace to the actual cause, propose the minimal fix. Use when something raises/fails/misbehaves and you need the cause, not a guess (Ecto changeset/constraint errors, Oban job failures, LiveView/MCP errors, runner-socket issues, flaky tests).
+description: Root-cause a crash, exception, stacktrace, failing test, or wrong behavior in portal/ — reproduce, read the real error, trace to the actual cause, propose the minimal fix. Use when something raises/fails/misbehaves and you need the cause, not a guess (Ecto changeset/constraint errors, recurrent job failures, LiveView/MCP errors, runner-socket issues, flaky tests).
 effort: medium
 argument-hint: "<the error, failing test, or symptom>"
 allowed-tools: Read, Grep, Glob, Bash
@@ -37,8 +37,8 @@ line that's wrong and say why. Never edit a test to make a real failure pass.
   list), or `ensure_has_permissions` is checking the wrong one.
 - **`{:error, :not_found}`** — genuinely missing, OR `Authorizer.for_subject` scoped
   it out (cross-account) — check the subject's account vs the row's.
-- **Oban job keeps retrying** — read `max_attempts` and the `perform` error; a job
-  that isn't idempotent (IL-13) corrupts state on retry. Check args are string-keyed.
+- **Recurrent job keeps failing** — read the `execute/1` error and the durable rows
+  it polls; a job that isn't idempotent (IL-13) corrupts state when a tick repeats.
 - **LiveView** — value missing/doubled on load → `mount` runs twice (IL-18); a
   silent form failure → check the `{:error, changeset}` branch is handled, not the UI.
 - **MCP** — a doubled action → idempotency key (see `controllers/mcp/idempotency.ex`);

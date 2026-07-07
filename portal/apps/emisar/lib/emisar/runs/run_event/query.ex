@@ -17,10 +17,9 @@ defmodule Emisar.Runs.RunEvent.Query do
   Restrict to events whose parent run reached a terminal state before
   `cutoff`. The run's `finished_at` is the authoritative "this run is
   old" signal; the event's own `inserted_at` only correlates. Used by
-  `Workers.ActionRunEventRetention` to prune progress chunks once the
+  `Runs.Jobs.EventRetention` to prune progress chunks once the
   run that produced them ages out of the account's retention window.
-  Pair with `by_account_id/2` so the `(account_id, inserted_at)` index
-  carries the account scan.
+  Pair with `by_account_id/2` so the account/run index carries the account scan.
 
   A subquery (not a join) keeps this safe to compose into a bulk
   delete — Postgres `DELETE` with a correlated `IN` is unambiguous,

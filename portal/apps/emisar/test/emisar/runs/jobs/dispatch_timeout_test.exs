@@ -1,4 +1,4 @@
-defmodule Emisar.Workers.RunDispatchTimeoutTest do
+defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   @moduledoc """
   Covers the mid-run zombie pass (a run stuck in `running` after its
   runner died must reach a terminal state, or every `wait_for_run`
@@ -10,7 +10,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
   use Emisar.DataCase, async: true
   alias Emisar.Fixtures
   alias Emisar.{Repo, Runs}
-  alias Emisar.Workers.RunDispatchTimeout
+  alias Emisar.Runs.Jobs.DispatchTimeout
 
   defp running_run_for(runner) do
     {:ok, run} =
@@ -62,7 +62,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :sent
@@ -74,7 +74,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 20 * 60)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -86,7 +86,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 10 * 60)
     run = running_run_for(runner)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -97,7 +97,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = running_run_for(runner)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     assert Runs.peek_run_by_id(run.id).status == :running
   end
@@ -107,7 +107,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 5)
     run = running_run_for(runner)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     assert Runs.peek_run_by_id(run.id).status == :running
   end
@@ -123,7 +123,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert is_nil(Repo.reload!(runner).last_disconnected_at)
     run = running_run_for(runner)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     assert Runs.peek_run_by_id(run.id).status == :error
   end
@@ -136,7 +136,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: false)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -152,7 +152,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     {:ok, _} = Emisar.Runners.disable_runner(runner, subject)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -166,7 +166,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
 
     {:ok, _} = Emisar.Runners.delete_runner(runner, subject)
 
-    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+    assert :ok = DispatchTimeout.execute([])
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error

@@ -2811,6 +2811,29 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "list_accounts_for_system_sweep/1" do
+    test "returns tombstoned accounts in stable id order" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.mark_account_as_deleted(account_a)
+
+      assert [first, second] = Accounts.list_accounts_for_system_sweep()
+      assert [first.id, second.id] == Enum.sort([account_a.id, account_b.id])
+    end
+
+    test "paginates after the supplied account id" do
+      accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
+      [first, second, third] = Enum.sort_by(accounts, & &1.id)
+
+      assert Enum.map(Accounts.list_accounts_for_system_sweep(limit: 1), & &1.id) == [first.id]
+
+      assert Enum.map(
+               Accounts.list_accounts_for_system_sweep(limit: 2, after_account_id: first.id),
+               & &1.id
+             ) == [second.id, third.id]
+    end
+  end
+
   describe "list_paddle_customer_sync_accounts/1" do
     test "returns accounts with a missing Paddle customer" do
       account = Fixtures.Accounts.create_account()

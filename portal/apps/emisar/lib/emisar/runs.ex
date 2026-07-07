@@ -5,11 +5,21 @@ defmodule Emisar.Runs do
   creates the run row, evaluates policy, hands the dispatch to the
   Transport for sending, and tracks progress + final result.
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
-  alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
+  alias Emisar.Runs.{ActionRun, Authorizer, Jobs, RunEvent}
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([Jobs.DispatchTimeout, Jobs.EventRetention], strategy: :one_for_one)
+  end
 
   # -- Listing / queries ------------------------------------------------
 
@@ -818,7 +828,7 @@ defmodule Emisar.Runs do
   defp args_sha256(args), do: Crypto.hash_hex(Jason.encode!(args || %{}))
 
   @doc """
-  Internal — used by `Emisar.Workers.RunDispatchTimeout` to find runs
+  Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find runs
   that have been sitting in `pending` / `sent` longer than the
   dispatch threshold. Returns a plain list (no pagination); the worker
   iterates and decides per-run whether to time it out based on the
@@ -857,7 +867,7 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — used by `Emisar.Workers.RunDispatchTimeout` to find in-flight
+  Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find in-flight
   runs whose runner may have died mid-run. Plain list (real fleets keep few
   runs in flight); the worker decides per-run from the runner's presence and
   disconnect history.
@@ -931,7 +941,7 @@ defmodule Emisar.Runs do
   re-sending a stale dispatch — the runner dedupes by `request_id`, so a
   redelivery replays the cached result or runs it once (idempotent).
   Internal — called from `dispatch_run/2`, `Approvals.approve_request/4`,
-  and `Emisar.Workers.RunDispatchTimeout`.
+  and `Emisar.Runs.Jobs.DispatchTimeout`.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
     # Independent send-time guard: re-read the CURRENT status and refuse to
@@ -1177,7 +1187,7 @@ defmodule Emisar.Runs do
     do: %{cancelled_at: DateTime.utc_now(), finished_at: DateTime.utc_now(), reason_text: reason}
 
   @doc """
-  Internal — `Emisar.Workers.RunDispatchTimeout` terminally fails a
+  Internal — `Emisar.Runs.Jobs.DispatchTimeout` terminally fails a
   non-finished run (`:error` + `error_message`) when its dispatch can't
   complete: the runner was offline/disabled/removed, disconnected
   mid-run, or stayed online but never acknowledged the send past the

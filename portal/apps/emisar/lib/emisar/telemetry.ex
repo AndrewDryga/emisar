@@ -18,12 +18,7 @@ defmodule Emisar.Telemetry do
 
   The matching `Telemetry.Metrics` definitions live in `EmisarWeb.Telemetry`.
   """
-  # `Oban.Job` is a third-party schema with no domain Query module, so IL-1's
-  # "start every pipeline at Schema.Query" cannot apply — the queue-backlog read
-  # in `oban_available_by_queue/0` is the one sanctioned inline query here.
-  # credo:disable-for-next-line Emisar.Checks.IL01NoInlineEctoDsl
-  import Ecto.Query
-  alias Emisar.{Approvals, Repo, Runners}
+  alias Emisar.{Approvals, Runners}
 
   @doc """
   A run reached a terminal status. Emits `[:emisar, :run, :finished]` with a
@@ -69,6 +64,28 @@ defmodule Emisar.Telemetry do
     :telemetry.execute([:emisar, :auth, :magic_link_failed], %{count: 1}, %{reason: reason})
   end
 
+  @doc """
+  A supervised recurrent job completed. Emits duration tagged by bounded job
+  module name.
+  """
+  @spec job_finished(String.t(), integer()) :: :ok
+  def job_finished(job, duration) when is_binary(job) and is_integer(duration) do
+    :telemetry.execute([:emisar, :job, :finished], %{duration: duration}, %{job: job})
+  end
+
+  @doc """
+  A supervised recurrent job crashed. Emits one failure and its duration tagged
+  by bounded job module name and failure kind.
+  """
+  @spec job_failed(String.t(), atom(), integer()) :: :ok
+  def job_failed(job, kind, duration) when is_binary(job) and is_atom(kind) do
+    :telemetry.execute(
+      [:emisar, :job, :failed],
+      %{count: 1, duration: duration},
+      %{job: job, kind: kind}
+    )
+  end
+
   # -- Periodic gauges (poller-invoked samplers) ------------------------
 
   @doc """
@@ -92,51 +109,5 @@ defmodule Emisar.Telemetry do
   @spec measure_runner_connections() :: :ok
   def measure_runner_connections do
     :telemetry.execute([:emisar, :runners, :connection], Runners.connection_counts())
-  end
-
-  @oban_event [:emisar, :oban, :queue]
-
-  @doc """
-  Sampler — Oban queue backlog. Emits `[:emisar, :oban, :queue]` once per
-  CONFIGURED queue with the count of `:available` (waiting) jobs, tagged by the
-  bounded `:queue` name. Emitting every configured queue — not just the
-  non-empty ones — keeps a drained queue's gauge from going stale at its last
-  non-zero reading.
-  """
-  @spec measure_oban_queues() :: :ok
-  def measure_oban_queues do
-    counts = oban_available_by_queue()
-
-    # Union the configured queues (so a drained one still reports 0, never a stale
-    # gauge) with the queues actually holding jobs (so a job in a queue this node
-    # doesn't run — or test mode, where `:queues` is `false` — still reports).
-    queues = Enum.uniq(configured_oban_queues() ++ Map.keys(counts))
-
-    Enum.each(queues, fn queue ->
-      :telemetry.execute(@oban_event, %{available: Map.get(counts, queue, 0)}, %{queue: queue})
-    end)
-  end
-
-  # `%{queue => available_count}` from oban_jobs. A drained queue is simply
-  # absent (no rows); `measure_oban_queues/0` fills it with 0.
-  defp oban_available_by_queue do
-    query =
-      from(j in Oban.Job,
-        where: j.state == "available",
-        group_by: j.queue,
-        select: {j.queue, count(j.id)}
-      )
-
-    query |> Repo.all() |> Map.new()
-  end
-
-  # The queues this node is configured to run, as strings (oban_jobs.queue is
-  # text). `:queues` is `false` when queue-running is disabled (Oban test mode) —
-  # then there's no configured set and the caller falls back to queues with jobs.
-  defp configured_oban_queues do
-    case Application.fetch_env!(:emisar, Oban)[:queues] do
-      queues when is_list(queues) -> Enum.map(Keyword.keys(queues), &Atom.to_string/1)
-      _ -> []
-    end
   end
 end
