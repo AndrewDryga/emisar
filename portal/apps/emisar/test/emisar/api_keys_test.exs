@@ -97,6 +97,14 @@ defmodule Emisar.ApiKeysTest do
       {_user_b, _account_b, subject_b} = owner_subject_pair()
       assert {:ok, []} = ApiKeys.list_key_owner_options(subject_b)
     end
+
+    test "a runner subject without view_api_keys permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = ApiKeys.list_key_owner_options(subject)
+    end
   end
 
   describe "list_key_options/1" do
@@ -138,6 +146,14 @@ defmodule Emisar.ApiKeysTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
       assert {:ok, [{_id, "mine"}]} = ApiKeys.list_key_options(viewer_subject)
+    end
+
+    test "a runner subject without view_api_keys permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = ApiKeys.list_key_options(subject)
     end
   end
 
@@ -252,7 +268,7 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "create_key/2" do
+  describe "create_key/3" do
     test "returns raw + persisted key" do
       {user, account, subject} = owner_subject_pair()
 
@@ -506,7 +522,7 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "mint_quick_key/1" do
+  describe "mint_quick_key/2" do
     test "mints a pre-scoped auto key, hidden until first use" do
       {_user, _account, subject} = owner_subject_pair()
 

@@ -18,6 +18,10 @@ defmodule Emisar.RunsTest do
     )
   end
 
+  defp no_permissions_subject(account) do
+    Fixtures.Subjects.build_subject(account: account, role: :runner)
+  end
+
   defp deny_all_rules do
     %{
       "schema_version" => 2,
@@ -65,6 +69,13 @@ defmodule Emisar.RunsTest do
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
       assert {:ok, [_run], _meta} = Runs.list_runs(viewer_subject)
+    end
+
+    test "a subject without view_runs permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      subject = no_permissions_subject(account)
+
+      assert {:error, :unauthorized} = Runs.list_runs(subject)
     end
 
     test "the runner_id filter scopes the feed to one runner" do
@@ -126,6 +137,13 @@ defmodule Emisar.RunsTest do
       assert Runs.list_run_operator_options(subject) == {:ok, [{user.id, user.full_name}]}
     end
 
+    test "a subject without view_runs permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      subject = no_permissions_subject(account)
+
+      assert {:error, :unauthorized} = Runs.list_run_operator_options(subject)
+    end
+
     test "cross-account — B's options never include A's operators" do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -153,6 +171,13 @@ defmodule Emisar.RunsTest do
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert Runs.list_run_runbook_options(subject_b) == {:ok, []}
+    end
+
+    test "a subject without view_runs permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      subject = no_permissions_subject(account)
+
+      assert {:error, :unauthorized} = Runs.list_run_runbook_options(subject)
     end
   end
 
@@ -312,6 +337,12 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: "running"}))
 
       assert {:ok, %{total: 1, success_rate: nil}} = Runs.fetch_run_stats(subject)
+    end
+
+    test "a subject without view_runs permission is refused", %{account: account} do
+      subject = no_permissions_subject(account)
+
+      assert {:error, :unauthorized} = Runs.fetch_run_stats(subject)
     end
   end
 

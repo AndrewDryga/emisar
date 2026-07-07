@@ -167,7 +167,7 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "change_policy/0" do
+  describe "change_policy/1" do
     test "with no argument builds a form changeset off the default rules" do
       changeset = Policies.change_policy()
       assert %Ecto.Changeset{} = changeset
@@ -186,7 +186,7 @@ defmodule Emisar.PoliciesTest do
   # change_policy/0 builds the form changeset; these guard the rules-level
   # validation it (and the persisted save) rely on — monotonic tiers and the
   # editor's shape guardrails.
-  describe "change_policy/0 — tier-monotonicity validation" do
+  describe "change_policy/1 — tier-monotonicity validation" do
     alias Emisar.Policies.Policy.Changeset, as: PolicyChangeset
 
     test "monotonic defaults pass validation" do
@@ -257,7 +257,7 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "change_policy/0 — rules-shape validation (the policy-editor guardrails)" do
+  describe "change_policy/1 — rules-shape validation (the policy-editor guardrails)" do
     defp rules_changeset(rules) do
       Policy.Changeset.create(%{account_id: Ecto.UUID.generate(), rules: rules})
     end

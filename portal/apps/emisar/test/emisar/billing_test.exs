@@ -519,6 +519,14 @@ defmodule Emisar.BillingTest do
 
       assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject_b)
     end
+
+    test "a runner subject without view_billing permission is refused", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject)
+    end
   end
 
   describe "invoice_pdf_url/3" do
@@ -547,6 +555,13 @@ defmodule Emisar.BillingTest do
     test "an owner of another account is refused", %{account: account} do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert {:error, :unauthorized} = Billing.invoice_pdf_url(account, "txn_stub_1", subject_b)
+    end
+
+    test "a runner subject without view_billing permission is refused", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Billing.invoice_pdf_url(account, "txn_stub_1", subject)
     end
   end
 

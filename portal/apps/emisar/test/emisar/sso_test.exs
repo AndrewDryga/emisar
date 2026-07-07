@@ -784,9 +784,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- delete_provider/3 -----------------------------------------------
+  # -- delete_provider/2 -----------------------------------------------
 
-  describe "delete_provider/3" do
+  describe "delete_provider/2" do
     test "soft-deletes a provider for an enterprise admin" do
       {_user, account, subject} = enterprise_owner()
       # A second enabled provider so require_sso (unset here anyway) can't bite.
@@ -2206,9 +2206,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- delete_group_mapping/3 ------------------------------------------
+  # -- delete_group_mapping/2 ------------------------------------------
 
-  describe "delete_group_mapping/3" do
+  describe "delete_group_mapping/2" do
     setup do
       scim_provider()
     end
@@ -2263,7 +2263,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "list_pending_link_requests_for_account/1" do
+  describe "list_pending_link_requests_for_account/2" do
     setup do
       {_owner, account, subject} = enterprise_owner()
       %{account: account, subject: subject}

@@ -16,52 +16,74 @@ defmodule Emisar.ContextCoverageTest do
   use ExUnit.Case, async: true
 
   @contexts ~w[
-    accounts api_keys approvals audit auth billing catalog mail oauth
+    accounts api_keys approvals audit auth billing catalog mail marketing oauth
     policies runbooks runners runs sso users
   ]a
 
   # Every function name covered by a `describe "name/arity …"` across the WHOLE
   # test tree (both apps) — a context's functions may be tested in sibling files.
-  defp described_function_names do
+  defp described_functions do
     [Path.join(__DIR__, ".."), Path.join([__DIR__, "..", "..", "..", "emisar_web", "test"])]
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.exs")))
     |> Enum.flat_map(fn file ->
-      ~r/describe\s+"([a-z_]+[!?]?)\//
+      ~r/describe\s+"([a-z_]+[!?]?)\/(\d+)/
       |> Regex.scan(File.read!(file))
-      |> Enum.map(&Enum.at(&1, 1))
+      |> Enum.map(fn [_match, name, arity] -> {name, String.to_integer(arity)} end)
     end)
     |> MapSet.new()
   end
 
-  defp public_function_names(ctx) do
-    [__DIR__, "..", "..", "lib", "emisar", "#{ctx}.ex"]
+  defp public_functions(context_name) do
+    [__DIR__, "..", "..", "lib", "emisar", "#{context_name}.ex"]
     |> Path.join()
     |> File.read!()
-    # name only — no trailing `(`, so parenless public defs (`def plans, do:`,
-    # `def list_running_runs do`) are covered too, not silently skipped.
-    |> then(&Regex.scan(~r/^  def ([a-z_]+[!?]?)/m, &1))
-    |> Enum.map(&Enum.at(&1, 1))
-    |> MapSet.new()
+    |> Code.string_to_quoted!()
+    |> public_defs()
   end
+
+  defp public_defs(ast) do
+    {_ast, defs} =
+      Macro.prewalk(ast, MapSet.new(), fn
+        {:def, _meta, [head | _body]} = node, defs ->
+          {node, MapSet.put(defs, function_name_and_arity(head))}
+
+        node, defs ->
+          {node, defs}
+      end)
+
+    defs
+  end
+
+  defp function_name_and_arity({:when, _meta, [head | _guards]}),
+    do: function_name_and_arity(head)
+
+  defp function_name_and_arity({name, _meta, args}) when is_atom(name) and is_list(args),
+    do: {Atom.to_string(name), length(args)}
+
+  defp function_name_and_arity({name, _meta, _context}) when is_atom(name),
+    do: {Atom.to_string(name), 0}
+
+  defp format_function({name, arity}), do: "#{name}/#{arity}"
 
   setup_all do
-    {:ok, described: described_function_names()}
+    {:ok, described: described_functions()}
   end
 
-  for ctx <- @contexts do
-    @ctx ctx
-    test "Emisar.#{ctx |> Atom.to_string() |> Macro.camelize()} — every public function has a describe",
+  for context_name <- @contexts do
+    @context_name context_name
+    test "Emisar.#{context_name |> Atom.to_string() |> Macro.camelize()} — every public function has a describe",
          %{described: described} do
       gap =
-        @ctx
-        |> public_function_names()
+        @context_name
+        |> public_functions()
         |> MapSet.difference(described)
         |> Enum.sort()
+        |> Enum.map(&format_function/1)
 
       assert gap == [],
-             "#{@ctx}.ex has PUBLIC functions with no `describe` anywhere in the suite: " <>
+             "#{@context_name}.ex has PUBLIC functions with no `describe` anywhere in the suite: " <>
                "#{inspect(gap)}. Add `describe \"<fun>/<arity>\"` (with real tests, in module " <>
-               "order) to test/emisar/#{@ctx}_test.exs."
+               "order) to test/emisar/#{@context_name}_test.exs."
     end
   end
 end

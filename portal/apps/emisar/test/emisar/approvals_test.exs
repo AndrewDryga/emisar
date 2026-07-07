@@ -199,7 +199,7 @@ defmodule Emisar.ApprovalsTest do
     %{account: account, runner: runner, run: run, request: request, requester_id: requester}
   end
 
-  describe "list_pending_approval_requests/1" do
+  describe "list_pending_approval_requests/2" do
     test "only returns pending requests" do
       {account, run1} = run_fixture()
       {_, run2} = run_fixture(account: account)
@@ -553,7 +553,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "create_request/3" do
+  describe "create_request/4" do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()
       operator = Fixtures.Users.create_user()
@@ -584,7 +584,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "create_request/3 approver notifications" do
+  describe "create_request/4 approver notifications" do
     setup do
       account = Fixtures.Accounts.create_account()
 

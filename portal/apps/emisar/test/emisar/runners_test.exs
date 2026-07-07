@@ -1705,7 +1705,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "register_via_enrollment_key/2" do
+  describe "register_via_enrollment_key/3" do
     test "mints an runner + token on success" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()

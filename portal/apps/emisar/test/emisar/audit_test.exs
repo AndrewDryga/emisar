@@ -910,7 +910,7 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_actor_options/2 (the dynamic actor picker)" do
+  describe "list_actor_options/3 (the dynamic actor picker)" do
     setup do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()

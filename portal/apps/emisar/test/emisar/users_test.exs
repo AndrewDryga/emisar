@@ -93,7 +93,7 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "record_sign_in/2" do
+  describe "record_sign_in/3" do
     test "stamps the sign-in and audits user.signed_in with the method" do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
 

@@ -657,7 +657,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "provision_sso_membership/3" do
+  describe "provision_sso_membership/4" do
     test "creates a membership at the given role for a JIT-provisioned user" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -2112,7 +2112,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "delete_membership/3" do
+  describe "delete_membership/2" do
     test "owner can remove a non-owner member" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
