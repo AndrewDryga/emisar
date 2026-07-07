@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
   alias Emisar.Auth
-  alias EmisarWeb.{MagicLinkHandoff, RequestContext, ReturnTo}
+  alias EmisarWeb.{MagicLinkHandoff, RegistrationHandoff, RequestContext, ReturnTo}
 
   # The email form POSTs to `UserSessionController.magic_link_start` (a controller,
   # because issuing the split token sets a signed nonce cookie a LiveView can't).
@@ -9,6 +9,8 @@ defmodule EmisarWeb.MagicLinkLive do
   # with no reload; on a match we redirect to `:magic_link_complete` with a
   # short-lived, cookie-bound handoff that establishes the session.
   def mount(params, session, socket) do
+    email = sent_to(session)
+
     {:ok,
      socket
      |> assign(:page_title, "Sign in via email")
@@ -18,7 +20,7 @@ defmodule EmisarWeb.MagicLinkLive do
      |> assign(:return_to, ReturnTo.app_path(params["return_to"]))
      # The address magic_link_start stashed in the session, so the "sent" page can
      # offer Resend without a retype. nil when the page is opened directly.
-     |> assign(:email, sent_to(session))
+     |> assign(:email, email)
      # The code's expiry (ISO8601) magic_link_start stashed — the sent page counts
      # it down and disables the code form when it lapses. nil on direct nav.
      |> assign(:expires_at, session["magic_link_expires_at"])
@@ -28,9 +30,10 @@ defmodule EmisarWeb.MagicLinkLive do
      |> assign(:token_id, session["magic_link_token_id"])
      |> assign(:nonce, session["magic_link_nonce"])
      |> assign(:registered?, session["magic_link_registered"] == true)
+     |> assign(:registration_handoff, registration_handoff(session))
      |> assign(:request_context, RequestContext.from_socket(socket))
      |> assign(:code_error, nil)
-     |> assign(:email_form, to_form(%{"email" => ""}, as: "user"))
+     |> assign(:email_form, to_form(%{"email" => email || ""}, as: "user"))
      |> assign(:code_form, to_form(%{"code" => ""}))}
   end
 
@@ -64,6 +67,12 @@ defmodule EmisarWeb.MagicLinkLive do
       _ -> nil
     end
   end
+
+  defp registration_handoff(%{"magic_link_registration_user_id" => user_id})
+       when is_binary(user_id),
+       do: RegistrationHandoff.sign(user_id)
+
+  defp registration_handoff(_session), do: nil
 
   def render(assigns) do
     ~H"""
@@ -115,6 +124,12 @@ defmodule EmisarWeb.MagicLinkLive do
         >
           <input type="hidden" name="user[email]" value={@email} />
           <input type="hidden" name="return_to" value={@return_to} />
+          <input
+            :if={@registration_handoff}
+            type="hidden"
+            name="registration_handoff"
+            value={@registration_handoff}
+          />
           <.button
             id="resend-code"
             type="submit"
@@ -128,7 +143,28 @@ defmodule EmisarWeb.MagicLinkLive do
           </.button>
         </.form>
 
-        <.auth_footer_link navigate={~p"/sign_in/magic"}>
+        <.simple_form
+          :if={@registered? && @email}
+          for={@email_form}
+          action={~p"/sign_up/email"}
+          method="post"
+          class="mt-5"
+        >
+          <.input
+            field={@email_form[:email]}
+            type="email"
+            label="Wrong address?"
+            autocomplete="email"
+            required
+          />
+          <:actions>
+            <.button type="submit" variant={:secondary} class="w-full">
+              Send code to this email <span aria-hidden="true">→</span>
+            </.button>
+          </:actions>
+        </.simple_form>
+
+        <.auth_footer_link :if={!@registered?} navigate={~p"/sign_in/magic"}>
           <:lead>Wrong address?</:lead>
           Use a different email
         </.auth_footer_link>

@@ -2,7 +2,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Audit.Event
   alias Emisar.{Auth, Repo, Users}
-  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
+  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff, RegistrationHandoff}
 
   describe "split-code magic link" do
     # Drive the real request, then pull token_id + the 6-char secret out of the
@@ -29,15 +29,18 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert conn.resp_cookies["emisar_magic"]
     end
 
-    # The sign-up form posts `registration=1` to /start; the flag rides the magic
-    # cookie through the round-trip so the FIRST sign-in fires sign_up_completed.
-    # The welcome flash is the observable proxy (same `registered?` signal drives
-    # both it and the analytics event), since the analytics seam is off in test.
-    test "a registration round-trip welcomes the new operator", %{conn: conn, user: user} do
+    # The sign-up form posts a signed registration handoff to /start; the
+    # verified user id rides the magic cookie through the round-trip so the FIRST
+    # sign-in fires sign_up_completed. The welcome flash is the observable proxy
+    # (same `registered?` signal drives both it and the analytics event), since
+    # the analytics seam is off in test.
+    test "a registration round-trip welcomes the new operator", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
       conn =
         post(conn, ~p"/sign_in/magic/start", %{
           "user" => %{"email" => user.email},
-          "registration" => "1"
+          "registration_handoff" => RegistrationHandoff.sign(user.id)
         })
 
       assert_received {:email, sent}
@@ -47,6 +50,89 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       assert get_session(conn, :user_token)
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
+    end
+
+    test "a registration email typo can be corrected from the same browser", %{conn: conn} do
+      wrong_email = "typo-#{System.unique_integer([:positive])}@example.test"
+      fixed_email = "fixed-#{System.unique_integer([:positive])}@example.test"
+      user = Fixtures.Users.create_user(email: wrong_email, confirmed?: false)
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => wrong_email},
+          "registration_handoff" => RegistrationHandoff.sign(user.id)
+        })
+
+      assert_received {:email, _old_email}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_up/email", %{"user" => %{"email" => fixed_email}})
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      assert get_session(conn, :magic_link_email) == fixed_email
+
+      conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "updated your signup email"
+
+      assert_received {:email, sent}
+      assert [{_, ^fixed_email}] = sent.to
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      assert {:error, :not_found} = Users.fetch_user_by_email(wrong_email)
+      assert {:ok, corrected} = Users.fetch_user_by_email(fixed_email)
+      assert corrected.id == user.id
+
+      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert token = get_session(conn, :user_token)
+      assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert signed_in.id == user.id
+    end
+
+    test "registration email correction needs the pending signup browser", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      _conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => RegistrationHandoff.sign(user.id)
+        })
+
+      assert_received {:email, _old_email}
+
+      conn =
+        post(build_conn(), ~p"/sign_up/email", %{
+          "user" => %{"email" => "hijack@example.test"}
+        })
+
+      assert redirected_to(conn) == ~p"/sign_up"
+      refute_received {:email, _email}
+      assert Repo.reload!(user).email == user.email
+    end
+
+    test "registration email correction refuses a forged registration marker", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration" => "1"
+        })
+
+      assert_received {:email, _old_email}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_up/email", %{"user" => %{"email" => "hijack@example.test"}})
+
+      assert redirected_to(conn) == ~p"/sign_up"
+      refute_received {:email, _email}
+      assert Repo.reload!(user).email == user.email
     end
 
     test "a normal sign-in (no registration) shows no welcome", %{conn: conn, user: user} do

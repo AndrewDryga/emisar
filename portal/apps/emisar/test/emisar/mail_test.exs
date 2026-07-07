@@ -170,37 +170,6 @@ defmodule Emisar.MailTest do
     end
   end
 
-  describe "welcome email" do
-    test "carries the team name + branded sign-in link" do
-      user = Fixtures.Users.create_user()
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(%{name: "Acme Co", slug: "acme-co"}, user)
-
-      UserNotifier.deliver_welcome(user, account)
-
-      assert_email_sent(fn email ->
-        assert email.subject == "Your emisar workspace is ready"
-        assert email.text_body =~ "Acme Co"
-        assert email.text_body =~ "/app/#{account.slug}/sign_in"
-        true
-      end)
-    end
-
-    # an owner who signed up without a name is greeted
-    # by email rather than rendering a blank salutation.
-    test "falls back to the email when the owner has no full name" do
-      user = Fixtures.Users.create_user(full_name: nil)
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(%{name: "Nameless", slug: "nameless"}, user)
-
-      UserNotifier.deliver_welcome(user, account)
-
-      assert_email_sent(&(&1.text_body =~ "Welcome to emisar, #{user.email}!"))
-    end
-  end
-
   describe "confirmation email" do
     setup do
       %{user: Fixtures.Users.create_user()}

@@ -357,6 +357,59 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "correct_registration_email/4" do
+    test "updates the pending unconfirmed user and reissues the magic link" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      {old_token_id, old_nonce, old_secret} = Auth.issue_magic_link(user)
+      new_email = "fixed-#{System.unique_integer([:positive])}@example.test"
+
+      assert {:ok, %User{} = updated, new_token_id, new_nonce, new_secret} =
+               Auth.correct_registration_email(old_token_id, user.id, new_email)
+
+      assert updated.email == new_email
+      assert Repo.reload!(user).email == new_email
+
+      assert {:error, :invalid_or_expired} =
+               Auth.verify_magic_link(old_token_id, old_secret, old_nonce)
+
+      assert {:ok, %User{id: id, email: ^new_email, confirmed_at: %DateTime{}}} =
+               Auth.verify_magic_link(new_token_id, new_secret, new_nonce)
+
+      assert id == user.id
+    end
+
+    test "refuses when the pending signup user has already confirmed" do
+      user = Fixtures.Users.create_user()
+      {token_id, _nonce, _secret} = Auth.issue_magic_link(user)
+      new_email = "late-#{System.unique_integer([:positive])}@example.test"
+
+      assert Auth.correct_registration_email(token_id, user.id, new_email) ==
+               {:error, :already_confirmed}
+
+      assert Repo.reload!(user).email == user.email
+    end
+
+    test "rejects a token that was not minted for the registration user" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      other_user = Fixtures.Users.create_user(confirmed?: false)
+      {token_id, _nonce, _secret} = Auth.issue_magic_link(user)
+      new_email = "hijack-#{System.unique_integer([:positive])}@example.test"
+
+      assert Auth.correct_registration_email(token_id, other_user.id, new_email) ==
+               {:error, :invalid_or_expired}
+
+      assert Repo.reload!(user).email == user.email
+    end
+
+    test "rejects an expired or malformed token id" do
+      new_email = "unused-#{System.unique_integer([:positive])}@example.test"
+      registration_user_id = Repo.generate_id()
+
+      assert Auth.correct_registration_email("not-a-uuid", registration_user_id, new_email) ==
+               {:error, :invalid_or_expired}
+    end
+  end
+
   describe "magic_link_validity_in_minutes/0" do
     test "is the magic-link code's validity window in minutes" do
       assert Auth.magic_link_validity_in_minutes() == 15

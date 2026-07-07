@@ -12,7 +12,8 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Mailers, Users}
-  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff, RecentAccounts, RequestContext}
+  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
+  alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
   alias EmisarWeb.{ReturnTo, Throttle, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
@@ -29,7 +30,12 @@ defmodule EmisarWeb.UserSessionController do
   # generous enough for a NAT'd team behind one egress IP.
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "sign_in", limit: 30, window_ms: 60_000]
-       when action in [:magic_link_start, :magic_link_complete, :magic_link_confirm]
+       when action in [
+              :magic_link_start,
+              :registration_email_correction,
+              :magic_link_complete,
+              :magic_link_confirm
+            ]
 
   @doc """
   Magic-link request (POST from the email form). Issues a split-code token,
@@ -40,9 +46,7 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
-    # The sign-up form posts `registration=1`; carry it in the magic cookie so the
-    # sign-in that completes this round-trip fires sign_up_completed (activation).
-    registered? = params["registration"] == "1"
+    registration_handoff = params["registration_handoff"]
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
     # doesn't apply.
@@ -52,17 +56,20 @@ defmodule EmisarWeb.UserSessionController do
     conn =
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
            {:ok, user} <- Users.fetch_user_by_email(email) do
+        registration_user_id = registration_user_id(registration_handoff, user)
+        registered? = is_binary(registration_user_id)
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
         Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to)
 
         conn
-        |> put_magic_cookie(token_id, nonce, registered?)
+        |> put_magic_cookie(token_id, nonce, registration_user_id)
         # The LiveView verifies the typed code (the nonce isn't readable from JS),
         # so it reads token_id + nonce from the encrypted session; the cookie stays
         # for the email-link path and the sign-in-completion browser binding.
         |> put_session(:magic_link_token_id, token_id)
         |> put_session(:magic_link_nonce, nonce)
         |> put_session(:magic_link_registered, registered?)
+        |> put_magic_registration_user_id(registration_user_id)
       else
         # Surfacing the throttle is safe: it's checked BEFORE the user lookup and
         # fires identically for real and unknown addresses, so it can't leak
@@ -89,6 +96,53 @@ defmodule EmisarWeb.UserSessionController do
     |> put_session(:magic_link_expires_at, magic_link_expiry())
     |> put_magic_return_to(return_to)
     |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  @doc """
+  Signup recovery for a typo in the just-submitted email. Only the same browser
+  that holds the pending registration magic cookie can change it.
+  """
+  def registration_email_correction(conn, %{"user" => %{"email" => email}}) do
+    context = RequestContext.from_conn(conn)
+    trimmed = email |> to_string() |> String.trim()
+    key = String.downcase(trimmed)
+
+    with {:ok, token_id, _nonce, registration_user_id} when is_binary(registration_user_id) <-
+           read_magic_cookie(conn),
+         :ok <- Throttle.check("magic_link", key, 5, 900_000),
+         {:ok, user, new_token_id, nonce, secret} <-
+           Auth.correct_registration_email(token_id, registration_user_id, trimmed, context) do
+      _ = Mailers.UserNotifier.deliver_magic_link(user, new_token_id, secret, context)
+
+      conn
+      |> put_magic_cookie(new_token_id, nonce, user.id)
+      |> put_session(:magic_link_token_id, new_token_id)
+      |> put_session(:magic_link_nonce, nonce)
+      |> put_session(:magic_link_registered, true)
+      |> put_session(:magic_link_registration_user_id, user.id)
+      |> put_session(:magic_link_email, trimmed)
+      |> put_session(:magic_link_expires_at, magic_link_expiry())
+      |> put_flash(:info, "We updated your signup email and sent a new code.")
+      |> redirect(to: ~p"/sign_in/magic?sent=1")
+    else
+      {:error, :rate_limited} ->
+        conn
+        |> put_flash(
+          :error,
+          "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
+        )
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
+
+      {:error, %Ecto.Changeset{}} ->
+        conn
+        |> put_flash(:error, "We couldn't update that signup email. Check it and try again.")
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
+
+      _ ->
+        conn
+        |> put_flash(:error, "That signup session expired. Create your account again.")
+        |> redirect(to: ~p"/sign_up")
+    end
   end
 
   defp magic_link_expiry do
@@ -176,8 +230,11 @@ defmodule EmisarWeb.UserSessionController do
     # uppercase letters + digits (Emisar.Crypto).
     secret = secret |> to_string() |> String.trim() |> String.upcase()
 
-    with {:ok, _cookie_token_id, nonce, registered?} <- read_magic_cookie(conn),
+    with {:ok, cookie_token_id, nonce, registration_user_id} <- read_magic_cookie(conn),
+         true <- cookie_token_id == link_token_id,
          {:ok, user} <- Auth.verify_magic_link(link_token_id, secret, nonce, context) do
+      registered? = is_binary(registration_user_id)
+
       conn
       |> prep.()
       |> complete_magic_sign_in(user, registered?, context)
@@ -193,9 +250,18 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  defp put_magic_cookie(conn, token_id, nonce, registered?) do
-    flag = if registered?, do: "1", else: "0"
-    put_resp_cookie(conn, @magic_cookie, "#{token_id}:#{nonce}:#{flag}", @magic_cookie_opts)
+  defp put_magic_cookie(conn, token_id, nonce, registration_user_id) do
+    registration_ref =
+      if is_binary(registration_user_id),
+        do: "user:#{registration_user_id}",
+        else: "-"
+
+    put_resp_cookie(
+      conn,
+      @magic_cookie,
+      "#{token_id}:#{nonce}:#{registration_ref}",
+      @magic_cookie_opts
+    )
   end
 
   defp put_magic_return_to(conn, nil), do: conn
@@ -207,8 +273,14 @@ defmodule EmisarWeb.UserSessionController do
     case conn.cookies[@magic_cookie] do
       value when is_binary(value) ->
         case String.split(value, ":", parts: 3) do
-          [token_id, nonce, flag] when token_id != "" and nonce != "" ->
-            {:ok, token_id, nonce, flag == "1"}
+          [token_id, nonce, registration_ref] when token_id != "" and nonce != "" ->
+            registration_user_id =
+              case registration_ref do
+                "user:" <> user_id -> user_id
+                _ -> nil
+              end
+
+            {:ok, token_id, nonce, registration_user_id}
 
           _ ->
             :error
@@ -231,6 +303,22 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp put_return_to(conn, _params), do: conn
+
+  defp registration_user_id(handoff, %Users.User{id: user_id, confirmed_at: nil}) do
+    case RegistrationHandoff.verify(handoff) do
+      {:ok, ^user_id} -> user_id
+      _ -> nil
+    end
+  end
+
+  defp registration_user_id(_handoff, %Users.User{}), do: nil
+
+  defp put_magic_registration_user_id(conn, registration_user_id)
+       when is_binary(registration_user_id),
+       do: put_session(conn, :magic_link_registration_user_id, registration_user_id)
+
+  defp put_magic_registration_user_id(conn, _),
+    do: delete_session(conn, :magic_link_registration_user_id)
 
   # A sign-in begun on a team's branded page carries a `/app/<slug>` return_to.
   # Resolve the operator's membership of THAT team and either remember it for the

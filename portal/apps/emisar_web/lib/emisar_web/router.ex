@@ -149,6 +149,7 @@ defmodule EmisarWeb.Router do
     # :magic_link_complete with a short-lived, cookie-bound handoff that sets the
     # session (a LiveView can't set the auth cookie itself).
     post "/sign_in/magic/start", UserSessionController, :magic_link_start
+    post "/sign_up/email", UserSessionController, :registration_email_correction
     get "/sign_in/magic/complete", UserSessionController, :magic_link_complete
     get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
 

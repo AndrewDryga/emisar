@@ -346,6 +346,29 @@ defmodule Emisar.Auth do
     {token.id, nonce, secret}
   end
 
+  @doc """
+  Internal — signup email correction from the same browser that requested a
+  registration magic link for this exact user. Returns `{:ok, user, token_id,
+  nonce, secret} | {:error, :invalid_or_expired | :already_confirmed |
+  %Ecto.Changeset{}}`.
+  """
+  def correct_registration_email(
+        token_id,
+        registration_user_id,
+        new_email,
+        context \\ %RequestContext{}
+      )
+      when is_binary(token_id) and is_binary(registration_user_id) and is_binary(new_email) do
+    with {:ok, %UserToken{user: %Users.User{} = user}} <-
+           fetch_live_magic_link_token(token_id),
+         :ok <- ensure_registration_token_user(user, registration_user_id),
+         {:ok, %Users.User{} = updated} <-
+           Users.correct_unconfirmed_user_email(user.id, new_email, context: context) do
+      {new_token_id, nonce, secret} = issue_magic_link(updated, context)
+      {:ok, updated, new_token_id, nonce, secret}
+    end
+  end
+
   @doc "Validity window of a magic-link code, in minutes — for the sent-page countdown."
   def magic_link_validity_in_minutes, do: UserToken.Query.magic_link_validity_in_minutes()
 
@@ -464,6 +487,31 @@ defmodule Emisar.Auth do
     else
       :error
     end
+  end
+
+  defp fetch_live_magic_link_token(token_id) do
+    if Repo.valid_uuid?(token_id) do
+      token =
+        UserToken.Query.by_id(token_id)
+        |> UserToken.Query.by_context("magic_link")
+        |> UserToken.Query.not_expired("magic_link")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.with_preloaded_user()
+        |> Repo.peek()
+
+      case token do
+        %UserToken{user: %Users.User{}} = token -> {:ok, token}
+        _ -> {:error, :invalid_or_expired}
+      end
+    else
+      {:error, :invalid_or_expired}
+    end
+  end
+
+  defp ensure_registration_token_user(%Users.User{id: user_id}, registration_user_id) do
+    if Repo.valid_uuid?(registration_user_id) and user_id == registration_user_id,
+      do: :ok,
+      else: {:error, :invalid_or_expired}
   end
 
   # -- Email-change step-up --------------------------------------------

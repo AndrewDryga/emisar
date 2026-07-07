@@ -9,6 +9,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Auth
+  alias EmisarWeb.RegistrationHandoff
 
   test "renders the email form that POSTs to the start action", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
@@ -36,6 +37,36 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Use a different email"
+  end
+
+  test "a sent signup can correct the pending email in place", %{conn: conn} do
+    conn =
+      Plug.Test.init_test_session(conn, %{
+        "magic_link_email" => "typo@example.test",
+        "magic_link_registered" => true
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    assert html =~ ~s(action="/sign_up/email")
+    assert html =~ "Send code to this email"
+    refute html =~ "Use a different email"
+  end
+
+  test "a sent signup resend preserves the signed registration handoff", %{conn: conn} do
+    user_id = Emisar.Repo.generate_id()
+
+    conn =
+      Plug.Test.init_test_session(conn, %{
+        "magic_link_email" => "typo@example.test",
+        "magic_link_registered" => true,
+        "magic_link_registration_user_id" => user_id
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
+    assert RegistrationHandoff.verify(handoff) == {:ok, user_id}
   end
 
   test "?sent=1 inlines the stashed address and offers Resend", %{conn: conn} do

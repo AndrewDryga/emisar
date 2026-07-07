@@ -1,11 +1,13 @@
 defmodule EmisarWeb.UserSignUpLiveTest do
   @moduledoc """
   Self-serve sign-up: one form creates the user AND their free-plan
-  workspace, then arms the hidden POST that mails them a one-time sign-in
-  link. Passwordless — no credential is set at registration.
+  workspace, then arms the hidden POST that mails the one-time sign-in
+  link. Passwordless — no credential is set at registration, and the magic-link
+  round-trip is the email-confirmation path.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Users
+  alias EmisarWeb.RegistrationHandoff
 
   defp sign_up_params(overrides \\ %{}) do
     Map.merge(
@@ -61,6 +63,9 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert html =~ "phx-trigger-action"
 
     {:ok, user} = Users.fetch_user_by_email(params["user"]["email"])
+    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
+    assert RegistrationHandoff.verify(handoff) == {:ok, user.id}
+
     assert user.full_name == "Founder Person"
     # Email confirmation is a separate step — never auto-confirmed.
     refute user.confirmed_at
@@ -71,12 +76,11 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       |> Emisar.Repo.all()
       |> Emisar.Repo.preload(:account)
 
-    assert [%{role: :owner, account: %{name: "Founder Co"} = account}] = memberships
+    assert [%{role: :owner, account: %{name: "Founder Co"}}] = memberships
 
-    # The new owner gets a welcome email with their team's branded sign-in link
-    # to share — selectively matched (the separate confirmation email also fires).
-    assert_receive {:email, %{subject: "Your emisar workspace is ready"} = welcome}
-    assert welcome.text_body =~ "/app/#{account.slug}/sign_in"
+    # Signup itself stays quiet: the browser's triggered POST to
+    # /sign_in/magic/start is the sole email send for the successful path.
+    refute_received {:email, _email}
   end
 
   test "when workspace setup fails, the user gets a confirmation + a recovery path", %{conn: conn} do

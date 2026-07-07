@@ -242,29 +242,6 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  @doc """
-  Welcomes a new workspace owner right after signup with their team's branded
-  sign-in link, so they can hand it to the people they want to invite. Sent
-  alongside — not instead of — the email-confirmation message.
-  """
-  def deliver_welcome(%Users.User{} = user, account) do
-    url = PublicUrl.url("/app/#{account.slug}/sign_in")
-
-    deliver(user.email, "Your emisar workspace is ready", """
-    Welcome to emisar, #{user.full_name || user.email}!
-
-    Your workspace "#{account.name}" is ready. You and your team sign in here:
-
-    #{url}
-
-    Share that link with the people you want on board — they'll sign in with
-    their email, or through single sign-on once you connect it in
-    Settings → SSO. (We've sent a separate email to confirm your address.)
-
-    — emisar
-    """)
-  end
-
   # The branded sign-in pages thread a `/app/<slug>` return_to through these
   # links so the magic link / reset lands back on the right team. Already
   # whitelisted by `EmisarWeb.ReturnTo` at the call site; encoded for the URL here.

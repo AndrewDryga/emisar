@@ -228,6 +228,54 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "correct_unconfirmed_user_email/3" do
+    test "updates an unconfirmed signup email and audits the correction" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      new_email = "corrected-#{System.unique_integer([:positive])}@example.test"
+
+      assert {:ok, %User{} = updated} =
+               Users.correct_unconfirmed_user_email(user.id, new_email)
+
+      assert updated.email == new_email
+      assert Repo.reload!(user).email == new_email
+
+      {:ok, [event], _} =
+        Emisar.Audit.list_events(subject, filter: [event_type: ["user.email_changed"]])
+
+      assert event.payload["from"] == user.email
+      assert event.payload["to"] == new_email
+      assert event.payload["method"] == "signup_correction"
+      _ = account
+    end
+
+    test "refuses after the user is confirmed" do
+      user = Fixtures.Users.create_user() |> Fixtures.Users.confirm_user()
+      new_email = "too-late-#{System.unique_integer([:positive])}@example.test"
+
+      assert Users.correct_unconfirmed_user_email(user.id, new_email) ==
+               {:error, :already_confirmed}
+
+      assert Repo.reload!(user).email == user.email
+    end
+
+    test "rejects invalid replacement emails without writing" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      assert {:error, changeset} = Users.correct_unconfirmed_user_email(user.id, "not-an-email")
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
+      assert Repo.reload!(user).email == user.email
+    end
+  end
+
   describe "change_user/2" do
     test "builds a registration changeset for the form (no DB write)" do
       user = Fixtures.Users.create_user()

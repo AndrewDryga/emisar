@@ -1,6 +1,7 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Mailers, Users}
+  alias Emisar.{Accounts, Auth, Users}
+  alias EmisarWeb.RegistrationHandoff
 
   def mount(_params, _session, socket) do
     changeset = Users.change_user(%Emisar.Users.User{})
@@ -11,6 +12,7 @@ defmodule EmisarWeb.UserSignUpLive do
      |> assign(:trigger_submit, false)
      |> assign(:account_name, "")
      |> assign(:account_name_error, nil)
+     |> assign(:registration_handoff, nil)
      |> assign_form(changeset)}
   end
 
@@ -23,7 +25,9 @@ defmodule EmisarWeb.UserSignUpLive do
 
       <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
            email to the magic-link request, so the new owner gets a sign-in
-           link immediately (no password, no re-typing their email). --%>
+           link immediately (no password, no re-typing their email). The magic
+           link confirms the email address when used, so signup itself stays
+           quiet and the operator gets one email, not three. --%>
       <.simple_form
         for={@form}
         id="registration_form"
@@ -50,9 +54,15 @@ defmodule EmisarWeb.UserSignUpLive do
           No password to set — we'll email you a one-time sign-in link and a 6-character code.
         </p>
 
-        <%!-- Marks this magic-link request as a registration, so the first
-             sign-in completing the round-trip fires sign_up_completed. --%>
-        <input type="hidden" name="registration" value="1" />
+        <%!-- Proves the controller request came from THIS completed signup, so
+             the first sign-in can fire sign_up_completed and same-browser typo
+             recovery can only update this just-created user. --%>
+        <input
+          :if={@registration_handoff}
+          type="hidden"
+          name="registration_handoff"
+          value={@registration_handoff}
+        />
 
         <:actions>
           <.button phx-disable-with="Creating..." class="w-full">
@@ -116,18 +126,14 @@ defmodule EmisarWeb.UserSignUpLive do
                },
                user
              ) do
-          {:ok, account} ->
-            :ok = Auth.deliver_confirmation_instructions(user)
-            # Hand the owner their team's branded sign-in link to share — a
-            # second, informational email (the confirmation above is the
-            # action-required one).
-            Mailers.UserNotifier.deliver_welcome(user, account)
-
+          {:ok, _account} ->
             # Flip trigger_submit → the form POSTs the email to magic_link_start,
-            # which mails the sign-in link + lands them on "check your email".
+            # which mails the sign-in link, confirms the address when completed,
+            # and lands them on "check your email".
             {:noreply,
              socket
              |> assign(:trigger_submit, true)
+             |> assign(:registration_handoff, RegistrationHandoff.sign(user.id))
              |> assign_form(Users.change_user(user))}
 
           {:error, _reason} ->

@@ -138,6 +138,36 @@ defmodule Emisar.Users do
     )
   end
 
+  @doc """
+  Internal — Auth signup recovery: update an unconfirmed registration's email
+  before the first magic-link proof. Returns `{:ok, user} | {:error,
+  :already_confirmed | :not_found | %Ecto.Changeset{}}`.
+  """
+  def correct_unconfirmed_user_email(user_id, new_email, opts \\ [])
+      when is_binary(new_email) do
+    if Repo.valid_uuid?(user_id) do
+      context = Keyword.get(opts, :context, %RequestContext{})
+
+      User.Query.not_deleted()
+      |> User.Query.by_id(user_id)
+      |> Repo.fetch_and_update(User.Query,
+        with: &unconfirmed_email(&1, new_email),
+        audit: fn updated, changeset ->
+          Audit.user_changesets(updated, "user.email_changed",
+            context: context,
+            payload: %{
+              from: changeset.data.email,
+              to: updated.email,
+              method: "signup_correction"
+            }
+          )
+        end
+      )
+    else
+      {:error, :not_found}
+    end
+  end
+
   # -- Form builders -------------------------------------------------------
 
   def change_user(%User{} = user, attrs \\ %{}) do
@@ -270,6 +300,11 @@ defmodule Emisar.Users do
   end
 
   defp mfa_verify_and_consume(%User{}, _otp, _at), do: :invalid
+
+  defp unconfirmed_email(%User{confirmed_at: nil} = user, new_email),
+    do: User.Changeset.email(user, %{email: new_email})
+
+  defp unconfirmed_email(%User{}, _new_email), do: :already_confirmed
 
   # TOTP buckets are 30 seconds wide — NimbleTOTP's verification window.
   defp totp_bucket(nil), do: nil
