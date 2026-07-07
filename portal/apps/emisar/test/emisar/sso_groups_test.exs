@@ -12,6 +12,9 @@ defmodule Emisar.SSOGroupsTest do
   alias Emisar.Fixtures
   alias Emisar.SSO.IdentityProvider
 
+  @scim_string_limit 255
+  @max_group_member_ids 5_000
+
   defp enterprise_owner do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
   end
@@ -63,6 +66,9 @@ defmodule Emisar.SSOGroupsTest do
 
   defp role_of(account_id, user_id),
     do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
+
+  defp overlong_scim_id, do: String.duplicate("g", @scim_string_limit + 1)
+  defp too_many_member_external_ids, do: for(n <- 1..(@max_group_member_ids + 1), do: "okta|#{n}")
 
   # -- Sync: role from groups ------------------------------------------
 
@@ -220,6 +226,45 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert role_of(account.id, identity.user_id) == :admin
+    end
+
+    test "rejects overlong group and member identifiers before syncing", %{provider: provider} do
+      overlong = overlong_scim_id()
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: overlong,
+                 member_external_ids: []
+               })
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-valid",
+                 display: overlong,
+                 member_external_ids: []
+               })
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-valid",
+                 member_external_ids: [overlong]
+               })
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_patch_group_members(provider, "grp-valid", [overlong], [])
+    end
+
+    test "rejects oversized group member batches before querying", %{provider: provider} do
+      too_many = too_many_member_external_ids()
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-too-large",
+                 member_external_ids: too_many
+               })
+
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_patch_group_members(provider, "grp-too-large", too_many, [])
     end
 
     @tag capture_log: true
@@ -531,6 +576,38 @@ defmodule Emisar.SSOGroupsTest do
       # The unique index on (provider_id, external_group_id) maps the violation
       # onto the first constraint field, :provider_id.
       assert "has already been taken" in errors_on(changeset).provider_id
+    end
+
+    test "overlong group mapping identifiers are rejected before the database", %{
+      provider: provider,
+      subject: subject
+    } do
+      overlong = overlong_scim_id()
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: overlong, role: :admin},
+                 subject
+               )
+
+      assert "should be at most 255 character(s)" in errors_on(changeset).external_group_id
+
+      assert {:ok, mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-valid", role: :admin},
+                 subject
+               )
+
+      assert {:error, changeset} =
+               SSO.update_group_mapping(
+                 mapping,
+                 %{external_group_display: overlong},
+                 subject
+               )
+
+      assert "should be at most 255 character(s)" in errors_on(changeset).external_group_display
     end
   end
 

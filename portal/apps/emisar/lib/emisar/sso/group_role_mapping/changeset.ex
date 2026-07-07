@@ -4,6 +4,7 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
 
   @create_fields ~w[external_group_id external_group_display role]a
   @update_fields ~w[external_group_display role]a
+  @max_string_length 255
 
   def create(account_id, provider_id, attrs) do
     %GroupRoleMapping{}
@@ -30,6 +31,8 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
     # assignment (decision 7). Defense in depth: `Accounts.sync_set_membership_role/3`
     # also refuses `:owner`, but rejecting it here keeps an owner mapping from
     # ever being stored in the first place.
+    |> validate_length(:external_group_id, max: @max_string_length)
+    |> validate_length(:external_group_display, max: @max_string_length)
     |> validate_exclusion(:role, [:owner], message: "directory sync cannot grant owner")
     |> unique_constraint([:provider_id, :external_group_id],
       name: :directory_group_role_mappings_provider_group_index

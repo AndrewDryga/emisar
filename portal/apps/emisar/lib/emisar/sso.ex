@@ -851,6 +851,8 @@ defmodule Emisar.SSO do
   # specialist assignment, but an admin mapping still wins. Never :owner
   # (mappings can't mint owners — decision 7).
   @sync_role_precedence [:admin, :billing_manager, :operator, :viewer]
+  @scim_group_string_max_length 255
+  @scim_group_member_max_count 5_000
 
   @doc """
   Internal — SCIM group upsert (`PUT /Groups`): refresh the group's display on
@@ -865,19 +867,25 @@ defmodule Emisar.SSO do
     display = attrs[:display] || attrs["display"]
     member_external_ids = attrs[:member_external_ids] || attrs["member_external_ids"] || []
 
-    # Best-effort by design (not one transaction): SCIM pushes are idempotent
-    # and the IdP re-drives them, so a partial apply self-heals on the next
-    # push. Wrapping the membership replace + per-member role recompute (each a
-    # row-locked membership update + audit) in a single transaction would hold
-    # locks across an unbounded member set for no gain over that self-heal.
-    desired_ids = resolve_member_identity_ids(provider, member_external_ids)
-    _ = refresh_group_display(provider, external_group_id, display)
+    with :ok <- validate_scim_group_values(external_group_id, display, member_external_ids) do
+      # Best-effort by design (not one transaction): SCIM pushes are idempotent
+      # and the IdP re-drives them, so a partial apply self-heals on the next
+      # push. Wrapping the membership replace + per-member role recompute (each a
+      # row-locked membership update + audit) in a single transaction would hold
+      # locks across an unbounded member set for no gain over that self-heal.
+      desired_ids = resolve_member_identity_ids(provider, member_external_ids)
+      _ = refresh_group_display(provider, external_group_id, display)
 
-    affected = replace_group_members(provider, external_group_id, desired_ids)
-    :ok = recompute_role_for_affected(provider, affected)
+      affected = replace_group_members(provider, external_group_id, desired_ids)
+      :ok = recompute_role_for_affected(provider, affected)
 
-    {:ok,
-     %{external_group_id: external_group_id, display: display, member_count: length(desired_ids)}}
+      {:ok,
+       %{
+         external_group_id: external_group_id,
+         display: display,
+         member_count: length(desired_ids)
+       }}
+    end
   end
 
   @doc """
@@ -892,17 +900,77 @@ defmodule Emisar.SSO do
         add_external_ids,
         remove_external_ids
       ) do
-    add_ids = resolve_member_identity_ids(provider, add_external_ids)
-    remove_ids = resolve_member_identity_ids(provider, remove_external_ids)
+    with :ok <- validate_required_scim_string(external_group_id),
+         :ok <- validate_scim_patch_member_ids(add_external_ids, remove_external_ids) do
+      add_ids = resolve_member_identity_ids(provider, add_external_ids)
+      remove_ids = resolve_member_identity_ids(provider, remove_external_ids)
 
-    added = add_group_members(provider, external_group_id, add_ids)
-    removed = remove_group_members(provider, external_group_id, remove_ids)
+      added = add_group_members(provider, external_group_id, add_ids)
+      removed = remove_group_members(provider, external_group_id, remove_ids)
 
-    affected = Enum.uniq(added ++ removed)
-    :ok = recompute_role_for_affected(provider, affected)
+      affected = Enum.uniq(added ++ removed)
+      :ok = recompute_role_for_affected(provider, affected)
 
-    {:ok, %{external_group_id: external_group_id, added: length(added), removed: length(removed)}}
+      {:ok,
+       %{external_group_id: external_group_id, added: length(added), removed: length(removed)}}
+    end
   end
+
+  defp validate_scim_group_values(external_group_id, display, member_external_ids) do
+    with :ok <- validate_required_scim_string(external_group_id),
+         :ok <- validate_optional_scim_string(display) do
+      validate_scim_member_ids(member_external_ids)
+    end
+  end
+
+  defp validate_scim_patch_member_ids(add_external_ids, remove_external_ids)
+       when is_list(add_external_ids) and is_list(remove_external_ids) do
+    if length(add_external_ids) + length(remove_external_ids) > @scim_group_member_max_count do
+      {:error, :invalid_scim_group}
+    else
+      case validate_scim_member_ids(add_external_ids) do
+        :ok -> validate_scim_member_ids(remove_external_ids)
+        error -> error
+      end
+    end
+  end
+
+  defp validate_scim_patch_member_ids(_add_external_ids, _remove_external_ids),
+    do: {:error, :invalid_scim_group}
+
+  defp validate_scim_member_ids(member_external_ids) when is_list(member_external_ids) do
+    cond do
+      length(member_external_ids) > @scim_group_member_max_count ->
+        {:error, :invalid_scim_group}
+
+      Enum.all?(member_external_ids, &valid_scim_required_string?/1) ->
+        :ok
+
+      true ->
+        {:error, :invalid_scim_group}
+    end
+  end
+
+  defp validate_scim_member_ids(_member_external_ids), do: {:error, :invalid_scim_group}
+
+  defp validate_required_scim_string(value) do
+    if valid_scim_required_string?(value), do: :ok, else: {:error, :invalid_scim_group}
+  end
+
+  defp validate_optional_scim_string(nil), do: :ok
+
+  defp validate_optional_scim_string(value) when is_binary(value) do
+    if String.length(value) <= @scim_group_string_max_length,
+      do: :ok,
+      else: {:error, :invalid_scim_group}
+  end
+
+  defp validate_optional_scim_string(_value), do: {:error, :invalid_scim_group}
+
+  defp valid_scim_required_string?(value) when is_binary(value),
+    do: value != "" and String.length(value) <= @scim_group_string_max_length
+
+  defp valid_scim_required_string?(_value), do: false
 
   @doc """
   Internal — recompute one identity's role from its synced group memberships:

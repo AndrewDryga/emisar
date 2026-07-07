@@ -23,20 +23,29 @@ defmodule EmisarWeb.SCIM.GroupController do
   alias EmisarWeb.SCIM.Resource
 
   plug EmisarWeb.SCIM.Auth
+  @max_group_member_ids 5_000
+  @max_patch_operations 100
 
   # POST /scim/v2/Groups — provision (or reconcile) a group's membership.
-  # `scim_upsert_group` recomputes affected members' roles best-effort and always
-  # succeeds (a per-member recompute the last-owner guard refuses is held, not an
-  # HTTP failure — see the moduledoc), so there's no domain-error branch here.
+  # `scim_upsert_group` recomputes affected members' roles best-effort: a
+  # per-member recompute the last-owner guard refuses is held, not an HTTP
+  # failure, while malformed SCIM group input is rejected as invalidValue.
   def create(conn, params) do
     provider = conn.assigns.scim_provider
-    attrs = Resource.parse_group(params)
 
-    if blank?(attrs.external_id) do
-      bad_request(conn, "invalidValue", "A SCIM Group requires a displayName/externalId.")
+    if oversized_members?(Map.get(params, "members")) do
+      render_error(conn, :invalid_scim_group)
     else
-      {:ok, summary} = SSO.scim_upsert_group(provider, attrs)
-      render_group(conn, :created, summary, attrs.member_external_ids)
+      attrs = Resource.parse_group(params)
+
+      if blank?(attrs.external_id) do
+        bad_request(conn, "invalidValue", "A SCIM Group requires a displayName/externalId.")
+      else
+        case SSO.scim_upsert_group(provider, attrs) do
+          {:ok, summary} -> render_group(conn, :created, summary, attrs.member_external_ids)
+          {:error, reason} -> render_error(conn, reason)
+        end
+      end
     end
   end
 
@@ -44,10 +53,18 @@ defmodule EmisarWeb.SCIM.GroupController do
   # id is the externalId the domain keys on (parse falls back to it).
   def replace(conn, %{"id" => external_id} = params) do
     provider = conn.assigns.scim_provider
-    attrs = Resource.parse_group(Map.put_new(params, "externalId", external_id))
+    params = Map.put_new(params, "externalId", external_id)
 
-    {:ok, summary} = SSO.scim_upsert_group(provider, attrs)
-    render_group(conn, :ok, summary, attrs.member_external_ids)
+    if oversized_members?(Map.get(params, "members")) do
+      render_error(conn, :invalid_scim_group)
+    else
+      attrs = Resource.parse_group(params)
+
+      case SSO.scim_upsert_group(provider, attrs) do
+        {:ok, summary} -> render_group(conn, :ok, summary, attrs.member_external_ids)
+        {:error, reason} -> render_error(conn, reason)
+      end
+    end
   end
 
   # PATCH /scim/v2/Groups/:id — RFC 7644 §3.5.2 Operations on `members`. We honor
@@ -65,12 +82,19 @@ defmodule EmisarWeb.SCIM.GroupController do
           member_external_ids: member_external_ids
         }
 
-        {:ok, summary} = SSO.scim_upsert_group(provider, attrs)
-        render_group(conn, :ok, summary, member_external_ids)
+        case SSO.scim_upsert_group(provider, attrs) do
+          {:ok, summary} -> render_group(conn, :ok, summary, member_external_ids)
+          {:error, reason} -> render_error(conn, reason)
+        end
 
       {:delta, add_ids, remove_ids} ->
-        {:ok, _summary} = SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids)
-        render_group(conn, :ok, %{external_group_id: external_id}, add_ids)
+        case SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids) do
+          {:ok, _summary} -> render_group(conn, :ok, %{external_group_id: external_id}, add_ids)
+          {:error, reason} -> render_error(conn, reason)
+        end
+
+      {:error, reason} ->
+        render_error(conn, reason)
 
       :unsupported ->
         unsupported_patch(conn)
@@ -90,8 +114,10 @@ defmodule EmisarWeb.SCIM.GroupController do
     provider = conn.assigns.scim_provider
     attrs = %{external_id: external_id, display: nil, member_external_ids: []}
 
-    {:ok, _summary} = SSO.scim_upsert_group(provider, attrs)
-    send_resp(conn, :no_content, "")
+    case SSO.scim_upsert_group(provider, attrs) do
+      {:ok, _summary} -> send_resp(conn, :no_content, "")
+      {:error, reason} -> render_error(conn, reason)
+    end
   end
 
   # GET /scim/v2/Groups/:id — the domain tracks group membership but exposes no
@@ -118,13 +144,16 @@ defmodule EmisarWeb.SCIM.GroupController do
   #   :unsupported           — any op we don't model (→ honest SCIM error).
   # A `replace` of the whole members set can't be combined with deltas in one
   # PatchOp (IdPs never do), so a replace wins and short-circuits.
+  defp member_ops(operations) when length(operations) > @max_patch_operations,
+    do: {:error, :invalid_scim_group}
+
   defp member_ops(operations) do
     Enum.reduce_while(operations, {:delta, [], []}, fn op, acc ->
       case classify_op(op) do
-        :skip -> {:cont, acc}
         {:replace, ids} -> {:halt, {:replace, ids}}
         {:add, ids} -> {:cont, add_to_delta(acc, ids, [])}
         {:remove, ids} -> {:cont, add_to_delta(acc, [], ids)}
+        {:error, reason} -> {:halt, {:error, reason}}
         :unsupported -> {:halt, :unsupported}
       end
     end)
@@ -147,22 +176,30 @@ defmodule EmisarWeb.SCIM.GroupController do
   defp classify_op(_op), do: :unsupported
 
   defp classify_member_op("add", path, value) do
-    if members_path?(path), do: {:add, Resource.parse_members(value)}, else: :unsupported
+    if members_path?(path), do: member_op(:add, value), else: :unsupported
   end
 
   defp classify_member_op("replace", path, value) do
-    if members_path?(path), do: {:replace, Resource.parse_members(value)}, else: :unsupported
+    if members_path?(path), do: member_op(:replace, value), else: :unsupported
   end
 
   defp classify_member_op("remove", path, value) do
+    filtered_remove = filtered_member_remove(path)
+
     cond do
-      members_path?(path) -> {:remove, Resource.parse_members(value)}
-      filtered_member_remove(path) != :skip -> filtered_member_remove(path)
+      members_path?(path) -> member_op(:remove, value)
+      filtered_remove != :skip -> filtered_remove
       true -> :unsupported
     end
   end
 
   defp classify_member_op(_verb, _path, _value), do: :unsupported
+
+  defp member_op(kind, value) do
+    if oversized_members?(value),
+      do: {:error, :invalid_scim_group},
+      else: {kind, Resource.parse_members(value)}
+  end
 
   # path "members" (or absent — a pathless members op carries the array in value).
   defp members_path?(nil), do: true
@@ -180,6 +217,11 @@ defmodule EmisarWeb.SCIM.GroupController do
 
   defp filtered_member_remove(_path), do: :skip
 
+  defp oversized_members?(members) when is_list(members),
+    do: length(members) > @max_group_member_ids
+
+  defp oversized_members?(_members), do: false
+
   defp downcase(value) when is_binary(value), do: String.downcase(value)
   defp downcase(_value), do: ""
 
@@ -190,6 +232,12 @@ defmodule EmisarWeb.SCIM.GroupController do
     |> put_status(status)
     |> json(Resource.to_group(summary, member_external_ids))
   end
+
+  defp render_error(conn, :invalid_scim_group),
+    do: bad_request(conn, "invalidValue", "The SCIM Group payload was rejected.")
+
+  defp render_error(conn, _reason),
+    do: bad_request(conn, "invalidValue", "The SCIM Group request could not be processed.")
 
   defp not_found(conn, external_id) do
     detail =

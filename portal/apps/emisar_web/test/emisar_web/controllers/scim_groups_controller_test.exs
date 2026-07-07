@@ -14,6 +14,9 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   alias Emisar.SSO.IdentityProvider
 
   @scim_content_type "application/scim+json"
+  @scim_string_limit 255
+  @max_group_member_ids 5_000
+  @max_patch_operations 100
 
   # Enterprise account + a SCIM-enabled provider. Returns the provider, its raw
   # bearer (shown once), the owner subject, and the account.
@@ -63,6 +66,9 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       "members" => Enum.map(member_external_ids, &%{"value" => &1})
     }
   end
+
+  defp overlong_scim_id, do: String.duplicate("g", @scim_string_limit + 1)
+  defp too_many_member_external_ids, do: for(n <- 1..(@max_group_member_ids + 1), do: "okta|#{n}")
 
   defp auth(conn, token), do: put_req_header(conn, "authorization", "Bearer " <> token)
 
@@ -167,6 +173,16 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["status"] == "400"
+    end
+
+    test "an overlong group externalId → 400 invalidValue", %{conn: conn, token: token} do
+      body =
+        conn
+        |> scim_send(token, :post, ~p"/scim/v2/Groups", group_payload(overlong_scim_id(), []))
+        |> json_response(400)
+
+      assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
+      assert body["scimType"] == "invalidValue"
     end
 
     test "an empty members set empties the group and renders members:[]", %{
@@ -299,6 +315,20 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidPath"
     end
 
+    test "a PATCH with too many operations → 400 invalidValue", %{conn: conn, token: token} do
+      operations =
+        for _n <- 1..(@max_patch_operations + 1) do
+          %{"op" => "add", "path" => "members", "value" => []}
+        end
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp", %{"Operations" => operations})
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
+    end
+
     test "a whole-set `replace` of members short-circuits to a full upsert", %{
       conn: conn,
       token: token,
@@ -340,6 +370,24 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert role_of(account.id, incoming.user_id) == :operator
       assert role_of(account.id, keep.user_id) == :viewer
+    end
+
+    test "a PATCH replace with an overlong member id → 400 invalidValue", %{
+      conn: conn,
+      token: token
+    } do
+      replace_body = %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "members", "value" => [%{"value" => overlong_scim_id()}]}
+        ]
+      }
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-ops", replace_body)
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
     end
 
     test "a pathless add op carries the member ids in `value`", %{
@@ -556,6 +604,23 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert body["id"] == "grp-ops"
       assert role_of(account.id, identity.user_id) == :operator
+    end
+
+    test "PUT rejects group member lists over the cap before replacing", %{
+      conn: conn,
+      token: token
+    } do
+      body =
+        conn
+        |> scim_send(
+          token,
+          :put,
+          ~p"/scim/v2/Groups/grp-too-large",
+          group_payload("grp-too-large", too_many_member_external_ids())
+        )
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
     end
 
     test "PUT with no externalId in the body keys on the path :id", %{
