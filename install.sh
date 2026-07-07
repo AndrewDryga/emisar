@@ -717,8 +717,8 @@ install_binary() {
   fi
 }
 
-# install_default_packs installs the host-matched starter packs from the
-# bundle shipped inside this tarball (offline — no registry round-trip).
+# install_default_packs installs the starter packs from the bundle shipped
+# inside this tarball (offline — no registry round-trip).
 # The full catalog is fetched on demand later via `emisar pack install
 # <name>`. $1 is the extracted tarball root.
 install_default_packs() {
@@ -730,16 +730,26 @@ install_default_packs() {
     return 0
   fi
 
-  # Let the runner pick which bundled packs suit this host: `pack suggest`
-  # inspects the host (binaries on PATH, in standard dirs, or running as a
-  # process) and matches the bundle's declared requirements — data-driven,
-  # so a new bundled pack needs no edit here. Intersect with what's bundled
-  # in case catalog and bundle ever drift; fall back to the OS-agnostic
-  # core if suggest can't run.
   local wanted selected=()
-  while IFS= read -r wanted; do
-    [ -n "${wanted}" ] && [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
-  done < <("${BIN_DIR}/emisar" pack suggest --catalog "${bundle}" --names-only 2>/dev/null || true)
+
+  if [ "${INIT}" = "none" ]; then
+    # Binary-only installs commonly run in Cloud Shell / CI / containers,
+    # where the image has many client CLIs installed but is not the host
+    # being managed. Do not treat that toolbelt as a service inventory.
+    for wanted in linux-core debugging; do
+      [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
+    done
+  else
+    # Let the runner pick which bundled packs suit this host: `pack suggest`
+    # inspects the host (binaries on PATH, in standard dirs, or running as a
+    # process) and matches the bundle's declared requirements — data-driven,
+    # so a new bundled pack needs no edit here. Intersect with what's bundled
+    # in case catalog and bundle ever drift; fall back to the OS-agnostic
+    # core if suggest can't run.
+    while IFS= read -r wanted; do
+      [ -n "${wanted}" ] && [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
+    done < <("${BIN_DIR}/emisar" pack suggest --catalog "${bundle}" --names-only 2>/dev/null || true)
+  fi
 
   if [ ${#selected[@]} -eq 0 ]; then
     for wanted in linux-core debugging; do
@@ -751,7 +761,11 @@ install_default_packs() {
     return 0
   fi
 
-  if ! confirm "install starter packs for this host (${selected[*]})?"; then
+  local prompt="install starter packs for this host (${selected[*]})?"
+  if [ "${INIT}" = "none" ]; then
+    prompt="install core starter packs (${selected[*]})? (--no-service skips host-detected packs)"
+  fi
+  if ! confirm "${prompt}"; then
     log "skipping starter packs — add them later with: ${BIN_DIR}/emisar pack install <name>"
     return 0
   fi
@@ -780,6 +794,11 @@ install_default_packs() {
 install_suggested_packs() {
   local dst="${ETC_DIR}/packs"
   local out
+
+  if [ "${INIT}" = "none" ]; then
+    log "binary-only install: skipping host-detected pack suggestions; add packs later with: ${BIN_DIR}/emisar pack install <name>"
+    return 0
+  fi
 
   # `if cmd` (not `cmd || true`) so set -e doesn't abort here, and so we can
   # tell "catalog unreachable" (non-zero exit) from "nothing matched" (zero

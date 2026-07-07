@@ -215,9 +215,17 @@ defmodule EmisarWeb.PacksTest do
       # grafana detects by process only — :3000 is shared with Node/dev apps.
       assert grafana.detect.ports == []
 
-      # consul: no detect block → binaries derived from requires (consul,
-      # which is service-specific, survives; a generic helper would not).
+      # consul: no detect.binaries block → binaries derived from requires
+      # (consul survives as a useful CLI signal; generic curl is stripped).
       assert by_id["consul"].detect.binaries == ["consul"]
+      assert "consul" in by_id["consul"].detect.processes
+      assert 8500 in by_id["consul"].detect.ports
+
+      # Required CLIs stay valid suggestion signals on supervised hosts.
+      assert by_id["postgres"].detect.binaries == ["psql"]
+      assert "postgres" in by_id["postgres"].detect.processes
+      assert by_id["docker"].detect.binaries == ["docker"]
+      assert "dockerd" in by_id["docker"].detect.processes
 
       # cloudflare: requires only curl and declares no detect → all-empty
       # signal → omitted entirely (a remote-API pack isn't host-detectable).
@@ -385,6 +393,8 @@ defmodule EmisarWeb.PacksTest do
       # (the ubiquitous helpers — curl/jq/… — say nothing about the host),
       # and a remote-API-only pack with no detectable signal is omitted.
       assert by_id["grafana"]["detect"]["binaries"] == []
+      assert by_id["postgres"]["detect"]["binaries"] == ["psql"]
+      assert by_id["docker"]["detect"]["binaries"] == ["docker"]
       refute Map.has_key?(by_id, "cloudflare")
 
       # The JSON entry exposes ONLY the lean public shape — no hash, no
