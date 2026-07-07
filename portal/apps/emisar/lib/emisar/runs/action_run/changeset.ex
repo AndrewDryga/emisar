@@ -1,5 +1,6 @@
 defmodule Emisar.Runs.ActionRun.Changeset do
   use Emisar, :changeset
+  alias Emisar.Repo.Changeset, as: RepoChangeset
   alias Emisar.Runs.ActionRun
 
   @create_fields ~w[
@@ -18,25 +19,30 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   ]a
 
   # Generous caps — well above any real action's args (the largest, the shell
-  # pack's `script`, is 64 KB) or an operator's "why" reason — but they bound a
-  # hostile MCP client that would otherwise write a multi-MB row and fan it onto
-  # the runner's PubSub topic. The runner re-validates args per-spec at
-  # execution, but the cloud-side cost is paid before that rejection.
+  # pack's `script`, is 64 KB) — but they bound a hostile MCP client that would
+  # otherwise write a multi-MB row and fan it onto the runner's PubSub topic.
+  # The runner re-validates args per-spec at execution, but the cloud-side cost
+  # is paid before that rejection.
   @max_args_bytes 262_144
-  @max_reason_length 4_096
+  @max_reason_length 255
   # An honest attestation is ~300 bytes serialized (key_id + 128-hex sig + nonce
   # + timestamp); 8 KB is generous headroom while bounding the jsonb row + the
   # relayed wire envelope. The MCP boundary (normalize_attestation) already caps
   # each field; this backstops any other writer.
   @max_attestation_bytes 8_192
+  # Runner-origin text can be large enough to explain a failure or show the
+  # redacted command, but not unbounded. Plain string columns stay within the DB
+  # string budget so malicious runner values fail as changeset errors first.
+  @max_runner_text_length 16_384
+  @max_db_string_length 255
 
   def create(attrs) do
     %ActionRun{}
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
     |> validate_length(:reason, max: @max_reason_length)
-    |> validate_args_size()
-    |> validate_attestation_size()
+    |> RepoChangeset.validate_json_size(:args, @max_args_bytes)
+    |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> unique_constraint([:account_id, :request_id])
     |> unique_constraint([:api_key_id, :idempotency_key],
       name: :action_runs_api_key_idempotency_key_index
@@ -50,41 +56,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     run
     |> cast(attrs, @transition_fields)
     |> put_change(:status, status)
-  end
-
-  defp validate_args_size(changeset) do
-    case get_change(changeset, :args) do
-      args when is_map(args) ->
-        case Jason.encode(args) do
-          {:ok, json} when byte_size(json) > @max_args_bytes ->
-            add_error(changeset, :args, "is too large (max #{@max_args_bytes} bytes serialized)")
-
-          _ ->
-            changeset
-        end
-
-      _ ->
-        changeset
-    end
-  end
-
-  defp validate_attestation_size(changeset) do
-    case get_change(changeset, :attestation) do
-      att when is_map(att) ->
-        case Jason.encode(att) do
-          {:ok, json} when byte_size(json) > @max_attestation_bytes ->
-            add_error(
-              changeset,
-              :attestation,
-              "is too large (max #{@max_attestation_bytes} bytes serialized)"
-            )
-
-          _ ->
-            changeset
-        end
-
-      _ ->
-        changeset
-    end
+    |> validate_length(:reason_text, max: @max_reason_length)
+    |> validate_length(:error_message, max: @max_runner_text_length)
+    |> validate_length(:executed_command, max: @max_runner_text_length)
+    |> validate_length(:stdout_sha256, max: @max_db_string_length)
+    |> validate_length(:stderr_sha256, max: @max_db_string_length)
+    |> validate_length(:event_id, max: @max_db_string_length)
   end
 end

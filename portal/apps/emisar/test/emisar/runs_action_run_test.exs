@@ -2,6 +2,31 @@ defmodule Emisar.Runs.ActionRunTest do
   use ExUnit.Case, async: true
   alias Emisar.Runs.ActionRun
 
+  defp create_attrs(attrs) do
+    Map.merge(
+      %{
+        account_id: Ecto.UUID.generate(),
+        runner_id: Ecto.UUID.generate(),
+        request_id: "req_x",
+        action_id: "linux.uptime",
+        source: "operator"
+      },
+      attrs
+    )
+  end
+
+  defp transition_run do
+    %ActionRun{
+      id: Ecto.UUID.generate(),
+      account_id: Ecto.UUID.generate(),
+      runner_id: Ecto.UUID.generate(),
+      request_id: "req_x",
+      action_id: "linux.uptime",
+      source: :operator,
+      status: :running
+    }
+  end
+
   describe "terminal?/1 (status transition matrix)" do
     @terminal [
       :success,
@@ -51,17 +76,56 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects unknown source values" do
-      changeset =
-        ActionRun.Changeset.create(%{
-          account_id: Ecto.UUID.generate(),
-          runner_id: Ecto.UUID.generate(),
-          request_id: "req_x",
-          action_id: "linux.uptime",
-          source: "wat"
-        })
+      changeset = ActionRun.Changeset.create(create_attrs(%{source: "wat"}))
 
       refute changeset.valid?
       assert {"is invalid", _} = changeset.errors[:source]
+    end
+
+    test "rejects an oversized operator reason before the DB string column does" do
+      changeset = ActionRun.Changeset.create(create_attrs(%{reason: String.duplicate("x", 256)}))
+
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :reason)
+    end
+  end
+
+  describe "transition/3 size caps" do
+    test "accepts normal runner result metadata" do
+      changeset =
+        ActionRun.Changeset.transition(transition_run(), :success, %{
+          error_message: "exit status 1",
+          executed_command: "uptime -p",
+          event_id: "evt_123",
+          stdout_sha256: String.duplicate("a", 64),
+          stderr_sha256: String.duplicate("b", 64)
+        })
+
+      assert changeset.valid?
+    end
+
+    test "rejects oversized runner result text fields" do
+      for field <- [:error_message, :executed_command] do
+        changeset =
+          ActionRun.Changeset.transition(transition_run(), :failed, %{
+            field => String.duplicate("x", 16_385)
+          })
+
+        refute changeset.valid?
+        assert Keyword.has_key?(changeset.errors, field)
+      end
+    end
+
+    test "rejects oversized runner result string fields before the DB does" do
+      for field <- [:reason_text, :event_id, :stdout_sha256, :stderr_sha256] do
+        changeset =
+          ActionRun.Changeset.transition(transition_run(), :failed, %{
+            field => String.duplicate("x", 256)
+          })
+
+        refute changeset.valid?
+        assert Keyword.has_key?(changeset.errors, field)
+      end
     end
   end
 end
