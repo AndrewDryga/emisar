@@ -34,6 +34,65 @@ defmodule Emisar.Accounts.Account.Query do
     do: limit(queryable, ^n)
 
   @doc """
+  Accounts whose Paddle Customer is missing or stale. The billing contact is
+  stable while the stored user remains an active owner with a confirmed email;
+  when that owner is removed, suspended, demoted, deleted, or changes email, the
+  next customer-sync sweep reselects/updates Paddle.
+  """
+  def needing_paddle_customer_sync(queryable) do
+    queryable
+    |> with_joined_paddle_billing_contact_membership()
+    |> with_joined_paddle_billing_contact_user()
+    |> where(
+      [
+        accounts: a,
+        paddle_billing_contact_membership: m,
+        paddle_billing_contact_user: u
+      ],
+      is_nil(a.paddle_customer_id) or
+        is_nil(a.paddle_billing_contact_user_id) or
+        is_nil(a.paddle_customer_synced_at) or
+        a.updated_at > a.paddle_customer_synced_at or
+        is_nil(m.id) or
+        m.updated_at > a.paddle_customer_synced_at or
+        is_nil(u.id) or
+        is_nil(u.email) or
+        is_nil(u.confirmed_at) or
+        u.updated_at > a.paddle_customer_synced_at
+    )
+  end
+
+  defp with_joined_paddle_billing_contact_membership(queryable) do
+    with_named_binding(queryable, :paddle_billing_contact_membership, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [accounts: a],
+        membership in ^Emisar.Accounts.Membership.Query.not_deleted(),
+        on:
+          membership.account_id == a.id and
+            membership.user_id == a.paddle_billing_contact_user_id and
+            membership.role == :owner and
+            is_nil(membership.disabled_at),
+        as: ^binding
+      )
+    end)
+  end
+
+  defp with_joined_paddle_billing_contact_user(queryable) do
+    with_named_binding(queryable, :paddle_billing_contact_user, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [accounts: a],
+        user in ^Emisar.Users.User.Query.not_deleted(),
+        on: user.id == a.paddle_billing_contact_user_id,
+        as: ^binding
+      )
+    end)
+  end
+
+  @doc """
   Restrict to accounts the given user is a member of — joins through
   membership on `membership.user_id` and excludes suspended memberships
   (`disabled_at`). Used by the "switch account" picker, so a suspended user

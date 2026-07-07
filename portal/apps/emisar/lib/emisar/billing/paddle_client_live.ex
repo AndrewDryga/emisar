@@ -16,14 +16,16 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @impl true
   def create_customer(attrs) do
-    body = %{
-      "email" => attrs[:email],
-      "name" => attrs[:name],
-      "custom_data" => %{"account_id" => attrs[:account_id]}
-    }
-
-    with {:ok, %{"data" => %{"id" => id} = data}} <- post_json("/customers", body) do
+    with {:ok, %{"data" => %{"id" => id} = data}} <-
+           post_json("/customers", customer_body(attrs)) do
       {:ok, Map.put(data, "id", id)}
+    end
+  end
+
+  @impl true
+  def update_customer(%{customer: customer_id} = attrs) when is_binary(customer_id) do
+    with {:ok, %{"data" => data}} <- patch_json("/customers/#{customer_id}", customer_body(attrs)) do
+      {:ok, data}
     end
   end
 
@@ -156,25 +158,35 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
+  defp customer_body(attrs) do
+    %{
+      "email" => attrs[:email],
+      "name" => attrs[:name],
+      "custom_data" => %{"account_id" => attrs[:account_id]}
+    }
+  end
+
   defp post_json(path, params) do
     body = Jason.encode!(params)
     request = Finch.build(:post, base() <> path, headers(), body)
 
-    case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
-      {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
-        Jason.decode(resp_body)
+    request_json(request)
+  end
 
-      {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        {:error, {:http, status, resp_body}}
+  defp patch_json(path, params) do
+    body = Jason.encode!(params)
+    request = Finch.build(:patch, base() <> path, headers(), body)
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+    request_json(request)
   end
 
   defp get(path) do
     request = Finch.build(:get, base() <> path, headers())
 
+    request_json(request)
+  end
+
+  defp request_json(request) do
     case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
         Jason.decode(body)

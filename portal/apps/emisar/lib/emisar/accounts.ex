@@ -1561,16 +1561,92 @@ defmodule Emisar.Accounts do
     |> Repo.aggregate(:count, :id)
   end
 
-  # First-wins under the row lock: a concurrent checkout already linked a
-  # customer — keep it (the empty changeset makes the update a no-op write).
-  defp link_paddle_customer_unless_linked(
-         %Account{paddle_customer_id: nil} = account,
-         customer_id
-       ),
-       do: Account.Changeset.link_paddle_customer(account, customer_id)
+  @doc """
+  Internal — Billing worker: accounts whose Paddle customer is missing or
+  stale. The caller supplies string-key Oban args normalized to keyword opts:
+  `:limit` and optional `:after_account_id`.
+  """
+  def list_paddle_customer_sync_accounts(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
 
-  defp link_paddle_customer_unless_linked(%Account{} = account, _customer_id),
-    do: Ecto.Changeset.change(account)
+    Account.Query.not_deleted()
+    |> Account.Query.needing_paddle_customer_sync()
+    |> after_paddle_sync_account(Keyword.get(opts, :after_account_id))
+    |> Account.Query.ordered_by_id()
+    |> Account.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  defp after_paddle_sync_account(queryable, id) when is_binary(id),
+    do: Account.Query.after_id(queryable, id)
+
+  defp after_paddle_sync_account(queryable, _id), do: queryable
+
+  @doc """
+  Internal — Billing customer sync: load the account and the stable billing
+  owner. The current billing-contact user is kept while they remain an active
+  owner with a confirmed email; only then do we fall back to the earliest active
+  confirmed owner.
+  """
+  def fetch_paddle_customer_sync_target(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      account_query =
+        Account.Query.not_deleted()
+        |> Account.Query.by_id(account_id)
+
+      with {:ok, account} <- Repo.fetch(account_query, Account.Query),
+           {:ok, owner} <- fetch_paddle_billing_owner(account) do
+        {:ok, %{account: account, owner: owner}}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp fetch_paddle_billing_owner(%Account{paddle_billing_contact_user_id: user_id} = account)
+       when is_binary(user_id) do
+    case fetch_active_owner_user(account.id, user_id) do
+      {:ok, owner} -> {:ok, owner}
+      {:error, :not_found} -> fetch_first_active_owner_user(account.id)
+    end
+  end
+
+  defp fetch_paddle_billing_owner(%Account{} = account) do
+    fetch_first_active_owner_user(account.id)
+  end
+
+  defp fetch_first_active_owner_user(account_id) do
+    result =
+      Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_role(:owner)
+      |> Membership.Query.with_confirmed_user_email()
+      |> Membership.Query.with_preloaded_user()
+      |> Membership.Query.oldest()
+      |> Repo.fetch(Membership.Query)
+      |> owner_user_result()
+
+    case result do
+      {:ok, owner} -> {:ok, owner}
+      {:error, :not_found} -> {:error, :no_billing_contact}
+    end
+  end
+
+  defp fetch_active_owner_user(account_id, user_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.not_disabled()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_user_id(user_id)
+    |> Membership.Query.by_role(:owner)
+    |> Membership.Query.with_confirmed_user_email()
+    |> Membership.Query.with_preloaded_user()
+    |> Repo.fetch(Membership.Query)
+    |> owner_user_result()
+  end
+
+  defp owner_user_result({:ok, %Membership{user: %Users.User{} = user}}), do: {:ok, user}
+  defp owner_user_result({:error, :not_found}), do: {:error, :not_found}
 
   @doc """
   Internal — Billing webhook resolve: the account a Paddle customer id
@@ -1587,21 +1663,42 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — Billing: stamp the Paddle customer id after first checkout.
-  First-wins under the row lock: two concurrent first-checkouts both
-  create a vendor customer, but only the first write lands — the loser
-  gets the winner's account back (its vendor customer stays orphaned at
-  Paddle, an accepted cost; orphans bill nothing). Callers must read the
-  id off the RETURNED account, not the one they minted.
+  Internal — Billing: stamp a successful Paddle customer sync.
+  First-wins under the row lock: two concurrent first syncs may both mint
+  a vendor customer, but only the first customer id lands. A loser gets the
+  winner's account back without marking it clean; Billing then updates the
+  winning Paddle customer and calls this again with the stored id.
   """
-  def put_account_paddle_customer_id(%Account{} = account, customer_id)
-      when is_binary(customer_id) do
+  def put_account_paddle_customer_sync(
+        %Account{} = account,
+        customer_id,
+        billing_contact_user_id
+      )
+      when is_binary(customer_id) and is_binary(billing_contact_user_id) do
     Account.Query.not_deleted()
     |> Account.Query.by_id(account.id)
     |> Repo.fetch_and_update(Account.Query,
-      with: &link_paddle_customer_unless_linked(&1, customer_id)
+      with: &sync_paddle_customer_if_current(&1, customer_id, billing_contact_user_id)
     )
   end
+
+  defp sync_paddle_customer_if_current(
+         %Account{paddle_customer_id: nil} = account,
+         customer_id,
+         billing_contact_user_id
+       ),
+       do: Account.Changeset.sync_paddle_customer(account, customer_id, billing_contact_user_id)
+
+  defp sync_paddle_customer_if_current(
+         %Account{paddle_customer_id: existing_customer_id} = account,
+         customer_id,
+         billing_contact_user_id
+       )
+       when existing_customer_id == customer_id,
+       do: Account.Changeset.sync_paddle_customer(account, customer_id, billing_contact_user_id)
+
+  defp sync_paddle_customer_if_current(%Account{} = account, _customer_id, _owner_id),
+    do: Ecto.Changeset.change(account)
 
   # -- Authorization ----------------------------------------------------
 

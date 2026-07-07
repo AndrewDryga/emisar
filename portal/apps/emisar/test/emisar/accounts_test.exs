@@ -2786,7 +2786,8 @@ defmodule Emisar.AccountsTest do
   describe "peek_account_by_paddle_customer_id/1" do
     test "resolves the account a Paddle customer id belongs to" do
       account = Fixtures.Accounts.create_account()
-      {:ok, linked} = Accounts.put_account_paddle_customer_id(account, "ctm_123")
+      owner = Fixtures.Users.create_user()
+      {:ok, linked} = Accounts.put_account_paddle_customer_sync(account, "ctm_123", owner.id)
 
       assert %Account{id: id} = Accounts.peek_account_by_paddle_customer_id("ctm_123")
       assert id == linked.id
@@ -2797,7 +2798,8 @@ defmodule Emisar.AccountsTest do
       # cancellation/final-invoice webhooks must still resolve so Billing can
       # close the books.
       account = Fixtures.Accounts.create_account()
-      {:ok, _} = Accounts.put_account_paddle_customer_id(account, "ctm_deleted")
+      owner = Fixtures.Users.create_user()
+      {:ok, _} = Accounts.put_account_paddle_customer_sync(account, "ctm_deleted", owner.id)
       Fixtures.Accounts.mark_account_as_deleted(account)
 
       assert %Account{id: id} = Accounts.peek_account_by_paddle_customer_id("ctm_deleted")
@@ -2809,27 +2811,192 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "put_account_paddle_customer_id/2" do
-    test "stamps the Paddle customer id on first checkout" do
+  describe "list_paddle_customer_sync_accounts/1" do
+    test "returns accounts with a missing Paddle customer" do
       account = Fixtures.Accounts.create_account()
-      assert is_nil(account.paddle_customer_id)
+      owner = Fixtures.Users.create_user()
 
-      assert {:ok, %Account{paddle_customer_id: "ctm_first"}} =
-               Accounts.put_account_paddle_customer_id(account, "ctm_first")
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
-      assert Repo.reload!(account).paddle_customer_id == "ctm_first"
+      assert Enum.map(Accounts.list_paddle_customer_sync_accounts(), & &1.id) == [account.id]
     end
 
-    test "first-wins: a second checkout keeps the already-linked id" do
+    test "omits accounts whose customer is synced to the current owner email" do
       account = Fixtures.Accounts.create_account()
-      {:ok, _} = Accounts.put_account_paddle_customer_id(account, "ctm_winner")
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      {:ok, _} = Accounts.put_account_paddle_customer_sync(account, "ctm_synced", owner.id)
+
+      assert Accounts.list_paddle_customer_sync_accounts() == []
+    end
+
+    test "returns a synced account after its stored billing owner changes email" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      {:ok, _} = Accounts.put_account_paddle_customer_sync(account, "ctm_stale", owner.id)
+
+      Fixtures.Users.update_email(owner, "changed-#{System.unique_integer([:positive])}@test.dev")
+
+      assert Enum.map(Accounts.list_paddle_customer_sync_accounts(), & &1.id) == [account.id]
+    end
+  end
+
+  describe "fetch_paddle_customer_sync_target/1" do
+    test "selects the earliest active confirmed owner when no billing contact is stored" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user(email: "owner-a@example.test")
+      other_owner = Fixtures.Users.create_user(email: "owner-b@example.test")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: other_owner.id,
+        role: "owner"
+      )
+
+      assert {:ok, %{account: %Account{id: account_id}, owner: selected}} =
+               Accounts.fetch_paddle_customer_sync_target(account.id)
+
+      assert account_id == account.id
+      assert selected.id == owner.id
+    end
+
+    test "keeps the stored billing contact while they remain an active owner" do
+      account = Fixtures.Accounts.create_account()
+      first_owner = Fixtures.Users.create_user()
+      billing_owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: first_owner.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: billing_owner.id,
+        role: "owner"
+      )
+
+      {:ok, _} =
+        Accounts.put_account_paddle_customer_sync(account, "ctm_stable", billing_owner.id)
+
+      assert {:ok, %{owner: selected}} = Accounts.fetch_paddle_customer_sync_target(account.id)
+      assert selected.id == billing_owner.id
+    end
+
+    test "falls back when the stored billing contact is no longer an owner" do
+      account = Fixtures.Accounts.create_account()
+      fallback_owner = Fixtures.Users.create_user()
+      billing_owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: fallback_owner.id,
+        role: "owner"
+      )
+
+      billing_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: billing_owner.id,
+          role: "owner"
+        )
+
+      {:ok, _} =
+        Accounts.put_account_paddle_customer_sync(account, "ctm_fallback", billing_owner.id)
+
+      Fixtures.Memberships.force_role(billing_membership, "admin")
+
+      assert {:ok, %{owner: selected}} = Accounts.fetch_paddle_customer_sync_target(account.id)
+      assert selected.id == fallback_owner.id
+    end
+
+    test "skips unconfirmed owners and refuses an account with no billable owner email" do
+      account = Fixtures.Accounts.create_account()
+      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: unconfirmed.id,
+        role: "owner"
+      )
+
+      assert Accounts.fetch_paddle_customer_sync_target(account.id) ==
+               {:error, :no_billing_contact}
+    end
+  end
+
+  describe "put_account_paddle_customer_sync/3" do
+    test "stamps the Paddle customer id, billing contact, and sync time" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      assert is_nil(account.paddle_customer_id)
+
+      assert {:ok,
+              %Account{
+                paddle_customer_id: "ctm_first",
+                paddle_billing_contact_user_id: owner_id,
+                paddle_customer_synced_at: %DateTime{}
+              }} = Accounts.put_account_paddle_customer_sync(account, "ctm_first", owner.id)
+
+      assert owner_id == owner.id
+
+      reloaded = Repo.reload!(account)
+      assert reloaded.paddle_customer_id == "ctm_first"
+      assert reloaded.paddle_billing_contact_user_id == owner.id
+    end
+
+    test "first-wins: a different customer id keeps the already-linked id" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      other_owner = Fixtures.Users.create_user()
+      {:ok, _} = Accounts.put_account_paddle_customer_sync(account, "ctm_winner", owner.id)
 
       # The loser's write is a no-op — the caller gets the winning account back,
       # still carrying the first id (callers read the id off the RETURNED account).
-      assert {:ok, %Account{paddle_customer_id: "ctm_winner"}} =
-               Accounts.put_account_paddle_customer_id(account, "ctm_loser")
+      assert {:ok,
+              %Account{
+                paddle_customer_id: "ctm_winner",
+                paddle_billing_contact_user_id: owner_id
+              }} = Accounts.put_account_paddle_customer_sync(account, "ctm_loser", other_owner.id)
 
+      assert owner_id == owner.id
       assert Repo.reload!(account).paddle_customer_id == "ctm_winner"
+    end
+
+    test "a sync for the stored customer id may update the billing contact" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      new_owner = Fixtures.Users.create_user()
+      {:ok, linked} = Accounts.put_account_paddle_customer_sync(account, "ctm_keep", owner.id)
+
+      assert {:ok, %Account{paddle_billing_contact_user_id: owner_id}} =
+               Accounts.put_account_paddle_customer_sync(linked, "ctm_keep", new_owner.id)
+
+      assert owner_id == new_owner.id
     end
   end
 

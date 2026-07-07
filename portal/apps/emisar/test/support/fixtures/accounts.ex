@@ -19,6 +19,7 @@ defmodule Emisar.Fixtures.Accounts do
   @doc ~S|Persists an account. A non-"free" `:plan` mints a matching subscription (plan lives on the subscription, not the account).|
   def create_account(attrs \\ %{}) do
     {plan, attrs} = pop_plan(attrs)
+    {paddle_attrs, attrs} = pop_paddle_attrs(attrs)
 
     {:ok, account} =
       attrs
@@ -26,6 +27,7 @@ defmodule Emisar.Fixtures.Accounts do
       |> Account.Changeset.create()
       |> Repo.insert()
 
+    account = maybe_seed_paddle_customer(account, paddle_attrs)
     maybe_seed_plan(account, plan)
     account
   end
@@ -67,4 +69,32 @@ defmodule Emisar.Fixtures.Accounts do
     do: create_subscription(account, plan)
 
   def maybe_seed_plan(_account, _plan), do: :ok
+
+  defp pop_paddle_attrs(attrs) do
+    attrs = Map.new(attrs)
+
+    {paddle_customer_id, attrs} = Map.pop(attrs, :paddle_customer_id)
+    {paddle_billing_contact_user_id, attrs} = Map.pop(attrs, :paddle_billing_contact_user_id)
+    {paddle_customer_synced_at, attrs} = Map.pop(attrs, :paddle_customer_synced_at)
+
+    paddle_attrs =
+      %{}
+      |> maybe_put(:paddle_customer_id, paddle_customer_id)
+      |> maybe_put(:paddle_billing_contact_user_id, paddle_billing_contact_user_id)
+      |> maybe_put(:paddle_customer_synced_at, paddle_customer_synced_at)
+
+    {paddle_attrs, attrs}
+  end
+
+  defp maybe_seed_paddle_customer(%Account{} = account, attrs) when map_size(attrs) == 0,
+    do: account
+
+  defp maybe_seed_paddle_customer(%Account{} = account, attrs) do
+    account
+    |> Ecto.Changeset.change(attrs)
+    |> Repo.update!()
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

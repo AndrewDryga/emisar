@@ -70,6 +70,7 @@ config :emisar, Oban,
        # Every minute — picks up runs that have been pending/sent past
        # the 2-min grace window and forces them to a terminal state.
        {"* * * * *", Emisar.Workers.RunDispatchTimeout},
+       {"*/15 * * * *", Emisar.Workers.PaddleCustomerSync},
        {"0 * * * *", Emisar.Workers.BillingSync}
      ]}
   ],

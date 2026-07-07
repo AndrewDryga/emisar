@@ -64,6 +64,10 @@ defmodule Emisar.Accounts.Membership.Query do
   def latest(queryable),
     do: queryable |> order_by([memberships: m], desc: m.inserted_at) |> limit(1)
 
+  @doc "Earliest-joined membership only — orders and limits in one step."
+  def oldest(queryable),
+    do: queryable |> order_by([memberships: m], asc: m.inserted_at, asc: m.id) |> limit(1)
+
   @doc """
   Inner-join the membership's (non-deleted) account, idempotently. Use it
   on its own to filter on account columns; pair with a preload via
@@ -116,6 +120,13 @@ defmodule Emisar.Accounts.Membership.Query do
     queryable
     |> with_joined_user()
     |> where([user: u], not is_nil(u.mfa_enabled_at))
+  end
+
+  @doc "Restrict to memberships whose (non-deleted) user has a confirmed email address."
+  def with_confirmed_user_email(queryable) do
+    queryable
+    |> with_joined_user()
+    |> where([user: u], not is_nil(u.confirmed_at) and not is_nil(u.email))
   end
 
   @doc "Select only the (non-deleted) members' emails — the deliverability overlay."

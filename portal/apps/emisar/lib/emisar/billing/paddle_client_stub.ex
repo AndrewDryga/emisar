@@ -26,6 +26,17 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def update_customer(%{customer: customer_id} = attrs) do
+    {:ok,
+     %{
+       "id" => customer_id,
+       "email" => attrs[:email],
+       "name" => attrs[:name],
+       "custom_data" => %{"account_id" => attrs[:account_id]}
+     }}
+  end
+
+  @impl true
   def create_checkout_session(attrs) do
     {:ok,
      %{

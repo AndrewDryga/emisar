@@ -13,7 +13,8 @@ defmodule Emisar.Billing do
   alias Ecto.Multi
   alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Billing.{Authorizer, Entitlements, Subscription}
+  alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
+  require Logger
 
   @plans %{
     "free" => %{
@@ -486,10 +487,10 @@ defmodule Emisar.Billing do
   Ensures the account has a Paddle customer. Requires `manage` on billing and the subject's account.
 
   Returns `{:ok, customer_id, account}` or `{:error, term}`.
-  Idempotent: if the account already has one, just returns it.
 
-  On first creation the acting user's email is attached to the Paddle
-  customer so invoices and receipts reach a real inbox.
+  The Paddle customer is owned by the account's stable active owner contact,
+  not necessarily the actor who clicked checkout. Existing customers are
+  updated so Paddle keeps the current account name + owner email.
   """
   def ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
     with :ok <-
@@ -498,33 +499,142 @@ defmodule Emisar.Billing do
              Authorizer.manage_billing_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
-      do_ensure_paddle_customer(account, subject)
+      sync_paddle_customer_for_account(account.id)
     end
   end
 
-  defp do_ensure_paddle_customer(
-         %Accounts.Account{paddle_customer_id: customer_id} = account,
-         %Subject{}
-       )
-       when is_binary(customer_id),
-       do: {:ok, customer_id, account}
+  @doc """
+  Internal — sync one account's Paddle customer from the current account name
+  and stable active owner contact. Called by checkout after its Subject gate and
+  by `Workers.PaddleCustomerSync` as a trusted server sweep.
+  """
+  def sync_paddle_customer_for_account(account_id) when is_binary(account_id) do
+    with {:ok, %{account: account, owner: owner}} <-
+           Accounts.fetch_paddle_customer_sync_target(account_id) do
+      sync_paddle_customer(account, owner)
+    end
+  end
 
-  defp do_ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
+  @doc """
+  Internal — sync a bounded page of accounts whose Paddle customer mirror is
+  missing or stale. Returns sweep metadata so the worker can enqueue the next
+  page without owning the account query.
+  """
+  def sync_paddle_customers(opts \\ []) do
+    opts = normalize_paddle_customer_sync_opts(opts)
+    accounts = Accounts.list_paddle_customer_sync_accounts(opts)
+
+    Enum.each(accounts, &sync_paddle_customer_safely/1)
+
+    {:ok,
+     %{
+       processed: length(accounts),
+       last_account_id: last_account_id(accounts),
+       full?: length(accounts) == opts[:limit],
+       limit: opts[:limit]
+     }}
+  end
+
+  defp sync_paddle_customer_safely(%Accounts.Account{id: account_id}) do
+    case sync_paddle_customer_for_account(account_id) do
+      {:ok, _customer_id, _account} ->
+        :ok
+
+      {:error, reason} when reason in [:no_billing_contact, :not_found] ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("paddle_customer_sync.failed",
+          account_id: account_id,
+          error: inspect(redacted_paddle_error(reason))
+        )
+    end
+  end
+
+  defp sync_paddle_customer(%Accounts.Account{paddle_customer_id: nil} = account, owner) do
     with {:ok, %{"id" => customer_id}} <-
-           Emisar.Billing.PaddleClient.create_customer(%{
-             email: Subject.actor_email(subject),
-             name: account.name,
-             account_id: account.id
-           }),
-         {:ok, account} <- Accounts.put_account_paddle_customer_id(account, customer_id) do
-      # The write is first-wins under the row lock: a concurrent first
-      # checkout may have linked its customer between our stale-struct
-      # check and here, so the id of record is whatever the locked row
-      # carries — our freshly-minted customer is then a harmless orphan
-      # at Paddle (it bills nothing).
-      {:ok, account.paddle_customer_id, account}
+           PaddleClient.create_customer(customer_attrs(account, owner)),
+         {:ok, linked} <-
+           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
+      sync_linked_paddle_customer(linked, customer_id, owner)
+    else
+      {:ok, _data} -> {:error, :missing_customer_id}
+      other -> other
     end
   end
+
+  defp sync_paddle_customer(
+         %Accounts.Account{paddle_customer_id: customer_id} = account,
+         owner
+       )
+       when is_binary(customer_id) do
+    with {:ok, _customer} <- update_paddle_customer(account, owner),
+         {:ok, synced} <-
+           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
+      {:ok, synced.paddle_customer_id, synced}
+    end
+  end
+
+  defp sync_linked_paddle_customer(%Accounts.Account{} = account, customer_id, owner) do
+    if account.paddle_customer_id == customer_id do
+      {:ok, customer_id, account}
+    else
+      with {:ok, _customer} <- update_paddle_customer(account, owner),
+           {:ok, synced} <-
+             Accounts.put_account_paddle_customer_sync(
+               account,
+               account.paddle_customer_id,
+               owner.id
+             ) do
+        {:ok, synced.paddle_customer_id, synced}
+      end
+    end
+  end
+
+  defp update_paddle_customer(%Accounts.Account{paddle_customer_id: customer_id} = account, owner)
+       when is_binary(customer_id) do
+    account
+    |> customer_attrs(owner)
+    |> Map.put(:customer, customer_id)
+    |> PaddleClient.update_customer()
+  end
+
+  defp customer_attrs(%Accounts.Account{} = account, owner) do
+    %{email: owner.email, name: account.name, account_id: account.id}
+  end
+
+  defp normalize_paddle_customer_sync_opts(opts) when is_map(opts) do
+    [
+      limit:
+        normalize_paddle_customer_sync_limit(Map.get(opts, "limit") || Map.get(opts, :limit)),
+      after_account_id: Map.get(opts, "after_account_id") || Map.get(opts, :after_account_id)
+    ]
+  end
+
+  defp normalize_paddle_customer_sync_opts(opts) when is_list(opts) do
+    [
+      limit: normalize_paddle_customer_sync_limit(Keyword.get(opts, :limit)),
+      after_account_id: Keyword.get(opts, :after_account_id)
+    ]
+  end
+
+  defp normalize_paddle_customer_sync_limit(n) when is_integer(n) and n > 0,
+    do: min(n, 500)
+
+  defp normalize_paddle_customer_sync_limit(n) when is_binary(n) do
+    case Integer.parse(n) do
+      {parsed, ""} -> normalize_paddle_customer_sync_limit(parsed)
+      _ -> 100
+    end
+  end
+
+  defp normalize_paddle_customer_sync_limit(_), do: 100
+
+  defp last_account_id([]), do: nil
+  defp last_account_id(accounts), do: List.last(accounts).id
+
+  defp redacted_paddle_error({:http, status, _body}), do: {:http, status}
+  defp redacted_paddle_error(reason), do: reason
 
   @doc """
   Internal — the Paddle webhook controller's entry point; the request's

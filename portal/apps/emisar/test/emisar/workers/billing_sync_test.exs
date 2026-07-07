@@ -23,6 +23,8 @@ defmodule Emisar.Workers.BillingSyncTest.PartialFailPaddleClient do
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
+  def update_customer(_attrs), do: {:error, :unused}
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
@@ -228,6 +230,8 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient 
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
+  def update_customer(_attrs), do: {:error, :unused}
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
@@ -300,6 +304,8 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient do
   def retrieve_subscription(id), do: {:ok, %{"id" => id, "status" => "active"}}
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def update_customer(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true

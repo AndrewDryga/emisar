@@ -9,6 +9,9 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def create_customer(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
+  def update_customer(_attrs), do: {:error, :paddle_unavailable}
+
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
@@ -566,7 +569,7 @@ defmodule Emisar.BillingTest do
   end
 
   describe "ensure_paddle_customer/2" do
-    test "threads the acting user's email to Paddle on first creation" do
+    test "threads the selected owner email to Paddle on first creation" do
       # The test stub derives the customer id from the email it receives,
       # so two owners with different emails must yield different customer
       # ids. Before the fix (email: nil) both produced the same id.
@@ -584,11 +587,16 @@ defmodule Emisar.BillingTest do
     end
 
     test "is idempotent — returns the existing customer id without re-creating" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, "ctm_existing_01", ^account} =
+      {:ok, account} =
+        Emisar.Accounts.put_account_paddle_customer_sync(account, "ctm_existing_01", user.id)
+
+      assert {:ok, "ctm_existing_01", synced} =
                Billing.ensure_paddle_customer(account, subject)
+
+      assert synced.paddle_customer_id == "ctm_existing_01"
+      assert synced.paddle_billing_contact_user_id == user.id
     end
 
     test "an admin without manage_billing is refused" do
@@ -612,6 +620,49 @@ defmodule Emisar.BillingTest do
       account_a = %{account_a | paddle_customer_id: "ctm_existing_01"}
 
       assert {:error, :unauthorized} = Billing.ensure_paddle_customer(account_a, subject_b)
+    end
+  end
+
+  describe "sync_paddle_customer_for_account/1" do
+    test "creates a Paddle customer and stores the selected owner contact" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, customer_id, synced} = Billing.sync_paddle_customer_for_account(account.id)
+
+      assert String.starts_with?(customer_id, "ctm_stub_")
+      assert synced.paddle_customer_id == customer_id
+      assert synced.paddle_billing_contact_user_id == owner.id
+      assert %DateTime{} = synced.paddle_customer_synced_at
+
+      reloaded = Repo.reload!(account)
+      assert reloaded.paddle_customer_id == customer_id
+      assert reloaded.paddle_billing_contact_user_id == owner.id
+    end
+
+    test "refuses an account with no confirmed owner email" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user(confirmed?: false)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      assert Billing.sync_paddle_customer_for_account(account.id) ==
+               {:error, :no_billing_contact}
+    end
+  end
+
+  describe "sync_paddle_customers/1" do
+    test "syncs a bounded page of stale accounts and reports the cursor" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{processed: 1, last_account_id: account_id, full?: false, limit: 10}} =
+               Billing.sync_paddle_customers(limit: 10)
+
+      assert account_id == account.id
+      assert Repo.reload!(account).paddle_customer_id
     end
   end
 
@@ -1979,6 +2030,12 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   end
 
   @impl true
+  def update_customer(attrs) do
+    report({:update_customer, attrs})
+    {:ok, %{"id" => attrs[:customer]}}
+  end
+
+  @impl true
   def create_checkout_session(attrs) do
     report({:create_checkout_session, attrs})
     {:ok, %{"url" => "https://stub.paddle.test/checkout/captured"}}
@@ -2041,6 +2098,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   """
   use Emisar.DataCase, async: false
   import ExUnit.CaptureLog
+  alias Emisar.Accounts
   alias Emisar.Billing
   alias Emisar.BillingTest.CapturingPaddleClient
   alias Emisar.Fixtures
@@ -2113,28 +2171,52 @@ defmodule Emisar.BillingCheckoutArgsTest do
     refute Map.has_key?(attrs, :cancel_url)
   end
 
-  test "create_customer forwards the acting email + account name verbatim" do
-    # ensure_paddle_customer threads the subject's email + the account name (incl.
-    # special characters) straight onto the Paddle customer with no mangling —
-    # invoices reach a real inbox and the customer is recognisable in Paddle.
+  test "create_customer forwards the selected owner email + account name verbatim" do
+    # ensure_paddle_customer threads the selected owner email + the account name
+    # (incl. special characters) straight onto the Paddle customer with no
+    # mangling — invoices reach a real inbox and the customer is recognisable in
+    # Paddle.
     user = Fixtures.Users.create_user(%{email: "billing-owner@example.test"})
-    {_u, account, subject} = Fixtures.Subjects.owner_subject(%{name: "Acme & Co. (Ops)"})
-    # Re-bind the subject to the known-email user as owner of the account.
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    subject = %{subject | actor: user}
+    account_attrs = Fixtures.Accounts.account_attrs(%{name: "Acme & Co. (Ops)"})
+    {:ok, account} = Accounts.create_account_with_owner(account_attrs, user)
+    subject = Fixtures.Subjects.subject_for(user, account)
 
     assert {:ok, "ctm_captured_01", _account} = Billing.ensure_paddle_customer(account, subject)
 
-    assert_received {:create_customer, attrs}
-    assert attrs.email == "billing-owner@example.test"
-    assert attrs.name == "Acme & Co. (Ops)"
-    assert attrs.account_id == account.id
+    assert_received {:create_customer, paddle_attrs}
+    assert paddle_attrs.email == "billing-owner@example.test"
+    assert paddle_attrs.name == "Acme & Co. (Ops)"
+    assert paddle_attrs.account_id == account.id
+  end
+
+  test "update_customer switches to a new active owner when the prior contact is demoted" do
+    prior_owner = Fixtures.Users.create_user(%{email: "prior-owner@example.test"})
+    account_attrs = Fixtures.Accounts.account_attrs(%{name: "Owner Transfer Co."})
+    {:ok, account} = Accounts.create_account_with_owner(account_attrs, prior_owner)
+
+    new_owner = Fixtures.Users.create_user(%{email: "new-owner@example.test"})
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: new_owner.id,
+      role: "owner"
+    )
+
+    {:ok, account} =
+      Accounts.put_account_paddle_customer_sync(account, "ctm_existing_owner", prior_owner.id)
+
+    prior_membership = Fixtures.Memberships.fetch_membership(account.id, prior_owner.id)
+    Fixtures.Memberships.force_role(prior_membership, "admin")
+
+    assert {:ok, "ctm_existing_owner", synced} =
+             Billing.sync_paddle_customer_for_account(account.id)
+
+    assert synced.paddle_billing_contact_user_id == new_owner.id
+    assert_received {:update_customer, paddle_attrs}
+    assert paddle_attrs.customer == "ctm_existing_owner"
+    assert paddle_attrs.email == "new-owner@example.test"
+    assert paddle_attrs.name == "Owner Transfer Co."
+    assert paddle_attrs.account_id == account.id
   end
 
   test "a normal checkout leaks no secret / customer id / price id into the log drain" do
