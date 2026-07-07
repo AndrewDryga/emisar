@@ -33,6 +33,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert html =~ ~s(data-copy-text=" curl -sSL)
     end
 
+    test "puts the script details in the main install flow", %{conn: conn, account: account} do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+
+      {script_pos, _} = :binary.match(html, "What the script does")
+      {waiting_pos, _} = :binary.match(html, "Waiting for a runner to connect")
+
+      assert script_pos < waiting_pos
+    end
+
     # an operator (not just an admin) can open the wizard
     # and gets a live install command: `issue_install_key` is owner/admin/operator,
     # so `mint_install_key` succeeds and the one-liner renders with a real key.

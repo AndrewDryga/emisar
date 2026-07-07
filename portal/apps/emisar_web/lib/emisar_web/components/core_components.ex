@@ -4126,6 +4126,57 @@ defmodule EmisarWeb.CoreComponents do
                   </p>
                 </section>
 
+                <section>
+                  <.section_header title="What the script does" />
+                  <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
+                    <%!-- mt-[3px]: optically centers the 14px check on the first
+                         text line (mt-0.5 sat visibly high). --%>
+                    <li class="flex items-start gap-2.5">
+                      <.icon
+                        name="hero-check"
+                        class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
+                      />
+                      <span>Verifies the download's SHA-256 before running anything</span>
+                    </li>
+                    <li class="flex items-start gap-2.5">
+                      <.icon
+                        name="hero-check"
+                        class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
+                      />
+                      <span>
+                        Runs the runner as a dedicated
+                        <code class="font-mono text-zinc-300">emisar</code>
+                        user (not root) under a systemd unit
+                      </span>
+                    </li>
+                    <li class="flex items-start gap-2.5">
+                      <.icon
+                        name="hero-check"
+                        class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
+                      />
+                      <span>Only dials out — nothing listens on the host</span>
+                    </li>
+                  </ul>
+                  <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
+                    <.link
+                      href="/install.sh"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-brand-400 hover:text-brand-300"
+                    >
+                      It's a plain shell script — read it first&nbsp;→
+                    </.link>
+                    <.link
+                      href={~p"/trust" <> "#release-integrity"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-brand-400 hover:text-brand-300"
+                    >
+                      Verify the release's provenance&nbsp;→
+                    </.link>
+                  </div>
+                </section>
+
                 <%!-- The page's LIVE status — the strongest voice in the
                      column: the only PING dot, a semibold lead, the body
                      beneath. The credential note above is a static property
@@ -4215,47 +4266,6 @@ defmodule EmisarWeb.CoreComponents do
                 Install one on each host you want to operate. Once it connects it appears on the
                 Runners page, ready to receive actions.
               </p>
-            </div>
-          </section>
-
-          <section>
-            <.section_header title="What the script does" />
-            <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
-              <%!-- mt-[3px]: optically centers the 14px check on the first
-                   text line (mt-0.5 sat visibly high). --%>
-              <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                <span>Verifies the download's SHA-256 before running anything</span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                <span>
-                  Runs the runner as a dedicated <code class="font-mono text-zinc-300">emisar</code>
-                  user (not root) under a systemd unit
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400" />
-                <span>Only dials out — nothing listens on the host</span>
-              </li>
-            </ul>
-            <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
-              <.link
-                href="/install.sh"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-brand-400 hover:text-brand-300"
-              >
-                It's a plain shell script — read it first&nbsp;→
-              </.link>
-              <.link
-                href={~p"/trust" <> "#release-integrity"}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-brand-400 hover:text-brand-300"
-              >
-                Verify the release's provenance&nbsp;→
-              </.link>
             </div>
           </section>
 

@@ -24,6 +24,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Cursor"
       assert html =~ "Gemini CLI"
       assert html =~ "Codex CLI"
+      assert html =~ ~s(href="/docs/connect-an-llm")
 
       # No key minted until a client is picked.
       assert Repo.all(ApiKey) == []

@@ -1297,6 +1297,9 @@ defmodule EmisarWeb.AgentsLive do
               the audit trail.
             </p>
           </div>
+          <p class="mt-4 text-sm">
+            <.doc_link href={~p"/docs/connect-an-llm"}>Connect an agent docs</.doc_link>
+          </p>
         </div>
         <.section_header title="How agent keys work" />
         <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
