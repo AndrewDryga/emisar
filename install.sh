@@ -148,6 +148,16 @@ done
 log()   { printf '\033[1;34m[install]\033[0m %s\n' "$*" >&2; }
 warn()  { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
+die_systemd_required() {
+  local reason="$1"
+  die "this installer requires systemd on Linux (${reason}).
+
+For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
+  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
+
+If you are reusing a portal-generated one-liner, keep its EMISAR_AUTH_KEY/EMISAR_URL values and replace the final 'bash' with:
+  bash -s -- --no-service"
+}
 # log()/warn()/die() ALL write to stderr. Function return values come
 # back via stdout (e.g. `download_release` printf's the extracted dir).
 # A stdout-bound log() would leak into command substitutions and corrupt
@@ -211,10 +221,10 @@ detect_init() {
       #      states return "starting" or "degraded" and we still want
       #      the install to proceed.
       if ! command -v systemctl >/dev/null 2>&1; then
-        die "this installer requires systemd on Linux (systemctl not found on \$PATH)"
+        die_systemd_required "systemctl not found on \$PATH"
       fi
       if [ ! -d /run/systemd/system ]; then
-        die "this installer requires systemd on Linux (systemctl present but /run/systemd/system missing — PID 1 is not systemd; this looks like a container or cloud shell)"
+        die_systemd_required "systemctl present but /run/systemd/system missing - PID 1 is not systemd; this looks like a container or cloud shell"
       fi
       echo systemd
       ;;
@@ -228,17 +238,23 @@ detect_init() {
   esac
 }
 
-OS="$(detect_os)"
-ARCH="$(detect_arch)"
-# With --no-service, skip init detection entirely — the whole point of
-# the flag is to install on hosts that don't HAVE a real init (cloud
-# shell, containers, CI). detect_init() would die on those before we
-# ever reach do_install.
-if [ "${NO_SERVICE}" = "1" ]; then
-  INIT="none"
-else
-  INIT="$(detect_init)"
-fi
+OS=""
+ARCH=""
+INIT=""
+
+detect_target() {
+  OS="$(detect_os)"
+  ARCH="$(detect_arch)"
+  # With --no-service, skip init detection entirely — the whole point of
+  # the flag is to install on hosts that don't HAVE a real init (cloud
+  # shell, containers, CI). detect_init() would die on those before we
+  # ever reach do_install.
+  if [ "${NO_SERVICE}" = "1" ]; then
+    INIT="none"
+  else
+    INIT="$(detect_init)"
+  fi
+}
 
 require_root_and_tools() {
   if [ "$(id -u)" != "0" ]; then
@@ -1154,6 +1170,8 @@ EOF
 # -----------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------
+
+detect_target
 
 case "${MODE}" in
   install)   do_install;;
