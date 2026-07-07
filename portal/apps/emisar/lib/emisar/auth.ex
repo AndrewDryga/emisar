@@ -477,10 +477,20 @@ defmodule Emisar.Auth do
   identity-defining field (it controls every future magic link) gets a
   credential-grade gate a stolen session alone can't pass. Deletes any prior
   outstanding email-change code (single outstanding). Best-effort delivery;
-  returns `:ok`.
+  returns `:ok` or `{:error, :not_found}`.
   """
-  def issue_email_change_code(new_email, %Subject{actor: %Users.User{} = user} = subject)
+  def issue_email_change_code(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
+    with {:ok, user} <- Users.fetch_user_by_id(id) do
+      do_issue_email_change_code(new_email, user, subject)
+    end
+  end
+
+  defp do_issue_email_change_code(
+         new_email,
+         %Users.User{} = user,
+         %Subject{} = subject
+       ) do
     {code, digest} = Crypto.email_change_code()
 
     prior =
@@ -559,7 +569,7 @@ defmodule Emisar.Auth do
           {:ok, :totp}
 
         :code ->
-          :ok = issue_email_change_code(new_email, subject)
+          :ok = do_issue_email_change_code(new_email, user, subject)
           {:ok, :code}
       end
     end

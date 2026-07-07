@@ -32,6 +32,12 @@ defmodule Emisar.Fixtures.Users do
     user
   end
 
+  @doc "Updates a user's email as test setup, bypassing the self-service step-up flow."
+  def update_email(%User{} = user, email) when is_binary(email) do
+    {:ok, user} = user |> User.Changeset.email(%{email: email}) |> Emisar.Repo.update()
+    user
+  end
+
   @doc """
   Enrolls TOTP MFA for `subject` via `Auth.enable_mfa` and returns its tagged result
   (`{:ok, user, recovery_codes}` / `{:error, reason}`). Generating a code with

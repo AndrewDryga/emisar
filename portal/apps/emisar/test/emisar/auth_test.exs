@@ -438,6 +438,22 @@ defmodule Emisar.AuthTest do
       assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
     end
 
+    test "emails the fresh DB address when the subject actor snapshot is stale", %{
+      user: user,
+      subject: subject
+    } do
+      old_email = user.email
+      current_email = Fixtures.Random.unique_email()
+      Fixtures.Users.update_email(user, current_email)
+
+      assert subject.actor.email == old_email
+
+      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+
+      assert_received {:email, email}
+      assert [{_, ^current_email}] = email.to
+    end
+
     test "issuing again replaces the prior code (single outstanding)", %{subject: subject} do
       :ok = Auth.issue_email_change_code("first@example.com", subject)
       assert_received {:email, first_email}
