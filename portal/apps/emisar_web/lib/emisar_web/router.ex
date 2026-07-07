@@ -54,6 +54,45 @@ defmodule EmisarWeb.Router do
     plug :accepts, ["json"]
   end
 
+  @auth_live_session_keys [
+    :magic_link_email,
+    :magic_link_expires_at,
+    :magic_link_token_id,
+    :magic_link_nonce,
+    :magic_link_registered,
+    :magic_link_registration_user_id,
+    :mfa_pending_user_id,
+    :sso_pending_request
+  ]
+
+  # LiveView signs only the session data explicitly returned here into its
+  # websocket session. These pre-auth LiveViews are fed by controller flows that
+  # set short-lived markers in Plug session; keep the allowlist narrow.
+  def auth_live_session(conn) do
+    session =
+      @auth_live_session_keys
+      |> Enum.flat_map(fn key ->
+        case Plug.Conn.get_session(conn, key) do
+          nil -> []
+          value -> [{Atom.to_string(key), value}]
+        end
+      end)
+      |> Map.new()
+
+    flash = conn.assigns[:flash] || %{}
+
+    session
+    |> put_flash_session(flash, :magic_email_attempt)
+    |> put_flash_session(flash, :magic_email_error)
+  end
+
+  defp put_flash_session(session, flash, key) do
+    case Phoenix.Flash.get(flash, key) do
+      nil -> session
+      value -> Map.put(session, Atom.to_string(key), value)
+    end
+  end
+
   # -- Health (no logging, no session) --------------------------------
 
   scope "/" do
@@ -122,6 +161,7 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex, :redirect_if_user_is_authenticated]
 
     live_session :redirect_if_user_is_authenticated,
+      session: {__MODULE__, :auth_live_session, []},
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/sign_up", UserSignUpLive
       live "/sign_in", UserSignInLive

@@ -148,23 +148,33 @@ defmodule EmisarWeb.SCIM.GroupController do
     do: {:error, :invalid_scim_group}
 
   defp member_ops(operations) do
-    Enum.reduce_while(operations, {:delta, [], []}, fn op, acc ->
+    Enum.reduce_while(operations, {:delta, [], [], 0}, fn op, acc ->
       case classify_op(op) do
         {:replace, ids} -> {:halt, {:replace, ids}}
-        {:add, ids} -> {:cont, add_to_delta(acc, ids, [])}
-        {:remove, ids} -> {:cont, add_to_delta(acc, [], ids)}
+        {:add, ids} -> merge_delta(acc, ids, [])
+        {:remove, ids} -> merge_delta(acc, [], ids)
         {:error, reason} -> {:halt, {:error, reason}}
         :unsupported -> {:halt, :unsupported}
       end
     end)
     |> case do
-      {:delta, [], []} -> :unsupported
+      {:delta, [], [], _count} -> :unsupported
+      {:delta, adds, removes, _count} -> {:delta, Enum.reverse(adds), Enum.reverse(removes)}
       result -> result
     end
   end
 
-  defp add_to_delta({:delta, adds, removes}, new_adds, new_removes),
-    do: {:delta, adds ++ new_adds, removes ++ new_removes}
+  defp merge_delta({:delta, adds, removes, count}, new_adds, new_removes) do
+    count = count + length(new_adds) + length(new_removes)
+
+    if count > @max_group_member_ids do
+      {:halt, {:error, :invalid_scim_group}}
+    else
+      {:cont, {:delta, prepend_all(new_adds, adds), prepend_all(new_removes, removes), count}}
+    end
+  end
+
+  defp prepend_all(values, acc), do: Enum.reduce(values, acc, &[&1 | &2])
 
   # `op` is case-insensitive ("add"/"Add"/"replace"/"remove"). We only model the
   # `members` attribute; an op on any other path (displayName, a sub-attribute)

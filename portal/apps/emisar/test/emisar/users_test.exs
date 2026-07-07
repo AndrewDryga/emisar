@@ -254,7 +254,6 @@ defmodule Emisar.UsersTest do
       assert event.payload["from"] == user.email
       assert event.payload["to"] == new_email
       assert event.payload["method"] == "signup_correction"
-      _ = account
     end
 
     test "refuses after the user is confirmed" do

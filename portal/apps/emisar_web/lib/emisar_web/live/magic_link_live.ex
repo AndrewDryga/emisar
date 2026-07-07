@@ -10,6 +10,7 @@ defmodule EmisarWeb.MagicLinkLive do
   # short-lived, cookie-bound handoff that establishes the session.
   def mount(params, session, socket) do
     email = sent_to(session)
+    correction_email = correction_email(session, email)
 
     {:ok,
      socket
@@ -31,9 +32,11 @@ defmodule EmisarWeb.MagicLinkLive do
      |> assign(:nonce, session["magic_link_nonce"])
      |> assign(:registered?, session["magic_link_registered"] == true)
      |> assign(:registration_handoff, registration_handoff(session))
+     |> assign(:correction_email, correction_email)
+     |> assign(:correction_email_error, correction_email_error(session))
      |> assign(:request_context, RequestContext.from_socket(socket))
      |> assign(:code_error, nil)
-     |> assign(:email_form, to_form(%{"email" => email || ""}, as: "user"))
+     |> assign(:email_form, to_form(%{"email" => correction_email || ""}, as: "user"))
      |> assign(:code_form, to_form(%{"code" => ""}))}
   end
 
@@ -73,6 +76,16 @@ defmodule EmisarWeb.MagicLinkLive do
        do: RegistrationHandoff.sign(user_id)
 
   defp registration_handoff(_session), do: nil
+
+  defp correction_email(session, email) do
+    case session["magic_email_attempt"] do
+      attempted when is_binary(attempted) and attempted != "" -> attempted
+      _ -> email
+    end
+  end
+
+  defp correction_email_error(%{"magic_email_error" => error}) when is_binary(error), do: error
+  defp correction_email_error(_session), do: nil
 
   def render(assigns) do
     ~H"""
@@ -151,10 +164,12 @@ defmodule EmisarWeb.MagicLinkLive do
           class="mt-5"
         >
           <.input
-            field={@email_form[:email]}
+            name="user[email]"
+            value={@correction_email || ""}
             type="email"
             label="Wrong address?"
             autocomplete="email"
+            errors={List.wrap(@correction_email_error)}
             required
           />
           <:actions>

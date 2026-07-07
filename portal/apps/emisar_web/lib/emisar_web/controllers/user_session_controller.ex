@@ -12,6 +12,7 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Mailers, Users}
+  alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
   alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
   alias EmisarWeb.{ReturnTo, Throttle, UserAuth}
@@ -133,9 +134,10 @@ defmodule EmisarWeb.UserSessionController do
         )
         |> redirect(to: ~p"/sign_in/magic?sent=1")
 
-      {:error, %Ecto.Changeset{}} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         conn
-        |> put_flash(:error, "We couldn't update that signup email. Check it and try again.")
+        |> put_flash(:magic_email_attempt, trimmed)
+        |> put_flash(:magic_email_error, email_error(changeset))
         |> redirect(to: ~p"/sign_in/magic?sent=1")
 
       _ ->
@@ -149,6 +151,17 @@ defmodule EmisarWeb.UserSessionController do
     DateTime.utc_now()
     |> DateTime.add(Auth.magic_link_validity_in_minutes() * 60, :second)
     |> DateTime.to_iso8601()
+  end
+
+  defp email_error(%Ecto.Changeset{} = changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(&CoreComponents.translate_error/1)
+    |> Map.get(:email, [])
+    |> List.first()
+    |> case do
+      message when is_binary(message) -> message
+      _ -> "Check this email and try again."
+    end
   end
 
   @doc """

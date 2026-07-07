@@ -2,6 +2,10 @@ defmodule Emisar.ContextCoverageTest do
   @moduledoc """
   Enforces the house rule: **every public function in a domain context has a
   function-named `describe "fun/arity"` somewhere in the test suite.**
+  For a `def f(a, b \\ [])`, the written max arity (`f/2`) is the coverage key;
+  the compiler-generated `f/1` default wrapper is considered covered by that
+  describe. If a lower arity has distinct behavior, make it an explicit `def`
+  and it will need its own describe.
 
   A failure here means a public context function shipped with no test — exactly
   the gap the describe-order rule (§7: describes follow the module's function

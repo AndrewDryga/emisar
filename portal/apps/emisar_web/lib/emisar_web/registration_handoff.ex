@@ -12,8 +12,10 @@ defmodule EmisarWeb.RegistrationHandoff do
   One seam wrapping `Phoenix.Token` (IL-19) so the handoff crypto has a single,
   testable review surface.
   """
+  alias Emisar.Auth
+
   @salt "registration magic handoff"
-  @max_age_seconds 120
+  @max_age_seconds Auth.magic_link_validity_in_minutes() * 60
 
   @doc "Signs the just-created `user_id` into an opaque registration handoff."
   def sign(user_id) when is_binary(user_id),

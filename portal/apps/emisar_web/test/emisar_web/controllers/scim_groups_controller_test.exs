@@ -329,6 +329,28 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
+    test "a PATCH with too many aggregate member changes → 400 invalidValue", %{
+      conn: conn,
+      token: token
+    } do
+      operations =
+        for op <- 1..@max_patch_operations do
+          members =
+            for member <- 1..51 do
+              %{"value" => "okta|#{op}-#{member}"}
+            end
+
+          %{"op" => "add", "path" => "members", "value" => members}
+        end
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp", %{"Operations" => operations})
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
+    end
+
     test "a whole-set `replace` of members short-circuits to a full upsert", %{
       conn: conn,
       token: token,

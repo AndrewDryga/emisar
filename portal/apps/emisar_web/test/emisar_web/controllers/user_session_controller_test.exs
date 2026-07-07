@@ -52,6 +52,32 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
     end
 
+    test "a delayed registration resend still welcomes the new operator", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      handoff =
+        Phoenix.Token.sign(
+          EmisarWeb.Endpoint,
+          "registration magic handoff",
+          user.id,
+          signed_at: System.system_time(:second) - 121
+        )
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => handoff
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(conn, :user_token)
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
+    end
+
     test "a registration email typo can be corrected from the same browser", %{conn: conn} do
       wrong_email = "typo-#{System.unique_integer([:positive])}@example.test"
       fixed_email = "fixed-#{System.unique_integer([:positive])}@example.test"
@@ -112,6 +138,38 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/sign_up"
       refute_received {:email, _email}
       assert Repo.reload!(user).email == user.email
+    end
+
+    test "registration email correction shows invalid email inline on the sent page", %{
+      conn: conn
+    } do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => RegistrationHandoff.sign(user.id)
+        })
+
+      assert_received {:email, _old_email}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_up/email", %{"user" => %{"email" => "not-an-email"}})
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      refute_received {:email, _email}
+      assert Repo.reload!(user).email == user.email
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :magic_email_error) ==
+               "must have the @ sign and no spaces"
+
+      {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+      assert html =~ "must have the"
+      assert html =~ "sign and no spaces"
+      assert html =~ ~s(value="not-an-email")
     end
 
     test "registration email correction refuses a forged registration marker", %{conn: conn} do
