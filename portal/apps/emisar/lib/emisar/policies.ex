@@ -296,8 +296,8 @@ defmodule Emisar.Policies do
         })
 
       Multi.new()
-      |> Multi.run(:before, fn _repo, _changes ->
-        {:ok, peek_scoped_policy(account_id, scope_type, scope_value)}
+      |> Multi.run(:before, fn repo, _changes ->
+        {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
       end)
       |> Multi.insert(:policy, changeset,
         # The conflict target must repeat the partial index's predicate
@@ -385,11 +385,11 @@ defmodule Emisar.Policies do
       Enum.find(candidates, &(&1.scope_type == :account))
   end
 
-  defp peek_scoped_policy(account_id, scope_type, scope_value) do
+  defp peek_scoped_policy(repo, account_id, scope_type, scope_value) do
     Policy.Query.not_deleted()
     |> Policy.Query.by_account_id(account_id)
     |> Policy.Query.by_scope(scope_type, scope_value)
-    |> Repo.peek()
+    |> repo.peek()
   end
 
   # -- Evaluation -----------------------------------------------------
@@ -423,30 +423,19 @@ defmodule Emisar.Policies do
   @doc """
   Applies `rules` (a rules map — e.g. a live editor's `to_rules`) to a catalog
   `%{action_id => risk}` and buckets each action by the decision it would get,
-  running `evaluate/3` per action so overrides + tier defaults apply exactly as
-  dispatch would. Pure — no gate; the catalog is already fetched + authorized.
-  Powers the policy page's live "what this policy allows / needs approval /
-  denies" rail. Returns `%{"allow" => %{count, examples}, "require_approval" =>
-  …, "deny" => …}` with all three present (0/[] for an empty one).
+  using the same first-match override and tier-default rules as dispatch. Pure —
+  no gate; the catalog is already fetched + authorized. Powers the policy page's
+  live "what this policy allows / needs approval / denies" rail. Returns
+  `%{"allow" => %{count, examples}, "require_approval" => …, "deny" => …}` with
+  all three present (0/[] for an empty one).
   """
   def simulate_outcome(rules, action_risks) when is_map(rules) and is_map(action_risks) do
-    policy = %Policy{rules: rules}
+    defaults = rules["defaults"] || %{}
+    overrides = compile_overrides(rules["overrides"] || [])
 
-    ids_by_decision =
-      Enum.group_by(
-        action_risks,
-        fn {action_id, risk} ->
-          {decision, _matched, _reason} =
-            evaluate(policy, %{"action_id" => action_id, "risk" => to_string(risk)}, %{})
-
-          decision
-        end,
-        fn {action_id, _risk} -> action_id end
-      )
-
-    Map.new([:allow, :require_approval, :deny], fn decision ->
-      ids = ids_by_decision |> Map.get(decision, []) |> Enum.sort()
-      {Atom.to_string(decision), %{count: length(ids), examples: Enum.take(ids, 3)}}
+    Enum.reduce(action_risks, empty_outcome(), fn {action_id, risk}, outcome ->
+      decision = simulation_decision(defaults, overrides, action_id, risk)
+      add_outcome_action(outcome, decision, action_id)
     end)
   end
 
@@ -459,12 +448,54 @@ defmodule Emisar.Policies do
 
   defp override_matches?(_, _), do: false
 
+  defp compile_overrides(overrides) when is_list(overrides),
+    do: Enum.flat_map(overrides, &compile_override/1)
+
+  defp compile_override(%{"action" => pattern} = override)
+       when is_binary(pattern) and pattern != "" do
+    [%{matcher: Glob.compile(pattern), override: override}]
+  end
+
+  defp compile_override(_override), do: []
+
+  defp simulation_decision(defaults, overrides, action_id, risk) do
+    case find_compiled_override(overrides, action_id) do
+      nil -> default_for_tier(defaults, to_string(risk))
+      %{"decision" => decision} -> normalize_decision(decision)
+    end
+  end
+
+  defp find_compiled_override(overrides, action_id) do
+    Enum.find_value(overrides, fn %{matcher: matcher, override: override} ->
+      if Glob.match_compiled?(matcher, action_id), do: override
+    end)
+  end
+
+  defp empty_outcome do
+    Map.new(@decisions, &{&1, %{count: 0, examples: []}})
+  end
+
+  defp add_outcome_action(outcome, decision, action_id) do
+    Map.update!(outcome, decision, fn bucket ->
+      %{count: bucket.count + 1, examples: keep_example(bucket.examples, action_id)}
+    end)
+  end
+
+  defp keep_example(examples, action_id) do
+    [action_id | examples]
+    |> Enum.sort()
+    |> Enum.take(3)
+  end
+
   defp default_for_tier(defaults, tier) when is_map(defaults) do
     case Map.get(defaults, tier) do
       decision when decision in @decisions -> decision
       _ -> "deny"
     end
   end
+
+  defp normalize_decision(decision) when decision in @decisions, do: decision
+  defp normalize_decision(_decision), do: "deny"
 
   defp atomize("allow"), do: :allow
   defp atomize("require_approval"), do: :require_approval

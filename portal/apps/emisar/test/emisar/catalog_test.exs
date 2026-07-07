@@ -1056,6 +1056,79 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "action_risk_index_for_account/1" do
+    setup do
+      {account, subject} = account_with_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "returns account and per-runner risk maps from the scoped catalog", %{
+      account: account,
+      subject: subject
+    } do
+      r1 = Fixtures.Runners.create_runner(account_id: account.id)
+      r2 = Fixtures.Runners.create_runner(account_id: account.id)
+      foreign = Fixtures.Runners.create_runner()
+
+      {:ok, _} =
+        Catalog.observe_state(
+          r1,
+          state_payload(
+            actions: [action("shared.op", risk: "low"), action("r1.only", risk: "high")]
+          )
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(r2, state_payload(actions: [action("shared.op", risk: "critical")]))
+
+      {:ok, _} =
+        Catalog.observe_state(
+          foreign,
+          state_payload(actions: [action("foreign.secret", risk: "critical")])
+        )
+
+      assert {:ok, index} = Catalog.action_risk_index_for_account(subject)
+
+      assert index.account == %{"shared.op" => :critical, "r1.only" => :high}
+      assert index.runners[r1.id] == %{"shared.op" => :low, "r1.only" => :high}
+      assert index.runners[r2.id] == %{"shared.op" => :critical}
+      refute Map.has_key?(index.runners, foreign.id)
+
+      assert Catalog.action_risks_from_index(index, [r1.id, r2.id]) == %{
+               "shared.op" => :critical,
+               "r1.only" => :high
+             }
+
+      assert Catalog.action_risks_from_index(index, [foreign.id]) == %{}
+    end
+
+    test "is empty for a fresh account", %{subject: subject} do
+      assert {:ok, %{account: %{}, runners: %{}}} = Catalog.action_risk_index_for_account(subject)
+    end
+
+    test "a subject without view_catalog is denied", %{account: account} do
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+      assert {:error, :unauthorized} = Catalog.action_risk_index_for_account(no_view)
+    end
+  end
+
+  describe "action_risks_from_index/2" do
+    test "merges selected runners with worst risk winning and unknown ids ignored" do
+      index = %{
+        account: %{},
+        runners: %{
+          "runner-1" => %{"shared.op" => :low, "r1.only" => :high},
+          "runner-2" => %{"shared.op" => :critical}
+        }
+      }
+
+      assert Catalog.action_risks_from_index(index, ["runner-1", "runner-2", "missing"]) == %{
+               "shared.op" => :critical,
+               "r1.only" => :high
+             }
+    end
+  end
+
   describe "risk_breakdown_of/1" do
     test "buckets an action => risk map into a per-tier count" do
       risks = %{

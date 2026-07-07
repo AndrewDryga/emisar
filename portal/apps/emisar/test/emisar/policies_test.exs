@@ -794,6 +794,42 @@ defmodule Emisar.PoliciesTest do
         assert outcome[decision] == %{count: 0, examples: []}
       end
     end
+
+    test "precompiles wildcard overrides and keeps only the first three sorted examples" do
+      rules = %{
+        "defaults" => %{"low" => "allow"},
+        "overrides" => [
+          %{"name" => "review-drops", "action" => "*.drop_*", "decision" => "require_approval"},
+          # First match wins, so this later exact deny never moves a.drop_table out
+          # of the review bucket.
+          %{"name" => "deny-a-drop", "action" => "a.drop_table", "decision" => "deny"}
+        ]
+      }
+
+      ordinary_actions = Map.new(1..1_000, &{"linux.action_#{&1}", :low})
+
+      catalog =
+        Map.merge(ordinary_actions, %{
+          "d.drop_table" => :low,
+          "b.drop_table" => :low,
+          "a.drop_table" => :low,
+          "c.drop_table" => :low
+        })
+
+      outcome = Policies.simulate_outcome(rules, catalog)
+
+      assert outcome["allow"] == %{
+               count: 1_000,
+               examples: ["linux.action_1", "linux.action_10", "linux.action_100"]
+             }
+
+      assert outcome["require_approval"] == %{
+               count: 4,
+               examples: ["a.drop_table", "b.drop_table", "c.drop_table"]
+             }
+
+      assert outcome["deny"] == %{count: 0, examples: []}
+    end
   end
 
   describe "diff_rules/2" do

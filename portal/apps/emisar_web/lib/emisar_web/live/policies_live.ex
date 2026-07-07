@@ -41,6 +41,7 @@ defmodule EmisarWeb.PoliciesLive do
   defp load_all(socket) do
     subject = socket.assigns.current_subject
     runners = list_runners(subject)
+    catalog_index = load_action_risk_index(subject)
 
     account_policy =
       case Policies.fetch_policy(subject) do
@@ -49,7 +50,7 @@ defmodule EmisarWeb.PoliciesLive do
       end
 
     account_editor =
-      account_policy |> build_account_editor() |> Map.put(:catalog, load_account_catalog(subject))
+      account_policy |> build_account_editor() |> Map.put(:catalog, catalog_index.account)
 
     # A failed scoped-policy read must read as an error, not an empty ruleset
     # list — "No targeted rulesets yet" would wrongly imply none are configured.
@@ -57,7 +58,7 @@ defmodule EmisarWeb.PoliciesLive do
       case Policies.list_scoped_policies(subject) do
         {:ok, policies} ->
           {Enum.map(policies, fn policy ->
-             policy |> build_ruleset_editor() |> put_ruleset_catalog(runners, subject)
+             policy |> build_ruleset_editor() |> put_ruleset_catalog(runners, catalog_index)
            end), false}
 
         {:error, _} ->
@@ -68,33 +69,29 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:loading?, false)
     |> assign(:load_error?, load_error?)
     |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
+    |> assign(:catalog_index, catalog_index)
     |> assign(:account, account_editor)
     |> assign(:rulesets, rulesets)
     |> assign(:runners, runners)
     |> assign(:groups, list_groups(subject))
   end
 
-  # The catalog the account default governs — every advertised action's worst
-  # risk as `%{action_id => risk}`; the rail turns it into a live allow / needs-
-  # approval / deny outcome. A failed read is an empty catalog (the rail shows
-  # the connect-a-runner hint), never a crash.
-  defp load_account_catalog(subject) do
-    case Catalog.action_risks_for_account(subject) do
-      {:ok, catalog} -> catalog
-      {:error, _} -> %{}
+  # The compact catalog risk index every policy rail derives from. A failed read
+  # is an empty index (the rails show the connect-a-runner hint), never a crash.
+  defp load_action_risk_index(subject) do
+    case Catalog.action_risk_index_for_account(subject) do
+      {:ok, index} -> index
+      {:error, _} -> empty_action_risk_index()
     end
   end
+
+  defp empty_action_risk_index, do: %{account: %{}, runners: %{}}
 
   # The target catalog a ruleset governs (its runner, or its group's runners) —
   # so the rail speaks for THAT target, not account-wide. A group resolves to its
   # runners' ids from the already-loaded @runners.
-  defp put_ruleset_catalog(ruleset, runners, subject) do
-    catalog =
-      case Catalog.action_risks_for_runner_ids(ruleset_runner_ids(ruleset, runners), subject) do
-        {:ok, catalog} -> catalog
-        {:error, _} -> %{}
-      end
-
+  defp put_ruleset_catalog(ruleset, runners, catalog_index) do
+    catalog = Catalog.action_risks_from_index(catalog_index, ruleset_runner_ids(ruleset, runners))
     Map.put(ruleset, :catalog, catalog)
   end
 
@@ -222,7 +219,7 @@ defmodule EmisarWeb.PoliciesLive do
     {:noreply,
      update_editor(socket, uid, fn editor ->
        editor = %{editor | scope_type: scope_type, scope_value: scope_value}
-       put_ruleset_catalog(editor, socket.assigns.runners, socket.assigns.current_subject)
+       put_ruleset_catalog(editor, socket.assigns.runners, socket.assigns.catalog_index)
      end)}
   end
 
@@ -326,7 +323,7 @@ defmodule EmisarWeb.PoliciesLive do
     rebuilt =
       policy
       |> build_ruleset_editor()
-      |> put_ruleset_catalog(socket.assigns.runners, socket.assigns.current_subject)
+      |> put_ruleset_catalog(socket.assigns.runners, socket.assigns.catalog_index)
 
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
@@ -1070,7 +1067,11 @@ defmodule EmisarWeb.PoliciesLive do
   defp policy_fields(assigns) do
     # Self-approval + a single approval adds no SECOND party — the one case worth an
     # amber callout (guidance folded in). A healthy gate shows none.
-    assigns = assign(assigns, :single_reviewer?, single_reviewer_gate?(assigns.approval))
+    assigns =
+      assign(assigns,
+        shadowed_overrides: shadowed_overrides_by_index(assigns.overrides),
+        single_reviewer?: single_reviewer_gate?(assigns.approval)
+      )
 
     ~H"""
     <%!-- Each policy — the default and every targeted ruleset — is a dashed
@@ -1132,7 +1133,7 @@ defmodule EmisarWeb.PoliciesLive do
               editor_id={@editor_id}
               override={override}
               index={idx}
-              shadowed_by={shadowed_by(@overrides, idx)}
+              shadowed_by={Map.get(@shadowed_overrides, idx)}
               can_manage={@can_manage}
             />
           </div>
@@ -1417,14 +1418,14 @@ defmodule EmisarWeb.PoliciesLive do
   defp decision_options,
     do: [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]
 
-  # The index of the earlier override that shadows the row at `index`, or nil.
-  # Derived from the live (possibly-unsaved) rows via the pure `Policies`
-  # accessor — first-match means an override under a broader earlier glob is
-  # dead.
-  defp shadowed_by(overrides, index) do
+  # The index of the earlier override that shadows each row, keyed by the
+  # shadowed row's index. Derived once per editor render from the live
+  # (possibly-unsaved) rows via the pure `Policies` accessor — first-match means
+  # an override under a broader earlier glob is dead.
+  defp shadowed_overrides_by_index(overrides) do
     %{"overrides" => overrides}
     |> Policies.shadowed_overrides()
-    |> Enum.find_value(fn %{index: i, shadowed_by: j} -> if i == index, do: j end)
+    |> Map.new(fn %{index: index, shadowed_by: shadowed_by} -> {index, shadowed_by} end)
   end
 
   # The rank below which a tier's decision can't drop: 0 for `low` (anything

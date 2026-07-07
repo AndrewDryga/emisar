@@ -35,6 +35,24 @@ defmodule Emisar.Policies.GlobTest do
     end
   end
 
+  describe "compile/1 + match_compiled?/2" do
+    test "preserves match?/2 semantics for repeated matches" do
+      cases = [
+        {"nginx_*", "NGINX_RELOAD", true},
+        {"nginx_*", "apache_reload", false},
+        {"linux.uptime", "LINUX.UPTIME", true},
+        {"linux.uptime", "linux.reboot", false}
+      ]
+
+      for {pattern, string, expected} <- cases do
+        matcher = Glob.compile(pattern)
+
+        assert Glob.match_compiled?(matcher, string) == expected
+        assert Glob.match_compiled?(matcher, string) == Glob.match?(pattern, string)
+      end
+    end
+  end
+
   describe "subsumes?/2 — true (L(b) ⊆ L(a))" do
     test "* subsumes everything" do
       assert Glob.subsumes?("*", "anything")

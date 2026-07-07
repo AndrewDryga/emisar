@@ -589,6 +589,12 @@ defmodule Emisar.Catalog do
     end)
   end
 
+  defp most_severe_risk_by_action_rows(rows) when is_list(rows) do
+    Enum.reduce(rows, %{}, fn {_runner_id, action_id, risk}, acc ->
+      Map.update(acc, action_id, risk, &most_severe(&1, risk))
+    end)
+  end
+
   defp most_severe(current, candidate) do
     if Map.get(@risk_rank, candidate, 0) > Map.get(@risk_rank, current, 0),
       do: candidate,
@@ -623,8 +629,36 @@ defmodule Emisar.Catalog do
   `{:ok, %{action_id => risk}}`.
   """
   def action_risks_for_account(%Subject{} = subject) do
-    with {:ok, actions} <- list_all_actions_for_account(subject) do
-      {:ok, most_severe_risk_by_action(actions)}
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      rows =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.select_action_risk_rows()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, most_severe_risk_by_action_rows(rows)}
+    end
+  end
+
+  @doc """
+  Compact, account-scoped action risk index for policy previews.
+
+  Returns the account-wide `%{action_id => worst_risk}` plus each runner's own
+  `%{action_id => risk}` from one `view_catalog`-gated query that selects only
+  `{runner_id, action_id, risk}`. Policy rails use this instead of loading full
+  `runner_actions` structs or issuing one query per targeted ruleset.
+  """
+  def action_risk_index_for_account(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      rows =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.select_action_risk_rows()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, action_risk_index(rows)}
     end
   end
 
@@ -646,14 +680,44 @@ defmodule Emisar.Catalog do
   def action_risks_for_runner_ids(runner_ids, %Subject{} = subject) when is_list(runner_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      actions =
+      rows =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
+        |> RunnerAction.Query.select_action_risk_rows()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, most_severe_risk_by_action(actions)}
+      {:ok, most_severe_risk_by_action_rows(rows)}
     end
+  end
+
+  @doc """
+  Derives `%{action_id => worst_risk}` for `runner_ids` from an
+  `action_risk_index_for_account/1` result. Pure and intentionally tolerant:
+  unknown runner ids contribute nothing, matching the account-scoped query path.
+  """
+  def action_risks_from_index(%{runners: actions_by_runner}, runner_ids)
+      when is_list(runner_ids) do
+    runner_ids
+    |> Enum.flat_map(&Map.get(actions_by_runner, &1, %{}))
+    |> Enum.reduce(%{}, fn {action_id, risk}, acc ->
+      Map.update(acc, action_id, risk, &most_severe(&1, risk))
+    end)
+  end
+
+  defp action_risk_index(rows) when is_list(rows) do
+    Enum.reduce(rows, %{account: %{}, runners: %{}}, &add_action_risk_row/2)
+  end
+
+  defp add_action_risk_row({runner_id, action_id, risk}, index) do
+    account = Map.update(index.account, action_id, risk, &most_severe(&1, risk))
+
+    runners =
+      Map.update(index.runners, runner_id, %{action_id => risk}, fn actions ->
+        Map.update(actions, action_id, risk, &most_severe(&1, risk))
+      end)
+
+    %{index | account: account, runners: runners}
   end
 
   @doc """

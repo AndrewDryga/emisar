@@ -17,14 +17,34 @@ defmodule Emisar.Policies.Glob do
   page already uses.
   """
   def match?(pattern, string) do
+    matcher = compile(pattern)
+    match_compiled?(matcher, string)
+  end
+
+  @doc """
+  Compiles a policy glob once for repeated matching.
+
+  The policy editor's live outcome preview can test thousands of actions against
+  the same override list on every render. Compiling wildcard regexes once per
+  preview keeps the matcher semantics identical to `match?/2` without paying
+  regex compilation per action.
+  """
+  def compile(pattern) do
     if String.contains?(pattern, "*") do
       escaped = pattern |> Regex.escape() |> String.replace("\\*", ".*")
-      regex = Regex.compile!("^" <> escaped <> "$", "i")
-      Regex.match?(regex, string)
+      {:regex, Regex.compile!("^" <> escaped <> "$", "i")}
     else
-      String.downcase(pattern) == String.downcase(string)
+      {:literal, String.downcase(pattern)}
     end
   end
+
+  @doc """
+  Matches `string` against a matcher returned by `compile/1`.
+  """
+  def match_compiled?({:regex, regex}, string), do: Regex.match?(regex, string)
+
+  def match_compiled?({:literal, pattern}, string),
+    do: pattern == String.downcase(string)
 
   @doc """
   Whether glob `a` subsumes glob `b` — i.e. every string matching `b` also
