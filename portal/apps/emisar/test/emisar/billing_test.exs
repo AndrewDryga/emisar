@@ -23,8 +23,12 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def list_products, do: {:error, :paddle_unavailable}
 
   @impl true
+  def list_transactions(_attrs), do: {:error, :paddle_unavailable}
+
+  @impl true
   def get_transaction_invoice(_id), do: {:error, :unused}
 
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :invalid_payload}
 end
 
@@ -571,24 +575,28 @@ defmodule Emisar.BillingTest do
       assert {:ok, "ctm_existing_01", ^account} =
                Billing.ensure_paddle_customer(account, subject)
     end
-  end
 
-  describe "ensure_paddle_customer/2 — internal helper has no own Subject gate" do
-    test "it takes a %Subject{} for its email only — authz is the start_checkout caller's" do
-      # ensure_paddle_customer/2 runs NO ensure_has_permissions of its own: by
-      # design the manage_billing gate lives in its caller (start_checkout/4), and
-      # the helper just threads the acting user's email onto the Paddle customer.
-      # The contract is arity-2 (account, subject) with no permission-bearing
-      # arity-3 variant, and it succeeds for any owner subject without a gate of
-      # its own. (start_checkout's gate is proven by the admin/cross-account
-      # denial tests above.)
-      assert function_exported?(Billing, :ensure_paddle_customer, 2)
-      refute function_exported?(Billing, :ensure_paddle_customer, 3)
+    test "an admin without manage_billing is refused" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      admin = Fixtures.Users.create_user()
 
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
-      assert {:ok, customer_id, _account} = Billing.ensure_paddle_customer(account, subject)
-      assert String.starts_with?(customer_id, "ctm_stub_")
+      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+
+      assert {:error, :unauthorized} = Billing.ensure_paddle_customer(account, admin_subject)
+    end
+
+    test "an owner of another account is refused before returning an existing customer" do
+      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      account_a = %{account_a | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:error, :unauthorized} = Billing.ensure_paddle_customer(account_a, subject_b)
     end
   end
 
@@ -2002,6 +2010,10 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   @impl true
   def get_transaction_invoice(_id), do: {:error, :unused}
 
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 

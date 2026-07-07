@@ -15,7 +15,7 @@ defmodule Emisar.Runners.Token.Query do
 
   def by_runner_account_id(queryable, account_id) do
     queryable
-    |> join(:inner, [tokens: t], r in ^Emisar.Runners.Runner.Query.all(),
+    |> join(:inner, [tokens: t], r in ^Emisar.Runners.Runner.Query.not_deleted(),
       on: r.id == t.runner_id,
       as: :runners
     )

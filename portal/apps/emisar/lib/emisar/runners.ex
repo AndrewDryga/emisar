@@ -960,7 +960,8 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_enrollment_keys_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, key.account_id) do
       {:ok, key}
     end
   end

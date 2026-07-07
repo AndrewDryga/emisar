@@ -1532,6 +1532,15 @@ defmodule Emisar.RunnersTest do
 
       assert {:error, :not_found} = Runners.revoke_enrollment_key(key_a, owner_b)
     end
+
+    test "won't return an already-revoked auth key in another account" do
+      {_account_a, _ua, owner_a} = account_with_owner_subject()
+      {_account_b, _ub, owner_b} = account_with_owner_subject()
+      {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
+      {:ok, revoked_key_a} = Runners.revoke_enrollment_key(key_a, owner_a)
+
+      assert {:error, :not_found} = Runners.revoke_enrollment_key(revoked_key_a, owner_b)
+    end
   end
 
   describe "peek_enrollment_key_by_secret/1" do
@@ -2128,6 +2137,21 @@ defmodule Emisar.RunnersTest do
     test "an account-less / actor-less subject leaves the query unscoped (fallback)" do
       query = Runner.Query.all()
       assert Runners.Authorizer.for_subject(query, %Subject{}) == query
+    end
+
+    test "account-scoped runner token queries exclude deleted runners" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {_raw, token} = Runners.mint_runner_token(runner)
+      {:ok, _deleted} = Runners.delete_runner(runner, subject)
+
+      assert [] =
+               Token.Query.all()
+               |> Runners.Authorizer.for_subject(subject)
+               |> Repo.all()
+
+      assert %Token{id: id} = Repo.reload!(token)
+      assert id == token.id
     end
   end
 

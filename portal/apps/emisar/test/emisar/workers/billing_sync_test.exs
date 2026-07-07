@@ -27,8 +27,13 @@ defmodule Emisar.Workers.BillingSyncTest.PartialFailPaddleClient do
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
+  def list_products, do: {:error, :unused}
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+  @impl true
   def get_transaction_invoice(_id), do: {:error, :unused}
 
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
@@ -227,8 +232,13 @@ defmodule Emisar.Workers.BillingSyncUnknownStatusTest.UnknownStatusPaddleClient 
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
+  def list_products, do: {:error, :unused}
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+  @impl true
   def get_transaction_invoice(_id), do: {:error, :unused}
 
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
@@ -295,8 +305,13 @@ defmodule Emisar.Workers.BillingSyncNoPeriodTest.NoPeriodPaddleClient do
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
+  def list_products, do: {:error, :unused}
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+  @impl true
   def get_transaction_invoice(_id), do: {:error, :unused}
 
+  @impl true
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 

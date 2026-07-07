@@ -483,20 +483,33 @@ defmodule Emisar.Billing do
   defp parse_invoice_datetime(_), do: nil
 
   @doc """
-  Ensures the account has a Paddle customer; returns the customer id.
-  Idempotent — if the account already has one, just returns it.
+  Ensures the account has a Paddle customer. Requires `manage` on billing and the subject's account.
+
+  Returns `{:ok, customer_id, account}` or `{:error, term}`.
+  Idempotent: if the account already has one, just returns it.
 
   On first creation the acting user's email is attached to the Paddle
   customer so invoices and receipts reach a real inbox.
   """
-  def ensure_paddle_customer(
-        %Accounts.Account{paddle_customer_id: customer_id} = account,
-        %Subject{}
-      )
-      when is_binary(customer_id),
-      do: {:ok, customer_id, account}
-
   def ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_billing_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+      do_ensure_paddle_customer(account, subject)
+    end
+  end
+
+  defp do_ensure_paddle_customer(
+         %Accounts.Account{paddle_customer_id: customer_id} = account,
+         %Subject{}
+       )
+       when is_binary(customer_id),
+       do: {:ok, customer_id, account}
+
+  defp do_ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
     with {:ok, %{"id" => customer_id}} <-
            Emisar.Billing.PaddleClient.create_customer(%{
              email: Subject.actor_email(subject),
