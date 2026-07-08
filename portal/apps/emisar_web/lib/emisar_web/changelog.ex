@@ -11,6 +11,70 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-07],
+      slug: "recurrent-jobs-billing-sync-runner-install",
+      title: "More reliable background work and a cleaner runner setup",
+      tag: "v0.23.0",
+      summary:
+        "Routine product work is now more predictable: approval expiry, audit retention, billing sync, sign-in cleanup, and timed-out runs are handled by the control plane itself. Billing contact sync keeps customer records tied to active account owners, and runner setup now puts the install script details where operators need them while avoiding noisy host suggestions for binary-only installs."
+    },
+    %{
+      date: ~D[2026-07-06],
+      slug: "annual-billing-team-sso-security-hardening",
+      title: "Annual billing, Team-owned SSO, and safer input handling",
+      tag: "v0.22.0",
+      summary:
+        "Billing now supports monthly or annual checkout, shows recent invoices, and lets operators download invoice PDFs from the console. SSO moved into Team, where pending access requests, connection status, sign-in links, 2FA enforcement, and Require SSO live next to the roster. The same pass tightened how emisar handles oversized directory-sync data, runner output, signup recovery, email changes, and account-scoped billing or runner actions."
+    },
+    %{
+      date: ~D[2026-07-05],
+      slug: "console-on-canvas-policy-and-pack-clarity",
+      title: "A calmer, clearer console",
+      tag: "v0.21.0",
+      summary:
+        "The console now uses one page language across fleet, agents, policies, packs, runbooks, billing, approvals, and audit. Empty states explain the next useful action, dangerous actions use the same confirmation dialog, machine identifiers are easy to copy, and navigation looks like navigation rather than a row of buttons. Policies show what a rule allows, approves, or denies against the account's actual catalog, and pack search can narrow by risk tier or matching action."
+    },
+    %{
+      date: ~D[2026-07-03],
+      slug: "forensic-audit-and-decision-records",
+      title: "Audit and approvals read like records",
+      tag: "v0.20.0",
+      summary:
+        "The audit trail is easier to scan during an incident: each row makes the actor, target, action, and outcome clearer, and CSV export has its own Team-gated surface for larger investigations. Approval detail pages now open with the decision state, then show the command, arguments, reason, policy evidence, reviewer note, and timestamps in one record instead of scattered panels."
+    },
+    %{
+      date: ~D[2026-07-02],
+      slug: "billing-checkout-mfa-and-shared-components",
+      title: "Checkout, 2FA sign-in, and cleaner account forms",
+      tag: "v0.19.0",
+      summary:
+        "Checkout now follows the selected plan and billing cycle, and billing-manager seats can manage invoices and plans without receiving broader admin powers. Accounts that require 2FA can challenge after a magic-link sign-in with TOTP or a recovery code. Code entry, secret reveal, enrollment steps, switches, cards, and mobile list rows now share the same console patterns, so repeated workflows feel familiar instead of rebuilt per page."
+    },
+    %{
+      date: ~D[2026-07-01],
+      slug: "directory-owned-members-and-runner-scopes",
+      title: "Directory sync owns directory-managed access",
+      tag: "v0.18.0",
+      summary:
+        "Directory-managed members now behave consistently: synced roles stay owned by the IdP, deactivated users arrive suspended, manual suspensions are not undone by later syncs, and IdP-deactivated members cannot be reinstated from emisar. Runner scope selection is clearer and reused across invitations and MCP keys, and MCP keys can be limited by action and runner scope before a dispatch reaches a runner."
+    },
+    %{
+      date: ~D[2026-06-30],
+      slug: "sso-setup-and-audit-retention",
+      title: "SSO setup and audit retention become inspectable",
+      tag: "v0.17.0",
+      summary:
+        "SSO setup now has dedicated connection pages with pending access requests, a test-connection step, synced users and groups, sync health, and read-only provider fields after creation. Audit retention is easier to reason about: plan changes affect retention going forward rather than silently erasing existing rows, exports record that they happened, and important identity, plan, retention, and action-run events carry the details an operator needs later."
+    },
+    %{
+      date: ~D[2026-06-26],
+      slug: "passwordless-signed-dispatch-and-pack-verification",
+      title: "Passwordless sign-in, signed dispatch, and verified packs",
+      tag: "v0.16.0",
+      summary:
+        "emisar now signs users in with magic links or SSO only. Email changes require a fresh verification step, and invite and confirmation emails carry sign-in links instead of asking for a password. Signed dispatch gives runners a way to reject requests that were not made by a configured client, MCP keys gained action scopes, expiry, kind labels, and rotation, and the pack test harness expanded across the database, Kubernetes, routing, Redis, Nomad, Traefik, and firewall packs."
+    },
+    %{
       date: ~D[2026-06-25],
       slug: "analytics-and-console-craft",
       title: "Product analytics and the console craft pass",

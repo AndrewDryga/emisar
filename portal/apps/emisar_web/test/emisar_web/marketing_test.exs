@@ -600,9 +600,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Public beta control plane"
       assert html =~ "Client-attested signed dispatch"
       assert html =~ "The marketing site, rebuilt"
+      assert html =~ "More reliable background work and a cleaner runner setup"
+      assert html =~ "Annual billing, Team-owned SSO, and safer input handling"
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"
+      assert html =~ "v0.23.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
