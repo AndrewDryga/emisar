@@ -12,7 +12,7 @@ The **Iron Laws** below are non-negotiable. The user has had to call out the sam
 
 The repo-wide **creed** — pragmatic & boring, opinionated (this codebase's existing shape wins), wear every hat (PM / UX / security / frontend / maintainer / marketing), ship great maintainable products, readable & no-bloat, done-means-verified, greenfield — lives in the **root `AGENTS.md`**. Read it there; it is not repeated here. This file is the **portal-specific** layer: the Iron Laws and House opinions below, plus two process specifics the creed leaves to portal:
 
-- **The gate (IL-20).** Run `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test` and show the result — never say "should work". **Never pipe `mix format --check-formatted` (or `mix compile`) through `head`/`tail`** — the pipe's exit code replaces the tool's, so a formatting/compile failure passes silently. Run them as standalone commands (or `&&`-chain without a pipe) and read the real exit code.
+- **The gate (IL-20).** Run `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh` and show the result — never say "should work". The test-output guard fails on warning/error/log pollution; fix the source instead of hiding it. **Never pipe `mix format --check-formatted` (or `mix compile`) through `head`/`tail`** — the pipe's exit code replaces the tool's, so a formatting/compile failure passes silently. Run them as standalone commands (or `&&`-chain without a pipe) and read the real exit code.
 - **Verify APIs before you call them — don't invent (`/verify-api`).** Never call a function, pass an arg/option, or use a CLI flag you're not certain exists with that signature. Look it up *first*: the code in this repo → the `deps/` source → `mix help` / IEx `h` → version-matched HexDocs → `--help`. `mix compile --warnings-as-errors` (it flags undefined/private functions and wrong arity) is the backstop, not the first line. If you still can't confirm it, say so and ask — don't guess.
 
 ### House opinions (extend freely)
@@ -130,7 +130,7 @@ Numbered so Credo, `/iron-review`, and code review can cite them. **Architecture
 
 | # | Law | Why | Detect |
 |---|-----|-----|--------|
-| **IL-20** | **Verify before claiming done.** Run `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test` and show output. If you can't run it, say so explicitly. | "Should work" has burned us. Generated code that doesn't pass `mix test` doesn't get committed. | A "done" claim with no command output in the transcript. |
+| **IL-20** | **Verify before claiming done.** Run `mix compile --warnings-as-errors && mix format --check-formatted && mix credo && ../.agent/scripts/check-portal-test-output.sh` and show output. If you can't run it, say so explicitly. | "Should work" has burned us. Generated code that doesn't pass cleanly — including warning/error/log-free test output — doesn't get committed. | A "done" claim with no command output in the transcript. |
 
 ---
 
@@ -409,6 +409,7 @@ end
 - No `Process.sleep` for synchronization. Use `assert_receive` with an explicit timeout (default 500ms) when crossing process boundaries.
 - Capture expected warning/error logs at the ExUnit app boundary (`ExUnit.start(capture_log: true)`), not by sprinkling `with_log` through ordinary tests just to keep output quiet. Use `capture_log/with_log` locally only when the log text itself is the assertion under test.
 - When a test action emits a PubSub event, subscribe before the action and `assert_receive` the exact broadcast before the test exits. For LiveView tests where the open view also receives that broadcast, follow the assertion with a render/flush of the view so its queued `handle_info` runs while the sandbox owner is still alive. This proves the event contract and prevents late async DB work from surfacing as teardown noise.
+- Test output must stay boring. The gate runs `../.agent/scripts/check-portal-test-output.sh`, which fails if ExUnit output contains compiler warnings, Logger warning/error lines, Postgrex/DBConnection disconnect noise, or other warning/error markers. Treat a failure as a real defect or missing synchronization point; do not lower log levels, broaden capture, or add an allowlist unless the log text is itself the behavior under test.
 
 **Test-writing taste — the house style for an ExUnit body:**
 

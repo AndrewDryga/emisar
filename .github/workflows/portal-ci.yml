@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "portal/**"
+      - ".agent/scripts/check-portal-test-output.sh"
       - "install.sh"
       - "packs/**"
       - ".github/workflows/portal-ci.yml"
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "portal/**"
+      - ".agent/scripts/check-portal-test-output.sh"
       - "install.sh"
       - "packs/**"
       - ".github/workflows/portal-ci.yml"
@@ -104,18 +106,20 @@ jobs:
         # apps/emisar_web/.sobelow-conf.
         run: mix sobelow --root apps/emisar_web --config
 
-      - name: Test (emisar app — context + DB integration)
-        # `mix test.ci` runs `ecto.create --quiet && ecto.migrate --quiet
-        # && test`. The previous separate "unit, no DB" step was a no-op
-        # — no tests carry the `:db` moduletag, so `--exclude db` excluded
-        # nothing and the same suite ran twice. One step covers both.
-        run: cd apps/emisar && mix test.ci
+      - name: Compile-cycle budget
+        # Keep the existing xref budget gate without dumping the known cycle
+        # into normal CI output. If the budget is exceeded, print the report.
+        run: |
+          if ! output="$(cd apps/emisar && mix xref.cycles 2>&1)"; then
+            echo "$output"
+            exit 1
+          fi
 
-      - name: Test (web app — LiveView + controller regressions)
-        # `cd` into the umbrella child; running `mix test apps/...` from
-        # the root passes that path through to each child's test runner,
-        # which can't resolve it against its own working dir.
-        run: cd apps/emisar_web && mix test
+      - name: Test output gate (clean ExUnit output)
+        # Runs both portal test suites and fails if the output contains
+        # compiler warnings, Logger warning/error lines, or async DB teardown
+        # noise. Dirty test output is a regression: fix the source, don't hide it.
+        run: ../.agent/scripts/check-portal-test-output.sh
 
       - name: Docker build (release image)
         # Build context must be the REPO ROOT (the Dockerfile pulls in
