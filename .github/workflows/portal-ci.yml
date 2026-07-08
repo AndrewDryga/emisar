@@ -127,7 +127,9 @@ jobs:
         # image compiles with the same Erlang/Elixir as the test job and
         # local dev — one source of truth, no drift. The elixir line
         # carries an asdf `-otp-NN` suffix the hexpm image tag omits, so
-        # strip it; erlang maps straight to OTP_VERSION.
+        # strip it; erlang maps straight to OTP_VERSION. The smoke image
+        # also gets the dev-host force_ssl excludes so plain-HTTP localhost
+        # probes can hit more than `/healthz`.
         working-directory: ${{ github.workspace }}
         run: |
           elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
@@ -140,6 +142,7 @@ jobs:
           docker build -f portal/Dockerfile \
             --build-arg ELIXIR_VERSION="${elixir_version}" \
             --build-arg OTP_VERSION="${otp_version}" \
+            --build-arg EMISAR_DEV_HOST_EXCLUDES=1 \
             -t emisar/portal:ci .
 
       - name: Docker smoke (release boots + runs migrations + serves /healthz)
@@ -167,9 +170,10 @@ jobs:
           # EMISAR_DISABLE_BILLING is set — we don't want to bake a
           # Paddle key into CI, so use the stub.
           EMISAR_DISABLE_BILLING: "1"
-          # FORCE_SSL=false disables HTTPS redirect and the secure-
-          # cookie pin so plain-HTTP `curl http://localhost:4000/healthz`
-          # works against the smoke container.
+          # FORCE_SSL=false disables the secure-cookie pin and makes URL
+          # generation plain HTTP. HTTPS redirects are compile-time, so the
+          # docker build above also sets EMISAR_DEV_HOST_EXCLUDES=1 for the
+          # smoke image.
           FORCE_SSL: "false"
         run: |
           set -euo pipefail
