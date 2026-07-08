@@ -23,7 +23,7 @@ defmodule Emisar.Approvals do
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.ApiKeys
-  alias Emisar.Approvals.{Authorizer, Decision, Grant, Jobs, Request}
+  alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
   alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Auth.Subject
   require Logger
@@ -34,8 +34,12 @@ defmodule Emisar.Approvals do
 
   @impl Supervisor
   def init(_opts) do
-    Supervisor.init([Jobs.ExpireOverdueRequests], strategy: :one_for_one)
+    children = [job_module("ExpireOverdueRequests")]
+
+    Supervisor.init(children, strategy: :one_for_one)
   end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
     with :ok <-

@@ -14,7 +14,7 @@ defmodule Emisar.Billing do
   alias Ecto.Multi
   alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Billing.{Authorizer, Entitlements, Jobs, PaddleClient, Subscription}
+  alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
   require Logger
 
   @plans %{
@@ -68,8 +68,15 @@ defmodule Emisar.Billing do
 
   @impl Supervisor
   def init(_opts) do
-    Supervisor.init([Jobs.SyncPaddleCustomers, Jobs.SyncSubscriptions], strategy: :one_for_one)
+    children = [
+      job_module("SyncPaddleCustomers"),
+      job_module("SyncSubscriptions")
+    ]
+
+    Supervisor.init(children, strategy: :one_for_one)
   end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)

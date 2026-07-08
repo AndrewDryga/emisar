@@ -9,7 +9,7 @@ defmodule Emisar.Runs do
   alias Ecto.Multi
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
-  alias Emisar.Runs.{ActionRun, Authorizer, Jobs, RunEvent}
+  alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
 
   def start_link(opts) do
@@ -18,8 +18,15 @@ defmodule Emisar.Runs do
 
   @impl Supervisor
   def init(_opts) do
-    Supervisor.init([Jobs.DispatchTimeout, Jobs.EventRetention], strategy: :one_for_one)
+    children = [
+      job_module("DispatchTimeout"),
+      job_module("EventRetention")
+    ]
+
+    Supervisor.init(children, strategy: :one_for_one)
   end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Listing / queries ------------------------------------------------
 

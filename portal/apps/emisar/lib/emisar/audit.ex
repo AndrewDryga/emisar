@@ -27,7 +27,7 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
-  alias Emisar.Audit.{Authorizer, Event, Events, Jobs}
+  alias Emisar.Audit.{Authorizer, Event, Events}
   alias Emisar.{Auth, Billing, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
 
@@ -37,8 +37,12 @@ defmodule Emisar.Audit do
 
   @impl Supervisor
   def init(_opts) do
-    Supervisor.init([Jobs.Retention], strategy: :one_for_one)
+    children = [job_module("Retention")]
+
+    Supervisor.init(children, strategy: :one_for_one)
   end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Recording (internal helper called by sibling contexts) ----------
 
