@@ -9,6 +9,15 @@ defmodule EmisarWeb.TeamLiveTest do
   use EmisarWeb.ConnCase, async: true
   import Swoosh.TestAssertions
 
+  defp subscribe_team(account) do
+    assert :ok = Emisar.Accounts.subscribe_account_team(account.id)
+  end
+
+  defp assert_team_broadcast(lv, event, user_id) do
+    assert_receive {:list_changed, :team, ^event, ^user_id}
+    render(lv)
+  end
+
   describe "GET /app/settings/team as an owner" do
     test "the roster offers an Invite member action, not the read-only banner", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -516,10 +525,12 @@ defmodule EmisarWeb.TeamLiveTest do
                "Resend invite"
              )
 
+      subscribe_team(account)
       html = render_click(lv, "resend_invitation", %{"membership_id" => membership.id})
 
       assert html =~ "Invitation resent to #{email}."
       assert {:error, :not_found} = Emisar.Accounts.fetch_invitation_by_token(old_token)
+      assert_team_broadcast(lv, "membership.invitation_resent", membership.user_id)
 
       assert_email_sent(fn sent ->
         sent.to == [{"", email}] and
@@ -558,12 +569,19 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "another way"
     end
 
-    test "change_role promotes the member", %{lv: lv, membership: membership} do
+    test "change_role promotes the member", %{
+      account: account,
+      lv: lv,
+      membership: membership
+    } do
+      subscribe_team(account)
+
       html =
         render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "operator"})
 
       assert html =~ "Role updated."
       assert Emisar.Repo.reload!(membership).role == :operator
+      assert_team_broadcast(lv, "membership.role_changed", membership.user_id)
     end
 
     test "the role dropdown offers every OTHER role and omits the current one", %{
@@ -608,6 +626,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a suspended member's role stays editable — not locked beside a sync badge", %{
+      account: account,
       lv: lv,
       membership: membership
     } do
@@ -616,7 +635,9 @@ defmodule EmisarWeb.TeamLiveTest do
       # member's SCIM badge, misreads as "locked because synced"). It stays the
       # role picker — its confirm dialogs still render — and the change actually
       # applies (you set the role they'll have on reinstate).
+      subscribe_team(account)
       assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~ "Suspended"
+      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
       assert has_element?(lv, "##{"change-role-#{membership.id}-operator"}")
 
@@ -626,21 +647,31 @@ defmodule EmisarWeb.TeamLiveTest do
              }) =~ "Role updated."
 
       assert Emisar.Repo.reload!(membership).role == :operator
+      assert_team_broadcast(lv, "membership.role_changed", membership.user_id)
     end
 
-    test "suspend then reinstate round-trips", %{lv: lv, membership: membership} do
+    test "suspend then reinstate round-trips", %{
+      account: account,
+      lv: lv,
+      membership: membership
+    } do
+      subscribe_team(account)
+
       assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~
                "Access suspended."
 
       assert Emisar.Repo.reload!(membership).disabled_at
+      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
       assert render_click(lv, "reinstate", %{"membership_id" => membership.id}) =~
                "Access restored."
 
       refute Emisar.Repo.reload!(membership).disabled_at
+      assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
     end
 
     test "the Suspended chip appears on a suspended row and clears on reinstate", %{
+      account: account,
       lv: lv,
       membership: membership
     } do
@@ -648,14 +679,18 @@ defmodule EmisarWeb.TeamLiveTest do
       # visible signal the row is disabled.
       refute render(lv) =~ "Suspended"
 
+      subscribe_team(account)
       suspended = render_click(lv, "suspend", %{"membership_id" => membership.id})
       assert suspended =~ "Suspended"
+      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
       restored = render_click(lv, "reinstate", %{"membership_id" => membership.id})
       refute restored =~ "Suspended"
+      assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
     end
 
     test "remove soft-deletes the membership through the typed-confirm dialog", %{
+      account: account,
       lv: lv,
       member: member,
       membership: membership
@@ -663,8 +698,10 @@ defmodule EmisarWeb.TeamLiveTest do
       # Drive the dialog: type the member's email, then Confirm.
       dialog = "remove-member-#{membership.id}"
       type_confirm_token(lv, dialog, member.email)
+      subscribe_team(account)
       assert confirm_dialog(lv, dialog, "Remove member") =~ "Member removed."
       assert Emisar.Repo.reload!(membership).deleted_at
+      assert_team_broadcast(lv, "membership.removed", membership.user_id)
     end
 
     test "the remove dialog spells out that removal is permanent", %{lv: lv} do

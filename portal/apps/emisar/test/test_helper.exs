@@ -1,4 +1,4 @@
-ExUnit.start(exclude: [:db])
+ExUnit.start(exclude: [:db], capture_log: true)
 
 # Sandbox setup only runs when the Repo can actually start. The
 # unit-test subset (`mix test --exclude db`) runs without a DB and

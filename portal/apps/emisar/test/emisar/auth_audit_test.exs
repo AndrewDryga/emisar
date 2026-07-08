@@ -160,8 +160,8 @@ defmodule Emisar.AuthAuditTest do
 
       # A random token id → no token → no user → nothing to hang an audit row on,
       # and the SAME error a known-user failure returns (no enumeration oracle).
-      assert {:error, :invalid_or_expired} =
-               Auth.verify_magic_link(Ecto.UUID.generate(), "secret", "nonce", context)
+      assert Auth.verify_magic_link(Ecto.UUID.generate(), "secret", "nonce", context) ==
+               {:error, :invalid_or_expired}
 
       assert Repo.aggregate(Emisar.Audit.Event, :count) == before
     end

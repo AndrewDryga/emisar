@@ -352,7 +352,7 @@ defmodule Emisar.AuthTest do
       {token_id2, nonce2, secret2} = Auth.issue_magic_link(user)
 
       # The first token is gone — re-issuing deleted it.
-      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id1, secret1, nonce1)
+      assert Auth.verify_magic_link(token_id1, secret1, nonce1) == {:error, :invalid_or_expired}
       assert {:ok, %User{}} = Auth.verify_magic_link(token_id2, secret2, nonce2)
     end
   end
@@ -369,8 +369,8 @@ defmodule Emisar.AuthTest do
       assert updated.email == new_email
       assert Repo.reload!(user).email == new_email
 
-      assert {:error, :invalid_or_expired} =
-               Auth.verify_magic_link(old_token_id, old_secret, old_nonce)
+      assert Auth.verify_magic_link(old_token_id, old_secret, old_nonce) ==
+               {:error, :invalid_or_expired}
 
       assert {:ok, %User{id: id, email: ^new_email, confirmed_at: %DateTime{}}} =
                Auth.verify_magic_link(new_token_id, new_secret, new_nonce)
@@ -428,7 +428,7 @@ defmodule Emisar.AuthTest do
       assert id == user.id
 
       # Single-use — the token is deleted on success.
-      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert Auth.verify_magic_link(token_id, secret, nonce) == {:error, :invalid_or_expired}
     end
 
     test "the email half alone can't sign in — a wrong nonce is rejected (anti-hijack)", %{

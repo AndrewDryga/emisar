@@ -54,7 +54,7 @@ defmodule EmisarWeb.Components.ChipTest do
 
       html =
         rendered_to_string(
-          ~H"<CoreComponents.chip mono class=\"ml-2\">actions:read</CoreComponents.chip>"
+          ~H'<CoreComponents.chip mono class="ml-2">actions:read</CoreComponents.chip>'
         )
 
       assert html =~ "actions:read"

@@ -8,14 +8,21 @@ defmodule EmisarWeb.Telemetry do
 
   @impl true
   def init(_arg) do
-    children = [
-      # Telemetry poller — runs `periodic_measurements/0` every 10s so
-      # gauge-style metrics (VM memory, run queue lengths) get refreshed.
-      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
-      | reporter_children()
-    ]
+    children = poller_children() ++ reporter_children()
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  # Telemetry poller — runs `periodic_measurements/0` every 10s so gauge-style
+  # metrics (VM memory, run queue lengths) get refreshed. Disabled in tests
+  # because the samplers do fleet-wide DB reads outside an ExUnit sandbox owner;
+  # the sampler functions themselves are still covered directly.
+  defp poller_children do
+    if Application.get_env(:emisar_web, :enable_telemetry_poller, true) do
+      [{:telemetry_poller, measurements: periodic_measurements(), period: 10_000}]
+    else
+      []
+    end
   end
 
   # Prometheus exporter on a sibling port from the main endpoint so a

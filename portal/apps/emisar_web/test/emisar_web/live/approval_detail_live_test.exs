@@ -11,6 +11,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   alias Emisar.Runners.Runner
   alias EmisarWeb.PacksRegistry
 
+  defp subscribe_approvals(account) do
+    assert :ok = Approvals.subscribe_account_approvals(account.id)
+  end
+
+  defp assert_approval_broadcast(lv, request) do
+    request_id = request.id
+    assert_receive {:approval_updated, %Approvals.Request{id: ^request_id}}
+    render(lv)
+  end
+
   defp pending_request(account, requested_by) do
     {:ok, runner} =
       Runner.Changeset.register(%{
@@ -290,6 +300,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     request = pending_request(account, user)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    subscribe_approvals(account)
 
     # The reason textarea is optional — an empty submit still denies (this
     # path once raised FunctionClauseError on the missing `reason`).
@@ -299,6 +310,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> render_submit(%{"decision" => "deny"})
 
     assert html =~ "Denied."
+    assert_approval_broadcast(lv, request)
   end
 
   test "a denied request leads with the verdict callout, no live decide panel", %{conn: conn} do
@@ -306,6 +318,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     request = pending_request(account, user)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    subscribe_approvals(account)
 
     html =
       lv
@@ -318,6 +331,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "duplicate of an earlier run"
     refute html =~ "Approve and send"
     assert Repo.reload!(request).decision_reason == "duplicate of an earlier run"
+    assert_approval_broadcast(lv, request)
   end
 
   test "an expired request leads with the auto-denied verdict, no decide panel", %{conn: conn} do
@@ -543,6 +557,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # No votes yet — the tally reads 0 of 2 and no decider is named.
     assert html =~ "0 of 2"
     refute html =~ "Casey Approver"
+    subscribe_approvals(account)
 
     approver = Fixtures.Users.create_user(full_name: "Casey Approver")
 
@@ -559,6 +574,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         Fixtures.Subjects.subject_for(approver, account),
         "first"
       )
+
+    assert_approval_broadcast(lv, request)
 
     # The broadcast reaches the still-open page; it re-assigns request + decisions.
     rendered = render(lv)

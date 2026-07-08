@@ -407,6 +407,8 @@ end
 - Regression tests drive the domain API that failed, not database catalog introspection. For a migration/backstop, prove the relevant context operation succeeds or rejects correctly (`Runs.dispatch_run/2`, `Approvals.create_request/3`, etc.); only inspect schema catalogs when no meaningful domain path exists.
 - Every context change covers three paths: **happy path**, **denial path** (wrong role → `{:error, :unauthorized}`), **cross-account isolation** (account A subject cannot see account B rows → `{:error, :not_found}`). A write isn't done without the denial test.
 - No `Process.sleep` for synchronization. Use `assert_receive` with an explicit timeout (default 500ms) when crossing process boundaries.
+- Capture expected warning/error logs at the ExUnit app boundary (`ExUnit.start(capture_log: true)`), not by sprinkling `with_log` through ordinary tests just to keep output quiet. Use `capture_log/with_log` locally only when the log text itself is the assertion under test.
+- When a test action emits a PubSub event, subscribe before the action and `assert_receive` the exact broadcast before the test exits. For LiveView tests where the open view also receives that broadcast, follow the assertion with a render/flush of the view so its queued `handle_info` runs while the sandbox owner is still alive. This proves the event contract and prevents late async DB work from surfacing as teardown noise.
 
 **Test-writing taste — the house style for an ExUnit body:**
 

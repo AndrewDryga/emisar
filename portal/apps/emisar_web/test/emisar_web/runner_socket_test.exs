@@ -1,6 +1,7 @@
 defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Fixtures, Repo, Runners, Runs}
+  alias Emisar.RequestContext
   alias Emisar.Runners.Presence
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.RunnerSocket
@@ -807,18 +808,14 @@ defmodule EmisarWeb.RunnerSocketTest do
     # request_context (the IP/UA captured at socket init), which is the only
     # place that connect metadata is allowed to surface.
     test "an error envelope records a runner.error audit row stamped with the connect IP/UA",
-         %{account: account, runner: runner, user: user} do
-      # Rebuild the socket with a known connect IP/UA so we can assert it rides
-      # the audit row (connected_socket's init uses no ip/ua).
-      {_raw, token} = Runners.mint_runner_token(runner)
+         %{account: account, state: state, user: user} do
+      # Avoid re-running the socket connect path in this already-connected test
+      # process; connect would double-track this runner in Presence. The error
+      # envelope only needs the request context carried on state.
+      context =
+        RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "emisar-runner/9.9.9"})
 
-      {:ok, state} =
-        RunnerSocket.init(%{
-          token: token,
-          runner: runner,
-          ip_address: "203.0.113.7",
-          user_agent: "emisar-runner/9.9.9"
-        })
+      state = %{state | request_context: context}
 
       raw =
         Jason.encode!(%{
@@ -831,7 +828,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: runner.id)
+      {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: state.runner_id)
 
       row = Enum.find(events, &(&1.event_type == "runner.error"))
       assert row, "expected a runner.error audit row"

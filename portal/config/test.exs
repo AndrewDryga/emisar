@@ -72,6 +72,11 @@ config :phoenix_live_view,
 # to use it and (b) is dead weight for the suite.
 config :emisar_web, enable_prometheus_exporter: false
 
+# Skip the production telemetry poller in tests. Its periodic fleet-wide DB
+# samplers run in the supervisor process, outside the async sandbox owner; the
+# sampler functions are tested directly in Emisar.TelemetryTest.
+config :emisar_web, enable_telemetry_poller: false
+
 # Disable Sentry uploads in tests — no DSN means the client short-
 # circuits before any HTTP call.
 config :sentry, dsn: nil
