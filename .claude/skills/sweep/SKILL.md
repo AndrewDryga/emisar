@@ -38,7 +38,7 @@ Start clean — never work around stale state. For each project in scope, reconc
 fail-safe edits (re-read on collision — a parallel agent may be touching the same file).
 
 - **Done tasks need no pruning.** `coop tasks done` already moved each finished task to
-  `xx_done/`; the done record lives there + in git (`git log`), not the live queue. If you spot
+  `99_done/`; the done record lives there + in git (`git log`), not the live queue. If you spot
   a task still in `10_in_progress/` whose work is backed by a commit, finish closing it out
   (`coop tasks done <id>`); a claimed task with **no** matching commit isn't verifiably done —
   leave it and surface it for triage.
@@ -103,7 +103,7 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
    explicit pathspec commits only yours. (`git commit -- <path>` takes the worktree copy, so for
    a *deletion* `git rm` it then bare-commit guarded to your paths.)
 7. **Log + done** — append a one-line *what + why* (incl. what the review caught + fixed, and any
-   rule recorded) to `<project>/.agent/LOG.md`; `coop tasks done <id>` (moves it to `xx_done/`).
+   rule recorded) to `<project>/.agent/LOG.md`; `coop tasks done <id>` (moves it to `99_done/`).
    **Then** the next `00_todo/` task.
 
 - **Blocked?** `coop tasks block <id>` and fill its `decision.md` (decision · options · recommendation); move on.
@@ -111,7 +111,7 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
 - **Never** hold a `10_in_progress/` task you're not working — finish it, `coop tasks block` it, or move it back to `00_todo/`.
 
 ## 4. Finish
-- No `00_todo/` task left: **completeness pass** — re-verify every `xx_done/` task against
+- No `00_todo/` task left: **completeness pass** — re-verify every `99_done/` task against
   `git log` (one commit each) and that none shipped with an unaddressed review blocker or a
   house-rule violation.
 - **Disarm** — `rm -f .claude/.sweep-active` (and `/goal clear` if you set a run goal).

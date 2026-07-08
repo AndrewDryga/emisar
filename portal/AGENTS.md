@@ -136,12 +136,12 @@ Numbered so Credo, `/iron-review`, and code review can cite them. **Architecture
 
 ## Skills
 
-Project skills live in **`../.claude/skills/`** (repo root, so they're found from anywhere in the monorepo). Each is scoped to `portal/` Elixir. Invoke with `/<name>`.
+Project skills live in **`../.claude/skills/`** (repo root, so they're found from anywhere in the monorepo). Most rows below are portal-focused; repo-wide skills say so in their own descriptions and must read the touched project's `AGENTS.md`. Invoke with `/<name>`.
 
 | Skill | Use when |
 |-------|----------|
-| `/spec` | Designing a change that spans more than one file/context. Produces an opinionated, boring-by-default plan in the layered-context shape. |
-| `/work` | Executing a plan step-by-step with compile/test gates between steps. |
+| `/spec` | Designing a change that spans more than one file/context/project. Produces an opinionated, boring-by-default plan mapped to the touched project's gate. |
+| `/work` | Executing an approved plan step-by-step with the touched project's format/compile/test gate between steps. |
 | `/ship-review` | Reviewing a diff before merge through the product hats **and** the Iron Laws, in parallel. The product-level companion to `/code-review` (bugs) and `/iron-review` (laws). |
 | `/review-board` | The full pre-merge review — convenes a panel of expert hats (staff eng, domain, security, UX, UI, PM, marketing, sales) as parallel subagents, then synthesizes one ranked verdict + a prioritized fix plan (queueable into `.agent/tasks/00_todo/` for `/sweep`). Supersedes running `/security-review` + `/code-review` + `/ship-review` separately. |
 | `/new-context` | Scaffolding a whole new context (context + authorizer + schema + query + changeset + tests) in the standard shape. |

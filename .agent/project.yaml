@@ -1,4 +1,4 @@
-# coop project config — committed with the repo (unlike the rest of .agent/).
+# coop project conemisar is the MCP server that connects Claude, Cursor, ChatGPT — any AI agent — to your production infrastructure — committed with the repo (unlike the rest of .agent/).
 
 # Monorepo members: coop aggregates each one's .agent/tasks queue automatically,
 # so you never hand-maintain COOP_TASKS.

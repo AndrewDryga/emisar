@@ -46,8 +46,8 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **Only `rules/` (the shared taste KB) and `scripts/` (maintained dev tooling) are committed; everything else here is local working state and git-ignored** — the queue, log, ideas, backlog, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
 
 - **`tasks/`** — the work queue: **a folder per task**, driven by `coop tasks`. A task's **state is its directory**, four states, nothing else, so skipped work has nowhere to hide:
-  - `00_todo/` todo · `10_in_progress/` **claimed / in progress** · `50_blocked/` blocked · `xx_done/` **done _and_ gated-green _and_ committed**. The numeric prefix just sorts `ls` in lifecycle order; a state change is a **folder move**, never a checkbox edit — always via `coop tasks`, never a manual `mv`.
-  - Each task is `.agent/tasks/<state>/<id>/task.md` (+ optional `log.md`/`state.md`, and `decision.md` for a blocked task). `coop tasks list` shows them by state; `coop tasks add "<title>"` queues one. A `50_blocked/` task **must** carry its own `decision.md` (`coop tasks block` writes the stub). `10_in_progress/` is a soft claim so two agents in parallel don't grab the same task (see the work loop). Every task is always exactly one of these four — you never silently drop or half-finish one.
+  - `00_todo/` todo · `10_in_progress/` **claimed / in progress** · `50_blocked/` blocked · `99_done/` **done _and_ gated-green _and_ committed**. The numeric prefix just sorts `ls` in lifecycle order; a state change is a **folder move**, never a checkbox edit — always via `coop tasks`, never a manual `mv`.
+  - Each task is `.agent/tasks/<state>/<id>/task.md` (+ optional `log.md`/`state.md`, and `decision.md` for a blocked task). `coop tasks ls` shows them by state; `coop tasks add "<title>"` queues one. A `50_blocked/` task **must** carry its own `decision.md` (`coop tasks block` writes the stub). `10_in_progress/` is a soft claim so two agents in parallel don't grab the same task (see the work loop). Every task is always exactly one of these four — you never silently drop or half-finish one.
 - **`BACKLOG.md`** — actionable work you *discover* outside the current task's scope and **too big to fix on the spot**: a bug, tech debt, a missing test, a refactor you shouldn't do right now. (A small, safe cleanup you *can* do as you pass through, you just do — boy-scout rule, creed #7 — no entry needed; `BACKLOG` is for what would derail the current task.) Capture it here the moment you see it — don't derail the current goal, don't lose the finding — then keep going. **Not auto-worked**, and **not scanned by the Stop hook**, so it never blocks a batch; a human (or a later, deliberate pass) promotes an item into `.agent/tasks/00_todo/`. (Distinct from `IDEAS.md` = product features needing approval, and a blocked task's `decision.md` = needs a human call.)
 - **`LOG.md`** — your chain-of-thought, so the *what + why* survives compaction. Append a short entry when you make a decision, finish a task, or set yourself a next step. Newest first under `## Recent`; when `## Recent` passes ~50 lines, move older entries to `LOG.archive.md`. **Not committed** — it is local working memory (git-ignored).
 - **A blocked task's `decision.md`** — **only a genuine _human call_**: a product decision, an ambiguous spec, an irreversible one-way-door migration. `coop tasks block <id>` moves the task to `50_blocked/` and writes the `decision.md` stub; fill it in — the decision needed · the options · your recommendation — then move on (`coop tasks decisions` lists the open ones). Never guess on an irreversible choice. **"Blocked on evidence / verification" is NOT a human call and must NEVER block a task** — needing to know an API's shape, a CLI verb's behaviour on recent versions, a live system's cert path, or whether something reproduces is *work you do*, not a decision someone else makes. **Gather the evidence yourself** — spawn a subagent, stand up a throwaway Docker SUT, query the live MCP fleet, or read a sibling repo (e.g. `../blitz/blitz-infra`) — then proceed. A blocked task whose blocker is "we don't know X yet" is a mis-file: go find out X.
@@ -56,7 +56,7 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 
 ### Definition of Done
 
-A task moves to `xx_done/` (via `coop tasks done`) only when **all** of these hold:
+A task moves to `99_done/` (via `coop tasks done`) only when **all** of these hold:
 
 - the project gate ran **green** (exact command in the project `AGENTS.md`),
 - the change is **committed** — one focused commit per task,
@@ -66,21 +66,21 @@ No changelog file — `git log` is the changelog.
 
 ### The work loop (what `/sweep`, `/goal`, `/loop`, `/work` all follow)
 
-Work the first todo task in `.agent/tasks/` (`coop tasks list`), then the next, until none remain:
+Work the first todo task in `.agent/tasks/` (`coop tasks ls`), then the next, until none remain:
 
 1. **Claim** — `coop tasks claim <id>` (moves it `00_todo/` → `10_in_progress/`). A parallel agent skips `10_in_progress/`, so you won't both grab the same task.
 2. **Do it** — wear the hats; obey the project's `AGENTS.md`.
 3. **Gate** — run the project gate; fix until green.
 4. **Commit** — one focused commit for the task.
-5. **Record** — append a *what + why* line to `LOG.md`, `coop tasks done <id>` (moves it to `xx_done/`), and move to the next todo task.
+5. **Record** — append a *what + why* line to `LOG.md`, `coop tasks done <id>` (moves it to `99_done/`), and move to the next todo task.
 
 When the loop is interrupted:
 
-- **Blocked?** Only if it's a true **human call** (above): `coop tasks block <id>` + fill in its `decision.md`; move on (`coop tasks unblock <id>` returns it to `10_in_progress/` once decided). If the blocker is *missing evidence* (a live check, an API shape, "does this verb still work"), it is **not** blocked — gather the evidence yourself (subagent / throwaway SUT / live fleet / sibling repo) and keep going.
+- **Blocked?** Only if it's a true **human call** (above): `coop tasks block <id>` + fill in its `decision.md`; move on (`coop tasks unblock <id>` returns it to `00_todo/` once decided; claim it again before work). If the blocker is *missing evidence* (a live check, an API shape, "does this verb still work"), it is **not** blocked — gather the evidence yourself (subagent / throwaway SUT / live fleet / sibling repo) and keep going.
 - **Abandoning a claim?** Move it back to `00_todo/` so it gets picked up.
 - **Spot something off** — a bug, debt, a missing test, a small mess? **Fix it in place when it's a small, safe cleanup** (boy-scout rule, creed #7); when it's bigger, risky, or would derail/sprawl the commit, jot it in `BACKLOG.md` and stay on the current task. Capture what you don't fix; never walk past a mess.
 
-**Don't-stop contract:** never stop holding an in_progress task, and do not stop while an actionable todo remains (`10_in_progress/`/`xx_done/`/`50_blocked/` don't block the Stop hook — an in_progress task is some agent's live claim). At the end of a batch, re-verify every `xx_done/` task against `git log`, and reclaim any orphaned `10_in_progress/` task left by an interrupted session (move it back to `00_todo/`).
+**Don't-stop contract:** never stop holding an in_progress task, and do not stop while an actionable todo remains (`10_in_progress/`/`99_done/`/`50_blocked/` don't block the Stop hook — an in_progress task is some agent's live claim). At the end of a batch, re-verify every `99_done/` task against `git log`, and reclaim any orphaned `10_in_progress/` task left by an interrupted session (move it back to `00_todo/`).
 
 ---
 
@@ -105,6 +105,7 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 - **State + rules** — `.agent/` is read and written identically by both tools.
 - **Skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
 - **Enforcement** — Claude hooks under `.claude/` (Stop, commit-gate); the *logic* lives in shared scripts so CI or another tool can reuse it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
+- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `.codex/`, hooks, or task-queue conventions, run `bash .agent/scripts/audit-llm-setup.sh`. It checks the cross-tool symlinks, current `coop` verbs/state names, and basic skill metadata so stale agent instructions fail fast.
 
 ---
 

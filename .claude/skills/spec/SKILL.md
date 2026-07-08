@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Design an opinionated, boring-by-default implementation plan for a portal/ change before writing code. Use when a change spans more than one file or context, when the approach isn't obvious, or when the user asks to plan/design/think through a feature. Produces a small-step, verifiable plan to approve before /work.
+description: Design an opinionated, boring-by-default implementation plan for an emisar change before writing code. Use when a change spans more than one file, context, or project; when the approach is not obvious; or when the user asks to plan/design/think through a feature. Maps the slice to the touched project AGENTS.md gate and produces small verifiable steps to approve before /work.
 effort: medium
 argument-hint: "<what you want to build>"
 allowed-tools: Read, Grep, Glob, Bash
@@ -9,9 +9,9 @@ allowed-tools: Read, Grep, Glob, Bash
 # /spec — plan a change (the boring, shippable way)
 
 Produce a plan the user can approve, then hand to `/work`. Optimize for the
-smallest correct slice, not the grandest design. Read `portal/AGENTS.md` (laws +
-prime directive) and the contexts you'll touch **before** planning — plan against
-the real code, not a guess.
+smallest correct slice, not the grandest design. Read root `AGENTS.md`, then the
+`AGENTS.md` for every touched project **before** planning — plan against the real
+code, not a guess.
 
 ## 1. Wear the PM hat first (don't skip)
 
@@ -25,16 +25,19 @@ Before *how*, settle *whether* and *what*:
 If the request is vague or oversized, say so and propose the thin slice. Pull the
 `/product-manager` hat for a real prioritization call.
 
-## 2. Map the work onto the layered-context shape
+## 2. Map the work onto the touched project
 
-Walk the layers and name what changes in each (skip the ones that don't):
-- **Migration / schema** — new table or columns? (IL-12 money, soft-delete, indexes.)
-- **Query** — what new predicates/ordering/filters? (They go in the Query module.)
-- **Changeset** — which new state transitions?
-- **Authorizer** — new permission, or reuse `view/manage`? New role grants?
-- **Context** — the public functions (name them; each takes `%Subject{}`, returns tagged tuples).
-- **Web / MCP** — which LiveView/controller/MCP action; what events; what's streamed.
-- **Tests** — name the happy / denial / cross-account cases per function.
+Walk the relevant layers and name what changes in each (skip what does not apply):
+- **portal/** — migration/schema, query, changeset, authorizer, context API, web/MCP,
+  tests. Name the happy / denial / cross-account cases per public function.
+- **runner/ or mcp/** — package touched, trust boundary, validation/exec/transport path,
+  table-driven tests, race/vet gate, and whether the Debian container is needed.
+- **packs/** — pack/action manifest contract, arg bounds, risk, version/hash impact,
+  validation command, and redis/cassandra golden update if touched.
+- **infra/** — Terraform resource, SOC 2/security invariant, docs/compliance update, and
+  fmt/init/validate/tflint gate.
+- **agent tooling/docs** — canonical source of truth, duplicate/stale text removed,
+  adoption check added or updated.
 
 ## 3. Choose boring on purpose
 
@@ -57,12 +60,11 @@ Name which lenses this change leans on, so `/work` and `/ship-review` know:
 Slice: <one sentence — what ships, what's deferred>
 
 Steps (each independently compilable + testable):
-1. <migration/schema> — …
-2. <query + changeset> — …
-3. <context fns + tests> — …
-4. <web/mcp> — …
+1. <project/layer> — …
+2. <project/layer> — …
+3. <tests/gate> — …
 
-Tests: <the denial + cross-account cases, by name>
+Tests: <the denial + cross-account cases, by name, or the touched project's equivalent gate>
 Hats: <which, and the open question for each>
 Risks / unknowns: <bullets, or "none">
 ```
