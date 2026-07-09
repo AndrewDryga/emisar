@@ -1,0 +1,50 @@
+name: Publish MCP Registry metadata
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: mcp-registry-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish remote MCP listing
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+    env:
+      MCP_PUBLISHER_VERSION: "1.7.9"
+      MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set registry version from product tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          jq --arg version "$version" '.version = $version' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Install verified mcp-publisher
+        run: |
+          set -euo pipefail
+          artifact="mcp-publisher_linux_amd64.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}" \
+            --output "$artifact"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
+          tar --extract --gzip --file "$artifact" mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login http --domain emisar.dev --private-key "${{ secrets.MCP_PRIVATE_KEY }}"
+
+      - name: Publish remote MCP listing
+        run: ./mcp-publisher publish server.json
