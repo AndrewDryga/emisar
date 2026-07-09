@@ -7,7 +7,7 @@ defmodule Emisar.Analytics do
   destination live in one auditable place — the analytics counterpart to
   `Emisar.Audit.Events` and `Emisar.Telemetry`.
 
-  `track/4`, `set_people/3`, and `set_group/4` build the Mixpanel payload,
+  `track/4`, `set_people/3`, and `set_group/3` build the Mixpanel payload,
   then hand it to the config-swapped `MixpanelClient` on a supervised,
   fire-and-forget Task (`EmisarWeb.TaskSupervisor`) — analytics is
   best-effort and never blocks or fails the caller's request. The whole
@@ -78,8 +78,8 @@ defmodule Emisar.Analytics do
   hard-depend on it; `account_id` rides every event as a plain property
   regardless.
   """
-  @spec set_group(String.t(), String.t(), map(), keyword()) :: :ok
-  def set_group(group_key, group_id, set_properties, _opts \\ [])
+  @spec set_group(String.t(), String.t(), map()) :: :ok
+  def set_group(group_key, group_id, set_properties)
       when is_binary(group_key) and is_binary(group_id) do
     if groups_enabled?() do
       enabled_dispatch(fn ->

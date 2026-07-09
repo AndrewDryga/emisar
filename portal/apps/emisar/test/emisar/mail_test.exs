@@ -15,7 +15,6 @@ defmodule Emisar.MailTest do
     test "reports a suppressed address case-insensitively (citext key)" do
       {:ok, _} = Mail.suppress("Bounced@Example.com", :hard_bounce, "HardBounce")
 
-      # citext key → the stored casing doesn't matter on lookup.
       assert Mail.suppressed?("bounced@example.com")
       assert Mail.suppressed?("BOUNCED@EXAMPLE.COM")
       refute Mail.suppressed?("someone-else@example.com")
@@ -24,7 +23,6 @@ defmodule Emisar.MailTest do
     test "trims the input before the lookup" do
       {:ok, _} = Mail.suppress("trim@example.com", :hard_bounce, "bounce")
 
-      # The mailer may hand a padded address; suppressed? String.trims it first.
       assert Mail.suppressed?("  trim@example.com  ")
     end
 
@@ -38,9 +36,6 @@ defmodule Emisar.MailTest do
       {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
       {:ok, _} = Mail.suppress("complained@example.com", :spam_complaint, "complaint")
 
-      # Given the caller's own (differing) casing; the result keeps the INPUT
-      # strings so a render check against them is exact, while the match itself
-      # is case-insensitive (citext + the downcase reconciliation).
       result =
         Mail.suppressed_emails([
           "Bounced@Example.com",
@@ -58,10 +53,8 @@ defmodule Emisar.MailTest do
     test "drops nil/blank entries (SSO members have no email)" do
       {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
 
-      # A list with only nils (e.g. an all-SSO team) must not reach the query.
       assert Mail.suppressed_emails([nil, nil]) == MapSet.new()
 
-      # A mix of nil + real addresses still resolves the real ones.
       result = Mail.suppressed_emails([nil, "bounced@example.com", "  ", "fine@example.com"])
       assert result == MapSet.new(["bounced@example.com"])
     end
@@ -103,8 +96,6 @@ defmodule Emisar.MailTest do
     test "a suppressed address is not sent to", %{user: user} do
       {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
-      # The skip path returns {:ok, %{suppressed: true}} without building an
-      # email — proof the send was suppressed, not delivered.
       assert {:ok, %{suppressed: true}} = UserNotifier.deliver_magic_link(user, "tok", "123456")
     end
 
@@ -149,8 +140,6 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_magic_link(user, "tok", "ABC234", context)
 
       assert_email_sent(fn email ->
-        # A recipient can tell their own sign-in from a stranger's: when, where,
-        # and a parsed device — not the raw User-Agent string.
         email.text_body =~ "This sign-in was requested" and
           email.text_body =~ "203.0.113.7" and
           email.text_body =~ "Chrome on macOS" and
@@ -161,9 +150,6 @@ defmodule Emisar.MailTest do
     test "omits the lines it has no data for (no IP / unparseable device)", %{user: user} do
       UserNotifier.deliver_magic_link(user, "tok", "ABC234", %RequestContext{})
 
-      # Time is always present; the Device line (block-only wording) is dropped
-      # rather than shown blank. ("From" also appears in the body prose, so the
-      # unambiguous Device label is the one to assert on.)
       assert_email_sent(fn email ->
         email.text_body =~ "Time" and not (email.text_body =~ "Device")
       end)
@@ -175,9 +161,6 @@ defmodule Emisar.MailTest do
       %{user: Fixtures.Users.create_user()}
     end
 
-    # the sign-up confirmation carries its subject, the
-    # absolute /confirm/<token> link, a universal sign-in link (so the recipient
-    # is never stranded), and the "ignore if you didn't sign up" line.
     test "carries the subject, confirm link, sign-in link, and reassurance line", %{user: user} do
       UserNotifier.deliver_confirmation_instructions(user, "tok-confirm")
 
@@ -190,8 +173,6 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # a suppressed address is skipped with the shared
-    # {:ok, %{suppressed: true}} contract; no email is built.
     test "skips a suppressed recipient", %{user: user} do
       {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
@@ -201,9 +182,6 @@ defmodule Emisar.MailTest do
   end
 
   describe "magic-link email content" do
-    # The magic-link subject, the /sign_in/magic/<token>/<code> link, and the
-    # body copy "15 minutes" which AGREES with the enforced
-    # @magic_link_validity_in_minutes.
     test "carries the subject, link, the code, and a 15-minute expiry" do
       user = Fixtures.Users.create_user()
       UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234")
@@ -211,7 +189,6 @@ defmodule Emisar.MailTest do
       assert_email_sent(fn email ->
         assert email.subject == "Your emisar sign-in code"
         assert email.text_body =~ "/sign_in/magic/tok-magic/ABC234"
-        # The code is shown standalone for cross-device entry.
         assert email.text_body =~ "ABC234"
         assert email.text_body =~ "15 minutes"
         true
@@ -224,10 +201,6 @@ defmodule Emisar.MailTest do
       %{invitee: Fixtures.Users.create_user()}
     end
 
-    # the invite subject names the workspace, the body
-    # names the inviter + workspace, carries the /accept_invitation/<token>
-    # link, the team's branded sign-in link (where they sign in after accepting),
-    # and the "what is emisar?" pitch.
     test "names the inviter and workspace and carries the accept + sign-in links", %{
       invitee: invitee
     } do
@@ -247,7 +220,6 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # an inviter with no full_name is shown by email.
     test "falls back to the inviter's email when they have no full name", %{invitee: invitee} do
       inviter = Fixtures.Users.create_user(full_name: nil)
       account = Fixtures.Accounts.create_account(name: "Globex")
@@ -257,8 +229,6 @@ defmodule Emisar.MailTest do
       assert_email_sent(&(&1.text_body =~ inviter.email))
     end
 
-    # a suppressed invitee is skipped (the membership row
-    # is created elsewhere; here only the send is suppressed).
     test "skips a suppressed invitee", %{invitee: invitee} do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -274,10 +244,6 @@ defmodule Emisar.MailTest do
       %{approver: Fixtures.Users.create_user()}
     end
 
-    # (body content) — the approval email surfaces enough
-    # to decide from the inbox: subject with the action_id, the runner NAME
-    # (not the opaque id), the operator's reason, an args preview, and the
-    # /app/approvals/<id> link. (Recipient targeting is covered in approvals_test.)
     test "surfaces action, runner name, reason, args, and the approval link", %{
       approver: approver
     } do
@@ -305,8 +271,6 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # a run on a runner with no name falls back to a
-    # truncated-id label, never a blank or the raw full id.
     test "labels an unnamed runner by a truncated id", %{approver: approver} do
       request = %{id: "req-id-9", reason: "x", matched_rules: []}
 
@@ -328,8 +292,6 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    # a suppressed decider is skipped via the same
-    # shared deliver/3; other recipients are unaffected (covered elsewhere).
     test "skips a suppressed decider", %{approver: approver} do
       {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
       request = %{id: "r", reason: "x", matched_rules: []}

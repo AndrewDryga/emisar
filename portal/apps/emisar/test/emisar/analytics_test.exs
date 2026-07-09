@@ -4,16 +4,20 @@ defmodule Emisar.AnalyticsTest do
   use ExUnit.Case, async: false
   alias Emisar.Analytics
 
+  @analytics_env_keys [:mixpanel_enabled, :analytics_test_pid, :mixpanel_groups_enabled]
+  @unset :unset
+
   setup do
-    # Opt this test into emission: enabled, synchronous (test.exs), and
-    # reporting the stub's payloads back to this process.
+    original = Map.new(@analytics_env_keys, &{&1, Application.get_env(:emisar, &1, @unset)})
+
     Application.put_env(:emisar, :mixpanel_enabled, true)
     Application.put_env(:emisar, :analytics_test_pid, self())
 
     on_exit(fn ->
-      Application.put_env(:emisar, :mixpanel_enabled, false)
-      Application.delete_env(:emisar, :analytics_test_pid)
-      Application.delete_env(:emisar, :mixpanel_groups_enabled)
+      Enum.each(original, fn
+        {key, @unset} -> Application.delete_env(:emisar, key)
+        {key, value} -> Application.put_env(:emisar, key, value)
+      end)
     end)
 
     :ok
@@ -84,9 +88,21 @@ defmodule Emisar.AnalyticsTest do
       assert update["$ip"] == "0"
       assert update["$set"] == %{"$email" => "a@b.co", "plan" => "team"}
     end
+
+    test "compacts profile properties and preserves a supplied $set_once" do
+      Analytics.set_people(
+        "user-9",
+        %{"plan" => "team", "empty" => ""},
+        set_once: %{"created_at" => "2026-07-09", "empty" => nil}
+      )
+
+      assert_receive {:mixpanel_engage, [update]}
+      assert update["$set"] == %{"plan" => "team"}
+      assert update["$set_once"] == %{"created_at" => "2026-07-09"}
+    end
   end
 
-  describe "set_group/4" do
+  describe "set_group/3" do
     test "is gated off by default" do
       Analytics.set_group("account_id", "acc-1", %{"name" => "Acme"})
       refute_receive {:mixpanel_groups, _}
@@ -99,6 +115,14 @@ defmodule Emisar.AnalyticsTest do
       assert_receive {:mixpanel_groups, [group]}
       assert group["$group_key"] == "account_id"
       assert group["$group_id"] == "acc-1"
+      assert group["$set"] == %{"name" => "Acme"}
+    end
+
+    test "omits blank group properties" do
+      Application.put_env(:emisar, :mixpanel_groups_enabled, true)
+      Analytics.set_group("account_id", "acc-1", %{"name" => "Acme", "empty" => nil})
+
+      assert_receive {:mixpanel_groups, [group]}
       assert group["$set"] == %{"name" => "Acme"}
     end
   end
