@@ -43,5 +43,18 @@ defmodule Emisar.MarketingTest do
       assert {:error, changeset} = Marketing.capture_signup(%{source: "footer"})
       assert %{email: ["can't be blank"]} = errors_on(changeset)
     end
+
+    test "bounds email and source input before persistence" do
+      too_long_email = String.duplicate("a", 250) <> "@x.co"
+      too_long_source = String.duplicate("s", 101)
+
+      assert {:error, changeset} = Marketing.capture_signup(%{email: too_long_email})
+      assert %{email: ["should be at most 254 character(s)"]} = errors_on(changeset)
+
+      assert {:error, changeset} =
+               Marketing.capture_signup(%{email: "source@example.com", source: too_long_source})
+
+      assert %{source: ["should be at most 100 character(s)"]} = errors_on(changeset)
+    end
   end
 end
