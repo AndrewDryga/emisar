@@ -13,7 +13,15 @@ defmodule Emisar.Cluster.GCETest do
     end
 
     test "skips instances without a network IP (e.g. still booting)" do
-      assert GCE.nodes_from_instances([%{"name" => "booting"}, instance("10.82.0.9")], "emisar") ==
+      assert GCE.nodes_from_instances(
+               [
+                 %{"name" => "booting"},
+                 %{"networkInterfaces" => [%{"networkIP" => nil}]},
+                 %{"networkInterfaces" => [%{"networkIP" => ""}]},
+                 instance("10.82.0.9")
+               ],
+               "emisar"
+             ) ==
                [:"emisar@10.82.0.9"]
     end
   end

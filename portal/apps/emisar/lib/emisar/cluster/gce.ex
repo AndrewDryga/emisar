@@ -59,7 +59,7 @@ defmodule Emisar.Cluster.GCE do
   @doc false
   def nodes_from_instances(instances, basename) do
     Enum.flat_map(instances, fn
-      %{"networkInterfaces" => [%{"networkIP" => ip} | _]} ->
+      %{"networkInterfaces" => [%{"networkIP" => ip} | _]} when is_binary(ip) and ip != "" ->
         # Node names must be atoms, and the set is bounded by the MIG size — these
         # are our own GCP instances, not user/runner/LLM input, so there is no
         # atom-table exhaustion vector (the IL-14 concern).
