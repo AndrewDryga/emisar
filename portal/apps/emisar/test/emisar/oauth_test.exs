@@ -10,7 +10,7 @@ defmodule Emisar.OAuthTest do
   alias Emisar.OAuth.{Client, Token}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
-  @resource "https://emisar.dev/api/mcp/rpc"
+  @resource Emisar.PublicUrl.url("/api/mcp/rpc")
 
   defp pkce do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
@@ -164,7 +164,7 @@ defmodule Emisar.OAuthTest do
       assert tokens.expires_in == 3600
 
       assert {:ok, %{api_key: key, account: acct}} =
-               OAuth.resolve_access_token(tokens.access_token)
+               OAuth.resolve_access_token(tokens.access_token, @resource)
 
       assert acct.id == account.id
       assert key.kind == :mcp
@@ -378,14 +378,14 @@ defmodule Emisar.OAuthTest do
                })
 
       # The new access token resolves.
-      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token)
+      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
     end
 
     test "fails closed once the backing api_key is revoked", %{client: client, tokens: tokens} do
       # Revoking the backing key is the operator's off-switch for an OAuth
       # connection — refresh must then stop minting access tokens, not keep
       # the 30-day grant alive over a dead key.
-      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token)
+      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token, @resource)
 
       key
       |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
@@ -416,15 +416,16 @@ defmodule Emisar.OAuthTest do
     end
   end
 
-  describe "resolve_access_token/1" do
+  describe "resolve_access_token/2" do
     test "rejects unknown / malformed tokens" do
-      assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token")
-      assert {:error, :invalid} = OAuth.resolve_access_token("garbage")
-      assert {:error, :invalid} = OAuth.resolve_access_token(nil)
+      assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token", @resource)
+      assert {:error, :invalid} = OAuth.resolve_access_token("garbage", @resource)
+      assert {:error, :invalid} = OAuth.resolve_access_token(nil, @resource)
+      assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token", nil)
     end
   end
 
-  describe "resolve_access_token/1 invalidation paths" do
+  describe "resolve_access_token/2 invalidation paths" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
@@ -446,13 +447,13 @@ defmodule Emisar.OAuthTest do
       # A live token resolves; backdating its access_expires_at past `now`
       # makes `live?/1` false, so resolution must fail closed rather than
       # hand back a subject for a token whose 1-hour window has elapsed.
-      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token, @resource)
 
       token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
       past = DateTime.add(DateTime.utc_now(), -60, :second)
       Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end
 
     test "an access token whose pair was rotation-revoked by a refresh resolves to :invalid",
@@ -467,8 +468,8 @@ defmodule Emisar.OAuthTest do
                  "client_id" => client.id
                })
 
-      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token)
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end
 
     test "a token whose backing api-key is revoked after issuance resolves to :invalid",
@@ -477,13 +478,13 @@ defmodule Emisar.OAuthTest do
       # exchange/refresh-time checks are tested elsewhere; this asserts the
       # resolve path also fails closed — `peek_api_key_by_id` returns nil
       # for a revoked key, so the live access token no longer resolves.
-      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token)
+      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token, @resource)
 
       key
       |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
       |> Repo.update!()
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end
 
     test "a token whose account is soft-deleted resolves to :invalid",
@@ -491,13 +492,13 @@ defmodule Emisar.OAuthTest do
       # `fetch_account_by_id` scopes by `not_deleted()`, so soft-deleting the
       # account makes it `{:error, :not_found}` inside resolve's `with`, which
       # falls through to `:invalid` — a token can't resolve into a dead tenant.
-      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token, @resource)
 
       account
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Repo.update!()
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end
 
     test "cross-account isolation rides the backing key — a token only ever resolves to its own account",
@@ -520,10 +521,10 @@ defmodule Emisar.OAuthTest do
         })
 
       assert {:ok, %{account: acct_a, api_key: key_a}} =
-               OAuth.resolve_access_token(tokens.access_token)
+               OAuth.resolve_access_token(tokens.access_token, @resource)
 
       assert {:ok, %{account: acct_b, api_key: key_b}} =
-               OAuth.resolve_access_token(tokens_b.access_token)
+               OAuth.resolve_access_token(tokens_b.access_token, @resource)
 
       assert acct_a.id == account.id
       assert acct_b.id == account_b.id
@@ -532,14 +533,11 @@ defmodule Emisar.OAuthTest do
       assert key_b.account_id == account_b.id
     end
 
-    test "the stored `resource` is NOT enforced as an audience at resolve time", %{tokens: tokens} do
-      # Documented self-limit (OAuth moduledoc): the RFC 8707 `resource` is
-      # accepted + stored but not yet enforced as an audience binding — there
-      # is one protected resource today. Assert the CURRENT behavior: the
-      # token carries its consented `resource`, yet resolution succeeds with
-      # no audience check (resolve never looks at `token.resource`).
-      assert {:ok, %{token: token}} = OAuth.resolve_access_token(tokens.access_token)
-      assert token.resource == @resource
+    test "rejects a token issued for another resource", %{tokens: tokens} do
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      Repo.update!(Ecto.Changeset.change(token, resource: "https://other.example/mcp"))
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end
   end
 

@@ -1005,7 +1005,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
             "code_challenge" => challenge,
             "code_challenge_method" => "S256",
             "scope" => "mcp offline_access",
-            "resource" => "https://emisar.dev/api/mcp/rpc"
+            "resource" => EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
           },
           subject
         )
@@ -2814,11 +2814,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "the wait_for_run timeout clamps any over-cap duration to the 90s server cap" do
-      # The wait_for_run descriptor copy says "5m", but the server caps at
-      # @max_get_run_wait_ms (90s) so a long-poll can't pin a request process for
-      # five minutes. Assert the cap CONSTANT + clamp BRANCH rather than sleeping:
+      # The descriptor and server both cap this long-poll at 90s. Assert the cap
+      # CONSTANT + clamp BRANCH rather than sleeping:
       # the RPC handler runs `parse_wait(timeout, max_get_run_wait_ms())`, which
-      # clamps anything over the cap (and the documented "300s"/"600s") to 90_000ms.
+      # clamps anything over the cap to 90_000ms.
       assert Service.max_get_run_wait_ms() == 90_000
       assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
       assert Service.parse_wait("300s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
@@ -3431,7 +3430,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp offline_access",
-          "resource" => "https://emisar.dev/api/mcp/rpc"
+          "resource" => EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
         },
         subject
       )

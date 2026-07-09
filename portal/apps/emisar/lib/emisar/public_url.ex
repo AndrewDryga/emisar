@@ -1,8 +1,8 @@
 defmodule Emisar.PublicUrl do
   @moduledoc """
   The app's public base URL — the single source of truth for absolute
-  links built outside a request (mailer bodies, Paddle success/cancel
-  URLs, the MCP `WWW-Authenticate` resource hint).
+  links built outside a request (mailer bodies and Paddle success/cancel
+  URLs).
 
   Reproduces `EmisarWeb.Endpoint.url/0` from the shared
   `:emisar_web, EmisarWeb.Endpoint` config so callers in the `emisar`

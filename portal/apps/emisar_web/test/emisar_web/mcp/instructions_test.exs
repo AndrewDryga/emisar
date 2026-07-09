@@ -92,13 +92,8 @@ defmodule EmisarWeb.MCP.InstructionsTest do
     end
   end
 
-  test "the pending-approval copy says blocks up to 5 min (the documented client-facing cap)" do
-    # F1: the instructions advertise a 5-minute block while the server caps a
-    # single long-poll at 90s (@max_get_run_wait_ms) and tells the client to
-    # re-call. The copy is the deliberate client contract — pin the "5 min"
-    # wording AND the "call wait_for_run again" re-poll instruction together,
-    # so the doc-vs-cap asymmetry stays an intentional, visible decision.
-    assert @text =~ "5 min"
+  test "the pending-approval copy states the 90-second long-poll cap" do
+    assert @text =~ "90 seconds"
     assert @text =~ "wait_for_run` again"
   end
 

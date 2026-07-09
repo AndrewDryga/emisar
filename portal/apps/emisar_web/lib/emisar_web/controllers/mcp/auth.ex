@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.Auth do
   authorization server and start the OAuth flow.
   """
   import Plug.Conn
-  alias Emisar.{Accounts, ApiKeys, OAuth, PublicUrl}
+  alias Emisar.{Accounts, ApiKeys, OAuth}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext
 
@@ -36,6 +36,9 @@ defmodule EmisarWeb.MCP.Auth do
     end
   end
 
+  @doc "Canonical URI this MCP HTTP surface accepts OAuth tokens for."
+  def resource, do: EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
+
   defp resolve_bearer(conn) do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> raw] -> resolve_token(raw)
@@ -44,7 +47,7 @@ defmodule EmisarWeb.MCP.Auth do
   end
 
   defp resolve_token("emo-" <> _ = raw) do
-    case OAuth.resolve_access_token(raw) do
+    case OAuth.resolve_access_token(raw, resource()) do
       {:ok, %{api_key: key, account: account}} -> {:ok, key, account}
       _ -> :error
     end
@@ -60,10 +63,9 @@ defmodule EmisarWeb.MCP.Auth do
   end
 
   # RFC 9728 §5.1 — point unauthenticated clients at the protected-resource
-  # metadata. The base is the app's configured public URL (the same
-  # `Emisar.PublicUrl` source the mailers + billing use), so the issuer is
-  # stable rather than echoing whatever host the request happened to arrive on.
+  # metadata. The configured endpoint URL stays stable rather than echoing
+  # whichever Host header the request arrived with.
   defp challenge do
-    ~s(Bearer resource_metadata="#{PublicUrl.base()}/.well-known/oauth-protected-resource")
+    ~s(Bearer resource_metadata="#{EmisarWeb.Endpoint.url()}/.well-known/oauth-protected-resource")
   end
 end

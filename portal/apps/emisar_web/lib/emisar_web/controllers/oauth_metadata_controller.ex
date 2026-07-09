@@ -13,6 +13,7 @@ defmodule EmisarWeb.OAuthMetadataController do
   """
   use EmisarWeb, :controller
   alias Emisar.OAuth
+  alias EmisarWeb.MCP.Auth, as: MCPAuth
 
   # RFC 9728 — protected resource metadata. `resource` is the canonical
   # MCP endpoint URI clients bind tokens to (RFC 8707).
@@ -20,7 +21,7 @@ defmodule EmisarWeb.OAuthMetadataController do
     base = EmisarWeb.Endpoint.url()
 
     json(conn, %{
-      resource: base <> "/api/mcp/rpc",
+      resource: MCPAuth.resource(),
       authorization_servers: [base],
       scopes_supported: OAuth.supported_scopes(),
       bearer_methods_supported: ["header"]

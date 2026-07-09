@@ -5,15 +5,14 @@ defmodule Emisar.OAuth do
   spec requires: Dynamic Client Registration (RFC 7591), authorization
   code + PKCE (S256), and refresh tokens.
 
-  The RFC 8707 `resource` parameter is accepted and stored on the code +
-  token, but is NOT yet enforced as an audience binding — there is one
-  protected resource (the MCP endpoint) today, so audience confusion has
-  no surface. Before adding a second protected resource, enforce
-  `token.resource` against the canonical resource URI at resolve time.
+  The RFC 8707 `resource` parameter is stored on the code + token. The
+  MCP bearer boundary supplies its canonical resource URI to
+  `resolve_access_token/2`, which validates that the token was issued for
+  that resource before resolving its backing key.
 
   Tokens are backed by an `api_keys` row minted at consent, so the
   existing MCP auth + scoping + attribution logic is reused unchanged:
-  `resolve_access_token/1` returns that backing key, which the MCP
+  `resolve_access_token/2` returns that backing key, which the MCP
   `:authenticate` plug assigns exactly as a static-bearer request.
 
   Token formats (all sha256-hashed at rest):
@@ -267,13 +266,14 @@ defmodule Emisar.OAuth do
   @doc """
   Internal — the MCP `:authenticate` plug (pre-auth; the bearer access
   token is the credential, resolved into the Subject downstream). Resolve a
-  presented access token to its backing API key + account. Validates the
-  token is live and not revoked, then loads the backing key (which carries
-  scope + attribution). Returns `{:error, :invalid}` for anything off.
+  presented access token to its backing API key + account for `resource`.
+  Validates the token is live, not revoked, and audience-bound to that
+  resource before loading the backing key (which carries scope + attribution).
+  Returns `{:error, :invalid}` for anything off.
   """
-  @spec resolve_access_token(String.t()) ::
+  @spec resolve_access_token(String.t(), String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}
-  def resolve_access_token(raw) when is_binary(raw) do
+  def resolve_access_token(raw, resource) when is_binary(raw) and is_binary(resource) do
     queryable =
       Token.Query.all()
       |> Token.Query.not_revoked()
@@ -281,6 +281,7 @@ defmodule Emisar.OAuth do
 
     with %Token{} = token <- Repo.peek(queryable),
          true <- live?(token.access_expires_at),
+         true <- resource_matches?(token.resource, resource),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
          {:ok, account} <- Accounts.fetch_account_by_id(token.account_id) do
       {:ok, %{api_key: key, account: account, token: token}}
@@ -289,7 +290,7 @@ defmodule Emisar.OAuth do
     end
   end
 
-  def resolve_access_token(_), do: {:error, :invalid}
+  def resolve_access_token(_, _), do: {:error, :invalid}
 
   @doc """
   Internal — delete authorization codes past their expiry.
@@ -408,6 +409,32 @@ defmodule Emisar.OAuth do
     do: Crypto.secure_compare(a, b)
 
   defp constant_eq(_, _), do: false
+
+  # RFC 8707 canonical URIs lowercase scheme + host. Keep the rest exact so
+  # a token for one path, query, or port can never authenticate another MCP
+  # resource, while accepting clients that capitalize only scheme or host.
+  defp resource_matches?(token_resource, expected_resource) do
+    with {:ok, normalized_token} <- normalize_resource_uri(token_resource),
+         {:ok, normalized_expected} <- normalize_resource_uri(expected_resource) do
+      constant_eq(normalized_token, normalized_expected)
+    else
+      _ -> false
+    end
+  end
+
+  defp normalize_resource_uri(resource) when is_binary(resource) do
+    case URI.parse(resource) do
+      %URI{scheme: scheme, host: host, fragment: nil} = uri
+      when is_binary(scheme) and is_binary(host) ->
+        normalized = %URI{uri | scheme: String.downcase(scheme), host: String.downcase(host)}
+        {:ok, URI.to_string(normalized)}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp normalize_resource_uri(_), do: :error
 
   defp live?(nil), do: false
   defp live?(%DateTime{} = at), do: DateTime.compare(at, DateTime.utc_now()) == :gt

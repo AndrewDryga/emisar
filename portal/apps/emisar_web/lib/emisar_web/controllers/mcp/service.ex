@@ -333,7 +333,7 @@ defmodule EmisarWeb.MCP.Service do
 
   @doc """
   Single run state, with optional long-poll until terminal. `wait_ms`
-  is clamped to 300s. Returns `{:ok, payload, status}` where status
+  is clamped to 90s. Returns `{:ok, payload, status}` where status
   is `:terminal` or `:waiting` so the caller can choose a 200 vs 202.
   """
   @spec fetch_run(Plug.Conn.t(), String.t(), non_neg_integer()) ::

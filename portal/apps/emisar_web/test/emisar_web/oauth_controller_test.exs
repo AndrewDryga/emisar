@@ -9,7 +9,7 @@ defmodule EmisarWeb.OAuthControllerTest do
   alias Emisar.{Crypto, Fixtures, OAuth, Repo}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
-  @resource "https://emisar.dev/api/mcp/rpc"
+  @resource EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
 
   setup do
     {user, account, _subject} = Fixtures.Subjects.owner_subject()
@@ -1485,7 +1485,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         })
         |> json_response(200)
 
-      {:ok, %{api_key: original_key}} = OAuth.resolve_access_token(first["access_token"])
+      {:ok, %{api_key: original_key}} =
+        OAuth.resolve_access_token(first["access_token"], @resource)
 
       rotated =
         build_conn()
@@ -1497,7 +1498,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> json_response(200)
 
       assert {:ok, %{api_key: rotated_key, account: acct}} =
-               OAuth.resolve_access_token(rotated["access_token"])
+               OAuth.resolve_access_token(rotated["access_token"], @resource)
 
       # Same backing key + account — the grant carried forward, no re-consent.
       assert rotated_key.id == original_key.id
@@ -1600,6 +1601,26 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> json_response(200)
 
       assert body["result"]["serverInfo"]["name"] == "emisar"
+    end
+
+    test "an emo- access token for another resource returns 401", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      access_token = mint_access_token(user, account)
+
+      token =
+        Repo.get_by!(OAuth.Token, access_token_hash: Crypto.hash(access_token))
+
+      Repo.update!(Ecto.Changeset.change(token, resource: "https://other.example/mcp"))
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> access_token)
+        |> rpc("initialize")
+
+      assert conn.status == 401
     end
 
     test "a missing token returns 401 with a WWW-Authenticate challenge", %{conn: conn} do

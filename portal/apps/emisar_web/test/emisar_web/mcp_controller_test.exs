@@ -1493,7 +1493,7 @@ defmodule EmisarWeb.MCPControllerTest do
       user: user
     } do
       # The two REST long-poll budgets differ by endpoint and are both enforced via
-      # parse_wait's clamp (the descriptor copy's "300s"/"5m" never overrides them).
+      # parse_wait's clamp, even when a client asks for a larger duration.
       # Assert the clamp CONSTANTS (no sleeping):
       #   - dispatch (POST /tools/:id) uses max_wait_ms (60s),
       #   - get_run (GET /runs/:id) uses max_get_run_wait_ms (90s).
