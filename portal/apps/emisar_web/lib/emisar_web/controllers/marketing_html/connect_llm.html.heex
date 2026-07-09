@@ -116,17 +116,18 @@
             </p>
             <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
               <li>
-                Enable it once: <strong>Settings → Apps → Advanced settings</strong>
+                Enable it once:
+                <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>
                 → turn on <strong>Developer mode</strong>.
               </li>
               <li>
-                Open <strong>Settings → Apps</strong> and click <strong>Create app</strong>.
+                Open <strong>Settings → Connectors</strong> and click <strong>Create</strong>.
               </li>
               <li>
                 Fill the form:
                 <ul class="mt-1 list-disc space-y-1 pl-6 text-zinc-400">
                   <li>
-                    <strong>Name</strong>
+                    <strong>Connector name</strong>
                     — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
                   </li>
                   <li>
@@ -134,7 +135,7 @@
                     infrastructure actions on my fleet."
                   </li>
                   <li>
-                    <strong>MCP Server URL</strong>
+                    <strong>Connector URL</strong>
                     —
                     <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
                       https://emisar.dev/api/mcp/rpc
@@ -149,8 +150,14 @@
                 switch the authentication type back to OAuth.
               </li>
               <li>
-                Use it in a chat by choosing <strong>Developer mode</strong>
-                and selecting <strong>emisar</strong>. Draft apps appear in ChatGPT Apps settings.
+                Use it from a <strong>new chat</strong>: click the <strong>+</strong>
+                button near the composer, choose <strong>More</strong>, then select <strong>emisar</strong>. Seeing actions in settings only proves ChatGPT
+                fetched metadata; this step adds the app to the conversation context
+                so the model can call it.
+              </li>
+              <li>
+                After changing emisar's tool metadata, open the connector in settings and
+                choose <strong>Refresh</strong> before testing again.
               </li>
             </ol>
             <p class="mt-3 text-xs leading-relaxed text-zinc-500">

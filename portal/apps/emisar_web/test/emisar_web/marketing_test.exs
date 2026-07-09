@@ -585,9 +585,14 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
       # Current ChatGPT Apps setup path: OAuth, Developer mode, no static token.
-      assert html =~ "Settings → Apps"
-      assert html =~ "Create app"
+      assert html =~ "Settings → Apps &amp; Connectors"
+      assert html =~ "Settings → Connectors"
+      assert html =~ "click <strong>Create</strong>"
       assert html =~ "choose <strong>OAuth</strong>"
+      assert html =~ "Use it from a <strong>new chat</strong>"
+      assert html =~ "choose <strong>More</strong>"
+      assert html =~ "conversation context"
+      assert html =~ "choose <strong>Refresh</strong>"
 
       # The stdio-bridge config for each supported desktop/CLI client.
       assert html =~ "claude_desktop_config.json"
