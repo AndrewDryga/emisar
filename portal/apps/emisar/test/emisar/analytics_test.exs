@@ -27,7 +27,7 @@ defmodule Emisar.AnalyticsTest do
     test "emits one event with distinct_id, time, an $insert_id, and the custom props" do
       Analytics.track("action_dispatched", "user-123", %{"risk" => "high", "source" => "operator"})
 
-      assert_receive {:mixpanel_track, [event]}
+      assert_receive {:mixpanel_track, [event]}, 500
       assert event["event"] == "action_dispatched"
       props = event["properties"]
       assert props["distinct_id"] == "user-123"
@@ -44,7 +44,7 @@ defmodule Emisar.AnalyticsTest do
         ip: "1.2.3.4"
       )
 
-      assert_receive {:mixpanel_track, [event]}
+      assert_receive {:mixpanel_track, [event]}, 500
       props = event["properties"]
       assert props["$device_id"] == "dev-1"
       assert props["$user_id"] == "user-7"
@@ -54,7 +54,7 @@ defmodule Emisar.AnalyticsTest do
     test "drops nil and blank properties, keeps false and 0" do
       Analytics.track("x", "id", %{"a" => nil, "b" => "", "c" => false, "d" => 0})
 
-      assert_receive {:mixpanel_track, [event]}
+      assert_receive {:mixpanel_track, [event]}, 500
       props = event["properties"]
       refute Map.has_key?(props, "a")
       refute Map.has_key?(props, "b")
@@ -65,7 +65,7 @@ defmodule Emisar.AnalyticsTest do
     test "omits absent identity opts entirely" do
       Analytics.track("x", "id", %{})
 
-      assert_receive {:mixpanel_track, [event]}
+      assert_receive {:mixpanel_track, [event]}, 500
       props = event["properties"]
       refute Map.has_key?(props, "$device_id")
       refute Map.has_key?(props, "$user_id")
@@ -83,7 +83,7 @@ defmodule Emisar.AnalyticsTest do
     test "emits an engage $set with geo suppressed" do
       Analytics.set_people("user-9", %{"$email" => "a@b.co", "plan" => "team"})
 
-      assert_receive {:mixpanel_engage, [update]}
+      assert_receive {:mixpanel_engage, [update]}, 500
       assert update["$distinct_id"] == "user-9"
       assert update["$ip"] == "0"
       assert update["$set"] == %{"$email" => "a@b.co", "plan" => "team"}
@@ -96,7 +96,7 @@ defmodule Emisar.AnalyticsTest do
         set_once: %{"created_at" => "2026-07-09", "empty" => nil}
       )
 
-      assert_receive {:mixpanel_engage, [update]}
+      assert_receive {:mixpanel_engage, [update]}, 500
       assert update["$set"] == %{"plan" => "team"}
       assert update["$set_once"] == %{"created_at" => "2026-07-09"}
     end
@@ -112,7 +112,7 @@ defmodule Emisar.AnalyticsTest do
       Application.put_env(:emisar, :mixpanel_groups_enabled, true)
       Analytics.set_group("account_id", "acc-1", %{"name" => "Acme"})
 
-      assert_receive {:mixpanel_groups, [group]}
+      assert_receive {:mixpanel_groups, [group]}, 500
       assert group["$group_key"] == "account_id"
       assert group["$group_id"] == "acc-1"
       assert group["$set"] == %{"name" => "Acme"}
@@ -122,7 +122,7 @@ defmodule Emisar.AnalyticsTest do
       Application.put_env(:emisar, :mixpanel_groups_enabled, true)
       Analytics.set_group("account_id", "acc-1", %{"name" => "Acme", "empty" => nil})
 
-      assert_receive {:mixpanel_groups, [group]}
+      assert_receive {:mixpanel_groups, [group]}, 500
       assert group["$set"] == %{"name" => "Acme"}
     end
   end

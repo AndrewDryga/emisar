@@ -36,20 +36,26 @@ defmodule Emisar.Analytics.MixpanelClient.Live do
   end
 
   defp post(payload, path) do
-    body = Jason.encode!(payload)
-    request = Finch.build(:post, host() <> path, headers(), body)
+    case Jason.encode(payload) do
+      {:ok, body} ->
+        request = Finch.build(:post, host() <> path, headers(), body)
 
-    case Finch.request(request, Emisar.Finch, receive_timeout: 5_000) do
-      {:ok, %Finch.Response{status: status}} when status in 200..299 ->
-        :ok
+        case Finch.request(request, Emisar.Finch, receive_timeout: 5_000) do
+          {:ok, %Finch.Response{status: status}} when status in 200..299 ->
+            :ok
 
-      {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        Logger.debug("mixpanel #{path} -> HTTP #{status}: #{resp_body}")
-        {:error, {:http, status}}
+          {:ok, %Finch.Response{status: status, body: resp_body}} ->
+            Logger.debug("mixpanel #{path} -> HTTP #{status}: #{resp_body}")
+            {:error, {:http, status}}
+
+          {:error, reason} ->
+            Logger.debug("mixpanel #{path} -> #{inspect(reason)}")
+            {:error, reason}
+        end
 
       {:error, reason} ->
-        Logger.debug("mixpanel #{path} -> #{inspect(reason)}")
-        {:error, reason}
+        Logger.debug("mixpanel #{path} JSON encode failed: #{inspect(reason)}")
+        {:error, {:encode, reason}}
     end
   end
 
