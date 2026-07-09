@@ -30,6 +30,20 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
         assert expected_error in errors_on(changeset(slug: bad)).slug
       end
     end
+
+    test "installs default settings and validates the grant-lifetime cap" do
+      assert %Account.Settings{
+               require_mfa: false,
+               require_sso: false,
+               max_grant_lifetime_seconds: nil
+             } = changeset() |> apply_changes() |> Map.fetch!(:settings)
+
+      invalid = changeset(settings: %{max_grant_lifetime_seconds: -1})
+
+      refute invalid.valid?
+
+      assert "must be greater than or equal to 0" in errors_on(invalid).settings.max_grant_lifetime_seconds
+    end
   end
 
   defp changeset(overrides \\ %{}) do

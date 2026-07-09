@@ -148,11 +148,8 @@ defmodule Emisar.Accounts do
 
   @doc """
   Update an account's settings. The required permission is **field-aware**:
-  changing a security setting (`require_mfa`) needs the owner-only
-  `manage_security_settings` permission, while renaming/rebranding only
-  needs `manage_own_account` (owner + admin). This stops an admin from
-  turning OFF account-wide MFA enforcement — a security downgrade only an
-  owner should make.
+  changing a security setting needs `manage_security_settings` (owner +
+  admin), while renaming/rebranding only needs `manage_own_account`.
 
   When `require_mfa` is flipped on, every signed-in user without
   `mfa_enabled_at` is funneled to MFA setup by
@@ -193,7 +190,7 @@ defmodule Emisar.Accounts do
   end
 
   # Field-aware authorization: a security-setting change requires the
-  # owner-only permission on top of the manage_own_account gate already
+  # manage-security permission on top of the manage-account gate already
   # checked at the entry; a plain rename/rebrand needs nothing more.
   defp ensure_security_change_permitted(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
     if security_setting_changed?(changeset) do
@@ -212,9 +209,10 @@ defmodule Emisar.Accounts do
   defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
     do: Map.has_key?(changes, :settings)
 
-  # A settings change is a security event named for the specific toggle;
-  # everything else is a plain account.updated. The UI never changes more than
-  # one setting in a request.
+  # Each changed security setting gets its own audit event. The UI normally
+  # sends one setting at a time, but the context also records every change from
+  # a direct caller rather than silently attributing a multi-setting update to
+  # only the first field.
   defp account_update_audit(
          %Account{} = account,
          %Ecto.Changeset{} = changeset,
@@ -222,18 +220,20 @@ defmodule Emisar.Accounts do
        ) do
     settings_changes = settings_changes(changeset)
 
-    cond do
-      Map.has_key?(settings_changes, :require_mfa) ->
-        Audit.Events.account_require_mfa_set(subject, account)
+    events =
+      for {field, build_event} <- [
+            require_mfa: &Audit.Events.account_require_mfa_set/2,
+            require_sso: &Audit.Events.account_require_sso_set/2,
+            max_grant_lifetime_seconds: &Audit.Events.account_max_grant_lifetime_set/2
+          ],
+          Map.has_key?(settings_changes, field) do
+        build_event.(subject, account)
+      end
 
-      Map.has_key?(settings_changes, :require_sso) ->
-        Audit.Events.account_require_sso_set(subject, account)
-
-      Map.has_key?(settings_changes, :max_grant_lifetime_seconds) ->
-        Audit.Events.account_max_grant_lifetime_set(subject, account)
-
-      true ->
-        Audit.Events.account_updated(subject, account)
+    case events do
+      [] -> Audit.Events.account_updated(subject, account)
+      [event] -> event
+      events -> events
     end
   end
 
@@ -884,7 +884,7 @@ defmodule Emisar.Accounts do
         :ok
 
       {:error, reason} ->
-        Logger.warning("suspend_membership_user_missing",
+        Logger.warning("membership_user_missing",
           user_id: membership.user_id,
           membership_id: membership.id,
           reason: inspect(reason)
@@ -1033,9 +1033,9 @@ defmodule Emisar.Accounts do
   :owner_not_assignable | :last_owner | :not_found | %Ecto.Changeset{}}`.
   """
   def sync_set_membership_role(
-        %Membership{role: role, directory_managed: true} = membership,
+        %Membership{account_id: account_id, role: role, directory_managed: true} = membership,
         role,
-        %SSO.IdentityProvider{}
+        %SSO.IdentityProvider{account_id: account_id}
       ),
       do: {:ok, membership}
 
@@ -1296,9 +1296,10 @@ defmodule Emisar.Accounts do
         audit: &Audit.Events.membership_removed(subject, &1),
         after_commit: [
           &broadcast_membership_removed/1,
-          # A removed user's sessions self-heal at membership resolution,
-          # but their minted API keys don't — revoke them so they can't
-          # keep dispatching via MCP / OAuth after losing the account.
+          # A removed member's mounted session still carries its old Subject
+          # until it remounts. Disconnect + revoke it after the delete commits,
+          # alongside the API keys that would otherwise keep dispatching.
+          &disconnect_user_sessions/1,
           &revoke_membership_api_keys/1
         ]
       )
@@ -1727,7 +1728,7 @@ defmodule Emisar.Accounts do
 
   @doc """
   Whether `subject` may change account security settings such as MFA
-  enforcement — owner-only.
+  enforcement (owner or admin).
   """
   def subject_can_manage_account_security?(%Subject{} = subject) do
     Auth.Authorizer.has_permission?(subject, Authorizer.manage_security_settings_permission())

@@ -18,8 +18,7 @@ defmodule Emisar.Accounts.Authorizer do
   def manage_owners_permission, do: build(Membership, :manage_owners)
   def invite_member_permission, do: build(Membership, :invite)
   def edit_own_profile_permission, do: build(Users.User, :edit_self)
-  # Held by owners only — required to flip account-wide security knobs
-  # (require_mfa, etc.).
+  # Held by owners and admins — required to flip account-wide security knobs.
   def manage_security_settings_permission, do: build(Account, :manage_security)
 
   @impl Emisar.Auth.Authorizer
