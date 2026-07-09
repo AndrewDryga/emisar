@@ -20,6 +20,10 @@ defmodule EmisarWeb.MCPRegistryTest do
 
     assert descriptor["name"] == "dev.emisar/emisar"
     assert descriptor["title"] == "Emisar"
+
+    assert descriptor["description"] ==
+             "Emisar gives AI agents a live catalog of approved infrastructure actions instead of shell access. Each dispatch is policy-gated, bound to a trusted pack hash, and recorded in a searchable audit trail plus a tamper-evident host journal."
+
     assert descriptor["version"] == "0.23.0"
 
     assert descriptor["remotes"] == [
