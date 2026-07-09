@@ -1,7 +1,7 @@
 defmodule Emisar.Mailers.UserNotifier do
   @moduledoc """
-  Transactional emails sent during user lifecycle: confirmation and
-  magic-link login. Plain-text templates — the rendering engine is
+  Transactional emails for account lifecycle, sign-in, profile security,
+  invitations, and approvals. Plain-text templates -- the rendering engine is
   intentionally not LiveView's heex.
   """
   import Swoosh.Email
