@@ -19,17 +19,12 @@ defmodule Emisar.CryptoTest do
       assert byte_size(raw) == 16
     end
 
-    # 32 random bytes, url-safe base64, NO padding.
     test "is never padded" do
       refute Crypto.random_secret() =~ "="
     end
   end
 
   describe "email_token/0 + email_token_digest/1" do
-    # the emailed (magic-link/reset/confirm) token
-    # round-trips: the url-safe-base64 string in the link re-derives the
-    # stored digest, and a mangled or forged link returns :error rather
-    # than crashing or silently matching.
     test "the emitted token re-derives its stored digest" do
       {encoded, digest} = Crypto.email_token()
 
@@ -40,6 +35,24 @@ defmodule Emisar.CryptoTest do
 
     test "a non-base64 presented token is :error, not a crash or false match" do
       assert :error = Crypto.email_token_digest("not valid base64 !!!")
+    end
+  end
+
+  describe "user_invite_token/0 + user_invite_token_digest/1" do
+    test "returns a URL-safe token whose digest can be re-derived" do
+      {raw, digest} = Crypto.user_invite_token()
+
+      assert raw =~ ~r/\A[A-Za-z0-9_-]+\z/
+      assert digest == Crypto.user_invite_token_digest(raw)
+    end
+  end
+
+  describe "session_token/0" do
+    test "returns 32 raw bytes and their at-rest digest" do
+      {raw, digest} = Crypto.session_token()
+
+      assert byte_size(raw) == 32
+      assert digest == Crypto.hash(raw)
     end
   end
 
@@ -80,9 +93,6 @@ defmodule Emisar.CryptoTest do
   end
 
   describe "hash_hex/1" do
-    # the content-addressing digest form is lowercase
-    # hex of the same sha256, so a stored output digest can be compared
-    # byte-for-byte against the hex digest a runner reports.
     test "is lowercase-hex sha256 matching the runner-reported digest form" do
       assert Crypto.hash_hex("output payload") ==
                Base.encode16(Crypto.hash("output payload"), case: :lower)
@@ -91,11 +101,16 @@ defmodule Emisar.CryptoTest do
     end
   end
 
+  describe "email_change_code/0" do
+    test "returns a six-digit code and its digest" do
+      {code, digest} = Crypto.email_change_code()
+
+      assert code =~ ~r/\A\d{6}\z/
+      assert digest == Crypto.hash(code)
+    end
+  end
+
   describe "anonymous_visitor_id/1" do
-    # Cookieless visitor id: a salted hash of (IP|User-Agent) that also folds in
-    # the UTC week-start, so it's stable within a week but rotates weekly
-    # (unlinkable across weeks). Determinism within the week is what makes a
-    # visitor countable and stitchable to their user on login — no client id.
     test "is a stable 64-char hex id for the same fingerprint within a week" do
       fingerprint = "203.0.113.7|Mozilla/5.0 Chrome/120"
       id = Crypto.anonymous_visitor_id(fingerprint)
@@ -142,9 +157,6 @@ defmodule Emisar.CryptoTest do
       assert_raise FunctionClauseError, fn -> Crypto.mint("emk-", 4) end
     end
 
-    # each credential type lives in its own prefix
-    # namespace, so a presented bearer is routed to the right lookup and no
-    # two credential kinds can collide on a stored prefix/hash.
     test "the named per-credential minters produce distinct namespaces" do
       {scim_raw, scim_prefix, scim_hash} = Crypto.scim_token()
       assert String.starts_with?(scim_prefix, "ems-")
@@ -154,16 +166,27 @@ defmodule Emisar.CryptoTest do
 
       assert String.starts_with?(Crypto.run_request_id(), "req_")
       assert String.starts_with?(Crypto.scim_token_namespace(), "ems-")
-      # A grab-bag of namespaces never shares a tag.
       tags = ["emk-", "emkey-auth-", "rnrtok-", "ems-", "req_"]
       assert tags == Enum.uniq(tags)
     end
   end
 
+  describe "OIDC and dispatch credentials" do
+    test "use fixed prefixes and PKCE's S256 transform" do
+      assert Crypto.run_request_id() =~ ~r/\Areq_[A-Za-z0-9_-]+\z/
+      assert Crypto.runner_name_suffix() =~ ~r/\A[A-Za-z0-9_-]+\z/
+      assert Crypto.oidc_state() =~ ~r/\A[A-Za-z0-9_-]{43}\z/
+      assert Crypto.oidc_nonce() =~ ~r/\A[A-Za-z0-9_-]{43}\z/
+      assert Crypto.pkce_verifier() =~ ~r/\A[A-Za-z0-9_-]{86}\z/
+
+      verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+
+      assert Crypto.pkce_s256_challenge(verifier) ==
+               Base.url_encode64(Crypto.hash(verifier), padding: false)
+    end
+  end
+
   describe "mfa_recovery_code/0" do
-    # (recovery-code namespace) — codes are lowercased
-    # base32 (survive hand transcription), unique per call, and only the
-    # digest is the at-rest form.
     test "is lowercased base32, unique, with a matching digest" do
       {plain1, digest1} = Crypto.mfa_recovery_code()
       {plain2, _digest2} = Crypto.mfa_recovery_code()
