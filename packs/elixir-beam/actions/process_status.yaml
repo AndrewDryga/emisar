@@ -1,0 +1,32 @@
+schema_version: 1
+id: beam.process_status
+title: BEAM /proc status summary
+kind: exec
+risk: low
+description: Show selected /proc/PID/status fields for a BEAM process.
+side_effects:
+  - One /proc status read.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: BEAM OS process PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "awk '/^(Name|State|Pid|PPid|Uid|Gid|VmPeak|VmSize|VmRSS|Threads|FDSize|voluntary_ctxt_switches|nonvoluntary_ctxt_switches):/ { print }' /proc/{{ args.pid }}/status"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Status summary for PID 4321
+    args:
+      pid: 4321

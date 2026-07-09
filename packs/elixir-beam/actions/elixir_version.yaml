@@ -1,0 +1,22 @@
+schema_version: 1
+id: beam.elixir_version
+title: elixir --version
+kind: exec
+risk: low
+description: Show the installed Elixir and Erlang/OTP versions.
+side_effects:
+  - One elixir version check.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: elixir
+    argv: ["--version"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Elixir version
+    args: {}

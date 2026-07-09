@@ -1,0 +1,22 @@
+schema_version: 1
+id: beam.epmd_names
+title: epmd -names
+kind: exec
+risk: low
+description: List Erlang nodes registered with the local EPMD daemon.
+side_effects:
+  - One local EPMD query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: epmd
+    argv: ["-names"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Registered local nodes
+    args: {}

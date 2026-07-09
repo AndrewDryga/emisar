@@ -1,0 +1,47 @@
+schema_version: 1
+id: beam.recon_trace_clear
+title: Clear recon_trace tracing
+kind: script
+risk: medium
+description: Stop all recon_trace tracing in the running Elixir release.
+side_effects:
+  - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
+  - One release rpc call with a fixed expression.
+  - Mutates tracing state by clearing recon_trace.
+  - Does not modify application data.
+args:
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Docker container name or ID when the release runs inside a container (see beam.release_targets); omit for a release running directly on the host.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$"
+      max_length: 128
+  - name: release
+    type: string
+    required: false
+    default: ""
+    description: Release name when several Elixir releases run on the target (see beam.release_targets); omit when only one runs or ELIXIR_RELEASE_CTL pins the target.
+    validation:
+      pattern: "^([a-z][a-z0-9_]{0,63})?$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/release_ctl.sh
+    interpreter: /bin/bash
+  argv:
+    - "--mode"
+    - "recon_trace_clear"
+    - "--container"
+    - "{{ args.container }}"
+    - "--release"
+    - "{{ args.release }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear recon_trace
+    args: {}

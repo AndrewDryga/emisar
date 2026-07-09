@@ -1,0 +1,24 @@
+schema_version: 1
+id: beam.processes
+title: BEAM process list
+kind: exec
+risk: low
+description: List BEAM and Elixir OS processes on the runner host.
+side_effects:
+  - One process table read without command-line arguments.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - 'ps -eo pid,user,etime,pcpu,pmem,comm | awk ''NR == 1 || $6 ~ /(^|\/)(beam\.smp|beam|elixir)$/ { print }'' | head -100'
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Local BEAM processes
+    args: {}

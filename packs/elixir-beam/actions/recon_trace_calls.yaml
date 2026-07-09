@@ -1,0 +1,143 @@
+schema_version: 1
+id: beam.recon_trace_calls
+title: Bounded recon_trace call capture
+kind: script
+risk: high
+description: Trace calls to one existing module/function in the running Elixir release for a bounded time window.
+side_effects:
+  - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
+  - Installs recon_trace call tracing in the running release, then clears it after duration_ms.
+  - Can add runtime overhead while active.
+  - Clears recon_trace state at the end of the capture window.
+  - "include_args or include_return prints raw call arguments and return values into the captured output, which is stored in the audit trail and returned to the caller. Those values routinely carry secrets and PII (a Plug.Conn holds secret_key_base and session data; connection state holds DB and API credentials; function arguments hold whatever the caller passed). The runner's always-on redaction only catches secrets in a few text shapes and does NOT reliably mask BEAM term output, so leave both flags false unless the specific traced function is known not to touch sensitive data."
+args:
+  - name: module
+    type: string
+    required: true
+    description: Existing module atom to trace, for example MyApp.Worker, Elixir.MyApp.Worker, or gen_server.
+    validation:
+      pattern: "^[A-Za-z_][A-Za-z0-9_.@-]{0,127}$"
+      max_length: 128
+  - name: function
+    type: string
+    required: true
+    description: Existing function atom to trace.
+    validation:
+      pattern: "^[A-Za-z_][A-Za-z0-9_!?@]{0,127}$"
+      max_length: 128
+  - name: arity
+    type: integer
+    required: true
+    description: Function arity.
+    validation:
+      min: 0
+      max: 255
+  - name: max_traces
+    type: integer
+    required: false
+    default: 10
+    description: Maximum trace events to capture.
+    validation:
+      min: 1
+      max: 100
+  - name: duration_ms
+    type: integer
+    required: false
+    default: 2000
+    description: Capture window in milliseconds.
+    validation:
+      min: 100
+      max: 10000
+  - name: pid_scope
+    type: string
+    required: false
+    default: all
+    description: Which processes recon_trace should target. Keep the default `all` to catch processes spawned during the window (servers handle each request in a fresh process); `existing` restricts to processes already alive when tracing starts.
+    validation:
+      enum:
+        - existing
+        - new
+        - all
+  - name: include_args
+    type: boolean
+    required: false
+    default: false
+    description: Print raw call arguments instead of arity-only call lines. Leaks whatever the callers passed (secrets, PII) into the audit trail; the runner's redaction does not reliably mask BEAM terms. Keep false unless the traced function's arguments are known safe.
+  - name: include_return
+    type: boolean
+    required: false
+    default: false
+    description: Print raw return values via recon_trace return tracing. Same exposure as include_args (a returned Plug.Conn carries secret_key_base and session data). Keep false unless the return is known safe.
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Docker container name or ID when the release runs inside a container (see beam.release_targets); omit for a release running directly on the host.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$"
+      max_length: 128
+  - name: release
+    type: string
+    required: false
+    default: ""
+    description: Release name when several Elixir releases run on the target (see beam.release_targets); omit when only one runs or ELIXIR_RELEASE_CTL pins the target.
+    validation:
+      pattern: "^([a-z][a-z0-9_]{0,63})?$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/release_ctl.sh
+    interpreter: /bin/bash
+  argv:
+    - "--mode"
+    - "recon_trace_calls"
+    - "--module"
+    - "{{ args.module }}"
+    - "--function"
+    - "{{ args.function }}"
+    - "--arity"
+    - "{{ args.arity }}"
+    - "--max-traces"
+    - "{{ args.max_traces }}"
+    - "--duration-ms"
+    - "{{ args.duration_ms }}"
+    - "--pid-scope"
+    - "{{ args.pid_scope }}"
+    - "--include-args"
+    - "{{ args.include_args }}"
+    - "--include-return"
+    - "{{ args.include_return }}"
+    - "--container"
+    - "{{ args.container }}"
+    - "--release"
+    - "{{ args.release }}"
+  timeout: 20s
+  timeout_min: 1s
+  timeout_max: 45s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+  redact:
+    - name: elixir-term-kv-secret
+      type: regex
+      pattern: '(?i)\b([a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?\s*(?:=>|:)\s*)(<<"(?:[^"\\]|\\.)*">>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,}\]]+)'
+      replacement: '${1}[REDACTED]'
+    - name: elixir-term-tuple-secret
+      type: regex
+      pattern: '(?i)(\{:?"?[a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?,\s*)(<<"(?:[^"\\]|\\.)*">>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,)}\]]+)'
+      replacement: '${1}[REDACTED]'
+examples:
+  - title: Trace arity-only Phoenix endpoint calls for two seconds
+    args:
+      module: MyAppWeb.Endpoint
+      function: call
+      arity: 2
+      max_traces: 10
+      duration_ms: 2000
+  - title: Trace a containerized release
+    args:
+      module: MyApp.Worker
+      function: handle_info
+      arity: 2
+      container: my_app

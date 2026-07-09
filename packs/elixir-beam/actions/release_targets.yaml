@@ -1,0 +1,41 @@
+schema_version: 1
+id: beam.release_targets
+title: Debuggable Elixir releases
+kind: script
+risk: low
+description: List running Elixir releases on the runner host and inside running Docker containers, with the release and container values to pass to the other beam.release_* actions.
+side_effects:
+  - Scans /proc for BEAM processes started from a release.
+  - Probes each running container with docker exec when the docker CLI is available (skipped otherwise).
+  - Read-only.
+args:
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Limit the scan to one Docker container name or ID; omit to scan the host and all running containers.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$"
+      max_length: 128
+execution:
+  script:
+    path: scripts/release_ctl.sh
+    interpreter: /bin/bash
+  argv:
+    - "--mode"
+    - "targets"
+    - "--container"
+    - "{{ args.container }}"
+  timeout: 30s
+  timeout_min: 5s
+  timeout_max: 120s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: All debuggable releases
+    args: {}
+  - title: Releases inside one container
+    args:
+      container: my_app

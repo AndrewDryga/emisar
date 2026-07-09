@@ -1,0 +1,76 @@
+schema_version: 1
+
+id: elixir-beam
+name: Elixir / BEAM runtime
+version: 0.1.0
+description: >
+  Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
+  inside Docker containers: toolchain versions, EPMD registrations, BEAM OS
+  process state, Linux /proc memory and process-tree detail, release RPC
+  snapshots, supervisor/process/ETS/allocator/scheduler/port introspection,
+  binary-leak checks, and bounded recon_trace call tracing. Releases are
+  discovered from running BEAM processes; target one by release name, or by
+  container for a release inside Docker.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - erl
+    - elixir
+    - epmd
+
+detect:
+  processes:
+    - beam.smp
+    - beam
+    - elixir
+
+setup:
+  summary: >
+    Inspects Elixir/Erlang runtime state on the runner host and inside Docker
+    containers. No node cookies or application credentials are needed: release
+    actions go through the release's own bin/RELEASE_NAME control script,
+    discovered from the running BEAM process (start with beam.release_targets).
+  env:
+    - name: ELIXIR_RELEASE_CTL
+      description: Optional override pinning the release control script path, for example /opt/my_app/bin/my_app (with a container argument, the path inside the container). Only needed when discovery cannot see the release; add it to the runner's inherit_env. The release/container action arguments take precedence.
+  notes:
+    - "Release actions discover running releases from BEAM process command lines and only ever execute <release_root>/bin/<release_name> of a release that is already running — callers select among live releases but cannot point actions at arbitrary binaries."
+    - "When several releases run on one target, pass the release argument (names come from beam.release_targets). For a release inside Docker, pass the container argument; the runner uid then needs the docker CLI and Docker socket access."
+    - "The runner uid must be able to read /proc entries for the target BEAM process; otherwise Linux may hide another user's process details."
+    - "Release RPC actions execute fixed, pack-authored expressions only; callers cannot supply arbitrary Elixir code."
+    - "If the release control script evaluates runtime config during rpc, the runner service must inherit the same runtime env the release script needs, or those actions will fail before connecting. With the container argument this usually just works: docker exec runs with the container's configured environment."
+    - "beam.release_pid reports the PID inside the container's namespace when container is set, not the host PID (find the host PID with beam.processes)."
+    - "The recon-powered actions (allocators, binary_leak, scheduler_usage, recon_trace) need recon compiled into the release and fail with a clear message otherwise; check with beam.release_debug_tools. The recon_trace action is high-risk because tracing adds runtime overhead and can expose function arguments or return values when explicitly enabled."
+    - "There is deliberately no action launching the interactive observer_cli TUI; its dashboards are covered by the release_* snapshot actions (top_processes, ets_tables, allocators, scheduler_usage, ports, memory)."
+  verify: beam.release_targets
+
+actions:
+  - actions/elixir_version.yaml
+  - actions/erl_system_version.yaml
+  - actions/epmd_names.yaml
+  - actions/processes.yaml
+  - actions/process_status.yaml
+  - actions/process_limits.yaml
+  - actions/process_memory.yaml
+  - actions/process_tree.yaml
+  - actions/release_targets.yaml
+  - actions/release_pid.yaml
+  - actions/release_runtime.yaml
+  - actions/release_memory.yaml
+  - actions/release_applications.yaml
+  - actions/release_debug_tools.yaml
+  - actions/release_registered.yaml
+  - actions/release_top_processes.yaml
+  - actions/release_process_info.yaml
+  - actions/release_supervisor_tree.yaml
+  - actions/release_ets_tables.yaml
+  - actions/release_allocators.yaml
+  - actions/release_binary_leak.yaml
+  - actions/release_scheduler_usage.yaml
+  - actions/release_ports.yaml
+  - actions/recon_trace_calls.yaml
+  - actions/recon_trace_clear.yaml

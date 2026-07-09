@@ -1,0 +1,58 @@
+schema_version: 1
+id: beam.release_scheduler_usage
+title: Elixir release scheduler usage
+kind: script
+risk: low
+description: Show per-scheduler utilization of the running Elixir release sampled over a bounded window with recon scheduler_usage — the accurate BEAM CPU picture, unlike OS-level CPU of busy-waiting schedulers. Requires recon in the release (check with beam.release_debug_tools).
+side_effects:
+  - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
+  - One release rpc call with a fixed expression that samples scheduler wall time for sample_ms.
+  - Read-only.
+args:
+  - name: sample_ms
+    type: integer
+    required: false
+    default: 1000
+    description: Sampling window in milliseconds.
+    validation:
+      min: 100
+      max: 5000
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Docker container name or ID when the release runs inside a container (see beam.release_targets); omit for a release running directly on the host.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$"
+      max_length: 128
+  - name: release
+    type: string
+    required: false
+    default: ""
+    description: Release name when several Elixir releases run on the target (see beam.release_targets); omit when only one runs or ELIXIR_RELEASE_CTL pins the target.
+    validation:
+      pattern: "^([a-z][a-z0-9_]{0,63})?$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/release_ctl.sh
+    interpreter: /bin/bash
+  argv:
+    - "--mode"
+    - "scheduler_usage"
+    - "--sample-ms"
+    - "{{ args.sample_ms }}"
+    - "--container"
+    - "{{ args.container }}"
+    - "--release"
+    - "{{ args.release }}"
+  timeout: 20s
+  timeout_min: 10s
+  timeout_max: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: One-second scheduler sample
+    args: {}

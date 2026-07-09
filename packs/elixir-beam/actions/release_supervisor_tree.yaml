@@ -1,0 +1,68 @@
+schema_version: 1
+id: beam.release_supervisor_tree
+title: Elixir release supervisor tree
+kind: script
+risk: low
+description: Show a bounded supervisor subtree from the running Elixir release.
+side_effects:
+  - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
+  - One release rpc call with a fixed expression.
+  - Uses existing atoms only; unknown names do not create atoms.
+  - Read-only.
+args:
+  - name: registered_name
+    type: string
+    required: true
+    description: Registered supervisor name, for example MyApp.Supervisor or Elixir.MyApp.Supervisor.
+    validation:
+      pattern: "^[A-Za-z_][A-Za-z0-9_.@-]{0,127}$"
+      max_length: 128
+  - name: depth
+    type: integer
+    required: false
+    default: 2
+    description: Maximum supervisor depth to walk.
+    validation:
+      min: 0
+      max: 5
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Docker container name or ID when the release runs inside a container (see beam.release_targets); omit for a release running directly on the host.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$"
+      max_length: 128
+  - name: release
+    type: string
+    required: false
+    default: ""
+    description: Release name when several Elixir releases run on the target (see beam.release_targets); omit when only one runs or ELIXIR_RELEASE_CTL pins the target.
+    validation:
+      pattern: "^([a-z][a-z0-9_]{0,63})?$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/release_ctl.sh
+    interpreter: /bin/bash
+  argv:
+    - "--mode"
+    - "supervisor_tree"
+    - "--registered-name"
+    - "{{ args.registered_name }}"
+    - "--depth"
+    - "{{ args.depth }}"
+    - "--container"
+    - "{{ args.container }}"
+    - "--release"
+    - "{{ args.release }}"
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Top-level supervisor
+    args:
+      registered_name: MyApp.Supervisor
+      depth: 2

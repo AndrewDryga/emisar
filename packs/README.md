@@ -1,6 +1,6 @@
 # Emisar example packs
 
-79 packs / 1,244 actions covering Linux ops, web/proxy, databases,
+80 packs / 1,269 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-79 packs, 1,244 actions, sorted by id. **Risk** is the pack's ceiling —
+80 packs, 1,269 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -93,6 +93,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `dnf-rpm` | 13 | high | local-host |
 | `docker` | 25 | critical | local-host |
 | `elasticsearch` | 21 | critical | ELASTIC_* |
+| `elixir-beam` | 25 | high | ELIXIR_RELEASE_CTL (opt) |
 | `envoy` | 14 | high | ENVOY_ADMIN (opt) |
 | `fail2ban` | 8 | high | local-host |
 | `firewall` | 11 | critical | local-host |
