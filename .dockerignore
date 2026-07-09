@@ -3,10 +3,19 @@
 # (_build, deps via `mix deps.get`/`mix release`) or never COPY-ed at all.
 .git
 .github
+.agent
+**/.agent
+.expert
+**/.expert
+.claude
+.codex
+bin
+dev
 **/_build
 **/deps
 **/.elixir_ls
 **/node_modules
+**/cover
 **/erl_crash.dump
 **/*.log
 .DS_Store
