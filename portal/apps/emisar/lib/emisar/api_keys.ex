@@ -228,8 +228,8 @@ defmodule Emisar.ApiKeys do
       is_nil(key.rotated_to_id) and expiring_soon?(key.expires_at)
   end
 
-  # Quick-connect keys carry no expiry and never rotate; auth already
-  # guarantees the key isn't past its expiry when this runs.
+  # A non-expiring MCP key (currently an OAuth backing key) never rotates;
+  # auth already guarantees an expiring key is still usable when this runs.
   defp expiring_soon?(nil), do: false
 
   defp expiring_soon?(%DateTime{} = expires_at) do
@@ -403,8 +403,8 @@ defmodule Emisar.ApiKeys do
   Called by `Accounts` when a membership is removed or suspended so a
   deprovisioned user loses the delegated execute access their keys carry:
   account-scoped `emk-` keys (and the OAuth backing keys behind `emo-`
-  tokens) keep resolving after the user's membership is gone, unlike
-  sessions, which self-heal at membership resolution. Both honor the
+  tokens) keep resolving after the user's membership is gone. Accounts
+  revokes browser sessions alongside this bulk key update. Both honor the
   `usable?` gate, so flipping `revoked_at` kills MCP dispatch + OAuth
   refresh at once. Bulk update — the `membership_removed`/`_suspended`
   event is the audit anchor. Returns `{:ok, count}`.
@@ -440,9 +440,10 @@ defmodule Emisar.ApiKeys do
       prefix = String.slice(raw, 0, @prefix_size)
       hash = Crypto.hash(raw)
 
-      # Deliberately all(): `usable?/1` below is the single liveness gate
-      # (it rejects deleted/revoked/expired in one place).
-      queryable = ApiKey.Query.all() |> ApiKey.Query.by_key_prefix(prefix)
+      # `key_prefix` is unique only among live rows. Excluding soft-deleted
+      # keys here keeps a reissued prefix a single-result lookup; `usable?/1`
+      # below remains the gate for revocation and expiry.
+      queryable = ApiKey.Query.not_deleted() |> ApiKey.Query.by_key_prefix(prefix)
 
       with %ApiKey{} = key <- Repo.peek(queryable),
            true <- Crypto.secure_compare(key.key_hash, hash),
@@ -644,16 +645,18 @@ defmodule Emisar.ApiKeys do
   def fetch_owner_user_id(_api_key_id), do: nil
 
   @doc """
-  Whether the account has NO connected LLM agent yet (no non-revoked API key) —
-  drives the "connect an agent" nudge dot in the nav. Requires `view`; returns
-  false (no nudge) when the subject can't view keys.
+  Whether the account has NO connected LLM agent yet (no visible live MCP key) —
+  drives the "connect an agent" nudge dot in the nav. Audit-export tokens and
+  auto-minted keys the client has not used yet do not count. Requires `view`;
+  returns false (no nudge) when the subject can't view keys.
   """
   def no_agents?(%Subject{account: %{id: account_id}} = subject) do
     case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_api_keys_permission()) do
       :ok ->
         queryable =
-          ApiKey.Query.not_deleted()
+          ApiKey.Query.visible_to_operators()
           |> ApiKey.Query.by_account_id(account_id)
+          |> ApiKey.Query.by_kind(:mcp)
           |> ApiKey.Query.not_revoked()
 
         not Repo.exists?(queryable)

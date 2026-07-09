@@ -9,12 +9,11 @@ defmodule Emisar.ApiKeysTest do
     user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
 
     {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
@@ -324,12 +323,11 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
       subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
@@ -504,7 +502,7 @@ defmodule Emisar.ApiKeysTest do
       # Minting a key publishes `api_key.created` on the topic just joined.
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
-      assert_receive {:list_changed, :api_key, "api_key.created", key_id}
+      assert_receive {:list_changed, :api_key, "api_key.created", key_id}, 500
       assert key_id == key.id
     end
 
@@ -561,12 +559,11 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
@@ -707,6 +704,28 @@ defmodule Emisar.ApiKeysTest do
       refute ApiKeys.peek_api_key_by_secret(raw)
     end
 
+    test "resolves a reissued live key when a soft-deleted key shares its prefix" do
+      {raw, stale} = Fixtures.ApiKeys.create_api_key()
+
+      stale
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      duplicate =
+        Emisar.ApiKeys.ApiKey.Changeset.create(
+          stale.account_id,
+          stale.created_by_id,
+          stale.created_by_membership_id,
+          stale.key_prefix,
+          stale.key_hash,
+          %{name: "reissued"}
+        )
+        |> Repo.insert!()
+
+      assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_secret(raw)
+      assert id == duplicate.id
+    end
+
     test "first use of an auto key clears the flag and audits api_key.bound" do
       {_user, _account, subject} = owner_subject_pair()
       {:ok, raw, _key} = ApiKeys.mint_quick_key(subject)
@@ -730,7 +749,7 @@ defmodule Emisar.ApiKeysTest do
       ApiKeys.subscribe_account_api_keys(account.id)
 
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
-      assert_receive {:list_changed, :api_key, "api_key.first_used", id}
+      assert_receive {:list_changed, :api_key, "api_key.first_used", id}, 500
       assert id == key.id
 
       # A later call bumps last_used_at but is no longer a first call — no storm.
@@ -922,13 +941,28 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "no_agents?/1" do
-    test "is true when the account has no non-revoked key, false once one exists" do
+    test "is true when the account has no live MCP key, false once one exists" do
       {_user, account, subject} = owner_subject_pair()
 
       # No keys yet → nudge the operator to connect an agent.
       assert ApiKeys.no_agents?(subject)
 
       {_raw, _key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      refute ApiKeys.no_agents?(subject)
+    end
+
+    test "ignores audit-export and unused auto-generated keys until an MCP client connects" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, _export_key} =
+        ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+
+      assert ApiKeys.no_agents?(subject)
+
+      {:ok, quick_raw, _quick_key} = ApiKeys.mint_quick_key(subject)
+      assert ApiKeys.no_agents?(subject)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(quick_raw)
       refute ApiKeys.no_agents?(subject)
     end
 
@@ -999,12 +1033,11 @@ defmodule Emisar.ApiKeysTest do
       {_owner, account, owner_subject} = owner_subject_pair()
       admin = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
@@ -1017,19 +1050,17 @@ defmodule Emisar.ApiKeysTest do
       operator = Fixtures.Users.create_user()
       viewer = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
