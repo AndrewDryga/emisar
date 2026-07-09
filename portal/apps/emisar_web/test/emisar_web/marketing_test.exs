@@ -584,6 +584,11 @@ defmodule EmisarWeb.MarketingTest do
     test "the connect-an-llm page renders every client config block", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
 
+      # Current ChatGPT Apps setup path: OAuth, Developer mode, no static token.
+      assert html =~ "Settings → Apps"
+      assert html =~ "Create app"
+      assert html =~ "choose <strong>OAuth</strong>"
+
       # The stdio-bridge config for each supported desktop/CLI client.
       assert html =~ "claude_desktop_config.json"
       assert html =~ ".cursor/mcp.json"

@@ -49,7 +49,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
-      assert html =~ "we only mint a key once you choose"
+      assert html =~ "Cloud clients use OAuth"
       assert html =~ "Connect an agent"
 
       # With a live key the index collapses to the list + a title-row CTA
@@ -61,7 +61,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
       assert html =~ ~p"/app/#{account}/agents/connect"
-      refute html =~ "we only mint a key once you choose"
+      refute html =~ "Cloud clients use OAuth"
     end
 
     test "the list has status/name filters + the custom tab opens the key-builder form",
@@ -108,28 +108,27 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert all_html =~ "border-brand-500/60"
     end
 
-    test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",
+    test "selecting Claude.ai (remote MCP) shows OAuth URL instead of bridge snippet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_web"})
 
-      # Mint still happens — same flow, just remote transport.
-      [auto] = Repo.all(ApiKey)
-      assert auto.account_id == account.id
-      assert auto.name == "Claude.ai"
+      # Cloud clients use OAuth; the backing key is minted after consent,
+      # not when the operator merely opens the setup panel.
+      assert Repo.all(ApiKey) == []
 
       # Remote-MCP UI is shown:
       assert html =~ "/api/mcp/rpc"
-      assert html =~ "Authorization: Bearer emk-"
       assert html =~ "Steps for Claude.ai"
-      # The reveal reads as a new live credential, not setup copy.
-      assert html =~ "New key minted"
+      assert html =~ "Choose OAuth"
       assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
 
       # The local-bridge snippet shape is NOT shown for this client.
       refute html =~ "EMISAR_API_KEY"
+      refute html =~ "Authorization: Bearer emk-"
+      refute html =~ "New key minted"
       refute html =~ "/usr/local/bin/emisar-mcp"
 
       # The install-emisar-mcp block does not render at all for remote
@@ -144,10 +143,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = lv |> render_click("select_client", %{"client" => "chatgpt"})
 
-      [auto] = Repo.all(ApiKey)
-      assert auto.name == "ChatGPT"
+      assert Repo.all(ApiKey) == []
       assert html =~ "/api/mcp/rpc"
       assert html =~ "Steps for ChatGPT"
+      assert html =~ "Settings &rarr; Apps" or html =~ "Settings → Apps"
+      assert html =~ "Create app"
+      assert html =~ "choose OAuth"
+      refute html =~ "Authorization: Bearer emk-"
     end
 
     test "selecting a client mints a key named after the client + inlines snippet", %{conn: conn} do
@@ -163,7 +165,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert ApiKey.auto_unused?(auto)
 
       # Snippet shows the bridge config with EMISAR_CLIENT stamped so
-      # the cloud audit can attribute calls back to this client.
+      # the audit trail can attribute calls back to this client.
       assert html =~ "EMISAR_API_KEY"
       assert html =~ "EMISAR_CLIENT"
       assert html =~ "claude-desktop"

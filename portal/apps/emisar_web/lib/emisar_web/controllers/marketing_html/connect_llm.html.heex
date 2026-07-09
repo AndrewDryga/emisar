@@ -15,7 +15,7 @@
       <ul class="mt-4 list-disc space-y-2 pl-6 text-sm text-zinc-300">
         <li>
           <strong>Remote MCP</strong>
-          (Claude.ai, ChatGPT, recent IDE
+          (Claude.ai, ChatGPT Apps, recent IDE
           clients) — paste one URL. emisar signs you in over OAuth; there
           is no API key or header to manage. This is the <em>only</em>
           way the cloud connectors work — their setup form has a URL field
@@ -32,7 +32,7 @@
       <figure class="mt-8 overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <img
           src="/images/screenshots/connect-llm-agents.webp"
-          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT) and local/IDE clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI). Picking one mints a bearer key and shows the exact connector URL, Authorization header, and per-client setup steps."
+          alt="The Connect-an-agent client picker: cloud clients (Claude.ai, ChatGPT Apps) and local/IDE clients (Claude Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI). Cloud setup shows the OAuth MCP server URL; local setup mints a bearer key and shows per-client setup steps."
           loading="lazy"
           class="w-full"
         />
@@ -52,7 +52,7 @@
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Claude.ai and ChatGPT only let you enter a <strong>URL</strong> —
+          Claude.ai and ChatGPT Apps only need a <strong>URL</strong> —
           no header, no token field. emisar is a full OAuth&nbsp;2.1
           authorization server, so the connector discovers it from that URL,
           registers itself automatically, and sends you through a one-time
@@ -110,19 +110,17 @@
           <section>
             <h3 class="text-xl font-semibold text-zinc-50">ChatGPT</h3>
             <p class="mt-2 text-sm text-zinc-400">
-              ChatGPT hides custom MCP connectors behind <strong>Developer mode</strong>, so there's one extra toggle
-              before the connector form appears. Available on Plus,
+              ChatGPT now calls custom MCP connectors <strong>apps</strong>. Developer mode exposes
+              the app-creation flow for your own MCP server. Available on Plus,
               Pro, Business, Enterprise, and Education.
             </p>
             <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
               <li>
-                Enable it once:
-                <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>
+                Enable it once: <strong>Settings → Apps → Advanced settings</strong>
                 → turn on <strong>Developer mode</strong>.
               </li>
               <li>
-                Back in <strong>Settings → Apps &amp; Connectors</strong>,
-                click <strong>Create</strong>.
+                Open <strong>Settings → Apps</strong> and click <strong>Create app</strong>.
               </li>
               <li>
                 Fill the form:
@@ -146,13 +144,13 @@
                 </ul>
               </li>
               <li>
-                Check <strong>I trust this application</strong>, then click <strong>Create</strong>. ChatGPT sends you to an emisar
-                sign-in → <strong>Authorize</strong>.
+                Click <strong>Create</strong>. ChatGPT sends you to an emisar
+                sign-in → <strong>Authorize</strong>. If ChatGPT shows a token or header field,
+                switch the authentication type back to OAuth.
               </li>
               <li>
-                Use it in a chat: click <strong>+</strong>
-                near the composer → <strong>More</strong>, then enable <strong>emisar</strong>. You may need to re-add it for each
-                new conversation.
+                Use it in a chat by choosing <strong>Developer mode</strong>
+                and selecting <strong>emisar</strong>. Draft apps appear in ChatGPT Apps settings.
               </li>
             </ol>
             <p class="mt-3 text-xs leading-relaxed text-zinc-500">

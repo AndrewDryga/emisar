@@ -131,7 +131,9 @@ defmodule EmisarWeb.OAuthController do
   defp render_consent(conn, client, params) do
     requested = scopes(params["scope"])
 
-    render(conn, :consent,
+    conn
+    |> allow_oauth_form_redirect(params["redirect_uri"])
+    |> render(:consent,
       client_name: client_label(client),
       account_name: account_label(conn),
       user_email: user_email(conn),
@@ -166,6 +168,47 @@ defmodule EmisarWeb.OAuthController do
   defp redirect_error(conn, redirect_uri, error_code, state) do
     redirect_back(conn, redirect_uri, %{error: error_code, state: state})
   end
+
+  # Some browser CSP implementations apply `form-action` across the OAuth form
+  # navigation chain, including the 302 back to the client's callback. Keep the
+  # base policy strict and widen only this consent page to the already-validated
+  # callback origin.
+  defp allow_oauth_form_redirect(conn, redirect_uri) do
+    case form_action_origin(redirect_uri) do
+      nil ->
+        conn
+
+      origin ->
+        extra =
+          conn.assigns
+          |> Map.get(:csp_extra, %{})
+          |> Map.update("form-action", [origin], &(&1 ++ [origin]))
+
+        assign(conn, :csp_extra, extra)
+    end
+  end
+
+  defp form_action_origin(uri) when is_binary(uri) do
+    case URI.parse(uri) do
+      %URI{scheme: scheme, host: host} = parsed
+      when scheme in ["https", "http"] and is_binary(host) ->
+        scheme <> "://" <> csp_host(host) <> csp_port(parsed)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp form_action_origin(_), do: nil
+
+  defp csp_host(host) do
+    if String.contains?(host, ":"), do: "[" <> host <> "]", else: host
+  end
+
+  defp csp_port(%URI{scheme: "https", port: port}) when port in [nil, 443], do: ""
+  defp csp_port(%URI{scheme: "http", port: port}) when port in [nil, 80], do: ""
+  defp csp_port(%URI{port: port}) when is_integer(port), do: ":" <> Integer.to_string(port)
+  defp csp_port(_), do: ""
 
   # -- Validation -----------------------------------------------------
 

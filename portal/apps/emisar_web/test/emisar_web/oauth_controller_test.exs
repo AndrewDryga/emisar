@@ -16,9 +16,11 @@ defmodule EmisarWeb.OAuthControllerTest do
     %{user: user, account: account}
   end
 
-  defp register_client!(name \\ "Claude") do
+  defp register_client!(name \\ "Claude", opts \\ []) do
+    redirect_uris = Keyword.get(opts, :redirect_uris, [@redirect])
+
     {:ok, client} =
-      OAuth.register_client(%{"client_name" => name, "redirect_uris" => [@redirect]})
+      OAuth.register_client(%{"client_name" => name, "redirect_uris" => redirect_uris})
 
     client
   end
@@ -418,6 +420,35 @@ defmodule EmisarWeb.OAuthControllerTest do
       # Both known scopes render as human-readable grants, not raw tokens.
       assert html =~ "Run approved actions"
       assert html =~ "Stay connected"
+    end
+
+    test "CSP form-action allows the registered OAuth callback origin only", %{
+      conn: conn,
+      user: user
+    } do
+      chatgpt_redirect = "https://chatgpt.com/connector/oauth/callback-id"
+      client = register_client!("ChatGPT", redirect_uris: [chatgpt_redirect])
+      {_verifier, challenge} = pkce()
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: chatgpt_redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        state: "xyz"
+      }
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+
+      [csp] = get_resp_header(conn, "content-security-policy")
+
+      assert csp =~ "form-action 'self' https://chatgpt.com"
+      refute csp =~ "connector/oauth"
     end
 
     test "scope_label falls back to the raw token for unknown scopes" do

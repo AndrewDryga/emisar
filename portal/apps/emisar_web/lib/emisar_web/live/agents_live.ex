@@ -28,6 +28,7 @@ defmodule EmisarWeb.AgentsLive do
   @active_threshold_secs 5 * 60
   @idle_threshold_secs 24 * 60 * 60
   @refresh_ms 5_000
+  @remote_client_ids ~w(claude_web chatgpt)
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -39,13 +40,10 @@ defmodule EmisarWeb.AgentsLive do
       ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
-    # The operator first picks which LLM client they're connecting
-    # (Claude Desktop, Cursor, Codex, …). On pick we mint a quick key
-    # whose `name` reflects the choice, so the audit trail and the
-    # agents list both read "Claude Desktop" rather than a generic
-    # "Quick connect". The client id also flows into the snippet's
-    # EMISAR_CLIENT env var so the bridge stamps it onto every
-    # User-Agent.
+    # The operator first picks which LLM client they're connecting.
+    # Local clients get a quick API key + snippet. Cloud clients use
+    # OAuth, so their backing key is minted only after the user consents
+    # in the OAuth flow.
     #
     # `ApiKeys.mint_quick_key/2` ring-evicts unused autos at 42 per
     # account, so opening many tabs can't accumulate dangling keys.
@@ -90,13 +88,20 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:quick_connected?, false)}
   end
 
+  def handle_event("select_client", %{"client" => id}, socket) when id in @remote_client_ids do
+    {:noreply,
+     socket
+     |> assign(:selected_client, id)
+     |> assign(:quick_secret, nil)
+     |> assign(:quick_key_id, nil)
+     |> assign(:quick_connected?, false)}
+  end
+
   def handle_event("select_client", %{"client" => id}, socket) do
-    # First-pick mints a quick key whose name matches the client
+    # Local-client first-pick mints a quick key whose name matches the client
     # (so it shows up as e.g. "Claude Desktop" on the agents list and
-    # in audit rows). Switching clients re-mints — the previous
-    # un-bound auto-key gets ring-evicted naturally. Any restrictions
-    # picked in the shared scope panel propagate to the mint so
-    # quick-mints can be scoped too, not only Custom-tab keys.
+    # in audit rows). Switching local clients re-mints — the previous
+    # un-bound auto-key gets ring-evicted naturally.
     Permissions.gated(
       socket,
       # Quick-mint is the ISSUE tier (operators and above) — gating it on
@@ -468,11 +473,10 @@ defmodule EmisarWeb.AgentsLive do
 
   # Two transports under the hood — local stdio bridge (`emisar-mcp`)
   # and remote MCP over HTTP at `/api/mcp/rpc`. Remote-MCP clients
-  # don't need the bridge binary installed; they just need a URL +
-  # bearer token. We surface that as a different tab variant rather
+  # don't need the bridge binary installed; they just need a URL and
+  # OAuth. We surface that as a different tab variant rather
   # than a global toggle because the operator's question is "which
   # client am I connecting" first; transport falls out of the answer.
-  @remote_client_ids ~w(claude_web chatgpt)
   defp remote_client?(id), do: id in @remote_client_ids
 
   defp client_label(id), do: Map.get(@client_labels, id, "MCP client")
@@ -490,30 +494,29 @@ defmodule EmisarWeb.AgentsLive do
   defp config_target_is_file?(%{location: location}),
     do: is_binary(location) and String.starts_with?(location, "~")
 
-  defp client_config("claude_web", url, key) do
+  defp client_config("claude_web", url, _key) do
     %{
       kind: :remote,
       rpc_url: "#{url}/api/mcp/rpc",
-      auth_header: "Authorization: Bearer #{key}",
       steps: [
         "Open Settings → Connectors → Add custom connector in claude.ai.",
         "Name it \"Emisar\" and paste the URL below into Remote MCP server URL.",
-        "Under Authentication, add a header named Authorization with value Bearer <key>.",
-        "Save. Claude tests the connection and lists every Emisar action as a tool."
+        "Choose OAuth. Leave client ID and client secret empty so Claude can register dynamically.",
+        "Save, then complete the emisar sign-in and consent screen."
       ]
     }
   end
 
-  defp client_config("chatgpt", url, key) do
+  defp client_config("chatgpt", url, _key) do
     %{
       kind: :remote,
       rpc_url: "#{url}/api/mcp/rpc",
-      auth_header: "Authorization: Bearer #{key}",
       steps: [
-        "Open Settings → Connectors in ChatGPT (Pro / Team / Enterprise — custom connectors are gated).",
-        "Click Add custom connector and paste the URL below as the MCP server URL.",
-        "Set the bearer token to the API key (no header name needed — ChatGPT prepends \"Authorization: Bearer\").",
-        "Save. Tools become available in the next chat turn."
+        "Open Settings → Apps → Advanced settings and turn on Developer mode.",
+        "Open ChatGPT Apps settings and click Create app.",
+        "Name it \"Emisar\", paste the URL below as the MCP Server URL, and choose OAuth.",
+        "Create the app, then complete the emisar sign-in and consent screen.",
+        "Use it from a conversation by choosing Developer mode and selecting Emisar."
       ]
     }
   end
@@ -610,7 +613,7 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   # `client` is baked into EMISAR_CLIENT so the bridge can stamp it on
-  # every cloud request's User-Agent — the audit page shows it as
+  # every local MCP request's User-Agent — the audit page shows it as
   # "Client: claude-desktop" etc., so operators see which LLM client
   # produced each event without having to parse the IP.
   defp mcp_json_snippet(url, key, command, client) do
@@ -679,8 +682,8 @@ defmodule EmisarWeb.AgentsLive do
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
-        Pick how your agent connects — we only mint a key once you choose, named after the
-        client, setup pre-filled. Keeps the audit trail and the agents list clean.
+        Pick how your agent connects. Cloud clients use OAuth and mint their backing key only
+        after consent; local clients get a one-time key with setup pre-filled.
         <.doc_link href="/docs/connect-an-llm">Connect an agent docs</.doc_link>
       </.page_intro>
 
@@ -996,8 +999,8 @@ defmodule EmisarWeb.AgentsLive do
                 icon="hero-cpu-chip"
                 title="No agents connected yet."
               >
-                Pick a client above — we mint a key + pre-fill the snippet (local) or
-                URL + token (cloud). The agent shows up here on its first MCP call.
+                Pick a client above. Cloud clients use OAuth; local clients get a key +
+                pre-filled snippet. The agent shows up here on its first MCP call.
               </.empty_state>
             </:empty>
           </LiveTable.live_table>
@@ -1093,7 +1096,7 @@ defmodule EmisarWeb.AgentsLive do
           <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
             Cloud
             <span class="ml-1 normal-case tracking-normal text-zinc-600">
-              — hosted LLMs: no install, URL + token
+              — hosted LLMs: no install, OAuth
             </span>
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
@@ -1135,9 +1138,9 @@ defmodule EmisarWeb.AgentsLive do
         <%!-- Body. Empty state until the operator picks. Once picked we
            render the per-transport setup section — for local clients
            that's "install + paste snippet", for remote it's
-           "URL + bearer header + per-host steps". Scope picker only
-           appears AFTER a client is chosen too; it's part of the
-           per-client setup, not a standalone step. --%>
+           "paste URL + choose OAuth". Scope picker only appears AFTER a
+           local client is chosen too; it's part of the per-client setup,
+           not a standalone step. --%>
         <%= cond do %>
           <% is_nil(@selected_client) -> %>
             <%!-- Nothing picked → nothing rendered: the picker is the prompt;
@@ -1168,9 +1171,7 @@ defmodule EmisarWeb.AgentsLive do
                 client_id={@selected_client}
                 client_label={client_label(@selected_client)}
                 rpc_url={@config.rpc_url}
-                auth_header={@config.auth_header}
                 steps={@config.steps}
-                minted?={@quick_secret != nil}
               />
             </div>
           <% @config -> %>
@@ -1477,42 +1478,33 @@ defmodule EmisarWeb.AgentsLive do
   attr :client_id, :string, required: true
   attr :client_label, :string, required: true
   attr :rpc_url, :string, required: true
-  attr :auth_header, :string, required: true
   attr :steps, :list, required: true
-  attr :minted?, :boolean, default: false
 
   defp remote_mcp_panel(assigns) do
     ~H"""
     <div class="space-y-8">
       <div>
         <.section_header title="Add the connector">
-          <:subtitle>Paste both values into {@client_label}'s custom-connector setup.</:subtitle>
+          <:subtitle>Paste this URL into {@client_label}'s setup and choose OAuth.</:subtitle>
         </.section_header>
-        <%!-- The fresh-mint note sits WITH the connector values that hold the
-             token — "the bearer token below" points right at it. --%>
-        <.minted_note :if={@minted?} class="mb-4">
-          Copy the bearer token below now — you won't see it again. Lost it later? Pick
-          this client again for a fresh key.
-        </.minted_note>
-        <%!-- The two values cloud LLMs need. Bearer header is rendered
-             in full (operator just minted it) so they can copy the whole
-             "Authorization: Bearer emk-..." string verbatim. --%>
-        <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned artifact frame (credential values), pending code_panel migration --%>
+        <p class="mb-4 text-sm leading-relaxed text-zinc-400">
+          No API key is shown here. {@client_label} discovers emisar's OAuth metadata from this
+          endpoint, then the consent screen creates a revocable key behind the scenes.
+        </p>
+        <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned artifact frame (OAuth URL), pending code_panel migration --%>
         <div class="overflow-hidden rounded-lg bg-black/80 ring-1 ring-white/[0.08]">
           <div class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2.5">
-            <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
+            <p class="font-mono text-[11px] text-zinc-500">OAuth MCP server URL</p>
             <.copy_button
               id={"copy-#{@client_id}-conn"}
-              text={"URL: #{@rpc_url}\nHeader: #{@auth_header}"}
+              text={@rpc_url}
             >
-              Copy URL + header
+              Copy URL
             </.copy_button>
           </div>
           <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
             <span class="text-zinc-500">URL:</span>
             <span id={"rpc-url-#{@client_id}"} class="break-all text-zinc-200">{@rpc_url}</span>
-            <span class="text-zinc-500">Header:</span>
-            <span id={"auth-hdr-#{@client_id}"} class="break-all text-zinc-200">{@auth_header}</span>
           </div>
         </div>
       </div>
@@ -1520,7 +1512,7 @@ defmodule EmisarWeb.AgentsLive do
       <div>
         <%!-- Per-host step list on the canvas — content, not an artifact. Each
              client config stores its own list because the menu paths differ
-             (Claude.ai uses "Custom connectors", ChatGPT "Connectors"). --%>
+             (Claude.ai uses Custom connectors, ChatGPT uses Apps). --%>
         <.section_header title={"Steps for #{@client_label}"} />
         <.steps>
           <:step :for={step <- @steps}>{step}</:step>
@@ -1529,7 +1521,7 @@ defmodule EmisarWeb.AgentsLive do
 
       <p class="text-xs text-zinc-500">
         Cloud LLM connectors need {@client_label} to be on a plan that
-        supports custom MCP servers. Connection refused or 401?
+        supports custom OAuth MCP servers. Connection refused or 401?
         <.doc_link href={~p"/docs/connect-an-llm"}>Troubleshooting</.doc_link>
       </p>
     </div>
