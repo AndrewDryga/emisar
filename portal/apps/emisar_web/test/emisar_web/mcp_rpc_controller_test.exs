@@ -107,6 +107,13 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     |> post(~p"/api/mcp/rpc", Jason.encode!(body))
   end
 
+  defp oauth2_mcp_schemes, do: [%{"type" => "oauth2", "scopes" => ["mcp"]}]
+
+  defp assert_oauth_required(tool) do
+    assert tool["securitySchemes"] == oauth2_mcp_schemes()
+    assert get_in(tool, ["_meta", "securitySchemes"]) == oauth2_mcp_schemes()
+  end
+
   setup do
     {account, user} = setup_account()
     {:ok, account: account, user: user}
@@ -397,14 +404,31 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("initialize")
+        |> rpc("initialize", %{
+          "protocolVersion" => "2025-06-18",
+          "capabilities" => %{},
+          "clientInfo" => %{"name" => "ChatGPT", "version" => "dev"}
+        })
         |> json_response(200)
 
       assert body["jsonrpc"] == "2.0"
       assert body["id"] == 1
-      assert body["result"]["protocolVersion"] == "2024-11-05"
+      assert body["result"]["protocolVersion"] == "2025-06-18"
       assert body["result"]["serverInfo"]["name"] == "emisar"
       assert get_in(body, ["result", "capabilities", "tools", "listChanged"]) == false
+    end
+
+    test "returns 2024-11-05 when an older client explicitly negotiates it",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("initialize", %{"protocolVersion" => "2024-11-05"})
+        |> json_response(200)
+
+      assert body["result"]["protocolVersion"] == "2024-11-05"
     end
 
     test "includes an instructions guide covering error recovery",
@@ -507,7 +531,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> rpc("initialize")
         |> json_response(200)
 
-      assert body["result"]["protocolVersion"] == "2024-11-05"
+      assert body["result"]["protocolVersion"] == "2025-06-18"
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
       assert reloaded.last_client_info == %{}
     end
@@ -621,6 +645,22 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       names = Enum.map(tools, & &1["name"])
       assert "linux.uptime" in names
       assert "wait_for_run" in names
+
+      action_tool = Enum.find(tools, &(&1["name"] == "linux.uptime"))
+      wait_tool = Enum.find(tools, &(&1["name"] == "wait_for_run"))
+
+      assert_oauth_required(action_tool)
+      assert_oauth_required(wait_tool)
+      assert action_tool["annotations"]["readOnlyHint"] == true
+      assert action_tool["annotations"]["destructiveHint"] == false
+      assert action_tool["annotations"]["openWorldHint"] == true
+
+      assert wait_tool["annotations"] == %{
+               "readOnlyHint" => true,
+               "destructiveHint" => false,
+               "openWorldHint" => false,
+               "idempotentHint" => true
+             }
     end
 
     test "an audit-export key is refused on tools/list (wrong kind)",
@@ -1771,7 +1811,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       body = init_with_client_info(conn, raw, "not-a-map")
 
       # Handshake still succeeds.
-      assert body["result"]["protocolVersion"] == "2024-11-05"
+      assert body["result"]["protocolVersion"] == "2025-06-18"
 
       # Nothing recorded — the field stays at its empty default (never written).
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
@@ -2278,7 +2318,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> post(~p"/api/mcp/rpc", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "initialize"}))
         |> json_response(200)
 
-      assert body["result"]["protocolVersion"] == "2024-11-05"
+      assert body["result"]["protocolVersion"] == "2025-06-18"
     end
   end
 
@@ -2314,6 +2354,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert desc =~ "Runs on: only-host (connected)"
       # ... and the action's risk tier as a trailing Risk line.
       assert desc =~ "Risk: critical"
+      assert_oauth_required(tool)
+      assert tool["annotations"]["readOnlyHint"] == false
+      assert tool["annotations"]["destructiveHint"] == true
+      assert tool["annotations"]["openWorldHint"] == true
     end
   end
 

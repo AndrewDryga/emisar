@@ -31,7 +31,8 @@ defmodule EmisarWeb.MCPRpcController do
   alias Emisar.ApiKeys
   alias EmisarWeb.MCP.{Auth, ContentBlocks, Idempotency, Instructions, Service}
 
-  @protocol_version "2024-11-05"
+  @latest_protocol_version "2025-06-18"
+  @supported_protocol_versions [@latest_protocol_version, "2024-11-05"]
   @server_name "emisar"
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
@@ -75,7 +76,7 @@ defmodule EmisarWeb.MCPRpcController do
 
     {:ok,
      %{
-       protocolVersion: @protocol_version,
+       protocolVersion: negotiated_protocol_version(params),
        serverInfo: %{name: @server_name, version: app_version()},
        capabilities: %{tools: %{listChanged: false}},
        instructions: Instructions.text()
@@ -523,6 +524,12 @@ defmodule EmisarWeb.MCPRpcController do
       v -> to_string(v)
     end
   end
+
+  defp negotiated_protocol_version(%{"protocolVersion" => requested})
+       when requested in @supported_protocol_versions,
+       do: requested
+
+  defp negotiated_protocol_version(_params), do: @latest_protocol_version
 
   # MCP Streamable-HTTP session id. At `initialize` we hand the client a
   # session id (reusing one it already sent) via the Mcp-Session-Id response

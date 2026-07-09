@@ -14,7 +14,7 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Catalog, Runbooks, Runners, Runs}
-  alias EmisarWeb.MCP.{Idempotency, ToolSchema}
+  alias EmisarWeb.MCP.{Idempotency, ToolMetadata, ToolSchema}
   require Logger
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -519,8 +519,10 @@ defmodule EmisarWeb.MCP.Service do
     %{
       name: first.action_id,
       description: tool_description(first, runners),
-      inputSchema: ToolSchema.build(first, runner_names)
+      inputSchema: ToolSchema.build(first, runner_names),
+      annotations: ToolMetadata.action_annotations(first)
     }
+    |> ToolMetadata.auth_required()
   end
 
   defp runner_status_rank(runner), do: if(runner.online?, do: 0, else: 1)

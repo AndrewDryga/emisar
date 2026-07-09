@@ -11,6 +11,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   a JSON-RPC `result` shape: `%{content: blocks, isError: is_error}`.
   """
   alias Emisar.Runs
+  alias EmisarWeb.MCP.ToolMetadata
 
   @doc """
   Synthetic tool descriptor for `wait_for_run`. Surfaced in
@@ -45,8 +46,10 @@ defmodule EmisarWeb.MCP.ContentBlocks do
             "pattern" => "^[0-9]+(ms|s|m)$"
           }
         }
-      }
+      },
+      annotations: ToolMetadata.read_only_annotations()
     }
+    |> ToolMetadata.auth_required()
   end
 
   @doc "Synthetic tool descriptor for `list_runbooks` (read-only)."
@@ -64,8 +67,10 @@ defmodule EmisarWeb.MCP.ContentBlocks do
         "type" => "object",
         "additionalProperties" => false,
         "properties" => %{}
-      }
+      },
+      annotations: ToolMetadata.read_only_annotations()
     }
+    |> ToolMetadata.auth_required()
   end
 
   @doc "Synthetic tool descriptor for `get_runbook` (read-only)."
@@ -90,8 +95,10 @@ defmodule EmisarWeb.MCP.ContentBlocks do
             "description" => "The runbook slug (from list_runbooks) or its id."
           }
         }
-      }
+      },
+      annotations: ToolMetadata.read_only_annotations()
     }
+    |> ToolMetadata.auth_required()
   end
 
   @doc "Synthetic tool descriptor for `recent_runs` (read-only)."
@@ -135,8 +142,10 @@ defmodule EmisarWeb.MCP.ContentBlocks do
               "Only runs of this action_id (e.g. \"linux.uptime\"). Omit for all actions."
           }
         }
-      }
+      },
+      annotations: ToolMetadata.read_only_annotations()
     }
+    |> ToolMetadata.auth_required()
   end
 
   @doc "Render the `list_runbooks` summaries: a short intro plus the runbooks as JSON."
