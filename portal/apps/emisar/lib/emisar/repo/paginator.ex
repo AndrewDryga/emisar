@@ -37,7 +37,8 @@ defmodule Emisar.Repo.Paginator do
       |> Enum.reverse()
 
     if encoded = Keyword.get(opts, :cursor) do
-      with {:ok, {direction, values}} <- decode_cursor(encoded) do
+      with {:ok, {direction, values}} <- decode_cursor(encoded),
+           true <- length(values) == length(cursor_fields) do
         {:ok,
          %{
            query_module: query_module,
@@ -46,6 +47,8 @@ defmodule Emisar.Repo.Paginator do
            direction: direction,
            values: values
          }}
+      else
+        _ -> {:error, :invalid_cursor}
       end
     else
       {:ok, %{query_module: query_module, cursor_fields: cursor_fields, limit: limit}}
@@ -224,8 +227,9 @@ defmodule Emisar.Repo.Paginator do
     # `:safe` rejects funs, pids, ports, references and any unknown
     # atoms — leaves the integer/tuple/binary leaves we serialized in.
     with {:ok, etf} <- Base.url_decode64(encoded, padding: false),
-         {direction, values} <- :erlang.binary_to_term(etf, [:safe]),
-         values = decompress_cursor(values),
+         {direction, encoded_values} <- :erlang.binary_to_term(etf, [:safe]),
+         true <- direction in [:after, :before],
+         values when is_list(values) <- decompress_cursor(encoded_values),
          false <- Enum.any?(values, &is_nil/1) do
       {:ok, {direction, values}}
     else

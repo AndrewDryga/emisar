@@ -35,20 +35,23 @@ defmodule Emisar.Repo.FilterTest do
       assert {:error, {:invalid_type, _}} =
                Filter.validate_value(filter({:string, :uuid}), "not-a-uuid")
 
-      # A list with a bad element is rejected as a whole.
       assert {:error, {:invalid_type, _}} =
                Filter.validate_value(filter({:list, :integer}), [1, "x"])
+
+      assert {:error, {:invalid_type, _}} =
+               Filter.validate_value(
+                 filter({:string, :uuid}),
+                 "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
+               )
     end
 
     test "a range requires at least one bound, each of the declared type" do
       assert :ok = Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: 10})
       assert :ok = Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: nil})
 
-      # Both bounds nil is a meaningless range.
       assert {:error, {:invalid_type, _}} =
                Filter.validate_value(filter({:range, :integer}), %Range{from: nil, to: nil})
 
-      # A bound of the wrong type is rejected.
       assert {:error, {:invalid_type, _}} =
                Filter.validate_value(filter({:range, :integer}), %Range{from: "x", to: nil})
     end
@@ -87,8 +90,6 @@ defmodule Emisar.Repo.FilterTest do
   end
 
   describe "build_dynamic/4 — applying named filters" do
-    # `:q` stands in for a queryable; the funs build dynamics without ever
-    # running a query, so build_dynamic only collects + merges conditions.
     defp definitions do
       %{
         active: %Filter{name: :active, type: :boolean, fun: fn q -> {q, dynamic(true)} end},

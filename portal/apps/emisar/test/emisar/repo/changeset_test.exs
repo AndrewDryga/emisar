@@ -7,6 +7,7 @@ defmodule Emisar.Repo.ChangesetTest do
   """
   use ExUnit.Case, async: true
   import Ecto.Changeset
+  import Emisar.DataCase, only: [errors_on: 1]
   alias Emisar.Repo.Changeset, as: RepoChangeset
 
   @types %{name: :string, slug: :string, legal_name: :string}
@@ -75,6 +76,10 @@ defmodule Emisar.Repo.ChangesetTest do
       assert RepoChangeset.validate_json_size(json_change(%{"a" => "x"}), :config, 100).valid?
     end
 
+    test "a value Jason cannot encode passes through unchanged" do
+      assert RepoChangeset.validate_json_size(json_change(self()), :config, 100).valid?
+    end
+
     test "a value whose serialized JSON exceeds max_bytes errors on the field" do
       result =
         RepoChangeset.validate_json_size(
@@ -84,7 +89,17 @@ defmodule Emisar.Repo.ChangesetTest do
         )
 
       refute result.valid?
-      assert {"is too large (max 100 bytes serialized)", _} = result.errors[:config]
+      assert "is too large (max 100 bytes serialized)" in errors_on(result).config
+    end
+  end
+
+  describe "unique_constraint_error?/1" do
+    test "recognizes only unique-constraint failures" do
+      unique_error = add_error(changeset(), :name, "has already been taken", constraint: :unique)
+      validation_error = add_error(changeset(), :name, "can't be blank", validation: :required)
+
+      assert RepoChangeset.unique_constraint_error?(unique_error)
+      refute RepoChangeset.unique_constraint_error?(validation_error)
     end
   end
 end

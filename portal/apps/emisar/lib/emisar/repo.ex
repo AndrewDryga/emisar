@@ -6,9 +6,9 @@ defmodule Emisar.Repo do
   alias Emisar.Repo.{Broadcastable, Filter, Paginator, Preloader}
   require Ecto.Query
 
-  @doc "True iff `binary` is a string-encoded UUID."
-  def valid_uuid?(binary) when is_binary(binary),
-    do: match?(<<_::64, ?-, _::32, ?-, _::32, ?-, _::32, ?-, _::96>>, binary)
+  @doc "True iff `binary` is a 36-character, string-encoded UUID."
+  def valid_uuid?(binary) when is_binary(binary) and byte_size(binary) == 36,
+    do: match?({:ok, _}, Ecto.UUID.cast(binary))
 
   def valid_uuid?(_), do: false
 
@@ -68,7 +68,7 @@ defmodule Emisar.Repo do
     case fetch(queryable, query_module, opts) do
       {:ok, schema} -> schema
       {:error, :not_found} -> raise Ecto.NoResultsError, queryable: queryable
-      {:error, reason} -> raise "Emisar.Repo.fetch!/2 failed: #{inspect(reason)}"
+      {:error, reason} -> raise "Emisar.Repo.fetch!/3 failed: #{inspect(reason)}"
     end
   end
 

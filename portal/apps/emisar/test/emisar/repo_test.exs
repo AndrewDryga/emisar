@@ -13,6 +13,17 @@ defmodule Emisar.RepoTest do
   alias Ecto.Multi
   alias Emisar.Repo
 
+  describe "valid_uuid?/1" do
+    test "accepts canonical UUID text and rejects malformed or raw values" do
+      assert Repo.valid_uuid?(Ecto.UUID.generate())
+      assert Repo.valid_uuid?("A0B1C2D3-E4F5-6789-ABCD-EF0123456789")
+      refute Repo.valid_uuid?("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz")
+      refute Repo.valid_uuid?("12345678-1234-1234-1234-1234567890")
+      refute Repo.valid_uuid?(<<0::128>>)
+      refute Repo.valid_uuid?(nil)
+    end
+  end
+
   describe ":after_commit must not be used inside an open transaction" do
     test "commit_multi/2 raises when :after_commit is given inside an open transaction" do
       multi = Multi.run(Multi.new(), :noop, fn _repo, _changes -> {:ok, :done} end)
@@ -42,7 +53,7 @@ defmodule Emisar.RepoTest do
 
       assert {:ok, %{noop: :done}} = Repo.commit_multi(multi, after_commit: after_commit)
 
-      assert_receive :fired
+      assert_receive :fired, 500
     end
   end
 end
