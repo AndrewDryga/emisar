@@ -20,6 +20,7 @@ defmodule EmisarWeb.OAuthController do
   """
   use EmisarWeb, :controller
   alias Emisar.OAuth
+  alias EmisarWeb.MCP.Auth, as: MCPAuth
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
   # Auth surface — keep it out of search indexes.
@@ -84,7 +85,8 @@ defmodule EmisarWeb.OAuthController do
     state = params["state"]
 
     with {:ok, client} <- OAuth.fetch_client(params["client_id"]),
-         :ok <- check_redirect(client, redirect_uri) do
+         :ok <- check_redirect(client, redirect_uri),
+         :ok <- validate_request(params) do
       case params["decision"] do
         "approve" ->
           case OAuth.issue_code(client, params, subject) do
@@ -106,6 +108,7 @@ defmodule EmisarWeb.OAuthController do
           redirect_error(conn, redirect_uri, "access_denied", state)
       end
     else
+      {:error, code} when is_binary(code) -> redirect_error(conn, redirect_uri, code, state)
       _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
     end
   end
@@ -226,6 +229,7 @@ defmodule EmisarWeb.OAuthController do
       params["code_challenge"] == "" -> {:error, "invalid_request"}
       # MCP mandates S256; reject "plain" (absent defaults to S256).
       params["code_challenge_method"] not in [nil, "S256"] -> {:error, "invalid_request"}
+      params["resource"] != MCPAuth.resource() -> {:error, "invalid_target"}
       true -> :ok
     end
   end

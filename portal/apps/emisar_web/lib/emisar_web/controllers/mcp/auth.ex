@@ -3,7 +3,7 @@ defmodule EmisarWeb.MCP.Auth do
   Shared bearer authentication for the MCP HTTP surfaces — the JSON-RPC
   `/api/mcp/rpc` endpoint and the REST `/api/mcp/*` routes. Resolves a
   presented bearer (a static `emk-` API key OR an `emo-` OAuth access
-  token; both back onto the same `api_keys` row, so downstream scoping +
+  token; both resolve to `api_keys` rows, so downstream scoping +
   attribution is identical) and, on failure, emits RFC 9728's
   `WWW-Authenticate` challenge so a remote MCP client can discover the
   authorization server and start the OAuth flow.

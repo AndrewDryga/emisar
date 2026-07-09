@@ -27,7 +27,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp",
-          "resource" => "https://emisar.dev/api/mcp/rpc"
+          "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
         },
         subject
       )
@@ -104,7 +104,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp",
-          "resource" => "https://emisar.dev/api/mcp/rpc"
+          "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
         },
         subject
       )

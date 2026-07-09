@@ -7,9 +7,8 @@ defmodule EmisarWeb.OAuthMetadataController do
     * `/.well-known/oauth-authorization-server` (RFC 8414) — the AS
       endpoints + capabilities (PKCE S256, DCR, refresh).
 
-  URLs are derived from the request host so the documents are
-  self-consistent whichever host the client connected through
-  (emisar.dev / emisar.dev / localhost).
+  URLs derive from the configured public base, never the request host, so a
+  forged Host header cannot alter the advertised trust boundary.
   """
   use EmisarWeb, :controller
   alias Emisar.OAuth

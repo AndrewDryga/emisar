@@ -403,7 +403,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         code_challenge: challenge,
         code_challenge_method: "S256",
         scope: "mcp offline_access",
-        state: "xyz"
+        state: "xyz",
+        resource: @resource
       }
 
       html =
@@ -437,7 +438,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         code_challenge: challenge,
         code_challenge_method: "S256",
         scope: "mcp offline_access",
-        state: "xyz"
+        state: "xyz",
+        resource: @resource
       }
 
       conn =
@@ -516,7 +518,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         response_type: "code",
         code_challenge: challenge,
         code_challenge_method: "S256",
-        scope: ""
+        scope: "",
+        resource: @resource
       }
 
       html =
@@ -544,7 +547,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         redirect_uri: @redirect,
         response_type: "code",
         code_challenge: challenge,
-        code_challenge_method: "S256"
+        code_challenge_method: "S256",
+        resource: @resource
       }
 
       conn =
@@ -570,7 +574,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         redirect_uri: @redirect,
         response_type: "code",
         code_challenge: challenge,
-        code_challenge_method: "S256"
+        code_challenge_method: "S256",
+        resource: @resource
       }
 
       html =
@@ -599,7 +604,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         response_type: "code",
         code_challenge: challenge,
         scope: "mcp offline_access",
-        state: "xyz"
+        state: "xyz",
+        resource: @resource
       }
 
       html =
@@ -629,7 +635,8 @@ defmodule EmisarWeb.OAuthControllerTest do
         response_type: "code",
         code_challenge: challenge,
         code_challenge_method: "S256",
-        scope: "mcp offline_access"
+        scope: "mcp offline_access",
+        resource: @resource
       }
 
       codes_before = Repo.aggregate(OAuth.AuthorizationCode, :count)
@@ -644,6 +651,29 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert Repo.aggregate(OAuth.AuthorizationCode, :count) == codes_before
       assert Repo.aggregate(OAuth.Token, :count) == tokens_before
       assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_before
+    end
+
+    test "rejects a resource other than the protected MCP endpoint", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        resource: "https://other.example/mcp"
+      }
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+
+      assert redirected_to(conn, 302) =~ "error=invalid_target"
     end
 
     test "shows an error page for an unknown client (no redirect)", %{conn: conn, user: user} do
@@ -871,6 +901,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
 
@@ -880,14 +911,55 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "state=xyz"
     end
 
-    test "deny redirects back with access_denied", %{conn: conn, user: user, client: client} do
+    test "approve rejects an unexpected protected resource without minting credentials", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      keys_before = Repo.aggregate(Emisar.ApiKeys.ApiKey, :count)
+      codes_before = Repo.aggregate(OAuth.AuthorizationCode, :count)
+
       conn =
         conn
         |> log_in_user(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
           "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => "https://other.example/mcp",
+          "decision" => "approve"
+        })
+
+      location = redirected_to(conn, 302)
+      assert location =~ "error=invalid_target"
+      refute location =~ "code="
+      assert Repo.aggregate(Emisar.ApiKeys.ApiKey, :count) == keys_before
+      assert Repo.aggregate(OAuth.AuthorizationCode, :count) == codes_before
+    end
+
+    test "deny redirects back with access_denied", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "deny"
         })
 
@@ -902,7 +974,8 @@ defmodule EmisarWeb.OAuthControllerTest do
     test "a non-approve decision is treated as access_denied", %{
       conn: conn,
       user: user,
-      client: client
+      client: client,
+      challenge: challenge
     } do
       conn =
         conn
@@ -910,7 +983,12 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
           "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "maybe"
         })
 
@@ -940,6 +1018,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
 
@@ -970,6 +1049,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
 
@@ -1000,6 +1080,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
       end)
@@ -1025,6 +1106,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
 
@@ -1064,6 +1146,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "resource" => @resource,
           "decision" => "approve"
         })
 
@@ -1415,10 +1498,9 @@ defmodule EmisarWeb.OAuthControllerTest do
       end
     end
 
-    # the RFC 8707 `resource` is accepted and persisted on
-    # the issued token row, but it is NOT enforced as an audience binding yet
-    # (single protected resource today). Asserts the current behavior end-to-end.
-    test "the resource is carried onto the token row but not enforced", %{
+    # The RFC 8707 `resource` is persisted on the issued token row so the MCP
+    # bearer boundary can enforce it as the token audience.
+    test "the resource is carried onto the token row for audience enforcement", %{
       conn: conn,
       verifier: verifier,
       client: client,
