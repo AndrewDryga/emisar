@@ -43,7 +43,7 @@ cases:
 - action: consul.destroy_session
   args:
     session_id: abc12345-1234-5678-9abc-def012345678
-  skip: mutator skipped by default (medium); set --include=consul.destroy_session to run
+  skip: mutator skipped by default (high); set --include=consul.destroy_session to run
 - action: consul.force_check_fail
   args:
     check_id: service:api:1
