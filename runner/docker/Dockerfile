@@ -16,8 +16,16 @@
 #     emisar/runner
 
 # --- builder -------------------------------------------------------
+#
+# Base images are digest-pinned for supply-chain integrity: the tag
+# documents the human-readable version, the @sha256 pins the exact
+# multi-arch index so a rebuild is reproducible and a moved/republished
+# tag can't swap the base out from under us. Refresh (when bumping a tag
+# or pulling upstream security patches) with:
+#   docker buildx imagetools inspect golang:1.26-alpine --format '{{.Manifest.Digest}}'
+# then paste the new digest below (keep the tag in sync).
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 WORKDIR /src
 
@@ -48,7 +56,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # --max-count` vs `-m`, etc.). Sticks with debian:bookworm-slim to
 # share base layers with the portal image.
 
-FROM debian:bookworm-slim
+# Digest-pinned (refresh via the buildx imagetools command noted above).
+FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
 
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \

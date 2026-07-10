@@ -8,6 +8,7 @@ on:
       - ".agent/scripts/check-portal-test-output.sh"
       - "install.sh"
       - "packs/**"
+      - ".tool-versions"
       - ".github/workflows/portal-ci.yml"
   pull_request:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - ".agent/scripts/check-portal-test-output.sh"
       - "install.sh"
       - "packs/**"
+      - ".tool-versions"
       - ".github/workflows/portal-ci.yml"
 
 # install.sh + packs/** are real source inputs to the
@@ -23,6 +25,12 @@ on:
 # and EmisarWeb.PacksRegistry compile-scans packs/. A
 # change to either silently rebuilds the release artefact, so it must
 # also re-run portal-ci.
+#
+# .tool-versions (repo root) is the single source of truth for the
+# Erlang/Elixir toolchain: setup-beam resolves it via version-file, and
+# the release image build derives its --build-args from it. A bump there
+# changes what the test job and the release image compile with, so it
+# must re-run portal-ci even when nothing under portal/ changed.
 
 concurrency:
   group: portal-ci-${{ github.ref }}

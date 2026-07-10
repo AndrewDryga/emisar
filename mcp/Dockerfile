@@ -20,8 +20,15 @@
 #         emisar/mcp
 
 # --- builder -------------------------------------------------------
+#
+# Base images are digest-pinned for supply-chain integrity: the tag
+# documents the version, the @sha256 pins the exact multi-arch index so a
+# rebuild is reproducible and a moved/republished tag can't swap the base
+# out. Refresh (when bumping a tag or pulling security patches) with:
+#   docker buildx imagetools inspect golang:1.26-alpine --format '{{.Manifest.Digest}}'
+# then paste the new digest below (keep the tag in sync).
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 WORKDIR /src
 COPY go.mod ./
@@ -36,7 +43,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 # --- runtime -------------------------------------------------------
 
-FROM alpine:3.23
+# Digest-pinned (refresh via the buildx imagetools command noted above).
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
 RUN apk add --no-cache ca-certificates \
     && adduser -S -D -H emisar

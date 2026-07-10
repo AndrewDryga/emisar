@@ -9,7 +9,11 @@
 #   docker build -f runner/docker/Dockerfile.test -t emisar-test runner/
 #   docker run --rm emisar-test
 
-FROM golang:1.26-bookworm
+# Base image is digest-pinned for supply-chain integrity: the tag documents
+# the version, the @sha256 pins the exact multi-arch index so a rebuild is
+# reproducible and a moved tag can't swap the base out. Refresh with:
+#   docker buildx imagetools inspect golang:1.26-bookworm --format '{{.Manifest.Digest}}'
+FROM golang:1.26-bookworm@sha256:18aedc16aa19b3fd7ded7245fc14b109e054d65d22ed53c355c899582bbb2113
 
 # bash is needed by the executor tests that use /bin/sh -c with trap.
 # (debian:bookworm-slim already has /bin/sh as dash; we want a real
