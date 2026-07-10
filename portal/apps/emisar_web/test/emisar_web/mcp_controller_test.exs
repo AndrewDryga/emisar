@@ -1487,7 +1487,7 @@ defmodule EmisarWeb.MCPControllerTest do
   end
 
   describe "long-poll wait caps (REST)" do
-    test "dispatch ?wait is capped at 60s; /runs/:id ?wait at 90s", %{
+    test "dispatch ?wait is capped at 60s; /runs/:id ?wait at five minutes", %{
       conn: conn,
       account: account,
       user: user
@@ -1496,9 +1496,9 @@ defmodule EmisarWeb.MCPControllerTest do
       # parse_wait's clamp, even when a client asks for a larger duration.
       # Assert the clamp CONSTANTS (no sleeping):
       #   - dispatch (POST /tools/:id) uses max_wait_ms (60s),
-      #   - get_run (GET /runs/:id) uses max_get_run_wait_ms (90s).
+      #   - get_run (GET /runs/:id) uses max_get_run_wait_ms (five minutes).
       assert Service.parse_wait("5m", Service.max_wait_ms()) == {:ok, 60_000}
-      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
+      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 300_000}
 
       # And the get_run endpoint ACCEPTS an over-cap ?wait rather than rejecting it
       # as invalid_wait — the clamp is silent. A terminal run returns 200 (the cap

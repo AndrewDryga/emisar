@@ -247,7 +247,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp handle_wait_for_run(conn, args) do
     run_id = Map.get(args, "run_id")
-    timeout = Map.get(args, "timeout", "90s")
+    timeout = Map.get(args, "timeout", "5m")
 
     if not is_binary(run_id) or run_id == "" do
       {content, _} =
@@ -260,7 +260,7 @@ defmodule EmisarWeb.MCPRpcController do
           {content, _} =
             ContentBlocks.error_content(
               "Bad timeout",
-              "Expected a duration like \"60s\" or \"90s\" (max 90s)."
+              "Expected a duration like \"60s\" or \"5m\" (max 5m)."
             )
 
           {:ok, %{content: content, isError: true}}

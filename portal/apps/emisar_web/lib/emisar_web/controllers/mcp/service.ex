@@ -22,9 +22,10 @@ defmodule EmisarWeb.MCP.Service do
   # JSON-RPC equivalent.
   @max_runners_per_call 16
   @max_wait_ms 60_000
-  # Cap a long-poll at 90s so a `wait_for_run` can't pin a request process for
-  # five minutes; clients re-poll if the run is still running.
-  @max_get_run_wait_ms 90_000
+  # Approval decisions commonly take longer than an action-result wait. Give the
+  # dedicated `wait_for_run` tool one useful approval window; action dispatches
+  # remain capped at 60s above so ordinary tool calls cannot hold a request as long.
+  @max_get_run_wait_ms 300_000
   # The wait is event-driven — it blocks on the run's PubSub topic and wakes on
   # each `{:run_updated, _}` broadcast. This timer is only the safety net: a
   # missed broadcast, or a state change that doesn't broadcast at all, is still
@@ -333,7 +334,7 @@ defmodule EmisarWeb.MCP.Service do
 
   @doc """
   Single run state, with optional long-poll until terminal. `wait_ms`
-  is clamped to 90s. Returns `{:ok, payload, status}` where status
+  is clamped to five minutes. Returns `{:ok, payload, status}` where status
   is `:terminal` or `:waiting` so the caller can choose a 200 vs 202.
   """
   @spec fetch_run(Plug.Conn.t(), String.t(), non_neg_integer()) ::

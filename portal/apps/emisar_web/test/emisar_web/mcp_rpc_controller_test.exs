@@ -661,6 +661,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
                "openWorldHint" => false,
                "idempotentHint" => true
              }
+
+      assert wait_tool["description"] =~ "five minutes"
+
+      assert get_in(wait_tool, ["inputSchema", "properties", "timeout", "description"]) =~
+               "Defaults to 5m"
     end
 
     test "an audit-export key is refused on tools/list (wrong kind)",
@@ -2813,16 +2818,16 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "requires `run_id`"
     end
 
-    test "the wait_for_run timeout clamps any over-cap duration to the 90s server cap" do
-      # The descriptor and server both cap this long-poll at 90s. Assert the cap
+    test "the wait_for_run timeout clamps any over-cap duration to the five-minute server cap" do
+      # The descriptor and server both cap this long-poll at five minutes. Assert the cap
       # CONSTANT + clamp BRANCH rather than sleeping:
       # the RPC handler runs `parse_wait(timeout, max_get_run_wait_ms())`, which
-      # clamps anything over the cap to 90_000ms.
-      assert Service.max_get_run_wait_ms() == 90_000
-      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
-      assert Service.parse_wait("300s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
+      # clamps anything over the cap to 300_000ms.
+      assert Service.max_get_run_wait_ms() == 300_000
+      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 300_000}
+      assert Service.parse_wait("301s", Service.max_get_run_wait_ms()) == {:ok, 300_000}
       # At/under the cap passes through unchanged.
-      assert Service.parse_wait("90s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
+      assert Service.parse_wait("5m", Service.max_get_run_wait_ms()) == {:ok, 300_000}
       assert Service.parse_wait("30s", Service.max_get_run_wait_ms()) == {:ok, 30_000}
     end
   end

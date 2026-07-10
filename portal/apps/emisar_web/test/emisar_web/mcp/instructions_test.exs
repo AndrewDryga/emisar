@@ -92,8 +92,8 @@ defmodule EmisarWeb.MCP.InstructionsTest do
     end
   end
 
-  test "the pending-approval copy states the 90-second long-poll cap" do
-    assert @text =~ "90 seconds"
+  test "the pending-approval copy states the five-minute long-poll cap" do
+    assert @text =~ "five minutes"
     assert @text =~ "wait_for_run` again"
   end
 

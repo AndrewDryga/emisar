@@ -28,7 +28,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
           "whenever a tool returns `status: \"pending_approval\"` — by default wait for the " <>
           "decision rather than asking the user whether to wait. The response carries a `run_id`; " <>
           "this tool polls the cloud for the operator's decision and the action's output. " <>
-          "Times out after 90 seconds; if you hit the timeout while still pending, call " <>
+          "Times out after five minutes; if you hit the timeout while still pending, call " <>
           "wait_for_run again with the same run_id and keep waiting until it resolves.",
       inputSchema: %{
         "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -42,8 +42,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
           },
           "timeout" => %{
             "type" => "string",
-            "description" =>
-              "How long to block (e.g. \"60s\", \"90s\"). Max 90s. Defaults to 90s.",
+            "description" => "How long to block (e.g. \"60s\", \"5m\"). Max 5m. Defaults to 5m.",
             "pattern" => "^[0-9]+(ms|s|m)$"
           }
         }
@@ -276,7 +275,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       "#{hdr}#{headline}\nrun_id: #{rid}\n\n" <>
         "This run is paused for human approval. By default, call `wait_for_run` with this " <>
         "run_id right now and keep waiting until the operator decides — do NOT stop to ask the " <>
-        "user whether to wait. wait_for_run blocks up to 90 seconds per call; if it times out " <>
+        "user whether to wait. wait_for_run blocks up to five minutes per call; if it times out " <>
         "while still pending, call it again with the same run_id. Let the user know it's paused " <>
         "on them so they go approve it, but keep waiting. You'll get the action output on " <>
         "approve, or the denial reason on deny — report that outcome."

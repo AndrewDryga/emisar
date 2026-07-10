@@ -53,7 +53,7 @@ defmodule EmisarWeb.MCP.Instructions do
   - status `pending_approval`: the action is paused for a human to approve in the portal — the \
   result leads with a `⏸ pending approval` line naming the action and why. By default, \
   immediately call `wait_for_run` with the returned `run_id` and block for the decision — do NOT \
-  ask the user whether to wait; just wait. Each call blocks up to 90 seconds; if it returns \
+  ask the user whether to wait; just wait. Each call blocks up to five minutes; if it returns \
   still-pending, call `wait_for_run` again with the same `run_id` and keep waiting until the \
   operator decides. (Do tell the user it's paused on them so they go approve it — but keep \
   waiting, don't hand control back.) On approve the output is prefixed `✓ approved · audit event \

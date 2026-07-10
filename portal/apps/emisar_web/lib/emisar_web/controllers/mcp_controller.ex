@@ -188,7 +188,7 @@ defmodule EmisarWeb.MCPController do
 
   # GET /api/mcp/runs/:id
   #
-  # Supports `?wait=Xs` (up to 90s) for long-polling: blocks until
+  # Supports `?wait=Xs` (up to five minutes) for long-polling: blocks until
   # the run reaches a terminal state (or the deadline expires). Used
   # by the bridge's synthetic `wait_for_run` MCP tool so the LLM can
   # park on a pending-approval run without tight client-side polling.
@@ -197,7 +197,7 @@ defmodule EmisarWeb.MCPController do
       :error ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "invalid_wait", expected: "duration string e.g. '60s', max 90s"})
+        |> json(%{error: "invalid_wait", expected: "duration string e.g. '60s', max 5m"})
 
       {:ok, wait_ms} ->
         case Service.fetch_run(conn, id, wait_ms) do
