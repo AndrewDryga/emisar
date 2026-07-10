@@ -50,7 +50,7 @@ cases:
   expect_exit:
   - 0
   - 1
-  skip: mutator skipped by default (medium)
+  skip: mutator skipped by default (high)
 - action: postgres.explain_query
   args:
     query: SELECT count(*) FROM pg_stat_activity
