@@ -57,7 +57,12 @@ execution:
       - "-n"
       - "-m"
       - "{{ args.max_lines }}"
+      # -e binds the pattern so a leading '-' is a literal pattern char,
+      # not a grep flag (e.g. -r); -- ends option parsing before the file
+      # operand. Both are GNU + BusyBox portable (like the -m note above).
+      - "-e"
       - "{{ args.pattern }}"
+      - "--"
       - "{{ args.file }}"
   timeout: 30s
   timeout_min: 1s

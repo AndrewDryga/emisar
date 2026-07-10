@@ -2,7 +2,7 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.3.14
+version: 0.3.15
 description: >
   Read-only Linux diagnostics plus narrow service control. Disk, mem,
   uptime, journalctl, log grep + tail, users/auth introspection, cron
