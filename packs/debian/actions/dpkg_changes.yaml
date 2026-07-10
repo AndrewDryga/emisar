@@ -6,12 +6,13 @@ kind: exec
 risk: low
 
 description: >
-  Tails /var/log/dpkg.log* and returns recent install / remove /
-  upgrade lines. Use to answer "what was changed on this host
-  recently?" before deeper forensics. Read-only.
+  Show recent dpkg install / remove / upgrade activity across
+  /var/log/dpkg.log and its rotated logs (.1 and .*.gz), returned in
+  time order. Use to answer "what was changed on this host recently?"
+  before deeper forensics. Read-only.
 
 side_effects:
-  - Reads /var/log/dpkg.log* (rotated logs included).
+  - Reads /var/log/dpkg.log and its rotated logs (/var/log/dpkg.log.1, /var/log/dpkg.log.*.gz).
 
 args:
   - name: lines
@@ -28,7 +29,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "tail -n {{ args.lines }} /var/log/dpkg.log"
+      - "zcat -f /var/log/dpkg.log /var/log/dpkg.log.* 2>/dev/null | sort | tail -n {{ args.lines }}"
   timeout: 15s
 
 output:
