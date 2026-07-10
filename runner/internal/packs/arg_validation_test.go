@@ -267,6 +267,49 @@ func TestDispatch_NginxLogPath_TraversalContained(t *testing.T) {
 	}
 }
 
+// a path-bearing string_array is contained PER ELEMENT at dispatch, not just
+// by its whole-array validators. Grounded in showcase.path_validation's
+// `extras` (a string_array carrying the same allowed_prefixes /var/log,/tmp +
+// denied_paths/prefixes + max_length as the scalar `file` arg): the runner runs
+// applyPathValidation over every element (stringsFor), so an LLM cannot pass
+// file=/var/log/syslog (allowlisted) and smuggle /etc/shadow through extras.
+// This is the exact seam disk_usage.yaml's `paths` array relies on.
+func TestDispatch_ShowcaseExtras_PerElementContained(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "showcase.path_validation"
+
+	// An allowlisted file plus an allowlisted extra both pass.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{
+		"file":   "/var/log/syslog",
+		"extras": []any{"/tmp/run.lock"},
+	}))
+
+	// A secret path smuggled through extras — while `file` itself is a clean
+	// allowlisted value — is rejected on the extras element, not silently run.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"file":   "/var/log/syslog",
+		"extras": []any{"/etc/shadow"},
+	}), "extras", "allowed_prefixes")
+
+	// `../` escape inside an extras element: Clean collapses it, allowed_prefixes rejects.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"file":   "/var/log/syslog",
+		"extras": []any{"/var/log/../../etc/shadow"},
+	}), "extras", "allowed_prefixes")
+
+	// The per-element deny list applies too.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"file":   "/var/log/syslog",
+		"extras": []any{"/var/log/secure"},
+	}), "extras", "denied_paths")
+
+	// Each element is length-bounded (max_length: 256) — an unbounded argv is a DoS.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"file":   "/var/log/syslog",
+		"extras": []any{"/var/log/" + strings.Repeat("a", 300)},
+	}), "extras", "max_length")
+}
+
 // a messaging arg is bounded at dispatch. Grounded in
 // kafka.delete_consumer_group's `group` (pattern `^[a-zA-Z0-9_.\-]{1,255}$`):
 // a metacharacter-bearing group id is rejected; a legitimate one passes. The

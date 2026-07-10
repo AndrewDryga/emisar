@@ -39,12 +39,20 @@ args:
     required: false
     default: []
     description: >
-      Additional paths to inspect. Each element validates the same way as
-      `file` — but currently only the whole-array validators apply (no
-      per-element path validation; if you need it, accept a single path
-      arg per call instead).
+      Additional paths to inspect. Every element is validated the same way
+      as `file`: the runner applies the path allow/deny rules and
+      max_length to each element (not just the whole-array validators), so
+      the same /var/log,/tmp containment holds for extras.
     validation:
       max_items: 4
+      max_length: 256
+      allowed_prefixes:
+        - /var/log
+        - /tmp
+      denied_paths:
+        - /var/log/secure
+      denied_prefixes:
+        - /tmp/private
 
 execution:
   command:
