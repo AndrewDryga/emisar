@@ -115,6 +115,12 @@ defmodule Emisar.Runs.ActionRun do
     # values redacted by the runner. Set on the result transition.
     field :executed_command, :string
 
+    # Durable per-run progress budget, incremented under the run's row lock on
+    # each accepted progress chunk (`Runs.append_event`). Bounds a hostile
+    # runner's distinct-seq event flood — see the append-event ceiling in Runs.
+    field :progress_event_count, :integer, default: 0
+    field :progress_byte_count, :integer, default: 0
+
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]

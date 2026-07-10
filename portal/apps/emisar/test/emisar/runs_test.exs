@@ -2512,14 +2512,10 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :running
     end
 
-    test "a chunk for an already-finalized run is dropped without re-opening it", %{
+    test "rejects a chunk for an already-terminal run — no persist, no resurrection", %{
       account: account,
       runner: runner
     } do
-      # a progress chunk that arrives AFTER the run reached a terminal state is
-      # persisted as a benign event but never resurrects the run: the :sent →
-      # :running flip in append_event/2 only fires from :sent, so a finished run
-      # stays finished. No error, no resurrection.
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
@@ -2530,9 +2526,10 @@ defmodule Emisar.RunsTest do
 
       assert finished.status == :success
 
-      # A late chunk lands — it appends (the appender doesn't gate on terminal),
-      # but the status guard means it can't flip a terminal run back to :running.
-      assert {:ok, %RunEvent{seq: 99}} =
+      # A late chunk (arriving after the run settled) is the hostile-flood
+      # vector: it's refused under the row lock before any insert, so a terminal
+      # run can never accrue unbounded events or be resurrected.
+      assert {:error, :run_terminal} =
                Runs.append_event(finished, %{
                  seq: 99,
                  kind: "progress",
@@ -2540,6 +2537,61 @@ defmodule Emisar.RunsTest do
                })
 
       assert Runs.peek_run_by_id(run.id).status == :success
+      refute Repo.exists?(RunEvent)
+    end
+
+    test "rejects a chunk whose seq is not positive", %{account: account, runner: runner} do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:error, changeset} =
+               Runs.append_event(run, %{seq: 0, kind: "progress", payload: %{"chunk" => "x"}})
+
+      assert "must be greater than 0" in errors_on(changeset).seq
+      refute Repo.exists?(RunEvent)
+    end
+
+    test "charges each accepted chunk against the run's durable budget", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "aa"}})
+      {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"chunk" => "bb"}})
+
+      reloaded = Runs.peek_run_by_id(run.id)
+      assert reloaded.progress_event_count == 2
+      assert reloaded.progress_byte_count > 0
+    end
+
+    test "accepts the last chunk within the event-count budget and refuses the next", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      # One under the ceiling, so the next append lands exactly on it.
+      Fixtures.Runs.charge_progress_budget(run, events: 49_999)
+
+      assert {:ok, %RunEvent{seq: 1}} =
+               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
+
+      # The 50_000th accepted event spent the budget; the 50_001st is refused.
+      assert {:error, :progress_budget_exceeded} =
+               Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"chunk" => "b"}})
+    end
+
+    test "refuses a chunk that would exceed the per-run byte budget", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      # Sitting on the byte ceiling, so any non-empty chunk tips it over.
+      Fixtures.Runs.charge_progress_budget(run, bytes: 67_108_864)
+
+      assert {:error, :progress_budget_exceeded} =
+               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "x"}})
+
+      refute Repo.exists?(RunEvent)
     end
 
     test "append_event/2 with an unknown run id returns :unknown_run" do

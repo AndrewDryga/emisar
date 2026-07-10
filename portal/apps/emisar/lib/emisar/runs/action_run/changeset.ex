@@ -76,4 +76,16 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   def release_pending_approval(%ActionRun{} = run) do
     change(run, status: :pending, queued_at: DateTime.utc_now())
   end
+
+  @doc """
+  Charge one accepted progress chunk (`event_bytes` serialized payload bytes)
+  against the run's durable budget. Called on the LOCKED run inside
+  `Runs.append_event`, so the read-modify-write can't lose a concurrent bump.
+  """
+  def record_progress(%ActionRun{} = run, event_bytes) when is_integer(event_bytes) do
+    change(run,
+      progress_event_count: run.progress_event_count + 1,
+      progress_byte_count: run.progress_byte_count + event_bytes
+    )
+  end
 end

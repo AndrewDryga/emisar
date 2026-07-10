@@ -201,7 +201,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "renders output as a single pre with chunks as inline spans (no double spacing)",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: "success"})
+    # Progress arrives while the run is live; append rejects terminal runs.
+    run = run_with(account, %{status: "running"})
 
     {:ok, _} =
       Runs.append_event(run, %{
@@ -242,7 +243,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # entity is present proves no stored XSS.
   test "attacker-influenced output is HTML-escaped (no stored XSS)", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: "success"})
+    # Progress arrives while the run is live; append rejects terminal runs.
+    run = run_with(account, %{status: "running"})
 
     {:ok, _} =
       Runs.append_event(run, %{

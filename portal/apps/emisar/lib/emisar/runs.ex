@@ -1425,19 +1425,50 @@ defmodule Emisar.Runs do
   # Called from the runner socket process — no Subject thread; the
   # socket-level token check is the auth gate.
 
-  @doc "Internal — runner socket: append a progress chunk to a dispatched run (socket token is the gate, no web subject)."
-  def append_event(%ActionRun{} = run, attrs) do
-    attrs = Map.put(attrs, :run_id, run.id) |> Map.put(:account_id, run.account_id)
+  # Per-run progress ceiling. A dispatched runner is authenticated but treated
+  # as hostile: without a cap it can append unbounded distinct-seq progress rows
+  # (each already ≤256 KiB) and fan each onto the run's PubSub topic, exhausting
+  # DB rows and socket memory. The budget is durable (counters on the run row)
+  # and charged atomically under the run's row lock, so it holds across
+  # reconnects and can't be raced by concurrent appends.
+  @max_progress_events_per_run 50_000
+  @max_progress_bytes_per_run 67_108_864
 
-    RunEvent.Changeset.create(attrs)
-    |> Repo.insert()
+  @doc "Internal — runner socket: append a progress chunk to a dispatched, non-terminal run within its per-run budget (socket token is the gate, no web subject)."
+  def append_event(%ActionRun{} = run, attrs) do
+    attrs = attrs |> Map.put(:run_id, run.id) |> Map.put(:account_id, run.account_id)
+    event_bytes = progress_payload_bytes(attrs)
+
+    Multi.new()
+    |> Multi.run(:run, fn repo, _changes ->
+      # Re-read under the row lock: the caller's struct can be stale, and the
+      # terminal-guard + budget check must judge (and charge) the CURRENT row so
+      # concurrent appends can't each pass on a stale count.
+      loaded_run =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_id(run.id)
+        |> ActionRun.Query.lock_for_update()
+        |> repo.one()
+
+      cond do
+        is_nil(loaded_run) -> {:error, :unknown_run}
+        ActionRun.terminal?(loaded_run.status) -> {:error, :run_terminal}
+        progress_budget_exceeded?(loaded_run, event_bytes) -> {:error, :progress_budget_exceeded}
+        true -> {:ok, loaded_run}
+      end
+    end)
+    |> Multi.insert(:event, RunEvent.Changeset.create(attrs))
+    |> Multi.update(:bump, fn %{run: loaded_run} ->
+      ActionRun.Changeset.record_progress(loaded_run, event_bytes)
+    end)
+    |> Repo.commit_multi()
     |> case do
-      {:ok, event} ->
+      {:ok, %{run: loaded_run, event: event}} ->
         broadcast_run_event(run, event)
 
-        # The first progress chunk marks the run as :running (transitions
-        # are idempotent server-side).
-        if run.status == :sent, do: mark_running(run)
+        # The first accepted chunk marks the run as :running (a separate locked
+        # transition; idempotent server-side).
+        if loaded_run.status == :sent, do: mark_running(run)
         {:ok, event}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -1447,6 +1478,11 @@ defmodule Emisar.Runs do
         if Repo.Changeset.unique_constraint_error?(changeset),
           do: {:error, :duplicate_event},
           else: {:error, changeset}
+
+      # :unknown_run | :run_terminal | :progress_budget_exceeded from the guard —
+      # all benign to the runner socket, which drops them quietly.
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -1455,6 +1491,23 @@ defmodule Emisar.Runs do
       nil -> {:error, :unknown_run}
       %ActionRun{} = run -> append_event(run, attrs)
     end
+  end
+
+  # Serialized byte size of a progress event's payload — what the budget charges
+  # (matching the per-event 256 KiB cap's measure). An absent/unencodable
+  # payload charges 0; the changeset rejects a malformed one separately.
+  defp progress_payload_bytes(attrs) do
+    with payload when not is_nil(payload) <- Map.get(attrs, :payload),
+         {:ok, json} <- Jason.encode(payload) do
+      byte_size(json)
+    else
+      _ -> 0
+    end
+  end
+
+  defp progress_budget_exceeded?(%ActionRun{} = run, event_bytes) do
+    run.progress_event_count >= @max_progress_events_per_run or
+      run.progress_byte_count + event_bytes > @max_progress_bytes_per_run
   end
 
   @doc """

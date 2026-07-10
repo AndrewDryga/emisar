@@ -906,6 +906,18 @@ defmodule EmisarWeb.MCPControllerTest do
           status: "pending"
         })
 
+      # The stderr chunk streams in while the run is still live — append rejects
+      # terminal runs, mirroring production where output precedes the result.
+      {:ok, _} =
+        Emisar.Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          stream: "stderr",
+          payload: %{
+            "chunk" => "nginx: bind() to 0.0.0.0:80 failed (98: Address already in use)\n"
+          }
+        })
+
       # create_changeset doesn't cast exit_code/error_message — the
       # production path goes through transition_changeset. Bypass with
       # a direct update so we can pin the failure-payload shape.
@@ -924,16 +936,6 @@ defmodule EmisarWeb.MCPControllerTest do
           run.id,
           Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
-
-      {:ok, _} =
-        Emisar.Runs.append_event(run, %{
-          seq: 1,
-          kind: "progress",
-          stream: "stderr",
-          payload: %{
-            "chunk" => "nginx: bind() to 0.0.0.0:80 failed (98: Address already in use)\n"
-          }
-        })
 
       body =
         conn

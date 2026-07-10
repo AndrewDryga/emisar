@@ -38,11 +38,15 @@ defmodule Emisar.Runs.RunEventTest do
       assert Keyword.has_key?(changeset.errors, :stream)
     end
 
-    test "rejects a negative seq from a hostile runner" do
-      changeset = RunEvent.Changeset.create(create_attrs(%{seq: -1}))
+    test "rejects a non-positive seq from a hostile runner" do
+      # Runner seq is 1-based; 0 and negatives are malformed and rejected before
+      # the row (and the DB CHECK) ever see them.
+      for bad_seq <- [0, -1] do
+        changeset = RunEvent.Changeset.create(create_attrs(%{seq: bad_seq}))
 
-      refute changeset.valid?
-      assert {"must be greater than or equal to %{number}", _} = changeset.errors[:seq]
+        refute changeset.valid?
+        assert {"must be greater than %{number}", _} = changeset.errors[:seq]
+      end
     end
   end
 end
