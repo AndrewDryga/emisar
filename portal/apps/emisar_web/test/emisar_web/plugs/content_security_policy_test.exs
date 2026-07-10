@@ -23,9 +23,11 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
       assert get_resp_header(conn, "cross-origin-opener-policy") == ["same-origin"]
     end
 
-    test "permits LiveView websocket connections (wss:)", %{conn: conn} do
+    test "permits only same-origin LiveView websocket connections", %{conn: conn} do
       [csp] = conn |> get(~p"/") |> get_resp_header("content-security-policy")
-      assert csp =~ "connect-src 'self' wss: ws:"
+      assert csp =~ "connect-src 'self'"
+      refute csp =~ " wss:"
+      refute csp =~ " ws:"
     end
 
     test "does NOT allow 'unsafe-eval' in script-src — LV doesn't need it", %{conn: conn} do

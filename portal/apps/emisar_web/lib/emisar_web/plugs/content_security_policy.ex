@@ -19,7 +19,9 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
       note.)
     * fonts: same-origin only — Inter is self-hosted under
       `priv/static/fonts` (no third-party font CDN).
-    * connect-src: same-origin + `wss:` (LiveView websocket).
+    * connect-src: same-origin only. CSP's `'self'` matching includes the
+      page's secure WebSocket origin, so LiveView does not need a broad
+      `ws:` or `wss:` scheme allowance.
     * frame-ancestors: 'none' (we never embed in an iframe).
 
   Pages that need extra origins (the Paddle `/checkout` page) opt in by
@@ -75,7 +77,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
       {"style-src", ["'self'", "'unsafe-inline'"]},
       {"img-src", ["'self'", "data:", "https:"]},
       {"font-src", ["'self'"]},
-      {"connect-src", ["'self'", "wss:", "ws:"]},
+      {"connect-src", ["'self'"]},
       {"frame-ancestors", ["'none'"]},
       {"base-uri", ["'self'"]},
       {"form-action", ["'self'"]},
