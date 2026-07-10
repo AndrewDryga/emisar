@@ -54,3 +54,40 @@ func TestSymlink_NonexistentTargetThroughSymlinkedParent(t *testing.T) {
 		t.Fatal("expected validation to reject path through symlinked parent")
 	}
 }
+
+// TestPath_RelativeValueRejectedUnderPathRules — a relative path value never
+// matches an absolute allow/deny list, so without this guard it slips past a
+// denied_prefixes rule and the executor runs it under its CWD, resolving to
+// the very denied location. Any path arg carrying path rules must reject a
+// non-absolute value the same as it rejects the equivalent absolute one.
+func TestPath_RelativeValueRejectedUnderPathRules(t *testing.T) {
+	deny := []actionspec.Arg{
+		{
+			Name: "p", Type: actionspec.ArgPath, Required: true,
+			Validation: &actionspec.Validation{DeniedPrefixes: []string{"/etc"}},
+		},
+	}
+	// The absolute form is denied by the /etc rule...
+	if _, err := Validate(deny, map[string]any{"p": "/etc/shadow"}); err == nil {
+		t.Fatal("expected /etc/shadow to be denied")
+	}
+	// ...and the relative form, which resolves to the same file under CWD "/",
+	// must be rejected too rather than slipping past the deny list.
+	if _, err := Validate(deny, map[string]any{"p": "etc/shadow"}); err == nil {
+		t.Fatal("expected relative etc/shadow to be rejected under denied_prefixes")
+	}
+
+	// An allowed_prefixes arg keeps rejecting relative values as well.
+	allow := []actionspec.Arg{
+		{
+			Name: "p", Type: actionspec.ArgPath, Required: true,
+			Validation: &actionspec.Validation{AllowedPrefixes: []string{"/var/log"}},
+		},
+	}
+	if _, err := Validate(allow, map[string]any{"p": "var/log/app.log"}); err == nil {
+		t.Fatal("expected relative var/log/app.log to be rejected under allowed_prefixes")
+	}
+	if _, err := Validate(allow, map[string]any{"p": "/var/log/app.log"}); err != nil {
+		t.Fatalf("absolute path under allowed prefix should pass: %v", err)
+	}
+}

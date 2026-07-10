@@ -258,6 +258,14 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) er
 
 	for _, s := range strs {
 		resolved := resolveForCheck(s)
+		// A relative value never matches an absolute allow/deny list, so it
+		// would slip past the deny checks below and then be run by the
+		// executor under its CWD — resolving to a denied absolute path. Path
+		// rules only make sense against the absolute path the executor uses,
+		// so require one.
+		if !filepath.IsAbs(resolved) {
+			return newError(a.Name, "path", "path %s must be absolute", resolved)
+		}
 		if len(allowedPaths) > 0 && !pathInList(resolved, allowedPaths) {
 			return newError(a.Name, "allowed_paths", "path %s not in allowlist", resolved)
 		}
