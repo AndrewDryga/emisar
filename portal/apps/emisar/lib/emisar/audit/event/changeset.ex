@@ -9,6 +9,11 @@ defmodule Emisar.Audit.Event.Changeset do
   # letting an attacker suppress their own failed-attempt trail.
   @request_meta_fields [:ip_address, :user_agent, :request_id, :mcp_session_id]
   @request_meta_limit 255
+  # Audit events record runner and request failures, so payloads can originate
+  # outside the control plane. Keep the event row even when its detail is too
+  # large to retain safely: the marker preserves the fact and scale of the
+  # event without making the audit log an unbounded JSONB sink.
+  @max_payload_bytes 262_144
 
   def create(attrs) do
     %Event{}
@@ -33,6 +38,7 @@ defmodule Emisar.Audit.Event.Changeset do
       :payload
     ])
     |> truncate_request_meta()
+    |> truncate_payload()
     |> validate_required([:account_id, :occurred_at, :event_type])
   end
 
@@ -44,4 +50,16 @@ defmodule Emisar.Audit.Event.Changeset do
 
   defp truncate(value) when is_binary(value), do: String.slice(value, 0, @request_meta_limit)
   defp truncate(value), do: value
+
+  defp truncate_payload(changeset) do
+    update_change(changeset, :payload, fn payload ->
+      case Jason.encode(payload) do
+        {:ok, json} when byte_size(json) > @max_payload_bytes ->
+          %{"truncated" => true, "serialized_bytes" => byte_size(json)}
+
+        _ ->
+          payload
+      end
+    end)
+  end
 end

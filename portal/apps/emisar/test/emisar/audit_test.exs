@@ -78,6 +78,37 @@ defmodule Emisar.AuditTest do
         })
       end
     end
+
+    test "replaces an oversized payload with a bounded audit marker", %{account: account} do
+      changeset =
+        Audit.changeset(account.id, "audit.test",
+          payload: %{"message" => String.duplicate("x", 262_144)}
+        )
+
+      assert changeset.valid?
+
+      assert %{"truncated" => true, "serialized_bytes" => bytes} =
+               Ecto.Changeset.get_field(changeset, :payload)
+
+      assert bytes > 262_144
+    end
+  end
+
+  describe "Event.Query.retention_expired/2" do
+    test "includes an event exactly at its stamped retention horizon" do
+      account = Fixtures.Accounts.create_account()
+      now = DateTime.utc_now()
+
+      {:ok, event} =
+        Audit.log(account.id, "audit.test", retain_until: now)
+
+      assert [expired] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.retention_expired(now)
+               |> Repo.all()
+
+      assert expired.id == event.id
+    end
   end
 
   describe "record/1" do
@@ -764,6 +795,13 @@ defmodule Emisar.AuditTest do
       assert Enum.map(events, & &1.target_id) == [subj_a]
     end
 
+    test "malformed actor and target ids return no rows", %{account: account, subject: subject} do
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: Ecto.UUID.generate())
+
+      assert {:ok, [], _} = Audit.list_events(subject, actor_id: "not-a-uuid")
+      assert {:ok, [], _} = Audit.list_events(subject, target_id: "not-a-uuid")
+    end
+
     test "the from / to date-range filters bound the window", %{
       account: account,
       subject: subject
@@ -1165,6 +1203,13 @@ defmodule Emisar.AuditTest do
 
       assert event_a.id == second.id
       assert event_b.id == third.id
+    end
+
+    test "a malformed :after cursor id returns no rows", %{account: account, subject: subject} do
+      seed_export_events(account, 1)
+
+      assert {:ok, []} =
+               Audit.list_for_export(subject, after: {DateTime.utc_now(), "not-a-uuid"})
     end
 
     test ":since is an inclusive lower bound and :limit caps the page", %{

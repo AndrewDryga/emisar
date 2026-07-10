@@ -392,10 +392,24 @@ defmodule Emisar.Audit do
   end
 
   defp filter_by_actor_id(queryable, nil), do: queryable
-  defp filter_by_actor_id(queryable, id), do: Event.Query.by_actor_id(queryable, id)
+
+  defp filter_by_actor_id(queryable, id) when is_binary(id) do
+    if Repo.valid_uuid?(id),
+      do: Event.Query.by_actor_id(queryable, id),
+      else: Event.Query.none(queryable)
+  end
+
+  defp filter_by_actor_id(queryable, _id), do: Event.Query.none(queryable)
 
   defp filter_by_target_id(queryable, nil), do: queryable
-  defp filter_by_target_id(queryable, id), do: Event.Query.by_target_id(queryable, id)
+
+  defp filter_by_target_id(queryable, id) when is_binary(id) do
+    if Repo.valid_uuid?(id),
+      do: Event.Query.by_target_id(queryable, id),
+      else: Event.Query.none(queryable)
+  end
+
+  defp filter_by_target_id(queryable, _id), do: Event.Query.none(queryable)
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
@@ -478,7 +492,9 @@ defmodule Emisar.Audit do
   defp apply_export_cursor(query, opts) do
     case Keyword.get(opts, :after) do
       {%DateTime{} = ts, id} when is_binary(id) ->
-        Event.Query.occurred_strictly_after(query, ts, id)
+        if Repo.valid_uuid?(id),
+          do: Event.Query.occurred_strictly_after(query, ts, id),
+          else: Event.Query.none(query)
 
       _ ->
         case Keyword.get(opts, :since) do

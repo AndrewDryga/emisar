@@ -381,6 +381,9 @@ defmodule Emisar.Audit.Event.Query do
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
 
+  @doc "A query that matches no audit events, used for invalid caller-supplied ids."
+  def none(queryable), do: where(queryable, [events: e], is_nil(e.id))
+
   @doc "Distinct `target_id`s of `kind` — options for the on-demand subject picker."
   def distinct_target_ids_of_kind(queryable \\ all(), kind) do
     queryable
@@ -411,11 +414,11 @@ defmodule Emisar.Audit.Event.Query do
   def occurred_before(queryable, ts),
     do: where(queryable, [events: e], e.occurred_at < ^ts)
 
-  # Retention: a row is prunable once its stamped `retain_until` has passed. (A
-  # null `retain_until` — only pre-migration edge rows — never matches, so it's
-  # never pruned; safe.)
+  # Retention: a row is prunable once it reaches its stamped `retain_until`.
+  # A null horizon (only pre-migration edge rows) never matches, so it is never
+  # pruned.
   def retention_expired(queryable, %DateTime{} = now),
-    do: where(queryable, [events: e], e.retain_until < ^now)
+    do: where(queryable, [events: e], e.retain_until <= ^now)
 
   # The retention sweep deletes by id in bounded batches (not one long-locking
   # DELETE): grab ≤ `limit` prunable ids, then delete that set. Per-row
