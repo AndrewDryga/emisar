@@ -553,6 +553,20 @@ defmodule Emisar.ApiKeysTest do
       assert Repo.reload(used_key)
     end
 
+    test "rotated_to_id carries a covering index so the eviction DELETE never seq-scans" do
+      # Index existence has no domain-observable behavior (the DELETE above
+      # succeeds either way), so §7's catalog-inspection carve-out applies:
+      # this is the only assertion that proves the FK's covering index exists.
+      %{rows: [[count]]} =
+        Ecto.Adapters.SQL.query!(
+          Repo,
+          "SELECT count(*) FROM pg_indexes WHERE tablename = 'api_keys' AND indexname = 'api_keys_rotated_to_id_index'",
+          []
+        )
+
+      assert count == 1
+    end
+
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
       # Operators CAN mint the quick key; only viewers are below the
       # `issue_quick` line, so the denial subject must be a viewer.
