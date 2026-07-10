@@ -607,6 +607,11 @@ func TestDispatch_IamDetachUserPolicy_ArnAcceptsManaged(t *testing.T) {
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{
 		"user_name": "intern", "policy_arn": "arn:aws:iam::123456789012:policy/team/DevAccess",
 	}))
+	// A non-default partition (GovCloud) still passes — the bounded partition
+	// segment `[a-zA-Z\-]{0,14}` covers aws-cn / aws-us-gov / aws-iso*.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws-us-gov:iam::aws:policy/AdministratorAccess",
+	}))
 
 	// A metacharacter-bearing account segment can't reach argv, and a wrong
 	// service (`s3`) is not an IAM policy ARN.
@@ -615,6 +620,12 @@ func TestDispatch_IamDetachUserPolicy_ArnAcceptsManaged(t *testing.T) {
 	}), "policy_arn", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{
 		"user_name": "intern", "policy_arn": "arn:aws:s3:::aws:policy/x",
+	}), "policy_arn", "pattern")
+	// The partition segment was the sole unbounded quantifier (`[a-zA-Z\-]*`);
+	// bounding it to {0,14} rejects an oversized partition instead of matching
+	// an arbitrarily long value.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws" + strings.Repeat("a", 5034) + ":iam::aws:policy/x",
 	}), "policy_arn", "pattern")
 }
 

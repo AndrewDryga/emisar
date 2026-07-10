@@ -23,7 +23,7 @@ args:
     required: true
     description: Policy ARN.
     validation:
-      pattern: "^arn:aws[a-zA-Z\\-]*:iam::(aws|[0-9]{12}):policy/[a-zA-Z0-9+=,.@\\-_/]{1,128}$"
+      pattern: "^arn:aws[a-zA-Z\\-]{0,14}:iam::(aws|[0-9]{12}):policy/[a-zA-Z0-9+=,.@\\-_/]{1,128}$"
 execution:
   command:
     binary: aws
