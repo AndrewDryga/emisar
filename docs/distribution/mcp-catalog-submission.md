@@ -375,7 +375,8 @@ Organization settings → Connectors.
 - [ ] DCR works end-to-end from a clean Claude account (human-owned live test).
 - [ ] Consent screen text matches the "what the connector can do" summary.
 - [ ] Golden + negative prompts ([§4](#4-golden--negative-prompts)) run green in Claude against the reviewer tenant.
-- [ ] Tool-name check: confirm Claude accepts dotted action-tool names, or that the reviewer tenant's showcase names are acceptable.
+- [x] Every tool has a bounded `title` and accurate `readOnlyHint`/`destructiveHint` — certified in source ([§9 static guarantees](#9-tool-metadata-inventory)), 2026-07-10.
+- [ ] Tool-name check: confirm Claude accepts dotted action-tool names, or that the reviewer tenant's showcase names are acceptable ([§9 certification caveat](#9-tool-metadata-inventory)).
 
 **Human-owned:** submit through Anthropic's current directory intake form; complete
 any Anthropic security review; provide reviewer-tenant credentials via the secure
@@ -489,6 +490,44 @@ the `showcase` pack): **11 tools** — 5 action tools
 Longest name: `showcase.path_validation` (24 chars). Paste the real captured JSON
 into the submission record for each platform; do not trust this expectation blindly
 — pack versions and runner scope shift the list.
+
+### Static server-side guarantees (verified in source 2026-07-10)
+
+These hold for **every** tenant, independent of the live `tools/list` capture
+above — they are enforced in the MCP tool builder
+(`apps/emisar_web/lib/emisar_web/controllers/mcp/{service.ex,content_blocks.ex,tool_metadata.ex}`)
+and the catalog ingest changeset (`apps/emisar/lib/emisar/catalog/runner_action/changeset.ex`).
+They are what a directory reviewer's "every tool has a title / accurate risk
+annotation / bounded output" checks probe, so certify them once here:
+
+- **Every tool carries a non-empty `title`.** Action tools take the action's own
+  title (`ToolMetadata.group_title/1`, deterministic across runner ordering,
+  falling back to the always-present `action_id`); the six synthetic tools carry
+  fixed titles (`Wait for a run to finish`, `List runbooks`, `Get a runbook`,
+  `Execute a runbook`, `Create a runbook draft`, `Recent runs`).
+- **`title` is length-bounded** — 255 chars at catalog ingest
+  (`@max_title_length`); synthetic titles are ≤ 24 chars.
+- **Annotations are risk-derived and worst-case for a group.** `readOnlyHint` is
+  true only when a `low`-risk action has no side effects; `destructiveHint` is
+  true for `high`/`critical`. For an action advertised by several runners the
+  group is annotated at its **worst** variant (read-only only if *every* variant
+  is read-only; destructive if *any* is high/critical), so a critical variant can
+  never ride under a read-only hint. `execute_runbook` is `destructive`+open-world;
+  the read-only synthetic tools (`wait_for_run`, `list_runbooks`, `get_runbook`,
+  `recent_runs`) are `readOnlyHint: true`.
+- **Every tool is stamped** with the OAuth `securitySchemes` marker
+  (`type: oauth2`, scopes `["mcp"]`) via `ToolMetadata.auth_required/1`.
+
+**Certification caveat — the tool `name` is not length-capped server-side.** The
+action-tool `name` is the `action_id` verbatim, bounded only by the runner socket
+frame (~1 MB), **not** by a `validate_length` (unlike `title`/`description`). Real
+`action_id`s come from trusted, hash-verified packs in the `<namespace>.<name>`
+form and are short (the whole catalog is ≤ ~30 chars); the reviewer tenant's
+showcase names are ≤ 24 chars. But a platform that enforces a tool-name length or
+charset limit (Claude/OpenAI's `^[a-zA-Z0-9_-]{1,64}$`) must still be checked per
+the platform's **tool-name check** line — this static guarantee does *not* cover
+the dotted `.` or a hypothetical over-length pack id. A server-side `action_id`
+length/format bound is tracked in the root `BACKLOG.md`.
 
 ---
 
