@@ -486,8 +486,8 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    A documented exception gets `# credo:disable-for-next-line
    Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
    why-comment — never a bare disable. Current sanctioned disables: the
-   runner socket's directed `deliver_to_runner` publish, and the two
-   long-poll tests' writer-side delay injections.
+   runner socket's directed `deliver_to_runner` publish, and the MCP
+   long-poll/recheck-timer tests' writer-side delay injections.
 
 2. **`/iron-review`** carries the judgment laws a static check can't
    decide (their safety depends on where a value came from): IL-3/4/5
