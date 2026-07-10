@@ -2,7 +2,7 @@ schema_version: 1
 id: systemd.reset_failed
 title: systemctl reset-failed [unit]
 kind: exec
-risk: low
+risk: medium
 description: >
   Clear the "failed" state from units that crashed. Required before
   start-limit thresholds reset and the unit can be auto-restarted.

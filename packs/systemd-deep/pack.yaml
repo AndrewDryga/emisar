@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.5
+version: 0.1.6
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
   timers, cgroup tree, journal disk usage, systemd-analyze for boot
