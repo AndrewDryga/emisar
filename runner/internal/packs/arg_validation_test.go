@@ -530,3 +530,28 @@ func TestDispatch_VmLabelValues_LabelLengthBounded(t *testing.T) {
 	// 129 chars — one past the {0,127} tail — is rejected on length by the pattern.
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"label": "a" + strings.Repeat("b", 128)}), "label", "pattern")
 }
+
+// cockroach.set_cluster_setting's `value` is interpolated verbatim into a
+// `/bin/sh -c "cockroach sql ... -e \"SET CLUSTER SETTING <name> = <value>\""`
+// pipeline — landing inside the double-quoted `-e` slot where `$(...)`, a
+// backtick, and a `"`-breakout `;` all execute. The quoted alternative of the
+// pattern is the only shell-containment boundary (the runner does NOT escape),
+// so it must exclude `"` `$` backtick `\`. Drive the real dispatch seam: the
+// shipped legit values ('64 MiB', DEFAULT) pass, and command-substitution /
+// quote-breakout payloads that the pre-fix `'[^']…'` alternative admitted are
+// now rejected on the pattern.
+func TestDispatch_CockroachSetClusterSetting_ValueShellSafe(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "cockroach.set_cluster_setting"
+	const name = "kv.snapshot_rebalance.max_rate"
+
+	// Real setting values — a quoted byte size and the bare DEFAULT token.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'64 MiB'"}))
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "DEFAULT"}))
+
+	// Command substitution and a `"`-breakout `;`-chain — both matched the old
+	// `'[^']{1,254}'` alternative; the shell-safe charset now rejects them.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'$(touch /tmp/pwned)'"}), "value", "pattern")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": `'" ; id ; "'`}), "value", "pattern")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'`id`'"}), "value", "pattern")
+}

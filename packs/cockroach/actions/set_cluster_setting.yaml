@@ -34,7 +34,7 @@ args:
       DEFAULT) or a quoted string ('64 MiB', '24h'). Passed verbatim into the
       statement; bounded so it can't break out of its slot.
     validation:
-      pattern: "^('[^']{1,254}'|[A-Za-z0-9._+-]{1,64})$"
+      pattern: "^('[A-Za-z0-9 ._:+/-]{1,254}'|[A-Za-z0-9._+-]{1,64})$"
       max_length: 256
 
 execution:

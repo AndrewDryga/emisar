@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cockroach
 name: CockroachDB
-version: 0.1.1
+version: 0.1.2
 description: >
   Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness /
   store capacity, under-replicated & unavailable ranges, running queries /
