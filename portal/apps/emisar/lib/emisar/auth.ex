@@ -240,7 +240,6 @@ defmodule Emisar.Auth do
       |> Repo.commit_multi()
       |> case do
         {:ok, _} -> :ok
-        {:error, :not_found} -> {:error, :not_found}
         {:error, reason} -> {:error, reason}
       end
     else
