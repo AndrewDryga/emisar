@@ -4,7 +4,39 @@ defmodule Emisar.Fixtures.Approvals do
   `Fixtures.Approvals.grants_for_api_key/1`.
   """
 
-  alias Emisar.{Approvals, Repo}
+  import Ecto.Changeset, only: [change: 2]
+  alias Emisar.{Approvals, Fixtures, Repo}
+
+  @doc """
+  Persists a `:pending` approval request by default. Caller supplies
+  `:account_id` (a run is created in it) or `:run_id`. Override `:status` (sets
+  `decided_at`) and `:requested_at` (to land it in a report window).
+  """
+  def create_request(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    run =
+      if attrs[:run_id],
+        do: nil,
+        else: Fixtures.Runs.create_run(Map.take(attrs, [:account_id]))
+
+    params = %{
+      account_id: attrs[:account_id] || run.account_id,
+      run_id: attrs[:run_id] || run.id,
+      requested_at: attrs[:requested_at] || DateTime.utc_now(),
+      reason: attrs[:reason]
+    }
+
+    {:ok, request} = params |> Approvals.Request.Changeset.create() |> Repo.insert()
+
+    case attrs[:status] do
+      status when is_atom(status) and not is_nil(status) ->
+        request |> change(status: status, decided_at: DateTime.utc_now()) |> Repo.update!()
+
+      nil ->
+        request
+    end
+  end
 
   @doc """
   Test-side inspector: the unrevoked grants minted against an API key,

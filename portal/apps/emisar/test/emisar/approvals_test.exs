@@ -295,6 +295,74 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "report_request_stats/3" do
+    test "tallies window requested/approved/denied plus current pending" do
+      account = Fixtures.Accounts.create_account()
+      from = ~U[2026-06-01 00:00:00.000000Z]
+      to = ~U[2026-07-01 00:00:00.000000Z]
+      in_window = ~U[2026-06-15 12:00:00.000000Z]
+
+      Fixtures.Approvals.create_request(
+        account_id: account.id,
+        status: :approved,
+        requested_at: in_window
+      )
+
+      Fixtures.Approvals.create_request(
+        account_id: account.id,
+        status: :approved,
+        requested_at: in_window
+      )
+
+      Fixtures.Approvals.create_request(
+        account_id: account.id,
+        status: :denied,
+        requested_at: in_window
+      )
+
+      # A still-pending request in the window (counts toward requested + pending).
+      Fixtures.Approvals.create_request(account_id: account.id, requested_at: in_window)
+
+      # Requested at the exclusive upper bound — outside the window.
+      Fixtures.Approvals.create_request(
+        account_id: account.id,
+        status: :approved,
+        requested_at: to
+      )
+
+      stats = Approvals.report_request_stats(account.id, from, to)
+      assert stats.requested == 4
+      assert stats.approved == 2
+      assert stats.denied == 1
+      assert stats.pending == 1
+    end
+
+    test "excludes another account's requests (cross-account isolation)" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      from = ~U[2026-06-01 00:00:00.000000Z]
+      to = ~U[2026-07-01 00:00:00.000000Z]
+      at = ~U[2026-06-15 12:00:00.000000Z]
+
+      Fixtures.Approvals.create_request(
+        account_id: account.id,
+        status: :approved,
+        requested_at: at
+      )
+
+      Fixtures.Approvals.create_request(
+        account_id: other_account.id,
+        status: :approved,
+        requested_at: at
+      )
+
+      stats = Approvals.report_request_stats(account.id, from, to)
+      assert stats.requested == 1
+      assert stats.approved == 1
+      assert stats.pending == 0
+    end
+  end
+
   describe "pending_queue_stats/0 (fleet-wide telemetry sampler)" do
     test "an empty queue reports zero count and zero age" do
       assert %{count: 0, oldest_age_seconds: 0} = Approvals.pending_queue_stats()

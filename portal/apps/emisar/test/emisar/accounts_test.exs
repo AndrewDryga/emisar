@@ -2908,6 +2908,67 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "list_accounts_due_for_report/2" do
+    test "includes never-reported and stale accounts; excludes freshly-reported and deleted" do
+      cutoff = ~U[2026-07-01 00:00:00.000000Z]
+
+      never_reported = Fixtures.Accounts.create_account()
+
+      stale =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.set_last_report_sent_at(~U[2026-06-15 12:00:00.000000Z])
+
+      Fixtures.Accounts.create_account()
+      |> Fixtures.Accounts.set_last_report_sent_at(~U[2026-07-05 12:00:00.000000Z])
+
+      deleted = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.mark_account_as_deleted(deleted)
+
+      due_ids =
+        cutoff |> Accounts.list_accounts_due_for_report() |> Enum.map(& &1.id) |> Enum.sort()
+
+      assert due_ids == Enum.sort([never_reported.id, stale.id])
+    end
+
+    test "paginates after the supplied account id" do
+      cutoff = ~U[2026-07-01 00:00:00.000000Z]
+      accounts = for _ <- 1..3, do: Fixtures.Accounts.create_account()
+      [first, second, third] = Enum.sort_by(accounts, & &1.id)
+
+      assert Enum.map(Accounts.list_accounts_due_for_report(cutoff, limit: 1), & &1.id) ==
+               [first.id]
+
+      assert Enum.map(
+               Accounts.list_accounts_due_for_report(cutoff,
+                 limit: 2,
+                 after_account_id: first.id
+               ),
+               & &1.id
+             ) == [second.id, third.id]
+    end
+  end
+
+  describe "mark_account_report_sent/2" do
+    test "stamps last_report_sent_at when the account is due" do
+      cutoff = ~U[2026-07-01 00:00:00.000000Z]
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, %Account{} = updated} = Accounts.mark_account_report_sent(account, cutoff)
+      assert updated.last_report_sent_at
+      assert DateTime.compare(updated.last_report_sent_at, cutoff) == :gt
+    end
+
+    test "is a no-op when the account was already reported at or after the cutoff" do
+      cutoff = ~U[2026-07-01 00:00:00.000000Z]
+
+      account =
+        Fixtures.Accounts.create_account()
+        |> Fixtures.Accounts.set_last_report_sent_at(~U[2026-07-10 09:00:00.000000Z])
+
+      assert {:error, :already_reported} = Accounts.mark_account_report_sent(account, cutoff)
+    end
+  end
+
   describe "list_paddle_customer_sync_accounts/1" do
     test "returns accounts with a missing Paddle customer" do
       account = Fixtures.Accounts.create_account()
@@ -3043,6 +3104,49 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.fetch_paddle_customer_sync_target(account.id) ==
                {:error, :no_billing_contact}
+    end
+  end
+
+  describe "fetch_account_report_recipient/1" do
+    test "returns the stable active confirmed owner" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      assert {:ok, recipient} = Accounts.fetch_account_report_recipient(account)
+      assert recipient.id == owner.id
+    end
+
+    test "returns :no_recipient when the account has no confirmed owner" do
+      account = Fixtures.Accounts.create_account()
+      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: unconfirmed.id,
+        role: "owner"
+      )
+
+      assert Accounts.fetch_account_report_recipient(account) == {:error, :no_recipient}
+    end
+
+    test "does not select another account's owner" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      other_owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: other_owner.id,
+        role: "owner"
+      )
+
+      assert Accounts.fetch_account_report_recipient(account) == {:error, :no_recipient}
     end
   end
 

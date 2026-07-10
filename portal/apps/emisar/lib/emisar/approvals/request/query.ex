@@ -25,6 +25,22 @@ defmodule Emisar.Approvals.Request.Query do
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [requests: r], desc: r.requested_at)
 
+  def requested_in_window(queryable, %DateTime{} = from, %DateTime{} = to),
+    do: where(queryable, [requests: r], r.requested_at >= ^from and r.requested_at < ^to)
+
+  @doc """
+  One-row aggregate for the monthly report: requests filed in the window plus
+  the approved/denied decision split, counted with SQL FILTER so the context
+  does no app-side summing.
+  """
+  def status_totals(queryable) do
+    select(queryable, [requests: r], %{
+      requested: count(r.id),
+      approved: filter(count(r.id), r.status == ^:approved),
+      denied: filter(count(r.id), r.status == ^:denied)
+    })
+  end
+
   def limit_to(queryable, n), do: limit(queryable, ^n)
 
   def expired_at_at_or_before(queryable, now),

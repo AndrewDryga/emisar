@@ -29,6 +29,7 @@ defmodule Emisar.Application do
       {DynamicSupervisor, strategy: :one_for_one, name: Emisar.SSO.OIDC.ProviderSupervisor},
 
       # Contexts
+      Emisar.Accounts,
       Emisar.Approvals,
       Emisar.Audit,
       Emisar.Billing,

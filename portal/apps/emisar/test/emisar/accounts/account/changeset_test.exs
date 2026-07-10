@@ -46,6 +46,17 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
     end
   end
 
+  describe "mark_report_sent/1" do
+    test "stamps last_report_sent_at" do
+      account = Fixtures.Accounts.create_account()
+
+      changeset = Account.Changeset.mark_report_sent(account)
+
+      assert changeset.valid?
+      assert %DateTime{} = Ecto.Changeset.get_change(changeset, :last_report_sent_at)
+    end
+  end
+
   defp changeset(overrides \\ %{}) do
     Account.Changeset.create(Fixtures.Accounts.account_attrs(overrides))
   end

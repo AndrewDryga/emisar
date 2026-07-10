@@ -25,6 +25,7 @@ config :logger, level: :warning
 
 # Background jobs disabled in tests; job modules are executed directly so DB
 # work stays inside the caller's sandbox checkout.
+config :emisar, Emisar.Accounts.Jobs.MonthlyReports, enabled: false
 config :emisar, Emisar.Approvals.Jobs.ExpireOverdueRequests, enabled: false
 config :emisar, Emisar.Audit.Jobs.Retention, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncPaddleCustomers, enabled: false

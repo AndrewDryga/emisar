@@ -81,6 +81,28 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Internal — monthly report job: approval activity for one account. The
+  window `[from, to)` yields requested/approved/denied counts; `pending` is the
+  account's current all-time backlog (a call-to-action, not window-bound).
+  Subject-less — the job scopes by the explicit, already-bounded `account_id`.
+  """
+  def report_request_stats(account_id, %DateTime{} = from, %DateTime{} = to) do
+    window_totals =
+      Request.Query.all()
+      |> Request.Query.by_account_id(account_id)
+      |> Request.Query.requested_in_window(from, to)
+      |> Request.Query.status_totals()
+      |> Repo.one()
+
+    pending =
+      Request.Query.pending()
+      |> Request.Query.by_account_id(account_id)
+      |> Repo.aggregate(:count)
+
+    Map.put(window_totals, :pending, pending)
+  end
+
+  @doc """
   Internal — telemetry sampler. FLEET-WIDE (no subject, every account): the
   count of unresolved approval requests and the age, in seconds, of the
   longest-waiting one. Drives the `emisar.approvals.pending.*` ops gauges,

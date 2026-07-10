@@ -39,6 +39,10 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> foreign_key_constraint(:paddle_billing_contact_user_id)
   end
 
+  @doc "Stamp the account's monthly value report as delivered now."
+  def mark_report_sent(%Account{} = account),
+    do: change(account, last_report_sent_at: DateTime.utc_now())
+
   # Settings is non-nil by construction: a brand-new account whose attrs carry
   # no settings still gets the embedded defaults, so `account.settings.<field>`
   # is always safe to read across the app.

@@ -11,6 +11,7 @@ defmodule Emisar.Accounts.Account do
     field :slug, :string
     field :paddle_customer_id, :string
     field :paddle_customer_synced_at, :utc_datetime_usec
+    field :last_report_sent_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
     # Operator settings live in one embedded jsonb value, not a column per

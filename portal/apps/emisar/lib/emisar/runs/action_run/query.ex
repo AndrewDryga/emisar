@@ -36,6 +36,9 @@ defmodule Emisar.Runs.ActionRun.Query do
   def inserted_after(queryable, %DateTime{} = ts),
     do: where(queryable, [runs: r], r.inserted_at >= ^ts)
 
+  def inserted_before(queryable, %DateTime{} = ts),
+    do: where(queryable, [runs: r], r.inserted_at < ^ts)
+
   def queued_before(queryable, %DateTime{} = ts),
     do: where(queryable, [runs: r], r.queued_at < ^ts)
 
@@ -54,6 +57,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
+
+  def distinct_runner_count(queryable),
+    do: select(queryable, [runs: r], count(r.runner_id, :distinct))
 
   @doc """
   One-row aggregate for the dashboard stats: total runs plus the per-outcome

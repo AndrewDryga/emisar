@@ -215,6 +215,26 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal — monthly report job: run outcome tallies for one account over a
+  `[from, to)` window. Subject-less; the job scopes by the explicit, already-
+  bounded `account_id`. Returns the `outcome_totals` map
+  (`%{total, success, failed, denied, cancelled}`) plus `:distinct_runners` —
+  how many distinct runners the account exercised in the window.
+  """
+  def report_run_stats(account_id, %DateTime{} = from, %DateTime{} = to) do
+    window =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_account_id(account_id)
+      |> ActionRun.Query.inserted_after(from)
+      |> ActionRun.Query.inserted_before(to)
+
+    totals = window |> ActionRun.Query.outcome_totals(@failure_statuses) |> Repo.one()
+    distinct_runners = window |> ActionRun.Query.distinct_runner_count() |> Repo.one()
+
+    Map.put(totals, :distinct_runners, distinct_runners)
+  end
+
+  @doc """
   Paginated list of recent runs for a runner, scoped to the subject's
   account. Caller can pass `page: [limit: n]` to control window size.
   Returns `{:ok, [run], %Paginator.Metadata{}}`.

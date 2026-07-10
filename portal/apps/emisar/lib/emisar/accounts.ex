@@ -5,12 +5,29 @@ defmodule Emisar.Accounts do
 
   Every read API in the rest of the system is expected to scope by
   account; this context owns the slug-based lookups and signup flow.
+
+  It also supervises the account-owned recurrent jobs (the monthly
+  account-health value report).
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    children = [job_module("MonthlyReports")]
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Accounts ---------------------------------------------------------
 
@@ -1582,6 +1599,57 @@ defmodule Emisar.Accounts do
   defp after_system_sweep_account(queryable, _id), do: queryable
 
   @doc """
+  Internal — monthly report job: a bounded, id-ordered page of non-deleted
+  accounts whose value report is due at `cutoff` (never sent, or sent in an
+  earlier month). Accepts `:limit` plus optional `:after_account_id` for keyset
+  pagination — stamping a row doesn't move its id, so paging stays stable as the
+  sweep stamps as it goes.
+  """
+  def list_accounts_due_for_report(%DateTime{} = cutoff, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 100)
+
+    Account.Query.not_deleted()
+    |> Account.Query.due_for_report(cutoff)
+    |> after_report_account(Keyword.get(opts, :after_account_id))
+    |> Account.Query.ordered_by_id()
+    |> Account.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  defp after_report_account(queryable, id) when is_binary(id),
+    do: Account.Query.after_id(queryable, id)
+
+  defp after_report_account(queryable, _id), do: queryable
+
+  @doc """
+  Internal — monthly report job: stamp `last_report_sent_at = now` under a row
+  lock, but only if the account is still due at `cutoff`. A repeated or
+  concurrent pass that already stamped it this month gets
+  `{:error, :already_reported}` so the report can't go out twice. Returns
+  `{:ok, account}` on the winning stamp.
+  """
+  def mark_account_report_sent(%Account{} = account, %DateTime{} = cutoff) do
+    query =
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account.id)
+
+    Repo.fetch_and_update(query, Account.Query, with: &stamp_report_if_due(&1, cutoff))
+  end
+
+  defp stamp_report_if_due(%Account{} = loaded_account, cutoff) do
+    # A non-changeset return aborts `fetch_and_update` as `{:error, that_value}`,
+    # so return the bare reason (not a wrapped tuple) to get `{:error, :already_reported}`.
+    if report_due?(loaded_account, cutoff),
+      do: Account.Changeset.mark_report_sent(loaded_account),
+      else: :already_reported
+  end
+
+  defp report_due?(%Account{last_report_sent_at: nil}, _cutoff), do: true
+
+  defp report_due?(%Account{last_report_sent_at: sent_at}, cutoff),
+    do: DateTime.compare(sent_at, cutoff) == :lt
+
+  @doc """
   Internal — Billing job: accounts whose Paddle customer is missing or
   stale. The caller supplies keyword opts:
   `:limit` and optional `:after_account_id`.
@@ -1615,7 +1683,7 @@ defmodule Emisar.Accounts do
         |> Account.Query.by_id(account_id)
 
       with {:ok, account} <- Repo.fetch(account_query, Account.Query),
-           {:ok, owner} <- fetch_paddle_billing_owner(account) do
+           {:ok, owner} <- fetch_stable_billing_owner(account) do
         {:ok, %{account: account, owner: owner}}
       end
     else
@@ -1623,7 +1691,19 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp fetch_paddle_billing_owner(%Account{paddle_billing_contact_user_id: user_id} = account)
+  @doc """
+  Internal — monthly report job: the single stable, active, confirmed owner to
+  send the account's value report to, or `{:error, :no_recipient}` when none
+  qualifies. Same "stable billing owner" selection the Paddle customer sync uses.
+  """
+  def fetch_account_report_recipient(%Account{} = account) do
+    case fetch_stable_billing_owner(account) do
+      {:ok, %Users.User{} = user} -> {:ok, user}
+      {:error, :no_billing_contact} -> {:error, :no_recipient}
+    end
+  end
+
+  defp fetch_stable_billing_owner(%Account{paddle_billing_contact_user_id: user_id} = account)
        when is_binary(user_id) do
     case fetch_active_owner_user(account.id, user_id) do
       {:ok, owner} -> {:ok, owner}
@@ -1631,7 +1711,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp fetch_paddle_billing_owner(%Account{} = account) do
+  defp fetch_stable_billing_owner(%Account{} = account) do
     fetch_first_active_owner_user(account.id)
   end
 

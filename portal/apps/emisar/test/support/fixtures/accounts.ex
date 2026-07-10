@@ -39,6 +39,13 @@ defmodule Emisar.Fixtures.Accounts do
     |> Repo.update!()
   end
 
+  @doc "Stamps `last_report_sent_at` directly, to rig the monthly-report cadence."
+  def set_last_report_sent_at(%Account{} = account, %DateTime{} = at) do
+    account
+    |> Ecto.Changeset.change(last_report_sent_at: at)
+    |> Repo.update!()
+  end
+
   @doc "Soft-deletes an account (sets `deleted_at`), returning the tombstoned struct."
   def mark_account_as_deleted(%Account{} = account) do
     account

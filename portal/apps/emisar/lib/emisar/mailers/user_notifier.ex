@@ -244,6 +244,58 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
+  @doc """
+  Monthly account-health value report — a plain, honest summary of the prior
+  calendar month: runs executed, approvals that gated risky work, and current
+  posture, with deep links back into the console. The report job only calls this
+  for accounts with real usage in the window, so there's no empty "you did
+  nothing" copy to write.
+  """
+  def deliver_monthly_account_report(%Users.User{} = recipient, account, report) do
+    dashboard_url = PublicUrl.url("/app/#{account.slug}")
+    runs_url = PublicUrl.url("/app/#{account.slug}/runs")
+    approvals_url = PublicUrl.url("/app/#{account.slug}/approvals")
+    audit_url = PublicUrl.url("/app/#{account.slug}/audit")
+    period = Calendar.strftime(report.period_start, "%B %Y")
+    runs = report.runs
+    approvals = report.approvals
+
+    body = """
+    Hi #{recipient.full_name || recipient.email},
+
+    Here's what emisar did for #{account.name} in #{period}.
+
+    Runs
+      Total:     #{runs.total}
+      Succeeded: #{runs.success}
+      Failed:    #{runs.failed}
+      Denied by policy: #{runs.denied}
+      Runners used:     #{runs.distinct_runners}
+
+    Approvals
+      Requested: #{approvals.requested}
+      Approved:  #{approvals.approved}
+      Denied:    #{approvals.denied}
+
+    Right now
+      Connected runners: #{report.runners}
+      Team members:      #{report.team_size}
+      Approvals waiting:  #{approvals.pending}
+
+    Open your dashboard:
+      #{dashboard_url}
+
+    Jump to runs, approvals, or the audit trail:
+      #{runs_url}
+      #{approvals_url}
+      #{audit_url}
+
+    — emisar
+    """
+
+    deliver(recipient.email, "Your emisar monthly report for #{account.name}", body)
+  end
+
   # The branded sign-in pages thread a `/app/<slug>` return_to through these
   # links so the magic link / reset lands back on the right team. Already
   # whitelisted by `EmisarWeb.ReturnTo` at the call site; encoded for the URL here.

@@ -346,6 +346,55 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "report_run_stats/3" do
+    test "tallies outcomes for runs inside the [from, to) window only" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      from = ~U[2026-06-01 00:00:00.000000Z]
+      to = ~U[2026-07-01 00:00:00.000000Z]
+      in_window = ~U[2026-06-15 12:00:00.000000Z]
+
+      for status <- [:success, :success, :failed, :denied] do
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          status: status,
+          inserted_at: in_window
+        )
+      end
+
+      # Just before the window and exactly at the exclusive upper bound — both out.
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        status: :success,
+        inserted_at: ~U[2026-05-31 23:59:59.000000Z]
+      )
+
+      Fixtures.Runs.create_run(account_id: account.id, status: :success, inserted_at: to)
+
+      stats = Runs.report_run_stats(account.id, from, to)
+      assert stats.total == 4
+      assert stats.success == 2
+      assert stats.failed == 1
+      assert stats.denied == 1
+      # All four in-window runs used the one runner.
+      assert stats.distinct_runners == 1
+    end
+
+    test "excludes another account's runs (cross-account isolation)" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      from = ~U[2026-06-01 00:00:00.000000Z]
+      to = ~U[2026-07-01 00:00:00.000000Z]
+      at = ~U[2026-06-15 12:00:00.000000Z]
+
+      Fixtures.Runs.create_run(account_id: account.id, status: :success, inserted_at: at)
+      Fixtures.Runs.create_run(account_id: other_account.id, status: :failed, inserted_at: at)
+
+      assert %{total: 1, success: 1, failed: 0} = Runs.report_run_stats(account.id, from, to)
+    end
+  end
+
   describe "list_recent_runs_for_runner/3" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()

@@ -34,6 +34,19 @@ defmodule Emisar.Accounts.Account.Query do
     do: limit(queryable, ^n)
 
   @doc """
+  Accounts whose monthly value report is due at `cutoff` (start of the current
+  month): never sent, or last sent in an earlier month. Pairs with the report
+  job's per-month cadence.
+  """
+  def due_for_report(queryable, %DateTime{} = cutoff) do
+    where(
+      queryable,
+      [accounts: a],
+      is_nil(a.last_report_sent_at) or a.last_report_sent_at < ^cutoff
+    )
+  end
+
+  @doc """
   Accounts whose Paddle Customer is missing or stale. The billing contact is
   stable while the stored user remains an active owner with a confirmed email;
   when that owner is removed, suspended, demoted, deleted, or changes email, the
