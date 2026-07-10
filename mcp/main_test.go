@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -123,9 +125,24 @@ func TestNewSessionID_UniquePerProcess(t *testing.T) {
 	// Bind to vars so the comparison is two distinct evaluations, not a
 	// syntactically-identical `f() == f()` (which static analysis flags as
 	// a tautology even though the nonce makes the values differ).
-	first, second := newSessionID(), newSessionID()
+	first, err := newSessionID(rand.Reader)
+	if err != nil {
+		t.Fatalf("newSessionID: %v", err)
+	}
+	second, err := newSessionID(rand.Reader)
+	if err != nil {
+		t.Fatalf("newSessionID: %v", err)
+	}
 	if first == second {
 		t.Error("two session ids collided — nonce isn't random")
+	}
+}
+
+// A rand read failure must fail closed (error), never fall back to a
+// shared constant that would alias two processes' idempotency keys.
+func TestNewSessionID_FailsClosedOnRandError(t *testing.T) {
+	if _, err := newSessionID(iotest.ErrReader(errors.New("rand unavailable"))); err == nil {
+		t.Error("newSessionID returned nil error on a failing reader — must fail closed")
 	}
 }
 

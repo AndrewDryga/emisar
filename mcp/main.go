@@ -171,12 +171,17 @@ func main() {
 		apiKey = stored
 	}
 
+	sessionID, err := newSessionID(rand.Reader)
+	if err != nil {
+		fatalln(err)
+	}
+
 	b := &bridge{
 		endpoint:        base + "/api/mcp/rpc",
 		apiKey:          apiKey,
 		userAgent:       buildUserAgent(),
 		client:          newHTTPClient(),
-		sessionID:       newSessionID(),
+		sessionID:       sessionID,
 		signer:          sign,
 		bootstrapPrefix: bootstrap,
 		credsPath:       credsPath,
@@ -538,13 +543,16 @@ func buildUserAgent() string {
 // process. It serves as the MCP session id (Mcp-Session-Id) and
 // namespaces idempotency keys: two unrelated bridge processes never
 // alias each other's request ids, and the same process's resend of a
-// frame collapses to one run.
-func newSessionID() string {
+// frame collapses to one run. It fails closed on a rand read error
+// (like newNonce) rather than returning a shared constant — a bridge
+// that can't mint a unique session id can't namespace idempotency or
+// correlate audit, so main() aborts instead.
+func newSessionID(r io.Reader) (string, error) {
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "nosession"
+	if _, err := io.ReadFull(r, b[:]); err != nil {
+		return "", fmt.Errorf("session id: %w", err)
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
 }
 
 // checkEndpointScheme refuses a cleartext (http) EMISAR_URL to a non-loopback
