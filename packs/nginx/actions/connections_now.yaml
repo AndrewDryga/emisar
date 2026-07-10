@@ -20,7 +20,7 @@ args:
       # Loopback host is fixed so this low-risk, no-approval read cannot be
       # aimed at an off-host target (cloud metadata 169.254.169.254, RFC1918,
       # TEST-NET) — only the port and path are caller-controlled.
-      pattern: "^https?://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$"
+      pattern: "^https?://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]{0,512})?$"
 execution:
   command:
     binary: curl
