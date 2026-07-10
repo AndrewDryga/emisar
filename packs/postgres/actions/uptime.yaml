@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports server uptime, version, and current connection count. Reads
+  Show server uptime, version, and current connection count. Reads
   pg_stat_database + pg_postmaster_start_time(). Use as a first-touch
   sanity check before deeper diagnosis. Read-only.
 

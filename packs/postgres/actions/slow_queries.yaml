@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the top N query fingerprints by mean execution time from
+  List the top N query fingerprints by mean execution time from
   pg_stat_statements. Requires the extension to be loaded
   (shared_preload_libraries = 'pg_stat_statements'); errors out
   cleanly if it isn't. Read-only.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns last-vacuum/last-autovacuum timestamps and dead-tuple counts
+  Show last-vacuum/last-autovacuum timestamps and dead-tuple counts
   for the top N tables in one schema, ordered by dead tuples. Use to
   decide whether to run VACUUM manually or tune autovacuum. Read-only.
 

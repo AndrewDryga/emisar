@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports replication slot health from the primary's perspective.
+  Show replication slot health from the primary's perspective.
   Surfaces sent/write/flush/replay LSNs plus the lag in bytes per
   replica. Run on the primary. Read-only. A lag >10 MB or a stalled
   flush_lsn is the usual signal that a downstream replica is in
