@@ -13,14 +13,14 @@ args:
     required: true
     description: Allocation ID.
     validation:
-      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
   - name: task
     type: string
     required: false
     default: ""
     description: Specific task (empty = all tasks).
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   command:
     binary: /bin/sh

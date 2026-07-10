@@ -559,6 +559,30 @@ func TestDispatch_NomadJobDispatch_MetaKvLengthBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"job": "batch-processor", "meta_kv": over}), "meta_kv", "max_length")
 }
 
+// nomad.job_dispatch's `job` and nomad.alloc_restart's `alloc_id`/`task` are
+// interpolated as BARE positionals into `nomad job dispatch … <job>` /
+// `nomad alloc restart -task <task> <alloc_id>` — no `--` end-of-flags guard.
+// Their identifier patterns anchor the first character to a non-dash class
+// (`^[a-zA-Z0-9]…` / `^[a-fA-F0-9]…`) so a value like `-verbose` / `-help` can
+// never reach argv as a leading-dash token nomad would read as a CLI flag
+// (fail-safe misparse, and inconsistent with the sibling script actions that
+// use `nomad job inspect -- "$job"`). Drive the real dispatch seam: legit ids
+// pass; a leading-dash value is rejected on the pattern.
+func TestDispatch_NomadExecMutators_NoLeadingDashIdentifier(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	// job_dispatch.job — legit id passes, a flag-looking value is rejected.
+	accepted(t, dispatchValidate(t, reg, "nomad.job_dispatch", map[string]any{"job": "batch-processor"}))
+	rejected(t, dispatchValidate(t, reg, "nomad.job_dispatch", map[string]any{"job": "-verbose"}), "job", "pattern")
+
+	// alloc_restart.alloc_id — a real hex alloc id passes; a leading-dash value
+	// (and the empty task, which stays optional) exercise both args.
+	accepted(t, dispatchValidate(t, reg, "nomad.alloc_restart", map[string]any{"alloc_id": "abc12345"}))
+	accepted(t, dispatchValidate(t, reg, "nomad.alloc_restart", map[string]any{"alloc_id": "abc12345", "task": "web"}))
+	rejected(t, dispatchValidate(t, reg, "nomad.alloc_restart", map[string]any{"alloc_id": "-0badf00d"}), "alloc_id", "pattern")
+	rejected(t, dispatchValidate(t, reg, "nomad.alloc_restart", map[string]any{"alloc_id": "abc12345", "task": "-help"}), "task", "pattern")
+}
+
 // cockroach.set_cluster_setting's `value` is interpolated verbatim into a
 // `/bin/sh -c "cockroach sql ... -e \"SET CLUSTER SETTING <name> = <value>\""`
 // pipeline — landing inside the double-quoted `-e` slot where `$(...)`, a
