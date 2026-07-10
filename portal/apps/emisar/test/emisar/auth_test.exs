@@ -52,6 +52,18 @@ defmodule Emisar.AuthTest do
       assert stored.metadata["ip_address"] == "203.0.113.9"
       assert stored.metadata["user_agent"] == "ExUnit/1.0"
     end
+
+    test "bounds session display metadata before persisting it", %{user: user} do
+      token =
+        Auth.create_session_token!(user, :magic_link, false, %{
+          user_agent: String.duplicate("x", 500)
+        })
+
+      assert {:ok, _user, %UserToken{} = stored} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
+      assert String.length(stored.metadata["user_agent"]) == 255
+    end
   end
 
   describe "fetch_user_and_token_by_session_token/1" do
@@ -452,6 +464,11 @@ defmodule Emisar.AuthTest do
       age_tokens(user.id, 16)
 
       assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+    end
+
+    test "a malformed token id is invalid rather than a database cast error" do
+      assert {:error, :invalid_or_expired} =
+               Auth.verify_magic_link("not-a-uuid", "secret", "nonce")
     end
 
     test "five wrong attempts lock the token — even the correct half then fails", %{user: user} do

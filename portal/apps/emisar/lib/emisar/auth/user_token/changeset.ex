@@ -3,6 +3,8 @@ defmodule Emisar.Auth.UserToken.Changeset do
   alias Emisar.Auth.UserToken
   alias Emisar.Users
 
+  @metadata_value_limit 255
+
   @doc """
   Session-cookie token row. Persists the digest (never the raw bearer) plus
   optional request metadata for the Profile sessions list. `auth_method` (how
@@ -81,6 +83,9 @@ defmodule Emisar.Auth.UserToken.Changeset do
   defp normalize_metadata(_), do: %{}
 
   defp to_string_or_nil(nil), do: nil
-  defp to_string_or_nil(value) when is_binary(value), do: value
-  defp to_string_or_nil(value), do: to_string(value)
+
+  defp to_string_or_nil(value) when is_binary(value),
+    do: String.slice(value, 0, @metadata_value_limit)
+
+  defp to_string_or_nil(value), do: value |> to_string() |> to_string_or_nil()
 end

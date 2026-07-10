@@ -98,17 +98,17 @@ defmodule Emisar.Auth do
   @doc """
   Live-session terminator for "user must lose access RIGHT NOW" paths
   (admin suspend, force-password-reset, account-wide password change).
-  Disconnects every active LiveView socket for the user via PubSub
-  before deleting the underlying token rows — so a kept-open browser
-  tab can't keep streaming PubSub updates after the user is killed at
-  the DB layer.
+  Captures every active LiveView topic, deletes the underlying token rows,
+  then broadcasts the captured topics — so a socket that subscribes during
+  revocation still receives its disconnect after its credential is dead.
 
   Pair with the standard `delete_all_session_tokens/1` for the auth
   cookie invalidation; the broadcast is best-effort and idempotent.
   """
   def disconnect_and_revoke_all_sessions(%Users.User{} = user) do
-    broadcast_disconnect_for_user(user)
-    {:ok, _count} = delete_all_session_tokens(user)
+    topics = live_socket_topics_for_user(user)
+    {:ok, count} = delete_all_session_tokens(user)
+    if count > 0, do: disconnect_live_sessions(topics)
     :ok
   end
 
@@ -128,8 +128,10 @@ defmodule Emisar.Auth do
       )
       when is_binary(keep_token) do
     keep_digest = Crypto.hash(keep_token)
-    broadcast_disconnect_for_user(user, except: keep_digest)
-    revoke_other_sessions!(user, keep_token, subject.context)
+    topics = live_socket_topics_for_user(user, except: keep_digest)
+    count = revoke_other_sessions!(user, keep_token, subject.context)
+    if count > 0, do: disconnect_live_sessions(topics)
+    count
   end
 
   @doc """
@@ -152,15 +154,24 @@ defmodule Emisar.Auth do
   the web app knows HOW to broadcast.
   """
   def broadcast_disconnect_for_user(%Users.User{} = user, opts \\ []) do
+    user
+    |> live_socket_topics_for_user(opts)
+    |> disconnect_live_sessions()
+
+    :ok
+  end
+
+  defp live_socket_topics_for_user(%Users.User{} = user, opts \\ []) do
     skip_digest = Keyword.get(opts, :except)
 
-    topics =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
-      |> Repo.all()
-      |> Enum.reject(&(&1.token == skip_digest))
-      |> Enum.map(&live_socket_topic(&1.token))
+    UserToken.Query.by_user_id(user.id)
+    |> UserToken.Query.by_context("session")
+    |> Repo.all()
+    |> Enum.reject(&(&1.token == skip_digest))
+    |> Enum.map(&live_socket_topic(&1.token))
+  end
 
+  defp disconnect_live_sessions(topics) do
     # The handler module lives in `emisar_web` — `Code.ensure_loaded?`
     # is defensive against running this code in an `:emisar`-only test
     # process where the umbrella sibling hasn't been started.
@@ -381,6 +392,14 @@ defmodule Emisar.Auth do
   """
   def verify_magic_link(token_id, secret, nonce, context \\ %RequestContext{})
       when is_binary(token_id) and is_binary(secret) and is_binary(nonce) do
+    if Repo.valid_uuid?(token_id) do
+      verify_live_magic_link(token_id, secret, nonce, context)
+    else
+      record_magic_link_failure(token_id, :invalid_or_expired, context)
+    end
+  end
+
+  defp verify_live_magic_link(token_id, secret, nonce, context) do
     Multi.new()
     |> Multi.run(:token, fn repo, _changes ->
       loaded_token =
