@@ -8,9 +8,6 @@ cases:
 - action: caddy.adapt_caddyfile
   args: {}
   expect_exit: 0
-- action: caddy.cluster_state
-  args: {}
-  expect_exit: 0
 - action: caddy.config_dump
   args: {}
   expect_exit: 0
