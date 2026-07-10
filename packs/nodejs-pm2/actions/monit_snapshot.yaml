@@ -1,18 +1,19 @@
 schema_version: 1
 id: pm2.monit_snapshot
-title: pm2 prettylist (process snapshot)
+title: pm2 monit snapshot (CPU + memory)
 kind: exec
 risk: low
-description: Show one-shot CPU + memory snapshot for every process, as pretty-printed JSON (pm2 prettylist).
+description: Show one-shot CPU + memory snapshot for every process as JSON. Read-only. Per-process environment is projected out — use `pm2.env` for one process's effective env.
 side_effects:
   - One PM2 IPC call.
   - Read-only.
 args: []
 execution:
   command:
-    binary: pm2
+    binary: /bin/sh
     argv:
-      - "prettylist"
+      - "-c"
+      - "pm2 jlist | jq 'map({name, pm_id, pid, monit, status: .pm2_env.status, uptime: .pm2_env.pm_uptime, restarts: .pm2_env.restart_time})'"
   timeout: 30s
 output:
   parser: json
