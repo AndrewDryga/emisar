@@ -239,6 +239,38 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
     end
   end
 
+  describe "build_ambiguous/1 — divergent runner arg schemas" do
+    test "exposes only the control fields and allows additional properties" do
+      schema = ToolSchema.build_ambiguous(["a", "b"])
+
+      assert Map.keys(schema.properties) |> Enum.sort() == [
+               "idempotency_key",
+               "reason",
+               "runners"
+             ]
+
+      assert schema.additionalProperties == true
+      assert schema.type == "object"
+      assert schema[:"$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    end
+
+    test "reason and runners stay required; the runner re-validates the real args" do
+      schema = ToolSchema.build_ambiguous(["a", "b"])
+
+      assert "reason" in schema.required
+      assert "runners" in schema.required
+      assert schema.properties["runners"].items.enum == ["a", "b"]
+    end
+
+    test "no runners advertise the action → runners is omitted and not required" do
+      schema = ToolSchema.build_ambiguous([])
+
+      refute Map.has_key?(schema.properties, "runners")
+      refute "runners" in schema.required
+      assert "reason" in schema.required
+    end
+  end
+
   describe "build/2 — schema envelope" do
     test "is a valid JSON Schema 2020-12 object" do
       schema = ToolSchema.build(action(), ["r"])

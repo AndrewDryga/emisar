@@ -35,25 +35,46 @@ defmodule EmisarWeb.MCP.ToolSchema do
     arg_properties = Map.new(args, &{&1["name"], arg_property(&1)})
     arg_required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
-    {runners_prop, runners_required} = runners_property(runner_names)
-
-    properties =
-      arg_properties
-      |> Map.put("reason", reason_property())
-      |> Map.put("idempotency_key", idempotency_key_property())
-      |> put_if_present("runners", runners_prop)
+    {control_properties, runners_required} = control_properties(runner_names)
 
     required =
       ["reason" | arg_required]
       |> then(&if runners_required, do: ["runners" | &1], else: &1)
       |> Enum.uniq()
 
+    schema_object(Map.merge(arg_properties, control_properties), required, false)
+  end
+
+  @doc """
+  Input schema for an action whose reachable runners advertise DIFFERENT
+  argument schemas (e.g. two pack versions). We can't present one accurate
+  arg list, so we expose only the universal control fields and allow
+  `additionalProperties` — the runner the caller selects re-validates the
+  real arguments on dispatch. Fail-closed: never a misleading arg contract.
+  """
+  def build_ambiguous(runner_names) do
+    {control_properties, runners_required} = control_properties(runner_names)
+    required = if runners_required, do: ["runners", "reason"], else: ["reason"]
+    schema_object(control_properties, required, true)
+  end
+
+  defp control_properties(runner_names) do
+    {runners_prop, runners_required} = runners_property(runner_names)
+
+    properties =
+      %{"reason" => reason_property(), "idempotency_key" => idempotency_key_property()}
+      |> put_if_present("runners", runners_prop)
+
+    {properties, runners_required}
+  end
+
+  defp schema_object(properties, required, additional_properties?) do
     %{
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: properties,
       required: required,
-      additionalProperties: false
+      additionalProperties: additional_properties?
     }
   end
 

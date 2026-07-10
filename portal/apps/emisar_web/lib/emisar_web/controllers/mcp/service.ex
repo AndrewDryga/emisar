@@ -650,20 +650,33 @@ defmodule EmisarWeb.MCP.Service do
 
     %{
       name: first.action_id,
-      description: tool_description(first, runners),
-      inputSchema: ToolSchema.build(first, runner_names),
-      annotations: ToolMetadata.action_annotations(first)
+      description: tool_description(group, runners),
+      inputSchema: group_input_schema(group, runner_names),
+      annotations: ToolMetadata.group_annotations(group)
     }
     |> ToolMetadata.auth_required()
   end
 
   defp runner_status_rank(runner), do: if(runner.online?, do: 0, else: 1)
 
-  defp tool_description(action, runners) do
-    base = action.description || action.title || action.action_id
+  # Identical arg schemas across the group → describe them precisely. When
+  # they diverge, fall back to the control-fields-only descriptor rather
+  # than advertising one arbitrary runner's arg contract for all of them.
+  defp group_input_schema([first | _] = group, runner_names) do
+    if uniform?(group, & &1.args_schema),
+      do: ToolSchema.build(first, runner_names),
+      else: ToolSchema.build_ambiguous(runner_names)
+  end
+
+  defp uniform?(group, fun), do: group |> Enum.map(fun) |> Enum.uniq() |> length() == 1
+
+  defp tool_description([first | _] = group, runners) do
+    base = first.description || first.title || first.action_id
+
+    combined_side_effects = group |> Enum.flat_map(&(&1.side_effects || [])) |> Enum.uniq()
 
     side_effects =
-      case action.side_effects || [] do
+      case combined_side_effects do
         [] -> ""
         list -> "\n\nSide effects:\n" <> Enum.map_join(list, "\n", &("- " <> &1))
       end
@@ -687,7 +700,27 @@ defmodule EmisarWeb.MCP.Service do
           "\n\nAvailable runners (pick one or more by name):\n" <> lines
       end
 
-    base <> side_effects <> hosts <> "\n\nRisk: #{action.risk}"
+    risk_line = "\n\nRisk: #{ToolMetadata.worst_risk(group)}"
+    base <> side_effects <> hosts <> variant_note(group) <> risk_line
+  end
+
+  # When runners disagree on this action's risk or arguments, say so: the
+  # descriptor shows the worst case, and the runner the caller picks
+  # enforces its own spec on dispatch. Cosmetic drift (title/description)
+  # is not flagged — only the two divergences that change what runs.
+  defp variant_note(group) do
+    cond do
+      not uniform?(group, & &1.risk) ->
+        "\n\nNote: runners advertise different risk levels for this action; the value below " <>
+          "is the highest. The runner you select enforces its own risk and arguments."
+
+      not uniform?(group, & &1.args_schema) ->
+        "\n\nNote: runners advertise different arguments for this action; pass what your " <>
+          "chosen runner requires — it re-validates on dispatch."
+
+      true ->
+        ""
+    end
   end
 
   defp runner_status_label(runner) do

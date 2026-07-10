@@ -2,6 +2,7 @@ defmodule EmisarWeb.MCP.ToolMetadata do
   @moduledoc false
 
   @oauth2_mcp [%{type: "oauth2", scopes: ["mcp"]}]
+  @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
 
   def auth_required(%{} = tool) do
     meta =
@@ -57,4 +58,19 @@ defmodule EmisarWeb.MCP.ToolMetadata do
       idempotentHint: read_only?
     }
   end
+
+  # Two runners can advertise the SAME action_id from different pack
+  # versions with different risk or side effects. The one tool descriptor
+  # must never understate danger: annotate the group at its worst case —
+  # read-only only if EVERY variant is read-only, destructive if ANY
+  # variant is high/critical. Describing the group off an arbitrary first
+  # row would let a critical variant ride under a read-only hint.
+  def group_annotations([_ | _] = actions) do
+    side_effects = Enum.flat_map(actions, &(&1.side_effects || []))
+    action_annotations(%{risk: worst_risk(actions), side_effects: side_effects})
+  end
+
+  # The highest risk any variant in the group advertises.
+  def worst_risk([_ | _] = actions),
+    do: Enum.max_by(actions, &Map.fetch!(@risk_rank, &1.risk)).risk
 end

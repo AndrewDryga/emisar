@@ -732,6 +732,78 @@ defmodule EmisarWeb.MCPRpcControllerTest do
                "Defaults to 5m"
     end
 
+    test "two runners advertising the same action at different risk describe the worst case",
+         %{conn: conn, account: account, user: user} do
+      safe = make_runner!(account, name: "safe-host")
+      advertise_action!(safe, action_id: "svc.restart", risk: "low")
+
+      prod = make_runner!(account, name: "prod-host")
+
+      advertise_action!(prod,
+        action_id: "svc.restart",
+        risk: "critical",
+        side_effects: ["restarts the service"]
+      )
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/list")
+        |> json_response(200)
+
+      assert %{"result" => %{"tools" => tools}} = body
+      tool = Enum.find(tools, &(&1["name"] == "svc.restart"))
+
+      # Fail-closed: the critical variant must never ride under a read-only /
+      # non-destructive hint just because a low-risk runner sorted first.
+      assert tool["annotations"]["destructiveHint"] == true
+      assert tool["annotations"]["readOnlyHint"] == false
+      assert tool["annotations"]["idempotentHint"] == false
+      assert tool["description"] =~ "Risk: critical"
+      assert tool["description"] =~ "different risk levels"
+      assert tool["description"] =~ "restarts the service"
+    end
+
+    test "two runners advertising the same action with different args fall back to a control-only schema",
+         %{conn: conn, account: account, user: user} do
+      host_a = make_runner!(account, name: "host-a")
+
+      advertise_action!(host_a,
+        action_id: "svc.scale",
+        args_schema: %{"args" => [%{"name" => "replicas", "type" => "integer"}]}
+      )
+
+      host_b = make_runner!(account, name: "host-b")
+
+      advertise_action!(host_b,
+        action_id: "svc.scale",
+        args_schema: %{"args" => [%{"name" => "count", "type" => "integer"}]}
+      )
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/list")
+        |> json_response(200)
+
+      assert %{"result" => %{"tools" => tools}} = body
+      tool = Enum.find(tools, &(&1["name"] == "svc.scale"))
+
+      properties = tool["inputSchema"]["properties"]
+      # Neither runner's arg name is advertised — the descriptor can't describe
+      # both accurately, so it exposes only the control fields and lets the
+      # selected runner re-validate the real arguments on dispatch.
+      refute Map.has_key?(properties, "replicas")
+      refute Map.has_key?(properties, "count")
+      assert Map.has_key?(properties, "reason")
+      assert tool["inputSchema"]["additionalProperties"] == true
+      assert tool["description"] =~ "different arguments"
+    end
+
     test "an audit-export key is refused on tools/list (wrong kind)",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user, kind: :audit_export)
