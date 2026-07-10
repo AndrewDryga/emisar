@@ -291,8 +291,9 @@ defmodule EmisarWeb.AuditLive do
         <%!-- :md, not :sm — a control on the 28px title row needs the full-size
              button to hold its own beside the H1. Export downloads the CURRENT
              FILTERED VIEW as CSV; both export surfaces are Team+ (the console
-             trail is on every plan — taking the data OUT is paid). On a free
-             plan the button wears the amber plan pill and walks to Billing. --%>
+             trail is on every plan — taking the data OUT is paid). On a lower
+             plan the control is a disabled lock button with a downward tooltip
+             naming the gate; upgrading is the Billing nav item. --%>
         <%= if Billing.audit_export_available?(@current_account) do %>
           <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
             Export CSV
