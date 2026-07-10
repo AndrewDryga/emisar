@@ -73,4 +73,18 @@ defmodule EmisarWeb.MCP.ToolMetadata do
   # The highest risk any variant in the group advertises.
   def worst_risk([_ | _] = actions),
     do: Enum.max_by(actions, &Map.fetch!(@risk_rank, &1.risk)).risk
+
+  # The MCP display `title` for the grouped tool — a stable, human-readable
+  # name independent of runner ordering. Variants of one action_id normally
+  # share a title; if they diverge we pick deterministically (sorted) so
+  # tools/list stays byte-stable, falling back to the action_id.
+  def group_title([%{action_id: action_id} | _] = actions) do
+    titles =
+      actions
+      |> Enum.map(&Map.get(&1, :title))
+      |> Enum.reject(&(is_nil(&1) or &1 == ""))
+      |> Enum.sort()
+
+    List.first(titles) || action_id
+  end
 end

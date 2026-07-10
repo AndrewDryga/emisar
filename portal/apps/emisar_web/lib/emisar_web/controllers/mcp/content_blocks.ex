@@ -22,6 +22,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def wait_for_run_tool do
     %{
       name: "wait_for_run",
+      title: "Wait for a run to finish",
       description:
         "Block on a previously-dispatched run until it reaches a terminal state " <>
           "(success, failed, denied, cancelled, etc.). Call this AUTOMATICALLY and immediately " <>
@@ -57,6 +58,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def list_runbooks_tool do
     %{
       name: "list_runbooks",
+      title: "List runbooks",
       description:
         "List this account's published runbooks. A runbook is a saved, ordered sequence of " <>
           "action steps (a playbook/checklist). Use this to discover them, then run one the " <>
@@ -78,6 +80,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def get_runbook_tool do
     %{
       name: "get_runbook",
+      title: "Get a runbook",
       description:
         "Read one published runbook's full definition: its ordered steps, each with an " <>
           "`action_id`, the `args` to pass, and the runner `target` (resolved to current runner " <>
@@ -107,6 +110,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def execute_runbook_tool do
     %{
       name: "execute_runbook",
+      title: "Execute a runbook",
       description:
         "Execute a published runbook end-to-end on the cloud — the first-party, governed way to " <>
           "run one. Prefer this over dispatching each step yourself: the cloud expands the " <>
@@ -145,6 +149,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def create_runbook_draft_tool do
     %{
       name: "create_runbook_draft",
+      title: "Create a runbook draft",
       description:
         "Save a proposed plan as a DRAFT runbook for an operator to review. This does NOT " <>
           "publish or run anything — the draft stays a draft until a human opens it in the " <>
@@ -213,6 +218,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   def recent_runs_tool do
     %{
       name: "recent_runs",
+      title: "Recent runs",
       description:
         "List the most recent action runs this agent (API key) dispatched, newest first — so you " <>
           "can recall what you already ran on a host and how it turned out (status, exit code) before " <>

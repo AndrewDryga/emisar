@@ -650,6 +650,7 @@ defmodule EmisarWeb.MCP.Service do
 
     %{
       name: first.action_id,
+      title: ToolMetadata.group_title(group),
       description: tool_description(group, runners),
       inputSchema: group_input_schema(group, runner_names),
       annotations: ToolMetadata.group_annotations(group)

@@ -715,6 +715,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert_oauth_required(action_tool)
       assert_oauth_required(wait_tool)
+
+      # Every tool carries a stable human-readable display title (MCP
+      # `title`, preferred over `name` for display).
+      assert action_tool["title"] == "Uptime"
+      assert wait_tool["title"] == "Wait for a run to finish"
+
       assert action_tool["annotations"]["readOnlyHint"] == true
       assert action_tool["annotations"]["destructiveHint"] == false
       assert action_tool["annotations"]["openWorldHint"] == true
