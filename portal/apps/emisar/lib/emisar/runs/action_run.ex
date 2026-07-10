@@ -65,7 +65,6 @@ defmodule Emisar.Runs.ActionRun do
     field :matched_rules, {:array, :string}, default: []
 
     field :requires_approval, :boolean, default: false
-    field :approval_request_id, Ecto.UUID
 
     field :status, Ecto.Enum,
       values: [
