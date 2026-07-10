@@ -893,6 +893,7 @@ defmodule EmisarWeb.AgentsLive do
                     </:seg>
                     <:seg>
                       last call{" "}<.local_time
+                        id={"agent-key-used-#{key.id}"}
                         value={key.last_used_at}
                         mode={:relative}
                         placeholder="never"
@@ -901,7 +902,11 @@ defmodule EmisarWeb.AgentsLive do
                     <:seg :if={key.expires_at}>
                       <span class={expiry_class(key)}>
                         {if expired?(key), do: "expired", else: "expires"}
-                        <.local_time value={key.expires_at} mode={:relative} />
+                        <.local_time
+                          id={"agent-key-expires-#{key.id}"}
+                          value={key.expires_at}
+                          mode={:relative}
+                        />
                       </span>
                     </:seg>
                   </.meta_line>

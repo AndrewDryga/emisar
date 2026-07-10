@@ -652,7 +652,12 @@ defmodule EmisarWeb.ProfileLive do
                 </.chip>
               </:chips>
               <:meta>
-                Started <.local_time value={session.inserted_at} mode={:relative} />
+                Started
+                <.local_time
+                  id={"session-started-#{session.id}"}
+                  value={session.inserted_at}
+                  mode={:relative}
+                />
                 <%= if session_ip(session) do %>
                   · <span class="font-mono">{session_ip(session)}</span>
                 <% end %>

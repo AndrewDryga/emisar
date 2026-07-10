@@ -733,6 +733,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   </span>
                   <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
                   <.local_time
+                    id={"decision-when-#{decision.id}"}
                     value={decision.decided_at}
                     mode={:forensic}
                     class="text-xs tabular-nums text-zinc-500"

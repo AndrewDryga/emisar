@@ -2307,7 +2307,12 @@ defmodule EmisarWeb.SSOSettingsLive do
             <div class="mt-0.5 text-xs text-zinc-500">
               <span class="break-all font-mono">{synced_external_id(member.identity)}</span>
               <span :if={member.identity.last_seen_at}>
-                · last synced <.local_time value={member.identity.last_seen_at} mode={:relative} />
+                · last synced
+                <.local_time
+                  id={"scim-member-synced-#{member.identity.id}"}
+                  value={member.identity.last_seen_at}
+                  mode={:relative}
+                />
               </span>
             </div>
           </div>
@@ -2430,7 +2435,12 @@ defmodule EmisarWeb.SSOSettingsLive do
       <span class="tabular-nums">{count_label(@stats.users, "user")}</span>
       <span class="tabular-nums">· {count_label(@stats.groups, "group")}</span>
       <span :if={@provider.scim_enabled and @provider.scim_last_seen_at} class="text-brand-300/90">
-        · synced <.local_time value={@provider.scim_last_seen_at} mode={:relative} />
+        · synced
+        <.local_time
+          id={"provider-sync-#{@provider.id}"}
+          value={@provider.scim_last_seen_at}
+          mode={:relative}
+        />
       </span>
       <span
         :if={@provider.scim_enabled and is_nil(@provider.scim_last_seen_at)}

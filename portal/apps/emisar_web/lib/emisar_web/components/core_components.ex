@@ -2078,7 +2078,11 @@ defmodule EmisarWeb.CoreComponents do
              column — the digest row is content left, status right. --%>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
-          <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
+          <TimeHelpers.local_time
+            id={"digest-run-#{@run.id}"}
+            value={@run.inserted_at}
+            mode={:relative}
+          />
           <span :if={@show_source && run_attribution(@run)}>· {run_attribution(@run)}</span>
         </div>
       </div>
@@ -2700,7 +2704,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.meta_line class="text-[11px]">
         <:seg mono>{key.key_prefix}…</:seg>
-        <:seg>last used{" "}<.local_time value={key.last_used_at} mode={:relative} /></:seg>
+        <:seg>last used{" "}<.local_time id={"key-used-\#{key.id}"} value={key.last_used_at} mode={:relative} /></:seg>
         <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
       </.meta_line>
   """
@@ -4577,10 +4581,15 @@ defmodule EmisarWeb.CoreComponents do
   hours remain so an approver can triage by urgency (the requester's run
   auto-cancels at expiry). Renders nothing without an expiry.
 
-      <.approval_expiry expires_at={@request.expires_at} />
+      <.approval_expiry id={"expiry-\#{@request.id}"} expires_at={@request.expires_at} />
   """
   attr :expires_at, :any, default: nil
   attr :class, :string, default: nil
+
+  attr :id, :string,
+    default: nil,
+    doc:
+      "Row-stable id threaded to the inner <.local_time> for list rows (e.g. id={\"expiry-\#{request.id}\"})."
 
   def approval_expiry(assigns) do
     assigns = assign(assigns, :expired?, approval_expired?(assigns.expires_at))
@@ -4597,6 +4606,7 @@ defmodule EmisarWeb.CoreComponents do
            the LocalTime hook carries the absolute time on hover. --%>
       <.icon name={if @expired?, do: "hero-no-symbol", else: "hero-clock"} class="h-3 w-3" />
       {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
+        id={@id}
         value={@expires_at}
         mode={:relative}
       />

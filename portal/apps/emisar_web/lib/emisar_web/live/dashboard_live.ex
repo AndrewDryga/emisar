@@ -316,7 +316,11 @@ defmodule EmisarWeb.DashboardLive do
                 {request.context["action_id"] || "—"}
               </div>
               <div class="truncate text-xs text-zinc-500">
-                <.local_time value={request.requested_at} mode={:relative} />
+                <.local_time
+                  id={"dash-pending-#{request.id}"}
+                  value={request.requested_at}
+                  mode={:relative}
+                />
                 <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
               </div>
             </div>

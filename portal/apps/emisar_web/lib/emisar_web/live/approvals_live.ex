@@ -216,7 +216,7 @@ defmodule EmisarWeb.ApprovalsLive do
     assigns = assign(assigns, :expires_at, ts)
 
     ~H"""
-    expires{" "}<.local_time value={@expires_at} mode={:relative} />
+    expires{" "}<.local_time id={"grant-expiry-#{@grant.id}"} value={@expires_at} mode={:relative} />
     """
   end
 
@@ -416,11 +416,19 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
                   <div class="shrink-0 text-right">
                     <div class="text-xs text-zinc-500">
-                      <.local_time value={request.requested_at} mode={:relative} />
+                      <.local_time
+                        id={"pending-when-#{request.id}"}
+                        value={request.requested_at}
+                        mode={:relative}
+                      />
                     </div>
                     <%!-- Held runs auto-cancel at expiry — surface it so an
                          approver can triage by urgency, not just arrival. --%>
-                    <.approval_expiry expires_at={request.expires_at} class="mt-0.5 justify-end" />
+                    <.approval_expiry
+                      id={"expiry-#{request.id}"}
+                      expires_at={request.expires_at}
+                      class="mt-0.5 justify-end"
+                    />
                   </div>
                 </.link>
               </li>
@@ -505,7 +513,11 @@ defmodule EmisarWeb.ApprovalsLive do
                     <:seg>via {grant_key_label(g)}</:seg>
                     <:seg :if={g.granted_by}>
                       granted by {g.granted_by.full_name || g.granted_by.email}
-                      <.local_time value={g.inserted_at} mode={:relative} />
+                      <.local_time
+                        id={"grant-created-#{g.id}"}
+                        value={g.inserted_at}
+                        mode={:relative}
+                      />
                     </:seg>
                   </.meta_line>
 
@@ -514,6 +526,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     <:seg>{format_uses(g)}</:seg>
                     <:seg>
                       last used{" "}<.local_time
+                        id={"grant-used-#{g.id}"}
                         value={g.last_used_at}
                         mode={:relative}
                         placeholder="never"
@@ -668,6 +681,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
                   <div class="flex shrink-0 items-center gap-3">
                     <.local_time
+                      id={"decided-when-#{request.id}"}
                       value={request.decided_at || request.requested_at}
                       mode={:relative}
                       class="text-xs text-zinc-500"

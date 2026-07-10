@@ -418,7 +418,11 @@ defmodule EmisarWeb.RunnersLive do
     assigns = assign(assigns, :heartbeat_at, ts)
 
     ~H"""
-    last heartbeat{" "}<.local_time value={@heartbeat_at} mode={:relative} />
+    last heartbeat{" "}<.local_time
+      id={"runner-heartbeat-#{@runner.id}"}
+      value={@heartbeat_at}
+      mode={:relative}
+    />
     """
   end
 
@@ -432,7 +436,7 @@ defmodule EmisarWeb.RunnersLive do
     assigns = assign(assigns, :seen_at, ts)
 
     ~H"""
-    last seen{" "}<.local_time value={@seen_at} mode={:relative} />
+    last seen{" "}<.local_time id={"runner-seen-#{@runner.id}"} value={@seen_at} mode={:relative} />
     """
   end
 

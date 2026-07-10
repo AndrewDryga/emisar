@@ -729,11 +729,22 @@ defmodule EmisarWeb.PacksLive do
                     <.status_badge status={to_string(v.trust_state)} />
                   </div>
                   <div :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}>
-                    first seen <.local_time value={v.first_seen_at} mode={:relative} class="inline" />
+                    first seen
+                    <.local_time
+                      id={"pack-version-first-#{v.id}"}
+                      value={v.first_seen_at}
+                      mode={:relative}
+                      class="inline"
+                    />
                   </div>
                   <div>
                     last seen
-                    <.local_time value={v.last_seen_at} mode={:relative} class="text-zinc-300" />
+                    <.local_time
+                      id={"pack-version-last-#{v.id}"}
+                      value={v.last_seen_at}
+                      mode={:relative}
+                      class="text-zinc-300"
+                    />
                   </div>
                 </div>
               </div>

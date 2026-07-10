@@ -340,16 +340,27 @@ defmodule EmisarWeb.BillingLive do
                     :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
                     tone={:amber}
                   >
-                    Cancels on <.local_time value={@summary.current_period_end} class="inline" />
+                    Cancels on
+                    <.local_time
+                      id="billing-cancels-on"
+                      value={@summary.current_period_end}
+                      class="inline"
+                    />
                   </.chip>
                   <.chip :if={@summary.trial_end} tone={:brand}>
-                    Trial ends <.local_time value={@summary.trial_end} class="inline" />
+                    Trial ends
+                    <.local_time id="billing-trial-ends" value={@summary.trial_end} class="inline" />
                   </.chip>
                   <span
                     :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
                     class="text-zinc-500"
                   >
-                    Next charge <.local_time value={@summary.current_period_end} class="inline" />
+                    Next charge
+                    <.local_time
+                      id="billing-next-charge"
+                      value={@summary.current_period_end}
+                      class="inline"
+                    />
                   </span>
                 </div>
               </div>
@@ -389,6 +400,7 @@ defmodule EmisarWeb.BillingLive do
                 >
                   <.local_time
                     :if={invoice.billed_at}
+                    id={"invoice-billed-#{invoice.id}"}
                     value={invoice.billed_at}
                     class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
                   />

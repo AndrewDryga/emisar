@@ -443,6 +443,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   <:seg>{key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"}</:seg>
                   <:seg>
                     last used{" "}<.local_time
+                      id={"enrollment-key-used-#{key.id}"}
                       value={key.last_used_at}
                       mode={:relative}
                       placeholder="never"

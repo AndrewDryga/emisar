@@ -219,6 +219,59 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "ancient-actor"
     end
 
+    # A relative WHEN cell must always pair with its OWN row. The bug: the
+    # <time> carried phx-update="ignore" + a random id, so on a filter patch
+    # morphdom reused a list row and left a neighbor's "2d ago" behind (a full
+    # reload fixed it). The fix — no ignore, a row-stable id={"when-#{event.id}"}
+    # — is locked here: every rendered <time> is keyed to its event and carries
+    # that event's OWN datetime, before AND after a filter patch.
+    test "each WHEN cell stays paired with its own event across a filter patch", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, connected} =
+        Audit.log(account.id, "runner.connected",
+          target_kind: "runner",
+          target_label: "nomad-hvn03"
+        )
+
+      {:ok, policy} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "fresh-actor"
+        )
+
+      {:ok, disconnected} =
+        Audit.log(account.id, "runner.disconnected",
+          target_kind: "runner",
+          target_label: "nomad-hvn04"
+        )
+
+      # Push each to a distinct instant so a bled datetime is unambiguous.
+      connected = shift_occurred_at(connected, -172_800)
+      policy = shift_occurred_at(policy, -3_600)
+      disconnected = shift_occurred_at(disconnected, -300)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      pairs = when_pairs(html)
+      assert pairs["when-#{connected.id}"] == DateTime.to_iso8601(connected.occurred_at)
+      assert pairs["when-#{policy.id}"] == DateTime.to_iso8601(policy.occurred_at)
+      assert pairs["when-#{disconnected.id}"] == DateTime.to_iso8601(disconnected.occurred_at)
+      # The hook owns the client render — the <time> is never a frozen, ignored
+      # node (that freeze WAS the bug the whole task fixes).
+      refute html =~ ~r/<time[^>]*phx-update/
+
+      # Filter to runner events → the policy row (and its WHEN) drops; the two
+      # kept rows still each pair with their OWN timestamp, not a neighbor's.
+      # The live_patch is the exact interaction that surfaced the bleed.
+      html = render_patch(lv, ~p"/app/#{account}/audit?target_kind=runner")
+      pairs = when_pairs(html)
+      refute Map.has_key?(pairs, "when-#{policy.id}")
+      assert pairs["when-#{connected.id}"] == DateTime.to_iso8601(connected.occurred_at)
+      assert pairs["when-#{disconnected.id}"] == DateTime.to_iso8601(disconnected.occurred_at)
+    end
+
     test "a relative-range preset chip narrows to the window (sets From to now − window)",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -952,6 +1005,20 @@ defmodule EmisarWeb.AuditLiveTest do
   # fresh account already carries its `account.created` / `user.signed_up` rows.
   # Building the queryable straight from the Query module is the sanctioned
   # test-fixture shape (§7).
+  # {"when-<event_id>" => datetime attr} for every relative WHEN cell in the
+  # rendered list — the pairing the cross-row bleed test asserts on.
+  defp when_pairs(html) do
+    ~r/<time id="(when-[^"]+)"[^>]*?datetime="([^"]+)"/
+    |> Regex.scan(html)
+    |> Map.new(fn [_, id, datetime] -> {id, datetime} end)
+  end
+
+  defp shift_occurred_at(event, seconds) do
+    event
+    |> Ecto.Changeset.change(occurred_at: DateTime.add(DateTime.utc_now(), seconds, :second))
+    |> Repo.update!()
+  end
+
   defp clear_audit_log(account_id) do
     Audit.Event.Query.all()
     |> Audit.Event.Query.by_account_id(account_id)

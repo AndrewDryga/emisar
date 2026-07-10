@@ -243,12 +243,12 @@ defmodule EmisarWeb.RunsLive do
               </.empty_state>
           <% end %>
         </:empty>
+        <%!-- No row-stable id: this responsive table renders each :col TWICE
+             (desktop <td> + mobile card), so a value-based id would duplicate.
+             local_time falls back to a per-render unique id; dropping
+             phx-update="ignore" is what keeps the WHEN correct across a patch. --%>
         <:col :let={run} label="When" class="w-24">
-          <.local_time
-            value={run.inserted_at}
-            mode={:relative}
-            class="text-xs text-zinc-400"
-          />
+          <.local_time value={run.inserted_at} mode={:relative} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={run} label="Action">
           <%!-- The action id is the row's headline — on a phone it wraps to show

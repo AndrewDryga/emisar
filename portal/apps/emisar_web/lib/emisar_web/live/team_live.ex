@@ -1090,6 +1090,7 @@ defmodule EmisarWeb.TeamLive do
                          sign-in-recency tail on every long email. --%>
                         <div class="text-xs text-zinc-500 sm:truncate">
                           {membership.user && membership.user.email} · joined{" "}<.local_time
+                            id={"member-joined-#{membership.id}"}
                             value={membership.inserted_at}
                             mode={:relative}
                           /> ·{" "}<.sign_in_status user={membership.user} />
@@ -1391,7 +1392,12 @@ defmodule EmisarWeb.TeamLive do
                       <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
                       {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
                       <span :if={provider.scim_last_seen_at} class="text-brand-300/90">
-                        · synced <.local_time value={provider.scim_last_seen_at} mode={:relative} />
+                        · synced
+                        <.local_time
+                          id={"provider-synced-#{provider.id}"}
+                          value={provider.scim_last_seen_at}
+                          mode={:relative}
+                        />
                       </span>
                       <span :if={is_nil(provider.scim_last_seen_at)} class="text-amber-300/90">
                         · never synced
@@ -1809,7 +1815,7 @@ defmodule EmisarWeb.TeamLive do
     assigns = assign(assigns, :signed_in_at, ts)
 
     ~H"""
-    last sign-in{" "}<.local_time value={@signed_in_at} mode={:relative} />
+    last sign-in{" "}<.local_time id={"signin-#{@user.id}"} value={@signed_in_at} mode={:relative} />
     """
   end
 

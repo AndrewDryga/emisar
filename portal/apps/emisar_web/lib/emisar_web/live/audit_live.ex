@@ -483,6 +483,7 @@ defmodule EmisarWeb.AuditLive do
               />
               <.audit_cell value={event.ip_address} mono />
               <.local_time
+                id={"when-#{event.id}"}
                 value={event.occurred_at}
                 mode={:relative}
                 styled_tooltip

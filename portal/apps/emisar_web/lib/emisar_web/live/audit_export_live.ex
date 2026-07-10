@@ -189,6 +189,7 @@ defmodule EmisarWeb.AuditExportLive do
                   <:seg mono>{key.key_prefix}…</:seg>
                   <:seg>
                     last used{" "}<.local_time
+                      id={"export-key-used-#{key.id}"}
                       value={key.last_used_at}
                       mode={:relative}
                       placeholder="never"

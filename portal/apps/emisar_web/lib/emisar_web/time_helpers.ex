@@ -154,6 +154,11 @@ defmodule EmisarWeb.TimeHelpers do
   attr :placeholder, :string, default: "—"
   attr :class, :string, default: nil
 
+  attr :id, :string,
+    default: nil,
+    doc:
+      "A ROW-STABLE id for a SINGLE-render list/stream row (e.g. id={\"when-\#{event.id}\"}) so morphdom keeps each <time> paired with its own row across a filter patch. Omit it for singletons and for a responsive LiveTable :col (which renders each cell twice) — the fallback id is unique per render."
+
   attr :styled_tooltip, :boolean,
     default: false,
     doc:
@@ -179,10 +184,16 @@ defmodule EmisarWeb.TimeHelpers do
       )
 
     ~H"""
+    <%!-- id: a caller-supplied ROW-STABLE id lets morphdom match this <time> to its
+         own row across a filter patch (no churn, no cross-row bleed). Without one we
+         fall back to a per-RENDER unique id — NOT a value-derived hash: a responsive
+         LiveTable renders each row's cell TWICE (desktop <td> + mobile card), so any
+         value-based id would be a duplicate DOM id there. What actually fixes the
+         stale-render bleed is the ABSENCE of phx-update="ignore" below — the hook's
+         updated() re-reads datetime on every patch, so a fresh id is harmless. --%>
     <time
-      id={"t-#{System.unique_integer([:positive])}"}
+      id={@id || "t-#{System.unique_integer([:positive])}"}
       phx-hook="LocalTime"
-      phx-update="ignore"
       datetime={@iso}
       data-format={Atom.to_string(@mode)}
       data-styled-tooltip={@styled_tooltip}
