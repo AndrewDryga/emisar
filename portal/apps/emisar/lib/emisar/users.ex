@@ -56,9 +56,15 @@ defmodule Emisar.Users do
         User.Query.not_deleted()
         |> User.Query.by_ids(ids)
         |> Repo.all()
-        |> Map.new(fn user -> {user.id, user.full_name || user.email} end)
+        |> Map.new(fn user -> {user.id, user_label(user)} end)
     end
   end
+
+  defp user_label(%User{full_name: full_name, email: email}) when is_binary(full_name) do
+    if String.trim(full_name) == "", do: email, else: full_name
+  end
+
+  defp user_label(%User{email: email}), do: email
 
   # -- Registration + sign-in (pre-Subject boundary) ----------------------
 

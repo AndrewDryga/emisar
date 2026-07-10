@@ -27,15 +27,17 @@ defmodule Emisar.UsersTest do
   end
 
   describe "user_labels_for_ids/1" do
-    test "labels by full name, falls back to email, skips nils and dedupes" do
+    test "labels by full name, falls back to email for blank names, skips nils and dedupes" do
       named = Fixtures.Users.create_user(full_name: "Ada Lovelace")
       unnamed = Fixtures.Users.create_user(full_name: nil)
+      blank = Fixtures.Users.create_user(full_name: "  ")
 
-      labels = Users.user_labels_for_ids([named.id, unnamed.id, nil, named.id])
+      labels = Users.user_labels_for_ids([named.id, unnamed.id, blank.id, nil, named.id])
 
       assert labels[named.id] == "Ada Lovelace"
       assert labels[unnamed.id] == unnamed.email
-      assert map_size(labels) == 2
+      assert labels[blank.id] == blank.email
+      assert map_size(labels) == 3
       assert Users.user_labels_for_ids([]) == %{}
     end
   end
