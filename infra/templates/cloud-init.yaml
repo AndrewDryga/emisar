@@ -30,7 +30,9 @@ write_files:
       # unset as "feature off".
       fetch_secret() {
         local data value
-        data=$(curl -s -H "Authorization: Bearer $TOKEN" "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access" | grep -oE '"data": ?"[^"]*"' | cut -d'"' -f4 || true)
+        # Header via stdin (curl -H @-) so the cloud-platform token never lands on
+        # curl's argv, readable by any host process via /proc/<pid>/cmdline.
+        data=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | curl -s -H @- "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access" | grep -oE '"data": ?"[^"]*"' | cut -d'"' -f4 || true)
         [ -n "$data" ] || return 0
         value=$(printf '%s' "$data" | base64 -d)
         [ -n "$value" ] || return 0
