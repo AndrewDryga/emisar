@@ -9,7 +9,8 @@ description: >
   that I didn't ask for?" leads back to a vendor module.
 side_effects:
   - Reads one file.
-  - Read-only.
+  - May expose secrets baked into vendor-data — the runner redacts via
+    its configured redaction rules.
 args: []
 execution:
   command:

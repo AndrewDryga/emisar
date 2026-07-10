@@ -9,7 +9,9 @@ description: >
   cloud-init actually try to do?".
 side_effects:
   - Reads one file.
-  - Read-only.
+  - May expose secrets baked into user-data / vendor-data — the merged
+    cloud-config is a superset; the runner redacts via its configured
+    redaction rules.
 args: []
 execution:
   command:
