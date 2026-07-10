@@ -366,7 +366,6 @@ defmodule Emisar.Catalog do
     |> RunnerAction.Query.by_account_id(pack_version.account_id)
     |> RunnerAction.Query.by_pack(pack_version.pack_id, pack_version.version)
     |> repo.all()
-    |> Enum.uniq_by(& &1.action_id)
     |> ActionSetDiff.manifest_from_actions()
   end
 
@@ -831,7 +830,7 @@ defmodule Emisar.Catalog do
         |> RunnerAction.Query.ordered_by_action()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> Enum.uniq_by(& &1.action_id)
+        |> most_severe_actions_by_id()
 
       {:ok, actions}
     end
@@ -853,10 +852,19 @@ defmodule Emisar.Catalog do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> Enum.group_by(&{&1.pack_id, &1.pack_version})
-        |> Map.new(fn {key, actions} -> {key, Enum.uniq_by(actions, & &1.action_id)} end)
+        |> Map.new(fn {key, actions} -> {key, most_severe_actions_by_id(actions)} end)
 
       {:ok, index}
     end
+  end
+
+  defp most_severe_actions_by_id(actions) do
+    actions
+    |> Enum.group_by(& &1.action_id)
+    |> Enum.map(fn {_action_id, actions} ->
+      Enum.max_by(actions, fn action -> {@risk_rank[action.risk] || 0, to_string(action.kind)} end)
+    end)
+    |> Enum.sort_by(& &1.action_id)
   end
 
   @doc """

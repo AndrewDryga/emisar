@@ -10,8 +10,8 @@ defmodule Emisar.Catalog.PackBaseline do
       That's "these are the bytes we publish, no human review needed".
     * **Hash differs from our shipped baseline** → record but mark as
       `pending`. Operator must Trust or Reject in the UI.
-    * **Unknown pack id** (third-party / custom pack) → TOFU pin
-      whatever first hash we see.
+    * **Unknown pack id** (third-party / custom pack) → record its
+      first hash as pending for operator review.
 
   ## Hash algorithm
 

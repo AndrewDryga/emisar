@@ -20,6 +20,15 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
     test "is an empty map for no actions" do
       assert ActionSetDiff.manifest_from_actions([]) == %{}
     end
+
+    test "keeps the most-severe report when runners duplicate an action" do
+      assert ActionSetDiff.manifest_from_actions([
+               act("a.write", :low, :exec),
+               act("a.write", :critical, :script)
+             ]) == %{
+               "a.write" => %{"risk" => "critical", "kind" => "script"}
+             }
+    end
   end
 
   describe "changes/2" do
@@ -107,6 +116,19 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
 
       assert Enum.map(diff.added, & &1.action_id) == ["b.add", "y.add"]
       assert Enum.map(diff.removed, & &1.action_id) == ["a.drop", "m.drop"]
+    end
+
+    test "ignores malformed persisted entries instead of crashing the review" do
+      manifest = %{
+        "a.read" => %{"risk" => "low", "kind" => "exec"},
+        "broken" => %{"risk" => "critical"}
+      }
+
+      diff = ActionSetDiff.changes([act("a.read", :low), act("broken", :critical)], manifest)
+
+      assert diff.added == [%{action_id: "broken", risk: "critical", kind: "exec"}]
+      assert diff.removed == []
+      assert diff.changed == []
     end
   end
 end

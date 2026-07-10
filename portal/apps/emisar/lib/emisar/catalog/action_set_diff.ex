@@ -33,14 +33,21 @@ defmodule Emisar.Catalog.ActionSetDiff do
 
   @doc """
   The `%{action_id => %{"risk" => risk, "kind" => kind}}` manifest for a pack
-  version, built from its already-fetched, deduped `%RunnerAction{}` rows.
-  String keys/values so it round-trips through the JSONB `trusted_manifest`
-  column. Stored at trust time so a later drift can be diffed against it.
+  version, built from its already-fetched `%RunnerAction{}` rows. Multiple
+  runners can report the same action, so the manifest keeps the most severe
+  risk deterministically. String keys/values round-trip through the JSONB
+  `trusted_manifest` column. Stored at trust time so a later drift can be
+  diffed against it.
   """
   @spec manifest_from_actions([RunnerAction.t()]) :: %{optional(String.t()) => map()}
   def manifest_from_actions(actions) when is_list(actions) do
-    Map.new(actions, fn %RunnerAction{action_id: action_id} = action ->
-      {action_id, %{"risk" => to_string(action.risk), "kind" => to_string(action.kind)}}
+    Enum.reduce(actions, %{}, fn %RunnerAction{action_id: action_id} = action, manifest ->
+      Map.update(
+        manifest,
+        action_id,
+        manifest_entry(action),
+        &most_conservative_entry(&1, action)
+      )
     end)
   end
 
@@ -59,6 +66,7 @@ defmodule Emisar.Catalog.ActionSetDiff do
     do: %{added: [], removed: [], changed: []}
 
   def changes(advertised, manifest) when is_list(advertised) and is_map(manifest) do
+    manifest = valid_entries(manifest)
     advertised_manifest = manifest_from_actions(advertised)
 
     added =
@@ -83,6 +91,31 @@ defmodule Emisar.Catalog.ActionSetDiff do
       removed: Enum.sort_by(removed, & &1.action_id),
       changed: Enum.sort_by(changed, & &1.action_id)
     }
+  end
+
+  defp manifest_entry(%RunnerAction{} = action),
+    do: %{"risk" => to_string(action.risk), "kind" => to_string(action.kind)}
+
+  defp most_conservative_entry(existing, %RunnerAction{} = candidate) do
+    candidate = manifest_entry(candidate)
+
+    cond do
+      risk_rank(candidate["risk"]) > risk_rank(existing["risk"]) -> candidate
+      risk_rank(candidate["risk"]) < risk_rank(existing["risk"]) -> existing
+      candidate["kind"] > existing["kind"] -> candidate
+      true -> existing
+    end
+  end
+
+  defp valid_entries(manifest) do
+    Enum.reduce(manifest, %{}, fn
+      {action_id, %{"risk" => risk, "kind" => kind}}, valid
+      when is_binary(action_id) and is_binary(risk) and is_binary(kind) ->
+        Map.put(valid, action_id, %{"risk" => risk, "kind" => kind})
+
+      _entry, valid ->
+        valid
+    end)
   end
 
   defp entry(action_id, %{"risk" => risk, "kind" => kind}),
