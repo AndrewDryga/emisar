@@ -331,6 +331,45 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute conn.resp_cookies["emisar_magic"]
     end
 
+    test "malformed magic-link email fields get the same neutral sent response", %{conn: conn} do
+      for params <- [
+            %{"user" => %{"email" => %{"nested" => "value"}}},
+            %{"user" => "not-a-map"},
+            %{}
+          ] do
+        response = post(conn, ~p"/sign_in/magic/start", params)
+
+        assert redirected_to(response) == ~p"/sign_in/magic?sent=1"
+      end
+
+      refute_received {:email, _email}
+    end
+
+    test "a malformed signup-email correction stays inline and sends no email", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      conn =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => RegistrationHandoff.sign(user.id)
+        })
+
+      assert_received {:email, _old_email}
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/sign_up/email", %{"user" => %{"email" => %{"nested" => "value"}}})
+
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :magic_email_error) ==
+               "Check this email and try again."
+
+      refute_received {:email, _email}
+      assert Repo.reload!(user).email == user.email
+    end
+
     test "the typed address + the code's expiry are stashed for the sent page", %{
       conn: conn,
       user: user

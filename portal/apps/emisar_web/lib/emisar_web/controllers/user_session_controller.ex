@@ -44,14 +44,14 @@ defmodule EmisarWeb.UserSessionController do
   cookie. Always lands on the "check your email" page — a throttled or unknown
   email skips the work but shows the same page (no account-existence leak).
   """
-  def magic_link_start(conn, %{"user" => %{"email" => email}} = params) do
+  def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
     registration_handoff = params["registration_handoff"]
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
     # doesn't apply.
-    trimmed = email |> to_string() |> String.trim()
+    trimmed = String.trim(email)
     key = String.downcase(trimmed)
 
     conn =
@@ -99,13 +99,16 @@ defmodule EmisarWeb.UserSessionController do
     |> redirect(to: ~p"/sign_in/magic?sent=1")
   end
 
+  def magic_link_start(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic?sent=1")
+
   @doc """
   Signup recovery for a typo in the just-submitted email. Only the same browser
   that holds the pending registration magic cookie can change it.
   """
-  def registration_email_correction(conn, %{"user" => %{"email" => email}}) do
+  def registration_email_correction(conn, %{"user" => %{"email" => email}})
+      when is_binary(email) do
     context = RequestContext.from_conn(conn)
-    trimmed = email |> to_string() |> String.trim()
+    trimmed = String.trim(email)
     key = String.downcase(trimmed)
 
     with {:ok, token_id, _nonce, registration_user_id} when is_binary(registration_user_id) <-
@@ -145,6 +148,13 @@ defmodule EmisarWeb.UserSessionController do
         |> put_flash(:error, "That signup session expired. Create your account again.")
         |> redirect(to: ~p"/sign_up")
     end
+  end
+
+  def registration_email_correction(conn, _params) do
+    conn
+    |> put_flash(:magic_email_attempt, "")
+    |> put_flash(:magic_email_error, "Check this email and try again.")
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
   end
 
   defp magic_link_expiry do
