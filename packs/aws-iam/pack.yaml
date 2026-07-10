@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-iam
 name: AWS IAM operations
-version: 0.1.3
+version: 0.1.4
 description: >
   IAM introspection — users, roles, policies, attached policies, access
   keys — plus incident-response mutators: deactivate access key,

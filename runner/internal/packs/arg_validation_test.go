@@ -555,3 +555,37 @@ func TestDispatch_CockroachSetClusterSetting_ValueShellSafe(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": `'" ; id ; "'`}), "value", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"name": name, "value": "'`id`'"}), "value", "pattern")
 }
+
+// iam.detach_user_policy's `policy_arn` gates the ARN passed to `aws iam
+// detach-user-policy`. The action's whole purpose ("remove overly broad
+// permissions during an incident") — and its own shipped example — is detaching
+// an AWS-MANAGED policy like arn:aws:iam::aws:policy/AdministratorAccess, whose
+// account segment is the literal token `aws`, not a 12-digit customer id. The
+// old `:iam::[0-9]{12}:policy/` pattern rejected exactly that value, breaking
+// the advertised capability at the dispatch seam. Drive the real seam: the
+// managed ARN and a customer-account ARN both pass; shell-metacharacter and
+// wrong-service ARNs are still rejected on the pattern.
+func TestDispatch_IamDetachUserPolicy_ArnAcceptsManaged(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "iam.detach_user_policy"
+
+	// AWS-managed policy (account segment is the literal `aws`) — the action's
+	// own example and its reason to exist. This is the value the old pattern
+	// wrongly rejected.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+	}))
+	// A 12-digit customer-account ARN still passes.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws:iam::123456789012:policy/team/DevAccess",
+	}))
+
+	// A metacharacter-bearing account segment can't reach argv, and a wrong
+	// service (`s3`) is not an IAM policy ARN.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws:iam::aws;reboot:policy/x",
+	}), "policy_arn", "pattern")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{
+		"user_name": "intern", "policy_arn": "arn:aws:s3:::aws:policy/x",
+	}), "policy_arn", "pattern")
+}
