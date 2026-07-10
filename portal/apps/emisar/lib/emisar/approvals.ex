@@ -655,7 +655,7 @@ defmodule Emisar.Approvals do
   defp mint_grant(%Request{}, %{api_key_id: nil}, _by_user_id, _attrs), do: {:ok, nil}
   defp mint_grant(%Request{}, _run, _by_user_id, %{duration: :once}), do: {:ok, nil}
 
-  defp mint_grant(%Request{} = request, run, by_user_id, attrs) do
+  defp mint_grant(%Request{} = request, %Runs.ActionRun{} = run, by_user_id, attrs) do
     case create_grant(request, run, by_user_id, attrs) do
       {:ok, grant} ->
         {:ok, grant}
@@ -905,7 +905,7 @@ defmodule Emisar.Approvals do
   The originating request, runner, and api_key are pulled off the
   approval `request` so the grant carries the same shape.
   """
-  def create_grant(%Request{} = request, %{} = run, granted_by_id, attrs) do
+  def create_grant(%Request{} = request, %Runs.ActionRun{} = run, granted_by_id, attrs) do
     now = DateTime.utc_now()
     duration = attrs[:duration]
 
