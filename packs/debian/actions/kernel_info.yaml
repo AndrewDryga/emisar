@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns kernel version (`uname -a`), uptime, and whether the host
+  Show kernel version (`uname -a`), uptime, and whether the host
   has /var/run/reboot-required (set by some packages — most often
   after a libc or kernel upgrade). Read-only. Use to plan a reboot
   window.
