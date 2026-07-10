@@ -41,6 +41,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
     |> validate_length(:reason, max: @max_reason_length)
+    |> validate_length(:mcp_session_id, max: @max_db_string_length)
     |> RepoChangeset.validate_json_size(:args, @max_args_bytes)
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
     |> unique_constraint([:account_id, :request_id])

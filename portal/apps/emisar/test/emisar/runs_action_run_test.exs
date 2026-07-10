@@ -124,6 +124,21 @@ defmodule Emisar.Runs.ActionRunTest do
       refute changeset.valid?
       assert Keyword.has_key?(changeset.errors, :reason)
     end
+
+    test "rejects an oversized mcp_session_id before the DB varchar(255) column does" do
+      changeset =
+        ActionRun.Changeset.create(create_attrs(%{mcp_session_id: String.duplicate("x", 256)}))
+
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :mcp_session_id)
+    end
+
+    test "accepts an mcp_session_id at the 255-char boundary" do
+      changeset =
+        ActionRun.Changeset.create(create_attrs(%{mcp_session_id: String.duplicate("x", 255)}))
+
+      assert changeset.valid?
+    end
   end
 
   describe "transition/3 size caps" do

@@ -740,6 +740,29 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert run.mcp_session_id == "sess-abc-123"
     end
 
+    test "an oversized Mcp-Session-Id header dispatches cleanly (dropped at the boundary, no 500)",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("mcp-session-id", String.duplicate("x", 300))
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{"runner" => "host-1", "reason" => "smoke", "wait" => "0"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.mcp_session_id == nil
+    end
+
     test "extracts a well-formed attestation (nested cert) and stores it on the run, not in the args",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
