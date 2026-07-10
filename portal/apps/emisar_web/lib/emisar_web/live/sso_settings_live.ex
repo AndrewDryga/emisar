@@ -2328,6 +2328,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                  keeps the editable select; those roles aren't recomputed. --%>
               <.tooltip
                 :if={@scim_enabled}
+                id={"role-lock-#{member.membership.id}"}
                 text="Role is managed by directory sync — set it with the group → role mappings above"
               >
                 <.chip icon="hero-lock-closed-mini">

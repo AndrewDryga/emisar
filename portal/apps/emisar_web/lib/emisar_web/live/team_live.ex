@@ -1121,6 +1121,7 @@ defmodule EmisarWeb.TeamLive do
                          change here silently reverts. Read-only, pointing to where the
                          change actually sticks — the identity provider. --%>
                           <.tooltip
+                            id={"role-lock-#{membership.id}"}
                             class="shrink-0"
                             text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
                           >

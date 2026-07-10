@@ -3432,28 +3432,44 @@ defmodule EmisarWeb.CoreComponents do
   bubble is right-anchored so it grows leftward and won't clip off a right-edge
   badge. `placement` picks which side it opens on — default `:top`, but use
   `:bottom` for a trigger near the top of the viewport (a title-row control),
-  where an upward bubble would clip off-screen. `text` also rides as `aria-label`.
+  where an upward bubble would clip off-screen.
+
+  The `text` carries load-bearing "why locked/limited" copy, so it can't rest on
+  hover alone: the wrapper is a focusable trigger (`tabindex="0"`) whose reveal
+  also fires on `focus-within`, so a touch tap or keyboard `Tab` opens the bubble;
+  `aria-describedby` links the trigger to the `role="tooltip"` bubble so assistive
+  tech announces the reason (WCAG 1.4.13). Pass an explicit `id` when the same tip
+  renders more than once on a page (a per-row lock) to keep bubble ids unique.
 
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
       </.tooltip>
       <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>
   """
+  attr :id, :string, default: nil, doc: "bubble id — override when the same tip repeats on a page"
   attr :text, :string, required: true
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
   def tooltip(assigns) do
+    assigns =
+      assign(assigns, :tooltip_id, assigns.id || "tooltip-#{:erlang.phash2(assigns.text)}")
+
     ~H"""
-    <span class={["group/tooltip relative inline-flex", @class]} aria-label={@text}>
+    <span
+      class={["group/tooltip relative inline-flex", @class]}
+      tabindex="0"
+      aria-describedby={@tooltip_id}
+    >
       {render_slot(@inner_block)}
       <span
+        id={@tooltip_id}
         role="tooltip"
         class={[
           "pointer-events-none absolute right-0 z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
           "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
-          "transition-opacity duration-100 group-hover/tooltip:opacity-100",
+          "transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           if(@placement == :bottom, do: "top-full mt-2", else: "bottom-full mb-2")
         ]}
       >

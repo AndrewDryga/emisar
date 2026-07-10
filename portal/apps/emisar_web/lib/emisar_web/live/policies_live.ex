@@ -1099,6 +1099,7 @@ defmodule EmisarWeb.PoliciesLive do
         <div class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
           <.tier_field
             :for={tier <- ["low", "medium", "high", "critical"]}
+            editor_id={@editor_id}
             tier={tier}
             value={@defaults[tier]}
             floor_rank={tier_floor_rank(@defaults, tier)}
@@ -1249,6 +1250,10 @@ defmodule EmisarWeb.PoliciesLive do
     """
   end
 
+  attr :editor_id, :string,
+    required: true,
+    doc: "scopes the lock tooltip id — unique per policy card"
+
   attr :tier, :string, required: true
   attr :value, :string, required: true
   attr :floor_rank, :integer, required: true
@@ -1277,6 +1282,7 @@ defmodule EmisarWeb.PoliciesLive do
            shrink it to content. --%>
       <.tooltip
         :if={locked_tier?(@floor_rank)}
+        id={"tier-lock-#{@editor_id}-#{@tier}"}
         text="Higher-risk tiers can't be more permissive than lower ones."
         class="w-full flex-col"
       >
