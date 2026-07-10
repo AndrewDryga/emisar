@@ -4,16 +4,28 @@ defmodule Emisar.OAuth.Client.Changeset do
 
   @cast_fields ~w(client_name redirect_uris grant_types response_types scope metadata)a
 
+  # The public-client shapes this AS actually supports (mirrors the RFC 8414
+  # discovery metadata). A registration requesting anything outside these — the
+  # implicit/password/client_credentials grants, a `token` response type — is
+  # rejected rather than silently stored and later refused at authorize/token.
+  @supported_grant_types ~w(authorization_code refresh_token)
+  @supported_response_types ~w(code)
+
   @doc """
   Register a public OAuth client (RFC 7591 Dynamic Client Registration).
   The caller normalizes string/array params first; this validates the
-  redirect URIs (https or localhost only) and persists the registration.
+  grant/response/redirect/auth-method shapes against what the AS supports
+  and persists the registration.
   """
   def register(attrs) do
     %Client{}
     |> cast(attrs, @cast_fields)
     |> validate_length(:client_name, max: 200)
     |> validate_public_auth_method(attrs)
+    |> validate_subset(:grant_types, @supported_grant_types, message: "unsupported grant_type")
+    |> validate_subset(:response_types, @supported_response_types,
+      message: "unsupported response_type"
+    )
     |> validate_redirect_uris()
   end
 

@@ -248,6 +248,34 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert body["error_description"] =~ "token_endpoint_auth_method must be none"
     end
 
+    test "rejects an unsupported grant type", %{conn: conn} do
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Implicit",
+          "redirect_uris" => [@redirect],
+          "grant_types" => ["authorization_code", "implicit"]
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_client_metadata"
+      assert body["error_description"] =~ "grant_types unsupported grant_type"
+    end
+
+    test "rejects an unsupported response type", %{conn: conn} do
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Token",
+          "redirect_uris" => [@redirect],
+          "response_types" => ["token"]
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_client_metadata"
+      assert body["error_description"] =~ "response_types unsupported response_type"
+    end
+
     # `redirect_uris` may arrive as a single bare string;
     # list_param/3 normalizes it to a one-element list and registration succeeds.
     test "redirect_uris accepts a single string (normalized to a list)", %{conn: conn} do
@@ -451,6 +479,36 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       assert csp =~ "form-action 'self' https://chatgpt.com"
       refute csp =~ "connector/oauth"
+    end
+
+    # the consent screen identifies the callback ORIGIN (validated against the
+    # client's registration), so the operator authorizes a concrete destination
+    # for the code — not just a self-reported, spoofable client name.
+    test "the consent screen shows the callback origin", %{conn: conn, user: user} do
+      chatgpt_redirect = "https://chatgpt.com/connector/oauth/callback-id"
+      client = register_client!("ChatGPT", redirect_uris: [chatgpt_redirect])
+      {_verifier, challenge} = pkce()
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: chatgpt_redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "mcp offline_access",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      assert html =~ "Authorization codes go to"
+      # The bare origin is surfaced to the operator (the full callback path is
+      # only echoed in the hidden redirect_uri field the POST carries back).
+      assert html =~ ~s(<span class="font-mono text-zinc-400">https://chatgpt.com</span>)
     end
 
     test "scope_label falls back to the raw token for unknown scopes" do
@@ -998,10 +1056,11 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute location =~ "code="
     end
 
-    # an empty scope on approve is narrowed server-side to
-    # the default "mcp offline_access" (narrow_scope/1), so the persisted code's
-    # scope is the default, never blank.
-    test "approve with an empty scope narrows to the default", %{
+    # an empty scope on approve narrows server-side to just "mcp"
+    # (narrow_scope/1: `mcp` is mandatory, `offline_access` only when requested),
+    # matching what the consent screen displayed for an empty scope — the grant
+    # never diverges from what the operator saw, and never blank.
+    test "approve with an empty scope narrows to mcp only", %{
       conn: conn,
       user: user,
       client: client,
@@ -1028,7 +1087,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         location |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query() |> Map.fetch!("code")
 
       row = Repo.get_by!(OAuth.AuthorizationCode, code_hash: Crypto.hash(raw_code))
-      assert row.scope == "mcp offline_access"
+      assert row.scope == "mcp"
     end
 
     # the POST re-runs the same client/redirect gate as
@@ -1522,6 +1581,29 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert token.resource == @resource
     end
 
+    # RFC 8707 — a token request that names a `resource` other than the one the
+    # code was granted for is invalid_target, mints no token.
+    test "a token request with a mismatched resource is rejected with invalid_target", %{
+      conn: conn,
+      verifier: verifier,
+      client: client,
+      code: code
+    } do
+      body =
+        conn
+        |> post_json(~p"/oauth/token", %{
+          "grant_type" => "authorization_code",
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier,
+          "resource" => "https://other.example/mcp"
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_target"
+    end
+
     # the client is public (auth method "none"): a
     # client_secret sent alongside the exchange is simply ignored — auth is
     # code + verifier only. The exchange still succeeds.
@@ -1713,6 +1795,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert challenge =~ "Bearer"
       assert challenge =~ "resource_metadata="
       assert challenge =~ "/.well-known/oauth-protected-resource"
+      # RFC 9728 — advertise the single scope every MCP token must carry.
+      assert challenge =~ ~s(scope="mcp")
     end
   end
 end

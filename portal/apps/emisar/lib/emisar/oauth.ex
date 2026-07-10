@@ -156,12 +156,14 @@ defmodule Emisar.OAuth do
   offline_access was requested).
   """
   @spec exchange_code(map()) :: {:ok, map()} | {:error, atom()}
-  def exchange_code(%{
-        "code" => raw_code,
-        "client_id" => client_id,
-        "redirect_uri" => redirect_uri,
-        "code_verifier" => verifier
-      })
+  def exchange_code(
+        %{
+          "code" => raw_code,
+          "client_id" => client_id,
+          "redirect_uri" => redirect_uri,
+          "code_verifier" => verifier
+        } = params
+      )
       when is_binary(raw_code) and is_binary(client_id) and is_binary(verifier) do
     Multi.new()
     |> Multi.run(:code, fn repo, _changes ->
@@ -177,6 +179,7 @@ defmodule Emisar.OAuth do
            :ok <- check_code_live(code),
            :ok <- check(code.client_id == client_id, :invalid_grant),
            :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
+           :ok <- check(resource_param_ok?(code.resource, params["resource"]), :invalid_target),
            :ok <- check(valid_code_verifier?(verifier), :invalid_grant),
            :ok <- check(pkce_ok?(code, verifier), :invalid_grant),
            # Fail closed when the backing api_key was revoked / deleted / expired
@@ -212,7 +215,7 @@ defmodule Emisar.OAuth do
   from the same backing key.
   """
   @spec refresh(map()) :: {:ok, map()} | {:error, atom()}
-  def refresh(%{"refresh_token" => raw, "client_id" => client_id})
+  def refresh(%{"refresh_token" => raw, "client_id" => client_id} = params)
       when is_binary(raw) and is_binary(client_id) do
     Multi.new()
     |> Multi.run(:token, fn repo, _changes ->
@@ -225,6 +228,7 @@ defmodule Emisar.OAuth do
 
       with %Token{} <- token,
            :ok <- check(token.client_id == client_id, :invalid_grant),
+           :ok <- check(resource_param_ok?(token.resource, params["resource"]), :invalid_target),
            :ok <- check(live?(token.refresh_expires_at), :invalid_grant),
            # Fail closed when the backing api_key has been revoked / deleted /
            # expired since the grant was issued. Without this a refresh keeps
@@ -267,9 +271,9 @@ defmodule Emisar.OAuth do
   Internal — the MCP `:authenticate` plug (pre-auth; the bearer access
   token is the credential, resolved into the Subject downstream). Resolve a
   presented access token to its backing API key + account for `resource`.
-  Validates the token is live, not revoked, and audience-bound to that
-  resource before loading the backing key (which carries scope + attribution).
-  Returns `{:error, :invalid}` for anything off.
+  Validates the token is live, not revoked, carries the `mcp` scope, and is
+  audience-bound to that resource before loading the backing key (which carries
+  attribution). Returns `{:error, :invalid}` for anything off.
   """
   @spec resolve_access_token(String.t(), String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}
@@ -280,6 +284,7 @@ defmodule Emisar.OAuth do
       |> Token.Query.by_access_hash(Crypto.hash(raw))
 
     with %Token{} = token <- Repo.peek(queryable),
+         true <- mcp_scope?(token.scope),
          true <- live?(token.access_expires_at),
          true <- resource_matches?(token.resource, resource),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
@@ -445,17 +450,33 @@ defmodule Emisar.OAuth do
   # token's resolve path uses.
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
 
-  # Keep only supported scopes from the (client-controlled) consent POST,
-  # so a raw scope string can't persist something the consent UI didn't
-  # show — and a future scope that maps to real capability on the backing
-  # key can't be smuggled past `@supported_scopes`. Empty → the default.
+  # Every access token carries the `mcp` scope: that scope IS the capability to
+  # reach the MCP resource, and the resource server rejects a token without it
+  # (`mcp_scope?/1` in `resolve_access_token/2`). `offline_access` is additive
+  # and only gates refresh-token issuance (`mint_token_pair/1`), so a client
+  # that requests it — or requests nothing — still gets `mcp`, and a raw,
+  # client-controlled scope string can't smuggle an unsupported scope in.
   defp narrow_scope(raw) do
-    (raw || "")
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.filter(&(&1 in @supported_scopes))
-    |> case do
-      [] -> "mcp offline_access"
-      scopes -> Enum.join(scopes, " ")
-    end
+    requested = String.split(raw || "", ~r/\s+/, trim: true)
+    if "offline_access" in requested, do: "mcp offline_access", else: "mcp"
   end
+
+  # Fail-closed backstop at the resource server: a token whose scope lacks
+  # `mcp` (e.g. a hand-crafted/legacy `offline_access`-only grant) must never
+  # authenticate, even though `narrow_scope/1` always mints `mcp`.
+  defp mcp_scope?(scope) when is_binary(scope),
+    do: "mcp" in String.split(scope, ~r/\s+/, trim: true)
+
+  defp mcp_scope?(_), do: false
+
+  # RFC 8707 — a token request MAY repeat the `resource` it wants the token
+  # for. When present it must match the resource the grant was bound to at
+  # consent (absent leaves that binding intact). A MISMATCH is a client asking
+  # for a token aimed at a resource it was never authorized for → fail closed.
+  defp resource_param_ok?(_bound, nil), do: true
+
+  defp resource_param_ok?(bound, requested) when is_binary(requested),
+    do: resource_matches?(bound, requested)
+
+  defp resource_param_ok?(_bound, _requested), do: false
 end

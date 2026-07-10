@@ -63,9 +63,10 @@ defmodule EmisarWeb.MCP.Auth do
   end
 
   # RFC 9728 §5.1 — point unauthenticated clients at the protected-resource
-  # metadata. The configured endpoint URL stays stable rather than echoing
-  # whichever Host header the request arrived with.
+  # metadata and advertise `scope="mcp"`, the single scope every MCP access
+  # token must carry. The configured endpoint URL stays stable rather than
+  # echoing whichever Host header the request arrived with.
   defp challenge do
-    ~s(Bearer resource_metadata="#{EmisarWeb.Endpoint.url()}/.well-known/oauth-protected-resource")
+    ~s(Bearer resource_metadata="#{EmisarWeb.Endpoint.url()}/.well-known/oauth-protected-resource", scope="mcp")
   end
 end

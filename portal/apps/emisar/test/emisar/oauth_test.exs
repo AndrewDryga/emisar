@@ -90,6 +90,28 @@ defmodule Emisar.OAuthTest do
 
       assert "http://localhost:8723/callback" in client.redirect_uris
     end
+
+    test "rejects an unsupported grant type (only authorization_code + refresh_token)" do
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Implicit",
+                 "redirect_uris" => [@redirect],
+                 "grant_types" => ["authorization_code", "implicit"]
+               })
+
+      assert "unsupported grant_type" in errors_on(changeset).grant_types
+    end
+
+    test "rejects an unsupported response type (only code)" do
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Token",
+                 "redirect_uris" => [@redirect],
+                 "response_types" => ["token"]
+               })
+
+      assert "unsupported response_type" in errors_on(changeset).response_types
+    end
   end
 
   describe "fetch_client/1" do
@@ -332,6 +354,56 @@ defmodule Emisar.OAuthTest do
       assert tokens.scope == "mcp offline_access"
     end
 
+    test "an offline_access-only request still carries the mandatory mcp scope",
+         %{client: client, subject: subject} do
+      # A client asking for `offline_access` (a refresh token) without naming
+      # `mcp` must still get `mcp` — that scope IS the MCP capability, so the
+      # token would be useless (and rejected at the resource server) without it.
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge, scope: "offline_access")
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      assert tokens.scope == "mcp offline_access"
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token, @resource)
+    end
+
+    test "rejects a token request whose resource mismatches the granted resource (RFC 8707)",
+         %{subject: subject, client: client} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      assert {:error, :invalid_target} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier,
+                 "resource" => "https://other.example/mcp"
+               })
+    end
+
+    test "accepts a token request that repeats the matching resource",
+         %{subject: subject, client: client} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      assert {:ok, _tokens} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier,
+                 "resource" => @resource
+               })
+    end
+
     test "a request missing the required params is :invalid_request, not a crash" do
       # The arity-1 fallback clause catches any param map lacking
       # code/client_id/redirect_uri/code_verifier — a malformed token POST.
@@ -406,6 +478,16 @@ defmodule Emisar.OAuthTest do
                OAuth.refresh(%{
                  "refresh_token" => tokens.refresh_token,
                  "client_id" => other.id
+               })
+    end
+
+    test "rejects a refresh whose resource mismatches the granted resource (RFC 8707)",
+         %{client: client, tokens: tokens} do
+      assert {:error, :invalid_target} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id,
+                 "resource" => "https://other.example/mcp"
                })
     end
 
@@ -536,6 +618,17 @@ defmodule Emisar.OAuthTest do
     test "rejects a token issued for another resource", %{tokens: tokens} do
       token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
       Repo.update!(Ecto.Changeset.change(token, resource: "https://other.example/mcp"))
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+    end
+
+    test "rejects a token whose scope lacks mcp (fail-closed resource-server backstop)",
+         %{tokens: tokens} do
+      # `narrow_scope/1` always mints `mcp`, but the resource server must not
+      # trust that: force the stored scope to `offline_access` only and the live
+      # token no longer authenticates.
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      Repo.update!(Ecto.Changeset.change(token, scope: "offline_access"))
 
       assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
     end

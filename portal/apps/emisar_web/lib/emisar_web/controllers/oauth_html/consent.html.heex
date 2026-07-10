@@ -12,6 +12,10 @@
         <p class="mt-1 text-sm text-zinc-400">
           wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
         </p>
+        <p :if={@callback_origin} class="mt-2 text-xs text-zinc-500">
+          Authorization codes go to
+          <span class="font-mono text-zinc-400">{@callback_origin}</span>
+        </p>
       </div>
 
       <div class="px-6 py-5">

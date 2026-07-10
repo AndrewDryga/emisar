@@ -138,6 +138,10 @@ defmodule EmisarWeb.OAuthController do
     |> allow_oauth_form_redirect(params["redirect_uri"])
     |> render(:consent,
       client_name: client_label(client),
+      # The origin codes are delivered to — validated against the client's
+      # registration — so the operator authorizes a concrete callback, not just
+      # a self-reported (spoofable) client name.
+      callback_origin: form_action_origin(params["redirect_uri"]),
       account_name: account_label(conn),
       user_email: user_email(conn),
       scopes: requested,
@@ -257,6 +261,7 @@ defmodule EmisarWeb.OAuthController do
 
   defp oauth_error(:invalid_grant), do: "invalid_grant"
   defp oauth_error(:invalid_client), do: "invalid_client"
+  defp oauth_error(:invalid_target), do: "invalid_target"
   defp oauth_error(:unsupported_grant_type), do: "unsupported_grant_type"
   defp oauth_error(:server_error), do: "server_error"
   defp oauth_error(_), do: "invalid_request"
