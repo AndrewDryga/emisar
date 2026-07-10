@@ -169,7 +169,7 @@ defmodule Emisar.Policies do
   `{:ok, %{{runner_id, action_id} => :allow | :require_approval | :deny}}`.
 
   Mirrors dispatch's `evaluate_with_policy/3` (the
-  `resolve_policy` + `evaluate/3` pair `Runs.evaluate_and_dispatch` calls), so
+  `resolve_policy` + `evaluate/2` pair `Runs.evaluate_and_dispatch` calls), so
   the prediction matches the real verdict — NOT a re-implementation. The one
   honest gap is dispatch's grant fast-path: a standing grant can let a
   `:require_approval` action run without pausing, which can't be known ahead of
@@ -190,7 +190,7 @@ defmodule Emisar.Policies do
         Map.new(targets, fn %{runner_id: runner_id, action_id: action_id} = target ->
           policy = Map.get(policies, {runner_id, target[:group]})
           match_ctx = %{"action_id" => action_id, "risk" => to_string(target[:risk] || "low")}
-          {decision, _matched, _reason} = evaluate(policy, match_ctx, %{})
+          {decision, _matched, _reason} = evaluate(policy, match_ctx)
           {{runner_id, action_id}, decision}
         end)
 
@@ -362,7 +362,7 @@ defmodule Emisar.Policies do
   @doc """
   Internal — the most specific policy governing a dispatch to `runner_id`
   (in `group`): a policy scoped to that runner, else that group, else the
-  account default, else `nil` (no policy → `evaluate/3` default-denies).
+  account default, else `nil` (no policy → `evaluate/2` default-denies).
   One query fetches the ≤3 candidates; precedence (runner > group > account)
   is resolved in memory. A scoped policy REPLACES the account default for
   that runner/group — it isn't layered on top.
@@ -399,10 +399,10 @@ defmodule Emisar.Policies do
   runtime properties (`action_id`, `risk`). Returns
   `{decision, matched_rules, reason}`.
   """
-  def evaluate(nil, _match_ctx, _args),
+  def evaluate(nil, _match_ctx),
     do: {:deny, [], "no policy configured for this account"}
 
-  def evaluate(%Policy{rules: rules}, %{} = match_ctx, _args) do
+  def evaluate(%Policy{rules: rules}, %{} = match_ctx) do
     action_id = match_ctx["action_id"] || ""
     risk = match_ctx["risk"] || "low"
 
@@ -507,7 +507,7 @@ defmodule Emisar.Policies do
     # caller (Runs) so Policies stays out of the Runners table.
     policy = resolve_policy(account_id, attrs[:runner_id], group)
 
-    # `evaluate/3` matches on `action_id` (override globs) + `risk` (tier
+    # `evaluate/2` matches on `action_id` (override globs) + `risk` (tier
     # defaults) only. The catalog-authoritative `kind` in `attrs` is the
     # anti-spoofing field carried by `Runs.evaluate_and_dispatch`; the
     # evaluator never reads it, so it isn't threaded into `match_ctx`.
@@ -518,7 +518,7 @@ defmodule Emisar.Policies do
       "risk" => to_string(attrs[:risk] || "low")
     }
 
-    {decision, matched, reason} = evaluate(policy, match_ctx, attrs[:args] || %{})
+    {decision, matched, reason} = evaluate(policy, match_ctx)
     {decision, matched, annotate_scope(reason, policy), policy}
   end
 

@@ -601,13 +601,13 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "evaluate/3 — risk-tier defaults" do
+  describe "evaluate/2 — risk-tier defaults" do
     setup do
       %{policy: %Policy{rules: Policies.default_rules()}}
     end
 
     test "no policy means deny everything" do
-      assert {:deny, [], reason} = Policies.evaluate(nil, %{"action_id" => "x.y"}, %{})
+      assert {:deny, [], reason} = Policies.evaluate(nil, %{"action_id" => "x.y"})
       assert reason =~ "no policy"
     end
 
@@ -616,7 +616,7 @@ defmodule Emisar.PoliciesTest do
       policy = %Policy{rules: rules}
 
       assert {:deny, [], _reason} =
-               Policies.evaluate(policy, %{"action_id" => "linux.uptime", "risk" => "low"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "linux.uptime", "risk" => "low"})
 
       assert Policies.shadowed_overrides(rules) == []
 
@@ -626,20 +626,20 @@ defmodule Emisar.PoliciesTest do
 
     test "low/medium tier defaults to allow with stock defaults", %{policy: policy} do
       assert {:allow, [], _} =
-               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "low"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "low"})
 
       assert {:allow, [], _} =
-               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "medium"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "medium"})
     end
 
     test "high tier defaults to require_approval", %{policy: policy} do
       assert {:require_approval, [], _} =
-               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "high"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "high"})
     end
 
     test "critical tier defaults to deny", %{policy: policy} do
       assert {:deny, [], _} =
-               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "critical"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "critical"})
     end
 
     test "operator can flip a single tier's default" do
@@ -650,11 +650,11 @@ defmodule Emisar.PoliciesTest do
       policy = %Policy{rules: rules}
 
       assert {:require_approval, [], _} =
-               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "critical"}, %{})
+               Policies.evaluate(policy, %{"action_id" => "x", "risk" => "critical"})
     end
   end
 
-  describe "evaluate/3 — per-action overrides" do
+  describe "evaluate/2 — per-action overrides" do
     test "override beats tier default when action matches exactly" do
       rules = %{
         "schema_version" => 2,
@@ -667,8 +667,7 @@ defmodule Emisar.PoliciesTest do
       assert {:deny, ["block-bad"], reason} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "x.bad", "risk" => "low"},
-                 %{}
+                 %{"action_id" => "x.bad", "risk" => "low"}
                )
 
       assert reason =~ "Override:"
@@ -676,8 +675,7 @@ defmodule Emisar.PoliciesTest do
       assert {:allow, [], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "x.fine", "risk" => "low"},
-                 %{}
+                 %{"action_id" => "x.fine", "risk" => "low"}
                )
     end
 
@@ -697,15 +695,13 @@ defmodule Emisar.PoliciesTest do
       assert {:allow, ["allow-cassandra-status"], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "cassandra.status_check", "risk" => "high"},
-                 %{}
+                 %{"action_id" => "cassandra.status_check", "risk" => "high"}
                )
 
       assert {:deny, [], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "cassandra.drop", "risk" => "high"},
-                 %{}
+                 %{"action_id" => "cassandra.drop", "risk" => "high"}
                )
     end
 
@@ -724,8 +720,7 @@ defmodule Emisar.PoliciesTest do
       assert {:deny, ["block-drops"], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "cassandra.DROP_table", "risk" => "low"},
-                 %{}
+                 %{"action_id" => "cassandra.DROP_table", "risk" => "low"}
                )
     end
 
@@ -742,8 +737,7 @@ defmodule Emisar.PoliciesTest do
       assert {:require_approval, ["first"], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "linux.uptime", "risk" => "low"},
-                 %{}
+                 %{"action_id" => "linux.uptime", "risk" => "low"}
                )
     end
 
@@ -753,8 +747,7 @@ defmodule Emisar.PoliciesTest do
       assert {:deny, [], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
-                 %{"action_id" => "x", "risk" => "low"},
-                 %{}
+                 %{"action_id" => "x", "risk" => "low"}
                )
     end
 
@@ -766,11 +759,11 @@ defmodule Emisar.PoliciesTest do
 
       base = %{"action_id" => "x", "risk" => "high"}
 
-      assert Policies.evaluate(policy, base, %{}) ==
-               Policies.evaluate(policy, Map.put(base, "kind", "exec"), %{})
+      assert Policies.evaluate(policy, base) ==
+               Policies.evaluate(policy, Map.put(base, "kind", "exec"))
 
-      assert Policies.evaluate(policy, base, %{}) ==
-               Policies.evaluate(policy, Map.put(base, "kind", "anything-else"), %{})
+      assert Policies.evaluate(policy, base) ==
+               Policies.evaluate(policy, Map.put(base, "kind", "anything-else"))
     end
   end
 

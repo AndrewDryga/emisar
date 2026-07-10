@@ -2,7 +2,7 @@ defmodule Emisar.Policies.Glob do
   @moduledoc """
   The policy-override glob grammar, in one tested place. `*` matches any run
   (including empty); every other character is literal. Matching is
-  case-insensitive and anchored — the same grammar `Policies.evaluate/3` uses
+  case-insensitive and anchored — the same grammar `Policies.evaluate/2` uses
   to pick the first matching override.
 
   Pure — no Repo, no Subject (like `Catalog.ActionSetDiff`).

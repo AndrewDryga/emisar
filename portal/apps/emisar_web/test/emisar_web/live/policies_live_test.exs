@@ -4,7 +4,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
   per-action overrides) and the inline targeted-ruleset list (add → pick a
   runner/group → save). Each card is its own form, discriminated by an
   `editor` field — `"account"` or a ruleset uid — so saves persist the
-  expected v2 JSON shape `Emisar.Policies.evaluate/3` consumes.
+  expected v2 JSON shape `Emisar.Policies.evaluate/2` consumes.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Policies
