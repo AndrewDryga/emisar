@@ -16,6 +16,13 @@ defmodule EmisarWeb.ErrorHTMLTest do
       html = render_to_string(EmisarWeb.ErrorHTML, "404", "html", %{})
       assert html =~ ~s(<meta name="robots" content="noindex, nofollow")
     end
+
+    test "uses the self-hosted application stylesheet, never a third-party font CDN" do
+      html = render_to_string(EmisarWeb.ErrorHTML, "404", "html", %{})
+
+      assert html =~ ~s(href="/assets/app.css")
+      refute html =~ "rsms.me"
+    end
   end
 
   describe "500" do

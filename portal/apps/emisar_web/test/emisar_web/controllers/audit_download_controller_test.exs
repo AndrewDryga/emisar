@@ -106,5 +106,23 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
         get(conn, ~p"/app/#{other_account}/audit/download")
       end
     end
+
+    test "formula-leading audit values are exported as text, not spreadsheet formulas", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_label: "=HYPERLINK(\"https://attacker.test\")"
+        )
+
+      body =
+        conn |> get(~p"/app/#{account}/audit/download?event_type=user.invited") |> response(200)
+
+      assert body =~ "\"\t=HYPERLINK(\"\"https://attacker.test\"\")\""
+    end
   end
 end

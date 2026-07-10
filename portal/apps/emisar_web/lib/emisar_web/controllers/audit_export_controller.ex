@@ -41,7 +41,7 @@ defmodule EmisarWeb.AuditExportController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, ApiKeys, Audit, Billing}
+  alias Emisar.{Accounts, ApiKeys, Audit, Billing, PublicUrl}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext
 
@@ -95,16 +95,27 @@ defmodule EmisarWeb.AuditExportController do
   end
 
   defp parse_event_types(params) do
-    raw =
-      params
-      |> Map.get("event_type", [])
-      |> List.wrap()
-      |> Enum.flat_map(&String.split(&1, ",", trim: true))
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
+    with {:ok, values} <- event_type_values(params["event_type"]) do
+      types =
+        values
+        |> Enum.flat_map(&String.split(&1, ",", trim: true))
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
 
-    {:ok, raw}
+      {:ok, types}
+    end
   end
+
+  defp event_type_values(nil), do: {:ok, []}
+  defp event_type_values(value) when is_binary(value), do: {:ok, [value]}
+
+  defp event_type_values(values) when is_list(values) do
+    if Enum.all?(values, &is_binary/1),
+      do: {:ok, values},
+      else: {:error, "event_type must be a string or list of strings"}
+  end
+
+  defp event_type_values(_), do: {:error, "event_type must be a string or list of strings"}
 
   defp parse_limit(nil), do: {:ok, Audit.default_export_limit()}
 
@@ -148,7 +159,8 @@ defmodule EmisarWeb.AuditExportController do
   defp decode_cursor(encoded) when is_binary(encoded) do
     with {:ok, raw} <- Base.url_decode64(encoded, padding: false),
          [ts_str, id] <- String.split(raw, "|", parts: 2),
-         {:ok, ts, _} <- DateTime.from_iso8601(ts_str) do
+         {:ok, ts, _} <- DateTime.from_iso8601(ts_str),
+         {:ok, _} <- Ecto.UUID.cast(id) do
       {:ok, ts, id}
     else
       _ -> :error
@@ -175,7 +187,7 @@ defmodule EmisarWeb.AuditExportController do
   defp maybe_put_next_cursor(conn, _events, _limit), do: conn
 
   defp next_page_url(conn, cursor) do
-    base = "#{conn.scheme}://#{conn.host}#{conn.request_path}"
+    base = PublicUrl.url("/api/audit")
     params = Map.put(conn.query_params || %{}, "cursor", cursor) |> Map.delete("since")
     base <> "?" <> URI.encode_query(params)
   end

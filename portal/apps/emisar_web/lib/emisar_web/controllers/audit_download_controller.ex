@@ -20,7 +20,7 @@ defmodule EmisarWeb.AuditDownloadController do
   @page_limit 100
 
   defp max_rows, do: Application.get_env(:emisar_web, :audit_download_max_rows, 100_000)
-  defp max_pages, do: div(max_rows(), @page_limit) + 1
+  defp max_pages, do: div(max_rows() + @page_limit - 1, @page_limit)
 
   def download(conn, params) do
     subject = conn.assigns.current_subject
@@ -169,7 +169,24 @@ defmodule EmisarWeb.AuditDownloadController do
   end
 
   # Always-quoted + doubled internal quotes — correct for every value incl.
-  # commas, newlines, and the payload JSON, with no csv dependency.
+  # commas, newlines, and the payload JSON, with no csv dependency. A tab
+  # prefix keeps a spreadsheet from evaluating attacker-controlled audit data
+  # as a formula when an operator opens the export.
   defp csv_field(nil), do: ~s("")
-  defp csv_field(value), do: ~s(") <> String.replace(to_string(value), ~s("), ~s("")) <> ~s(")
+
+  defp csv_field(value) do
+    value
+    |> to_string()
+    |> formula_safe()
+    |> String.replace(~s("), ~s(""))
+    |> then(&(~s(") <> &1 <> ~s(")))
+  end
+
+  defp formula_safe(value) do
+    if String.starts_with?(String.trim_leading(value), ["=", "+", "-", "@"]) do
+      "\t" <> value
+    else
+      value
+    end
+  end
 end

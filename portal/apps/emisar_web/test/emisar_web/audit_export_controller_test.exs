@@ -14,7 +14,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * Unauthenticated → 401
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Audit
+  alias Emisar.{Audit, PublicUrl}
 
   setup do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -183,6 +183,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert [cursor] = get_resp_header(conn, "x-next-cursor")
       assert cursor != ""
       assert [link] = get_resp_header(conn, "link")
+      assert link =~ "<#{PublicUrl.url("/api/audit")}?"
       assert link =~ ~s(rel="next")
       assert link =~ "cursor=#{cursor}"
     end
@@ -247,6 +248,16 @@ defmodule EmisarWeb.AuditExportControllerTest do
     test "malformed cursor returns 400, not silently rewinds", %{conn: conn, raw_key: raw} do
       conn = conn |> bearer(raw) |> get(~p"/api/audit?cursor=garbage")
       assert json_response(conn, 400)["error"] == "invalid_params"
+    end
+
+    test "a cursor with a non-UUID id returns 400 instead of an empty page", %{
+      conn: conn,
+      raw_key: raw
+    } do
+      cursor = Base.url_encode64("2026-01-01T00:00:00Z|not-a-uuid", padding: false)
+      conn = conn |> bearer(raw) |> get("/api/audit?cursor=#{cursor}")
+
+      assert json_response(conn, 400)["message"] =~ "cursor"
     end
 
     # a non-ISO8601 `since` is a 400 invalid_params, not a
@@ -315,6 +326,12 @@ defmodule EmisarWeb.AuditExportControllerTest do
 
       assert Enum.map(events, & &1["event_type"]) |> Enum.sort() ==
                ["policy.updated", "user.signed_in"]
+    end
+
+    test "nested event_type params return 400 instead of raising", %{conn: conn, raw_key: raw} do
+      conn = conn |> bearer(raw) |> get("/api/audit?event_type[unexpected]=policy.updated")
+
+      assert json_response(conn, 400)["message"] =~ "event_type"
     end
   end
 
