@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, is_leader, is_readonly, future_parts, parts_to_check, queue_size, absolute_delay, log_max_index, log_pointer, total_replicas, active_replicas FROM system.replicas FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, is_leader, is_readonly, future_parts, parts_to_check, queue_size, absolute_delay, log_max_index, log_pointer, total_replicas, active_replicas FROM system.replicas FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

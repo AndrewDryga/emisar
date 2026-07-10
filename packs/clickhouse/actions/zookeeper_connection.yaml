@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, host, port, index, connected_time, session_uptime_elapsed_seconds, is_expired, keeper_api_version, client_id FROM system.zookeeper_connection FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, host, port, index, connected_time, session_uptime_elapsed_seconds, is_expired, keeper_api_version, client_id FROM system.zookeeper_connection FORMAT JSONEachRow\""
   timeout: 15s
 output:
   parser: text

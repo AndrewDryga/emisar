@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SYSTEM RELOAD CONFIG\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SYSTEM RELOAD CONFIG\""
   timeout: 30s
 output:
   parser: text

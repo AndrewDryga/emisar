@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, code, value, last_error_time, substring(last_error_message, 1, 300) AS last_message, remote FROM system.errors WHERE value > 0 ORDER BY last_error_time DESC LIMIT 100 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, code, value, last_error_time, substring(last_error_message, 1, 300) AS last_message, remote FROM system.errors WHERE value > 0 ORDER BY last_error_time DESC LIMIT 100 FORMAT JSONEachRow\""
   timeout: 15s
 output:
   parser: text

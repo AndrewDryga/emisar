@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"KILL QUERY WHERE query_id = '$Q' SYNC\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"KILL QUERY WHERE query_id = '$Q' SYNC\""
   env:
     Q: "{{ args.query_id }}"
   timeout: 60s

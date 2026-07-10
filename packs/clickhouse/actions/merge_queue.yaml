@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, elapsed, progress, num_parts, source_part_names, result_part_name, total_size_bytes_compressed, memory_usage FROM system.merges FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, elapsed, progress, num_parts, source_part_names, result_part_name, total_size_bytes_compressed, memory_usage FROM system.merges FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

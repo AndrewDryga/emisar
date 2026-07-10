@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, value, numChildren, ctime, mtime, version, czxid, mzxid FROM system.zookeeper WHERE path = '$ZKPATH' ORDER BY name LIMIT 500 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, value, numChildren, ctime, mtime, version, czxid, mzxid FROM system.zookeeper WHERE path = '$ZKPATH' ORDER BY name LIMIT 500 FORMAT JSONEachRow\""
   env:
     ZKPATH: "{{ args.path }}"
   timeout: 30s

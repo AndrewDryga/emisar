@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, sum(rows) as rows, sum(bytes_on_disk) as bytes, count() as parts FROM system.parts WHERE active GROUP BY database, table ORDER BY bytes DESC LIMIT 100 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, sum(rows) as rows, sum(bytes_on_disk) as bytes, count() as parts FROM system.parts WHERE active GROUP BY database, table ORDER BY bytes DESC LIMIT 100 FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

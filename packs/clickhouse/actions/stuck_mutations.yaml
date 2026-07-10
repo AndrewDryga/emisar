@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, mutation_id, command, create_time, parts_to_do, latest_failed_part, latest_fail_time, substring(latest_fail_reason, 1, 300) AS fail_reason FROM system.mutations WHERE NOT is_done AND latest_fail_reason != '' ORDER BY create_time ASC LIMIT 100 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, mutation_id, command, create_time, parts_to_do, latest_failed_part, latest_fail_time, substring(latest_fail_reason, 1, 300) AS fail_reason FROM system.mutations WHERE NOT is_done AND latest_fail_reason != '' ORDER BY create_time ASC LIMIT 100 FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, partition_id, name, reason, disk, bytes_on_disk FROM system.detached_parts ORDER BY bytes_on_disk DESC LIMIT 500 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, partition_id, name, reason, disk, bytes_on_disk FROM system.detached_parts ORDER BY bytes_on_disk DESC LIMIT 500 FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

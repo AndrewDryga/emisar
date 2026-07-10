@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT id, name, status, substring(error, 1, 300) AS error, start_time, end_time, num_files, total_size FROM system.backups ORDER BY start_time DESC LIMIT 100 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT id, name, status, substring(error, 1, 300) AS error, start_time, end_time, num_files, total_size FROM system.backups ORDER BY start_time DESC LIMIT 100 FORMAT JSONEachRow\""
   timeout: 15s
 output:
   parser: text

@@ -25,7 +25,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"OPTIMIZE TABLE {{ args.database }}.{{ args.table }} FINAL\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"OPTIMIZE TABLE {{ args.database }}.{{ args.table }} FINAL\""
   timeout: 1h
 output:
   parser: text
