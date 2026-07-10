@@ -28,6 +28,7 @@ func packCmd() *cobra.Command {
 	cmd.AddCommand(packUpdateCmd())
 	cmd.AddCommand(packUninstallCmd())
 	cmd.AddCommand(packSuggestCmd())
+	cmd.AddCommand(packCatalogCmd())
 	return cmd
 }
 

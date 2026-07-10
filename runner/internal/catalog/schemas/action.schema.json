@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emisar.dev/v1/schemas/action.schema.json",
+  "title": "emisar action definition (actions/*.yaml)",
+  "description": "Authoring schema for a single action YAML. Documentation and editor validation only — the runner's loader (runner/pkg/actionspec) is the authoritative validator, and per-value argument validation happens at execution time.",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "kind", "risk", "description", "execution"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*", "description": "<namespace>.<name>."},
+    "title": {"type": "string", "minLength": 1},
+    "kind": {"type": "string", "enum": ["exec", "script"]},
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "low = read-only (no approval); medium/high = mutating/destructive (policy-gated); critical = default-deny."
+    },
+    "description": {"type": "string", "minLength": 1},
+    "side_effects": {"type": "array", "items": {"type": "string"}},
+    "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
+    "execution": {"$ref": "#/$defs/execution"},
+    "output": {"$ref": "#/$defs/output"},
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "args"],
+        "additionalProperties": false,
+        "properties": {"title": {"type": "string"}, "args": {"type": "object"}}
+      }
+    }
+  },
+  "$defs": {
+    "arg": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "duration", "path", "string_array", "integer_array"]
+        },
+        "required": {"type": "boolean"},
+        "sensitive": {"type": "boolean"},
+        "default": {},
+        "description": {"type": "string"},
+        "validation": {"$ref": "#/$defs/validation"}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enum": {"type": "array"},
+        "pattern": {"type": "string"},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "allowed": {"type": "array"},
+        "allowed_paths": {"type": "array", "items": {"type": "string"}},
+        "denied_paths": {"type": "array", "items": {"type": "string"}},
+        "allowed_prefixes": {"type": "array", "items": {"type": "string"}},
+        "denied_prefixes": {"type": "array", "items": {"type": "string"}},
+        "max_items": {"type": "integer"},
+        "max_length": {"type": "integer"},
+        "min_duration": {"type": "string"},
+        "max_duration": {"type": "string"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "object",
+          "required": ["binary", "argv"],
+          "additionalProperties": false,
+          "properties": {
+            "binary": {"type": "string"},
+            "argv": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "script": {
+          "type": "object",
+          "required": ["path"],
+          "additionalProperties": false,
+          "properties": {"path": {"type": "string"}, "interpreter": {"type": "string"}}
+        },
+        "argv": {"type": "array", "items": {"type": "string"}},
+        "timeout": {"type": "string"},
+        "timeout_min": {"type": "string"},
+        "timeout_max": {"type": "string"},
+        "success_exit_codes": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 255}},
+        "cancel_grace": {"type": "string"},
+        "cwd": {"type": "string"},
+        "env": {"type": "object", "additionalProperties": {"type": "string"}},
+        "user": {"type": "string"}
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parser": {"type": "string", "enum": ["", "text", "json"]},
+        "parser_required": {"type": "boolean"},
+        "max_stdout_bytes": {"type": "integer"},
+        "max_stdout_bytes_min": {"type": "integer"},
+        "max_stdout_bytes_max": {"type": "integer"},
+        "max_stderr_bytes": {"type": "integer"},
+        "max_stderr_bytes_min": {"type": "integer"},
+        "max_stderr_bytes_max": {"type": "integer"},
+        "redact": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"type": "string"},
+              "pattern": {"type": "string"},
+              "literal": {"type": "string"},
+              "replacement": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
