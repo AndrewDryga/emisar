@@ -708,10 +708,23 @@ defmodule EmisarWeb.LiveTable do
   # "All"), otherwise the filter's configured `default`. Absent → default; an
   # explicit blank overrides the default. `default` is nil for most filters, so
   # this is just `Map.get` for them.
+  defp filter_value(params, key, %Filter{type: {:list, _}, default: default}) do
+    case Map.fetch(params, key) do
+      {:ok, value} when is_binary(value) ->
+        value
+
+      {:ok, values} when is_list(values) ->
+        if Enum.all?(values, &is_binary/1), do: values, else: default
+
+      _ ->
+        default
+    end
+  end
+
   defp filter_value(params, key, %Filter{default: default}) do
     case Map.fetch(params, key) do
-      {:ok, value} -> value
-      :error -> default
+      {:ok, value} when is_binary(value) -> value
+      _ -> default
     end
   end
 
@@ -924,10 +937,13 @@ defmodule EmisarWeb.LiveTable do
       # so its falsy value never filters the row out.
       |> Enum.reject(fn {_name, value} -> is_nil(value) end)
 
+    after_cursor = params["#{prefix}after"]
+    before_cursor = params["#{prefix}before"]
+
     page_kv =
       cond do
-        c = params["#{prefix}after"] -> [cursor: c]
-        c = params["#{prefix}before"] -> [cursor: c]
+        is_binary(after_cursor) and after_cursor != "" -> [cursor: after_cursor]
+        is_binary(before_cursor) and before_cursor != "" -> [cursor: before_cursor]
         true -> []
       end
 
@@ -980,7 +996,9 @@ defmodule EmisarWeb.LiveTable do
     do: [value]
 
   defp cast_filter_value(%Filter{type: {:list, _}}, values) when is_list(values),
-    do: values
+    do: if(Enum.all?(values, &is_binary/1), do: values, else: nil)
+
+  defp cast_filter_value(%Filter{type: {:list, _}}, _), do: nil
 
   defp cast_filter_value(%Filter{type: :boolean}, "true"), do: true
   defp cast_filter_value(%Filter{type: :boolean}, _), do: false
@@ -988,7 +1006,8 @@ defmodule EmisarWeb.LiveTable do
   defp cast_filter_value(%Filter{type: :datetime}, value) when is_binary(value),
     do: parse_datetime_local(value)
 
-  defp cast_filter_value(_, value), do: value
+  defp cast_filter_value(_filter, value) when is_binary(value), do: value
+  defp cast_filter_value(_filter, _value), do: nil
 
   # datetime-local input ("YYYY-MM-DDTHH:MM") → UTC DateTime. The wallclock
   # value is read as UTC (audit columns render in UTC). An unparseable value

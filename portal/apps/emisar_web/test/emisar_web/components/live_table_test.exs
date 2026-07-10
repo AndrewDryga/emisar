@@ -102,6 +102,23 @@ defmodule EmisarWeb.LiveTableTest do
                LiveTable.params_to_opts(%{"name" => ""}, filters)
     end
 
+    test "nested filter params are ignored before they reach a query" do
+      filters = [string_filter(:name), list_filter(:status)]
+
+      assert [filter: [], page: []] =
+               LiveTable.params_to_opts(
+                 %{"name" => %{"nested" => "value"}, "status" => %{"nested" => "value"}},
+                 filters
+               )
+    end
+
+    test "a cursor must be a non-empty string" do
+      assert [filter: [], page: []] =
+               LiveTable.params_to_opts(%{"after" => %{"nested" => "value"}})
+
+      assert [filter: [], page: []] = LiveTable.params_to_opts(%{"before" => ""})
+    end
+
     test "after cursor lands in page[:cursor]" do
       assert [filter: [], page: [cursor: "abc"]] =
                LiveTable.params_to_opts(%{"after" => "abc"}, [])

@@ -98,8 +98,13 @@ defmodule EmisarWeb.TeamLive do
   # moment its group is selected (the group already covers it) — parse drops the
   # now-redundant runners and re-seeds the draft the select renders from.
   def handle_event("scope_changed", %{"scope" => values}, socket) do
-    %{groups: groups, runner_ids: runner_ids} = RunnerScope.parse(values, socket.assigns.runners)
-    {:noreply, assign(socket, :scope_draft, RunnerScope.to_values(groups, runner_ids))}
+    case RunnerScope.parse(values, socket.assigns.runners) do
+      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
+        {:noreply, assign(socket, :scope_draft, RunnerScope.to_values(groups, runner_ids))}
+
+      {:error, :invalid} ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("scope_changed", _params, socket),
@@ -218,14 +223,26 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
-      %{groups: groups, runner_ids: runner_ids} =
-        RunnerScope.parse(List.wrap(params["scope"]), socket.assigns.runners)
+      if Runners.subject_can_manage_runners?(socket.assigns.current_subject) do
+        case RunnerScope.parse(List.wrap(params["scope"]), socket.assigns.runners) do
+          {:ok, %{groups: groups, runner_ids: runner_ids}} ->
+            new_scopes =
+              Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
 
-      new_scopes = Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
+            case Runners.replace_runner_scopes(
+                   membership,
+                   new_scopes,
+                   socket.assigns.current_subject
+                 ) do
+              {:ok, :ok} -> {:ok, "Scope updated."}
+              {:error, reason} -> {:error, error_message(reason)}
+            end
 
-      case Runners.replace_runner_scopes(membership, new_scopes, socket.assigns.current_subject) do
-        {:ok, :ok} -> {:ok, "Scope updated."}
-        {:error, reason} -> {:error, error_message(reason)}
+          {:error, :invalid} ->
+            {:error, "Invalid runner scope."}
+        end
+      else
+        {:error, error_message(:unauthorized)}
       end
     end)
     |> tap_clear_scope_edit()

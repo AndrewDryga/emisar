@@ -151,29 +151,39 @@ defmodule EmisarWeb.RunnerScope do
   defp runner_row_class(false), do: @runner_row <> " cursor-pointer hover:bg-white/[0.04]"
 
   @doc """
-  Parse the checked scope values back to `%{groups: [name], runner_ids: [id]}`,
+  Parse the checked scope values back to `{:ok, %{groups: [name], runner_ids: [id]}}`,
   allowlisted against `runners` (a crafted POST can't smuggle another account's
   ids/groups — IL-15), with any runner already covered by a selected group
-  dropped (redundant). Empty both = "all runners".
+  dropped (redundant). An explicit empty list means "all runners"; malformed or
+  unknown values return `{:error, :invalid}` so they cannot widen a scope.
   """
-  def parse(values, runners) do
+  def parse(values, runners) when is_list(values) do
     valid_groups = runners |> Enum.map(& &1.group) |> Enum.reject(&blank?/1) |> MapSet.new()
     by_id = Map.new(runners, &{&1.id, &1})
 
-    groups =
-      for "group:" <> group <- values, MapSet.member?(valid_groups, group), uniq: true, do: group
+    if valid_scope_values?(values, valid_groups, by_id) do
+      groups =
+        for "group:" <> group <- values,
+            MapSet.member?(valid_groups, group),
+            uniq: true,
+            do: group
 
-    selected_groups = MapSet.new(groups)
+      selected_groups = MapSet.new(groups)
 
-    runner_ids =
-      for "runner:" <> id <- values,
-          Map.has_key?(by_id, id),
-          not MapSet.member?(selected_groups, by_id[id].group),
-          uniq: true,
-          do: id
+      runner_ids =
+        for "runner:" <> id <- values,
+            Map.has_key?(by_id, id),
+            not MapSet.member?(selected_groups, by_id[id].group),
+            uniq: true,
+            do: id
 
-    %{groups: groups, runner_ids: runner_ids}
+      {:ok, %{groups: groups, runner_ids: runner_ids}}
+    else
+      {:error, :invalid}
+    end
   end
+
+  def parse(_values, _runners), do: {:error, :invalid}
 
   @doc ~s(The `"group:x"`/`"runner:id"` selection strings for a persisted {groups, runner_ids} scope.)
   def to_values(groups, runner_ids),
@@ -184,6 +194,14 @@ defmodule EmisarWeb.RunnerScope do
 
   defp ungrouped_runners(runners),
     do: runners |> Enum.filter(&blank?(&1.group)) |> Enum.sort_by(& &1.name)
+
+  defp valid_scope_values?(values, valid_groups, by_id) do
+    Enum.all?(values, fn
+      "group:" <> group -> MapSet.member?(valid_groups, group)
+      "runner:" <> id -> Map.has_key?(by_id, id)
+      _ -> false
+    end)
+  end
 
   defp blank?(nil), do: true
   defp blank?(""), do: true

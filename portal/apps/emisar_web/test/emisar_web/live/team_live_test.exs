@@ -489,6 +489,38 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ ~r/checked[^>]*value="group:dba"/
       assert html =~ ~r/checked[^>]*value="runner:#{web.id}"/
     end
+
+    test "a malformed scope submission is rejected without widening existing access", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg4"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "scoped4-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership}} =
+        Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r10", group: "web")
+
+      {:ok, :ok} =
+        Emisar.Runners.replace_runner_scopes(membership, [{"runner", runner.id}], subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      html =
+        render_submit(lv, "save_scopes", %{
+          "membership_id" => membership.id,
+          "scope" => %{"crafted" => "all-runners"}
+        })
+
+      assert html =~ "Invalid runner scope."
+
+      assert [%{scope_type: :runner, scope_value: runner_id}] =
+               Emisar.Runners.runner_scopes_for_membership(membership.id)
+
+      assert runner_id == runner.id
+    end
   end
 
   describe "member administration" do
