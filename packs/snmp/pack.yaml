@@ -2,7 +2,7 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.1.0
+version: 0.2.0
 description: >
   Read a network device over SNMP with the net-snmp CLI — system group,
   interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group

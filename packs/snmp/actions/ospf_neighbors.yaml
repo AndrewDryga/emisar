@@ -18,7 +18,7 @@ args:
     required: true
     description: Target device hostname or IP (optionally host:port).
     validation:
-      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-:]{0,252}$"
 execution:
   script:
     path: scripts/snmpreq.sh

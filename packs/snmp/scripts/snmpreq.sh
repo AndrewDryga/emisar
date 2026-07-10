@@ -53,4 +53,7 @@ fi
 
 SNMPCONFPATH=$conf
 export SNMPCONFPATH
-"$tool" "$host" "$@"
+# `--` ends net-snmp's option parsing so a host/OID that begins with "-" reaches
+# the tool as a positional, never a flag (the arg patterns also forbid a leading
+# dash — this is the belt-and-suspenders second line).
+"$tool" -- "$host" "$@"

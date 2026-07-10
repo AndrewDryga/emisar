@@ -18,13 +18,13 @@ args:
     required: true
     description: Target device hostname or IP (optionally host:port).
     validation:
-      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-:]{0,252}$"
   - name: oid
     type: string
     required: true
     description: Root OID of the subtree — numeric (1.3.6.1.2.1.4) or symbolic (ipAddrTable).
     validation:
-      pattern: "^[A-Za-z0-9.:_\\-]{1,128}$"
+      pattern: "^[.A-Za-z0-9][A-Za-z0-9.:_\\-]{0,127}$"
 execution:
   script:
     path: scripts/snmpreq.sh
