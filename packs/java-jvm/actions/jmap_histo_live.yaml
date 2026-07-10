@@ -2,7 +2,7 @@ schema_version: 1
 id: jvm.jmap_histo_live
 title: jmap -histo:live (top 50)
 kind: exec
-risk: low
+risk: medium
 description: List top classes by retained-heap size after a forced full GC. Use to find the leak candidate.
 side_effects:
   - Triggers a full GC.

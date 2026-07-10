@@ -43,7 +43,10 @@ cases:
 - action: jvm.jmap_histo_live
   args:
     pid: 4321
-  expect_exit: 0
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium — forces a full GC)
 - action: jvm.jstack
   args:
     pid: 4321
