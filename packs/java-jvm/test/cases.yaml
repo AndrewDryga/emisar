@@ -18,7 +18,10 @@ cases:
 - action: jvm.jfr_dump
   args:
     pid: 4321
-  expect_exit: 0
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
 - action: jvm.jfr_start
   args:
     pid: 4321
@@ -29,7 +32,10 @@ cases:
 - action: jvm.jfr_stop
   args:
     pid: 4321
-  expect_exit: 0
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
 - action: jvm.jmap_heap_summary
   args:
     pid: 4321

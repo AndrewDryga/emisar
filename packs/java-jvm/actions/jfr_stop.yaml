@@ -2,7 +2,7 @@ schema_version: 1
 id: jvm.jfr_stop
 title: Stop active JFR recording
 kind: exec
-risk: low
+risk: medium
 description: Stops the "emisar" recording and finalizes the .jfr file.
 side_effects:
   - Stops the recording.
