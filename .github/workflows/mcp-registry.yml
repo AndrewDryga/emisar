@@ -43,6 +43,9 @@ jobs:
           printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
           tar --extract --gzip --file "$artifact" mcp-publisher
 
+      - name: Validate server.json against the registry schema
+        run: ./mcp-publisher validate server.json
+
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login http --domain emisar.dev --private-key "${{ secrets.MCP_PRIVATE_KEY }}"
 
