@@ -1,14 +1,16 @@
 name: infra CI
 
-# CI for the Terraform that manages emisar's Google Cloud DNS zone (infra/).
+# CI for the Terraform that provisions emisar's full GCP stack (infra/) — compute,
+# Cloud SQL, load balancer, secrets, IAM, monitoring, and the authoritative Cloud
+# DNS zone; prepared, not yet applied (README.md).
 # Same security posture as the other workflows: read-only token, NO secrets, and
 # NO cloud credentials — `validate` runs with the backend disabled, so CI never
 # touches Terraform Cloud or GCP. Tools are pinned by version AND checksum-
 # verified before use; first-party `actions/*` track major-version tags.
 #
-# This is the change-management gate for DNS: every edit to the zone goes through
-# a PR that must pass fmt + validate + tflint before a human approves the apply
-# in Terraform Cloud. See infra/COMPLIANCE.md.
+# This is the change-management gate for the stack: every edit to infra/ goes
+# through a PR that must pass fmt + validate + tflint before a human approves the
+# apply in Terraform Cloud. See infra/COMPLIANCE.md.
 
 on:
   pull_request:
