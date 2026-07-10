@@ -13,9 +13,10 @@ import "testing"
 // the REAL pack from packs/ and drive the engine's dispatch seam
 // (validation.Validate) to prove the /root/.ssh subtree is now contained.
 
-// Every ssl reader with a filesystem path arg names it `path` (verify_chain,
-// which takes `cert`, does not carry the /root/.ssh deny list and is out of
-// scope for this finding).
+// Every ssl reader with a single filesystem path arg names it `path`.
+// verify_chain is the exception — it takes two path args (`cert` + `ca_bundle`)
+// and now carries the same deny list on both (finding n19); it has its own
+// TestSslLocal_VerifyChain_* gates below.
 var sslPathActions = []string{
 	"ssl.key_modulus",
 	"ssl.cert_text",
@@ -81,4 +82,42 @@ func TestSslLocal_BenignPathAccepted(t *testing.T) {
 	for _, id := range sslPathActions {
 		accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/etc/ssl/certs/server.crt"}))
 	}
+}
+
+// verify_chain reads two files — `cert` and `ca_bundle` — and until finding n19
+// carried the /root/.ssh + shadow deny list on NEITHER, so an LLM could pass
+// cert=/root/.ssh/id_rsa or ca_bundle=/etc/shadow through the bare pattern past
+// every deny check (risk:low, no approval). Both args now match the pack's
+// six-of-seven baseline; drive each independently against the real library.
+func TestSslLocal_VerifyChain_BothPathArgsDenied(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const benign = "/etc/ssl/certs/server.crt"
+
+	for _, arg := range []string{"cert", "ca_bundle"} {
+		for _, p := range sslDeniedPrefixFiles {
+			raw := map[string]any{"cert": benign, "ca_bundle": benign}
+			raw[arg] = p
+			rejected(t, dispatchValidate(t, reg, "ssl.verify_chain", raw), arg, "denied_prefixes")
+		}
+		for _, p := range sslDeniedExactFiles {
+			raw := map[string]any{"cert": benign, "ca_bundle": benign}
+			raw[arg] = p
+			rejected(t, dispatchValidate(t, reg, "ssl.verify_chain", raw), arg, "denied_paths")
+		}
+		// `..` traversal is Clean-ed before the deny check, so it canonicalizes
+		// into the subtree and is rejected rather than slipping past.
+		raw := map[string]any{"cert": benign, "ca_bundle": benign}
+		raw[arg] = "/etc/ssl/../../root/.ssh/id_rsa"
+		rejected(t, dispatchValidate(t, reg, "ssl.verify_chain", raw), arg, "denied_prefixes")
+	}
+}
+
+// The other half of the gate: a benign cert + CA bundle is not over-rejected.
+func TestSslLocal_VerifyChain_BenignPathsAccepted(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	accepted(t, dispatchValidate(t, reg, "ssl.verify_chain", map[string]any{
+		"cert":      "/etc/ssl/certs/server.crt",
+		"ca_bundle": "/etc/ssl/certs/ca-certificates.crt",
+	}))
 }

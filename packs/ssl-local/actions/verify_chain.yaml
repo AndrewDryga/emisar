@@ -14,6 +14,13 @@ args:
     description: Cert file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      denied_paths:
+        - /etc/shadow
+        - /etc/gshadow
+        - /etc/shadow-
+        - /etc/gshadow-
+      denied_prefixes:
+        - /root/.ssh
   - name: ca_bundle
     type: string
     required: false
@@ -21,6 +28,13 @@ args:
     description: Trusted CA bundle.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      denied_paths:
+        - /etc/shadow
+        - /etc/gshadow
+        - /etc/shadow-
+        - /etc/gshadow-
+      denied_prefixes:
+        - /root/.ssh
 execution:
   command:
     binary: openssl
