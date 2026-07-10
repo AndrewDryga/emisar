@@ -93,6 +93,16 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
+      - name: Credo (Iron Laws)
+        # The mechanical IL-20 gate: the 35 custom Emisar.Checks.* AST checks
+        # (.credo.exs, strict) + stock UnsafeToAtom/NoProcessDictionary. Runs the
+        # same `mix credo` an agent runs locally, so a context-level violation
+        # (String.to_atom on runner/LLM input, a Process.put metadata channel, a
+        # web-layer Repo/Audit/Changeset call, a subject-less public read) can't
+        # merge green. Ordered after format to match the IL-20 chain
+        # compile && format && credo && test.
+        run: mix credo
+
       - name: Dependency audit (mix_audit)
         # emisar is a security product — fail the build on a known
         # advisory in any dependency. GHSA-g2wm-735q-3f56 (cowlib, low)
