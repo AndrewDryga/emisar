@@ -83,7 +83,10 @@
     instructions.
   </p>
   <ul>
-    <li><strong>Paddle</strong> — payment processing for paid plans.</li>
+    <li>
+      <strong>Paddle</strong>
+      — payment processing and subscription retention (Paddle Retain, checkout page only).
+    </li>
     <li>
       <strong>Postmark</strong>
       — transactional email (sign-up confirmation, magic links, approval notifications).
@@ -150,8 +153,9 @@
     token protecting your forms. A signed <strong>recent-teams cookie</strong> remembers which
     teams this browser has signed into, so the sign-on page can offer them as one-click
     buttons. And while you complete a passwordless sign-in, a short-lived signed cookie ties
-    the emailed code to this browser. No advertising cookies, no <strong>analytics cookies</strong>, no third-party trackers, and no analytics
-    script runs in your browser.
+    the emailed code to this browser. No advertising cookies and no <strong>analytics cookies</strong>. And aside from the Paddle checkout page — which loads
+    Paddle's own payment scripts (Paddle.js and Paddle Retain) that may set their own cookies
+    — no third-party tracker or analytics script runs in your browser.
   </p>
   <p>
     To understand which features get used and how people find us, we record a small

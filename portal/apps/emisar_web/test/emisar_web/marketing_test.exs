@@ -1047,6 +1047,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Postmark"
       assert html =~ "Fly.io"
       assert html =~ "Mixpanel"
+
+      # ...and Paddle Retain (ProfitWell), the checkout-page analytics vendor, must be
+      # disclosed here in parity with /trust + /dpa — the checkout page runs its scripts.
+      assert html =~ "Paddle Retain"
+      assert html =~ "checkout page only"
     end
 
     test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do
@@ -1055,6 +1060,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Mixpanel"
       assert html =~ "without a cookie"
       refute html =~ "no third-party trackers in the application"
+      # The "no third-party tracker or analytics script runs in your browser" claim must
+      # carry the Paddle checkout carve-out — that page loads Paddle.js + Paddle Retain.
+      assert html =~ "aside from the Paddle checkout page"
       # We do NOT honor DNT/GPC (cookieless first-party isn't a sale) — the page
       # must not promise it.
       refute html =~ "Do Not Track"
@@ -1073,8 +1081,8 @@ defmodule EmisarWeb.MarketingTest do
       # The remember-me cookie mechanism exists in code but no sign-in path writes it,
       # so the page must not claim we set one.
       refute html =~ "remember-me cookie"
-      # The no-tracker promise is retained.
-      assert html =~ "no third-party trackers"
+      # The no-tracker promise is retained, now scoped away from the Paddle checkout page.
+      assert html =~ "no third-party tracker or analytics script runs in your browser"
     end
 
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do
