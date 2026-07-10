@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "emisar": {
+      "url": "https://emisar.dev/api/mcp/rpc"
+    }
+  }
+}

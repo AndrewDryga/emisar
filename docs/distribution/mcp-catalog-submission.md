@@ -388,6 +388,13 @@ channel Anthropic specifies (never in the form).
 Cursor supports both the remote endpoint (recent builds) and the stdio bridge.
 Prefer the **remote** entry for the marketplace so there's nothing to install.
 
+Cursor now distributes MCP integrations as **Marketplace plugins**. A ready-to-ship
+plugin scaffold — `.cursor-plugin/plugin.json`, a remote-OAuth `mcp.json`, README,
+changelog, Apache-2.0 license, and icon — lives in
+[`cursor-plugin/`](cursor-plugin/); its `PUBLISHING.md` carries the human-owned
+publish steps. The fields below are the listing copy that scaffold and the
+publisher form reuse.
+
 **Listing fields**
 
 | Field | Value |

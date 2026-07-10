@@ -1,0 +1,14 @@
+{
+  "name": "emisar",
+  "version": "0.1.0",
+  "description": "One governed MCP endpoint for infrastructure actions — gated by policy, approval, and audit.",
+  "author": {
+    "name": "emisar",
+    "email": "support@emisar.dev"
+  },
+  "homepage": "https://emisar.dev",
+  "repository": "https://github.com/andrewdryga/emisar-cursor-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["devops", "infrastructure", "security", "automation", "mcp", "approvals", "audit"],
+  "logo": "assets/logo.svg"
+}
