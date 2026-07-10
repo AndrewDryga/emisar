@@ -4,18 +4,23 @@ title: Active connections (stub_status)
 kind: exec
 risk: low
 description: >
-  Hits the stub_status endpoint to get active/reading/writing/waiting counts. Cheaper than `nginx.status` (less parsing). Requires `stub_status on;` enabled.
+  Hits the stub_status endpoint to get active/reading/writing/waiting counts. Cheaper than `nginx.status` (less parsing). Requires `stub_status on;` enabled. Loopback-only — the host is pinned to 127.0.0.1/localhost/[::1]; only the port and path vary.
 side_effects:
-  - One curl to localhost.
+  - One curl to the local nginx over loopback.
   - Read-only.
 args:
   - name: url
     type: string
     required: false
     default: "http://127.0.0.1/nginx_status"
-    description: stub_status URL.
+    description: >
+      stub_status URL. Host is pinned to loopback (127.0.0.1, localhost, or
+      [::1]); pass a non-default port/path here.
     validation:
-      pattern: "^https?://[a-zA-Z0-9.:/_\\-]+$"
+      # Loopback host is fixed so this low-risk, no-approval read cannot be
+      # aimed at an off-host target (cloud metadata 169.254.169.254, RFC1918,
+      # TEST-NET) — only the port and path are caller-controlled.
+      pattern: "^https?://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$"
 execution:
   command:
     binary: curl

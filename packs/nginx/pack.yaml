@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.6
+version: 0.2.7
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
   TLS cert probes, and narrow operator actions (test_config, reload,
@@ -30,7 +30,7 @@ setup:
     127.0.0.1; config and signal actions run the nginx binary directly.
   notes:
     - "reload, quit_graceful, and stop_immediate signal the master process and need root (run the runner as root or via sudo)."
-    - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; pass a non-default URL with the `url` arg."
+    - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; the `url` arg is loopback-only (127.0.0.1/localhost/[::1]) — pass a non-default port/path, not an off-host target."
   verify: nginx.active_version
 
 actions:

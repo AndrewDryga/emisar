@@ -183,21 +183,37 @@ func TestDispatch_ShellRunScript_RequiredAndMaxLength(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"script": over}), "script", "max_length")
 }
 
-// a representative web/proxy arg is bounded at dispatch.
-// Grounded in nginx.status's `url` arg (pattern `^https?://[a-zA-Z0-9.:/_\-]+$`,
-// a URL whitelist), interpolated into a `curl` argv slot: a real localhost URL
-// passes, but a value with a space + shell metacharacters is rejected (the
-// pattern admits no whitespace or `;`).
-func TestDispatch_NginxStatus_UrlBounded(t *testing.T) {
+// nginx.status and nginx.connections_now curl a stub_status endpoint over a
+// caller-supplied `url`. Both are `risk: low` (no approval gate), so an
+// unconstrained host would be a gate-bypassing SSRF: a permitted low-risk MCP
+// call could aim runner `curl` at cloud metadata (169.254.169.254), an RFC1918
+// neighbour, or a TEST-NET target. The pattern pins the HOST to loopback
+// (127.0.0.1/localhost/[::1]) and leaves only the port and path caller-varied.
+// Drive both actions at the real dispatch seam: loopback URLs (with non-default
+// port/path) pass; every off-host host, a `@`-userinfo loopback bypass, a
+// shell-metacharacter value, and a wrong scheme are rejected by the pattern.
+func TestDispatch_NginxStatus_LoopbackOnly(t *testing.T) {
 	reg := loadRealLibrary(t)
-	const id = "nginx.status"
+	for _, id := range []string{"nginx.status", "nginx.connections_now"} {
+		t.Run(id, func(t *testing.T) {
+			// Loopback hosts with non-default port/path — the supported surface.
+			accepted(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://127.0.0.1/nginx_status"}))
+			accepted(t, dispatchValidate(t, reg, id, map[string]any{"url": "https://localhost:8443/status"}))
+			accepted(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://[::1]:8080/nginx_status"}))
 
-	accepted(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://127.0.0.1/nginx_status"}))
-	accepted(t, dispatchValidate(t, reg, id, map[string]any{"url": "https://localhost:8443/status"}))
-	// A space and `;` are outside the URL character class.
-	rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://127.0.0.1/ ; reboot"}), "url", "pattern")
-	// Wrong scheme (no http/https prefix) is also refused.
-	rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "file:///etc/passwd"}), "url", "pattern")
+			// Off-host targets a low-risk read must never reach.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://169.254.169.254/latest/meta-data/"}), "url", "pattern") // cloud IMDS
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://192.168.1.1/nginx_status"}), "url", "pattern")          // RFC1918
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://10.0.0.5/nginx_status"}), "url", "pattern")             // RFC1918
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://192.0.2.1/nginx_status"}), "url", "pattern")            // TEST-NET-1
+			// `@`-userinfo trick: the host is 169.254.169.254, not the loopback prefix.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://127.0.0.1@169.254.169.254/"}), "url", "pattern")
+			// A space and `;` are outside the URL character class.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "http://127.0.0.1/ ; reboot"}), "url", "pattern")
+			// Wrong scheme (no http/https prefix) is also refused.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "file:///etc/passwd"}), "url", "pattern")
+		})
+	}
 }
 
 // nginx's five log-reading actions take a `log_path` interpolated into a
