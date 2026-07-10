@@ -37,7 +37,7 @@ defmodule Emisar.Cluster.GCE.Client do
       {:ok, token}
     else
       {:ok, other} -> {:error, {:unexpected_token_response, other}}
-      {:error, _reason} = error -> error
+      {:error, reason} -> {:error, reason}
     end
   end
 
