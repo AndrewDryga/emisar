@@ -20,6 +20,7 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+      denied_prefixes:
         - /root/.ssh
 execution:
   command:
