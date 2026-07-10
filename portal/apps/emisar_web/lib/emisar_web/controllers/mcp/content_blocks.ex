@@ -298,7 +298,8 @@ defmodule EmisarWeb.MCP.ContentBlocks do
         "block for the decision and output. A step denied by policy or a dispatch error halts " <>
         "the waves behind it; steps that were denied or halted do not appear as dispatched runs."
 
-    {[text_block(guidance), text_block(Jason.encode!(payload, pretty: true))], payload.errors != []}
+    {[text_block(guidance), text_block(Jason.encode!(payload, pretty: true))],
+     payload.errors != []}
   end
 
   @doc "Render a `create_runbook_draft` result: review guidance plus the draft ids as JSON."

@@ -257,7 +257,8 @@ defmodule Emisar.RunbooksTest do
       # the authorizer's `_ -> []` clause), so the permission gate trips first.
       runner_subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Runbooks.fetch_published_runbook("guarded-book", runner_subject)
+      assert {:error, :unauthorized} =
+               Runbooks.fetch_published_runbook("guarded-book", runner_subject)
     end
   end
 

@@ -755,7 +755,9 @@ defmodule Emisar.RunsTest do
       with_metadata = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
       without = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-      {:ok, :running, run_with} = Runs.dispatch_run(base_attrs(account.id, runner.id), with_metadata)
+      {:ok, :running, run_with} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), with_metadata)
+
       {:ok, :running, run_without} = Runs.dispatch_run(base_attrs(account.id, runner.id), without)
 
       assert run_with.policy_decision == run_without.policy_decision
