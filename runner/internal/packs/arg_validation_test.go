@@ -200,6 +200,57 @@ func TestDispatch_NginxStatus_UrlBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"url": "file:///etc/passwd"}), "url", "pattern")
 }
 
+// nginx's five log-reading actions take a `log_path` interpolated into a
+// `/bin/sh -c "tail ... <path>"` pipeline. The anchored pattern blocks shell
+// metacharacters, but `.` and `/` are charset members so it does NOT stop `..`;
+// containment against traversal (and symlink escape) rests on
+// `allowed_prefixes: [/var/log/nginx]`, which runs the runner's
+// Clean+EvalSymlinks check. Because all five actions are `risk: low` (no
+// approval gate), a missing prefix would be a gate-bypassing arbitrary
+// root-readable file read (/etc/shadow, .pgpass, arbitrary .env). Drive both
+// halves at the real dispatch seam: the default log path passes, a `../` escape
+// to /etc is rejected by the prefix containment, and a shell-metacharacter
+// value is rejected by the pattern.
+func TestDispatch_NginxLogPath_TraversalContained(t *testing.T) {
+	reg := loadRealLibrary(t)
+	// Every action carrying the shared log_path arg, with its declared default.
+	cases := []struct {
+		id      string
+		defPath string
+	}{
+		{"nginx.error_tail", "/var/log/nginx/error.log"},
+		{"nginx.access_top_clients", "/var/log/nginx/access.log"},
+		{"nginx.access_top_urls", "/var/log/nginx/access.log"},
+		{"nginx.log_grep_4xx", "/var/log/nginx/access.log"},
+		{"nginx.log_grep_5xx", "/var/log/nginx/access.log"},
+	}
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			// The declared default (and a sibling rotated log) resolve under the
+			// allowed prefix and pass.
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{"log_path": c.defPath}))
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{"log_path": "/var/log/nginx/access.log.1"}))
+
+			// `../` escape to a root-readable secret: the pattern admits it (`.`
+			// and `/` are charset members) but Clean collapses it to /etc/... and
+			// the allowed_prefixes check rejects it.
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{
+				"log_path": "/var/log/nginx/../../../etc/passwd",
+			}), "log_path", "allowed_prefixes")
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{
+				"log_path": "/var/log/nginx/../../../etc/shadow",
+			}), "log_path", "allowed_prefixes")
+
+			// A shell-metacharacter value is stopped earlier, by the pattern —
+			// the log_path lands in a /bin/sh -c pipeline, so this is the
+			// injection-containment boundary.
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{
+				"log_path": "/var/log/nginx/$(id)",
+			}), "log_path", "pattern")
+		})
+	}
+}
+
 // a messaging arg is bounded at dispatch. Grounded in
 // kafka.delete_consumer_group's `group` (pattern `^[a-zA-Z0-9_.\-]{1,255}$`):
 // a metacharacter-bearing group id is rejected; a legitimate one passes. The
