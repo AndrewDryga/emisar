@@ -98,6 +98,30 @@ func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsLinkerHijackVarsInInheritEnv(t *testing.T) {
+	base := validConfig
+
+	// LD_*/DYLD_*/BASH_ENV in inherit_env would let the runner's own process
+	// env hijack the dynamic linker or shell init of every action's child —
+	// the same vector validateExecutionEnv blocks for pack env. Must be
+	// rejected.
+	for _, name := range []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "BASH_ENV"} {
+		cfg := base()
+		cfg.Execution.InheritEnv = []string{"NOMAD_TOKEN", name}
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("inherit_env including %q must be rejected", name)
+		}
+	}
+
+	// A benign var still validates — proving the rejection is the hijack vector
+	// specifically, not inherit_env in general.
+	cfg := base()
+	cfg.Execution.InheritEnv = []string{"NOMAD_TOKEN"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config with only a benign inherit_env var should validate, got %v", err)
+	}
+}
+
 // TestValidate_MaxRisk covers the admission risk ceiling: a valid tier (or
 // empty = no ceiling) validates; a bogus tier is rejected so a typo can't
 // silently disable the read-only-demo switch.

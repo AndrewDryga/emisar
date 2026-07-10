@@ -165,6 +165,21 @@ func (c *Config) Validate() error {
 	// runner.id is allowed to be empty at first start — cloud will assign one
 	// when the auth_key is exchanged. Operators who want a stable id can set
 	// it manually.
+	//
+	// Mirror the pack-env posture (actionspec.validateExecutionEnv): the
+	// dynamic-linker (LD_*/DYLD_*) and shell-startup (BASH_ENV) hijack vectors
+	// must not reach an action's child. buildEnv inherits these named vars from
+	// the runner's own process env, so an inherit_env listing LD_PRELOAD would
+	// defeat the same protection the pack-env path enforces. Applies regardless
+	// of cloud config — a local CLI runner spawns actions too.
+	for _, name := range c.Execution.InheritEnv {
+		if strings.HasPrefix(name, "LD_") || strings.HasPrefix(name, "DYLD_") || name == "BASH_ENV" {
+			return fmt.Errorf(
+				"config: execution.inherit_env must not include %q (dynamic-linker/shell-init hijack vector)",
+				name,
+			)
+		}
+	}
 	if c.Cloud.URL == "" {
 		// Permitted: developer using only CLI subcommands locally.
 	} else {
