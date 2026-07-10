@@ -4,7 +4,7 @@ title: pg_hba_file_rules
 kind: exec
 risk: low
 description: List effective pg_hba rules as the server loaded them. Catches syntax errors that didn't make it in.
-side_effects: ["One SELECT.", "Read-only — passwords are not exposed."]
+side_effects: ["One SELECT.", "Read-only — LDAP/RADIUS auth secrets are stripped from the options column."]
 args: []
 execution:
   command:
@@ -12,12 +12,21 @@ execution:
     argv:
       - "-XAt"
       - "-c"
-      - "SELECT line_number, type, database, user_name, address, netmask, auth_method, options, error FROM pg_hba_file_rules ORDER BY line_number;"
+      - "SELECT line_number, type, database, user_name, address, netmask, auth_method, array(SELECT o FROM unnest(options) AS o WHERE o NOT LIKE 'ldapbindpasswd=%' AND o NOT LIKE 'radiussecrets=%') AS options, error FROM pg_hba_file_rules ORDER BY line_number;"
   timeout: 10s
 output:
   parser: text
   max_stdout_bytes: 32768
   max_stderr_bytes: 8192
+  redact:
+    - name: ldap-bind-password
+      type: regex
+      pattern: '(?i)(ldapbindpasswd=)[^,}\s]*'
+      replacement: '${1}[REDACTED]'
+    - name: radius-shared-secret
+      type: regex
+      pattern: '(?i)(radiussecrets=)[^,}\s]*'
+      replacement: '${1}[REDACTED]'
 examples:
   - title: Hba rules
     args: {}
