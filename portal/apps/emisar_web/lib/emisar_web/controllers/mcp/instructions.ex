@@ -29,10 +29,14 @@ defmodule EmisarWeb.MCP.Instructions do
   from the fresh list. Don't retry the same failing call in a tight loop.
 
   Runbooks (saved playbooks): `list_runbooks` shows the account's published runbooks and \
-  `get_runbook` returns one's ordered steps — each an action_id, its args, and the runner target \
-  resolved to current runner names. The cloud does NOT run runbooks for you: when a user asks to \
-  run one, fetch it and dispatch each step yourself, in order, with the normal action tools, \
-  honoring each step's risk/approval.
+  `get_runbook` returns one's ordered steps. To RUN a runbook, prefer `execute_runbook` with its \
+  slug — the cloud runs it end-to-end as one audited execution, fanning the steps out to their \
+  target runners under the same policy/approval/runner-scope/pack-trust gates as a normal action \
+  call, and returns a `runbook_execution_id` plus per-run summaries (a step needing approval comes \
+  back `pending_approval` → use `wait_for_run`). Dispatch the steps yourself only when you must \
+  diverge from the saved plan. To hand the operator a reusable plan you've worked out, save it \
+  with `create_runbook_draft` — that writes a DRAFT for a human to review and publish; it never \
+  runs or publishes anything, and only a PUBLISHED runbook can be executed.
 
   Errors — what they mean and what to do:
   - `pack_untrusted`: the runner advertises a pack version no operator has trusted yet, so the \

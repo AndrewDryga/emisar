@@ -143,6 +143,15 @@ defmodule Emisar.Auth.Subject do
   def actor_id(%__MODULE__{}), do: nil
 
   @doc """
+  The acting USER's id, or `nil` when the actor isn't a user (API key /
+  runner / system). Use this — not `actor_id/1` — for a `belongs_to :user`
+  attribution column: an API-key actor's `actor_id` is the key id, which
+  would violate a users FK.
+  """
+  def user_id(%__MODULE__{actor: %Users.User{id: id}}), do: id
+  def user_id(%__MODULE__{}), do: nil
+
+  @doc """
   The acting user's email, or `nil` when the actor isn't a user
   (API key / runner / system). Used to attach the buyer's email to a
   Paddle customer for invoices and receipts.

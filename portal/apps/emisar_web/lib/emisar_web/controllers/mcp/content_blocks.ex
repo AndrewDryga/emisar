@@ -59,9 +59,9 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       name: "list_runbooks",
       description:
         "List this account's published runbooks. A runbook is a saved, ordered sequence of " <>
-          "action steps (a playbook/checklist). This server does NOT execute runbooks — use this " <>
-          "to discover them, then call `get_runbook` to read a runbook's steps and run them " <>
-          "yourself with the normal action tools. Read-only.",
+          "action steps (a playbook/checklist). Use this to discover them, then run one the " <>
+          "governed way with `execute_runbook` (preferred — the cloud runs it end-to-end under " <>
+          "policy/approval), or call `get_runbook` to inspect a runbook's steps first. Read-only.",
       inputSchema: %{
         "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
@@ -81,9 +81,10 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       description:
         "Read one published runbook's full definition: its ordered steps, each with an " <>
           "`action_id`, the `args` to pass, and the runner `target` (resolved to current runner " <>
-          "names). This server does NOT run the runbook — execute it yourself by dispatching each " <>
-          "step's action in order with the given args, targeting the listed runners " <>
-          "(pass `runners: [...]`), honoring each action's normal risk/approval. Read-only.",
+          "names). To RUN it, prefer `execute_runbook` (the cloud runs it end-to-end under " <>
+          "policy/approval and audits it as one execution); use this tool to inspect the steps " <>
+          "first, or to run them yourself only if you need to diverge from the saved plan. " <>
+          "Read-only.",
       inputSchema: %{
         "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
@@ -97,6 +98,112 @@ defmodule EmisarWeb.MCP.ContentBlocks do
         }
       },
       annotations: ToolMetadata.read_only_annotations()
+    }
+    |> ToolMetadata.auth_required()
+  end
+
+  @doc "Synthetic tool descriptor for `execute_runbook` (dispatches real actions)."
+  @spec execute_runbook_tool() :: map()
+  def execute_runbook_tool do
+    %{
+      name: "execute_runbook",
+      description:
+        "Execute a published runbook end-to-end on the cloud — the first-party, governed way to " <>
+          "run one. Prefer this over dispatching each step yourself: the cloud expands the " <>
+          "runbook into an audited execution, fans out the steps in waves to their target " <>
+          "runners, and enforces the SAME policy, approval, runner-scope, and pack-trust gates " <>
+          "as a normal action call. It returns a `runbook_execution_id` plus one summary per run " <>
+          "dispatched in the first wave; later waves fire automatically as runs finish. A run " <>
+          "that needs approval comes back `pending_approval` — call `wait_for_run` with its " <>
+          "run_id. Only PUBLISHED runbooks can be executed (see list_runbooks). This runs real " <>
+          "infrastructure actions.",
+      inputSchema: %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "object",
+        "additionalProperties" => false,
+        "required" => ["runbook", "reason"],
+        "properties" => %{
+          "runbook" => %{
+            "type" => "string",
+            "description" => "The published runbook's slug (from list_runbooks) or its id."
+          },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you are running this runbook — a short freeform sentence. Logged in the " <>
+                "audit trail and carried onto every step's run. Required."
+          }
+        }
+      },
+      annotations: ToolMetadata.execute_runbook_annotations()
+    }
+    |> ToolMetadata.auth_required()
+  end
+
+  @doc "Synthetic tool descriptor for `create_runbook_draft` (writes a draft, never publishes)."
+  @spec create_runbook_draft_tool() :: map()
+  def create_runbook_draft_tool do
+    %{
+      name: "create_runbook_draft",
+      description:
+        "Save a proposed plan as a DRAFT runbook for an operator to review. This does NOT " <>
+          "publish or run anything — the draft stays a draft until a human opens it in the " <>
+          "portal and publishes it. Use this to hand the operator a reusable playbook you've " <>
+          "worked out (an ordered list of action steps), not to execute work now. Give each " <>
+          "step an `action_id`, its `args`, and a `runner_selector` (which host(s)/group it " <>
+          "targets). Returns the draft's id/slug/version and a portal URL for review.",
+      inputSchema: %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "object",
+        "additionalProperties" => false,
+        "required" => ["title", "steps"],
+        "properties" => %{
+          "title" => %{
+            "type" => "string",
+            "description" => "Human-facing runbook title (1–80 chars)."
+          },
+          "slug" => %{
+            "type" => "string",
+            "description" =>
+              "Optional URL-safe id (^[a-z][a-z0-9_-]{0,79}$). Omit to derive it from the title."
+          },
+          "description" => %{
+            "type" => "string",
+            "description" => "Optional one-line summary of what the runbook does."
+          },
+          "steps" => %{
+            "type" => "array",
+            "minItems" => 1,
+            "description" => "Ordered steps the runbook runs.",
+            "items" => %{
+              "type" => "object",
+              "required" => ["id", "action_id"],
+              "properties" => %{
+                "id" => %{
+                  "type" => "string",
+                  "description" => "Short unique step id (1–80 chars), e.g. \"restart\"."
+                },
+                "action_id" => %{
+                  "type" => "string",
+                  "description" => "The action to run, e.g. \"linux.uptime\"."
+                },
+                "args" => %{
+                  "type" => "object",
+                  "description" => "The action's arguments (same shape its tool takes)."
+                },
+                "runner_selector" => %{
+                  "type" => "object",
+                  "description" =>
+                    "Which runner(s) the step targets — an object with a `group` key (list of " <>
+                      "group names) or a `runner_id` key (list of runner ids). Required before " <>
+                      "an operator can publish."
+                }
+              }
+            }
+          }
+        }
+      },
+      annotations: ToolMetadata.draft_runbook_annotations()
     }
     |> ToolMetadata.auth_required()
   end
@@ -155,8 +262,8 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       if summaries == [],
         do: "No published runbooks in this account yet.",
         else:
-          "#{length(summaries)} published runbook(s). Call `get_runbook` with a slug to read its " <>
-            "steps, then run them yourself by dispatching each step's action."
+          "#{length(summaries)} published runbook(s). Run one with `execute_runbook` (the " <>
+            "governed, audited way), or call `get_runbook` with a slug to inspect its steps first."
 
     {[text_block(intro), text_block(Jason.encode!(summaries, pretty: true))], false}
   end
@@ -165,13 +272,45 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   @spec from_runbook_detail(map()) :: {[map()], boolean()}
   def from_runbook_detail(detail) when is_map(detail) do
     guidance =
-      "Runbook `#{detail.slug}` v#{detail.version}. This server will NOT run it — execute the " <>
-        "steps yourself, in order: for each step call its `action_id` with `args`, targeting the " <>
-        "runners in `target.runners` (pass `runners: [...]`). If `target.runners` is empty, none " <>
-        "currently match the selector — pick a runner from tools/list. Honor each action's normal " <>
+      "Runbook `#{detail.slug}` v#{detail.version}. To run it as-is, prefer `execute_runbook` " <>
+        "with this slug — the cloud runs every step under policy/approval and audits it as one " <>
+        "execution. Run the steps yourself only to diverge from the saved plan: for each step " <>
+        "call its `action_id` with `args`, targeting the runners in `target.runners` " <>
+        "(pass `runners: [...]`); an empty `target.runners` means none currently match the " <>
+        "selector, so pick a runner from tools/list. Either way, honor each action's normal " <>
         "risk/approval (a high-risk step may return pending_approval; use wait_for_run as usual)."
 
     {[text_block(guidance), text_block(Jason.encode!(detail, pretty: true))], false}
+  end
+
+  @doc "Render an `execute_runbook` result: how-to-follow-up guidance plus the payload as JSON."
+  @spec from_runbook_execution(map()) :: {[map()], boolean()}
+  def from_runbook_execution(payload) when is_map(payload) do
+    rb = payload.runbook
+    dispatched = length(payload.dispatched)
+
+    guidance =
+      "Started a governed execution of runbook `#{rb.slug}` v#{rb.version} " <>
+        "(execution #{payload.runbook_execution_id}). #{dispatched} run(s) dispatched in the " <>
+        "first wave of #{payload.total_step_runs} total step-run(s); later waves fire " <>
+        "automatically as runs finish. Each dispatched run carries its own status — one showing " <>
+        "`pending_approval` is paused for an operator, so call `wait_for_run` with its run_id to " <>
+        "block for the decision and output. A step denied by policy or a dispatch error halts " <>
+        "the waves behind it; steps that were denied or halted do not appear as dispatched runs."
+
+    {[text_block(guidance), text_block(Jason.encode!(payload, pretty: true))], payload.errors != []}
+  end
+
+  @doc "Render a `create_runbook_draft` result: review guidance plus the draft ids as JSON."
+  @spec from_runbook_draft(map()) :: {[map()], boolean()}
+  def from_runbook_draft(payload) when is_map(payload) do
+    guidance =
+      "Saved DRAFT runbook `#{payload.slug}` v#{payload.version} (id #{payload.runbook_id}). " <>
+        "This did NOT publish or run it — it stays a draft for an operator to review. Point the " <>
+        "user at #{payload.review_url} to open, finish, and publish it; only then can it be " <>
+        "executed. Tell the user it's waiting on their review; do not treat the runbook as live."
+
+    {[text_block(guidance), text_block(Jason.encode!(payload, pretty: true))], false}
   end
 
   @doc "Render `recent_runs`: a one-line intro plus the runs as compact JSON, newest first."

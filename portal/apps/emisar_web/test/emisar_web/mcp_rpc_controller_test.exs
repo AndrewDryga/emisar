@@ -1132,6 +1132,242 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     |> Enum.map_join("\n", & &1["text"])
   end
 
+  describe "execute_runbook tool" do
+    test "tools/list exposes execute_runbook and create_runbook_draft (not read-only)",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      tools =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/list")
+        |> json_response(200)
+        |> get_in(["result", "tools"])
+
+      by_name = Map.new(tools, &{&1["name"], &1})
+      assert Map.has_key?(by_name, "execute_runbook")
+      assert Map.has_key?(by_name, "create_runbook_draft")
+
+      # Execution is risk-bearing + open-world; drafting writes only portal state.
+      execute = by_name["execute_runbook"]
+      assert execute["annotations"]["readOnlyHint"] == false
+      assert execute["annotations"]["destructiveHint"] == true
+      assert execute["annotations"]["openWorldHint"] == true
+      assert_oauth_required(execute)
+
+      draft = by_name["create_runbook_draft"]
+      assert draft["annotations"]["readOnlyHint"] == false
+      assert draft["annotations"]["destructiveHint"] == false
+      assert draft["annotations"]["openWorldHint"] == false
+      assert_oauth_required(draft)
+    end
+
+    test "executes a published runbook through the governed dispatch path",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1", group: "default")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      publish_runbook!(account, user, slug: "eu-health")
+
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "execute_runbook",
+          "arguments" => %{"runbook" => "eu-health", "reason" => "nightly health sweep"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+      text = content_text(body)
+      assert text =~ "governed execution"
+      assert text =~ "eu-health"
+      assert text =~ "runbook_execution_id"
+      # The step fanned out to the connected runner as a real run.
+      assert text =~ "linux.uptime"
+      assert text =~ "host-1"
+
+      {:ok, runs, _meta} = Runs.list_runs(subject)
+      assert [run] = runs
+      assert run.action_id == "linux.uptime"
+      assert run.runbook_execution_id
+    end
+
+    test "a missing reason is rejected with reason_required",
+         %{conn: conn, account: account, user: user} do
+      publish_runbook!(account, user, slug: "needs-reason")
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "execute_runbook",
+          "arguments" => %{"runbook" => "needs-reason"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Reason required"
+    end
+
+    test "a draft or unknown slug reads as a clear not-found",
+         %{conn: conn, account: account, user: user} do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      {:ok, draft} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "Draft only",
+            "name" => "Draft only",
+            "slug" => "draft-only",
+            "definition" => %{"steps" => []}
+          },
+          subject
+        )
+
+      assert draft.status == :draft
+      raw = make_api_key!(account, user)
+
+      for selector <- ["draft-only", "ghost"] do
+        body =
+          conn
+          |> put_req_header("authorization", "Bearer " <> raw)
+          |> rpc("tools/call", %{
+            "name" => "execute_runbook",
+            "arguments" => %{"runbook" => selector, "reason" => "go"}
+          })
+          |> json_response(200)
+
+        assert body["result"]["isError"] == true
+        assert content_text(body) =~ "Runbook not found"
+      end
+    end
+
+    test "cannot execute another account's published runbook",
+         %{conn: conn, account: account, user: user} do
+      other = setup_other_account()
+      make_runner!(other.account, name: "b-host", group: "default")
+      publish_runbook!(other.account, other.user, slug: "b-cross-exec")
+
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "execute_runbook",
+          "arguments" => %{"runbook" => "b-cross-exec", "reason" => "poke"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Runbook not found"
+      # Never dispatched into account A.
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+  end
+
+  describe "create_runbook_draft tool" do
+    test "creates a draft for operator review without publishing or running it",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "create_runbook_draft",
+          "arguments" => %{
+            "title" => "Restart web tier",
+            "description" => "Rolling restart of the web fleet",
+            "steps" => [
+              %{
+                "id" => "restart",
+                "action_id" => "linux.uptime",
+                "args" => %{},
+                "runner_selector" => %{"group" => ["default"]}
+              }
+            ]
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+      text = content_text(body)
+      assert text =~ "DRAFT"
+      assert text =~ "restart-web-tier"
+      assert text =~ "/runbooks/"
+
+      # Persisted as a draft, never published, never dispatched.
+      {:ok, runbooks, _meta} = Emisar.Runbooks.list_runbooks(subject)
+      assert [runbook] = runbooks
+      assert runbook.status == :draft
+      assert runbook.slug == "restart-web-tier"
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "a draft with an invalid slug fails changeset validation",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "create_runbook_draft",
+          "arguments" => %{
+            "title" => "Bad slug book",
+            "slug" => "Not A Slug",
+            "steps" => [%{"id" => "s1", "action_id" => "linux.uptime"}]
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Invalid runbook"
+      assert content_text(body) =~ "slug"
+    end
+
+    test "a missing title is a clear bad-arguments error",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "create_runbook_draft",
+          "arguments" => %{"steps" => [%{"id" => "s1", "action_id" => "linux.uptime"}]}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "`title` is required"
+    end
+
+    test "missing steps is a clear bad-arguments error",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "create_runbook_draft",
+          "arguments" => %{"title" => "No steps here"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "`steps` is required"
+    end
+  end
+
   describe "recent_runs tool" do
     test "tools/list includes the read-only recent_runs tool",
          %{conn: conn, account: account, user: user} do

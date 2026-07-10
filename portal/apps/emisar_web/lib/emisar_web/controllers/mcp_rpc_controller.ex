@@ -10,7 +10,8 @@ defmodule EmisarWeb.MCPRpcController do
     * `ping`              — `{}`
     * `tools/list`        — every action the API key can dispatch, plus
                             the synthetic `wait_for_run`, `list_runbooks`,
-                            and `get_runbook` tools
+                            `get_runbook`, `execute_runbook`,
+                            `create_runbook_draft`, and `recent_runs` tools
     * `tools/call`        — dispatch a run; result is `{content, isError}`
                             in MCP content-block shape
     * `notifications/*`   — silently dropped (per JSON-RPC notifications)
@@ -112,6 +113,8 @@ defmodule EmisarWeb.MCPRpcController do
             ContentBlocks.wait_for_run_tool(),
             ContentBlocks.list_runbooks_tool(),
             ContentBlocks.get_runbook_tool(),
+            ContentBlocks.execute_runbook_tool(),
+            ContentBlocks.create_runbook_draft_tool(),
             ContentBlocks.recent_runs_tool()
           ]
 
@@ -146,6 +149,16 @@ defmodule EmisarWeb.MCPRpcController do
       name == "get_runbook" ->
         with :ok <- require_mcp_key(conn) do
           handle_get_runbook(conn, args)
+        end
+
+      name == "execute_runbook" ->
+        with :ok <- require_mcp_key(conn) do
+          handle_execute_runbook(conn, args)
+        end
+
+      name == "create_runbook_draft" ->
+        with :ok <- require_mcp_key(conn) do
+          handle_create_runbook_draft(conn, args)
         end
 
       name == "recent_runs" ->
@@ -382,6 +395,132 @@ defmodule EmisarWeb.MCPRpcController do
 
         {:ok, %{content: content, isError: true}}
     end
+  end
+
+  # -- Runbooks (execute + draft) -------------------------------------
+
+  defp handle_execute_runbook(conn, args) do
+    reason = Map.get(args, "reason")
+
+    case Map.get(args, "runbook") do
+      slug when is_binary(slug) and slug != "" ->
+        run_execute_runbook(conn, slug, reason)
+
+      _ ->
+        tool_error(
+          "Bad arguments",
+          "execute_runbook requires `runbook` (a published runbook's slug or id string)."
+        )
+    end
+  end
+
+  defp run_execute_runbook(conn, slug, reason) do
+    case Service.execute_runbook(conn, slug, reason) do
+      {:ok, payload} ->
+        {content, is_err} = ContentBlocks.from_runbook_execution(payload)
+        {:ok, %{content: content, isError: is_err}}
+
+      {:error, :reason_required} ->
+        tool_error(
+          "Reason required",
+          "execute_runbook needs a non-empty `reason` — a short sentence on why. It's logged " <>
+            "in the audit trail and carried onto every step's run."
+        )
+
+      {:error, :not_found} ->
+        tool_error(
+          "Runbook not found",
+          "No PUBLISHED runbook with slug or id `#{slug}`. Call list_runbooks to see what can " <>
+            "be executed; drafts can't be run until an operator publishes them."
+        )
+
+      {:error, :unauthorized} ->
+        tool_error("Not allowed", "This API key can't execute runbooks.")
+
+      {:error, :empty_runbook} ->
+        tool_error(
+          "Runbook has no steps",
+          "This runbook has no steps to run — nothing was dispatched."
+        )
+
+      {:error, {:step_no_runners, n}} ->
+        tool_error(
+          "Step has no runners",
+          "Step #{n}'s target group resolves to no currently-connected runners. Bring a matching " <>
+            "runner online (Runners page) or fix the step's target, then retry."
+        )
+
+      {:error, {:fan_out_too_large, max}} ->
+        tool_error(
+          "Runbook too large",
+          "This runbook resolves to more than #{max} step-runs. Split it into smaller runbooks."
+        )
+
+      {:error, :duplicate_step_ids} ->
+        tool_error(
+          "Duplicate step ids",
+          "Two steps share an id, which would collide on dispatch. An operator must fix the " <>
+            "runbook so every step has a unique id."
+        )
+
+      {:error, _other} ->
+        tool_error(
+          "Execution failed",
+          "The runbook could not be started. If this persists, surface it to the operator — it " <>
+            "usually maps to an admin-side fix (policy, runner scope, or pack trust)."
+        )
+    end
+  end
+
+  defp handle_create_runbook_draft(conn, args) do
+    with {:ok, title} <- require_string_arg("title", Map.get(args, "title")),
+         {:ok, steps} <- validate_steps(Map.get(args, "steps")) do
+      params = %{
+        "title" => title,
+        "slug" => Map.get(args, "slug"),
+        "description" => Map.get(args, "description"),
+        "steps" => steps
+      }
+
+      case Service.create_runbook_draft(conn, params) do
+        {:ok, payload} ->
+          {content, is_err} = ContentBlocks.from_runbook_draft(payload)
+          {:ok, %{content: content, isError: is_err}}
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          tool_error(
+            "Invalid runbook",
+            "The draft failed validation:\n" <> changeset_error_lines(changeset)
+          )
+
+        {:error, :unauthorized} ->
+          tool_error("Not allowed", "This API key can't create runbook drafts.")
+      end
+    else
+      {:error, message} -> tool_error("Bad arguments", message)
+    end
+  end
+
+  defp require_string_arg(_label, value) when is_binary(value) and value != "", do: {:ok, value}
+  defp require_string_arg(label, _value), do: {:error, "`#{label}` is required (a string)."}
+
+  # Steps come from an LLM — accept an array (of step objects) or reject clearly.
+  # The changeset does the real bounds/shape validation on save.
+  defp validate_steps(steps) when is_list(steps), do: {:ok, steps}
+  defp validate_steps(nil), do: {:error, "`steps` is required (an array of step objects)."}
+  defp validate_steps(_), do: {:error, "`steps` must be an array of step objects."}
+
+  defp changeset_error_lines(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {k, v}, acc -> String.replace(acc, "%{#{k}}", to_string(v)) end)
+    end)
+    |> Enum.map_join("\n", fn {field, msgs} -> "- #{field}: #{Enum.join(msgs, ", ")}" end)
+  end
+
+  defp tool_error(header, body) do
+    {content, _} = ContentBlocks.error_content(header, body)
+    {:ok, %{content: content, isError: true}}
   end
 
   # -- recent_runs ----------------------------------------------------

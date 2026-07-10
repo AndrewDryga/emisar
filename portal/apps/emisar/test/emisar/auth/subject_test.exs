@@ -264,6 +264,19 @@ defmodule Emisar.Auth.SubjectTest do
       assert Subject.actor_email(key_subject) == nil
       assert Subject.actor_email(actorless) == nil
     end
+
+    test "user_id/1 is the user actor's id, nil for a key/runner/actor-less subject" do
+      user_subject = %Subject{actor: %User{id: "u1"}}
+      key_subject = %Subject{actor: %ApiKey{id: "k1"}}
+      runner_subject = %Subject{actor: %Runner{id: "r1"}}
+
+      # A user-FK attribution column takes user_id — an API key's actor_id is the
+      # KEY id, which would violate a users FK, so keys/runners resolve to nil.
+      assert Subject.user_id(user_subject) == "u1"
+      assert Subject.user_id(key_subject) == nil
+      assert Subject.user_id(runner_subject) == nil
+      assert Subject.user_id(%Subject{}) == nil
+    end
   end
 
   describe "in_account?/2 + ensure_in_account/3" do

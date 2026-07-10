@@ -23,6 +23,30 @@ defmodule EmisarWeb.MCP.ToolMetadata do
     }
   end
 
+  # Executing a published runbook fans out real infrastructure actions — open
+  # world (it touches systems beyond the portal), risk-bearing (a step may
+  # mutate/destroy), and never a safe replay (each call is a fresh execution).
+  def execute_runbook_annotations do
+    %{
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+      idempotentHint: false
+    }
+  end
+
+  # Drafting a runbook writes only portal state (a draft row) and never runs
+  # anything, so it isn't destructive or open-world — but it's a write, and a
+  # second call creates a second draft, so it's neither read-only nor idempotent.
+  def draft_runbook_annotations do
+    %{
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+      idempotentHint: false
+    }
+  end
+
   def action_annotations(action) do
     read_only? = action.risk == :low and Enum.empty?(action.side_effects || [])
 

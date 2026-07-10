@@ -213,6 +213,116 @@ defmodule EmisarWeb.MCP.Service do
   defp blank?(s), do: s in [nil, ""]
   defp nil_if_blank(s), do: if(blank?(s), do: nil, else: s)
 
+  # -- Runbooks (execute + draft) -------------------------------------
+
+  @doc """
+  Execute a published runbook by slug or id through the governed
+  `Runbooks.dispatch_runbook/3` path — every step flows through the same
+  policy / approval / runner-scope / pack-trust / audit gates as a normal
+  action dispatch. `reason` is required (audit "why"). Returns
+  `{:ok, execution_payload}` or a `dispatch_runbook`/resolution error tuple.
+
+  Not idempotent by design: each call mints a fresh governed execution (the
+  per-step idempotency the domain guarantees still holds — routing through
+  `dispatch_runbook` keeps the `(execution, step, runner)` unique index).
+  """
+  @spec execute_runbook(Plug.Conn.t(), String.t(), String.t() | nil) ::
+          {:ok, map()} | {:error, atom() | tuple() | Ecto.Changeset.t()}
+  def execute_runbook(conn, slug_or_id, reason) do
+    subject = conn.assigns.current_subject
+
+    with :ok <- validate_reason(reason),
+         {:ok, runbook} <- Runbooks.fetch_published_runbook(slug_or_id, subject),
+         {:ok, result} <- Runbooks.dispatch_runbook(runbook, reason, subject) do
+      {:ok, execution_payload(runbook, result, subject)}
+    end
+  end
+
+  @doc """
+  Create a DRAFT runbook from an LLM-proposed plan. Reuses the manage-gated
+  `Runbooks.create_runbook/2` and its changeset validation; the status is never
+  taken from the caller, so the row lands as a draft for an operator to review
+  and publish — this call never publishes or dispatches. `params` carries
+  `title` (required), optional `slug`/`description`, and `steps` (a list).
+  Returns `{:ok, draft_payload}` or `{:error, %Ecto.Changeset{} | :unauthorized}`.
+  """
+  @spec create_runbook_draft(Plug.Conn.t(), map()) ::
+          {:ok, map()} | {:error, Ecto.Changeset.t() | :unauthorized}
+  def create_runbook_draft(conn, params) do
+    subject = conn.assigns.current_subject
+
+    case Runbooks.create_runbook(draft_attrs(params), subject) do
+      {:ok, runbook} -> {:ok, draft_payload(runbook, subject)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # `status` is deliberately omitted so the row defaults to :draft — an
+  # LLM-authored runbook must never publish itself. Slug mirrors the editor:
+  # a typed slug wins, otherwise derive it from the title.
+  defp draft_attrs(params) do
+    title = params["title"]
+
+    %{
+      "title" => title,
+      "name" => title,
+      "slug" => draft_slug(params["slug"], title),
+      "description" => params["description"],
+      "definition" => %{"steps" => params["steps"] || []}
+    }
+  end
+
+  defp draft_slug(slug, title) do
+    case slug do
+      s when is_binary(s) and s != "" -> s
+      _ -> Emisar.Slug.slugify(title, max_length: 79)
+    end
+  end
+
+  defp draft_payload(runbook, subject) do
+    %{
+      runbook_id: runbook.id,
+      slug: runbook.slug,
+      title: runbook.title,
+      version: runbook.version,
+      status: runbook.status,
+      review_url:
+        "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
+    }
+  end
+
+  defp execution_payload(runbook, result, subject) do
+    {:ok, runners} = Runners.list_all_runners_for_account(subject)
+    names = Map.new(runners, &{&1.id, &1.name})
+
+    %{
+      runbook: %{slug: runbook.slug, title: runbook.title, version: runbook.version},
+      runbook_execution_id: result.execution_id,
+      total_step_runs: result.total,
+      dispatched: Enum.map(result.runs, &execution_run_summary(&1, names)),
+      errors: Enum.map(result.errors, &execution_error_summary(&1, names))
+    }
+  end
+
+  defp execution_run_summary(run, names) do
+    %{
+      run_id: run.id,
+      step_id: run.runbook_step_id,
+      action_id: run.action_id,
+      runner: Map.get(names, run.runner_id),
+      status: run.status
+    }
+  end
+
+  defp execution_error_summary(%{step_id: step_id, runner_id: runner_id, reason: reason}, names) do
+    %{step_id: step_id, runner: Map.get(names, runner_id), error: execution_error_reason(reason)}
+  end
+
+  # A row-less dispatch failure's reason is an internal atom or changeset; expose
+  # a stable string and never the struct (it can carry internal ids/fields).
+  defp execution_error_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp execution_error_reason(_reason), do: "dispatch_failed"
+
   # -- Recent runs (read-only) ----------------------------------------
 
   @doc """

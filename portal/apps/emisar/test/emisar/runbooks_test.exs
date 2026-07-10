@@ -201,6 +201,66 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "fetch_published_runbook/2" do
+    test "resolves the latest published version by slug" do
+      {_account, subject, runner} = account_with_runner()
+      steps = uptime_steps(1, runner_target(runner))
+      v1 = published_runbook!(subject, "healthcheck", steps)
+
+      {:ok, v2_draft} =
+        Runbooks.save_new_version(v1, %{"description" => "v2", "status" => "draft"}, subject)
+
+      {:ok, v2} = Runbooks.publish(v2_draft, subject)
+
+      assert {:ok, fetched} = Runbooks.fetch_published_runbook("healthcheck", subject)
+      assert fetched.id == v2.id
+      assert fetched.version == 2
+    end
+
+    test "resolves a published runbook by its id" do
+      {_account, subject, runner} = account_with_runner()
+      published = published_runbook!(subject, "byid-book", uptime_steps(1, runner_target(runner)))
+
+      assert {:ok, fetched} = Runbooks.fetch_published_runbook(published.id, subject)
+      assert fetched.id == published.id
+    end
+
+    test "a draft is not resolvable — only published" do
+      {_account, subject, _runner} = account_with_runner()
+      draft = draft_runbook!(subject, "still-draft")
+
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook("still-draft", subject)
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook(draft.id, subject)
+    end
+
+    test "an unknown slug or non-uuid is a clean :not_found" do
+      {_account, subject, _runner} = account_with_runner()
+
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook("no-such-book", subject)
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook("not-a-uuid", subject)
+    end
+
+    test "can't reach another account's published runbook" do
+      {_account_a, subject_a, _runner_a} = account_with_runner()
+      {_account_b, subject_b, runner_b} = account_with_runner()
+      theirs = published_runbook!(subject_b, "b-book", uptime_steps(1, runner_target(runner_b)))
+
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook("b-book", subject_a)
+      assert {:error, :not_found} = Runbooks.fetch_published_runbook(theirs.id, subject_a)
+    end
+
+    test "without view_runbooks is :unauthorized before any DB scope" do
+      {account, subject, runner} = account_with_runner()
+      _ = published_runbook!(subject, "guarded-book", uptime_steps(1, runner_target(runner)))
+
+      # The runner subject is the only principal that lacks view_runbooks (it hits
+      # the authorizer's `_ -> []` clause), so the permission gate trips first.
+      runner_subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Runbooks.fetch_published_runbook("guarded-book", runner_subject)
+    end
+  end
+
   describe "change_runbook/1" do
     test "builds a valid metadata-form changeset from the editor's text fields" do
       changeset = Runbooks.change_runbook(%{"title" => "Deploy check", "slug" => "deploy-check"})

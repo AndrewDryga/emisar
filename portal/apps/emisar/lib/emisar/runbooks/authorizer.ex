@@ -16,8 +16,14 @@ defmodule Emisar.Runbooks.Authorizer do
   def list_permissions_for_role(:viewer),
     do: [view_runbooks_permission()]
 
+  # MCP keys authenticate as :api_client, and the MCP surface lets an LLM draft
+  # a runbook for operator review (`create_runbook_draft`). Drafting reuses the
+  # manage-gated `create_runbook`, so api_client must carry manage. This is safe:
+  # a draft is inert until an operator publishes it, and the MCP layer exposes
+  # ONLY draft-create + execute — never publish/save-version/delete — so the
+  # reachable capability is bounded to creating drafts.
   def list_permissions_for_role(:api_client),
-    do: [view_runbooks_permission()]
+    do: [manage_runbooks_permission(), view_runbooks_permission()]
 
   def list_permissions_for_role(_), do: []
 

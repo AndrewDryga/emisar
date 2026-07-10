@@ -19,8 +19,17 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_slug(queryable, slug),
     do: where(queryable, [runbooks: r], r.slug == ^slug)
 
+  def published(queryable \\ all()),
+    do: where(queryable, [runbooks: r], r.status == :published)
+
   def ordered_by_title_version(queryable),
     do: order_by(queryable, [runbooks: r], asc: r.title, desc: r.version)
+
+  # The single highest-version row of whatever it's chained onto — a slug's
+  # versions share the slug, so this picks the newest one. Owns both its order
+  # and its limit, so a caller can't take the ordering without the cap.
+  def latest_version(queryable),
+    do: queryable |> order_by([runbooks: r], desc: r.version) |> limit(1)
 
   @impl Emisar.Repo.Query
   def cursor_fields,

@@ -39,6 +39,45 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
+  Resolves the latest PUBLISHED runbook a caller may execute, by slug first
+  (newest version of that slug) then, failing that, by a runbook row id.
+  Requires `view_runbooks`; scoped to the subject's account. Returns
+  `{:ok, runbook}` or `{:error, :not_found | :unauthorized}`. Drafts and
+  cross-account rows read as `:not_found` — this is the resolver behind the
+  MCP `execute_runbook` tool, which then dispatches through `dispatch_runbook/3`.
+  """
+  def fetch_published_runbook(slug_or_id, %Subject{} = subject) when is_binary(slug_or_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      case fetch_latest_published_by_slug(slug_or_id, subject) do
+        {:error, :not_found} -> fetch_published_by_id(slug_or_id, subject)
+        result -> result
+      end
+    end
+  end
+
+  defp fetch_latest_published_by_slug(slug, %Subject{} = subject) do
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.published()
+    |> Runbook.Query.by_slug(slug)
+    |> Runbook.Query.latest_version()
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch(Runbook.Query)
+  end
+
+  defp fetch_published_by_id(id, %Subject{} = subject) do
+    if Repo.valid_uuid?(id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.published()
+      |> Runbook.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
   Changeset for the runbook editor's metadata form (title/slug/description).
   Drives `phx-change` validation + inline field errors in the LiveView; the
   row itself is persisted by `create_runbook/2` / `save_new_version/3`, which
@@ -54,7 +93,7 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      user_id = Subject.actor_id(subject)
+      user_id = Subject.user_id(subject)
 
       Multi.new()
       |> Multi.insert(
@@ -115,7 +154,7 @@ defmodule Emisar.Runbooks do
              Authorizer.manage_runbooks_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, old.account_id) do
-      user_id = Subject.actor_id(subject)
+      user_id = Subject.user_id(subject)
 
       Multi.new()
       |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
@@ -573,7 +612,7 @@ defmodule Emisar.Runbooks do
       account_id: runbook.account_id,
       runbook_id: runbook.id,
       initiating_membership_id: subject.membership_id,
-      requested_by_id: Subject.actor_id(subject),
+      requested_by_id: Subject.user_id(subject),
       reason: reason,
       work_list: freeze_work_list(work_list)
     }
