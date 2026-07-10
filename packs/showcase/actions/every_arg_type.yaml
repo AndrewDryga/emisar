@@ -28,7 +28,7 @@ args:
       enum: [fast, slow, balanced]
 
   # string + pattern
-  - name: id_token
+  - name: identifier
     type: string
     required: false
     default: "abc123"
@@ -105,7 +105,7 @@ execution:
     binary: echo
     argv:
       - "mode={{ args.mode }}"
-      - "id_token={{ args.id_token }}"
+      - "identifier={{ args.identifier }}"
       - "port={{ args.port }}"
       - "ratio={{ args.ratio }}"
       - "verbose={{ args.verbose }}"
