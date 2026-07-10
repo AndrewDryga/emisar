@@ -254,6 +254,38 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "chunk-101\n"
   end
 
+  # A live-appending stream never evicts on its own, so a chatty run would grow
+  # the viewer's DOM one node per chunk without bound. stream_insert's :limit
+  # caps the client at the most-recent 500 events: the newest chunk renders, one
+  # well past the 500-event window (evicted as newer chunks arrive) does not.
+  test "the live event stream is client-bounded (a chatty run can't grow the DOM without bound)",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    for seq <- 1..600 do
+      event = %RunEvent{
+        id: Repo.generate_id(),
+        run_id: run.id,
+        account_id: account.id,
+        seq: seq,
+        kind: :progress,
+        stream: "stdout",
+        payload: %{"chunk" => "chunk-#{seq}\n"}
+      }
+
+      send(lv.pid, {:run_event, event})
+    end
+
+    html = render(lv)
+
+    # The last 500 (seq 101..600) are retained; seq 50 was evicted.
+    assert html =~ "chunk-600\n"
+    refute html =~ "chunk-50\n"
+  end
+
   test "an unknown run id bounces to the runs index", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 

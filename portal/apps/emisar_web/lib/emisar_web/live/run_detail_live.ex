@@ -68,8 +68,15 @@ defmodule EmisarWeb.RunDetailLive do
      |> assign(:approval_request, approval_request)}
   end
 
-  def handle_info({:run_event, event}, socket),
-    do: {:noreply, socket |> stream_insert(:events, event) |> assign(:output_present?, true)}
+  # A live-appending stream never evicts on its own, so a chatty run streaming
+  # thousands of progress chunks would grow the viewer's DOM without bound. Cap
+  # the client at the most-recent 500 events — stream/4's :limit does not carry
+  # to stream_insert/4, so it must be passed on every insert. Server socket
+  # memory is unaffected (streams are write-only to the client).
+  def handle_info({:run_event, event}, socket) do
+    {:noreply,
+     socket |> stream_insert(:events, event, limit: -500) |> assign(:output_present?, true)}
+  end
 
   # The runner's live connection changed — re-derive its state so an
   # in-flight run reflects a runner that just dropped (or reconnected).
