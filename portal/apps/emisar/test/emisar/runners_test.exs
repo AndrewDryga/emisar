@@ -535,7 +535,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "fetch_runner_by_external_id_for_account/2" do
+  describe "fetch_runner_by_external_id_for_account/3" do
     test "resolves a live runner by (account, external_id)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, external_id: "ext-1")
@@ -562,6 +562,27 @@ defmodule Emisar.RunnersTest do
 
       assert {:error, :not_found} =
                Runners.fetch_runner_by_external_id_for_account("recycle", account.id)
+    end
+  end
+
+  describe "fetch_and_lock_active_runner/3" do
+    test "locks an active runner in the account and rejects a disabled runner" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert {:ok, {:ok, %Runner{id: id}}} =
+               Repo.transaction(fn ->
+                 Runners.fetch_and_lock_active_runner(runner.id, account.id, repo: Repo)
+               end)
+
+      assert id == runner.id
+
+      {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+      assert {:ok, {:error, :not_found}} =
+               Repo.transaction(fn ->
+                 Runners.fetch_and_lock_active_runner(runner.id, account.id, repo: Repo)
+               end)
     end
   end
 
@@ -741,6 +762,23 @@ defmodule Emisar.RunnersTest do
       assert updated.hostname == "new-host"
       assert updated.labels == %{"env" => "prod"}
       assert updated.runner_version == "9.9.9"
+    end
+
+    test "refuses advertisements after the runner is disabled", %{account: account} do
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, hostname: "before")
+      {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+      assert Runners.apply_state(runner, %{"hostname" => "after"}) == {:error, :not_found}
+      assert Repo.reload!(runner).hostname == "before"
     end
   end
 
@@ -1606,7 +1644,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "mint_runner_token/2" do
+  describe "mint_runner_token/3" do
     test "mints a prefixed raw token + persists its hash, bound to the runner" do
       runner = Fixtures.Runners.create_runner(connected?: false)
 

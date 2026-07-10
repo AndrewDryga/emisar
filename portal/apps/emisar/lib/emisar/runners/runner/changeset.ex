@@ -16,6 +16,7 @@ defmodule Emisar.Runners.Runner.Changeset do
   # jsonb a real runner keeps to a handful of KB, so 64 KB serialized is well
   # above any honest advertisement while bounding the gross-abuse row.
   @max_hostname_length 255
+  @max_group_length 80
   @max_runner_version_length 255
   @max_json_bytes 65_536
 
@@ -36,7 +37,7 @@ defmodule Emisar.Runners.Runner.Changeset do
     ])
     |> validate_required([:account_id, :name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
-    |> validate_length(:group, min: 1, max: 80)
+    |> validate_length(:group, min: 1)
     |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
     |> unique_constraint(:name,
@@ -96,10 +97,12 @@ defmodule Emisar.Runners.Runner.Changeset do
   # cast a subset) reuse the same helper.
   defp validate_advertised_fields(changeset) do
     changeset
+    |> validate_length(:group, max: @max_group_length)
     |> validate_length(:hostname, max: @max_hostname_length)
     |> validate_length(:runner_version, max: @max_runner_version_length)
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
+    |> validate_number(:max_attestation_age_seconds, greater_than: 0)
   end
 
   # Connect/disconnect stamp the durable "last seen" history only.

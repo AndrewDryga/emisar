@@ -38,19 +38,25 @@ defmodule Emisar.Catalog do
   authenticated by the runner token. Not exposed to LV/MCP.
   """
   def observe_state(%Runners.Runner{} = runner, %{} = payload) do
-    runner = apply_runner_facts(runner, payload)
+    case apply_runner_facts(runner, payload) do
+      {:error, :not_found} ->
+        {:error, :unknown_runner}
 
-    case sync_catalog(runner, payload) do
-      {:ok, pending_changed?} ->
-        # Light up the pack-trust badge only when the pending set actually
-        # moved (drift / new custom pack), and only after the commit.
-        if pending_changed?, do: broadcast_pack_trust(runner.account_id)
+      {:ok, updated_runner} ->
+        case sync_catalog(updated_runner, payload) do
+          {:ok, pending_changed?} ->
+            # Light up the pack-trust badge only when the pending set actually
+            # moved (drift / new custom pack), and only after the commit.
+            if pending_changed?, do: broadcast_pack_trust(updated_runner.account_id)
 
-      {:error, reason} ->
-        Logger.warning("catalog sync for runner #{runner.id} failed: #{inspect(reason)}")
+          {:error, reason} ->
+            Logger.warning(
+              "catalog sync for runner #{updated_runner.id} failed: #{inspect(reason)}"
+            )
+        end
+
+        {:ok, updated_runner}
     end
-
-    {:ok, runner}
   end
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
@@ -73,11 +79,14 @@ defmodule Emisar.Catalog do
   defp apply_runner_facts(%Runners.Runner{} = runner, payload) do
     case Emisar.Runners.apply_state(runner, payload) do
       {:ok, updated} ->
-        updated
+        {:ok, updated}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
 
       {:error, reason} ->
         Logger.warning("apply_state for runner #{runner.id} failed: #{inspect(reason)}")
-        runner
+        {:ok, runner}
     end
   end
 
@@ -95,18 +104,24 @@ defmodule Emisar.Catalog do
     actions = payload["actions"] || []
 
     Repo.transaction(fn ->
-      pending_changed? =
-        packs
-        |> Enum.map(&observe_pack(runner.account_id, &1, now))
-        |> Enum.any?(&(&1 == :pending_changed))
+      case Runners.fetch_and_lock_active_runner(runner.id, runner.account_id, repo: Repo) do
+        {:ok, _active_runner} ->
+          pending_changed? =
+            packs
+            |> Enum.map(&observe_pack(runner.account_id, &1, now))
+            |> Enum.any?(&(&1 == :pending_changed))
 
-      seen_ids =
-        actions
-        |> Enum.map(&observe_action(runner, &1, packs, now))
-        |> Enum.reject(&is_nil/1)
+          seen_ids =
+            actions
+            |> Enum.map(&observe_action(runner, &1, packs, now))
+            |> Enum.reject(&is_nil/1)
 
-      prune_missing_actions(runner.id, seen_ids)
-      pending_changed?
+          prune_missing_actions(runner.id, seen_ids)
+          pending_changed?
+
+        {:error, :not_found} ->
+          Repo.rollback(:unknown_runner)
+      end
     end)
   rescue
     error -> {:error, error}

@@ -1,6 +1,6 @@
 defmodule Emisar.CatalogTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Catalog}
+  alias Emisar.{Audit, Catalog, Runners}
   alias Emisar.Catalog.{PackVersion, RunnerAction}
   alias Emisar.Fixtures
 
@@ -192,6 +192,17 @@ defmodule Emisar.CatalogTest do
 
     test "returns {:error, :unknown_runner} for an unknown id" do
       assert {:error, :unknown_runner} = Catalog.observe_state(Ecto.UUID.generate(), %{})
+    end
+
+    test "rejects an advertisement from a disabled runner" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+      assert {:error, :unknown_runner} =
+               Catalog.observe_state(runner.id, state_payload(actions: [action("linux.uptime")]))
+
+      assert {:ok, [], _} = Catalog.list_actions_for_runner(runner.id, subject)
     end
   end
 

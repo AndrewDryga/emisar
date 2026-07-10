@@ -3,28 +3,22 @@ defmodule Emisar.RunnerScopesTest do
   alias Emisar.{Accounts, Runners, Runs}
   alias Emisar.Fixtures
 
-  describe "Runners.list_runners_for_account/2 with :membership_id" do
+  describe "Runners.list_runners_for_account/2 with the subject membership" do
     setup do
       {account, user, subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
       %{account: account, subject: subject, membership: membership}
     end
 
-    test "no scopes = sees everything", %{
-      account: account,
-      subject: subject,
-      membership: membership
-    } do
-      a = Fixtures.Runners.create_runner(account_id: account.id, name: "a", group: "dba")
+    test "no scopes = sees everything", %{account: account, subject: subject} do
+      _a = Fixtures.Runners.create_runner(account_id: account.id, name: "a", group: "dba")
       _b = Fixtures.Runners.create_runner(account_id: account.id, name: "b", group: "app")
 
-      {:ok, runners, _} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
+      {:ok, runners, _} = Runners.list_runners_for_account(subject)
 
       names = runners |> Enum.map(& &1.name) |> Enum.sort()
 
       assert names == ["a", "b"]
-      _ = a
     end
 
     test "group scope restricts to only that group", %{
@@ -39,8 +33,7 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, :ok} =
         Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
-      {:ok, runners, meta} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
+      {:ok, runners, meta} = Runners.list_runners_for_account(subject)
 
       names = runners |> Enum.map(& &1.name) |> Enum.sort()
 
@@ -56,7 +49,7 @@ defmodule Emisar.RunnerScopesTest do
       subject: subject,
       membership: membership
     } do
-      dba = Fixtures.Runners.create_runner(account_id: account.id, name: "dba1", group: "dba")
+      _dba = Fixtures.Runners.create_runner(account_id: account.id, name: "dba1", group: "dba")
       edge = Fixtures.Runners.create_runner(account_id: account.id, name: "edge1", group: "edge")
 
       _other =
@@ -72,13 +65,23 @@ defmodule Emisar.RunnerScopesTest do
           subject
         )
 
-      {:ok, runners, _} =
-        Runners.list_runners_for_account(subject, membership_id: membership.id)
+      {:ok, runners, _} = Runners.list_runners_for_account(subject)
 
       names = runners |> Enum.map(& &1.name) |> Enum.sort()
 
       assert names == ["dba1", "edge1"]
-      _ = dba
+    end
+
+    test "single-runner reads treat an out-of-scope runner as not found", %{
+      account: account,
+      subject: subject,
+      membership: membership
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "app1", group: "app")
+      {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+
+      assert Runners.fetch_runner_by_id(runner.id, subject) == {:error, :not_found}
+      assert Runners.fetch_runner_by_name(runner.name, subject) == {:error, :not_found}
     end
   end
 

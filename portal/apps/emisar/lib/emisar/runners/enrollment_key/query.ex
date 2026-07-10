@@ -1,6 +1,7 @@
 defmodule Emisar.Runners.EnrollmentKey.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
+  alias Emisar.Users
 
   def all,
     do: from(enrollment_keys in Emisar.Runners.EnrollmentKey, as: :enrollment_keys)
@@ -129,7 +130,7 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
         queryable,
         :left,
         [enrollment_keys: k],
-        created_by in ^Emisar.Users.User.Query.not_deleted(),
+        created_by in ^Users.User.Query.not_deleted(),
         on: k.created_by_id == created_by.id,
         as: ^binding
       )
@@ -148,6 +149,6 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
   @impl Emisar.Repo.Query
   def preloads,
     do: [
-      created_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
+      created_by: {Users.User.Query.not_deleted(), Users.User.Query.preloads()}
     ]
 end

@@ -11,6 +11,8 @@ defmodule Emisar.Runners.Runner.Query do
   def not_disabled(queryable \\ all()),
     do: where(queryable, [runners: r], is_nil(r.disabled_at))
 
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+
   def by_id(queryable, id),
     do: where(queryable, [runners: r], r.id == ^id)
 

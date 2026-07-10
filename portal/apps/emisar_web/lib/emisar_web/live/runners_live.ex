@@ -39,12 +39,9 @@ defmodule EmisarWeb.RunnersLive do
     filters = Runners.Runner.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
-    # Filter by per-membership runner scopes (#238). Owners/admins
-    # rarely have scopes set; operators may. Groups list isn't
-    # scope-filtered: the "groups" sidebar header would lie about an
-    # empty group when the operator just can't see it, and that's
-    # confusing — let the list itself be the source of truth.
-    list_opts = Keyword.merge(opts, membership_id: socket.assigns.current_membership.id)
+    # Runners derives the current membership's scope from the subject, so the
+    # URL cannot select a broader member's scope. The groups and fleet summary
+    # remain account-wide by product decision; only individual rows are scoped.
 
     # Whole-account fleet health for the summary strip — counted from the
     # presence-decorated runners (the group_summary DB aggregate can't know
@@ -57,7 +54,7 @@ defmodule EmisarWeb.RunnersLive do
     # rather than leaving the operator to read it off each runner's chip.
     fleet_signed? = Runners.fleet_all_signed?(socket.assigns.current_subject)
 
-    case Runners.list_runners_for_account(socket.assigns.current_subject, list_opts) do
+    case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
       {:ok, runners, meta} ->
         groups =
           case Runners.list_group_summaries(socket.assigns.current_subject) do

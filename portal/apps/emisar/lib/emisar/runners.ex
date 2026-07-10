@@ -18,7 +18,7 @@ defmodule Emisar.Runners do
   socket's own subject upstream.
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token, UserRunnerScope}
@@ -63,10 +63,10 @@ defmodule Emisar.Runners do
 
   @doc """
   Paginated, filterable runner listing for the RunnersLive UI —
-  `:group` / `:status` / `:membership_id` opts narrow the set (the
-  membership filter applies in the query, before pagination; empty
-  scopes = all). Returns `{:ok, [runner], %Paginator.Metadata{}}`,
-  presence-decorated. MCP paths that must see the complete fleet use
+  `:group` / `:status` opts narrow the set. The authenticated subject's
+  membership scope applies in the query, before pagination; empty scopes
+  mean all runners. Returns `{:ok, [runner], %Paginator.Metadata{}}`,
+  presence-decorated. MCP paths that need the complete accessible fleet use
   `list_all_runners_for_account/1` instead.
   """
   def list_runners_for_account(%Subject{} = subject, opts \\ []) do
@@ -75,7 +75,6 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.view_runners_permission()
            ) do
-      {membership_id, opts} = Keyword.pop(opts, :membership_id)
       {group, opts} = Keyword.pop(opts, :group)
       {status, opts} = Keyword.pop(opts, :status)
 
@@ -83,7 +82,7 @@ defmodule Emisar.Runners do
       |> Runner.Query.ordered_by_group_name()
       |> maybe_by_group(group)
       |> maybe_by_connection(subject, status)
-      |> scope_to_membership(membership_id)
+      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runner.Query, opts)
       |> decorate_result()
@@ -95,7 +94,7 @@ defmodule Emisar.Runners do
   set, deliberately un-paginated, presence-decorated.
 
   The MCP path: `tools/list`, dispatch resolution, and runner
-  inventory must see every runner (no `status`/`group`/membership
+  inventory must see every runner (no status/group/membership
   filter), not a page. The UI uses the paginated
   `list_runners_for_account/2`. Returns `{:ok, runners}`.
   """
@@ -116,14 +115,13 @@ defmodule Emisar.Runners do
     end
   end
 
-  # Per-membership runner ACLs: restrict to the runners a membership may see
-  # (empty scopes = all). Filters in the query — BEFORE pagination — so the
-  # page contents and the metadata counts are correct (the old post-fetch
-  # in-memory filter left short pages with inflated totals). nil membership =
-  # no filter, so MCP / system paths see everything.
-  defp scope_to_membership(query, nil), do: query
+  # Per-membership runner ACLs: restrict to the authenticated membership's
+  # runners (empty scopes = all). Filters in the query — BEFORE pagination — so
+  # page contents and metadata counts agree. A subject with no membership (for
+  # example a legacy-unbound API key) has no per-membership restriction.
+  defp scope_to_subject_membership(query, %Subject{membership_id: nil}), do: query
 
-  defp scope_to_membership(query, membership_id) do
+  defp scope_to_subject_membership(query, %Subject{membership_id: membership_id}) do
     case runner_scopes_for_membership(membership_id) do
       [] ->
         query
@@ -180,6 +178,7 @@ defmodule Emisar.Runners do
          true <- Repo.valid_uuid?(id) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(id)
+      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
       |> decorate_result()
@@ -202,6 +201,7 @@ defmodule Emisar.Runners do
            ) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_name(name)
+      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
       |> decorate_result()
@@ -323,12 +323,31 @@ defmodule Emisar.Runners do
   `register_via_enrollment_key/2`; not exposed to LiveView/MCP — they don't
   have an external_id at the auth boundary.
   """
-  def fetch_runner_by_external_id_for_account(external_id, account_id)
+  def fetch_runner_by_external_id_for_account(external_id, account_id, opts \\ [])
       when is_binary(external_id) do
+    repo = Keyword.get(opts, :repo, Repo)
+
     Runner.Query.not_deleted()
     |> Runner.Query.by_account_id(account_id)
     |> Runner.Query.by_external_id(external_id)
-    |> Repo.fetch(Runner.Query)
+    |> repo.fetch(Runner.Query)
+  end
+
+  @doc """
+  Internal — locks an active runner for a caller's transaction. Catalog state
+  ingestion holds this lock through its write so disable/delete serializes with
+  the last in-flight advertisement instead of letting a revoked runner mutate
+  the catalog after the lifecycle change commits.
+  """
+  def fetch_and_lock_active_runner(runner_id, account_id, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.lock_for_update()
+    |> repo.fetch(Runner.Query)
   end
 
   # -- Runners: mutations ----------------------------------------------
@@ -373,7 +392,7 @@ defmodule Emisar.Runners do
       # ensure_in_account proved runner.account_id == subject.account.id, so the
       # subject's own account feeds the count — no preload.
       |> Multi.run(:limit, fn _repo, _ ->
-        case Emisar.Billing.check_limit(subject.account, :runners) do
+        case Billing.check_limit(subject.account, :runners) do
           :ok -> {:ok, :ok}
           {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
         end
@@ -429,31 +448,35 @@ defmodule Emisar.Runners do
 
   @doc "Internal — persists a runner_state advertisement from the runner socket."
   def apply_state(%Runner{} = runner, %{} = payload) do
-    runner
-    |> Runner.Changeset.apply_state(%{
-      hostname: payload["hostname"] || runner.hostname,
-      labels: payload["labels"] || runner.labels,
-      runner_version: payload["version"] || runner.runner_version,
-      packs: payload["packs"] || runner.packs,
-      external_id: payload["runner_id"] || runner.external_id,
-      # `group` is RUNNER-DECLARED: a config `runner.group` rename reaches the
-      # cloud here on reconnect, so update it (keep the existing group when the
-      # payload's is missing/blank — never wipe to ""). Deliberately trusted:
-      # group selects which policy override governs dispatches to THIS runner
-      # (Policies.resolve_policy), so a compromised host could declare a looser
-      # group — but it already owns the box the runner executes on, so it gains
-      # nothing it couldn't do locally. The host is the trust anchor. Pin to the
-      # auth key if you need it operator-authoritative. See docs/security-model.md.
-      group: nonblank(payload["group"]) || runner.group,
-      # Runner-declared too, but trusting it is unconditionally safe: it only
-      # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
-      # missing/false value clears it, so flipping enforcement off in config
-      # propagates on the next reconnect.
-      enforce_signatures: payload["enforce_signatures"] == true,
-      # The freshness window the runner advertises when enforcing; nil clears it.
-      max_attestation_age_seconds: payload["max_attestation_age_seconds"]
-    })
-    |> Repo.update()
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_id(runner.id)
+    |> Repo.fetch_and_update(Runner.Query,
+      with: fn active_runner ->
+        Runner.Changeset.apply_state(active_runner, %{
+          hostname: payload["hostname"] || active_runner.hostname,
+          labels: payload["labels"] || active_runner.labels,
+          runner_version: payload["version"] || active_runner.runner_version,
+          packs: payload["packs"] || active_runner.packs,
+          # `group` is RUNNER-DECLARED: a config `runner.group` rename reaches the
+          # cloud here on reconnect, so update it (keep the existing group when the
+          # payload's is missing/blank — never wipe to ""). Deliberately trusted:
+          # group selects which policy override governs dispatches to THIS runner
+          # (Policies.resolve_policy), so a compromised host could declare a looser
+          # group — but it already owns the box the runner executes on, so it gains
+          # nothing it couldn't do locally. The host is the trust anchor. Pin to the
+          # auth key if you need it operator-authoritative. See docs/security-model.md.
+          group: nonblank(payload["group"]) || active_runner.group,
+          # Runner-declared too, but trusting it is unconditionally safe: it only
+          # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
+          # missing/false value clears it, so flipping enforcement off in config
+          # propagates on the next reconnect.
+          enforce_signatures: payload["enforce_signatures"] == true,
+          # The freshness window the runner advertises when enforcing; nil clears it.
+          max_attestation_age_seconds: payload["max_attestation_age_seconds"]
+        })
+      end
+    )
   end
 
   defp nonblank(value) when is_binary(value) and value != "", do: value
@@ -1030,12 +1053,13 @@ defmodule Emisar.Runners do
   persists the hash, returns `{raw_token, token_record}`. Establishes the
   runner identity before any Subject exists.
   """
-  def mint_runner_token(%Runner{} = runner, issued_via_key_id \\ nil) do
+  def mint_runner_token(%Runner{} = runner, issued_via_key_id \\ nil, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
     {raw, prefix, hash} = Crypto.mint("rnrtok-", @token_prefix_size)
 
     {:ok, token} =
       Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash)
-      |> Repo.insert()
+      |> repo.insert()
 
     {raw, token}
   end
@@ -1134,8 +1158,8 @@ defmodule Emisar.Runners do
       register_or_reuse_runner(repo, key, attrs, external_id)
     end)
     |> maybe_audit_runner_registered(key, context)
-    |> Multi.run(:token, fn _repo, %{registration: {runner, _fresh?}} ->
-      {:ok, mint_runner_token(runner, key.id)}
+    |> Multi.run(:token, fn repo, %{registration: {runner, _fresh?}} ->
+      {:ok, mint_runner_token(runner, key.id, repo: repo)}
     end)
     |> Repo.commit_multi()
     |> case do
@@ -1187,12 +1211,12 @@ defmodule Emisar.Runners do
   # via its auth key — is already counted, so checking the limit for it
   # would lock an operator out of their own fleet at the plan ceiling.
   defp register_or_reuse_runner(repo, key, attrs, external_id) do
-    case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
+    case fetch_runner_by_external_id_for_account(external_id, key.account_id, repo: repo) do
       {:ok, %Runner{} = existing} ->
         {:ok, {existing, false}}
 
       {:error, :not_found} ->
-        case Emisar.Billing.check_limit(key.account, :runners) do
+        case Billing.check_limit(key.account, :runners) do
           :ok -> insert_runner(repo, key, attrs, external_id)
           {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
         end
@@ -1232,7 +1256,9 @@ defmodule Emisar.Runners do
                {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
            ) do
         {:ok, inserted} ->
-          {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
+          {:ok, runner} =
+            fetch_runner_by_external_id_for_account(external_id, key.account_id, repo: repo)
+
           {:ok, {runner, runner.id == inserted.id}}
 
         {:error, changeset} ->

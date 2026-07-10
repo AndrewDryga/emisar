@@ -45,12 +45,26 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
       assert Keyword.has_key?(changeset.errors, :hostname)
     end
 
+    test "rejects an oversized group rename", %{runner: runner} do
+      changeset = Runner.Changeset.apply_state(runner, %{group: String.duplicate("g", 81)})
+
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :group)
+    end
+
     test "rejects an oversized runner_version", %{runner: runner} do
       changeset =
         Runner.Changeset.apply_state(runner, %{runner_version: String.duplicate("9", 300)})
 
       refute changeset.valid?
       assert Keyword.has_key?(changeset.errors, :runner_version)
+    end
+
+    test "rejects a non-positive attestation window", %{runner: runner} do
+      changeset = Runner.Changeset.apply_state(runner, %{max_attestation_age_seconds: 0})
+
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :max_attestation_age_seconds)
     end
   end
 
