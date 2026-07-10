@@ -28,6 +28,7 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert runners.items.enum == ["solo"]
       assert runners.minItems == 1
       assert runners.maxItems == 1
+      assert runners.uniqueItems == true
       # No `default` and not optional — emisar never auto-targets, so the caller
       # must name the host explicitly even when there's only one choice.
       refute Map.has_key?(runners, :default)
@@ -64,8 +65,10 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
     end
 
     test "emisar `duration` type widens to string with a regex pattern" do
-      schema = ToolSchema.build(action(args: [%{"name" => "wait", "type" => "duration"}]), ["r"])
-      prop = schema.properties["wait"]
+      schema =
+        ToolSchema.build(action(args: [%{"name" => "timeout", "type" => "duration"}]), ["r"])
+
+      prop = schema.properties["timeout"]
       assert prop.type == "string"
       assert prop.pattern =~ "ns|us|ms|s|m|h"
     end
@@ -188,6 +191,48 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
         )
 
       assert schema.properties["limit"].default == 25
+    end
+
+    test "ignores malformed catalog arguments instead of failing tool discovery" do
+      schema =
+        ToolSchema.build(
+          %{
+            args_schema: %{
+              "args" => ["bad", %{"name" => 1}, %{"name" => "host", "validation" => []}]
+            }
+          },
+          ["r"]
+        )
+
+      assert schema.properties["host"].type == "string"
+      refute Map.has_key?(schema.properties["host"], :enum)
+    end
+
+    test "ignores a non-list catalog args schema and reserved control names" do
+      schema =
+        ToolSchema.build(
+          %{args_schema: %{"args" => %{"name" => "bad"}}},
+          ["r"]
+        )
+
+      assert schema.properties["reason"].type == "string"
+      refute Map.has_key?(schema.properties, "bad")
+
+      schema =
+        ToolSchema.build(
+          action(
+            args: [
+              %{"name" => "reason", "required" => true},
+              %{"name" => "runner", "required" => true},
+              %{"name" => "wait", "required" => true}
+            ]
+          ),
+          ["r"]
+        )
+
+      assert Enum.count(schema.required, &(&1 == "reason")) == 1
+      refute "runner" in schema.required
+      refute "wait" in schema.required
     end
   end
 

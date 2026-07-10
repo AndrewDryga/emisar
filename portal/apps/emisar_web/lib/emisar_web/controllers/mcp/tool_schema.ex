@@ -21,13 +21,14 @@ defmodule EmisarWeb.MCP.ToolSchema do
   """
 
   @max_runner_fan_out 16
+  @reserved_arg_names ~w(action_id runner runners reason wait idempotency_key)
 
   @doc """
   Returns the full `inputSchema` map (already shaped for JSON encoding)
   for one action, given the list of runner names that advertise it.
   """
   def build(action, runner_names) do
-    args = action.args_schema["args"] || []
+    args = action_args(action)
 
     arg_properties = Map.new(args, &{&1["name"], arg_property(&1)})
     arg_required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
@@ -98,6 +99,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
        items: %{type: "string", enum: runner_names},
        minItems: 1,
        maxItems: min(length(runner_names), @max_runner_fan_out),
+       uniqueItems: true,
        description:
          "REQUIRED — name the target runner(s) explicitly; emisar never picks for you. " <>
            "One or more names from the `enum`. The call fans out and each runner runs " <>
@@ -110,12 +112,23 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   # -- Per-action arg properties ---------------------------------------
 
+  defp action_args(%{args_schema: %{"args" => args}}) when is_list(args) do
+    Enum.filter(args, &valid_arg?/1)
+  end
+
+  defp action_args(_), do: []
+
+  defp valid_arg?(%{"name" => name}) when is_binary(name) and name != "",
+    do: name not in @reserved_arg_names
+
+  defp valid_arg?(_), do: false
+
   defp arg_property(arg) do
     arg["type"]
     |> base_type()
-    |> put_if_present(:description, arg["description"])
+    |> put_if_present(:description, description(arg["description"]))
     |> put_if_present(:default, arg["default"])
-    |> apply_validation(arg["validation"] || %{})
+    |> apply_validation(validation_map(arg["validation"]))
   end
 
   defp base_type("string"), do: %{type: "string"}
@@ -131,13 +144,31 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp apply_validation(map, %{} = v) do
     map
-    |> put_if_present(:enum, v["enum"] || v["allowed"])
-    |> put_if_present(:pattern, v["pattern"])
-    |> put_if_present(:minimum, v["min"])
-    |> put_if_present(:maximum, v["max"])
-    |> put_if_present(:minItems, v["min_items"])
-    |> put_if_present(:maxItems, v["max_items"])
+    |> put_if_present(:enum, validation_list(v["enum"] || v["allowed"]))
+    |> put_if_present(:pattern, validation_string(v["pattern"]))
+    |> put_if_present(:minimum, validation_number(v["min"]))
+    |> put_if_present(:maximum, validation_number(v["max"]))
+    |> put_if_present(:minItems, validation_count(v["min_items"]))
+    |> put_if_present(:maxItems, validation_count(v["max_items"]))
   end
+
+  defp validation_map(%{} = validation), do: validation
+  defp validation_map(_), do: %{}
+
+  defp description(value) when is_binary(value), do: value
+  defp description(_), do: nil
+
+  defp validation_list(value) when is_list(value), do: value
+  defp validation_list(_), do: nil
+
+  defp validation_string(value) when is_binary(value), do: value
+  defp validation_string(_), do: nil
+
+  defp validation_number(value) when is_number(value), do: value
+  defp validation_number(_), do: nil
+
+  defp validation_count(value) when is_integer(value) and value >= 0, do: value
+  defp validation_count(_), do: nil
 
   # Single replacement for the 4 prior `maybe_put_*` variants. Empty
   # string / empty list count as "no value", matching Emisar's

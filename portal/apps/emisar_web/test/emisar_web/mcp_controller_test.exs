@@ -366,7 +366,15 @@ defmodule EmisarWeb.MCPControllerTest do
         })
         |> json_response(202)
 
-      assert %{"runs" => [_]} = body
+      assert %{"runs" => [run_entry]} = body
+
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(
+          run_entry["run_id"] || run_entry["id"],
+          Fixtures.Subjects.subject_for(user, account, role: :owner)
+        )
+
+      refute Map.has_key?(run.args, "runner")
     end
 
     test "fans out to all listed runners in input order", %{
@@ -489,6 +497,39 @@ defmodule EmisarWeb.MCPControllerTest do
 
       assert body["error"] == "runner_not_found"
       assert body["runner"] == "ghost"
+    end
+
+    test "duplicate or malformed runner targets are rejected before dispatch", %{
+      conn: conn,
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      duplicate =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => [runner.name, runner.name],
+          "reason" => "do not dispatch twice"
+        })
+        |> json_response(400)
+
+      assert duplicate["error"] == "duplicate_runners"
+
+      malformed =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => [runner.name, 1],
+          "reason" => "do not partially dispatch"
+        })
+        |> json_response(400)
+
+      assert malformed["error"] == "invalid_runner_targets"
+      assert {:ok, [], _meta} = Emisar.Runs.list_runs(subject)
     end
 
     test "missing reason fails fast with 400 reason_required — not a 202 of per-runner errors", %{
@@ -1330,6 +1371,48 @@ defmodule EmisarWeb.MCPControllerTest do
       assert body["stdout_sha256"] == digest
       assert body["stdout_bytes"] == total_bytes
       assert total_bytes > 65_536
+    end
+
+    test "output preview reads only the most recent bounded event tail", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, name: "event-tail-host")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.cat",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "pending"
+        })
+
+      for seq <- 1..33 do
+        {:ok, _} =
+          Emisar.Runs.append_event(run, %{
+            seq: seq,
+            kind: "progress",
+            stream: "stdout",
+            payload: %{"chunk" => "line-#{seq}\\n"}
+          })
+      end
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(200)
+
+      assert body["output_events_truncated"] == true
+      assert body["stdout"] =~ "line-2"
+      assert body["stdout"] =~ "line-33"
+      refute body["stdout"] =~ "line-1\\n"
+      assert body["stdout_truncated"] == false
     end
 
     test "the policy block carries decision, reason, and matched rules", %{

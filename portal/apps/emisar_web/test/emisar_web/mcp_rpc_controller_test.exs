@@ -519,6 +519,20 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert {:ok, _} = Ecto.UUID.cast(minted)
     end
 
+    test "an oversized client-sent Mcp-Session-Id is replaced with a freshly minted one",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("mcp-session-id", String.duplicate("s", 256))
+        |> rpc("initialize")
+
+      assert [minted] = get_resp_header(conn, "mcp-session-id")
+      assert {:ok, _} = Ecto.UUID.cast(minted)
+    end
+
     test "initialize with no clientInfo records nothing and still handshakes",
          %{conn: conn, account: account, user: user} do
       subject = subject_for(account, user)
@@ -1518,6 +1532,47 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # Resolution failed before any dispatch — no orphan rows.
       assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
+
+    test "duplicate or malformed runner targets create no runs",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "fan-once")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      duplicate =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runners" => [runner.name, runner.name],
+            "reason" => "do not dispatch twice",
+            "wait" => "0"
+          }
+        })
+        |> json_response(200)
+
+      assert duplicate["result"]["isError"] == true
+      assert content_text(duplicate) =~ "Duplicate runners"
+
+      malformed =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runners" => [runner.name, 1],
+            "reason" => "do not partially dispatch",
+            "wait" => "0"
+          }
+        })
+        |> json_response(200)
+
+      assert malformed["result"]["isError"] == true
+      assert content_text(malformed) =~ "Invalid runner targets"
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
   end
 
   describe "recent_runs limit validation" do
@@ -2324,6 +2379,40 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> json_response(200)
 
       assert body["result"]["protocolVersion"] == "2025-06-18"
+    end
+
+    test "a non-object params value returns invalid params instead of raising",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("initialize", ["not", "an", "object"])
+        |> json_response(200)
+
+      assert body["error"] == %{"code" => -32602, "message" => "params must be an object"}
+    end
+
+    test "a non-string tool name and non-object arguments return invalid params",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      non_string_name =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => ["linux.uptime"], "arguments" => %{}})
+        |> json_response(200)
+
+      assert non_string_name["error"]["code"] == -32602
+
+      non_object_arguments =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "linux.uptime", "arguments" => ["bad"]})
+        |> json_response(200)
+
+      assert non_object_arguments["error"]["code"] == -32602
     end
   end
 

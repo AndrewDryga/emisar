@@ -323,6 +323,9 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       [
         if(approved?, do: text_block("✓ approved · audit event recorded")),
         if(headerline != "", do: text_block(headerline)),
+        if(output_truncated?(run),
+          do: text_block("Output preview is truncated; do not treat it as complete evidence.")
+        ),
         if(stdout != "", do: text_block(stdout)),
         if(stderr != "", do: text_block("stderr:\n" <> stderr)),
         if(err_msg != "", do: text_block("Error: " <> err_msg))
@@ -396,6 +399,12 @@ defmodule EmisarWeb.MCP.ContentBlocks do
       n when is_number(n) -> {n * 1.0, true}
       _ -> {0.0, false}
     end
+  end
+
+  defp output_truncated?(run) do
+    Enum.any?(["stdout_truncated", "stderr_truncated", "output_events_truncated"], fn key ->
+      Map.get(run, key) == true or Map.get(run, existing_atom(key)) == true
+    end)
   end
 
   # IL-14: never grow the atom table from request data. The run payload

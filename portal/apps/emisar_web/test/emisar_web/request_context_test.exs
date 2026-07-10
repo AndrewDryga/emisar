@@ -44,6 +44,15 @@ defmodule EmisarWeb.RequestContextTest do
       assert context.ip_address == "192.0.2.5"
     end
 
+    test "drops an oversized MCP session id before it reaches a varchar field" do
+      context =
+        conn()
+        |> put_req_header("mcp-session-id", String.duplicate("s", 256))
+        |> Builder.from_conn()
+
+      assert context.mcp_session_id == nil
+    end
+
     test "is an all-nil struct when no client metadata is present" do
       # No headers, and a non-tuple remote_ip exercises the peer fallback's
       # nil path — the system/engine-origin shape.

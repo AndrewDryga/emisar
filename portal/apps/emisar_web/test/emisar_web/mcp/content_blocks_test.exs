@@ -74,6 +74,22 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
       refute is_error
     end
 
+    test "a bounded output preview states that it is incomplete" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            id: "run-tail",
+            status: "success",
+            exit_code: 0,
+            stdout: "last line",
+            output_events_truncated: true
+          }
+        ])
+
+      assert text(blocks) =~ "Output preview is truncated"
+      refute is_error
+    end
+
     test "a non-zero exit flags isError even when status isn't a failure word" do
       {_blocks, is_error} =
         ContentBlocks.from_runs([%{id: "r", status: "success", exit_code: 1, stdout: ""}])

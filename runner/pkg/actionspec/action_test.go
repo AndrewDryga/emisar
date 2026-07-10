@@ -335,6 +335,9 @@ func TestAction_Validate(t *testing.T) {
 		{"reserved arg reason", func(a *Action) {
 			a.Args = []Arg{{Name: "reason", Type: ArgString}}
 		}, "reserved control-plane field"},
+		{"reserved arg runner", func(a *Action) {
+			a.Args = []Arg{{Name: "runner", Type: ArgString}}
+		}, "reserved control-plane field"},
 		{"reserved arg runners", func(a *Action) {
 			a.Args = []Arg{{Name: "runners", Type: ArgStringArray}}
 		}, "reserved control-plane field"},

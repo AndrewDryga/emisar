@@ -35,6 +35,10 @@ defmodule EmisarWeb.MCP.Service do
 
   @stdout_cap 65_536
   @stderr_cap 65_536
+  # A compromised runner can legally persist 256 KiB progress payloads. Limit
+  # the number read for an MCP preview as well as each rendered stream so one
+  # run cannot turn a status request into an unbounded database read.
+  @max_output_events 32
 
   # -- Tool list -------------------------------------------------------
 
@@ -265,7 +269,7 @@ defmodule EmisarWeb.MCP.Service do
   # -- Dispatch --------------------------------------------------------
 
   @type dispatch_opts :: %{
-          optional(:runner_names) => [String.t()],
+          optional(:runner_names) => term(),
           optional(:reason) => String.t() | nil,
           optional(:wait_ms) => non_neg_integer(),
           optional(:idempotency_key) => String.t() | nil
@@ -274,6 +278,8 @@ defmodule EmisarWeb.MCP.Service do
   @type dispatch_error ::
           {:error, :reason_required}
           | {:error, :runner_required, [String.t()]}
+          | {:error, :invalid_runner_targets}
+          | {:error, :duplicate_runners}
           | {:error, :runner_not_found, String.t()}
           | {:error, :runner_not_allowed, String.t(), String.t()}
           | {:error, :no_runner_available, :unknown_action | :scope_blocked}
@@ -427,11 +433,26 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  defp resolve_runners(_subject, _api_key, _action_id, names)
-       when length(names) > @max_runners_per_call,
-       do: {:error, :too_many_runners, @max_runners_per_call}
+  defp resolve_runners(_subject, _api_key, _action_id, names) when not is_list(names),
+    do: {:error, :invalid_runner_targets}
 
   defp resolve_runners(subject, api_key, action_id, names) do
+    cond do
+      Enum.any?(names, &(not is_binary(&1))) ->
+        {:error, :invalid_runner_targets}
+
+      length(names) > @max_runners_per_call ->
+        {:error, :too_many_runners, @max_runners_per_call}
+
+      MapSet.size(MapSet.new(names)) != length(names) ->
+        {:error, :duplicate_runners}
+
+      true ->
+        resolve_named_runners(subject, api_key, action_id, names)
+    end
+  end
+
+  defp resolve_named_runners(subject, api_key, action_id, names) do
     allowed = allowed_runners_for_action(subject, api_key, action_id)
     {:ok, all} = Runners.list_all_runners_for_account(subject)
     scopes = membership_scopes(api_key)
@@ -931,8 +952,9 @@ defmodule EmisarWeb.MCP.Service do
   # -- Run payload (incl. output) -------------------------------------
 
   defp full_run_payload(run, subject) do
-    {:ok, events, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 5_000])
-    {stdout, stderr} = collect_streams(events)
+    {:ok, events} = Runs.list_recent_events_for_run(run.id, @max_output_events + 1, subject)
+    {events, output_events_truncated?} = output_tail(events)
+    {{stdout, stdout_truncated?}, {stderr, stderr_truncated?}} = collect_streams(events)
 
     %{
       id: run.id,
@@ -947,10 +969,11 @@ defmodule EmisarWeb.MCP.Service do
       reason: run.reason_text,
       error_message: run.error_message,
       executed_command: run.executed_command,
-      stdout: truncate(stdout, @stdout_cap),
-      stderr: truncate(stderr, @stderr_cap),
-      stdout_truncated: byte_size(stdout) > @stdout_cap,
-      stderr_truncated: byte_size(stderr) > @stderr_cap,
+      stdout: stdout,
+      stderr: stderr,
+      stdout_truncated: stdout_truncated?,
+      stderr_truncated: stderr_truncated?,
+      output_events_truncated: output_events_truncated?,
       stdout_sha256: run.stdout_sha256,
       stderr_sha256: run.stderr_sha256,
       stdout_bytes: run.stdout_bytes,
@@ -963,16 +986,26 @@ defmodule EmisarWeb.MCP.Service do
     }
   end
 
+  defp output_tail(events) when length(events) > @max_output_events,
+    do: {tl(events), true}
+
+  defp output_tail(events), do: {events, false}
+
   defp collect_streams(events) do
-    Enum.reduce(events, {"", ""}, fn event, {out, err} ->
+    Enum.reduce(events, {{"", false}, {"", false}}, fn event, {out, err} ->
       chunk = get_chunk(event)
       stream = event.stream || (event.payload && event.payload["stream"])
 
       case stream do
-        "stderr" -> {out, err <> chunk}
-        _ -> {out <> chunk, err}
+        "stderr" -> {out, append_tail(err, chunk, @stderr_cap)}
+        _ -> {append_tail(out, chunk, @stdout_cap), err}
       end
     end)
+  end
+
+  defp append_tail({output, truncated?}, chunk, cap) do
+    combined = output <> chunk
+    {truncate(combined, cap), truncated? or byte_size(combined) > cap}
   end
 
   defp get_chunk(%{payload: %{"chunk" => c}}) when is_binary(c), do: c

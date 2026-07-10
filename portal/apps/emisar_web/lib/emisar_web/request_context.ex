@@ -17,14 +17,28 @@ defmodule EmisarWeb.RequestContext do
   import Plug.Conn, only: [get_req_header: 2, get_resp_header: 2]
   alias Emisar.RequestContext
 
+  @mcp_session_id_max_bytes 255
+
   @doc "Request context for an HTTP request (`%Plug.Conn{}`)."
   def from_conn(conn) do
     RequestContext.new(%{
       ip_address: normalize_ip(forwarded_for(conn) || peer_ip(conn)),
       user_agent: List.first(get_req_header(conn, "user-agent")),
       request_id: List.first(get_resp_header(conn, "x-request-id")),
-      mcp_session_id: List.first(get_req_header(conn, "mcp-session-id"))
+      mcp_session_id: mcp_session_id(conn)
     })
+  end
+
+  @doc "The bounded MCP session id from the request, or nil when absent or oversized."
+  def mcp_session_id(conn) do
+    case get_req_header(conn, "mcp-session-id") do
+      [value | _]
+      when is_binary(value) and value != "" and byte_size(value) <= @mcp_session_id_max_bytes ->
+        value
+
+      _ ->
+        nil
+    end
   end
 
   @doc """

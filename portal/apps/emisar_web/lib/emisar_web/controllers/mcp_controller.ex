@@ -78,7 +78,15 @@ defmodule EmisarWeb.MCPController do
     # action arg sharing one (runner pkg/actionspec reservedArgNames), so
     # a real action arg can never be silently stripped here. Keep the two
     # lists in sync.
-    action_args = Map.drop(params, ["action_id", "reason", "runners", "wait", "idempotency_key"])
+    action_args =
+      Map.drop(params, [
+        "action_id",
+        "reason",
+        "runner",
+        "runners",
+        "wait",
+        "idempotency_key"
+      ])
 
     case Service.parse_wait(params["wait"], Service.max_wait_ms()) do
       :error ->
@@ -120,6 +128,22 @@ defmodule EmisarWeb.MCPController do
                   "body, choosing from `candidates` below. Call `/runners` first if you need " <>
                   "to check which ones are online.",
               candidates: candidates
+            })
+
+          {:error, :invalid_runner_targets} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{
+              error: "invalid_runner_targets",
+              message: "`runners` must be an array of runner-name strings."
+            })
+
+          {:error, :duplicate_runners} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{
+              error: "duplicate_runners",
+              message: "Each runner may be targeted at most once per action call."
             })
 
           {:error, :runner_not_found, name} ->
@@ -233,13 +257,9 @@ defmodule EmisarWeb.MCPController do
   # singular `runner` (string) — mirroring the JSON-RPC `split_call_args`.
   # An empty/absent value fails closed with `runner_required`: Service never
   # auto-targets, even when exactly one runner advertises the action.
-  defp normalize_runner_input(params) do
-    cond do
-      is_list(params["runners"]) -> Enum.filter(params["runners"], &is_binary/1)
-      is_binary(params["runner"]) -> [params["runner"]]
-      true -> []
-    end
-  end
+  defp normalize_runner_input(%{"runners" => runners}), do: runners
+  defp normalize_runner_input(%{"runner" => runner}), do: [runner]
+  defp normalize_runner_input(_params), do: []
 
   # -- Plugs ----------------------------------------------------------
 

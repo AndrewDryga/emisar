@@ -30,6 +30,7 @@ defmodule EmisarWeb.MCPRpcController do
   use EmisarWeb, :controller
   alias Emisar.ApiKeys
   alias EmisarWeb.MCP.{Auth, ContentBlocks, Idempotency, Instructions, Service}
+  alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-06-18"
   @supported_protocol_versions [@latest_protocol_version, "2024-11-05"]
@@ -42,24 +43,38 @@ defmodule EmisarWeb.MCPRpcController do
   plug :authenticate
 
   # POST /api/mcp/rpc
-  def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) do
+  def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) when is_binary(method) do
     id = Map.get(req, "id")
-    params = Map.get(req, "params") || %{}
-    conn = conn |> maybe_emit_session_id(method) |> maybe_offer_successor(method)
 
-    case dispatch(conn, method, params) do
-      :no_reply ->
-        # JSON-RPC notification — RFC says no response body.
-        send_resp(conn, 202, "")
+    case params_map(Map.get(req, "params")) do
+      {:ok, params} ->
+        conn = conn |> maybe_emit_session_id(method) |> maybe_offer_successor(method)
 
-      {:ok, result} ->
-        json(conn, %{jsonrpc: "2.0", id: id, result: result})
+        case dispatch(conn, method, params) do
+          :no_reply ->
+            # JSON-RPC notification — RFC says no response body.
+            send_resp(conn, 202, "")
 
-      {:error, code, message} ->
-        json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
+          {:ok, result} ->
+            json(conn, %{jsonrpc: "2.0", id: id, result: result})
 
-      {:error, code, message, data} ->
-        json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message, data: data}})
+          {:error, code, message} ->
+            json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
+
+          {:error, code, message, data} ->
+            json(conn, %{
+              jsonrpc: "2.0",
+              id: id,
+              error: %{code: code, message: message, data: data}
+            })
+        end
+
+      :error ->
+        json(conn, %{
+          jsonrpc: "2.0",
+          id: id,
+          error: %{code: -32602, message: "params must be an object"}
+        })
     end
   end
 
@@ -108,6 +123,12 @@ defmodule EmisarWeb.MCPRpcController do
       name == "" ->
         {:error, -32602, "missing tool name"}
 
+      not is_binary(name) ->
+        {:error, -32602, "tool name must be a string"}
+
+      not is_map(args) ->
+        {:error, -32602, "tool arguments must be an object"}
+
       name == "wait_for_run" ->
         with :ok <- require_mcp_key(conn) do
           handle_wait_for_run(conn, args)
@@ -139,6 +160,10 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp dispatch(_conn, method, _params),
     do: {:error, -32601, "method not found", method}
+
+  defp params_map(nil), do: {:ok, %{}}
+  defp params_map(%{} = params), do: {:ok, params}
+  defp params_map(_), do: :error
 
   # -- Tool call ------------------------------------------------------
 
@@ -195,6 +220,24 @@ defmodule EmisarWeb.MCPRpcController do
             "the candidates: " <> Enum.join(candidates, ", ")
 
         {content, _} = ContentBlocks.error_content("Runner required", msg)
+        {:ok, %{content: content, isError: true}}
+
+      {:error, :invalid_runner_targets} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Invalid runner targets",
+            "`runners` must be an array of runner-name strings."
+          )
+
+        {:ok, %{content: content, isError: true}}
+
+      {:error, :duplicate_runners} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Duplicate runners",
+            "Each runner may be targeted at most once per action call."
+          )
+
         {:ok, %{content: content, isError: true}}
 
       {:error, :runner_not_found, runner} ->
@@ -406,8 +449,8 @@ defmodule EmisarWeb.MCPRpcController do
   defp split_call_args(args) do
     runner_names =
       cond do
-        is_list(args["runners"]) -> Enum.filter(args["runners"], &is_binary/1)
-        is_binary(args["runner"]) -> [args["runner"]]
+        Map.has_key?(args, "runners") -> args["runners"]
+        Map.has_key?(args, "runner") -> [args["runner"]]
         true -> []
       end
 
@@ -543,10 +586,7 @@ defmodule EmisarWeb.MCPRpcController do
   defp maybe_emit_session_id(conn, _method), do: conn
 
   defp req_session_id(conn) do
-    case get_req_header(conn, "mcp-session-id") do
-      [v | _] when is_binary(v) and v != "" -> v
-      _ -> nil
-    end
+    RequestContext.mcp_session_id(conn)
   end
 
   # Response-carried key rotation for the stdio bridge: when the caller's key
