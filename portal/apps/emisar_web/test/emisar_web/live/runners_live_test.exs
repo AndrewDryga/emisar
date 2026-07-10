@@ -356,4 +356,42 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "All runners offline"
     end
   end
+
+  # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
+  describe "stale-version chip" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "a below-minimum runner shows an 'unsupported' chip", %{conn: conn, account: account} do
+      Fixtures.Runners.create_runner(account_id: account.id, name: "old", runner_version: "0.0.0")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      assert html =~ "unsupported"
+    end
+
+    test "a below-recommended runner shows an 'outdated' chip", %{conn: conn, account: account} do
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "stale",
+        runner_version: "0.0.5"
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      assert html =~ "outdated"
+    end
+
+    test "a current runner shows no staleness chip", %{conn: conn, account: account} do
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "fresh",
+        runner_version: "1.0.0"
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      refute html =~ "unsupported"
+      refute html =~ "outdated"
+    end
+  end
 end

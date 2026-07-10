@@ -1515,9 +1515,10 @@ defmodule Emisar.AuditTest do
     end
 
     test "denials and access taken away are :warn" do
-      for t <- ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
-                  runner.disabled runner.deleted membership.removed membership.suspended
-                  approval.expired action_run.cancelled approval.grant_revoked] do
+      for t <-
+            ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
+                  runner.disabled runner.deleted runner.version_rejected membership.removed
+                  membership.suspended approval.expired action_run.cancelled approval.grant_revoked] do
         assert Audit.Event.Query.outcome(t) == :warn, "expected #{t} to be :warn"
       end
     end

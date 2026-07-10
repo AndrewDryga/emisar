@@ -64,6 +64,33 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "Cloud clients use OAuth"
     end
 
+    # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
+    test "a client on a below-minimum emisar-mcp bridge shows an 'unsupported' chip",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
+
+      {:ok, _} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "0.0.0"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "unsupported"
+    end
+
+    test "a client on a current emisar-mcp bridge shows no staleness chip", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
+
+      {:ok, _} =
+        ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "1.0.0"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      refute html =~ "unsupported"
+      refute html =~ "outdated"
+    end
+
     test "the list has status/name filters + the custom tab opens the key-builder form",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

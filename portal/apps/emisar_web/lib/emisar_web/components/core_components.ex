@@ -3426,6 +3426,59 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
+  A stale-version warning chip for a runner or the emisar-mcp bridge, driven by
+  the `Emisar.Compat` policy. Renders nothing for a current (`:supported`) or
+  unparseable/missing (`:unknown`) version; an amber "outdated" chip below the
+  recommended line; a rose "unsupported" chip below the minimum. The visible
+  label carries the state (never hover-only) and the tooltip title adds the
+  minimum-version detail.
+
+      <.version_chip kind={:runner} version={runner.runner_version} />
+  """
+  attr :kind, :atom, required: true, values: [:runner, :mcp]
+  attr :version, :string, default: nil
+  attr :class, :string, default: nil
+
+  def version_chip(assigns) do
+    assigns = assign(assigns, :status, version_status(assigns.kind, assigns.version))
+
+    ~H"""
+    <.chip
+      :if={@status in [:outdated, :unsupported]}
+      tone={version_chip_tone(@status)}
+      icon="hero-exclamation-triangle"
+      class={@class}
+      title={version_chip_title(@kind, @status)}
+    >
+      {version_chip_label(@status)}
+    </.chip>
+    """
+  end
+
+  defp version_status(:runner, version), do: Emisar.Compat.runner_status(version)
+  defp version_status(:mcp, version), do: Emisar.Compat.mcp_status(version)
+
+  defp version_chip_tone(:unsupported), do: :rose
+  defp version_chip_tone(:outdated), do: :amber
+
+  defp version_chip_label(:unsupported), do: "unsupported"
+  defp version_chip_label(:outdated), do: "outdated"
+
+  defp version_chip_title(:runner, :unsupported) do
+    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
+  end
+
+  defp version_chip_title(:runner, :outdated),
+    do: "Older than the recommended runner version — upgrade when you can."
+
+  defp version_chip_title(:mcp, :unsupported) do
+    "Below the minimum emisar-mcp version #{Emisar.Compat.mcp_minimum()} — upgrade the bridge."
+  end
+
+  defp version_chip_title(:mcp, :outdated),
+    do: "Older than the recommended emisar-mcp version — upgrade when you can."
+
+  @doc """
   Wraps a trigger element with a styled hover/focus tooltip — a dark bubble
   carrying `text`, for the "why" a control is locked/disabled/limited. CSS-only
   (named `group/tooltip`, so it's safe inside a row that has its own `group`); the

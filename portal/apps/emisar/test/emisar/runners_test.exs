@@ -866,6 +866,23 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "audit_runner_version_rejected/3" do
+    test "records a runner.version_rejected audit row carrying the version and minimum" do
+      runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
+
+      assert {:ok, event} =
+               Runners.audit_runner_version_rejected(runner, ">= 0.4.0", %RequestContext{})
+
+      event = Repo.reload!(event)
+      assert event.event_type == "runner.version_rejected"
+      assert event.account_id == runner.account_id
+      assert event.actor_kind == "runner"
+      assert event.target_id == runner.id
+      assert event.payload["runner_version"] == "0.0.0"
+      assert event.payload["minimum"] == ">= 0.4.0"
+    end
+  end
+
   describe "mark_disconnected/2" do
     test "stamps last_disconnected_at + reason for a runner struct" do
       runner = Fixtures.Runners.create_runner(connected?: false)

@@ -272,6 +272,22 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # The control plane refused a runner whose advertised version is below the
+  # configured minimum (enforcement on). The runner is the actor; the payload
+  # records the offending version and the minimum for the operator.
+  def runner_version_rejected(%Runners.Runner{} = runner, minimum, context \\ %RequestContext{}) do
+    Audit.changeset(runner.account_id, "runner.version_rejected",
+      actor_kind: "runner",
+      actor_id: runner.id,
+      actor_label: runner.name,
+      target_kind: "runner",
+      target_id: runner.id,
+      target_label: runner.name,
+      context: context,
+      payload: %{runner_version: runner.runner_version, minimum: minimum}
+    )
+  end
+
   # A runner enrolling itself via an auth key on first connect — the
   # runner is the actor, no operator `%Subject{}` is involved.
   def runner_registered(

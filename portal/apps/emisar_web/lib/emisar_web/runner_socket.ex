@@ -22,7 +22,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Catalog, RequestContext, Runners, Runs}
+  alias Emisar.{Catalog, Compat, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
@@ -212,11 +212,12 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp handle_envelope("runner_state", msg, state) do
     case Catalog.observe_state(state.runner_id, msg) do
-      {:ok, _runner} ->
+      {:ok, runner} ->
         # connect_runner already fired at socket init; this just refreshes
-        # the heartbeat-timeout watcher now that we have a catalog.
-        reset_heartbeat_timeout(state)
-        {:ok, refresh_heartbeat(state)}
+        # the heartbeat-timeout watcher now that we have a catalog. The
+        # runner's version is first known here (it rides runner_state, not the
+        # connect upgrade), so version enforcement gates on it now.
+        maybe_enforce_runner_version(runner, state)
 
       {:error, reason} ->
         Logger.warning("runner_state ingest failed for #{state.runner_id}: #{inspect(reason)}")
@@ -306,6 +307,38 @@ defmodule EmisarWeb.RunnerSocket do
   defp handle_envelope(type, _msg, state) do
     Logger.debug("runner_socket unknown envelope type #{type}")
     {:ok, state}
+  end
+
+  # -- Version enforcement --------------------------------------------
+
+  # Enforcement drops only a runner whose advertised version parses AND is
+  # below the configured minimum; :unknown (missing/malformed), :outdated, and
+  # :supported all proceed, as does warn-only mode — a stale-but-accepted
+  # version surfaces in the console, it does not tear the socket down.
+  defp maybe_enforce_runner_version(%Runners.Runner{} = runner, state) do
+    if Compat.enforce_runners?() and Compat.runner_status(runner.runner_version) == :unsupported do
+      reject_runner_version(runner, state)
+    else
+      reset_heartbeat_timeout(state)
+      {:ok, refresh_heartbeat(state)}
+    end
+  end
+
+  defp reject_runner_version(%Runners.Runner{} = runner, state) do
+    minimum = Compat.runner_minimum()
+    Runners.audit_runner_version_rejected(runner, minimum, state.request_context)
+
+    shutdown = %{
+      type: "shutdown",
+      protocol_version: @protocol_version,
+      reason: "runner_version_unsupported",
+      message:
+        "Runner version #{runner.runner_version} is below the minimum #{minimum} this control " <>
+          "plane accepts. Upgrade the runner to reconnect."
+    }
+
+    send(self(), :stop_after_drain)
+    {:push, {:text, Jason.encode!(shutdown)}, state}
   end
 
   # -- Helpers --------------------------------------------------------

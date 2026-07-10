@@ -237,7 +237,10 @@ defmodule EmisarWeb.RunnerDetailLive do
               <span :if={!@runner.hostname} class="text-zinc-500">—</span>
             </.meta_field>
             <.meta_field label="Version">
-              <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
+              <span class="inline-flex items-center gap-2">
+                <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
+                <.version_chip kind={:runner} version={@runner.runner_version} />
+              </span>
             </.meta_field>
             <.meta_field label="Group">
               <span class="truncate text-zinc-200">{@runner.group}</span>

@@ -544,6 +544,10 @@ defmodule Emisar.Runners do
   def audit_runner_error(account_id, runner_id, %{} = payload, %RequestContext{} = context),
     do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload, context))
 
+  @doc "Internal — runner socket: audit an enforced disconnect of a below-minimum runner version."
+  def audit_runner_version_rejected(%Runner{} = runner, minimum, %RequestContext{} = context),
+    do: Audit.record(Audit.Events.runner_version_rejected(runner, minimum, context))
+
   @doc "Internal — stamps disconnect history from the runner socket on close."
   def mark_disconnected(runner_or_id, reason \\ nil)
 

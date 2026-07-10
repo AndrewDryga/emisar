@@ -27,6 +27,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.enabled", "Runner enabled"},
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
+    {"runner.version_rejected", "Runner version rejected"},
     {"enrollment_key.created", "Auth key created"},
     {"enrollment_key.revoked", "Auth key revoked"},
     {"enrollment_key.bound", "Auth key bound to runner"},
@@ -118,7 +119,7 @@ defmodule Emisar.Audit.Event.Query do
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
   @danger_suffixes ~w[_failed .failed .error .timed_out]
-  @warn_suffixes ~w[.denied .refused .revoked _revoked .disabled .deleted .removed .suspended .expired .cancelled]
+  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected .disabled .deleted .removed .suspended .expired .cancelled]
   @pass_suffixes ~w[.success .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
@@ -153,6 +154,7 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.enabled", "Enabled"},
        {"runner.deleted", "Deleted"},
        {"runner.error", "Error"},
+       {"runner.version_rejected", "Version rejected"},
        {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"}
      ]},
     {"Pack trust",

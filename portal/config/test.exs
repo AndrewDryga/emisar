@@ -33,6 +33,20 @@ config :emisar, Emisar.OAuth.Jobs.Cleanup, enabled: false
 config :emisar, Emisar.Runs.Jobs.DispatchTimeout, enabled: false
 config :emisar, Emisar.Runs.Jobs.EventRetention, enabled: false
 
+# A fixed version-compatibility policy so classification is deterministic:
+# < 0.0.1 is unsupported, [0.0.1, 0.1.0) is outdated, >= 0.1.0 is supported.
+# The bounds sit below the "0.1.0" runner/key fixture default so a stock
+# fixture reads :supported (no stray chips, no enforced drop); tests opt into
+# staleness with an explicit low version. Enforcement stays off here; the
+# enforce-path tests (their own async:false files) flip the flag themselves.
+config :emisar, Emisar.Compat,
+  runner_minimum: ">= 0.0.1",
+  runner_recommended: ">= 0.1.0",
+  runner_enforce: false,
+  mcp_minimum: ">= 0.0.1",
+  mcp_recommended: ">= 0.1.0",
+  mcp_enforce: false
+
 # Paddle is stubbed in tests so we never hit the network.
 config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
 

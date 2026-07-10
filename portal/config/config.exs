@@ -34,6 +34,15 @@ config :emisar,
   # it with SECRET_KEY_BASE (runtime.exs); this non-secret default is dev/test.
   analytics_salt: "emisar-dev-analytics-salt"
 
+# Control-plane version-compatibility policy for runners and the
+# emisar-mcp bridge (Emisar.Compat). Thresholds are unset by default —
+# a fresh deployment warns about nothing until an operator configures a
+# `runner_minimum`/`runner_recommended` (and MCP equivalents) as `Version`
+# requirement strings. Enforcement is warn-only until flipped on.
+config :emisar, Emisar.Compat,
+  runner_enforce: false,
+  mcp_enforce: false
+
 # Configures the mailer
 #
 # By default it uses the "Local" adapter which stores the emails

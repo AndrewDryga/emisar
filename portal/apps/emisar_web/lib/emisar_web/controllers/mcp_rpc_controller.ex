@@ -28,7 +28,7 @@ defmodule EmisarWeb.MCPRpcController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.ApiKeys
+  alias Emisar.{ApiKeys, Compat}
   alias EmisarWeb.MCP.{Attestation, Auth, ContentBlocks, Idempotency, Instructions, Service}
   alias EmisarWeb.RequestContext
 
@@ -89,13 +89,15 @@ defmodule EmisarWeb.MCPRpcController do
   defp dispatch(conn, "initialize", params) do
     capture_client_info(conn, params)
 
-    {:ok,
-     %{
-       protocolVersion: negotiated_protocol_version(params),
-       serverInfo: %{name: @server_name, version: app_version()},
-       capabilities: %{tools: %{listChanged: false}},
-       instructions: Instructions.text()
-     }}
+    with :ok <- enforce_bridge_version(conn) do
+      {:ok,
+       %{
+         protocolVersion: negotiated_protocol_version(params),
+         serverInfo: %{name: @server_name, version: app_version()},
+         capabilities: %{tools: %{listChanged: false}},
+         instructions: Instructions.text()
+       }}
+    end
   end
 
   defp dispatch(_conn, "ping", _params), do: {:ok, %{}}
@@ -553,16 +555,59 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
+  # The stdio bridge stamps `emisar-mcp/<version>` in the User-Agent; extract
+  # the version so the compatibility policy can judge it. A remote connector
+  # (no bridge) has no such UA → nil → :unknown, which is never blocked.
+  defp bridge_version(conn) do
+    case get_req_header(conn, "user-agent") do
+      ["emisar-mcp/" <> rest | _] -> rest |> String.split() |> List.first()
+      _ -> nil
+    end
+  end
+
+  # Refuse a below-minimum emisar-mcp bridge at `initialize` when enforcement
+  # is on — a structured JSON-RPC error naming the minimum + upgrade path, so
+  # the operator's LLM surfaces a clear reason rather than a cryptic failure.
+  # Warn-only mode (and :unknown/:outdated/:supported) hands back :ok.
+  defp enforce_bridge_version(conn) do
+    version = bridge_version(conn)
+
+    if Compat.enforce_mcp?() and Compat.mcp_status(version) == :unsupported do
+      {:error, -32003, "emisar-mcp bridge version unsupported",
+       %{
+         minimum: Compat.mcp_minimum(),
+         your_version: version,
+         upgrade: "Update the emisar-mcp bridge: https://emisar.dev/docs/mcp"
+       }}
+    else
+      :ok
+    end
+  end
+
   # clientInfo is client-supplied at `initialize`. Snapshot the known
   # string fields against the authenticated key so runs dispatched after
   # can name the client. Best-effort — never affects the handshake reply.
   defp capture_client_info(conn, params) do
     key = conn.assigns[:api_key]
-    info = sanitize_client_info(Map.get(params, "clientInfo"))
+    info = client_info_snapshot(conn, params)
 
     if not is_nil(key) and is_map(info), do: ApiKeys.record_client_info(key, info)
     :ok
   end
+
+  # The connecting client's identity — its clientInfo, plus the emisar-mcp
+  # bridge version from the UA (which the console warns on when stale). Only
+  # recorded when clientInfo carries a name, so garbage never clobbers a good
+  # prior value.
+  defp client_info_snapshot(conn, params) do
+    case sanitize_client_info(Map.get(params, "clientInfo")) do
+      nil -> nil
+      info -> put_bridge_version(info, bridge_version(conn))
+    end
+  end
+
+  defp put_bridge_version(info, nil), do: info
+  defp put_bridge_version(info, version), do: Map.put(info, "bridge_version", version)
 
   defp sanitize_client_info(%{} = info) do
     clean =

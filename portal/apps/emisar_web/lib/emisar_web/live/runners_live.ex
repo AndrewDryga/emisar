@@ -323,6 +323,7 @@ defmodule EmisarWeb.RunnersLive do
                           >
                             v{runner.runner_version}
                           </span>
+                          <.version_chip kind={:runner} version={runner.runner_version} />
                           <%!-- Hardened runners are scannable at a glance — the portal
                            can't dispatch to them; only signed MCP calls run. --%>
                           <.chip

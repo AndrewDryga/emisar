@@ -24,6 +24,25 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.hostname
   end
 
+  # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
+  test "a below-minimum runner shows an 'unsupported' version chip", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, runner_version: "0.0.0")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    assert html =~ "unsupported"
+  end
+
+  test "a current runner shows no version chip", %{conn: conn, account: account} do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, runner_version: "1.0.0")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    refute html =~ "unsupported"
+    refute html =~ "outdated"
+  end
+
   # a runner that has reported no catalog renders the
   # "No actions yet" empty state in the advertised-actions card.
   test "a runner with no advertised actions shows the empty catalog state", %{
