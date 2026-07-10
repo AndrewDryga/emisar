@@ -5,11 +5,12 @@ defmodule EmisarWeb.PackRegistryController do
 
     * `GET /packs.json`            — index of every pack (id, version,
                                      content hash, requirements, tarball URL)
-    * `GET /packs/:id/pack.tar.gz` — a single pack as a gzip tarball
+    * `GET /packs/:id/pack.tar.gz` — 302-redirect to the pack's immutable,
+                                     content-addressed tarball
 
   The human-facing `/packs` + `/packs/:id` HTML pages live in
-  `MarketingController`. Both read from the same compile-time
-  `EmisarWeb.PacksRegistry`.
+  `MarketingController`. Both read from the same `EmisarWeb.PacksRegistry`
+  catalog cache.
   """
   use EmisarWeb, :controller
   alias EmisarWeb.PacksRegistry
@@ -44,16 +45,20 @@ defmodule EmisarWeb.PackRegistryController do
     json(conn, %{packs: PacksRegistry.suggest_index()})
   end
 
-  @doc "Single pack as a gzip tarball, or a 404 for an unknown id."
+  @doc """
+  Redirect to a pack's immutable, content-addressed tarball, or a 404 for
+  an unknown id. The bytes live in the pack registry bucket; the `--hash`
+  pin in the install snippet makes the redirect target tamper-evident, so
+  `emisar pack install` still rejects a poisoned mirror.
+  """
   def tarball(conn, %{"id" => id}) do
-    case PacksRegistry.tarball(id) do
-      {:ok, bin} ->
+    case PacksRegistry.tarball_url(id) do
+      {:ok, tarball_url} ->
         conn
-        |> put_resp_content_type("application/gzip")
-        |> put_resp_header("content-disposition", ~s(attachment; filename="#{id}.tar.gz"))
-        # Packs change only on a deploy; let CDNs/clients cache briefly.
+        # A pack version's bytes are immutable (content-addressed), so the
+        # redirect itself is cacheable; clients follow it to the real bytes.
         |> put_resp_header("cache-control", "public, max-age=300")
-        |> send_resp(200, bin)
+        |> redirect(external: tarball_url)
 
       :error ->
         conn

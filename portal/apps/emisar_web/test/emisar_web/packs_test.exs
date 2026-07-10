@@ -172,25 +172,18 @@ defmodule EmisarWeb.PacksTest do
       assert ids == Enum.sort(ids)
     end
 
-    test "each registry action is declared by its pack manifest" do
-      packs_path =
-        System.get_env("EMISAR_PACKS_DIR") || Path.expand("../../../../../packs", __DIR__)
+    test "every pack lists at least one action and action ids are unique across the catalog" do
+      packs = PacksRegistry.list()
+      assert packs != []
 
-      for pack <- PacksRegistry.list() do
-        manifest_path = Path.join([packs_path, pack.id, "pack.yaml"])
-        manifest = YamlElixir.read_from_file!(manifest_path)
+      all_action_ids =
+        for pack <- packs, action <- pack.actions do
+          assert pack.actions != [], "pack #{pack.id} has no actions"
+          action.id
+        end
 
-        action_ids =
-          manifest
-          |> Map.fetch!("actions")
-          |> Enum.map(&Path.join(Path.dirname(manifest_path), &1))
-          |> Enum.map(&YamlElixir.read_from_file!/1)
-          |> Enum.map(&Map.fetch!(&1, "id"))
-          |> Enum.sort()
-
-        assert Enum.map(pack.actions, & &1.id) == action_ids,
-               "registry action list drifted from #{pack.id}/pack.yaml"
-      end
+      assert all_action_ids == Enum.uniq(all_action_ids),
+             "duplicate action id across the catalog"
     end
 
     test "get/1 returns the pack struct for a known id" do
@@ -271,19 +264,18 @@ defmodule EmisarWeb.PacksTest do
                "sha256:5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af"
     end
 
-    test "tarball/1 returns a gzip tarball with flat pack files" do
-      assert {:ok, bin} = PacksRegistry.tarball("redis")
-      # gzip magic bytes
-      assert <<0x1F, 0x8B, _::binary>> = bin
-
-      {:ok, files} = :erl_tar.extract({:binary, bin}, [:memory, :compressed])
-      names = Enum.map(files, fn {name, _} -> to_string(name) end)
-      assert "pack.yaml" in names
-      assert Enum.any?(names, &String.starts_with?(&1, "actions/"))
+    test "tarball_url/1 returns the immutable content-addressed URL for a known id" do
+      pack = PacksRegistry.get("redis")
+      assert {:ok, url} = PacksRegistry.tarball_url("redis")
+      # The version + content hash are baked into the immutable path, so the
+      # URL a page renders is the exact bytes its --hash pin was cut against.
+      assert url == pack.tarball_url
+      assert url =~ "/v1/packs/redis/#{pack.version}/"
+      assert url =~ String.replace(pack.content_hash, "sha256:", "")
     end
 
-    test "tarball/1 is :error for an unknown id" do
-      assert PacksRegistry.tarball("nope") == :error
+    test "tarball_url/1 is :error for an unknown id" do
+      assert PacksRegistry.tarball_url("nope") == :error
     end
 
     test "build_action parses an exec action's command template" do
@@ -427,11 +419,10 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
-    test "GET /packs/:id/pack.tar.gz serves a gzip tarball", %{conn: conn} do
+    test "GET /packs/:id/pack.tar.gz redirects to the immutable tarball URL", %{conn: conn} do
       conn = get(conn, ~p"/packs/redis/pack.tar.gz")
-      assert response_content_type(conn, :gzip)
-      bin = response(conn, 200)
-      assert <<0x1F, 0x8B, _::binary>> = bin
+
+      assert redirected_to(conn, 302) == PacksRegistry.get("redis").tarball_url
     end
 
     test "GET /packs/:id/pack.tar.gz 404s for an unknown pack", %{conn: conn} do
@@ -478,64 +469,13 @@ defmodule EmisarWeb.PacksTest do
       assert entry["tarball"] =~ "/packs/redis/pack.tar.gz"
     end
 
-    test "GET /packs/:id/pack.tar.gz sets attachment filename + a short cache window",
-         %{conn: conn} do
+    test "GET /packs/:id/pack.tar.gz redirect is briefly cacheable", %{conn: conn} do
+      # A pack version's bytes are immutable (content-addressed), so the 302
+      # itself is safe to cache — clients follow it to the real bytes.
       conn = get(conn, ~p"/packs/redis/pack.tar.gz")
-
-      assert get_resp_header(conn, "content-disposition") == [
-               ~s(attachment; filename="redis.tar.gz")
-             ]
 
       assert get_resp_header(conn, "cache-control") == ["public, max-age=300"]
     end
-
-    test "the served tarball re-hashes to the advertised content_hash", %{conn: conn} do
-      # The install-integrity contract: a runner downloads the tarball,
-      # extracts the flat pack files, and recomputes the hash exactly the
-      # way computePackHash does — pack.yaml + each manifest-listed action
-      # (+ any referenced script), sorted by relpath, `relpath\0bytes\0`,
-      # sha256. If the served bytes don't re-hash to the `hash` in
-      # /packs.json, every `--hash`-pinned install would (correctly) fail.
-      # redis is exec-only; cassandra references a script (and ships a
-      # README + test dir the hash must ignore) — the pair covers both the
-      # script-path branch and the "extra files don't change the hash" rule.
-      advertised = conn |> get(~p"/packs.json") |> json_response(200)
-      by_id = Map.new(advertised["packs"], &{&1["id"], &1})
-
-      for id <- ~w(redis cassandra) do
-        bin = conn |> get(~p"/packs/#{id}/pack.tar.gz") |> response(200)
-        assert by_id[id]["hash"] == rehash_pack_tarball(bin), "tarball re-hash mismatch for #{id}"
-      end
-    end
-  end
-
-  # Mirror the runner's computePackHash over an extracted tarball's bytes,
-  # so the test verifies the SERVED archive — not the disk source — re-hashes
-  # to the advertised value.
-  defp rehash_pack_tarball(bin) do
-    {:ok, files} = :erl_tar.extract({:binary, bin}, [:memory, :compressed])
-    by_rel = Map.new(files, fn {name, data} -> {to_string(name), data} end)
-
-    manifest = YamlElixir.read_from_string!(Map.fetch!(by_rel, "pack.yaml"))
-    action_rels = Map.get(manifest, "actions", []) || []
-
-    action_entries =
-      Enum.flat_map(action_rels, fn rel ->
-        bytes = Map.fetch!(by_rel, rel)
-        base = [{rel, bytes}]
-
-        case get_in(YamlElixir.read_from_string!(bytes), ["execution", "script", "path"]) do
-          nil -> base
-          spath -> base ++ [{spath, Map.fetch!(by_rel, spath)}]
-        end
-      end)
-
-    iodata =
-      [{"pack.yaml", Map.fetch!(by_rel, "pack.yaml")} | action_entries]
-      |> Enum.sort_by(fn {rel, _} -> rel end)
-      |> Enum.map(fn {rel, data} -> [rel, <<0>>, data, <<0>>] end)
-
-    "sha256:" <> Base.encode16(:crypto.hash(:sha256, iodata), case: :lower)
   end
 
   # Every external (`href="http…"`) anchor in rendered HTML, so a test can

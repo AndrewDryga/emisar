@@ -74,11 +74,7 @@ defmodule Emisar.MixProject do
       {:gen_smtp, "~> 1.3"},
 
       # Misc primitives
-      {:jason, "~> 1.4"},
-      # Compile-time pack baseline reads packs/*.yaml
-      # to know each shipped pack's canonical hash. Auto-trust pinning
-      # only — never started at runtime.
-      {:yaml_elixir, "~> 2.12", runtime: false}
+      {:jason, "~> 1.4"}
     ]
   end
 

@@ -155,6 +155,14 @@ if config_env() == :prod do
     config :emisar_web, status_page_url: url
   end
 
+  # The published pack catalog the registry refreshes from (the bundled
+  # catalog.json is the boot fallback). Points at the immutable v1 pointer
+  # in the pack-registry bucket; override for a mirror or a staging bucket.
+  config :emisar_web, EmisarWeb.PacksRegistry,
+    catalog_url:
+      System.get_env("EMISAR_PACK_CATALOG_URL") ||
+        "https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json"
+
   # -- Mailer (Postmark by default; Mailgun and SMTP available as
   # fallbacks if you swap providers later) --------------------------
   cond do

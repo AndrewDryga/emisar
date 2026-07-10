@@ -22,6 +22,10 @@ defmodule EmisarWeb.Application do
       # supervised shutdown (currently: the MCP long-poll test's
       # mid-poll DB flip, future async dispatch jobs).
       {Task.Supervisor, name: EmisarWeb.TaskSupervisor},
+      # Loads the pack catalog (bundled at boot, then refreshed from the
+      # published URL) BEFORE the Endpoint, so the first /packs request
+      # already sees a populated registry.
+      EmisarWeb.PacksRegistry.Cache,
       EmisarWeb.Endpoint,
       # Sits AFTER the Endpoint so on SIGTERM it terminates first
       # (`:one_for_one` shuts down in reverse-start order). Its
