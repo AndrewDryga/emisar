@@ -153,6 +153,9 @@ defmodule Emisar.Policies.Policy.Changeset do
           {:halt,
            {:error, "override decision must be one of #{Enum.join(@valid_decisions, ", ")}"}}
 
+        not is_binary(Map.get(override, "action")) or String.trim(override["action"]) == "" ->
+          {:halt, {:error, "override action is required"}}
+
         true ->
           {:cont, :ok}
       end

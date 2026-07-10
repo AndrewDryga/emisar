@@ -116,7 +116,7 @@ defmodule Emisar.Policies do
   subsume or be subsumed).
   """
   def shadowed_overrides(rules) when is_map(rules) do
-    globs = Enum.map(rules["overrides"] || [], &override_action/1)
+    globs = Enum.map(overrides_for(rules), &override_action/1)
 
     for {glob, i} <- Enum.with_index(globs),
         is_binary(glob),
@@ -403,13 +403,12 @@ defmodule Emisar.Policies do
     do: {:deny, [], "no policy configured for this account"}
 
   def evaluate(%Policy{rules: rules}, %{} = match_ctx, _args) do
-    rules = rules || @default_rules
     action_id = match_ctx["action_id"] || ""
     risk = match_ctx["risk"] || "low"
 
-    case find_override(rules["overrides"] || [], action_id) do
+    case find_override(overrides_for(rules), action_id) do
       nil ->
-        decision = default_for_tier(rules["defaults"] || %{}, risk)
+        decision = default_for_tier(defaults_for(rules), risk)
         # The decision is stored separately on the run row and rendered
         # as its own chip; the reason should explain WHY without
         # echoing the verdict.
@@ -430,8 +429,8 @@ defmodule Emisar.Policies do
   all three present (0/[] for an empty one).
   """
   def simulate_outcome(rules, action_risks) when is_map(rules) and is_map(action_risks) do
-    defaults = rules["defaults"] || %{}
-    overrides = compile_overrides(rules["overrides"] || [])
+    defaults = defaults_for(rules)
+    overrides = compile_overrides(overrides_for(rules))
 
     Enum.reduce(action_risks, empty_outcome(), fn {action_id, risk}, outcome ->
       decision = simulation_decision(defaults, overrides, action_id, risk)
@@ -547,12 +546,32 @@ defmodule Emisar.Policies do
     after_rules = after_rules || @default_rules
 
     %{
-      "defaults" =>
-        diff_defaults(before_rules["defaults"] || %{}, after_rules["defaults"] || %{}),
-      "overrides" =>
-        diff_overrides(before_rules["overrides"] || [], after_rules["overrides"] || [])
+      "defaults" => diff_defaults(defaults_for(before_rules), defaults_for(after_rules)),
+      "overrides" => diff_overrides(overrides_for(before_rules), overrides_for(after_rules))
     }
   end
+
+  # Persisted rules are normally constrained by Policy.Changeset. Keep dispatch
+  # and audit resilient to a manually-corrupted JSONB row anyway: malformed
+  # defaults become the existing default_for_tier/2 deny fallback, and malformed
+  # overrides cannot match an action.
+  defp defaults_for(rules) when is_map(rules) do
+    case rules["defaults"] do
+      %{} = defaults -> defaults
+      _ -> %{}
+    end
+  end
+
+  defp defaults_for(_), do: %{}
+
+  defp overrides_for(rules) when is_map(rules) do
+    case rules["overrides"] do
+      overrides when is_list(overrides) -> overrides
+      _ -> []
+    end
+  end
+
+  defp overrides_for(_), do: []
 
   # Per-tier diff: %{"high" => %{"from" => "allow", "to" => "require_approval"}, ...}.
   # Tiers that didn't change are omitted so the audit detail can
@@ -577,8 +596,8 @@ defmodule Emisar.Policies do
   # name or decision changed. Yields `%{added: [...], removed: [...],
   # changed: [%{"action" => "x", "from" => %{...}, "to" => %{...}}]}`.
   defp diff_overrides(before_list, after_list) do
-    before_map = Map.new(before_list, &{&1["action"], &1})
-    after_map = Map.new(after_list, &{&1["action"], &1})
+    before_map = overrides_by_action(before_list)
+    after_map = overrides_by_action(after_list)
 
     before_keys = MapSet.new(Map.keys(before_map))
     after_keys = MapSet.new(Map.keys(after_map))
@@ -608,5 +627,11 @@ defmodule Emisar.Policies do
       end)
 
     %{"added" => added, "removed" => removed, "changed" => changed}
+  end
+
+  defp overrides_by_action(overrides) do
+    overrides
+    |> Enum.filter(fn override -> is_map(override) and is_binary(override["action"]) end)
+    |> Map.new(&{&1["action"], &1})
   end
 end

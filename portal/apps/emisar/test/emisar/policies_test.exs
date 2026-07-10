@@ -298,6 +298,16 @@ defmodule Emisar.PoliciesTest do
       assert {"overrides must be a list", _} = changeset.errors[:rules]
     end
 
+    test "rejects an override without an action" do
+      for action <- [nil, "", "   ", 42] do
+        changeset =
+          rules_changeset(%{"overrides" => [%{"action" => action, "decision" => "deny"}]})
+
+        refute changeset.valid?
+        assert {"override action is required", _} = changeset.errors[:rules]
+      end
+    end
+
     test "a minimal policy with neither defaults nor overrides is valid" do
       assert rules_changeset(%{"schema_version" => 2}).valid?
     end
@@ -599,6 +609,19 @@ defmodule Emisar.PoliciesTest do
     test "no policy means deny everything" do
       assert {:deny, [], reason} = Policies.evaluate(nil, %{"action_id" => "x.y"}, %{})
       assert reason =~ "no policy"
+    end
+
+    test "malformed stored sections fail closed instead of raising" do
+      rules = %{"defaults" => "not a map", "overrides" => "not a list"}
+      policy = %Policy{rules: rules}
+
+      assert {:deny, [], _reason} =
+               Policies.evaluate(policy, %{"action_id" => "linux.uptime", "risk" => "low"}, %{})
+
+      assert Policies.shadowed_overrides(rules) == []
+
+      outcome = Policies.simulate_outcome(rules, %{"linux.uptime" => :low})
+      assert outcome["deny"] == %{count: 1, examples: ["linux.uptime"]}
     end
 
     test "low/medium tier defaults to allow with stock defaults", %{policy: policy} do
