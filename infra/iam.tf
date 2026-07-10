@@ -27,12 +27,8 @@ resource "google_project_iam_member" "vm_compute_viewer" {
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 
-# Pull the portal image from Artifact Registry (private).
-resource "google_project_iam_member" "vm_artifact_reader" {
-  project = var.project_id
-  role    = "roles/artifactregistry.reader"
-  member  = "serviceAccount:${google_service_account.vm.email}"
-}
+# No image-registry role: the portal image is pulled anonymously from PUBLIC
+# GHCR — self-hosters run the exact same artifact (see var.container_image).
 
 # Connect to Cloud SQL (the connection is over the private VPC path; this grant
 # is what an IAM-auth or Auth-Proxy hardening would build on).

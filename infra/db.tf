@@ -8,9 +8,12 @@
 #     swap in CMEK via `encryption_key_name` if key custody is required).
 #   • deletion_protection so the production database can't be torn down by accident.
 resource "google_sql_database_instance" "emisar" {
-  name             = "emisar-pg"
-  region           = var.region
-  database_version = "POSTGRES_16"
+  name   = "emisar-pg"
+  region = var.region
+  # Latest Cloud SQL major (GA and Cloud SQL's default since late 2025). Bump as
+  # new majors go GA — it's a deliberate in-place major upgrade with a maintenance
+  # window, never an edit-and-forget.
+  database_version = "POSTGRES_18"
 
   # Guards `terraform destroy` / a destructive replacement at the API level, on top
   # of the Terraform lifecycle guard below.
@@ -73,10 +76,10 @@ resource "google_sql_database" "emisar" {
 }
 
 # App DB credential. Generated here (so a single apply stands the stack up) and
-# stored in Secret Manager. It lands in TF state — acceptable because state lives
-# in the locked-down, versioned `emisar-tfstate` bucket; the harder hardening is
-# Cloud SQL IAM auth (no password) via the Auth Proxy, noted in COMPLIANCE.md.
-# Alphanumeric so it needs no URL-encoding in the DATABASE_URL.
+# stored in Secret Manager. It lands in TF state — consistent with the decision
+# that secrets live in the Terraform Cloud workspace (vars + state, RBAC-gated);
+# the harder hardening is Cloud SQL IAM auth (no password) via the Auth Proxy,
+# noted in COMPLIANCE.md. Alphanumeric so it needs no URL-encoding in the URL.
 resource "random_password" "db" {
   length  = 32
   special = false

@@ -50,10 +50,10 @@ variable "instance_count" {
   }
 }
 
-variable "image_tag" {
+variable "container_image" {
   type        = string
-  description = "Tag of the emisar image in Artifact Registry to run. Pin a version/digest for a reproducible rollout; `latest` is the mutable default."
-  default     = "latest"
+  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). Pin a version tag or digest for a reproducible rollout; `latest` is the mutable default."
+  default     = "ghcr.io/andrewdryga/emisar:latest"
 }
 
 variable "app_port" {
@@ -82,6 +82,62 @@ variable "disable_billing" {
   type        = bool
   description = "Set EMISAR_DISABLE_BILLING=1 in the release (ship the Paddle stub) instead of requiring the paddle-* secrets. Use for an internal/staging tier."
   default     = false
+}
+
+# ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────
+# Externally-issued credentials only — machine secrets (SECRET_KEY_BASE, the DB
+# password/URL) are generated in-config and are not variables. "" means "not
+# configured": no secret version is created, cloud-init skips the env var, and
+# the release treats the feature as off. Paddle is all-or-nothing unless
+# disable_billing = true — enforced by a plan-time precondition (compute.tf).
+
+variable "paddle_api_key" {
+  type        = string
+  description = "Paddle API key (billing). Empty + disable_billing=false fails the plan."
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_webhook_secret" {
+  type        = string
+  description = "Paddle webhook signing secret; required alongside paddle_api_key."
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_client_token" {
+  type        = string
+  description = "Paddle client-side token Paddle.js initializes with on /checkout."
+  sensitive   = true
+  default     = ""
+}
+
+variable "postmark_api_token" {
+  type        = string
+  description = "Postmark server token (outbound mail). Empty → the release logs mail instead of sending — sign-in magic links won't deliver, so set it for real prod."
+  sensitive   = true
+  default     = ""
+}
+
+variable "postmark_webhook_secret" {
+  type        = string
+  description = "Postmark bounce/complaint webhook auth. Empty disables the webhook endpoint; sending still works."
+  sensitive   = true
+  default     = ""
+}
+
+variable "sentry_dsn" {
+  type        = string
+  description = "Sentry DSN. Empty disables error uploads."
+  sensitive   = true
+  default     = ""
+}
+
+variable "mixpanel_token" {
+  type        = string
+  description = "Mixpanel project token (server-side analytics). Empty keeps analytics off."
+  sensitive   = true
+  default     = ""
 }
 
 # ── Database ──────────────────────────────────────────────────────────────────

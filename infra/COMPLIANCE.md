@@ -27,8 +27,8 @@ outside this repo (📋).
 | SSH via IAP + OS Login only | ✅ | `iap_ssh` firewall (35.235.240.0/20), `enable-oslogin`, no 0.0.0.0/0 |
 | Host integrity | ✅ | Shielded VM (secure boot + vTPM + integrity monitoring) |
 | Least-privilege service account | ✅ | dedicated SA, scoped roles (`iam.tf`), no Owner/Editor |
-| Secret management | ✅ | Secret Manager, per-secret accessor; values out-of-band |
-| Private image + vuln scanning | ✅ | Artifact Registry (Container Analysis), not public GHCR |
+| Secret management | ✅/⚙️ | TFC workspace vars (sensitive) → Secret Manager; machine secrets generated in-config; per-secret accessor |
+| Image supply chain | ⚙️/📋 | public GHCR **by design** — prod runs the artifact self-hosters pull; pin digests; scanning is CI-side (below) |
 | Cloud Audit Logs (admin + data) | ✅ | `google_project_iam_audit_config` ADMIN_READ/DATA_READ/DATA_WRITE |
 | Network flow logs | ✅ | subnet `log_config` + LB request logging |
 | Availability: multi-node app | ✅ | regional MIG (2+), auto-healing, GCE clustering (`Emisar.Cluster.GCE`) |
@@ -36,14 +36,14 @@ outside this repo (📋).
 | DNS integrity | ✅ | DNSSEC (ECDSA), CAA; email auth (SPF/DKIM/DMARC/TLS-RPT/MTA-STS) |
 | Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
 | Reproducible infra (IaC) | ✅ | whole stack; `git log` is the change record |
-| State security | ✅ | GCS `emisar-tfstate` — UBLA + public-access-prevention + versioned |
+| State + secret custody | ⚙️ | Terraform Cloud (org Dryga / project emisar) — encrypted at rest, workspace RBAC, audit log; **workspace access = prod-secret access** |
 
 ## SOC 2 Trust Services Criteria — how the platform maps
 
 - **CC6 Logical & physical access** — dedicated least-privilege SA (no Owner/Editor;
-  per-secret accessor, `compute.viewer`/`cloudsql.client`/`artifactregistry.reader`
-  only). No public compute IPs; SSH exclusively through IAP + OS Login. The database
-  has no public IP. Human GCP access + MFA is ⚙️/📋.
+  per-secret accessor, `compute.viewer`/`cloudsql.client` only — no registry role,
+  the image is public). No public compute IPs; SSH exclusively through IAP + OS
+  Login. The database has no public IP. Human GCP access + MFA is ⚙️/📋.
 - **CC6.1 / CC6.7 Data at rest & in transit** — TLS 1.2+ at the edge (managed cert,
   RESTRICTED policy) and required to the database; at rest via Google-managed keys
   (CMEK optional). **DNSSEC** + **CAA** make DNS answers tamper-evident and constrain
@@ -61,8 +61,10 @@ outside this repo (📋).
   GCE clustering behind an anycast HTTPS LB; **Cloud SQL regional HA** (synchronous
   standby + automatic failover). DR: automated backups + PITR (RPO minutes) and the
   whole platform as code (re-apply rebuilds it).
-- **C1 Confidentiality** — the database is private-IP only; secrets live in Secret
-  Manager (per-secret least-priv), never in code; the image registry is private.
+- **C1 Confidentiality** — the database is private-IP only; instances read secrets
+  from Secret Manager (per-secret least-priv), never from code or metadata. Secret
+  *custody* is Terraform Cloud by decision — sensitive workspace variables and
+  state — so TFC RBAC + audit is the control that protects them.
 - **PI Processing integrity** — DB migrations run under Ecto's advisory lock (one
   runner, others wait); the health check gates traffic so only migrated, healthy
   nodes serve.
@@ -71,24 +73,31 @@ outside this repo (📋).
 
 - **VM service account** (`emisar-vm`): exactly `logging.logWriter`,
   `monitoring.metricWriter`, `compute.viewer` (cluster discovery),
-  `artifactregistry.reader` (image pull), `cloudsql.client`, and per-secret
-  `secretAccessor`. No Owner/Editor. It uses the metadata token — no long-lived key.
+  `cloudsql.client`, and per-secret `secretAccessor`. No Owner/Editor, and no
+  registry role (the image is public GHCR). It uses the metadata token — no
+  long-lived key.
 - **Humans**: grant `roles/dns.admin` / project roles to the infra team only; MFA on
   all GCP accounts; SSH via `gcloud compute ssh --tunnel-through-iap` (no keys on the
-  box). The apply identity ideally runs from CI via Workload Identity Federation.
-- **State bucket** (`emisar-tfstate`): UBLA + public-access-prevention + versioning;
-  access to it IS access to change production — grant `storage.objectAdmin` narrowly.
+  box).
+- **Terraform Cloud workspace** (org `Dryga` / project `emisar` / workspace
+  `emisar`): holds state AND the sensitive secret variables, so membership is
+  production access — restrict to the infra team, require 2FA on the TFC org,
+  require manual apply approval, keep the TFC audit log. Prefer dynamic
+  (Workload Identity Federation) GCP credentials over a pasted SA key.
 
 ## Data protection
 
 Encryption in transit is end-to-end (browser→LB TLS, LB→app internal, app→DB
 required-SSL). At rest is Google-managed AES-256 everywhere; for key custody, set
 `encryption_key_name` on Cloud SQL / the disk / Secret Manager (CMEK — Open items).
-The app DB password is generated by Terraform and lands in state; this is accepted
-because state is the locked-down, versioned, IAM-controlled `emisar-tfstate` bucket.
-Externally-issued secrets (SECRET_KEY_BASE, Paddle/Postmark tokens) are added
-out-of-band and never enter state. Stronger: Cloud SQL **IAM auth** (no password)
-via the Auth Proxy — Open items.
+Secret custody is **Terraform Cloud by decision**: externally-issued credentials
+(Paddle, Postmark, Sentry, Mixpanel) are sensitive workspace variables, and machine
+secrets (SECRET_KEY_BASE, the DB password) are generated in-config — all of which
+flow through TFC state into Secret Manager, where the instances read them. TFC
+encrypts variables and state at rest and gates them behind workspace RBAC + audit
+logs; the compensating rule is in Access above (workspace membership = prod
+access). Stronger: Cloud SQL **IAM auth** (no password) via the Auth Proxy — Open
+items.
 
 ## Backups & disaster recovery
 
@@ -106,24 +115,33 @@ request logs. For a longer window or SIEM, export to BigQuery / a log bucket.
 
 ## Vulnerability management
 
-Artifact Registry runs Container Analysis (CVE scanning) on the image; the portal's
-own CI runs `sobelow` (Phoenix SAST) + `mix_audit` (dependency CVEs); Shielded VM
-guards host boot integrity. Pin `image_tag` to a digest for reproducible rollouts.
+The image is **public GHCR by design** — self-hosters run the exact artifact prod
+runs, which is a transparency feature, not an oversight. The compensating controls:
+the portal's CI runs `sobelow` (Phoenix SAST) + `mix_audit` (dependency CVEs) on
+every change; pin `container_image` to a **digest** so a rollout is reproducible
+and a registry-side tag mutation can't swap the artifact; Shielded VM guards host
+boot integrity. Open item: an image CVE scan (e.g. trivy) in the publish workflow,
+since there is no registry-side Container Analysis on GHCR.
 
 ## What is NOT in this module (org-level — flagged, not hidden)
 
 SOC 2 Type II also needs controls no Terraform provides: an infosec policy,
 periodic access reviews, onboarding/offboarding, vendor/subprocessor management
-(Google, GoDaddy, Postmark, Paddle, BetterUptime), incident-response + BCP/DR
+(Google, HashiCorp/Terraform Cloud, GitHub/GHCR, GoDaddy, Postmark, Paddle,
+BetterUptime), incident-response + BCP/DR
 runbooks *with evidence they were tested over the period*, risk assessment, change-
 approval records, and security training. This module supplies technical evidence for
 CC6/CC7/CC8/A1/C1/PI; the rest is process the organization operates and evidences.
 
 ## Open items / hardening
 
+- **Portal image publish workflow** — nothing publishes `ghcr.io/andrewdryga/emisar`
+  yet (runner/mcp have release workflows; the portal doesn't). Add it, with a
+  **trivy CVE scan** in the pipeline (GHCR has no registry-side scanning).
 - **CMEK** on Cloud SQL + Secret Manager + disks if key custody is required.
 - **Cloud SQL IAM auth** (no password) via the Auth Proxy sidecar in cloud-init.
 - **Cloud Armor** WAF + rate-limiting attached to the backend service.
-- **Workload Identity Federation** so `terraform apply` runs from CI, not a laptop.
+- **TFC dynamic credentials (WIF)** for the GCP apply identity instead of a pasted
+  service-account key in the workspace.
 - Wire DMARC/TLS-RPT report inboxes; ramp DMARC → reject and MTA-STS → enforce.
 - More alert channels (PagerDuty/Slack) + policies (5xx rate, cert expiry).

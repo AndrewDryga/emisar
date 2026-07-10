@@ -1,11 +1,17 @@
 terraform {
-  # State in a versioned, private GCS bucket in the emisar project — self-contained
-  # in GCP, no external SaaS to provision. The bucket enforces uniform bucket-level
-  # access + public-access-prevention and keeps object versions for recovery.
-  # Migrate to another backend later with `terraform init -migrate-state`.
-  backend "gcs" {
-    bucket = "emisar-tfstate"
-    prefix = "dns"
+  # State + variables live in Terraform Cloud (org Dryga, project emisar). This
+  # matters more than usual: by decision, runtime secrets enter as SENSITIVE
+  # workspace variables and machine secrets are generated in-config, so the
+  # workspace's variables and state hold production credentials. TFC encrypts
+  # both at rest and gates them behind workspace RBAC + audit logs — treat
+  # access to this workspace as access to production (COMPLIANCE.md).
+  cloud {
+    organization = "Dryga"
+
+    workspaces {
+      project = "emisar"
+      name    = "emisar"
+    }
   }
 }
 
@@ -26,28 +32,10 @@ resource "google_project_service" "apis" {
     "certificatemanager.googleapis.com",
     "sqladmin.googleapis.com",
     "servicenetworking.googleapis.com",
-    "artifactregistry.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "iap.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
-}
-
-# ── Private container registry (SOC 2: private + vulnerability-scanned) ───────
-# emisar's image lives in Artifact Registry, not public GHCR — a security product
-# ships a private image, and AR + Container Analysis scans it for CVEs. The VM
-# service account pulls it with `roles/artifactregistry.reader` (iam.tf).
-resource "google_artifact_registry_repository" "emisar" {
-  location      = var.region
-  repository_id = "emisar"
-  format        = "DOCKER"
-  description   = "emisar portal container images"
-
-  docker_config {
-    immutable_tags = false
-  }
-
-  depends_on = [google_project_service.apis]
 }

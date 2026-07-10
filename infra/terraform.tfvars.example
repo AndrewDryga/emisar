@@ -1,19 +1,24 @@
-# Copy to terraform.tfvars (gitignored) and set project_id. Everything else
-# defaults to emisar's production values in variables.tf. Then:
-#   terraform init && terraform plan   (apply is the deliberate GCP-migration step)
+# Copy to terraform.tfvars (gitignored) and set project_id — OR, since state and
+# variables live in Terraform Cloud (org Dryga / project emisar / workspace
+# emisar), set everything as workspace variables there instead. SECRET variables
+# (paddle_*, postmark_*, sentry_dsn, mixpanel_token) must ONLY be set as SENSITIVE
+# TFC workspace variables — never in a tfvars file, even a gitignored one.
+#
+#   terraform login && terraform init && terraform plan
+#   (apply is the deliberate Fly→GCP migration step)
 
 project_id = "emisar" # the GCP project to deploy into
 
 # --- Overrides (defaults in variables.tf) ------------------------------------
-# region       = "us-central1"
-# domain       = "emisar.dev"
-# dns_name     = "emisar.dev."
+# region   = "us-central1"
+# domain   = "emisar.dev"
+# dns_name = "emisar.dev."
 
 # Compute
-# machine_type   = "e2-standard-2"
-# instance_count = 2                 # >1 clusters via Emisar.Cluster.GCE
-# image_tag      = "latest"          # pin a version/digest for a reproducible rollout
-# disable_billing = false            # true → ship the Paddle stub (no paddle-* secrets)
+# machine_type    = "e2-standard-2"
+# instance_count  = 2                                  # >1 clusters via Emisar.Cluster.GCE
+# container_image = "ghcr.io/andrewdryga/emisar:latest" # public GHCR; pin a digest for prod
+# disable_billing = false                              # true → Paddle stub, no paddle_* needed
 
 # Database
 # db_tier         = "db-custom-1-3840"   # a shared-core tier can't run REGIONAL HA

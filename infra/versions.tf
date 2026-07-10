@@ -1,14 +1,13 @@
-# emisar infrastructure — Google Cloud DNS.
-#
-# This module owns ONE thing: the authoritative public DNS zone for emisar.dev,
-# hosted on Cloud DNS. emisar's compute, load balancer, and TLS terminate on
-# Fly.io — there is deliberately no GCP serving stack here (that is the shape of
-# ../onlytty/infra, whose app runs on GCP; emisar's does not). Keeping DNS in
-# Terraform gives us a reviewed, versioned zone instead of hand-clicks in a
-# registrar UI.
+# emisar infrastructure — the full GCP deployment, prepared for SOC 2 Type II:
+# a global HTTPS load balancer (Google-managed TLS) fronting a regional MIG of
+# Container-Optimized OS instances running the portal image from public GHCR,
+# backed by private-IP Cloud SQL Postgres, with Secret Manager, least-priv IAM,
+# audit logging, monitoring, and the authoritative Cloud DNS zone (DNSSEC).
+# Adapted from ../onlytty/infra; PREPARED, NOT APPLIED — emisar serves from
+# Fly.io today, and applying this is the deliberate Fly→GCP migration (README).
 
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.10" # `project` in the cloud{} workspaces block
 
   required_providers {
     google = {

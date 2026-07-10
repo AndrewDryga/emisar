@@ -70,9 +70,8 @@ write_files:
       printf 'EMISAR_DISABLE_BILLING=1\n' >> "$ENV_FILE"
 %{ endif ~}
 
-      # Authenticate to the private Artifact Registry with the metadata token.
-      REGISTRY=$(printf '%s' "${container_image}" | cut -d/ -f1)
-      docker login -u oauth2accesstoken -p "$TOKEN" "https://$REGISTRY"
+      # Public GHCR pull, no credentials — prod runs the exact artifact
+      # self-hosters pull. Pin var.container_image to a digest for reproducibility.
       docker pull ${container_image}
 
       # Migrations first — Ecto's advisory lock serializes concurrent instances, so

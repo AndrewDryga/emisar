@@ -33,10 +33,14 @@ the separate, creds-gated deploy step.
 3. **Stateful resources are destroy-guarded.** The DNS zone and Cloud SQL carry
    `prevent_destroy` + (DB) `deletion_protection`. Removing either is a deliberate,
    reviewed act — never to make a `terraform destroy` "work".
-4. **Secrets discipline.** Externally-issued secrets (SECRET_KEY_BASE, Paddle/Postmark
-   tokens) are Secret Manager containers here, VALUES added out-of-band — never in
-   state or git. The ONE exception is the Terraform-generated DB password (in state,
-   mitigated by the locked-down bucket); don't add more secrets to state.
+4. **Secrets discipline.** Secret custody is Terraform Cloud BY DECISION:
+   externally-issued credentials enter as SENSITIVE workspace variables
+   (`variables.tf`), machine secrets (SECRET_KEY_BASE, DB password) are generated
+   in-config, and all flow through TFC state into Secret Manager for the instances.
+   Never put a secret value in git, a `.tf` default, or a tfvars file — the TFC
+   workspace (org `Dryga` / project `emisar`) is the only entry point, and access
+   to it is production access. A new secret = a sensitive variable + an
+   `app_secrets` entry + (if optional) an `optional_secret_values` entry.
 5. **The zone is authoritative — replicate before cutover.** Only records in `dns.tf`
    resolve once delegated. **DNSSEC DS is published LAST**, after NS delegation
    resolves — a DS ahead of working delegation takes the domain offline.

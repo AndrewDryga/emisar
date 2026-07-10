@@ -1,11 +1,16 @@
 # ── Secret Manager: every runtime secret the portal reads ────────────────────
-# Containers are created here; VALUES are added out-of-band (see README) so they
-# never live in Terraform state — EXCEPT database-url, which db.tf fills from the
-# Cloud SQL instance it creates. cloud-init fetches each at boot over the metadata
-# token and exports only the ones with a non-empty version, so an unpopulated
-# optional is simply unset and the release treats it as "feature off"
-# (runtime.exs). Required for a prod boot: secret-key-base, database-url, and the
-# three paddle-* (or set EMISAR_DISABLE_BILLING=1 in the instance template).
+# Value flow: Terraform Cloud workspace variables (SENSITIVE) → the secret
+# versions below → cloud-init fetches each at boot over the metadata token. One
+# place to set credentials (the TFC workspace), and a single apply stands the
+# whole stack up — no out-of-band `gcloud secrets versions add` step. The
+# trade-off, accepted deliberately: secret values live in TFC variables + state,
+# so the workspace's RBAC is the trust boundary (see main.tf + COMPLIANCE.md).
+#
+# Machine-generated secrets are not variables at all: SECRET_KEY_BASE is created
+# here (random_password) and DATABASE_URL is assembled in db.tf — no human ever
+# needs either value. An optional secret left "" in TFC gets NO version, so
+# cloud-init skips its env var and the release treats the feature as off
+# (runtime.exs); Paddle completeness is enforced at plan time in compute.tf.
 locals {
   app_secrets = {
     "emisar-secret-key-base"         = "SECRET_KEY_BASE"
@@ -18,6 +23,23 @@ locals {
     "emisar-sentry-dsn"              = "SENTRY_DSN"
     "emisar-mixpanel-token"          = "MIXPANEL_TOKEN"
   }
+
+  # Externally-issued credentials, one TFC workspace variable each.
+  optional_secret_values = {
+    "emisar-paddle-api-key"          = var.paddle_api_key
+    "emisar-paddle-webhook-secret"   = var.paddle_webhook_secret
+    "emisar-paddle-client-token"     = var.paddle_client_token
+    "emisar-postmark-api-token"      = var.postmark_api_token
+    "emisar-postmark-webhook-secret" = var.postmark_webhook_secret
+    "emisar-sentry-dsn"              = var.sentry_dsn
+    "emisar-mixpanel-token"          = var.mixpanel_token
+  }
+
+  # for_each keys must not derive from sensitive values; whether a secret is SET
+  # is not itself secret, so unwrap just that boolean with nonsensitive().
+  populated_optional_secrets = [
+    for id, value in local.optional_secret_values : id if nonsensitive(value != "")
+  ]
 }
 
 resource "google_secret_manager_secret" "app" {
@@ -38,4 +60,22 @@ resource "google_secret_manager_secret_iam_member" "vm_access" {
   secret_id = each.value.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.vm.email}"
+}
+
+# Phoenix's signing/encryption root — same length bar as `mix phx.gen.secret`.
+# Alphanumeric only so it survives every quoting context it passes through.
+resource "random_password" "secret_key_base" {
+  length  = 64
+  special = false
+}
+
+resource "google_secret_manager_secret_version" "secret_key_base" {
+  secret      = google_secret_manager_secret.app["emisar-secret-key-base"].id
+  secret_data = random_password.secret_key_base.result
+}
+
+resource "google_secret_manager_secret_version" "optional" {
+  for_each    = toset(local.populated_optional_secrets)
+  secret      = google_secret_manager_secret.app[each.key].id
+  secret_data = local.optional_secret_values[each.key]
 }

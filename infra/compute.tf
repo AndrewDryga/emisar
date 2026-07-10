@@ -1,8 +1,6 @@
 locals {
-  container_image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.emisar.repository_id}/emisar:${var.image_tag}"
-
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
-    container_image = local.container_image
+    container_image = var.container_image
     project_id      = var.project_id
     domain          = var.domain
     app_port        = var.app_port
@@ -135,6 +133,19 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     delete = "15m"
   }
 
+  # Catch the Paddle misconfiguration at PLAN time instead of a ~25-minute failed
+  # rollout: runtime.exs raises at boot when billing is enabled but any paddle_*
+  # credential is missing, so the MIG would never go healthy. Whether the vars are
+  # set is not itself secret — unwrap just the boolean.
+  lifecycle {
+    precondition {
+      condition = var.disable_billing || nonsensitive(
+        var.paddle_api_key != "" && var.paddle_webhook_secret != "" && var.paddle_client_token != ""
+      )
+      error_message = "Billing is enabled (disable_billing = false) but paddle_api_key / paddle_webhook_secret / paddle_client_token are not all set in the TFC workspace. Set all three, or set disable_billing = true to ship the Paddle stub."
+    }
+  }
+
   # Runtime boot prerequisites: without explicit edges the MIG can come up before
   # NAT / firewall / IAM / the database converge, so instances fail to pull the
   # image, read secrets, migrate, or pass /healthz.
@@ -144,8 +155,8 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_compute_firewall.lb_to_app,
     google_compute_firewall.cluster_dist,
     google_secret_manager_secret_iam_member.vm_access,
+    google_secret_manager_secret_version.secret_key_base,
     google_project_iam_member.vm_compute_viewer,
-    google_project_iam_member.vm_artifact_reader,
     google_sql_database.emisar,
     google_secret_manager_secret_version.database_url,
   ]

@@ -14,7 +14,8 @@ resource "google_compute_subnetwork" "emisar" {
   ip_cidr_range = var.subnet_cidr
   network       = google_compute_network.emisar.id
   # Private Google Access: instances with no external IP still reach Google APIs
-  # (Secret Manager, Artifact Registry, Cloud Logging) over Google's backbone.
+  # (Secret Manager, Cloud Logging, Compute) over Google's backbone; the public
+  # GHCR image pull egresses through Cloud NAT below.
   private_ip_google_access = true
 
   # Flow logs are an audit/forensics control (who talked to whom).
