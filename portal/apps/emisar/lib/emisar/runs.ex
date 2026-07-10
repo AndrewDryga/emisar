@@ -965,7 +965,7 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp dispatchable?(%ActionRun{status: status}), do: active_run_status?(status)
+  defp dispatchable?(%ActionRun{status: status}) when status in [:pending, :sent], do: true
   defp dispatchable?(_), do: false
 
   defp deliver_run_action(%ActionRun{} = run) do
@@ -1443,6 +1443,17 @@ defmodule Emisar.Runs do
       nil -> {:error, :not_found}
       %ActionRun{} -> {:error, :run_not_pending_approval}
     end
+  end
+
+  @doc """
+  Internal -- Approvals releases its locked, approved run into a fresh
+  `:pending` dispatch window. The caller passes its transaction repo so the
+  request approval and run release commit atomically; resetting `queued_at`
+  keeps timeouts measured from approval, not from when the human review began.
+  """
+  def release_pending_approval_run(%ActionRun{status: :pending_approval} = run, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+    repo.update(ActionRun.Changeset.release_pending_approval(run))
   end
 
   @doc """

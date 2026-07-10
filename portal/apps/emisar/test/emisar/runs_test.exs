@@ -1681,6 +1681,19 @@ defmodule Emisar.RunsTest do
       refute_receive {:cloud_to_runner, _}, 100
     end
 
+    test "refuses to publish a run still waiting for approval", %{
+      account: account,
+      runner: runner
+    } do
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
+
+      assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+
     test "a pack drifting to pending after authorization is refused at send, not shipped hash-less",
          %{account: account} do
       {_user, owner_account, subject} = Fixtures.Subjects.owner_subject()
@@ -2504,6 +2517,31 @@ defmodule Emisar.RunsTest do
                  {:ok, Runs.fetch_and_lock_pending_approval_run(repo, Ecto.UUID.generate())}
                end)
                |> Repo.transaction()
+    end
+  end
+
+  describe "release_pending_approval_run/2" do
+    test "releases a locked approval run with a fresh dispatch timestamp" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, parked} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
+
+      past = DateTime.add(DateTime.utc_now(), -3_600, :second)
+      {:ok, parked} = Repo.update(Ecto.Changeset.change(parked, queued_at: past))
+
+      assert {:ok, %{released: %ActionRun{status: :pending, queued_at: queued_at}}} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.run(:locked, fn repo, _changes ->
+                 Runs.fetch_and_lock_pending_approval_run(repo, parked.id)
+               end)
+               |> Ecto.Multi.run(:released, fn repo, %{locked: run} ->
+                 Runs.release_pending_approval_run(run, repo: repo)
+               end)
+               |> Repo.transaction()
+
+      assert DateTime.compare(queued_at, past) == :gt
     end
   end
 

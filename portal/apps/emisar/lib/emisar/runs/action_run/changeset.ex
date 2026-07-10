@@ -63,4 +63,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
   end
+
+  @doc "Release an approval-gated run into a fresh dispatch window."
+  def release_pending_approval(%ActionRun{} = run) do
+    change(run, status: :pending, queued_at: DateTime.utc_now())
+  end
 end

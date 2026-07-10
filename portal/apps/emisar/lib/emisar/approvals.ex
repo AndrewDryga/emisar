@@ -621,12 +621,13 @@ defmodule Emisar.Approvals do
     # it. With the request + run both locked, the decision is atomic.
     with {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
          {:ok, run} <- Runs.fetch_and_lock_pending_approval_run(repo, locked.run_id),
-         {:ok, grant} <- mint_grant(locked, run, by_user_id, attrs) do
+         {:ok, released_run} <- Runs.release_pending_approval_run(run, repo: repo),
+         {:ok, grant} <- mint_grant(locked, released_run, by_user_id, attrs) do
       {:ok,
        %{
          action: :dispatch,
          request: approved,
-         run: run,
+         run: released_run,
          grant: grant,
          grant_attrs: attrs,
          approved_count: count
