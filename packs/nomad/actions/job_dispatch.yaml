@@ -20,6 +20,7 @@ args:
     default: ""
     description: "Optional meta as 'k=v,k2=v2' (no spaces around =)."
     validation:
+      max_length: 1024
       pattern: "^([a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256}(,[a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256})*)?$"
 execution:
   command:

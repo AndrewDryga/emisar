@@ -531,6 +531,34 @@ func TestDispatch_VmLabelValues_LabelLengthBounded(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"label": "a" + strings.Repeat("b", 128)}), "label", "pattern")
 }
 
+// nomad.job_dispatch's `meta_kv` is a caller-supplied string interpolated into a
+// `/bin/sh -c` loop that builds an unbounded `-meta k=v -meta k=v ...` argv for
+// `nomad job dispatch`. Its anchored pattern bounds each pair, but the trailing
+// `(,...)*` left the PAIR COUNT unbounded — so a multi-megabyte `a=b,a=b,...`
+// (every pair individually valid) passed validation and reached the shell,
+// either failing with E2BIG or dispatching a job bloated with tens of thousands
+// of meta vars (a bounded resource/DoS abuse). `max_length: 1024` is what now
+// caps total argv size at the dispatch seam; a realistic meta string passes.
+func TestDispatch_NomadJobDispatch_MetaKvLengthBounded(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "nomad.job_dispatch"
+
+	// A realistic meta value (the action's own shipped example) passes.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"job": "batch-processor", "meta_kv": "input=/tmp/data,priority=high"}))
+	// 1024 bytes total is the ceiling and still accepted: "a=b" + ",a=b"*255 = 3 + 1020 = 1023 bytes,
+	// pad one more valid char to hit exactly 1024.
+	at := "ab=b" + strings.Repeat(",a=b", 255)
+	if len(at) != 1024 {
+		t.Fatalf("test fixture: expected 1024 bytes, got %d", len(at))
+	}
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"job": "batch-processor", "meta_kv": at}))
+
+	// A pair-flood that matches the pattern but exceeds 1024 bytes is rejected on
+	// length before it can build an oversized argv.
+	over := "a=b" + strings.Repeat(",a=b", 400) // 1603 bytes, every pair valid
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"job": "batch-processor", "meta_kv": over}), "meta_kv", "max_length")
+}
+
 // cockroach.set_cluster_setting's `value` is interpolated verbatim into a
 // `/bin/sh -c "cockroach sql ... -e \"SET CLUSTER SETTING <name> = <value>\""`
 // pipeline — landing inside the double-quoted `-e` slot where `$(...)`, a
