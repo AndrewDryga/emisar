@@ -533,6 +533,43 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "group→role mapping changes reconcile existing members" do
+    setup do
+      scim_provider()
+    end
+
+    test "create, update, and delete immediately apply the group's current role", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|existing-group-member")
+
+      assert {:ok, %{member_count: 1}} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-existing",
+                 member_external_ids: ["okta|existing-group-member"]
+               })
+
+      assert role_of(account.id, identity.user_id) == :viewer
+
+      assert {:ok, mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "grp-existing", role: :admin},
+                 subject
+               )
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      assert {:ok, _mapping} = SSO.update_group_mapping(mapping, %{role: :operator}, subject)
+      assert role_of(account.id, identity.user_id) == :operator
+
+      assert {:ok, _mapping} = SSO.delete_group_mapping(mapping, subject)
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
+  end
+
   # -- Config: required + uniqueness -----------------------------------
 
   describe "group→role mapping config — required fields + uniqueness" do

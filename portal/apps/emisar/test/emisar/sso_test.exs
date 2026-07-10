@@ -1169,6 +1169,20 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{user: _}} = SSO.complete_auth(provider, callback(claims), %{})
     end
 
+    test "an explicit unverified-email claim cannot use hd to pass the domain gate", %{
+      provider: provider
+    } do
+      claims = %{
+        "sub" => "g|unverified-hd",
+        "email" => "x@acme.test",
+        "email_verified" => "false",
+        "hd" => "acme.test"
+      }
+
+      assert {:error, :email_domain_not_allowed} =
+               SSO.complete_auth(provider, callback(claims), %{})
+    end
+
     test "no verified domain is refused when a domain is required", %{provider: provider} do
       claims = %{"sub" => "okta|nodomain"}
 

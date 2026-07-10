@@ -475,14 +475,15 @@ defmodule Emisar.SSO do
     # overrides it (#7 — don't trust a forged `hd` paired with an unverified email;
     # comparing only against the boolean `false` let the string slip through).
     verified? = claims["email_verified"] in [true, "true"]
-    unverified? = claims["email_verified"] in [false, "false"]
 
-    if verified? or (is_binary(claims["hd"]) and not unverified?),
+    if verified? or (is_binary(claims["hd"]) and not email_explicitly_unverified?(claims)),
       do: email,
       else: nil
   end
 
   defp verified_email(_claims), do: nil
+
+  defp email_explicitly_unverified?(claims), do: claims["email_verified"] in [false, "false"]
 
   # H1: when the provider restricts a domain, the IdP-asserted `hd` (preferred)
   # or the verified email's domain must match; a login with no verified domain
@@ -495,8 +496,8 @@ defmodule Emisar.SSO do
       else: {:error, :email_domain_not_allowed}
   end
 
-  defp claimed_domain_matches?(%{"hd" => hd}, domain) when is_binary(hd),
-    do: domains_equal?(hd, domain)
+  defp claimed_domain_matches?(%{"hd" => hd} = claims, domain) when is_binary(hd),
+    do: not email_explicitly_unverified?(claims) and domains_equal?(hd, domain)
 
   defp claimed_domain_matches?(claims, domain) do
     case verified_email(claims) do
@@ -1298,14 +1299,17 @@ defmodule Emisar.SSO do
   @doc """
   Create a group→role mapping for a provider. `manage_sso` + enterprise; the
   provider must be in the subject's account. The changeset rejects `:owner` —
-  sync can never grant owner (decision 7). `{:ok, mapping}`.
+  sync can never grant owner (decision 7). Existing synced group members are
+  reconciled after the mapping commits. `{:ok, mapping}`.
   """
   def create_group_mapping(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       multi = create_group_mapping_multi(provider, attrs, subject)
 
-      case Repo.commit_multi(multi) do
+      case Repo.commit_multi(multi,
+             after_commit: fn %{mapping: mapping} -> recompute_mapping_members(mapping) end
+           ) do
         {:ok, %{mapping: mapping}} -> {:ok, mapping}
         {:error, reason} -> {:error, reason}
       end
@@ -1322,7 +1326,7 @@ defmodule Emisar.SSO do
     end)
   end
 
-  @doc "Update a group→role mapping (its role / display). `manage_sso` + enterprise; account-scoped. Rejects `:owner`."
+  @doc "Update a group→role mapping (its role / display). `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit and rejects `:owner`."
   def update_group_mapping(%GroupRoleMapping{id: id}, attrs, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRoleMapping.Query.not_deleted()
@@ -1330,12 +1334,13 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(GroupRoleMapping.Query,
         with: &GroupRoleMapping.Changeset.update(&1, attrs),
-        audit: &Audit.Events.group_role_mapping_updated(subject, &1)
+        audit: &Audit.Events.group_role_mapping_updated(subject, &1),
+        after_commit: &recompute_mapping_members/1
       )
     end
   end
 
-  @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped."
+  @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit."
   def delete_group_mapping(%GroupRoleMapping{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRoleMapping.Query.not_deleted()
@@ -1343,8 +1348,38 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(GroupRoleMapping.Query,
         with: &GroupRoleMapping.Changeset.delete/1,
-        audit: &Audit.Events.group_role_mapping_deleted(subject, &1)
+        audit: &Audit.Events.group_role_mapping_deleted(subject, &1),
+        after_commit: &recompute_mapping_members/1
       )
+    end
+  end
+
+  # A group mapping is an authorization decision, not just display config. A
+  # new, changed, or removed mapping must immediately reconcile members already
+  # synced into that group; otherwise a deleted admin mapping can leave its
+  # members elevated until the directory happens to push the group again.
+  # After-commit keeps the mapping and its audit event atomic while letting the
+  # membership writes own their existing transaction and audit lifecycle.
+  defp recompute_mapping_members(%GroupRoleMapping{} = mapping) do
+    provider =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(mapping.account_id)
+      |> IdentityProvider.Query.by_id(mapping.provider_id)
+      |> Repo.peek()
+
+    case provider do
+      %IdentityProvider{scim_enabled: true} = provider ->
+        identity_ids =
+          provider
+          |> current_group_members(mapping.external_group_id)
+          |> Enum.map(& &1.user_identity_id)
+
+        provider
+        |> load_identities(identity_ids)
+        |> then(&recompute_role_for_affected(provider, &1))
+
+      _ ->
+        :ok
     end
   end
 
