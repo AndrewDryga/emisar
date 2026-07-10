@@ -62,7 +62,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: erlef/setup-beam@v1
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           # Pinned in /.tool-versions (repo root) — the single source of
           # truth shared with local asdf, so CI can't drift from dev.
