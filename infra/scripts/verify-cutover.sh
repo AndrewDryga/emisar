@@ -60,6 +60,25 @@ for rec in "${ADDED[@]}"; do
   fi
 done
 
+# TLS SNI probe (opt-in, POST-cutover). Pre-cutover the managed cert isn't ACTIVE —
+# this zone isn't authoritative until NS delegation, so a TLS handshake against the
+# LB can't succeed yet. Run with CHECK_TLS=1 AFTER cutover + cert ACTIVE: www and
+# mta-sts both CNAME to the apex/LB and must be SANs on the Certificate Manager cert
+# (lb.tf) or their SNI matches no cert-map entry and the handshake has no cert (m19).
+if [[ "${CHECK_TLS:-0}" == "1" ]]; then
+  echo
+  echo "Probing TLS SNI (post-cutover)…"
+  for probe in "www.$DOMAIN:/" "mta-sts.$DOMAIN:/.well-known/mta-sts.txt"; do
+    host="${probe%%:*}"; path="${probe#*:}"
+    if curl -fsS --max-time 10 -o /dev/null "https://$host$path"; then
+      printf '  ok       %-34s TLS\n' "$host"
+    else
+      printf '  TLS FAIL %-34s — no valid cert for this SNI (needs its SAN + cert-map entry)\n' "$host"
+      fail=1
+    fi
+  done
+fi
+
 echo
 if [[ "$fail" -ne 0 ]]; then
   echo "NOT SAFE — resolve the differences above before delegating nameservers."

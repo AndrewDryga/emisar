@@ -33,7 +33,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /h
 | Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; no public data-store surface |
 | Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates | availability; host integrity |
 | Database | Cloud SQL Postgres 18 (latest major) — private IP, regional HA, PITR backups, SSL-required, deletion-protected | availability, durability/DR, confidentiality |
-| TLS | Certificate Manager managed cert (DNS-auth), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
+| TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
 | Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
 | Image | public GHCR — prod runs the exact artifact self-hosters pull; pin digests | supply-chain transparency |
 | IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |

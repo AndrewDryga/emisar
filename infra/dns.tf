@@ -83,14 +83,32 @@ resource "google_dns_record_set" "www" {
 }
 
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
-# Proves domain control so the Google-managed cert (lb.tf) provisions. Published
-# into our own zone, so the cert goes ACTIVE minutes after the NS delegation.
+# Proves domain control so the Google-managed cert (lb.tf) provisions. One record
+# per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
+# ride the same cert). Published into our own zone, so the cert goes ACTIVE minutes
+# after the NS delegation.
 resource "google_dns_record_set" "cert_auth" {
   name         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].name
   managed_zone = google_dns_managed_zone.emisar.name
   type         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].type
   ttl          = 300
   rrdatas      = [google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].data]
+}
+
+resource "google_dns_record_set" "cert_auth_www" {
+  name         = google_certificate_manager_dns_authorization.www.dns_resource_record[0].name
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = google_certificate_manager_dns_authorization.www.dns_resource_record[0].type
+  ttl          = 300
+  rrdatas      = [google_certificate_manager_dns_authorization.www.dns_resource_record[0].data]
+}
+
+resource "google_dns_record_set" "cert_auth_mta_sts" {
+  name         = google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].name
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].type
+  ttl          = 300
+  rrdatas      = [google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].data]
 }
 
 # ── Google Workspace inbound mail ─────────────────────────────────────────────
@@ -199,12 +217,13 @@ resource "google_dns_record_set" "tlsrpt" {
 
 # ── MTA-STS — enforce TLS on inbound mail to our Google MX ────────────────────
 # The policy is served at https://mta-sts.emisar.dev/.well-known/mta-sts.txt by
-# the portal (priv/static/.well-known/mta-sts.txt), so `mta-sts` points at the
-# same Fly app as the apex. Ships in `mode: testing` — failures are reported via
-# TLS-RPT above but NO mail is blocked; flip the policy file to `mode: enforce`
-# AND bump the `id` below once the reports are clean (the DMARC ramp discipline,
-# for mail-in-transit). Activation needs a cert for the host:
-# `fly certs add mta-sts.emisar.dev`.
+# the portal (priv/static/.well-known/mta-sts.txt); `mta-sts` CNAMEs to the apex,
+# so it rides the same GCP LB and its TLS comes from the Certificate Manager cert
+# (lb.tf), which carries the mta-sts SAN + cert-map entry — without them the policy
+# is unfetchable and this control silently no-ops. Ships in `mode: testing` —
+# failures are reported via TLS-RPT above but NO mail is blocked; flip the policy
+# file to `mode: enforce` AND bump the `id` below once the reports are clean (the
+# DMARC ramp discipline, for mail-in-transit).
 resource "google_dns_record_set" "mta_sts_host" {
   name         = "mta-sts.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
