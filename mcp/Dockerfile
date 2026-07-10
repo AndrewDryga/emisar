@@ -38,9 +38,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && adduser -S -D -H emisar
 
 COPY --from=builder /out/emisar-mcp /usr/local/bin/emisar-mcp
+
+USER emisar
 
 # No ENTRYPOINT — emisar-mcp speaks JSON-RPC over stdio. Compose drives
 # this image with `docker compose run --rm -T mcp` and supplies the
