@@ -1,21 +1,19 @@
 # Notice
 
-emisar is source-available software owned by Andrii Dryga.
+emisar is software owned by Andrii Dryga.
 
-This repository is made available for review, evaluation, internal use, education, research, and contribution under the terms of `LICENSE.md`.
+This repository is dual-licensed:
 
-This repository is **not** licensed for:
+- **`runner/`, `mcp/`, and `packs/`** — the on-host runner, the stdio MCP
+  bridge, and the action-pack catalog — are open source under the
+  [Apache License, Version 2.0](../runner/LICENSE).
+- **Everything else** (including the `portal/` control plane) is
+  source-available under the
+  [Business Source License 1.1](../LICENSE.md): free for non-production
+  use, free production use under the Additional Use Grant, and each
+  version converts to the Apache License 2.0 on its Change Date.
 
-- competing commercial use;
-- hosted or managed service offerings;
-- commercial redistribution;
-- AI training;
-- model fine-tuning;
-- embedding or retrieval corpora;
-- clean-room replication;
-- generating or assisting a competing implementation.
-
-For commercial licensing, hosted use, AI permissions, or other rights, contact:
+For commercial licensing beyond the Additional Use Grant, contact:
 
 `licensing@emisar.dev`
 

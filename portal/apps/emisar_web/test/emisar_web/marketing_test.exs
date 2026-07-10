@@ -135,7 +135,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "Sign in"
     assert html =~ "Start free"
     assert html =~ "pack trust"
-    assert html =~ "source-available"
+    assert html =~ "Apache-2.0"
     refute html =~ "signed audit log"
     # A signed-out visitor gets the auth CTAs, not a dashboard link.
     refute html =~ ~s(href="/app")
@@ -1078,11 +1078,12 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/terms") |> html_response(200)
 
       # The liability cap (12-month fees / US $100), Delaware governing law,
-      # and the honest source-available (not OSI) license characterization.
+      # and the honest dual-license characterization (Apache-2.0 edge + BUSL core).
       assert html =~ "twelve"
       assert html =~ "US $100"
       assert html =~ "Delaware"
-      assert html =~ "source-available license that is not an OSI-approved"
+      assert html =~ "Apache License 2.0"
+      assert html =~ "Business Source License 1.1"
     end
 
     test "the refund page links terms + pricing and states the Paddle MoR + no-pro-rate posture",

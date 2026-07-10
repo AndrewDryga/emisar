@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing.
 
-This repository is source-available. Contributions are welcome, but contributions must follow the license, this guide, and any Contributor License Agreement required by the maintainers.
+This repository is dual-licensed — `runner/`, `mcp/`, and `packs/` under the Apache License 2.0, everything else under the Business Source License 1.1 (see `NOTICE.md`). Contributions are welcome, but contributions must follow the applicable license, this guide, and any Contributor License Agreement required by the maintainers.
 
 ## Ground Rules
 
@@ -33,15 +33,12 @@ You may use AI-assisted developer tools only if all of the following are true:
 1. you have the legal right to submit the generated or assisted work;
 2. the tool's terms allow your use and submission;
 3. the work does not copy protected third-party code or confidential material;
-4. the use does not violate `LICENSE.md` or `AI-USE-POLICY.md`;
-5. the contribution is reviewed and understood by you;
-6. you disclose material AI assistance when requested by maintainers.
+4. the contribution is reviewed and understood by you;
+5. you disclose material AI assistance when requested by maintainers.
 
 Do not submit AI-generated code that you do not understand.
 
 Do not submit code generated from another project's proprietary, source-available, or incompatible licensed code.
-
-Do not use this repository to prompt, train, fine-tune, benchmark, evaluate, or create a competing implementation.
 
 ## Development Process
 
@@ -57,8 +54,7 @@ Do not use this repository to prompt, train, fine-tune, benchmark, evaluate, or 
 
 Before opening a pull request, confirm:
 
-- [ ] I have read `LICENSE.md`.
-- [ ] I have read `AI-USE-POLICY.md`.
+- [ ] I have read `LICENSE.md` (and, for `runner/`/`mcp/`/`packs/`, the Apache-2.0 `LICENSE` there).
 - [ ] I have read and agree to this `CONTRIBUTING.md`.
 - [ ] I have the right to submit this contribution.
 - [ ] This contribution does not include confidential information.

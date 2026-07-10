@@ -177,7 +177,7 @@ defmodule EmisarWeb.MarketingController do
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get monthly invoices, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",
-     "The current product uses the hosted emisar control plane. The source-available repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
+     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation — but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings and you drop back to Free at the end of the current billing period. Your audit data is retained per the Free retention window."},
     {"Do you support SSO and SCIM?",

@@ -36,8 +36,10 @@ self-hosted and air-gapped deployments are not generally available.
 - Not an arbitrary remote shell or generic `execute(command)` tool.
 - Not a replacement for OS-level least privilege, process isolation, or
   customer change-management controls.
-- Not OSI-approved open source. The repository is source-available under
-  [`LICENSE.md`](LICENSE.md).
+- Not fully open source (yet). The on-host components — `runner/`, `mcp/`,
+  `packs/` — are Apache-2.0; the control plane is source-available under the
+  [Business Source License 1.1](LICENSE.md) and converts to Apache-2.0 on its
+  Change Date.
 
 See [`docs/security-model.md`](docs/security-model.md).
 
@@ -146,22 +148,29 @@ install.sh                       supervised install (systemd / launchd) — run 
 
 ## License
 
-This repository is **source-available**, not OSI-approved open source.
+This repository is dual-licensed:
 
-The code is available so users can inspect it, evaluate it, run permitted
-internal uses, understand how it works, and contribute improvements. It is
-not available for cloning the product, operating a competing service,
-commercial redistribution, AI training, model fine-tuning, embeddings
-corpora, clean-room replication, or building a substitute product.
+- **`runner/`, `mcp/`, and `packs/`** — the code that runs on your hosts (the
+  runner, the stdio MCP bridge) and the action-pack catalog — are **open
+  source under the [Apache License 2.0](runner/LICENSE)**. Inspect it, build
+  it, package it, and keep operating it independently of us.
+- **Everything else**, including the `portal/` control plane, is
+  source-available under the
+  **[Business Source License 1.1](./LICENSE.md)**: free for any
+  non-production use, free production use under the Additional Use Grant
+  (organizations under USD 1M annual revenue, and anything needed to run the
+  Apache-licensed components or the hosted service), and **each version
+  converts to the Apache License 2.0 on its Change Date** — so the entire
+  codebase is guaranteed to become open source over time.
 
 See:
 
 - [`LICENSE.md`](./LICENSE.md)
-- [`AI-USE-POLICY.md`](.github/AI-USE-POLICY.md)
+- [`runner/LICENSE`](runner/LICENSE) · [`mcp/LICENSE`](mcp/LICENSE) · [`packs/LICENSE`](packs/LICENSE)
 - [`CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - [`CLA.md`](.github/CLA.md)
 - [`NOTICE.md`](.github/NOTICE.md)
 - [`SECURITY.md`](.github/SECURITY.md)
 
-For commercial licensing, hosted use, AI permissions, or other rights,
-contact `licensing@emisar.dev`.
+For commercial licensing beyond the Additional Use Grant, contact
+`licensing@emisar.dev`.

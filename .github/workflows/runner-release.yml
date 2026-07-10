@@ -182,11 +182,12 @@ jobs:
           mkdir -p "dist/${name}"
           cp dist/emisar "dist/${name}/emisar"
           cp README.md "dist/${name}/"
-          # LICENSE.md + install.sh are repo invariants; missing either
-          # is a malformed release, so copy unconditionally (no
+          # runner/LICENSE (Apache-2.0 — the license of the shipped
+          # binary + packs) and install.sh are repo invariants; missing
+          # either is a malformed release, so copy unconditionally (no
           # `[ -f X ] && ... || true` swallows). `docs/` is gitignored
           # and read at https://emisar.dev/docs, so it's not shipped.
-          cp LICENSE.md "dist/${name}/"
+          cp runner/LICENSE "dist/${name}/LICENSE"
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"
           # Bundle only a SMALL curated default set so install.sh can set

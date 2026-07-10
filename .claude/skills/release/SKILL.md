@@ -50,6 +50,10 @@ the voice of the existing entries before writing a new one.
    `summary`, mechanism-led, sparse em-dashes). Prepend it, newest first.
 4. **Bump `portal/VERSION`** to the new `X.Y.0` (no `v`) — feeds the apps, the OTP
    release version, and the marketing footer in one edit.
+   Also **roll the BUSL `Change Date` in the root `LICENSE.md`** to the release date
+   + 3 years (`Change Date: YYYY-MM-DD`). BUSL applies per version — each release's
+   LICENSE states when THAT version converts to Apache-2.0; a stale date quietly
+   promises an earlier conversion for everything shipped after it.
 5. **Marketing test** — update the newest-entry assertions in
    `apps/emisar_web/test/emisar_web/marketing_test.exs` ("the changelog renders its
    entries").

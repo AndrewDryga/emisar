@@ -124,9 +124,10 @@ jobs:
           name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
           cp dist/emisar-mcp "dist/${name}/emisar-mcp"
-          # LICENSE.md is a repo invariant; missing it is a malformed
-          # release, fail loudly rather than silently shipping without one.
-          cp LICENSE.md "dist/${name}/"
+          # mcp/LICENSE (Apache-2.0 — the license of the shipped binary)
+          # is a repo invariant; missing it is a malformed release, fail
+          # loudly rather than silently shipping without one.
+          cp mcp/LICENSE "dist/${name}/LICENSE"
           # Self-documenting README so a maintainer looking at the
           # extracted tarball months later remembers what it is.
           # Heredoc is quoted ('EOF') so shell + actions expressions
