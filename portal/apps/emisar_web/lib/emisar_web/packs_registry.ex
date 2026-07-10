@@ -155,10 +155,11 @@ defmodule EmisarWeb.PacksRegistry do
              manifest = parse_yaml!.(manifest_path)
              requires = Map.get(manifest, "requires", %{}) || %{}
              requires_binaries = Map.get(requires, "binaries", []) || []
+             action_rels = Map.get(manifest, "actions", []) || []
 
              actions =
-               "#{pack_dir}/actions/*.yaml"
-               |> Path.wildcard()
+               action_rels
+               |> Enum.map(&Path.join(pack_dir, &1))
                |> Enum.map(parse_yaml!)
                |> Enum.map(build_action)
                |> Enum.sort_by(& &1.id)

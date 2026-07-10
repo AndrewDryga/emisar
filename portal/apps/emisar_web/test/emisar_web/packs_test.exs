@@ -172,6 +172,27 @@ defmodule EmisarWeb.PacksTest do
       assert ids == Enum.sort(ids)
     end
 
+    test "each registry action is declared by its pack manifest" do
+      packs_path =
+        System.get_env("EMISAR_PACKS_DIR") || Path.expand("../../../../../packs", __DIR__)
+
+      for pack <- PacksRegistry.list() do
+        manifest_path = Path.join([packs_path, pack.id, "pack.yaml"])
+        manifest = YamlElixir.read_from_file!(manifest_path)
+
+        action_ids =
+          manifest
+          |> Map.fetch!("actions")
+          |> Enum.map(&Path.join(Path.dirname(manifest_path), &1))
+          |> Enum.map(&YamlElixir.read_from_file!/1)
+          |> Enum.map(&Map.fetch!(&1, "id"))
+          |> Enum.sort()
+
+        assert Enum.map(pack.actions, & &1.id) == action_ids,
+               "registry action list drifted from #{pack.id}/pack.yaml"
+      end
+    end
+
     test "get/1 returns the pack struct for a known id" do
       assert %PacksRegistry.Pack{id: "linux-core"} = PacksRegistry.get("linux-core")
     end
