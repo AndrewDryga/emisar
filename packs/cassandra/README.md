@@ -11,7 +11,7 @@ current list (45 actions).
 | `cassandra.nodetool_status`         | none            | low      |
 | `cassandra.nodetool_tpstats`        | none            | low      |
 | `cassandra.nodetool_compactionstats`| none            | low      |
-| `cassandra.nodetool_tablestats`     | none            | medium   |
+| `cassandra.nodetool_tablestats`     | none            | low      |
 | `cassandra.nodetool_repair`         | cluster_state   | high     |
 | `cassandra.analyze_disk_pressure`   | none            | low      |
 
