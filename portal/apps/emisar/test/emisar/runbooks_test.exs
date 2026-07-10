@@ -598,7 +598,9 @@ defmodule Emisar.RunbooksTest do
 
       assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
 
-      assert "every step needs a runner or group target before publishing" in errors_on(changeset).definition
+      assert "every step needs exactly one runner or group target before publishing" in errors_on(
+               changeset
+             ).definition
     end
 
     test "publishing a step with a blank id is rejected", %{subject: subject} do
@@ -1347,6 +1349,33 @@ defmodule Emisar.RunbooksTest do
 
       # Engine context check: account unchanged by the partial failure.
       assert account.id == runner.account_id
+    end
+
+    test "a row-less first-wave failure halts later waves", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      other = Fixtures.Runners.create_runner(account_id: account.id)
+
+      steps =
+        uptime_steps(7, runner_target(runner))
+        |> List.update_at(1, &Map.put(&1, "runner_selector", runner_target(other)))
+
+      runbook = published_runbook!(subject, "rowless-halt-book", steps)
+
+      assert {:ok, %{execution_id: execution_id, runs: runs, errors: [_error]}} =
+               Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      assert length(runs) == 4
+      Enum.each(runs, &finish!/1)
+
+      # The failed second slot has no action-run row, but its durable halt state
+      # prevents the successful peers from releasing steps 6-7.
+      assert length(execution_runs(account, execution_id)) == 4
+
+      assert %RunbookExecution{status: :halted, halted_at: %DateTime{}} =
+               Repo.get!(RunbookExecution, execution_id)
     end
   end
 

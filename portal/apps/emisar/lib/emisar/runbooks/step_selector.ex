@@ -1,8 +1,10 @@
 defmodule Emisar.Runbooks.StepSelector do
   @moduledoc """
   Parsing for a runbook step's `runner_selector` — the single place that
-  understands both the current list shape (`%{"group" => ["a", "b"]}`) and the
-  older single-value shape (`%{"group" => "a"}`). Pure: no Repo, no Subject.
+  understands exactly one target type: the current list shape
+  (`%{"group" => ["a", "b"]}`) or the older single-value shape
+  (`%{"group" => "a"}`). A selector mixing runner ids and groups is invalid.
+  Pure: no Repo, no Subject.
   """
 
   @typedoc "A step's `runner_selector` value (or anything, for the unrecognized case)."
@@ -15,6 +17,7 @@ defmodule Emisar.Runbooks.StepSelector do
   blank and whitespace-only entries are dropped).
   """
   @spec parse(selector) :: {String.t() | nil, [String.t()]}
+  def parse(%{"runner_id" => _runner_ids, "group" => _groups}), do: {nil, []}
   def parse(%{"runner_id" => v}), do: {"runner_id", normalize(v)}
   def parse(%{"group" => v}), do: {"group", normalize(v)}
   def parse(_), do: {nil, []}

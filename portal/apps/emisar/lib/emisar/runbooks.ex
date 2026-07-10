@@ -200,8 +200,8 @@ defmodule Emisar.Runbooks do
   dispatch. Mints a `runbook_execution_id` grouping the runs, expands
   each step against its own runners into the work list, and dispatches
   the first wave of `#{@batch_size}`; later waves fire from
-  `dispatch_next_batch/1` as runs finish. Any failed/denied run halts the
-  waves that follow it.
+  `dispatch_next_batch/1` as runs finish. Any failed/denied run or row-less
+  dispatch failure halts the waves that follow it.
 
   Requires `dispatch_run` permission; the runbook must be in the
   subject's account. Returns
@@ -288,8 +288,8 @@ defmodule Emisar.Runbooks do
   Called from `Runs.mark_finished` whenever a run reaches a terminal
   state. When the finished run's whole wave is terminal and nothing in
   the execution failed, dispatches the next wave of `#{@batch_size}`
-  work-list items; any failed/denied/cancelled run halts the execution
-  (in-flight peers still finish naturally). Safe under concurrent
+  work-list items; any failed/denied/cancelled run or row-less dispatch
+  failure halts the execution (in-flight peers still finish naturally). Safe under concurrent
   finishers: the `(execution, step, runner)` unique index makes the
   losing dispatcher skip already-claimed slots.
   """
@@ -327,7 +327,7 @@ defmodule Emisar.Runbooks do
   # the FROZEN work-list resolved at the first wave, so runners added to a
   # selected group after dispatch are never picked up.
   defp continue_execution(%Runbook{} = runbook, %Emisar.Runs.ActionRun{} = finished, existing) do
-    with %RunbookExecution{} = execution <-
+    with %RunbookExecution{status: :active} = execution <-
            peek_execution(finished.account_id, finished.runbook_execution_id),
          %Emisar.Accounts.Membership{} <-
            Emisar.Accounts.peek_active_membership(
@@ -457,8 +457,8 @@ defmodule Emisar.Runbooks do
   # `:row_exists` (a policy denial wrote its denied row — the halt
   # signal — or a concurrent finisher already claimed the slot via the
   # `(execution, step, runner)` unique index), or `{:error, reason}` for
-  # row-less failures, which are audited so a halted execution leaves a
-  # trace.
+  # row-less failures, which halt the execution and are audited so the
+  # failed slot has a durable trace.
   defp dispatch_item(%Runbook{} = runbook, execution, {step, idx, runner_id} = item, dispatcher) do
     case dispatcher.(step_attrs(runbook, execution, item)) do
       {:ok, _status, run} ->
@@ -494,6 +494,8 @@ defmodule Emisar.Runbooks do
   end
 
   defp log_wave_dispatch_failure(%Runbook{} = runbook, execution, step, idx, runner_id, reason) do
+    halt_execution(runbook, execution)
+
     Audit.record(
       Audit.Events.runbook_step_dispatch_failed(
         runbook,
@@ -503,6 +505,16 @@ defmodule Emisar.Runbooks do
         reason
       )
     )
+  end
+
+  # A row-less dispatch failure is otherwise invisible to the continuation,
+  # which derives its halt decision from action run rows. Update only an active
+  # execution so concurrent finishers cannot reopen it after the first failure.
+  defp halt_execution(%Runbook{} = runbook, execution) do
+    RunbookExecution.Query.by_account_id(runbook.account_id)
+    |> RunbookExecution.Query.by_id(execution.id)
+    |> RunbookExecution.Query.active()
+    |> Repo.update_all(set: [status: :halted, halted_at: DateTime.utc_now()])
   end
 
   defp ensure_steps([]), do: {:error, :empty_runbook}

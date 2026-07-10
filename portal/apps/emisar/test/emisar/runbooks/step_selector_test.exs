@@ -24,6 +24,13 @@ defmodule Emisar.Runbooks.StepSelectorTest do
       assert StepSelector.parse(%{"group" => ["a", nil, 7]}) == {"group", ["a"]}
     end
 
+    test "a selector cannot mix runner ids and groups" do
+      selector = %{"runner_id" => ["r1"], "group" => ["prod"]}
+
+      assert StepSelector.parse(selector) == {nil, []}
+      assert StepSelector.empty?(selector)
+    end
+
     test "an unrecognized, absent, or nil selector is {nil, []}" do
       assert StepSelector.parse(%{}) == {nil, []}
       assert StepSelector.parse(nil) == {nil, []}

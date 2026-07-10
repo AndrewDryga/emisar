@@ -173,7 +173,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
         "every step needs an action before publishing"
 
       Enum.any?(steps, &StepSelector.empty?(&1["runner_selector"])) ->
-        "every step needs a runner or group target before publishing"
+        "every step needs exactly one runner or group target before publishing"
 
       Enum.any?(steps, &invalid_step_id?/1) ->
         "every step needs an ID of 1–#{@max_step_id_length} characters before publishing"

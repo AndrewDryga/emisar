@@ -9,4 +9,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
 
   def by_account_id(queryable \\ all(), account_id),
     do: where(queryable, [runbook_executions: r], r.account_id == ^account_id)
+
+  def active(queryable \\ all()),
+    do: where(queryable, [runbook_executions: r], r.status == :active)
 end

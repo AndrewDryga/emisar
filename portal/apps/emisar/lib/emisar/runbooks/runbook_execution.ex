@@ -11,6 +11,11 @@ defmodule Emisar.Runbooks.RunbookExecution do
 
   schema "runbook_executions" do
     field :reason, :string
+    # A row-less dispatch failure has no action run for the wave engine to
+    # inspect, so it halts the execution here before a later wave can advance.
+    field :status, Ecto.Enum, values: [:active, :halted], default: :active
+    field :halted_at, :utc_datetime_usec
+
     # Frozen authorized work-list: the full step×runner set resolved at the
     # first wave. Each item is `%{"step_index" => i, "runner_id" => id}`; the
     # step's action/args are re-read from the immutable runbook version by index.
