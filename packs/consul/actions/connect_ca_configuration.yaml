@@ -3,8 +3,10 @@ id: consul.connect_ca_configuration
 title: GET /v1/connect/ca/configuration
 kind: exec
 risk: low
-description: Show CA provider configuration (which CA, intermediate cert TTL, etc).
-side_effects: ["One API call.", "Read-only."]
+description: Show CA provider configuration (which CA, intermediate cert TTL, etc). Provider secrets the config map may carry — the Vault provider's Token and the built-in provider's PrivateKey — are redacted from the output.
+side_effects:
+  - One API call.
+  - Read-only; provider secret fields (Token, PrivateKey) are redacted before output.
 args: []
 execution:
   command:
@@ -17,6 +19,15 @@ output:
   parser: json
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+  redact:
+    - name: consul-ca-private-key
+      type: regex
+      pattern: '("PrivateKey"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
+    - name: consul-ca-vault-token
+      type: regex
+      pattern: '("Token"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
 examples:
   - title: CA config
     args: {}

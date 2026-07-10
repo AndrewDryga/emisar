@@ -2,7 +2,7 @@ schema_version: 1
 
 id: consul
 name: HashiCorp Consul operations
-version: 0.2.14
+version: 0.2.15
 description: >
   Deep Consul ops — agent self/metrics/host introspection, operator
   raft + autopilot + reload, catalog (services + nodes + datacenters),
