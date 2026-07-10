@@ -37,6 +37,7 @@ outside this repo (📋).
 | Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
 | Reproducible infra (IaC) | ✅ | whole stack; `git log` is the change record |
 | State + secret custody | ⚙️ | Terraform Cloud (org Dryga / project emisar) — encrypted at rest, workspace RBAC, audit log; **workspace access = prod-secret access** |
+| Keyless deploy identity (WIF) | ✅/⚙️ | pool `terraform-cloud` / provider `emisar-workspace` pinned to `organization:Dryga:project:emisar:workspace:emisar` → SA `terraform@emisar.iam` — no stored key anywhere |
 
 ## SOC 2 Trust Services Criteria — how the platform maps
 
@@ -82,8 +83,18 @@ outside this repo (📋).
 - **Terraform Cloud workspace** (org `Dryga` / project `emisar` / workspace
   `emisar`): holds state AND the sensitive secret variables, so membership is
   production access — restrict to the infra team, require 2FA on the TFC org,
-  require manual apply approval, keep the TFC audit log. Prefer dynamic
-  (Workload Identity Federation) GCP credentials over a pasted SA key.
+  require manual apply approval, keep the TFC audit log.
+- **Deploy identity — WIF, configured 2026-07-09, no stored key.** Remote runs
+  exchange their OIDC token at pool `terraform-cloud` / provider
+  `emisar-workspace`, whose attribute condition pins the trust to
+  `organization:Dryga:project:emisar:workspace:emisar` (no other TFC tenant can
+  authenticate), with the audience pinned explicitly on both sides. They
+  impersonate `terraform@emisar.iam.gserviceaccount.com`, which carries a
+  deliberate bundle: `roles/editor` + `roles/resourcemanager.projectIamAdmin`
+  (the config manages project IAM + audit config) + `roles/secretmanager.admin`
+  + `roles/iam.serviceAccountUser`. Honest note: `projectIamAdmin` makes this SA
+  project-admin-equivalent — acceptable because the project is single-purpose
+  and the SA is reachable only through the pinned, audit-logged TFC workspace.
 
 ## Data protection
 
@@ -141,7 +152,5 @@ CC6/CC7/CC8/A1/C1/PI; the rest is process the organization operates and evidence
 - **CMEK** on Cloud SQL + Secret Manager + disks if key custody is required.
 - **Cloud SQL IAM auth** (no password) via the Auth Proxy sidecar in cloud-init.
 - **Cloud Armor** WAF + rate-limiting attached to the backend service.
-- **TFC dynamic credentials (WIF)** for the GCP apply identity instead of a pasted
-  service-account key in the workspace.
 - Wire DMARC/TLS-RPT report inboxes; ramp DMARC → reject and MTA-STS → enforce.
 - More alert channels (PagerDuty/Slack) + policies (5xx rate, cert expiry).

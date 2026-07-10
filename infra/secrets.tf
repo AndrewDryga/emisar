@@ -37,6 +37,9 @@ locals {
 
   # for_each keys must not derive from sensitive values; whether a secret is SET
   # is not itself secret, so unwrap just that boolean with nonsensitive().
+  # Known only in REMOTE runs: local operations (terraform import/console) see
+  # remote sensitive variables as unavailable, so they must pass dummy values,
+  # e.g. `-var paddle_api_key=x` for each — the values never leave the machine.
   populated_optional_secrets = [
     for id, value in local.optional_secret_values : id if nonsensitive(value != "")
   ]
@@ -54,10 +57,12 @@ resource "google_secret_manager_secret" "app" {
 }
 
 # Least privilege: the VM SA gets accessor on exactly these secrets, not a
-# project-wide secret role.
+# project-wide secret role. Iterates the STATIC key map (not the resource map),
+# so instance keys resolve in every context — a for_each over the resource map
+# is "known only after apply" during a local import and hard-errors.
 resource "google_secret_manager_secret_iam_member" "vm_access" {
-  for_each  = google_secret_manager_secret.app
-  secret_id = each.value.id
+  for_each  = local.app_secrets
+  secret_id = google_secret_manager_secret.app[each.key].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.vm.email}"
 }
