@@ -475,7 +475,7 @@ defmodule EmisarWeb.AuditLive do
                 </div>
               </div>
               <.audit_cell value={
-                party_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
+                actor_label_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
               } />
               <.audit_cell
                 value={target_text(event, @refs)}
@@ -588,7 +588,7 @@ defmodule EmisarWeb.AuditLive do
     # the event acted on something other than its actor.
     who =
       [
-        party_text(event.actor_kind, event.actor_id, event.actor_label, refs),
+        actor_label_text(event.actor_kind, event.actor_id, event.actor_label, refs),
         target_text(event, refs)
       ]
       |> Enum.reject(&is_nil/1)
@@ -632,6 +632,29 @@ defmodule EmisarWeb.AuditLive do
 
   defp party_text(kind, id, label, refs), do: resolve_label(refs, kind, id, label)
 
+  # User-first ACTOR rendering: the accountable HUMAN leads, the credential is
+  # secondary `via` context. An api_key/MCP actor resolves its owner (the key
+  # creator) as `who` and the key name as `via`; when the owner can't be
+  # resolved (deleted, or a legacy row) it degrades to the key name alone.
+  # Every other actor kind is already human — `via` is nil.
+  defp actor_who_via("api_key", id, label, refs) when not is_nil(id) do
+    key_name = resolve_label(refs, "api_key", id, label)
+    owner = refs |> Map.get("api_key_owner", %{}) |> Map.get(id)
+
+    if owner, do: {owner, key_name}, else: {key_name, nil}
+  end
+
+  defp actor_who_via(kind, id, label, refs), do: {party_text(kind, id, label, refs), nil}
+
+  # The single-string actor label for the list's meta line + forensic column.
+  defp actor_label_text(kind, id, label, refs) do
+    case actor_who_via(kind, id, label, refs) do
+      {nil, _via} -> nil
+      {who, nil} -> who
+      {who, via} -> "#{who} via #{via}"
+    end
+  end
+
   # -- Reference rendering (shared with AuditDetailLive) ---------------
 
   attr :kind, :string, default: nil
@@ -642,6 +665,9 @@ defmodule EmisarWeb.AuditLive do
   # (`?actor_id=…`) — "what did this identity do" — instead of the
   # actor's own resource page. Used for the actor column.
   attr :audit_link?, :boolean, default: false
+  # When true, render human-first: an api_key/MCP actor leads with its owner
+  # and shows "· via <key>" as secondary context (the Actor card, not targets).
+  attr :actor?, :boolean, default: false
   attr :current_account, :map, required: true
 
   def ref(%{kind: nil} = assigns), do: ~H[<span class="text-xs text-zinc-500">—</span>]
@@ -658,17 +684,19 @@ defmodule EmisarWeb.AuditLive do
   end
 
   def ref(assigns) do
-    assigns =
-      assign(assigns,
-        text: resolve_label(assigns.refs, assigns.kind, assigns.id, assigns.label),
-        href: ref_href(assigns)
-      )
+    {text, via} =
+      if assigns.actor?,
+        do: actor_who_via(assigns.kind, assigns.id, assigns.label, assigns.refs),
+        else: {resolve_label(assigns.refs, assigns.kind, assigns.id, assigns.label), nil}
+
+    title = if via, do: "#{assigns.kind}: #{text} · via #{via}", else: "#{assigns.kind}: #{text}"
+    assigns = assign(assigns, text: text, via: via, title: title, href: ref_href(assigns))
 
     ~H"""
     <%!-- One truncating line: a short actor (email/name) shows in full; a long
          unresolved value (e.g. an approval_request UUID) ellipsis-clips instead of
          wrapping to 2-3 lines. The full value is on hover via title. --%>
-    <span class="block max-w-[16rem] truncate text-xs text-zinc-400" title={"#{@kind}: #{@text}"}>
+    <span class="block max-w-[16rem] truncate text-xs text-zinc-400" title={@title}>
       <%!-- The "kind:" prefix is a plain label — only the value links. --%>
       <span class="text-zinc-500">{@kind}:</span>
       <%= if @href do %>
@@ -678,6 +706,9 @@ defmodule EmisarWeb.AuditLive do
       <% else %>
         {@text}
       <% end %>
+      <%!-- The credential the human acted through — secondary context after the
+           human leads (an api_key/MCP actor). --%>
+      <span :if={@via} class="text-zinc-500">· via {@via}</span>
     </span>
     """
   end

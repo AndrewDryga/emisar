@@ -219,17 +219,46 @@ defmodule EmisarWeb.TimeHelpers do
   defp to_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
 
   @doc """
-  Who initiated a run, as a label. The PERSON leads when known (`requested_by`
-  preloaded — a username tells operators apart where every LLM key is named
-  "Claude Code"); then the MCP client the run was dispatched from
-  (clientInfo.name), then the API key's name, then the humanized source. An
-  unloaded association falls through — the shape matches only loaded rows.
+  User-first run attribution as `{who, via}` — the accountable HUMAN by name
+  (email fallback) and the secondary channel. `who` is the requesting user, or
+  an MCP run's API-key owner; `nil` when no human is recorded (legacy rows, the
+  runbook engine). `via` is the channel that adds signal — the API-key name,
+  "LLM agent", "runbook", "schedule" — and `nil` for a plain operator run,
+  where "via portal" says nothing. An unloaded association falls through the
+  same clauses as `nil` (`%Ecto.Association.NotLoaded{}` has no `:email` key).
   """
-  def run_actor(%{requested_by: %{full_name: _} = user}), do: user.full_name || user.email
-  def run_actor(%{client_info: %{"name" => name}}) when is_binary(name) and name != "", do: name
-  def run_actor(%{api_key: %{name: name}}) when is_binary(name) and name != "", do: name
-  def run_actor(%{source: source}), do: format_source(source)
-  def run_actor(_), do: "—"
+  def run_who_via(run), do: {run_who(run), run_via(run)}
+
+  # Match on :email presence, not a bare %{} — %Ecto.Association.NotLoaded{} is
+  # a struct (so a map) and would match %{}, swallowing the api_key fallback.
+  defp run_who(%{requested_by: %{email: _} = user}), do: user_display_name(user)
+  defp run_who(%{api_key: %{created_by: %{email: _} = user}}), do: user_display_name(user)
+  defp run_who(_run), do: nil
+
+  defp run_via(%{source: :mcp, api_key: %{name: name}}) when is_binary(name) and name != "",
+    do: name
+
+  defp run_via(%{source: :mcp}), do: "LLM agent"
+  defp run_via(%{source: :runbook}), do: "runbook"
+  defp run_via(%{source: :scheduled}), do: "schedule"
+  defp run_via(_run), do: nil
+
+  defp user_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
+  defp user_display_name(%{email: email}), do: email
+
+  @doc """
+  The single-line attribution label leading with the human — "Maya Chen via
+  Claude Code" — for `source_badge`'s one truncating line (the icon already
+  carries the origin). Composed from `run_who_via/1`.
+  """
+  def run_actor(run) do
+    case run_who_via(run) do
+      {nil, nil} -> "—"
+      {who, nil} -> who
+      {nil, via} -> via
+      {who, via} -> "#{who} via #{via}"
+    end
+  end
 
   @doc "The MCP client version snapshotted on a run, if any (e.g. \"1.2.3\")."
   def client_version(%{client_info: %{"version" => v}}) when is_binary(v) and v != "", do: v

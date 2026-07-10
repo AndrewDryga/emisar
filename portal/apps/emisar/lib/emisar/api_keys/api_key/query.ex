@@ -88,6 +88,19 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   end
 
   @doc """
+  Audit owner-label lookup: `{key_id, owner name-or-email}` via the key's
+  creating user, so the audit trail can name the accountable HUMAN behind an
+  API-key/MCP actor. INNER join — a key whose owner was deleted resolves no
+  row, and the trail degrades to the key name.
+  """
+  def select_owner_labels(queryable, ids) do
+    queryable
+    |> where([api_keys: k], k.id in ^ids)
+    |> join(:inner, [api_keys: k], u in assoc(k, :created_by), as: :owner)
+    |> select([api_keys: k, owner: u], {k.id, coalesce(u.full_name, u.email)})
+  end
+
+  @doc """
   Preload the (non-deleted) key this one replaced at rotation. A separate
   query, not a self-join — the `replaces` assoc's own `where` scopes it.
   """

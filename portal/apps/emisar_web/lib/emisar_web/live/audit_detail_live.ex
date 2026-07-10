@@ -387,6 +387,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id={@id}
           label={@label}
           refs={@refs}
+          actor?={@role == "Actor"}
           current_account={@current_account}
         />
       </div>

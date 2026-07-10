@@ -106,6 +106,34 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ "not verified device posture"
   end
 
+  test "the actor card leads with the human behind an api_key/MCP actor", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        name: "Claude Code",
+        created_by_id: owner.id
+      )
+
+    {:ok, event} =
+      Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: key.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    # The Actor card names the owner; the key trails as "· via Claude Code".
+    assert html =~ "Jordan Vale"
+    assert html =~ "via Claude Code"
+  end
+
   test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
     conn: conn
   } do

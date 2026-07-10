@@ -593,6 +593,9 @@ defmodule Emisar.Audit do
           :name,
           &Emisar.ApiKeys.ApiKey.Query.by_account_id(&1, account_id)
         ),
+      # The HUMAN behind an api_key/MCP actor (its creator), keyed by the SAME
+      # key ids, so the audit trail leads with who over the key name.
+      "api_key_owner" => fetch_owner_labels(ids_by_kind, account_id),
       "enrollment_key" =>
         fetch_labels(
           Emisar.Runners.EnrollmentKey.Query,
@@ -637,6 +640,22 @@ defmodule Emisar.Audit do
         query_module.all()
         |> scope.()
         |> query_module.select_labels(ids, field)
+        |> Repo.all()
+        |> Map.new()
+    end
+  end
+
+  # The owner map keys off the "api_key" actor/target ids (a key IS the actor);
+  # the join select projects each key id to its creator's name/email.
+  defp fetch_owner_labels(ids_by_kind, account_id) do
+    case Map.get(ids_by_kind, "api_key", []) do
+      [] ->
+        %{}
+
+      ids ->
+        Emisar.ApiKeys.ApiKey.Query.all()
+        |> Emisar.ApiKeys.ApiKey.Query.by_account_id(account_id)
+        |> Emisar.ApiKeys.ApiKey.Query.select_owner_labels(ids)
         |> Repo.all()
         |> Map.new()
     end

@@ -1,15 +1,30 @@
 defmodule EmisarWeb.RunsLiveTest do
   @moduledoc """
-  The runs list names the initiator of each run — for MCP/LLM runs that's
-  the API key's name (e.g. "Claude Code"), not the bare source.
+  The runs list names the accountable HUMAN of each run first — the requesting
+  operator, or an MCP/LLM key's owner — with the API key/client as secondary
+  "via" context, never replacing the human.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
 
-  test "shows the API key name in the source column", %{conn: conn} do
+  test "leads with the human and shows the key as via context", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
+    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        name: "Claude Code",
+        created_by_id: owner.id
+      )
 
     {:ok, runner} =
       Runner.Changeset.register(%{
@@ -33,7 +48,9 @@ defmodule EmisarWeb.RunsLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
-    assert html =~ "Claude Code"
+    # The human owns the "Dispatched by" cell; the key trails as "via …".
+    assert html =~ "Jordan Vale"
+    assert html =~ "via Claude Code"
     # Secondary columns (Source/Duration) collapse below lg so the table fits
     # a phone in an incident.
     assert html =~ "hidden lg:table-cell"

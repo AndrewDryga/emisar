@@ -2102,37 +2102,16 @@ defmodule EmisarWeb.CoreComponents do
   # "via portal" is the default channel and says nothing, so it's dropped;
   # the MCP agent name IS the signal (human vs agent origin) and stays. A run
   # with no recorded human (legacy rows, the runbook engine) shows only its
-  # channel; nil hides the segment entirely. Unloaded assocs
-  # (%Ecto.Association.NotLoaded{} has no :email/:full_name key) fall through
-  # the same clauses as nil.
+  # channel; nil hides the segment entirely. TimeHelpers.run_who_via/1 is the
+  # shared who/via primitive (also feeds the runs list + run detail).
   defp run_attribution(run) do
-    case {attribution_who(run), attribution_channel(run)} do
+    case TimeHelpers.run_who_via(run) do
       {nil, nil} -> nil
       {who, nil} -> "by #{who}"
       {nil, channel} -> "via #{channel}"
       {who, channel} -> "by #{who} via #{channel}"
     end
   end
-
-  # Match on :email presence, not a bare %{} — %Ecto.Association.NotLoaded{}
-  # is a struct (so a map) and would match %{}, swallowing the api_key fallback.
-  defp attribution_who(%{requested_by: %{email: _} = user}), do: user_display_name(user)
-
-  defp attribution_who(%{api_key: %{created_by: %{email: _} = user}}),
-    do: user_display_name(user)
-
-  defp attribution_who(_run), do: nil
-
-  defp user_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
-  defp user_display_name(%{email: email}), do: email
-
-  defp attribution_channel(%{source: :mcp, api_key: %{name: name}}) when is_binary(name),
-    do: name
-
-  defp attribution_channel(%{source: :mcp}), do: "LLM agent"
-  defp attribution_channel(%{source: :runbook}), do: "runbook"
-  defp attribution_channel(%{source: :scheduled}), do: "schedule"
-  defp attribution_channel(_run), do: nil
 
   @doc """
   A dotted mono identifier (an action id, an event type) rendered with a

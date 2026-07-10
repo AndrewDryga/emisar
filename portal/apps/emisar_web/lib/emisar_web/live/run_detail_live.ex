@@ -202,10 +202,14 @@ defmodule EmisarWeb.RunDetailLive do
               </.link>
             </.meta_field>
             <.meta_field label="Dispatched by">
+              <% {who, via} = run_who_via(@run) %>
               <span class="block truncate">
-                <span class="text-zinc-200">{run_actor(@run)}</span>
-                <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
-                <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
+                <span :if={who} class="text-zinc-200">{who}</span>
+                <span :if={via} class={if who, do: "text-zinc-400", else: "text-zinc-200"}>
+                  {if who, do: "via #{via}", else: via}
+                </span>
+                <span :if={!who && !via} class="text-zinc-500">—</span>
+                <span :if={client_version(@run)} class="text-zinc-500">{client_version(@run)}</span>
               </span>
               <span
                 :if={@run.mcp_session_id}

@@ -113,6 +113,35 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "renamed-prod"
     end
 
+    test "an api_key/MCP actor reads human-first: owner leads, key as via", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          name: "Claude Code",
+          created_by_id: owner.id
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: key.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      # A wall of generically-named keys stays legible: the accountable human
+      # leads, the key name trails as "via" context.
+      assert html =~ "Jordan Vale"
+      assert html =~ "via Claude Code"
+    end
+
     test "rows name the actor, and the date filters render in the facet panel",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

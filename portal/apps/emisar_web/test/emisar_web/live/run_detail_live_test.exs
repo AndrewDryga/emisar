@@ -102,20 +102,36 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "Requires approval"
   end
 
-  test "names the API key that initiated an MCP run", %{conn: conn} do
+  test "an MCP run leads with the accountable human, key as via context", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
+    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        name: "Claude Code",
+        created_by_id: owner.id
+      )
+
     run = run_with(account, %{source: "mcp", api_key_id: key.id})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    # The operator-named key is the headline initiator; the source type
-    # ("LLM agent") trails as context.
-    assert html =~ "Claude Code"
-    assert html =~ "LLM agent"
+    # The accountable human (the key's owner) leads; the operator-named key
+    # trails as "via" context.
+    assert html =~ "Jordan Vale"
+    assert html =~ "via Claude Code"
   end
 
-  test "prefers the MCP client name + version over a generic key name", %{conn: conn} do
+  test "the channel is the operator-named key + the client version, not the client name",
+       %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "prod-mcp")
 
@@ -128,9 +144,12 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "Claude Code"
+    # The operator-named key IS the channel ("via prod-mcp"); the snapshotted
+    # client version rides along — but the self-reported client NAME is not the
+    # attribution channel.
+    assert html =~ "via prod-mcp"
     assert html =~ "1.2.3"
-    refute html =~ "prod-mcp"
+    refute html =~ "Claude Code"
   end
 
   test "shows the MCP session id as a sub-line under Source, not its own cell", %{conn: conn} do

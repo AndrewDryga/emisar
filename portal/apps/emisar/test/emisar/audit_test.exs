@@ -1423,6 +1423,51 @@ defmodule Emisar.AuditTest do
       assert refs["api_key"][api_key.id] == api_key.name
     end
 
+    test "resolves the human behind an api_key actor (its owner)", %{
+      account: account,
+      user: user
+    } do
+      # The audit trail leads with WHO acted; an api_key/MCP actor resolves to
+      # its creating human so a wall of generically-named keys stays legible.
+      {_raw, api_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, event} =
+        Audit.log(account.id, "action.dispatched",
+          actor_kind: "api_key",
+          actor_id: api_key.id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      assert refs["api_key"][api_key.id] == api_key.name
+      assert refs["api_key_owner"][api_key.id] == (user.full_name || user.email)
+    end
+
+    test "an api_key owner in another account does not resolve (account-scoped)" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      user_b = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          user_id: user_b.id,
+          role: "owner"
+        )
+
+      {_raw, key_b} =
+        Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
+
+      # A mis-stamped row in account A pointing at B's key id.
+      {:ok, event} =
+        Audit.log(account_a.id, "action.dispatched", actor_kind: "api_key", actor_id: key_b.id)
+
+      refs = Audit.resolve_references([event])
+
+      refute Map.has_key?(refs["api_key_owner"], key_b.id)
+    end
+
     test "missing records (deleted since the event) are simply absent" do
       account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()
