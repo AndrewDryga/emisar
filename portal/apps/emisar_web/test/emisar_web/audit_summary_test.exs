@@ -162,6 +162,18 @@ defmodule EmisarWeb.AuditSummaryTest do
       assert [] = AuditSummary.summary_pairs(ev("policy.updated", %{"changes" => %{}}))
     end
 
+    test "malformed nested payload values fall through without crashing the audit list" do
+      assert [] =
+               AuditSummary.summary_pairs(
+                 ev("policy.updated", %{
+                   "changes" => %{
+                     "defaults" => "not-a-map",
+                     "overrides" => %{"added" => "not-a-list"}
+                   }
+                 })
+               )
+    end
+
     test "a runner-scoped edit leads with a scope chip" do
       pairs =
         AuditSummary.summary_pairs(

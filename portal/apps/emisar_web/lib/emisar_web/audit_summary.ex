@@ -232,12 +232,12 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("policy.updated", p) do
     # Surface the most interesting bit: how many overrides were
     # touched. The detail page renders the full diff.
-    changes = get(p, :changes) || %{}
-    overrides = get(changes, :overrides) || %{}
-    n_added = length(get(overrides, :added) || [])
-    n_removed = length(get(overrides, :removed) || [])
-    n_changed = length(get(overrides, :changed) || [])
-    defaults_changed = map_size(get(changes, :defaults) || %{})
+    changes = map_value(p, :changes)
+    overrides = map_value(changes, :overrides)
+    n_added = length(list_value(overrides, :added))
+    n_removed = length(list_value(overrides, :removed))
+    n_changed = length(list_value(overrides, :changed))
+    defaults_changed = changes |> map_value(:defaults) |> map_size()
     from_v = get(p, :from_version)
     to_v = get(p, :to_version)
 
@@ -323,4 +323,18 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   defp get(_, _), do: nil
+
+  defp map_value(map, key) do
+    case get(map, key) do
+      value when is_map(value) -> value
+      _ -> %{}
+    end
+  end
+
+  defp list_value(map, key) do
+    case get(map, key) do
+      value when is_list(value) -> value
+      _ -> []
+    end
+  end
 end

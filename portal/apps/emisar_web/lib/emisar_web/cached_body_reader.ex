@@ -13,12 +13,23 @@ defmodule EmisarWeb.CachedBodyReader do
   @cache_paths ["/webhooks/paddle"]
 
   def read_body(conn, opts) do
-    {:ok, body, conn} = Plug.Conn.read_body(conn, opts)
+    case Plug.Conn.read_body(conn, opts) do
+      {:ok, body, conn} ->
+        maybe_cache_body(conn, body)
 
-    if conn.request_path in @cache_paths do
-      {:ok, body, Plug.Conn.assign(conn, :raw_body, body)}
-    else
-      {:ok, body, conn}
+      {:more, body, conn} ->
+        # Preserve Plug.Parsers' size limit behavior. The JSON parser converts
+        # this to a controlled :too_large response; caching a partial signed
+        # payload would be both useless and misleading.
+        {:more, body, conn}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  defp maybe_cache_body(%{request_path: path} = conn, body) when path in @cache_paths,
+    do: {:ok, body, Plug.Conn.assign(conn, :raw_body, body)}
+
+  defp maybe_cache_body(conn, body), do: {:ok, body, conn}
 end
