@@ -15,16 +15,22 @@ defmodule EmisarWeb.SSOSignInController do
     render(conn, :new, recent: RecentAccounts.list(conn), form: team_form(""))
   end
 
-  def create(conn, %{"team" => %{"slug" => slug}}) do
+  def create(conn, %{"team" => %{"slug" => slug}}) when is_binary(slug) do
     case Accounts.fetch_account_by_id_or_slug(String.trim(slug)) do
       {:ok, account} ->
         redirect(conn, to: ~p"/app/#{account}/sign_in")
 
       {:error, :not_found} ->
-        conn
-        |> put_flash(:error, "We couldn't find a team at that address. Check it and try again.")
-        |> render(:new, recent: RecentAccounts.list(conn), form: team_form(slug))
+        render_not_found(conn, slug)
     end
+  end
+
+  def create(conn, _params), do: render_not_found(conn, "")
+
+  defp render_not_found(conn, slug) do
+    conn
+    |> put_flash(:error, "We couldn't find a team at that address. Check it and try again.")
+    |> render(:new, recent: RecentAccounts.list(conn), form: team_form(slug))
   end
 
   defp team_form(slug), do: Phoenix.Component.to_form(%{"slug" => slug}, as: "team")

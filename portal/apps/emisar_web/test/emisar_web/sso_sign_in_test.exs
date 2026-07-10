@@ -98,6 +98,18 @@ defmodule EmisarWeb.SSOSignInTest do
       assert html_response(conn, 200) =~ "couldn&#39;t find a team"
     end
 
+    test "malformed team fields re-render the neutral not-found response", %{conn: conn} do
+      for params <- [
+            %{"team" => %{"slug" => %{"nested" => "value"}}},
+            %{"team" => "not-a-map"},
+            %{}
+          ] do
+        response = post(conn, ~p"/sign_in/sso", params)
+
+        assert html_response(response, 200) =~ "couldn&#39;t find a team"
+      end
+    end
+
     test "a real slug and a fake slug resolve through the same pre-auth lookup — no leak", %{
       conn: conn
     } do
