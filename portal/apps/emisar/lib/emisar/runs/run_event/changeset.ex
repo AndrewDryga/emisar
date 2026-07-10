@@ -13,6 +13,7 @@ defmodule Emisar.Runs.RunEvent.Changeset do
     %RunEvent{}
     |> cast(attrs, [:run_id, :account_id, :seq, :kind, :stream, :payload])
     |> validate_required([:run_id, :account_id, :seq, :kind])
+    |> validate_number(:seq, greater_than_or_equal_to: 0)
     |> validate_length(:stream, max: @max_stream_length)
     |> RepoChangeset.validate_json_size(:payload, @max_payload_bytes)
     |> unique_constraint([:run_id, :seq])

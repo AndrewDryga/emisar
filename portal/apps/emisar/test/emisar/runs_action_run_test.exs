@@ -163,5 +163,14 @@ defmodule Emisar.Runs.ActionRunTest do
         assert Keyword.has_key?(changeset.errors, field)
       end
     end
+
+    test "rejects negative byte/duration metadata from a hostile runner" do
+      for field <- [:stdout_bytes, :stderr_bytes, :duration_ms] do
+        changeset = ActionRun.Changeset.transition(transition_run(), :success, %{field => -1})
+
+        refute changeset.valid?
+        assert {"must be greater than or equal to %{number}", _} = changeset.errors[field]
+      end
+    end
   end
 end

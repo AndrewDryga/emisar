@@ -62,6 +62,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:stdout_sha256, max: @max_db_string_length)
     |> validate_length(:stderr_sha256, max: @max_db_string_length)
     |> validate_length(:event_id, max: @max_db_string_length)
+    |> validate_number(:stdout_bytes, greater_than_or_equal_to: 0)
+    |> validate_number(:stderr_bytes, greater_than_or_equal_to: 0)
+    |> validate_number(:duration_ms, greater_than_or_equal_to: 0)
   end
 
   @doc "Release an approval-gated run into a fresh dispatch window."
