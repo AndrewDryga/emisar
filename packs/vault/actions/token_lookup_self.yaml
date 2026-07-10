@@ -3,10 +3,10 @@ id: vault.token_lookup_self
 title: vault token lookup
 kind: exec
 risk: low
-description: Show metadata on the current token (the runner's). Useful to debug policy denials.
+description: Show metadata on the current token (the runner's) — accessor, policies, ttl. Useful to debug policy denials. The token itself (data.id) is redacted from the output.
 side_effects:
   - One auth/token/lookup-self request.
-  - Read-only.
+  - Read-only; the token value (data.id) returned by the API is redacted before output.
 args: []
 execution:
   command:
@@ -20,6 +20,11 @@ output:
   parser: json
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
+  redact:
+    - name: vault-token-id
+      type: regex
+      pattern: '("id"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
 examples:
   - title: Self lookup
     args: {}
