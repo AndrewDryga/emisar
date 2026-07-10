@@ -3,16 +3,17 @@ id: pm2.jlist
 title: pm2 jlist
 kind: exec
 risk: low
-description: List PM2 processes as JSON (richer than `list`). Read-only.
+description: List PM2 processes as JSON with status, uptime, restarts, mode, and CPU/mem. Read-only. Per-process environment is projected out — use `pm2.env` for one process's effective env.
 side_effects:
   - One PM2 IPC call.
   - Read-only.
 args: []
 execution:
   command:
-    binary: pm2
+    binary: /bin/sh
     argv:
-      - "jlist"
+      - "-c"
+      - "pm2 jlist | jq 'map({name, pm_id, pid, monit, status: .pm2_env.status, uptime: .pm2_env.pm_uptime, restarts: .pm2_env.restart_time, mode: .pm2_env.exec_mode})'"
   timeout: 30s
 output:
   parser: json
