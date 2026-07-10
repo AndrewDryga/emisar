@@ -55,6 +55,26 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert json_response(conn, 401) == %{"error" => "enrollment_key_invalid"}
     end
+
+    test "rejects malformed fields without consuming the enrollment key", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      for params <- [
+            %{"external_id" => %{"nested" => "value"}, "hostname" => "runner"},
+            %{"hostname" => %{"nested" => "value"}},
+            %{"group" => %{"nested" => "value"}},
+            %{"version" => %{"nested" => "value"}},
+            %{"labels" => "not-a-map"}
+          ] do
+        response = register(build_conn(), raw_key, params)
+
+        assert json_response(response, 400) == %{"error" => "register_failed"}
+      end
+
+      response = register(conn, raw_key, %{"hostname" => "runner"})
+      assert %{"runner_id" => _} = json_response(response, 201)
+    end
   end
 
   describe "POST /runner/register — limits and name conflicts" do

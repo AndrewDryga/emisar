@@ -38,10 +38,14 @@ defmodule EmisarWeb.PaddleWebhookController do
       {:error, reason} ->
         Logger.warning("paddle webhook rejected: #{inspect(reason)}")
         conn |> put_status(:bad_request) |> json(%{error: "invalid"})
+
+      _ ->
+        conn |> put_status(:bad_request) |> json(%{error: "invalid"})
     end
   end
 
-  defp handle_event(conn, %{"event_id" => event_id, "event_type" => type} = event) do
+  defp handle_event(conn, %{"event_id" => event_id, "event_type" => type} = event)
+       when is_binary(event_id) and is_binary(type) do
     case Billing.record_and_apply_event(event_id, type, event) do
       :ok ->
         json(conn, %{received: true})

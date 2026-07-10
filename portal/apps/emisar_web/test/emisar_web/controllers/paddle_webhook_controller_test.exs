@@ -86,6 +86,17 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     |> post(~p"/webhooks/paddle", Jason.encode!(body))
   end
 
+  defp post_duplicate_signature_webhook(conn, body) do
+    conn =
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("paddle-signature", "ts=1;h1=first")
+
+    conn = Map.update!(conn, :req_headers, &[{"paddle-signature", "ts=1;h1=second"} | &1])
+
+    post(conn, ~p"/webhooks/paddle", Jason.encode!(body))
+  end
+
   defp subscription_for(account_id) do
     Subscription.Query.all()
     |> Subscription.Query.by_account_id(account_id)
@@ -129,6 +140,16 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
         |> post(~p"/webhooks/paddle", Jason.encode!(event))
 
       assert json_response(conn, 400) == %{"error" => "missing_signature"}
+      assert subscription_for(account.id) == nil
+    end
+
+    test "duplicate signature headers are rejected without crashing or applying", %{conn: conn} do
+      account = account_with_customer("ctm_duplicate_signature")
+      event = subscription_event(customer_id: "ctm_duplicate_signature")
+
+      conn = post_duplicate_signature_webhook(conn, event)
+
+      assert json_response(conn, 400) == %{"error" => "invalid"}
       assert subscription_for(account.id) == nil
     end
   end
@@ -265,6 +286,16 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   describe "malformed + failing events" do
     test "a decodable event without event_id/event_type is malformed → 400", %{conn: conn} do
       conn = post_webhook(conn, %{"hello" => "world"})
+
+      assert json_response(conn, 400) == %{"error" => "malformed_event"}
+    end
+
+    test "an event with non-string identity fields is malformed before billing", %{conn: conn} do
+      conn =
+        post_webhook(conn, %{
+          "event_id" => %{"nested" => "value"},
+          "event_type" => "subscription.created"
+        })
 
       assert json_response(conn, 400) == %{"error" => "malformed_event"}
     end

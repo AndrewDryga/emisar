@@ -18,16 +18,11 @@ defmodule EmisarWeb.RunnerConnectController do
 
   def register(conn, params) do
     with {:ok, enrollment_key} <- read_bearer(conn),
+         {:ok, attrs} <- registration_attrs(params),
          {:ok, runner, token, raw_token} <-
            Runners.register_via_enrollment_key(
              enrollment_key,
-             %{
-               external_id: params["external_id"],
-               hostname: params["hostname"],
-               group: params["group"],
-               labels: params["labels"] || %{},
-               version: params["version"]
-             },
+             attrs,
              RequestContext.from_conn(conn)
            ) do
       conn
@@ -44,6 +39,11 @@ defmodule EmisarWeb.RunnerConnectController do
 
       {:error, :enrollment_key_invalid} ->
         unauthorized(conn, "enrollment_key_invalid")
+
+      {:error, :invalid_registration} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "register_failed"})
 
       {:error, :over_limit, plan, limit} ->
         conn
@@ -119,6 +119,32 @@ defmodule EmisarWeb.RunnerConnectController do
       _ -> :missing_bearer
     end
   end
+
+  defp registration_attrs(%{} = params) do
+    labels = if is_nil(params["labels"]), do: %{}, else: params["labels"]
+
+    attrs = %{
+      external_id: params["external_id"],
+      hostname: params["hostname"],
+      group: params["group"],
+      labels: labels,
+      version: params["version"]
+    }
+
+    if Enum.all?(
+         [attrs.external_id, attrs.hostname, attrs.group, attrs.version],
+         &optional_string?/1
+       ) and
+         is_map(labels) do
+      {:ok, attrs}
+    else
+      {:error, :invalid_registration}
+    end
+  end
+
+  defp registration_attrs(_), do: {:error, :invalid_registration}
+
+  defp optional_string?(value), do: is_nil(value) or is_binary(value)
 
   defp unauthorized(conn, code) do
     conn
