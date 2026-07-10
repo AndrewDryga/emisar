@@ -79,7 +79,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `aws-s3` | 8 | low | AWS_* (opt) |
 | `bind` | 11 | high | local-host |
 | `bonding` | 3 | low | local-host |
-| `caddy` | 10 | high | CADDY_ADMIN (opt) |
+| `caddy` | 10 | high | CADDY_* (opt) |
 | `cassandra` | 45 | critical | CQLSH_* (opt) |
 | `clickhouse` | 31 | critical | CH_* (opt) |
 | `cloud-init` | 23 | critical | local-host |

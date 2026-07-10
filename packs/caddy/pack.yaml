@@ -2,7 +2,7 @@ schema_version: 1
 
 id: caddy
 name: Caddy web server
-version: 0.1.6
+version: 0.1.7
 description: >
   Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI.
   Config dump, upstream health, PKI inventory, config validation, plus
@@ -33,6 +33,9 @@ setup:
     - name: CADDY_ADMIN
       description: Base URL of the Caddy admin API; set only if it does not listen on the default.
       default: "http://127.0.0.1:2019"
+    - name: CADDY_ACCESS_LOG
+      description: Path to the Caddy access log for access_log_tail.
+      default: /var/log/caddy/access.log
   notes:
     - "reload_config and stop change runtime state and need permission to talk to the admin socket and signal the process — run the runner as root or as the caddy service user."
   verify: caddy.version
