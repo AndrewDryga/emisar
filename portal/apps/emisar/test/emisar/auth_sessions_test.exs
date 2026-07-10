@@ -71,7 +71,7 @@ defmodule Emisar.AuthSessionsTest do
     end
   end
 
-  describe "revoke_other_sessions!/2" do
+  describe "revoke_other_sessions!/3" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{user: user, subject: subject}

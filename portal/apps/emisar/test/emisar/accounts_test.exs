@@ -2687,7 +2687,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "mark_invitation_accepted/1" do
+  describe "mark_invitation_accepted/2" do
     test "stamps invitation_accepted_at + clears the token without touching the user" do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()

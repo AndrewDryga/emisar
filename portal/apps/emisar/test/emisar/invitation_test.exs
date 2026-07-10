@@ -86,7 +86,7 @@ defmodule Emisar.InvitationTest do
     end
   end
 
-  describe "fetch_invitation_by_token/1" do
+  describe "fetch_invitation_by_token/2" do
     setup do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)

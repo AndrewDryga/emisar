@@ -130,7 +130,7 @@ defmodule Emisar.PoliciesPersistenceTest do
     end
   end
 
-  describe "evaluate_with_policy/2" do
+  describe "evaluate_with_policy/3" do
     setup do
       account = Fixtures.Accounts.create_account()
       %{account: account}
