@@ -46,8 +46,10 @@ defmodule EmisarWeb.MCP.Instructions do
   - "No runner in scope": the action exists but no runner you're permitted to reach advertises \
   it. This is an access grant, not a transient state — ask an admin to grant runner access. \
   Retrying won't help.
-  - "Runner required": more than one runner advertises the action. Re-call with \
-  `runners: ["name"]` (candidates are listed in the error).
+  - "Runner required": emisar always requires an explicit target, even when only one runner \
+  advertises the action. Re-call with `runners: ["name"]` (candidates are listed in the error).
+  - "Invalid runner targets" / "Duplicate runners": use a list of distinct runner-name strings. \
+  Fix the target list and retry; emisar creates no partial fan-out.
   - "Denied by policy": an account policy blocked it; the reason is the rule that fired — show it \
   to the user verbatim. Won't change on retry; it needs a policy edit or an approval grant.
   - status `pending_approval`: the action is paused for a human to approve in the portal — the \

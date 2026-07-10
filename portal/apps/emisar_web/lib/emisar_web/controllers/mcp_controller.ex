@@ -38,7 +38,7 @@ defmodule EmisarWeb.MCPController do
   """
 
   use EmisarWeb, :controller
-  alias EmisarWeb.MCP.{Auth, Idempotency, Service}
+  alias EmisarWeb.MCP.{Attestation, Auth, Idempotency, Service}
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
@@ -71,8 +71,8 @@ defmodule EmisarWeb.MCPController do
     # Anything the LLM passes beyond the known top-level keys is an
     # action arg. `wait` is a query param but Phoenix merges query +
     # body into params, so it may land here too. `idempotency_key` is a
-    # control field (Layer 2), not an action arg — drop it so it never
-    # reaches the runner.
+    # control fields (Layer 2 idempotency and runner attestation), not action
+    # args — drop them so they never reach the runner as action input.
     #
     # These are reserved arg names: `emisar pack validate` rejects any
     # action arg sharing one (runner pkg/actionspec reservedArgNames), so
@@ -85,7 +85,8 @@ defmodule EmisarWeb.MCPController do
         "runner",
         "runners",
         "wait",
-        "idempotency_key"
+        "idempotency_key",
+        "attestation"
       ])
 
     case Service.parse_wait(params["wait"], Service.max_wait_ms()) do
@@ -99,7 +100,8 @@ defmodule EmisarWeb.MCPController do
           runner_names: normalize_runner_input(params),
           reason: params["reason"],
           wait_ms: wait_ms,
-          idempotency_key: Idempotency.resolve(conn, params)
+          idempotency_key: Idempotency.resolve(conn, params),
+          attestation: Attestation.normalize(params["attestation"])
         }
 
         case Service.dispatch_tool(conn, action_id, action_args, opts) do

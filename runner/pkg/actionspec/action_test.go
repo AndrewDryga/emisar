@@ -350,6 +350,9 @@ func TestAction_Validate(t *testing.T) {
 		{"reserved arg action_id", func(a *Action) {
 			a.Args = []Arg{{Name: "action_id", Type: ArgString}}
 		}, "reserved control-plane field"},
+		{"reserved arg attestation", func(a *Action) {
+			a.Args = []Arg{{Name: "attestation", Type: ArgString}}
+		}, "reserved control-plane field"},
 		{"bad redaction rule", func(a *Action) {
 			a.Output.Redact = []RedactionRule{{Name: "r", Type: "nope"}}
 		}, "redaction"},

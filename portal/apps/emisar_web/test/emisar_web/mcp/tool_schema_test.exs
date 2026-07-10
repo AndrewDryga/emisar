@@ -18,6 +18,7 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       schema = ToolSchema.build(action(), ["only-runner"])
 
       assert schema.properties["idempotency_key"].type == "string"
+      assert schema.properties["idempotency_key"].maxLength == 200
       refute "idempotency_key" in schema.required
     end
 
@@ -224,7 +225,8 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
             args: [
               %{"name" => "reason", "required" => true},
               %{"name" => "runner", "required" => true},
-              %{"name" => "wait", "required" => true}
+              %{"name" => "wait", "required" => true},
+              %{"name" => "attestation", "required" => true}
             ]
           ),
           ["r"]
@@ -233,6 +235,7 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert Enum.count(schema.required, &(&1 == "reason")) == 1
       refute "runner" in schema.required
       refute "wait" in schema.required
+      refute "attestation" in schema.required
     end
   end
 

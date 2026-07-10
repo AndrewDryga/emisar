@@ -20,8 +20,10 @@ defmodule EmisarWeb.MCP.ToolSchema do
   hint to the LLM, not the security gate.
   """
 
+  alias EmisarWeb.MCP.Idempotency
+
   @max_runner_fan_out 16
-  @reserved_arg_names ~w(action_id runner runners reason wait idempotency_key)
+  @reserved_arg_names ~w(action_id runner runners reason wait idempotency_key attestation)
 
   @doc """
   Returns the full `inputSchema` map (already shaped for JSON encoding)
@@ -75,6 +77,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
   defp idempotency_key_property do
     %{
       type: "string",
+      maxLength: Idempotency.max_length(),
       description:
         "Optional. Leave this UNSET for normal calls. Only set it when you are RE-ISSUING " <>
           "a dispatch that may have already gone through (the previous attempt errored, timed " <>

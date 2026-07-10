@@ -29,7 +29,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.ApiKeys
-  alias EmisarWeb.MCP.{Auth, ContentBlocks, Idempotency, Instructions, Service}
+  alias EmisarWeb.MCP.{Attestation, Auth, ContentBlocks, Idempotency, Instructions, Service}
   alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-06-18"
@@ -456,79 +456,13 @@ defmodule EmisarWeb.MCPRpcController do
 
     reason = args["reason"]
     wait = args["wait"]
-    attestation = normalize_attestation(args["attestation"])
+    attestation = Attestation.normalize(args["attestation"])
 
     action_args =
       Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key", "attestation"])
 
     {runner_names, reason, wait, attestation, action_args}
   end
-
-  # An MCP client attaches `attestation` beside the call's runner/reason; the
-  # portal RELAYS it to the runner, which verifies the Ed25519 signature AND the
-  # CA-signed certificate. The portal is KEY-BLIND — it never parses or trusts the
-  # cert, only relays a well-formed, size-bounded envelope so a malformed one
-  # degrades to "no attestation" (an enforcing runner then refuses cleanly) and an
-  # abused key can't fan a multi-MB blob onto every runner's PubSub topic before
-  # the runner rejects it.
-  defp normalize_attestation(%{} = att) do
-    sig = att["sig"]
-    nonce = att["nonce"]
-    issued_at = att["issued_at"]
-    cert = normalize_cert(att["cert"])
-
-    if bounded_string?(sig) and bounded_string?(nonce) and bounded_string?(issued_at) and cert do
-      %{"sig" => sig, "nonce" => nonce, "issued_at" => issued_at, "cert" => cert}
-    end
-  end
-
-  defp normalize_attestation(_), do: nil
-
-  # The cert nests inside the attestation. The portal validates its SHAPE and
-  # BOUNDS every field (it stays key-blind — the runner verifies the CA signature),
-  # relaying only the known fields so a malformed/oversized cert degrades to nil.
-  defp normalize_cert(%{} = cert) do
-    required = ["ca_id", "key_id", "public_key", "valid_from", "valid_until", "serial", "sig"]
-    fields = Map.take(cert, required)
-    scope = Map.get(cert, "scope", %{})
-
-    if map_size(fields) == length(required) and
-         Enum.all?(fields, fn {_k, v} -> bounded_string?(v) end) and
-         valid_scope?(scope) do
-      Map.put(fields, "scope", scope)
-    end
-  end
-
-  defp normalize_cert(_), do: nil
-
-  # Scope is {group?: bounded string, labels?: %{bounded string => bounded string}},
-  # both optional (an empty scope is the valid "any runner" mode) and bounded.
-  defp valid_scope?(%{} = scope) do
-    group_ok =
-      case Map.fetch(scope, "group") do
-        :error -> true
-        {:ok, group} -> bounded_string?(group)
-      end
-
-    labels_ok =
-      case Map.fetch(scope, "labels") do
-        :error ->
-          true
-
-        {:ok, %{} = labels} ->
-          map_size(labels) <= 32 and
-            Enum.all?(labels, fn {k, v} -> bounded_string?(k) and bounded_string?(v) end)
-
-        {:ok, _} ->
-          false
-      end
-
-    group_ok and labels_ok and Enum.all?(Map.keys(scope), &(&1 in ["group", "labels"]))
-  end
-
-  defp valid_scope?(_), do: false
-
-  defp bounded_string?(v), do: is_binary(v) and byte_size(v) <= 512
 
   # -- Auth -----------------------------------------------------------
   #

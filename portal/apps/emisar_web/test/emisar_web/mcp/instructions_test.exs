@@ -59,6 +59,8 @@ defmodule EmisarWeb.MCP.InstructionsTest do
           "Action not found",
           "No runner in scope",
           "Runner required",
+          "Invalid runner targets",
+          "Duplicate runners",
           "Denied by policy",
           "pending_approval",
           "runner_offline",
@@ -101,5 +103,10 @@ defmodule EmisarWeb.MCP.InstructionsTest do
     assert @text =~ "Rule of thumb"
     assert @text =~ "say so"
     assert @text =~ "retrying in a loop"
+  end
+
+  test "requires an explicit target even when only one runner advertises the action" do
+    assert @text =~ "always requires an explicit target"
+    assert @text =~ "even when only one runner"
   end
 end

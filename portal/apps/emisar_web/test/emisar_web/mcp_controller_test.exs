@@ -1207,24 +1207,28 @@ defmodule EmisarWeb.MCPControllerTest do
       refute Map.has_key?(run.args, "wait")
     end
 
-    test "attestation is NOT a REST reserved key — it leaks through as an action arg", %{
+    test "relays a valid attestation as a control envelope, not an action arg", %{
       conn: conn,
       account: account,
       user: user,
       runner: runner
     } do
-      # F3 asymmetry: REST's Map.drop omits `attestation`, so (unlike JSON-RPC,
-      # which extracts it onto the run) it is forwarded as an ordinary action
-      # arg. The run row's `attestation` column stays nil; `attestation` lands
-      # in `args` instead. The runner rejects the unknown arg downstream, but
-      # the portal treats it as data, not a control key — confirm the asymmetry.
       raw = make_api_key!(account, user)
 
       attestation = %{
         "sig" => "deadbeef",
         "nonce" => "n1",
         "issued_at" => "2026-06-17T12:00:00Z",
-        "cert" => %{"ca_id" => "ca-acme", "key_id" => "op-1", "sig" => "cafe"}
+        "cert" => %{
+          "ca_id" => "ca-acme",
+          "key_id" => "op-1",
+          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+          "valid_from" => "2026-06-25T00:00:00Z",
+          "valid_until" => "2026-06-26T00:00:00Z",
+          "scope" => %{"group" => "edge", "labels" => %{"env" => "prod"}},
+          "serial" => "01J0CERT0000000000000000A",
+          "sig" => "cafebabe"
+        }
       }
 
       body =
@@ -1247,10 +1251,8 @@ defmodule EmisarWeb.MCPControllerTest do
           Fixtures.Subjects.subject_for(user, account, role: :owner)
         )
 
-      # NOT extracted onto the run (the JSON-RPC-only control path) ...
-      assert run.attestation == nil
-      # ... and instead carried in the args as a plain value.
-      assert run.args["attestation"] == attestation
+      assert run.attestation == attestation
+      refute Map.has_key?(run.args, "attestation")
       assert run.args["path"] == "/tmp/marker"
     end
   end

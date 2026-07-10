@@ -116,11 +116,11 @@ type Example struct {
 // reservedArgNames are the top-level request fields the control plane owns
 // on every MCP action dispatch (POST /tools/:action_id): the audit reason,
 // the runner or runners target selector, the idempotency_key retry control,
-// the wait sync-poll knob, and the action_id itself. The control plane strips
-// these from the request before the remaining keys reach the runner as action
-// args, so an action arg sharing one of these names could never receive a
-// value. Reject the collision at pack-validation time rather than letting it
-// silently break dispatch.
+// the wait sync-poll knob, the client attestation, and the action_id itself.
+// The control plane strips these from the request before the remaining keys
+// reach the runner as action args, so an action arg sharing one of these names
+// could never receive a value. Reject the collision at pack-validation time
+// rather than letting it silently break dispatch.
 //
 // Keep in sync with the portal's drop list in
 // apps/emisar_web/lib/emisar_web/controllers/mcp_controller.ex.
@@ -131,6 +131,7 @@ var reservedArgNames = map[string]struct{}{
 	"runners":         {},
 	"wait":            {},
 	"idempotency_key": {},
+	"attestation":     {},
 }
 
 // secretArgNameRe matches arg names that look secret-bearing (for SecretArgWarnings).
@@ -221,7 +222,7 @@ func (a *Action) Validate() error {
 			return fmt.Errorf("action %s: %w", a.ID, err)
 		}
 		if _, reserved := reservedArgNames[a.Args[i].Name]; reserved {
-			return fmt.Errorf("action %s: arg %q is a reserved control-plane field (one of action_id/reason/runner/runners/wait/idempotency_key) and would be stripped before reaching the runner; rename it", a.ID, a.Args[i].Name)
+			return fmt.Errorf("action %s: arg %q is a reserved control-plane field (one of action_id/reason/runner/runners/wait/idempotency_key/attestation) and would be stripped before reaching the runner; rename it", a.ID, a.Args[i].Name)
 		}
 		if _, dup := seen[a.Args[i].Name]; dup {
 			return fmt.Errorf("action %s: duplicate arg %q", a.ID, a.Args[i].Name)

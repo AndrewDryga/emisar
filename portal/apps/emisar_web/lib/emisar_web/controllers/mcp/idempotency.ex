@@ -20,6 +20,9 @@ defmodule EmisarWeb.MCP.Idempotency do
 
   @max_length 200
 
+  @doc "Maximum accepted caller-supplied idempotency-key length in bytes."
+  def max_length, do: @max_length
+
   @doc """
   Returns the idempotency key for this call, applying Layer 2 → Layer 1
   precedence. `nil` means "no replay semantics" — the dispatch proceeds

@@ -9,6 +9,10 @@ defmodule EmisarWeb.MCP.IdempotencyTest do
   defp conn_without_header, do: %Plug.Conn{req_headers: []}
 
   describe "resolve/2" do
+    test "publishes the same maximum enforced by key sanitization" do
+      assert Idempotency.max_length() == 200
+    end
+
     test "Layer 2 (body arg) wins over Layer 1 (header)" do
       conn = conn_with_header("from-header")
       assert Idempotency.resolve(conn, %{"idempotency_key" => "from-body"}) == "from-body"
@@ -35,19 +39,19 @@ defmodule EmisarWeb.MCP.IdempotencyTest do
 
     test "over-long key is rejected (would otherwise fill the unique index with junk)" do
       conn = conn_without_header()
-      too_long = String.duplicate("x", 201)
+      too_long = String.duplicate("x", Idempotency.max_length() + 1)
       assert Idempotency.resolve(conn, %{"idempotency_key" => too_long}) == nil
     end
 
     test "a key of exactly 200 bytes is accepted (the cap is inclusive)" do
       conn = conn_without_header()
-      exactly_max = String.duplicate("x", 200)
+      exactly_max = String.duplicate("x", Idempotency.max_length())
       assert Idempotency.resolve(conn, %{"idempotency_key" => exactly_max}) == exactly_max
     end
 
     test "201 bytes is rejected — the boundary is exactly 200" do
       conn = conn_without_header()
-      one_over = String.duplicate("x", 201)
+      one_over = String.duplicate("x", Idempotency.max_length() + 1)
       assert Idempotency.resolve(conn, %{"idempotency_key" => one_over}) == nil
     end
 
@@ -74,6 +78,13 @@ defmodule EmisarWeb.MCP.IdempotencyTest do
 
     test "deterministic: same (key, runner_id) → same result (so retries replay cleanly)" do
       assert Idempotency.per_runner("k", "r") == Idempotency.per_runner("k", "r")
+    end
+
+    test "the longest accepted external key remains within the persisted varchar budget" do
+      scoped = Idempotency.per_runner(String.duplicate("k", 200), Ecto.UUID.generate())
+
+      assert byte_size(scoped) == 237
+      assert byte_size(scoped) <= 255
     end
   end
 end

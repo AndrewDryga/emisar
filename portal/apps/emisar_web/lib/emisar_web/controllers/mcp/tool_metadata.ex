@@ -29,7 +29,8 @@ defmodule EmisarWeb.MCP.ToolMetadata do
     %{
       readOnlyHint: read_only?,
       destructiveHint: action.risk in [:high, :critical],
-      openWorldHint: true
+      openWorldHint: true,
+      idempotentHint: read_only?
     }
   end
 end
