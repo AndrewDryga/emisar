@@ -3,8 +3,10 @@ id: nomad.acl_token_self
 title: nomad acl token self
 kind: exec
 risk: low
-description: Show the runner's own token — name, type, policies, expiration.
-side_effects: ["One API call.", "Read-only."]
+description: Show the runner's own token — name, type, policies, expiration. The Secret ID the CLI prints is redacted from the output.
+side_effects:
+  - One API call.
+  - Read-only; the Secret ID field printed by the CLI is redacted before output.
 args: []
 execution:
   command: {binary: nomad, argv: ["acl", "token", "self"]}
@@ -13,6 +15,11 @@ output:
   parser: text
   max_stdout_bytes: 8192
   max_stderr_bytes: 8192
+  redact:
+    - name: nomad-token-secretid
+      type: regex
+      pattern: '(Secret ID\s*=\s*)\S+'
+      replacement: '${1}[REDACTED]'
 examples:
   - title: Self
     args: {}
