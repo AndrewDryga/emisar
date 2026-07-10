@@ -15,7 +15,7 @@ args:
     required: true
     description: Label name to enumerate values for, e.g. job, instance.
     validation:
-      pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$'
+      pattern: '^[a-zA-Z_][a-zA-Z0-9_]{0,127}$'
 execution:
   script:
     path: scripts/vmget.sh

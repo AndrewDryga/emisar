@@ -2,7 +2,7 @@ schema_version: 1
 
 id: victoriametrics
 name: VictoriaMetrics queries
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only PromQL / MetricsQL access to VictoriaMetrics over its HTTP API:
   instant and range queries, series and label discovery, and the

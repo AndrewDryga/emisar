@@ -468,3 +468,22 @@ func TestDispatch_BondingStatus_AnchoredPattern(t *testing.T) {
 	// 16 chars — one past the {0,14} tail (1 + 15).
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"bond": "abcdefghijklmnop"}), "bond", "pattern")
 }
+
+// a metric-label arg is LENGTH-bounded at dispatch, not just charset-anchored.
+// Grounded in vm.label_values's `label` (pattern `^[a-zA-Z_][a-zA-Z0-9_]{0,127}$`):
+// the value is rendered into the URL path `/api/v1/label/<label>/values`, so the
+// anchored class already blocks metacharacters, but before the fix the `*`
+// quantifier left length unbounded — a ~8 MiB all-`a` label passed validation
+// and was transmitted to VictoriaMetrics (a bounded request-amplification DoS).
+// The `{0,127}` tail is what now rejects an over-128-char value at this seam;
+// a real short label name passes.
+func TestDispatch_VmLabelValues_LabelLengthBounded(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "vm.label_values"
+
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"label": "job"}))
+	// 128 chars total (1 lead + 127 tail) is the ceiling and still accepted.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"label": "a" + strings.Repeat("b", 127)}))
+	// 129 chars — one past the {0,127} tail — is rejected on length by the pattern.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"label": "a" + strings.Repeat("b", 128)}), "label", "pattern")
+}
