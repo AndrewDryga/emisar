@@ -185,6 +185,21 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
+    test "a malformed members value is rejected instead of becoming an empty group", %{
+      conn: conn,
+      token: token
+    } do
+      body =
+        conn
+        |> scim_send(token, :post, ~p"/scim/v2/Groups", %{
+          "externalId" => "grp-malformed",
+          "members" => %{"value" => "okta|member"}
+        })
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
+    end
+
     test "an empty members set empties the group and renders members:[]", %{
       conn: conn,
       token: token,
@@ -410,6 +425,37 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
         |> json_response(400)
 
       assert body["scimType"] == "invalidValue"
+    end
+
+    test "a malformed PATCH members value cannot clear an existing mapped group", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      identity = provision(provider, "okta|protected")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|protected"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-adm", %{
+          "Operations" => [%{"op" => "replace", "path" => "members", "value" => %{}}]
+        })
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
+      assert role_of(account.id, identity.user_id) == :admin
     end
 
     test "a pathless add op carries the member ids in `value`", %{

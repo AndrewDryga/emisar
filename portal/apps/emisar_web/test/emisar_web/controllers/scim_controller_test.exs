@@ -301,6 +301,24 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "400"
     end
 
+    test "a POST with an unparseable active value is rejected before provisioning", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      body =
+        conn
+        |> scim_post(
+          token,
+          ~p"/scim/v2/Users",
+          user_payload("okta|invalid-active", email: "invalid-active@acme.test", active: "maybe")
+        )
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
+      assert {:error, :not_found} = SSO.scim_fetch_user(provider, "okta|invalid-active")
+    end
+
     test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
       # externalId is present (passes the blank gate), but the email carries a
       # space — the provision changeset's email validate_format rejects it. A

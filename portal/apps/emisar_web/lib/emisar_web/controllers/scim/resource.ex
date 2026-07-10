@@ -244,6 +244,18 @@ defmodule EmisarWeb.SCIM.Resource do
 
   def parse_members(_members), do: []
 
+  @doc "Whether a SCIM Group `members` value is absent or a well-formed member array."
+  def valid_members?(nil), do: true
+
+  def valid_members?(members) when is_list(members) do
+    Enum.all?(members, fn
+      %{"value" => value} when is_binary(value) and value != "" -> true
+      _ -> false
+    end)
+  end
+
+  def valid_members?(_members), do: false
+
   @doc """
   Build a SCIM ListResponse from already-serialized resources. `totalResults`
   is the count of returned resources. A filtered probe (`userName eq …`) is

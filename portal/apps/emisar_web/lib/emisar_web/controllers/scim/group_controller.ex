@@ -33,7 +33,7 @@ defmodule EmisarWeb.SCIM.GroupController do
   def create(conn, params) do
     provider = conn.assigns.scim_provider
 
-    if oversized_members?(Map.get(params, "members")) do
+    if invalid_members?(Map.get(params, "members")) do
       render_error(conn, :invalid_scim_group)
     else
       attrs = Resource.parse_group(params)
@@ -55,7 +55,7 @@ defmodule EmisarWeb.SCIM.GroupController do
     provider = conn.assigns.scim_provider
     params = Map.put_new(params, "externalId", external_id)
 
-    if oversized_members?(Map.get(params, "members")) do
+    if invalid_members?(Map.get(params, "members")) do
       render_error(conn, :invalid_scim_group)
     else
       attrs = Resource.parse_group(params)
@@ -206,7 +206,7 @@ defmodule EmisarWeb.SCIM.GroupController do
   defp classify_member_op(_verb, _path, _value), do: :unsupported
 
   defp member_op(kind, value) do
-    if oversized_members?(value),
+    if invalid_members?(value),
       do: {:error, :invalid_scim_group},
       else: {kind, Resource.parse_members(value)}
   end
@@ -231,6 +231,9 @@ defmodule EmisarWeb.SCIM.GroupController do
     do: length(members) > @max_group_member_ids
 
   defp oversized_members?(_members), do: false
+
+  defp invalid_members?(members),
+    do: oversized_members?(members) or not Resource.valid_members?(members)
 
   defp downcase(value) when is_binary(value), do: String.downcase(value)
   defp downcase(_value), do: ""

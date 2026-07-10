@@ -23,13 +23,18 @@ defmodule EmisarWeb.SCIM.UserController do
     provider = conn.assigns.scim_provider
     attrs = Resource.parse_user(params)
 
-    if blank?(attrs.external_id) do
-      bad_request(conn, "invalidValue", "A SCIM User requires an externalId or userName.")
-    else
-      case SSO.scim_provision_user(provider, attrs) do
-        {:ok, result} -> render_user(conn, :created, result)
-        {:error, reason} -> render_error(conn, reason)
-      end
+    cond do
+      blank?(attrs.external_id) ->
+        bad_request(conn, "invalidValue", "A SCIM User requires an externalId or userName.")
+
+      not is_boolean(attrs.active) ->
+        bad_request(conn, "invalidValue", "A SCIM User `active` value must be boolean.")
+
+      true ->
+        case SSO.scim_provision_user(provider, attrs) do
+          {:ok, result} -> render_user(conn, :created, result)
+          {:error, reason} -> render_error(conn, reason)
+        end
     end
   end
 
