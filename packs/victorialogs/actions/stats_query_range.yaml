@@ -4,7 +4,7 @@ title: GET /select/logsql/stats_query_range
 kind: script
 risk: low
 description: >
-  Stats over logs across a time range — a LogsQL query containing a
+  Show stats over logs across a time range — a LogsQL query containing a
   "| stats" pipe, evaluated at each step and returned in Prometheus
   range-query (matrix) format. Use to chart an aggregate over time. Bound
   the range with a _time filter in the query.
