@@ -29,6 +29,7 @@ resource "google_project_service" "apis" {
     "compute.googleapis.com",
     "dns.googleapis.com",
     "secretmanager.googleapis.com",
+    "storage.googleapis.com", # the public pack-registry bucket (packs_registry.tf)
     "certificatemanager.googleapis.com",
     "sqladmin.googleapis.com",
     "servicenetworking.googleapis.com",

@@ -32,6 +32,19 @@ variable "subnet_cidr" {
   }
 }
 
+# ── Pack registry (the one public-read bucket) ────────────────────────────────
+variable "pack_registry_bucket" {
+  type        = string
+  description = "GCS bucket name for public pack-registry artifacts (catalog.json, suggest.json, JSON schemas, immutable pack tarballs). Bucket names are GLOBALLY unique — override if the default is taken."
+  default     = "emisar-pack-registry"
+}
+
+variable "pack_registry_location" {
+  type        = string
+  description = "Location for the pack-registry bucket. A multi-region (US/EU/ASIA) gives world-wide read locality for unauthenticated `emisar pack install`; a single region is cheaper if installs are regional."
+  default     = "US"
+}
+
 # ── Compute ───────────────────────────────────────────────────────────────────
 variable "machine_type" {
   type        = string

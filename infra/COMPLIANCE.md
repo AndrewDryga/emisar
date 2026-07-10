@@ -17,6 +17,8 @@ outside this repo (📋).
 | Control | Status | Where / evidence |
 |---|---|---|
 | No public database surface | ✅ | Cloud SQL private IP only (`db.tf`, VPC peering) |
+| Public data surface, scoped + justified | ⚙️ | ONE public-read GCS bucket for pack artifacts (`packs_registry.tf`) — unauthenticated `emisar pack install` requires it; no secret/account data ever written there; `objectViewer` to `allUsers` on objects only |
+| Pack artifact integrity + retention | ✅ | object versioning on, no lifecycle delete, `prevent_destroy`; publisher SA `objectCreator` only (append, never delete); install trust is the pinned `--hash`, not the transport |
 | Database HA (failover) | ✅ | `availability_type = "REGIONAL"` |
 | Database backups + PITR | ✅ | automated backups, `point_in_time_recovery_enabled`, 30 retained |
 | Database deletion protection | ✅ | `deletion_protection` + Terraform `prevent_destroy` |
@@ -44,7 +46,11 @@ outside this repo (📋).
 - **CC6 Logical & physical access** — dedicated least-privilege SA (no Owner/Editor;
   per-secret accessor, `compute.viewer`/`cloudsql.client` only — no registry role,
   the image is public). No public compute IPs; SSH exclusively through IAP + OS
-  Login. The database has no public IP. Human GCP access + MFA is ⚙️/📋.
+  Login. The database has no public IP. Human GCP access + MFA is ⚙️/📋. The single
+  public surface is the pack-registry bucket (`packs_registry.tf`) — public **read**
+  of pack artifacts only, no write, no listing, and nothing sensitive is ever
+  stored there; its publisher SA (`emisar-pack-publisher`) is bucket-scoped
+  `objectCreator` (append-only, cannot delete history).
 - **CC6.1 / CC6.7 Data at rest & in transit** — TLS 1.2+ at the edge (managed cert,
   RESTRICTED policy) and required to the database; at rest via Google-managed keys
   (CMEK optional). **DNSSEC** + **CAA** make DNS answers tamper-evident and constrain
@@ -77,6 +83,11 @@ outside this repo (📋).
   `cloudsql.client`, and per-secret `secretAccessor`. No Owner/Editor, and no
   registry role (the image is public GHCR). It uses the metadata token — no
   long-lived key.
+- **Pack publisher service account** (`emisar-pack-publisher`): exactly
+  `roles/storage.objectCreator` on the pack-registry bucket — nothing else. Create
+  (append) only: it cannot delete or overwrite-away historical pack versions, and
+  it has no project-wide storage role. Post-publish reads go through the bucket's
+  public `objectViewer` binding (IAM is additive), so it needs no read grant.
 - **Humans**: grant `roles/dns.admin` / project roles to the infra team only; MFA on
   all GCP accounts; SSH via `gcloud compute ssh --tunnel-through-iap` (no keys on the
   box).

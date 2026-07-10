@@ -39,6 +39,16 @@ output "dnssec_ds_record" {
   value       = try(data.google_dns_keys.emisar.key_signing_keys[0].ds_record, "(pending — re-run after the zone's keys generate)")
 }
 
+output "pack_registry_bucket" {
+  description = "GCS bucket holding the published pack-registry artifacts (the publisher and portal write/read here)."
+  value       = google_storage_bucket.pack_registry.name
+}
+
+output "pack_registry_base_url" {
+  description = "Public HTTPS base URL for pack artifacts — install snippets and the portal catalog loader join paths onto this (e.g. <base>/v1/catalog.json)."
+  value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
+}
+
 output "next_steps" {
   description = "One-time steps to bring the GCP stack up (nothing is applied by preparing this code)."
   value       = <<-EOT

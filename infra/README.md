@@ -30,12 +30,13 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /h
 
 | Area | Resources | SOC 2 relevance |
 |---|---|---|
-| Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; no public data-store surface |
+| Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; DB/compute private (the only public read is the pack bucket) |
 | Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates | availability; host integrity |
 | Database | Cloud SQL Postgres 18 (latest major) — private IP, regional HA, PITR backups, SSL-required, deletion-protected | availability, durability/DR, confidentiality |
 | TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
 | Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
 | Image | public GHCR — prod runs the exact artifact self-hosters pull; pin digests | supply-chain transparency |
+| Pack registry | GCS bucket, **public-read** (the one deliberate public surface), object-versioned, create-only publisher SA; serves catalog/suggest/schema + immutable pack tarballs | integrity; supply-chain transparency |
 | IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
 | DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
 | Monitoring | uptime check + alert policies (DB CPU/disk, unreachable) → email channel | detection |
@@ -46,9 +47,32 @@ honest about what's enforced in code vs. configured vs. org-owned.
 ## Files
 
 `network.tf` · `compute.tf` · `db.tf` · `lb.tf` · `secrets.tf` · `iam.tf`
-(SA + audit) · `monitoring.tf` · `dns.tf` · `main.tf` (TFC backend + provider +
+(SA + audit) · `packs_registry.tf` (public pack bucket + publisher SA) ·
+`monitoring.tf` · `dns.tf` · `main.tf` (TFC backend + provider +
 APIs) · `variables.tf` · `outputs.tf` · `versions.tf` ·
 `templates/cloud-init.yaml` · `scripts/verify-cutover.sh`.
+
+## Pack registry (the one public-read surface)
+
+Everything else here is private by default. `packs_registry.tf` is the deliberate,
+documented exception: `emisar pack install <id>` runs **unauthenticated**, so the
+published pack artifacts — `catalog.json`, `suggest.json`, the JSON schemas, and
+the immutable pack tarballs — live in a **public-read** GCS bucket
+(`var.pack_registry_bucket`, default `emisar-pack-registry`). The safety argument:
+nothing secret or account-scoped is ever written there (only pack bytes that are
+already public source in `packs/` plus their metadata), and install trust doesn't
+rest on the transport — snippets pin `--hash sha256:...` and the runner rejects any
+tampered tarball. History is preserved by **object versioning** (no lifecycle
+delete rule; the bucket is `prevent_destroy`), and the CI publisher SA
+(`emisar-pack-publisher`) holds **`objectCreator` only** — it can append new
+artifacts but cannot delete or mutate history. Outputs: `pack_registry_bucket` and
+`pack_registry_base_url`. Recover an accidentally-overwritten mutable object (the
+latest `catalog.json` pointer) from a prior generation:
+
+```bash
+gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catalog.json   # list generations
+gcloud storage cp gs://<bucket>/v1/catalog.json#<generation> gs://<bucket>/v1/catalog.json # restore one
+```
 
 ## Clustering (emisar-specific vs onlytty)
 
