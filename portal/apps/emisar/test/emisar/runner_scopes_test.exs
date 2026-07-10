@@ -187,22 +187,54 @@ defmodule Emisar.RunnerScopesTest do
                )
     end
 
-    test "no membership_id passed = bypasses the check (MCP/system path)", %{
+    test "derives the runner-scope membership from the authenticated subject", %{
       account: account,
+      user: user,
       subject: subject
     } do
-      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "dba")
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
-      # No `requested_by_membership_id` → skips scope check entirely.
-      # Falls through to `:action_not_found` because we haven't seeded
-      # the catalog — that's the expected next error after the gate
-      # passes.
-      assert {:error, :action_not_found} =
+      {:ok, :ok} =
+        Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+
+      assert {:error, :runner_out_of_scope} =
                Runs.dispatch_run(
                  %{
                    runner_id: runner.id,
                    action_id: "x.y",
                    reason: "test"
+                 },
+                 subject
+               )
+    end
+
+    test "ignores a forged attrs membership when applying runner scopes", %{
+      account: account,
+      user: user,
+      subject: subject
+    } do
+      {:ok, subject_membership} = Accounts.fetch_membership_for_session(user, nil)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+      other_user = Fixtures.Users.create_user()
+
+      forged_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: other_user.id,
+          role: "operator"
+        )
+
+      {:ok, :ok} =
+        Runners.replace_runner_scopes(subject_membership, [{"group", "dba"}], subject)
+
+      assert {:error, :runner_out_of_scope} =
+               Runs.dispatch_run(
+                 %{
+                   runner_id: runner.id,
+                   action_id: "x.y",
+                   reason: "test",
+                   requested_by_membership_id: forged_membership.id
                  },
                  subject
                )

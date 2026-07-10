@@ -135,8 +135,9 @@ defmodule Emisar.ApprovalsTest do
         role: "owner"
       )
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    operator_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+    mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
 
@@ -165,7 +166,7 @@ defmodule Emisar.ApprovalsTest do
       idempotency_key: "idem-#{System.unique_integer([:positive])}"
     }
 
-    %{attrs: attrs, subject: subject}
+    %{attrs: attrs, mcp_subject: mcp_subject, operator_subject: operator_subject}
   end
 
   # Account + an online (subscribed) runner + a parked request snapshotting
@@ -671,25 +672,26 @@ defmodule Emisar.ApprovalsTest do
     # dispatch transaction; the approval-gated MCP dispatch path is its real
     # exercise — a gated run and its request must commit atomically.
     test "approval-gated MCP dispatch creates a pending run and request through the domain path" do
-      %{attrs: attrs, subject: subject} = approval_gated_mcp_dispatch_setup()
+      %{attrs: attrs, mcp_subject: mcp_subject, operator_subject: operator_subject} =
+        approval_gated_mcp_dispatch_setup()
 
       assert {:ok, :pending_approval, %ActionRun{status: :pending_approval} = run} =
-               Runs.dispatch_run(attrs, subject)
+               Runs.dispatch_run(attrs, mcp_subject)
 
       assert {:ok, [%Request{run_id: run_id, status: :pending}], _} =
-               Approvals.list_pending_approval_requests(subject)
+               Approvals.list_pending_approval_requests(operator_subject)
 
       assert run_id == run.id
     end
 
     test "an idempotency-replayed require-approval dispatch files only ONE request" do
-      %{attrs: attrs, subject: subject} = approval_gated_mcp_dispatch_setup()
+      %{attrs: attrs, mcp_subject: mcp_subject} = approval_gated_mcp_dispatch_setup()
 
       # Two calls with the same Idempotency-Key resolve to the SAME run; the
       # request insert (composed into create_run's Multi, on_conflict :nothing)
       # must not file a second request for it.
-      assert {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, subject)
-      assert {:ok, :pending_approval, run2} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, mcp_subject)
+      assert {:ok, :pending_approval, run2} = Runs.dispatch_run(attrs, mcp_subject)
       assert run1.id == run2.id
 
       requests = Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.all()
@@ -923,8 +925,8 @@ defmodule Emisar.ApprovalsTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {:ok, _} =
         Runs.create_run(%{
@@ -2153,8 +2155,8 @@ defmodule Emisar.ApprovalsTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
       Emisar.Runners.subscribe_runner_transport(runner)
@@ -2190,7 +2192,7 @@ defmodule Emisar.ApprovalsTest do
         api_key_id: key.id
       }
 
-      %{subject: subject, attrs: attrs, grant: grant}
+      %{subject: mcp_subject, attrs: attrs, grant: grant}
     end
 
     test "a grant-matched dispatch consumes exactly one use and runs" do
@@ -2246,8 +2248,9 @@ defmodule Emisar.ApprovalsTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      operator_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
 
@@ -2267,11 +2270,12 @@ defmodule Emisar.ApprovalsTest do
         )
 
       Emisar.Runners.subscribe_runner_transport(runner)
-      %{subject: subject, key: key, runner: runner}
+      %{mcp_subject: mcp_subject, operator_subject: operator_subject, key: key, runner: runner}
     end
 
     test "matching grant bypasses approval and runs immediately", %{
-      subject: subject,
+      mcp_subject: mcp_subject,
+      operator_subject: operator_subject,
       key: key,
       runner: runner
     } do
@@ -2285,17 +2289,20 @@ defmodule Emisar.ApprovalsTest do
       }
 
       assert {:ok, :pending_approval, run1} =
-               Runs.dispatch_run(attrs, subject)
+               Runs.dispatch_run(attrs, mcp_subject)
 
       request =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
 
       {:ok, _} =
-        Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :any_args)
+        Approvals.approve_request(request, operator_subject, nil,
+          duration: :one_day,
+          scope: :any_args
+        )
 
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
-      assert {:ok, :running, run2} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, :running, run2} = Runs.dispatch_run(attrs, mcp_subject)
       assert run2.id != run1.id
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
@@ -2307,7 +2314,8 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test ":once approval doesn't create a reusable grant", %{
-      subject: subject,
+      mcp_subject: mcp_subject,
+      operator_subject: operator_subject,
       key: key,
       runner: runner
     } do
@@ -2321,15 +2329,15 @@ defmodule Emisar.ApprovalsTest do
       }
 
       {:ok, :pending_approval, run1} =
-        Runs.dispatch_run(attrs, subject)
+        Runs.dispatch_run(attrs, mcp_subject)
 
       request =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
 
-      {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :once)
+      {:ok, _} = Approvals.approve_request(request, operator_subject, nil, duration: :once)
 
       assert {:ok, :pending_approval, _run2} =
-               Runs.dispatch_run(attrs, subject)
+               Runs.dispatch_run(attrs, mcp_subject)
     end
   end
 

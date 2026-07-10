@@ -62,6 +62,42 @@ defmodule Emisar.Runs.ActionRunTest do
       refute ActionRun.terminal?(nil)
       refute ActionRun.terminal?("nonsense")
     end
+
+    test "failure predicates classify every terminal non-success" do
+      failures = @terminal -- [:success]
+
+      assert Enum.sort(ActionRun.failure_statuses()) == Enum.sort(failures)
+      assert Enum.all?(failures, &ActionRun.failure?/1)
+      refute ActionRun.failure?(:success)
+      refute ActionRun.failure?(:pending)
+    end
+  end
+
+  describe "Query.filters/0" do
+    test "offers every persisted status and source" do
+      filters = ActionRun.Query.filters()
+
+      status_values =
+        filters
+        |> Enum.find(&(&1.name == :status))
+        |> Map.fetch!(:values)
+        |> Enum.map(&elem(&1, 0))
+
+      source_values =
+        filters
+        |> Enum.find(&(&1.name == :source))
+        |> Map.fetch!(:values)
+        |> Enum.map(&elem(&1, 0))
+
+      expected_statuses =
+        ActionRun |> Ecto.Enum.values(:status) |> Enum.map(&to_string/1) |> Enum.sort()
+
+      expected_sources =
+        ActionRun |> Ecto.Enum.values(:source) |> Enum.map(&to_string/1) |> Enum.sort()
+
+      assert Enum.sort(status_values) == expected_statuses
+      assert Enum.sort(source_values) == expected_sources
+    end
   end
 
   describe "create_changeset/2" do

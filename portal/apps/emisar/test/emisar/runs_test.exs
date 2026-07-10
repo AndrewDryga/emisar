@@ -603,6 +603,22 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
     end
 
+    test "an MCP subject cannot attribute a dispatch to another API key" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+
+      {_raw, authentic_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {_raw, forged_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      subject = Emisar.Auth.Subject.for_api_key(authentic_key, account)
+
+      attrs = base_attrs(account.id, runner.id, %{source: "mcp", api_key_id: forged_key.id})
+
+      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
+      assert run.api_key_id == authentic_key.id
+    end
+
     test "audits only the policy decision + terminal outcome, decision first" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1074,7 +1090,7 @@ defmodule Emisar.RunsTest do
         "overrides" => []
       }
 
-      {subject, attrs} = replayable_dispatch(deny_high)
+      {subject, _operator_subject, attrs} = replayable_dispatch(deny_high)
 
       assert {:error, :denied_by_policy, reason} = Runs.dispatch_run(attrs, subject)
       assert {:error, :denied_by_policy, ^reason} = Runs.dispatch_run(attrs, subject)
@@ -1108,7 +1124,7 @@ defmodule Emisar.RunsTest do
         "overrides" => []
       }
 
-      {subject, attrs} = replayable_dispatch(approval_high)
+      {subject, operator_subject, attrs} = replayable_dispatch(approval_high)
 
       assert {:ok, :pending_approval, %ActionRun{id: id}} = Runs.dispatch_run(attrs, subject)
       assert {:ok, :pending_approval, %ActionRun{id: ^id}} = Runs.dispatch_run(attrs, subject)
@@ -1117,7 +1133,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, [%ActionRun{status: :pending_approval}], _} =
                Runs.list_recent_runs(subject, limit: 50)
 
-      assert {:ok, [_one], _} = Approvals.list_pending_approval_requests(subject)
+      assert {:ok, [_one], _} = Approvals.list_pending_approval_requests(operator_subject)
 
       # …and no second run_action envelope was ever pushed (it never dispatched).
       refute_receive {:cloud_to_runner, _}, 100
@@ -1155,10 +1171,12 @@ defmodule Emisar.RunsTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      operator_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      mcp_subject = Emisar.Auth.Subject.for_api_key(key, account)
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
@@ -1172,7 +1190,7 @@ defmodule Emisar.RunsTest do
           idempotency_key: "idem-#{System.unique_integer([:positive])}"
         })
 
-      {subject, attrs}
+      {mcp_subject, operator_subject, attrs}
     end
   end
 
@@ -1874,9 +1892,21 @@ defmodule Emisar.RunsTest do
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
       Emisar.Runs.subscribe_account_runs(account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
                Runs.cancel_run(run, subject, "user pressed stop")
+
+      assert_receive {:cloud_to_runner,
+                      %{
+                        "type" => "cancel",
+                        "request_id" => request_id,
+                        "reason" => "user pressed stop"
+                      }},
+                     500
+
+      assert request_id == run.request_id
+      assert Runs.peek_run_by_id(run.id).status == :cancelled
 
       # Payload contract: runner is preloaded so subscribers (e.g.
       # RunDetailLive's meta strip) can render `runner.name` without

@@ -1,5 +1,6 @@
 defmodule Emisar.Runs.ActionRun.Query do
   use Emisar, :query
+  alias Emisar.{ApiKeys, Runners, Users}
   alias Emisar.Repo.{Filter, Like}
 
   def all,
@@ -79,7 +80,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         queryable,
         :left,
         [runs: r],
-        runner in ^Emisar.Runners.Runner.Query.not_deleted(),
+        runner in ^Runners.Runner.Query.not_deleted(),
         on: r.runner_id == runner.id,
         as: ^binding
       )
@@ -99,7 +100,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         queryable,
         :left,
         [runs: r],
-        api_key in ^Emisar.ApiKeys.ApiKey.Query.not_deleted(),
+        api_key in ^ApiKeys.ApiKey.Query.not_deleted(),
         on: r.api_key_id == api_key.id,
         as: ^binding
       )
@@ -115,7 +116,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         queryable,
         :left,
         [runs: r],
-        requested_by in ^Emisar.Users.User.Query.not_deleted(),
+        requested_by in ^Users.User.Query.not_deleted(),
         on: r.requested_by_id == requested_by.id,
         as: ^binding
       )
@@ -159,8 +160,8 @@ defmodule Emisar.Runs.ActionRun.Query do
   @impl Emisar.Repo.Query
   def preloads,
     do: [
-      runner: {Emisar.Runners.Runner.Query.not_deleted(), Emisar.Runners.Runner.Query.preloads()},
-      api_key: {Emisar.ApiKeys.ApiKey.Query.not_deleted(), Emisar.ApiKeys.ApiKey.Query.preloads()}
+      runner: {Runners.Runner.Query.not_deleted(), Runners.Runner.Query.preloads()},
+      api_key: {ApiKeys.ApiKey.Query.not_deleted(), ApiKeys.ApiKey.Query.preloads()}
     ]
 
   @impl Emisar.Repo.Query
@@ -173,14 +174,17 @@ defmodule Emisar.Runs.ActionRun.Query do
         values: [
           {"pending", "Pending"},
           {"pending_approval", "Pending approval"},
+          {"denied", "Denied"},
           {"sent", "Sent"},
           {"running", "Running"},
           {"success", "Success"},
           {"failed", "Failed"},
           {"error", "Error"},
-          {"refused", "Refused"},
+          {"validation_failed", "Validation failed"},
+          {"unknown_action", "Unknown action"},
           {"cancelled", "Cancelled"},
-          {"timed_out", "Timed out"}
+          {"timed_out", "Timed out"},
+          {"refused", "Refused"}
         ],
         fun: fn queryable, statuses -> {queryable, dynamic([runs: r], r.status in ^statuses)} end
       },
@@ -221,7 +225,8 @@ defmodule Emisar.Runs.ActionRun.Query do
         values: [
           {"operator", "Operator"},
           {"mcp", "LLM agent"},
-          {"runbook", "Runbook"}
+          {"runbook", "Runbook"},
+          {"scheduled", "Scheduled"}
         ],
         fun: fn queryable, sources -> {queryable, dynamic([runs: r], r.source in ^sources)} end
       },

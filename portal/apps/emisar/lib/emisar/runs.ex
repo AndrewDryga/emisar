@@ -7,7 +7,7 @@ defmodule Emisar.Runs do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, RequestContext, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -369,6 +369,7 @@ defmodule Emisar.Runs do
            ) do
       attrs
       |> put_dispatcher_context(subject)
+      |> put_dispatcher_identity(subject)
       |> dispatch_run_for_account(account_id)
     end
   end
@@ -385,6 +386,33 @@ defmodule Emisar.Runs do
   end
 
   defp put_dispatcher_context(attrs, _subject), do: attrs
+
+  # The authenticated subject, not wire attrs, owns both dispatch attribution
+  # and the runner-scope membership. This keeps a boundary regression from
+  # letting a user name another membership (or an API key another credential)
+  # to widen its fleet reach or misattribute the run.
+  defp put_dispatcher_identity(
+         attrs,
+         %Subject{actor: %Users.User{id: user_id}, membership_id: membership_id}
+       ) do
+    attrs
+    |> Map.put(:requested_by_id, user_id)
+    |> Map.put(:requested_by_membership_id, membership_id)
+    |> Map.delete(:api_key_id)
+  end
+
+  defp put_dispatcher_identity(
+         attrs,
+         %Subject{actor: %ApiKeys.ApiKey{id: api_key_id}, membership_id: membership_id}
+       ) do
+    attrs
+    |> Map.put(:api_key_id, api_key_id)
+    |> Map.put(:requested_by_membership_id, membership_id)
+    |> Map.delete(:requested_by_id)
+  end
+
+  defp put_dispatcher_identity(attrs, %Subject{membership_id: membership_id}),
+    do: Map.put(attrs, :requested_by_membership_id, membership_id)
 
   @doc """
   Internal: dispatch a run for an explicit account with no `%Subject{}`.
@@ -1096,10 +1124,7 @@ defmodule Emisar.Runs do
 
     Multi.new()
     |> cancel_run_in_multi(run.id, reason)
-    |> Multi.insert(
-      :cancel_requested_audit,
-      Audit.Events.run_cancel_requested(subject, run, reason)
-    )
+    |> add_cancel_requested_audit(subject, reason)
     |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
     |> Repo.commit_multi(
       after_commit: fn changes ->
@@ -1107,27 +1132,25 @@ defmodule Emisar.Runs do
         Emisar.Approvals.broadcast_request_cancelled(changes.request_cancel)
       end
     )
-    |> case do
-      {:ok, %{run_cancel: {:cancelled, cancelled}}} -> {:ok, cancelled}
-      {:ok, %{run_cancel: {:noop, unchanged}}} -> {:ok, unchanged}
-      {:ok, %{run_cancel: :no_run}} -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
-    end
+    |> cancel_run_result()
   end
 
   defp cancel_run_for_status(%ActionRun{status: status} = run, subject, reason) do
     if ActionRun.terminal?(status) do
       {:ok, run}
     else
-      # In-flight (sent / running): the runner is executing, so tell it to stop.
-      Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
-        "type" => "cancel",
-        "request_id" => run.request_id,
-        "reason" => reason
-      })
+      reason = reason || "operator cancelled"
 
-      Audit.record(Audit.Events.run_cancel_requested(subject, run, reason))
-      mark_cancelled(run, reason || "operator cancelled")
+      Multi.new()
+      |> cancel_run_in_multi(run.id, reason)
+      |> add_cancel_requested_audit(subject, reason)
+      |> Repo.commit_multi(
+        after_commit: fn %{run_cancel: run_cancel} ->
+          deliver_cancel_to_runner(run_cancel, reason)
+          broadcast_cancelled_run(run_cancel)
+        end
+      )
+      |> cancel_run_result()
     end
   end
 
@@ -1166,6 +1189,37 @@ defmodule Emisar.Runs do
       _repo, %{run_cancel: _} -> {:ok, nil}
     end)
   end
+
+  # The cancellation audit describes an actual state transition. A stale
+  # cancellation may lock a run another writer already settled, which is a
+  # no-op rather than a second cancellation request.
+  defp add_cancel_requested_audit(multi, %Subject{} = subject, reason) do
+    Multi.run(multi, :cancel_requested_audit, fn
+      repo, %{run_cancel: {:cancelled, cancelled}} ->
+        repo.insert(Audit.Events.run_cancel_requested(subject, cancelled, reason))
+
+      _repo, %{run_cancel: _} ->
+        {:ok, nil}
+    end)
+  end
+
+  defp cancel_run_result({:ok, %{run_cancel: {:cancelled, cancelled}}}), do: {:ok, cancelled}
+  defp cancel_run_result({:ok, %{run_cancel: {:noop, unchanged}}}), do: {:ok, unchanged}
+  defp cancel_run_result({:ok, %{run_cancel: :no_run}}), do: {:error, :not_found}
+  defp cancel_run_result({:error, reason}), do: {:error, reason}
+
+  # Publish a cancellation only after its state + audit record committed. A
+  # dispatch that starts afterward then observes `:cancelled` and refuses to
+  # publish an action instead of receiving this cancel before the action exists.
+  defp deliver_cancel_to_runner({:cancelled, %ActionRun{} = run}, reason) do
+    Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
+      "type" => "cancel",
+      "request_id" => run.request_id,
+      "reason" => reason
+    })
+  end
+
+  defp deliver_cancel_to_runner(_, _reason), do: :ok
 
   defp cancel_run_locked(repo, run_id, reason) do
     loaded_run =
