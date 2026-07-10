@@ -26,7 +26,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" --quiet --eval \"rs.stepDown({{ args.seconds }})\""
+      - "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');rs.stepDown({{ args.seconds }})\""
   timeout: 60s
 cancel_grace: 15s
 output:

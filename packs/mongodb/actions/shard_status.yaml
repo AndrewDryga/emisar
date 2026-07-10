@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'sh.status(true)'"
+      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");sh.status(true)'"
   timeout: 60s
 output:
   parser: text

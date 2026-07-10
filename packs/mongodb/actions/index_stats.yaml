@@ -25,7 +25,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" --quiet --eval 'JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").aggregate([{$indexStats:{}}]).toArray())'"
+      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").aggregate([{$indexStats:{}}]).toArray())'"
   timeout: 30s
 output:
   parser: json

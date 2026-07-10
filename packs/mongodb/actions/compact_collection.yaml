@@ -30,7 +30,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" --quiet --eval \"db.getSiblingDB('{{ args.db_name }}').runCommand({compact: '{{ args.collection }}'})\""
+      - "mongosh --nodb --quiet --eval \"db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('{{ args.db_name }}').runCommand({compact: '{{ args.collection }}'})\""
   timeout: 1800s
 cancel_grace: 60s
 output:

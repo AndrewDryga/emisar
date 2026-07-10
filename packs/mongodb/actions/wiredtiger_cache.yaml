@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.serverStatus().wiredTiger.cache)'"
+      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.serverStatus().wiredTiger.cache)'"
   timeout: 30s
 output:
   parser: json

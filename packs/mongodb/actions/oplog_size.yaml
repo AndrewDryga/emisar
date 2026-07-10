@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.getSiblingDB('local').runCommand({collStats:'oplog.rs'}))\""
+      - "mongosh '--nodb' '--quiet' '--eval' \"db=new Mongo(process.env.MONGO_URI).getDB('admin');JSON.stringify(db.getSiblingDB('local').runCommand({collStats:'oplog.rs'}))\""
   timeout: 30s
 output:
   parser: json

@@ -1,3 +1,8 @@
+# 2026-07-09 (m40): every action now connects with `new Mongo(process.env.MONGO_URI)`
+# inside a `mongosh --nodb --eval` (URI read from env, never on argv/proc-cmdline).
+# The `db=` assignment rebinds the shell's `db`/`rs`/`sh` helpers to that connection,
+# so the evals below are unchanged in behavior — exit codes and shapes are identical;
+# these cases stay green. MONGO_URI still reaches the child via inherit_env.
 defaults:
   env:
     MONGO_URI: mongodb://root:testpass@mongodb:27017/?authSource=admin
