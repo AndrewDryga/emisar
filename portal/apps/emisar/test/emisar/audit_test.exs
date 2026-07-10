@@ -134,12 +134,12 @@ defmodule Emisar.AuditTest do
       assert Repo.reload!(event).id == event.id
     end
 
-    test "an invalid changeset surfaces {:error, %Ecto.Changeset{}} (no insert)" do
+    test "a blank event_type fails validation and writes no row" do
       account = Fixtures.Accounts.create_account()
       before = Repo.aggregate(Audit.Event, :count, :id)
 
-      # event_type is required; an empty one fails the changeset rather than writing.
-      assert {:error, %Ecto.Changeset{}} = Audit.record(Audit.changeset(account.id, ""))
+      assert {:error, changeset} = Audit.record(Audit.changeset(account.id, ""))
+      assert "can't be blank" in errors_on(changeset).event_type
       assert Repo.aggregate(Audit.Event, :count, :id) == before
     end
   end

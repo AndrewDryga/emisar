@@ -1466,8 +1466,8 @@ defmodule Emisar.BillingTest do
 
       assert {:ok, %Subscription{status: "past_due"}} = Billing.apply_webhook_event(newer)
 
-      # A partial stale capture with a different event id cannot prove it is
-      # newer than the persisted Paddle timestamp, so it is a no-op.
+      # A partial capture carrying NO `updated_at` can't prove it postdates the
+      # stored Paddle timestamp, so the timestamp-absent fallback drops it.
       stale = %{
         "event_id" => "evt_upd_stale_old",
         "event_type" => "subscription.updated",

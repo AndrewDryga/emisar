@@ -2239,7 +2239,8 @@ defmodule Emisar.ApprovalsTest do
 
       # The run insert fails inside the Multi, so the composed grant consume
       # rolls back with it — no use is burned without a durable run.
-      assert {:error, %Ecto.Changeset{}} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
+      assert {:error, changeset} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
+      assert "is too large (max 262144 bytes serialized)" in errors_on(changeset).args
       assert Repo.reload!(grant).uses_count == 0
     end
 

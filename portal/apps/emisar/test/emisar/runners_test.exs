@@ -1169,9 +1169,10 @@ defmodule Emisar.RunnersTest do
       subject: subject,
       member: member
     } do
-      assert {:error, %Ecto.Changeset{}} =
+      assert {:error, changeset} =
                Runners.replace_runner_scopes(member, [{"group", ""}], subject)
 
+      assert "can't be blank" in errors_on(changeset).scope_value
       assert Runners.runner_scopes_for_membership(member.id) == []
     end
 
@@ -1353,7 +1354,7 @@ defmodule Emisar.RunnersTest do
       changeset = Runners.change_enrollment_key(%{"max_uses" => 0})
 
       refute changeset.valid?
-      assert changeset.errors[:max_uses]
+      assert "must be greater than 0" in errors_on(changeset).max_uses
     end
   end
 

@@ -79,7 +79,7 @@ defmodule Emisar.UsersTest do
 
       assert {:error, changeset} = Users.register_user(%{email: email, full_name: "TooLong"})
 
-      assert changeset.errors[:email]
+      assert "should be at most 160 character(s)" in errors_on(changeset).email
       assert {:error, :not_found} = Users.fetch_user_by_email(email)
     end
 
@@ -206,7 +206,8 @@ defmodule Emisar.UsersTest do
     end
 
     test "rejects a malformed email", %{subject: subject} do
-      assert {:error, %Ecto.Changeset{}} = Users.update_user_email("not-an-email", subject)
+      assert {:error, changeset} = Users.update_user_email("not-an-email", subject)
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
     end
 
     test "accepts an email of exactly 160 characters", %{subject: subject} do

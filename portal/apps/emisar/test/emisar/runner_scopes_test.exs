@@ -125,8 +125,10 @@ defmodule Emisar.RunnerScopesTest do
       subject: subject,
       membership: membership
     } do
-      assert {:error, %Ecto.Changeset{}} =
+      assert {:error, changeset} =
                Runners.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
+
+      assert "is invalid" in errors_on(changeset).scope_type
     end
 
     test "an operator (no manage_team permission) cannot widen scope → :unauthorized", %{
