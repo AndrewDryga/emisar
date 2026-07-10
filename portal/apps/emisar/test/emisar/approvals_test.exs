@@ -883,6 +883,21 @@ defmodule Emisar.ApprovalsTest do
       assert {:error, :not_found} = Approvals.approve_request(req_a, subject_b, "wrong account")
     end
 
+    test "ABUSE: a forged request struct cannot cross the account boundary" do
+      {account_a, run_a} = run_fixture()
+      decider_a = operator_subject(account_a)
+      {:ok, request_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+
+      account_b = Fixtures.Accounts.create_account()
+      subject_b = operator_subject(account_b)
+      forged_request = %{request_a | account_id: account_b.id}
+
+      assert {:error, :not_found} = Approvals.approve_request(forged_request, subject_b, "forged")
+      assert %Request{status: :pending} = Repo.reload!(request_a)
+      assert approved_count(request_a.id) == 0
+      assert %ActionRun{status: :pending_approval} = Repo.reload!(run_a)
+    end
+
     test "the second operator's decision loses with :already_decided" do
       {account, run} = run_fixture()
       {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
@@ -2775,6 +2790,21 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "expire_overdue_requests/1" do
+    test "expires a request exactly at its decision deadline" do
+      {_account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      now = DateTime.utc_now()
+
+      {1, _} =
+        Request.Query.all()
+        |> Request.Query.by_id(request.id)
+        |> Repo.update_all(set: [expires_at: now])
+
+      assert Approvals.expire_overdue_requests(now) == 1
+      assert %Request{status: :expired} = Repo.reload!(request)
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+    end
+
     test "transitions pending requests past expires_at to expired + cancels the run" do
       {account, run} = run_fixture()
       user = Fixtures.Users.create_user()

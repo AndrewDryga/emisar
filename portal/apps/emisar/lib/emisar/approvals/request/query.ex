@@ -27,8 +27,8 @@ defmodule Emisar.Approvals.Request.Query do
 
   def limit_to(queryable, n), do: limit(queryable, ^n)
 
-  def expired_at_before(queryable, now),
-    do: where(queryable, [requests: r], not is_nil(r.expires_at) and r.expires_at < ^now)
+  def expired_at_at_or_before(queryable, now),
+    do: where(queryable, [requests: r], not is_nil(r.expires_at) and r.expires_at <= ^now)
 
   @doc """
   Row lock for the finalize re-read in `record_decision` — the decision is
@@ -73,7 +73,10 @@ defmodule Emisar.Approvals.Request.Query do
   """
   def expire_pending(id, now) do
     all()
-    |> where([requests: r], r.id == ^id and r.status == :pending)
+    |> where(
+      [requests: r],
+      r.id == ^id and r.status == :pending and not is_nil(r.expires_at) and r.expires_at <= ^now
+    )
     |> update(
       set: [
         status: :expired,

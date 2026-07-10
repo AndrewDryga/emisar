@@ -437,18 +437,25 @@ defmodule Emisar.Approvals do
   def deny_request(%Request{} = r, %Subject{} = s, reason \\ nil),
     do: record_decision(r, s, :deny, reason, [])
 
-  # The single decision path. Pre-Multi gates run in IL-3 order (permission →
-  # account scope → self-approval → pack-trust for approve); the Multi inserts
-  # this decider's Decision row (DB-unique per request+decider), re-reads the
-  # LOCKED request, and finalizes on the locked row so concurrent votes
-  # serialize. Dispatch fires only after a committed :approved transition.
-  defp record_decision(%Request{} = request, %Subject{} = subject, decision, reason, opts) do
+  # The single decision path. Fetch the request through the subject scope before
+  # evaluating any request-derived guard: callers can hold a stale struct, and
+  # must not be able to pair another account's id with their own account_id.
+  # The Multi then re-reads the same scoped row under lock, inserts this
+  # decider's DB-unique vote, and finalizes on that locked row so concurrent
+  # votes serialize. Dispatch fires only after a committed :approved transition.
+  defp record_decision(
+         %Request{} = supplied_request,
+         %Subject{} = subject,
+         decision,
+         reason,
+         opts
+       ) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, request.account_id),
+         {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- check_self_approval(decision, request, subject),
          :ok <- recheck_trust(decision, request),
          :ok <- check_attestation_fresh(decision, request) do
@@ -462,17 +469,18 @@ defmodule Emisar.Approvals do
 
       result =
         Multi.new()
-        |> Multi.run(:decision, fn _repo, _changes ->
-          insert_decision(request, by_user_id, decision)
-        end)
         |> Multi.run(:locked, fn repo, _changes ->
           locked =
             Request.Query.all()
             |> Request.Query.by_id(request.id)
+            |> Authorizer.for_subject(subject)
             |> Request.Query.lock_for_update()
             |> repo.one()
 
           {:ok, locked}
+        end)
+        |> Multi.run(:decision, fn _repo, %{locked: locked} ->
+          insert_decision(locked, by_user_id, decision)
         end)
         |> Multi.run(:outcome, fn repo, %{locked: locked} ->
           finalize(repo, locked, decision, by_user_id, reason, grant_attrs)
@@ -503,6 +511,13 @@ defmodule Emisar.Approvals do
         decision_result(changes)
       end
     end
+  end
+
+  defp fetch_approval_request_for_decision(id, %Subject{} = subject) do
+    Request.Query.all()
+    |> Request.Query.by_id(id)
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch(Request.Query)
   end
 
   # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
@@ -1125,11 +1140,14 @@ defmodule Emisar.Approvals do
   def expire_overdue_requests(now \\ DateTime.utc_now()) do
     expiring =
       Request.Query.pending()
-      |> Request.Query.expired_at_before(now)
+      |> Request.Query.expired_at_at_or_before(now)
       |> Repo.all()
 
-    Enum.each(expiring, &expire_one(&1, now))
-    length(expiring)
+    Enum.count(expiring, &expired?(&1, now))
+  end
+
+  defp expired?(%Request{} = request, now) do
+    match?({:ok, _}, expire_one(request, now))
   end
 
   defp expire_one(%Request{} = request, now) do
