@@ -29,6 +29,30 @@ mix hex.outdated    # how far behind we are (stale = unpatched)
 - **Provenance:** is the package widely used and maintained? Unmaintained or
   single-commit packages are risk.
 
+## Release age (the too-fresh gate)
+
+A dependency release published hours ago is a supply-chain risk — a compromised
+maintainer account, a typosquat, a rushed malicious minor — not harmless churn.
+So a bumped version must clear a release-age window before it can merge.
+
+- **Enforcement** is CI, not the package managers. Native minimum-age support
+  (verified 2026-07): **Hex/Mix** — none at the resolver (`mix deps.get` takes
+  whatever the lock pins); **Go modules** — none (the proxy serves any version
+  regardless of age); **npm** — `.npmrc` `minimum-release-age` exists (npm ≥ 11)
+  but emisar ships no npm manifests, so nothing to configure. **Dependabot
+  `cooldown`** (`.github/dependabot.yml`) only throttles the PRs *Dependabot*
+  opens — it is PR-noise control, not a boundary.
+- **The gate:** `.agent/scripts/dep-age-gate.py` runs in CI
+  (`.github/workflows/dep-age.yml`) on every PR touching a lockfile. It diffs
+  dependency versions against the base and rejects any added/upgraded version
+  younger than its window: **patch 7d · minor 14d · major 30d** (mirrors the
+  Dependabot cooldown; keep both in sync). Run it locally with
+  `python3 .agent/scripts/dep-age-gate.py check`.
+- **Adding/bumping a dep:** prefer a version already past its window, or expect
+  the gate to hold the PR until it ages. For an urgent security fix that can't
+  wait, add an audited entry to `.dep-age-allow` (ecosystem · package · version ·
+  reason — reason is mandatory) and remove it once the version has aged out.
+
 ## Advisories
 
 For a flagged or suspect package, look up its advisories (GitHub Advisory DB /

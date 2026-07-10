@@ -1,0 +1,58 @@
+name: Dependency age gate
+
+# Supply-chain enforcement: reject a PR that bumps a dependency to a version
+# published more recently than its release-age window (see
+# .agent/scripts/dep-age-gate.py). Dependabot's `cooldown` only throttles the
+# PRs Dependabot itself opens; this gate enforces the same windows on ANY PR
+# that touches a lockfile — a human bump, another bot, a hand-edited lock.
+#
+# Runs on every PR (and push to main) that changes a lockfile, the gate script,
+# the allowlist, or this workflow. The offline self-test runs unconditionally so
+# a change to the gate logic is exercised even when no lockfile moved.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "portal/mix.lock"
+      - "runner/go.mod"
+      - "mcp/go.mod"
+      - ".dep-age-allow"
+      - ".agent/scripts/dep-age-gate.py"
+      - ".github/workflows/dep-age.yml"
+  push:
+    branches: [main]
+    paths:
+      - "portal/mix.lock"
+      - "runner/go.mod"
+      - "mcp/go.mod"
+      - ".dep-age-allow"
+      - ".agent/scripts/dep-age-gate.py"
+      - ".github/workflows/dep-age.yml"
+
+concurrency:
+  group: dep-age-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dep-age:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # Need the base commit in history to diff lockfile versions against.
+          fetch-depth: 0
+
+      - name: Self-test (offline fixtures — reject-too-fresh / allow-old-enough)
+        run: python3 .agent/scripts/dep-age-gate.py self-test
+
+      - name: Enforce dependency release age
+        # PR: diff the head lockfiles against the PR's base commit — exactly the
+        # versions this PR introduces. Push to main: diff against the prior tip.
+        env:
+          DEP_AGE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 .agent/scripts/dep-age-gate.py check

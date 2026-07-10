@@ -1,0 +1,21 @@
+# dep-age-gate allowlist — the escape hatch for an urgent dependency bump that
+# must land BEFORE its release-age window elapses (see .agent/scripts/dep-age-gate.py).
+#
+# emisar is a security product, so the normal rule is: a freshly-published
+# dependency release waits out its cooldown window before it can merge. The one
+# legitimate exception is an urgent security fix — a patch for an actively
+# exploited CVE in a dependency — where waiting is the larger risk. That is a
+# deliberate, reviewable decision, so it leaves a paper trail here rather than a
+# silent flag or a CI override.
+#
+# One entry per line:  <ecosystem> <package> <version> <reason>
+#   ecosystem  hex | go
+#   package    exact package/module name as it appears in the lockfile
+#   version    exact version being allowed (hex: "1.2.3", go: "v1.2.3")
+#   reason     REQUIRED, non-empty — the CVE / advisory id and why it can't wait
+#
+# The reason is mandatory: a bare exemption is a hard error. Remove the entry
+# once the version has aged past its window (the gate would pass on its own then).
+#
+# Example (delete once real entries exist):
+#   hex plug 1.99.1 GHSA-xxxx-yyyy-zzzz — RCE in Plug.Conn, patched only in 1.99.1, actively exploited
