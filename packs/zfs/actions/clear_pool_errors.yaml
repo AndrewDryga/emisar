@@ -17,20 +17,20 @@ args:
     required: true
     description: Pool name.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,63}$"
   - name: device
     type: string
     required: false
     default: ""
     description: Specific device (empty for all).
     validation:
-      pattern: "^[a-zA-Z0-9_/.\\-]{0,128}$"
+      pattern: "^([a-zA-Z0-9_/.][a-zA-Z0-9_/.\\-]{0,127})?$"
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "zpool clear {{ args.pool }} {{ args.device }}"
+      - "zpool clear -- {{ args.pool }} {{ args.device }}"
   timeout: 30s
 output:
   parser: text
