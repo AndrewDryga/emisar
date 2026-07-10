@@ -11,7 +11,7 @@ args:
     required: true
     description: Package name.
     validation:
-      pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_+.\\-]{0,127}$"
 execution:
   command: {binary: rpm, argv: ["-qi", "{{ args.package }}"]}
   timeout: 15s
