@@ -2,11 +2,14 @@
 // (Claude Desktop, Cursor, Claude Code, Gemini CLI, Codex CLI, …) that
 // only speak stdio JSON-RPC.
 //
-// The bridge does NOTHING that the portal couldn't do — it just
-// forwards every JSON-RPC frame to POST /api/mcp/rpc on the portal
-// and writes the response to stdout. All tool descriptors, content
-// blocks, and the synthetic `wait_for_run` tool are produced by the
-// portal; the bridge has no MCP-protocol-specific logic of its own.
+// On the forwarding path the bridge does NOTHING that the portal
+// couldn't do — it just forwards every JSON-RPC frame to POST
+// /api/mcp/rpc on the portal and writes the response to stdout. All
+// tool descriptors, content blocks, and the synthetic `wait_for_run`
+// tool are produced by the portal. The one exception is client-attested
+// dispatch (sign.go): the bridge reads `tools/call` frames to attach an
+// Ed25519 signature, because the signing key must stay client-side and
+// never reach the control plane.
 //
 // Configure your client to launch:
 //
