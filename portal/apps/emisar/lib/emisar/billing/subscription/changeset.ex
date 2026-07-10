@@ -29,13 +29,15 @@ defmodule Emisar.Billing.Subscription.Changeset do
     end
   end
 
-  # True only when the stored row AND the incoming attrs both carry a Paddle
-  # `updated_at` and the incoming one is strictly older. A first insert (no
-  # stored timestamp) or an event without one always applies.
+  # Once the mirror has Paddle's monotonic timestamp, an incoming event must
+  # carry one too. A partial payload without it cannot prove it is newer, so
+  # dropping it prevents an old delivery from rewinding the mirror. Legacy rows
+  # without a stored timestamp still accept the next event and establish the
+  # guard when Paddle supplies `updated_at`.
   defp stale_update?(%Subscription{paddle_updated_at: %DateTime{} = stored}, attrs) do
     case attrs[:paddle_updated_at] || attrs["paddle_updated_at"] do
       %DateTime{} = incoming -> DateTime.compare(incoming, stored) == :lt
-      _ -> false
+      _ -> true
     end
   end
 

@@ -908,6 +908,7 @@ defmodule Emisar.BillingTest do
           "id" => "sub_evt_sc",
           "customer_id" => account.paddle_customer_id,
           "status" => "active",
+          "updated_at" => "2026-08-02T00:00:00Z",
           "scheduled_change" => %{"action" => "cancel", "effective_at" => "2026-09-01T00:00:00Z"},
           "current_billing_period" => %{
             "starts_at" => "2026-08-01T00:00:00Z",
@@ -1269,7 +1270,8 @@ defmodule Emisar.BillingTest do
         "data" => %{
           "id" => "sub_evt_upd_partial_c",
           "customer_id" => account.paddle_customer_id,
-          "status" => "past_due"
+          "status" => "past_due",
+          "updated_at" => "2026-08-02T00:00:00Z"
         }
       }
 
@@ -1428,12 +1430,7 @@ defmodule Emisar.BillingTest do
                |> Repo.one()
     end
 
-    test "FINDING: a stale out-of-order update clobbers a newer state (last-writer-wins)" do
-      # There is no version/sequence guard in upsert_from_subscription — every
-      # field the payload carries is written. So replaying an OLDER captured
-      # `subscription.updated` AFTER a newer one rewinds the row to the stale
-      # state. Assert the documented stale-clobber risk so a future ordering
-      # guard is a deliberate change, not an accidental regression.
+    test "a timestamp-free update cannot clobber a timestamped mirror" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_stale_01"})
 
       created =
@@ -1449,8 +1446,8 @@ defmodule Emisar.BillingTest do
 
       assert {:ok, %Subscription{status: "past_due"}} = Billing.apply_webhook_event(newer)
 
-      # A stale capture (a DIFFERENT event id, so dedup doesn't block it) replays
-      # an older "active" state — and wins, because nothing compares timestamps.
+      # A partial stale capture with a different event id cannot prove it is
+      # newer than the persisted Paddle timestamp, so it is a no-op.
       stale = %{
         "event_id" => "evt_upd_stale_old",
         "event_type" => "subscription.updated",
@@ -1462,10 +1459,9 @@ defmodule Emisar.BillingTest do
         }
       }
 
-      assert {:ok, %Subscription{status: "active"}} = Billing.apply_webhook_event(stale)
+      assert {:ok, %Subscription{status: "past_due"}} = Billing.apply_webhook_event(stale)
 
-      # The row was rewound to the stale status — the documented last-writer-wins.
-      assert %Subscription{status: "active"} =
+      assert %Subscription{status: "past_due"} =
                Subscription.Query.all()
                |> Subscription.Query.by_account_id(account.id)
                |> Repo.one()
@@ -1655,6 +1651,7 @@ defmodule Emisar.BillingTest do
         "id" => "sub_" <> event_id,
         "customer_id" => customer_id,
         "status" => "active",
+        "updated_at" => Keyword.get(opts, :updated_at, "2026-08-01T00:00:00Z"),
         "next_billed_at" => "2026-07-01T00:00:00Z",
         "items" => [subscription_item(price_id, opts)]
       }
@@ -1672,6 +1669,7 @@ defmodule Emisar.BillingTest do
         "id" => "sub_" <> event_id,
         "customer_id" => customer_id,
         "status" => Keyword.fetch!(opts, :status),
+        "updated_at" => Keyword.get(opts, :updated_at, "2026-09-01T00:00:00Z"),
         "next_billed_at" => "2026-09-01T00:00:00Z",
         "items" => [subscription_item(price_id, opts)]
       }
