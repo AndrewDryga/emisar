@@ -1061,6 +1061,22 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "Global Privacy Control"
     end
 
+    test "the privacy page discloses every functional cookie it actually sets", %{conn: conn} do
+      html = conn |> get(~p"/privacy") |> html_response(200)
+
+      # We set more than one first-party functional cookie — the disclosure must not
+      # undercount to a single session cookie.
+      refute html =~ "We use one cookie"
+      assert html =~ "session cookie"
+      assert html =~ "recent-teams cookie"
+      assert html =~ "passwordless sign-in"
+      # The remember-me cookie mechanism exists in code but no sign-in path writes it,
+      # so the page must not claim we set one.
+      refute html =~ "remember-me cookie"
+      # The no-tracker promise is retained.
+      assert html =~ "no third-party trackers"
+    end
+
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 

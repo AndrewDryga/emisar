@@ -145,8 +145,12 @@
 
   <h2 id="cookies">7. Cookies & analytics</h2>
   <p>
-    We use one cookie: a signed, HTTP-only session cookie that keeps you logged in and
-    carries the CSRF token protecting your forms. No advertising cookies, no <strong>analytics cookies</strong>, no third-party trackers, and no analytics
+    We use a small set of strictly-functional, first-party cookies — and nothing else. A
+    signed, HTTP-only <strong>session cookie</strong> keeps you signed in and carries the CSRF
+    token protecting your forms. A signed <strong>recent-teams cookie</strong> remembers which
+    teams this browser has signed into, so the sign-on page can offer them as one-click
+    buttons. And while you complete a passwordless sign-in, a short-lived signed cookie ties
+    the emailed code to this browser. No advertising cookies, no <strong>analytics cookies</strong>, no third-party trackers, and no analytics
     script runs in your browser.
   </p>
   <p>
