@@ -29,6 +29,7 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:args_schema, args_schema)
          |> assign_form(initial_args(args_schema))
          |> assign(:reason, "")
+         |> assign(:reason_error, nil)
          |> assign(
            :can_dispatch?,
            Runs.subject_can_dispatch_run?(socket.assigns.current_subject)
@@ -100,11 +101,15 @@ defmodule EmisarWeb.RunNewLive do
     # phx-change payload won't contain `"args"`. Default to the existing
     # form so the empty-args case doesn't FunctionClauseError.
     args = Map.get(params, "args", socket.assigns.form.params)
+    reason = params["reason"] || socket.assigns.reason
 
     {:noreply,
      socket
      |> assign_form(args, arg_errors(args, socket.assigns.args_schema))
-     |> assign(:reason, params["reason"] || socket.assigns.reason)}
+     |> assign(:reason, reason)
+     # Clear the inline error as soon as the operator fills the field in — never
+     # add one here (a blank field shouldn't show "required" until they dispatch).
+     |> assign(:reason_error, if(String.trim(reason) == "", do: socket.assigns.reason_error))}
   end
 
   def handle_event("dispatch", params, socket) do
@@ -119,11 +124,13 @@ defmodule EmisarWeb.RunNewLive do
     raw_args = params["args"] || %{}
     reason = params["reason"] || ""
 
+    # A missing reason is a validation of the one operator-entered run
+    # parameter, so it renders inline under the field, not in a flash.
     if String.trim(reason) == "" do
       {:noreply,
        socket
        |> assign(:reason, reason)
-       |> put_flash(:error, "Reason is required — describe why you are running this action.")}
+       |> assign(:reason_error, "Reason is required — describe why you are running this action.")}
     else
       do_dispatch_with_reason(socket, raw_args, reason)
     end
@@ -374,6 +381,7 @@ defmodule EmisarWeb.RunNewLive do
                 value={@reason}
                 type="textarea"
                 label="Reason"
+                errors={List.wrap(@reason_error)}
                 rows="2"
                 required={true}
                 placeholder="Why are you running this action?"

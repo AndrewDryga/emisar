@@ -217,19 +217,23 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert flash["error"] == "Action not found."
   end
 
-  test "a blank reason refuses to dispatch", %{conn: conn} do
+  # A blank reason is a validation of the operator's own input, so it renders
+  # inline under the reason field (rose <.error>), never as a top-of-page flash.
+  test "a blank reason renders inline at the field, not in a flash", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    html =
-      lv
-      |> form("#dispatch_form", %{"args" => %{"path" => "/var/log/app.log"}, "reason" => "  "})
-      |> render_submit()
+    lv
+    |> form("#dispatch_form", %{"args" => %{"path" => "/var/log/app.log"}, "reason" => "  "})
+    |> render_submit()
 
-    assert html =~ "Reason is required"
+    # The message is the inline field error inside the form, not the flash banner.
+    assert has_element?(lv, "#dispatch_form p.text-rose-400", "Reason is required")
+    refute has_element?(lv, "#flash-error", "Reason is required")
+    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
   test "a valid dispatch navigates to the run detail page", %{conn: conn} do
