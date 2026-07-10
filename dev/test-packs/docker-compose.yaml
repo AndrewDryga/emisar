@@ -46,6 +46,7 @@ services:
       CH_USER: default
       ELASTIC_USER: elastic
       ELASTIC_PASSWORD: testpass
+      ELASTIC_URL: "http://elasticsearch:9200"
       PROM_URL: "http://prometheus:9090"
       ENVOY_ADMIN: "http://envoy:9901"
       CADDY_ADMIN: "http://caddy:2019"

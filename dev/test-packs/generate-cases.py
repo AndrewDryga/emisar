@@ -32,7 +32,7 @@ PACK_ENV = {
     "mongodb":  {"MONGO_URI": "mongodb://root:testpass@mongodb:27017/?authSource=admin"},
     "cassandra":{"CQLSH_HOST": "cassandra"},
     "clickhouse":{"CH_HOST": "clickhouse", "CH_USER": "default"},
-    "elasticsearch":{"ELASTIC_USER":"elastic","ELASTIC_PASSWORD":"testpass","ES_URL":"http://elasticsearch:9200"},
+    "elasticsearch":{"ELASTIC_USER":"elastic","ELASTIC_PASSWORD":"testpass","ELASTIC_URL":"http://elasticsearch:9200"},
     "consul":   {"CONSUL_HTTP_ADDR": "http://consul:8500"},
     "vault":    {"VAULT_ADDR": "http://vault:8200", "VAULT_TOKEN": "test-root-token"},
     "nomad":    {"NOMAD_ADDR": "http://nomad:4646"},

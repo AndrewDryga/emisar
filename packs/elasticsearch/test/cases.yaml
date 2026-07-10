@@ -2,7 +2,7 @@ defaults:
   env:
     ELASTIC_USER: elastic
     ELASTIC_PASSWORD: testpass
-    ES_URL: http://elasticsearch:9200
+    ELASTIC_URL: http://elasticsearch:9200
 cases:
 - action: es.cache_clear
   args:
