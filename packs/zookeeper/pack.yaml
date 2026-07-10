@@ -1,7 +1,7 @@
 schema_version: 1
 id: zookeeper
 name: ZooKeeper operations
-version: 0.1.3
+version: 0.1.4
 description: >
   Cluster + 4lw command + watch + session introspection. Read-only. Set
   ZK_SERVERS env var (host:port,host:port,…). All four-letter words need

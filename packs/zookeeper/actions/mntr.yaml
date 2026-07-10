@@ -11,7 +11,7 @@ args:
     required: true
     description: host:port.
     validation:
-      pattern: "^[a-zA-Z0-9.\\-]{1,255}:[0-9]{1,5}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-]{0,254}:[0-9]{1,5}$"
 execution:
   command:
     binary: /bin/sh
