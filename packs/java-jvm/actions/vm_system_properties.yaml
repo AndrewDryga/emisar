@@ -3,10 +3,18 @@ id: jvm.vm_system_properties
 title: jcmd VM.system_properties
 kind: exec
 risk: low
-description: 'Dumps every -Dkey=value system property the JVM was started with. Use to confirm config overrides took effect.'
+description: >
+  Dump every -Dkey=value system property the JVM was started with
+  (jcmd VM.system_properties = System.getProperties()). Use to confirm
+  config overrides took effect — but note this deliberately surfaces
+  every launch -D property, which routinely carries secrets
+  (spring.datasource.password, javax.net.ssl.keyStorePassword, JDBC /
+  cloud credentials). Scope it by policy. The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can
+  miss a bespoke secret whose name and value match no rule.
 side_effects:
   - One jcmd call.
-  - Read-only.
+  - Read-only, but exposes every -D launch property (may include secrets).
 args:
   - name: pid
     type: integer
