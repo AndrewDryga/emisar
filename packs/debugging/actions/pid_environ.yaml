@@ -6,15 +6,18 @@ kind: exec
 risk: low
 
 description: >
-  Returns the env vars a PID was started with. Reads
-  /proc/<pid>/environ and turns NULs into newlines. Use to confirm a
-  daemon picked up the config you think it did. Output will pass
-  through the runner's redaction pipeline so secrets matching the
-  configured rules are masked.
+  Show the full set of environment variables a PID was started with —
+  reads /proc/<pid>/environ and turns NULs into newlines. This
+  deliberately surfaces the process's entire environment, which
+  commonly carries injected secrets (DB URLs, API keys, cloud
+  credentials); scope it by policy and prefer pid_status / pid_limits
+  when you don't need the values. The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can
+  miss a bespoke secret whose name and value match no rule.
 
 side_effects:
   - Reads /proc/<pid>/environ — requires runner uid to match or root.
-  - Read-only.
+  - Read-only, but exposes the process's full environment (may include secrets).
 
 args:
   - name: pid
