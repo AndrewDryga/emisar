@@ -41,4 +41,14 @@ defmodule EmisarWeb.TelemetryDashboardTest do
   test "the reference alert rules file is present" do
     assert @observability_dir |> Path.join("alerts.yaml") |> File.exists?()
   end
+
+  test "LiveView event latency uses only the server-owned view label" do
+    metric =
+      Enum.find(
+        EmisarWeb.Telemetry.metrics(),
+        &(&1.name == [:phoenix, :live_view, :handle_event, :stop, :duration])
+      )
+
+    assert %{tags: [:view]} = metric
+  end
 end

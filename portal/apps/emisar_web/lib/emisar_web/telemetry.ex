@@ -102,8 +102,11 @@ defmodule EmisarWeb.Telemetry do
         reporter_options: [buckets: @latency_buckets]
       ),
       distribution("phoenix.live_view.handle_event.stop.duration",
-        tags: [:view, :event],
-        tag_values: &live_view_event_tags/1,
+        # LiveView event names come from the client frame. Exporting them as a
+        # Prometheus label lets a hostile client manufacture unbounded series,
+        # so retain only the server-owned view module tag.
+        tags: [:view],
+        tag_values: &live_view_tags/1,
         unit: {:native, :millisecond},
         reporter_options: [buckets: @latency_buckets]
       ),
@@ -196,12 +199,6 @@ defmodule EmisarWeb.Telemetry do
   # the view module name so Prometheus labels stay bounded and readable.
   defp live_view_tags(%{socket: socket}), do: %{view: inspect(socket.view)}
   defp live_view_tags(_metadata), do: %{view: "unknown"}
-
-  defp live_view_event_tags(%{socket: socket, event: event}),
-    do: %{view: inspect(socket.view), event: event}
-
-  defp live_view_event_tags(metadata),
-    do: %{view: "unknown", event: metadata[:event] || "unknown"}
 
   defp periodic_measurements do
     [
