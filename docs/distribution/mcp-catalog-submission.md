@@ -436,8 +436,55 @@ registry repo or their form — verify which at submission time).
 
 ## 8. ChatGPT apps / connectors
 
-ChatGPT calls custom MCP connectors **apps**; creation is under Developer mode.
-Remote HTTPS MCP only (no stdio). Flow from `/docs/connect-an-llm`.
+ChatGPT calls custom MCP connectors **apps**; remote HTTPS MCP only (no stdio).
+Flow from `/docs/connect-an-llm`. There are **two distinct ChatGPT integration
+paths, and they behave very differently against a dynamic per-account catalog** —
+this distinction is the crux the "verify and submit to ChatGPT" work turned on, so
+read it before assuming a directory listing is the goal.
+
+#### 8a. Compatibility finding — snapshot vs. dynamic catalog (verified 2026-07-10)
+
+emisar's `tools/list` is **dynamic and per-account** ([§1 Tool surface](#1-canonical-product-facts)):
+two operators of the same account can see different tools, and the set shifts with
+runner scope and pack versions. That collides with how OpenAI's **public Plugin
+directory** publishes an app. Verified against current OpenAI docs:
+
+- **The directory freezes one metadata snapshot for all users.** In the plugin
+  submission portal, *"When you scan the app's MCP endpoint … OpenAI stores the
+  discovered metadata with that draft version"* while *"tool calls … continue to
+  use your live MCP server."* Plugins that contain apps *"use reviewed app metadata
+  snapshots."* So the tool **names/schemas/descriptions/annotations** every ChatGPT
+  user sees are frozen from whatever tenant was scanned at submission; only tool
+  **execution** hits the live per-user endpoint.
+- **Dynamic per-user tool lists aren't supported** by the submission flow — it wants
+  a single snapshot that *"represents your app's contract."*
+- **Per-account divergence is treated as a breaking change.** *"Removing or renaming
+  a tool, making a schema incompatible … can break the current version as soon as
+  the server change deploys."* For emisar the live catalog legitimately differs from
+  the snapshot for **every account except the one scanned** — the reviewer tenant's
+  `showcase.*` tools don't exist for a real customer, and that customer's real
+  runner actions aren't in the snapshot. The model would be told it can call tools
+  the live endpoint refuses, and would never learn the account's actual tools.
+
+**Conclusion:** a public Plugin-directory listing built from any single reviewer
+snapshot is **incomplete, misleading, and unusable for other accounts** — the exact
+condition the task says must be **blocked with a decision, not worked around by
+silently changing the catalog or shipping a broken app**. The product decision
+(pursue the directory via a static ChatGPT-facing tool surface, or support ChatGPT
+only via the per-user path below) is captured in this task's `decision.md`
+(`.agent/tasks/…/2026-07-09-verify-and-submit-emisar-to-the-chatgpt-plugins`).
+**Do not weaken account isolation or the per-account catalog to fit the directory
+scanner.**
+
+#### 8b. Supported path — per-user Developer Mode custom connector (compatible)
+
+The **Developer Mode custom connector** path is fully compatible and is the
+integration `/docs/connect-an-llm` documents. Each operator connects the remote MCP
+URL over OAuth **as themselves**; ChatGPT fetches that operator's `tools/list`
+**live** and it is **refreshable** (*"custom connectors are scoped to your
+account"*; *"whenever you change your tools list or descriptions, refresh your MCP
+server's metadata in ChatGPT"*). No directory submission is required, so the
+per-account catalog, approval, and audit posture are preserved end to end.
 
 **Create-connector fields**
 
@@ -457,10 +504,20 @@ Remote HTTPS MCP only (no stdio). Flow from `/docs/connect-an-llm`.
 - [ ] Added to a **new chat** via **+ → More → emisar** (settings-only visibility ≠ usable).
 - [ ] After any tool-metadata change, use **Refresh** in the connector settings before re-testing.
 - [ ] Golden + negative prompts ([§4](#4-golden--negative-prompts)) run green.
-- [ ] Tool-name check: OpenAI's function-name rule is `^[a-zA-Z0-9_-]{1,64}$` — **confirm dotted action-tool names are accepted, or verify the reviewer tenant exposes only names that pass** (the showcase catalog's `showcase.*` names contain a `.`; if ChatGPT rejects them, this is a real finding to raise, not something to hide).
+- [ ] Tool-name check: the Apps-SDK MCP path uses dotted names in its own docs (its
+  example tool is `kanban.move_task`), so the dotted `action_id` names are expected
+  to pass here — but OpenAI's **Chat Completions** function-name rule is
+  `^[a-zA-Z0-9_-]{1,64}$` (no `.`), and the two have been observed to diverge, so
+  **confirm dotted names live on the MCP connector before relying on them**; the
+  reviewer tenant's `showcase.*` names are ≤ 24 chars regardless. If ChatGPT rejects
+  a `.`, that's a real finding to raise, not something to hide.
 
-**Human-owned:** submit to OpenAI's connector/app directory intake when open;
-complete OpenAI's review; supply reviewer credentials out-of-band.
+**Human-owned (per-user path):** none of the above is done from this repo — a human
+runs the live OAuth + golden/negative pass from a real ChatGPT account against the
+deployed endpoint.
+
+**Human-owned (directory path):** blocked pending the product decision in this
+task's `decision.md` — do not submit a snapshot that misrepresents other accounts.
 
 ---
 
@@ -568,13 +625,15 @@ done
 ## 11. Human-owned steps remaining
 
 These require a real vendor portal session, live product access, a browser, or the
-secret store — none are done from this repo, and none are blocked on a decision;
-they are operator execution steps.
+secret store — none are done from this repo. All are operator execution steps
+**except** the ChatGPT *directory* row, which is blocked on a product decision (see
+[§8a](#8-chatgpt-apps--connectors) and the task `decision.md`).
 
 | Platform | Human-owned steps |
 |---|---|
 | **MCP Registry** | Choose namespace; verify ownership (GitHub OAuth or DNS TXT); `mcp-publisher publish`; confirm the record is live. |
 | **Claude** | Complete Anthropic's directory intake + security review; live DCR test from a clean account; deliver reviewer creds out-of-band. |
 | **Cursor** | Confirm current intake mechanism (PR vs form); live OAuth test from a clean Cursor install; submit. |
-| **ChatGPT** | Submit to OpenAI's connector directory when open; live OAuth test; confirm dotted tool names are accepted (or raise it). |
+| **ChatGPT (per-user path)** | Live OAuth + golden/negative pass from a real ChatGPT account in Developer Mode against the deployed endpoint; confirm dotted tool names are accepted (or raise it). Fully supported ([§8b](#8-chatgpt-apps--connectors)). |
+| **ChatGPT (directory listing)** | **Blocked on a product decision** — the directory freezes one metadata snapshot that can't represent the dynamic per-account catalog ([§8a](#8-chatgpt-apps--connectors)). Do not submit until the decision resolves to a static ChatGPT-facing tool surface. |
 | **All** | Re-diff each vendor form against this kit (freshness rule); capture the real `tools/list` per [§9](#9-tool-metadata-inventory); capture the screenshots + provision the reviewer tenant per [reviewer-tenant.md](reviewer-tenant.md). |
