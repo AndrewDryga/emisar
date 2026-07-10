@@ -340,17 +340,27 @@ defmodule EmisarWeb.Router do
 
   # -- MCP / LLM tool surface -----------------------------------------
 
+  # Streamable-HTTP (MCP 2025-06-18) JSON-RPC endpoint — the canonical MCP
+  # surface the stdio bridge and remote connectors (Claude / ChatGPT / Cursor)
+  # use. Deliberately OUTSIDE the `:api` pipeline: a Streamable-HTTP GET opens an
+  # SSE stream with `Accept: text/event-stream`, which `:accepts, ["json"]`
+  # would answer 406 — but the spec requires 405 (this stateless server offers
+  # no SSE stream). The controller enforces content negotiation, Origin, and
+  # protocol-version checks explicitly instead. GET/DELETE are answered 405: no
+  # SSE stream to open, no durable session to terminate.
+  scope "/api/mcp", EmisarWeb do
+    post "/rpc", MCPRpcController, :handle
+    get "/rpc", MCPRpcController, :reject_stream
+    delete "/rpc", MCPRpcController, :reject_termination
+  end
+
   scope "/api", EmisarWeb do
     pipe_through :api
 
     scope "/mcp" do
-      # JSON-RPC 2.0 / MCP-over-HTTP. Single endpoint the stdio bridge
-      # and remote-MCP clients (Claude / ChatGPT cloud connectors) use.
-      post "/rpc", MCPRpcController, :handle
-
       # REST routes — still in use by HTTP-only integrations (OpenAI
-      # function-calling shim, generic curl examples, etc.). The
-      # JSON-RPC endpoint above is the canonical MCP surface.
+      # function-calling shim, generic curl examples, etc.). The JSON-RPC
+      # endpoint above is the canonical MCP surface.
       get "/runners", MCPController, :list_runners
       get "/tools", MCPController, :list_tools
       post "/tools/:action_id", MCPController, :run_tool

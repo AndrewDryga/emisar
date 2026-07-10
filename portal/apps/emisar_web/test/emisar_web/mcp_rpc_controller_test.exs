@@ -1546,6 +1546,124 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
+  describe "Streamable HTTP transport conformance" do
+    test "GET opens no SSE stream — 405 with Allow: POST", %{conn: conn} do
+      conn = get(conn, ~p"/api/mcp/rpc")
+
+      assert json_response(conn, 405)["error"] =~ "only accepts POST"
+      assert get_resp_header(conn, "allow") == ["POST"]
+    end
+
+    test "a Streamable-HTTP GET (Accept: text/event-stream) is 405, not 406", %{conn: conn} do
+      # The reason /api/mcp/rpc lives outside the `:accepts, ["json"]` pipeline:
+      # an SSE-probe GET must reach the 405 handler, not be pre-empted by a 406.
+      conn =
+        conn
+        |> put_req_header("accept", "text/event-stream")
+        |> get(~p"/api/mcp/rpc")
+
+      assert json_response(conn, 405)
+    end
+
+    test "DELETE terminates no session — 405", %{conn: conn} do
+      conn = delete(conn, ~p"/api/mcp/rpc")
+      assert json_response(conn, 405)
+    end
+
+    test "a cross-origin browser POST is 403 — before auth", %{conn: conn} do
+      # No bearer: a bad Origin is rejected at the HTTP layer, not challenged 401.
+      conn =
+        conn
+        |> put_req_header("origin", "https://evil.example.com")
+        |> rpc("initialize")
+
+      assert json_response(conn, 403)["error"] =~ "Cross-origin"
+    end
+
+    test "a same-origin POST passes the Origin gate", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("origin", EmisarWeb.Endpoint.url())
+        |> rpc("initialize")
+        |> json_response(200)
+
+      assert body["result"]["serverInfo"]["name"] == "emisar"
+    end
+
+    test "a non-JSON Content-Type is 415", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "ping"}))
+
+      assert json_response(conn, 415)["error"] =~ "application/json"
+    end
+
+    test "an SSE-only Accept on POST is 406", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("accept", "text/event-stream")
+        |> rpc("initialize")
+
+      assert json_response(conn, 406)["error"] =~ "Accept"
+    end
+
+    test "an Accept listing both JSON and event-stream passes",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("accept", "application/json, text/event-stream")
+        |> rpc("initialize")
+        |> json_response(200)
+
+      assert body["result"]["serverInfo"]["name"] == "emisar"
+    end
+
+    test "an unsupported MCP-Protocol-Version on a post-init request is 400", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("mcp-protocol-version", "1999-01-01")
+        |> rpc("ping")
+
+      assert json_response(conn, 400)["error"] =~ "MCP-Protocol-Version"
+    end
+
+    test "a supported MCP-Protocol-Version passes", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("mcp-protocol-version", "2025-06-18")
+        |> rpc("ping")
+        |> json_response(200)
+
+      assert body["result"] == %{}
+    end
+
+    test "initialize is never blocked by its MCP-Protocol-Version header",
+         %{conn: conn, account: account, user: user} do
+      # The version is negotiated in the body, so a stray header on `initialize`
+      # must not 400 — it reaches the handler.
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("mcp-protocol-version", "not-a-version")
+        |> rpc("initialize")
+        |> json_response(200)
+
+      assert body["result"]["serverInfo"]["name"] == "emisar"
+    end
+  end
+
   describe "wait_for_run argument + lookup errors" do
     setup %{account: account, user: user} do
       {:ok, raw: make_api_key!(account, user)}

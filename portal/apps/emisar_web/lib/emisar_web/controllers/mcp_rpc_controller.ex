@@ -19,6 +19,16 @@ defmodule EmisarWeb.MCPRpcController do
   Anything else → JSON-RPC `-32601 method not found`. Parse errors →
   `-32700`. Auth failures → JSON-RPC `-32001 unauthorized`.
 
+  ## Streamable HTTP transport
+
+  This is a stateless, JSON-only Streamable-HTTP (2025-06-18) server: POST
+  handles JSON-RPC; a GET (SSE stream) and a DELETE (session termination) are
+  answered `405 Method Not Allowed` — we offer neither. Transport conformance is
+  enforced before dispatch (pure predicates live in `MCP.Transport`): a
+  cross-origin browser `Origin` is `403`, a non-JSON `Content-Type` is `415`, an
+  `Accept` that can't take `application/json` is `406`, and an unsupported
+  `MCP-Protocol-Version` header on a post-initialize request is `400`.
+
   ## Stdio bridge
 
   `mcp/main.go` is a thin transport shim that reads stdio JSON-RPC,
@@ -31,7 +41,7 @@ defmodule EmisarWeb.MCPRpcController do
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat}
   alias EmisarWeb.MCP.{Attestation, Auth, ClientMetadata, ContentBlocks}
-  alias EmisarWeb.MCP.{Idempotency, Instructions, Service}
+  alias EmisarWeb.MCP.{Idempotency, Instructions, Service, Transport}
   alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-06-18"
@@ -42,8 +52,16 @@ defmodule EmisarWeb.MCPRpcController do
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
   plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
 
-  plug :authenticate
-  plug :put_client_metadata
+  # Transport conformance runs before auth: an out-of-spec frame is rejected at
+  # the HTTP layer regardless of the bearer. `:handle` (POST) alone negotiates a
+  # body; GET/DELETE fall straight through to their 405 actions.
+  plug :validate_origin
+  plug :validate_content_type when action == :handle
+  plug :validate_accept when action == :handle
+  plug :validate_protocol_version when action == :handle
+
+  plug :authenticate when action == :handle
+  plug :put_client_metadata when action == :handle
 
   # POST /api/mcp/rpc
   def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) when is_binary(method) do
@@ -85,6 +103,24 @@ defmodule EmisarWeb.MCPRpcController do
     conn
     |> put_status(:bad_request)
     |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32600, message: "invalid request"}})
+  end
+
+  # GET /api/mcp/rpc — a Streamable-HTTP client opens an SSE stream here; this
+  # stateless server offers none, so the spec's answer is 405.
+  def reject_stream(conn, _params), do: method_not_allowed(conn)
+
+  # DELETE /api/mcp/rpc — session termination; this stateless server issues no
+  # durable session to terminate, so 405 per the spec.
+  def reject_termination(conn, _params), do: method_not_allowed(conn)
+
+  defp method_not_allowed(conn) do
+    conn
+    |> put_resp_header("allow", "POST")
+    |> put_status(:method_not_allowed)
+    |> json(%{
+      error:
+        "The MCP endpoint only accepts POST — this stateless server offers no SSE stream (GET) or session termination (DELETE)."
+    })
   end
 
   # -- Method dispatch ------------------------------------------------
@@ -605,6 +641,66 @@ defmodule EmisarWeb.MCPRpcController do
       Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key", "attestation"])
 
     {runner_names, reason, wait, attestation, action_args}
+  end
+
+  # -- Streamable HTTP transport --------------------------------------
+  #
+  # HTTP-layer conformance (pure decisions in `MCP.Transport`). Each rejection
+  # halts with the spec-correct status and a small JSON body so an MCP client
+  # sees a clear reason rather than a framework error page.
+
+  defp validate_origin(conn, _opts) do
+    if Transport.allowed_origin?(get_req_header(conn, "origin"), EmisarWeb.Endpoint.url()) do
+      conn
+    else
+      reject(conn, :forbidden, "Cross-origin request rejected.")
+    end
+  end
+
+  defp validate_content_type(conn, _opts) do
+    if Transport.json_content_type?(get_req_header(conn, "content-type")) do
+      conn
+    else
+      reject(conn, :unsupported_media_type, "Content-Type must be application/json.")
+    end
+  end
+
+  defp validate_accept(conn, _opts) do
+    if Transport.accepts_json?(get_req_header(conn, "accept")) do
+      conn
+    else
+      reject(
+        conn,
+        :not_acceptable,
+        "This endpoint returns application/json; the Accept header must allow it."
+      )
+    end
+  end
+
+  # The `initialize` request negotiates the protocol version in its body, so its
+  # header isn't validated; every later request carrying an unsupported header is
+  # 400 per the spec.
+  defp validate_protocol_version(conn, _opts) do
+    cond do
+      conn.body_params["method"] == "initialize" ->
+        conn
+
+      Transport.acceptable_protocol_version?(
+        get_req_header(conn, "mcp-protocol-version"),
+        @supported_protocol_versions
+      ) ->
+        conn
+
+      true ->
+        reject(conn, :bad_request, "Unsupported MCP-Protocol-Version header.")
+    end
+  end
+
+  defp reject(conn, status, message) do
+    conn
+    |> put_status(status)
+    |> json(%{error: message})
+    |> halt()
   end
 
   # -- Auth -----------------------------------------------------------
