@@ -10,7 +10,8 @@ defmodule EmisarWeb.MfaQr do
 
   def provisioning_uri(email, secret) when is_binary(email) and is_binary(secret) do
     encoded = Base.encode32(secret, padding: false)
-    "otpauth://totp/#{@issuer}:#{email}?secret=#{encoded}&issuer=#{@issuer}"
+    label = URI.encode(email, &URI.char_unreserved?/1)
+    "otpauth://totp/#{@issuer}:#{label}?secret=#{encoded}&issuer=#{@issuer}"
   end
 
   # `viewbox: true` (singular w/o explicit width) emits a viewBox-only
