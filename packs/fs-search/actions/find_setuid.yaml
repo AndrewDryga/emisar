@@ -9,7 +9,7 @@ side_effects:
   - Read-only.
 args:
   - name: path
-    type: string
+    type: path
     required: false
     default: "/"
     description: Root path.
@@ -20,18 +20,34 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
+      denied_prefixes:
         - /etc/ssl/private
         - /root/.ssh
         - /etc/ssh
-        - /etc/sudoers
         - /etc/sudoers.d
-        - /proc/kcore
 execution:
   command:
     binary: find
     argv:
       - "{{ args.path }}"
       - "-xdev"
+      - "("
+      - "-path"
+      - "/etc/ssh"
+      - "-o"
+      - "-path"
+      - "/etc/ssl/private"
+      - "-o"
+      - "-path"
+      - "/root/.ssh"
+      - "-o"
+      - "-path"
+      - "/etc/sudoers.d"
+      - ")"
+      - "-prune"
+      - "-o"
       - "-type"
       - "f"
       - "("

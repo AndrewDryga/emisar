@@ -9,7 +9,7 @@ side_effects:
   - Read-only.
 args:
   - name: path
-    type: string
+    type: path
     required: true
     description: Root path.
     validation:
@@ -19,12 +19,13 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
+      denied_prefixes:
         - /etc/ssl/private
         - /root/.ssh
         - /etc/ssh
-        - /etc/sudoers
         - /etc/sudoers.d
-        - /proc/kcore
   - name: glob
     type: string
     required: true
@@ -46,6 +47,21 @@ execution:
       - "{{ args.path }}"
       - "-maxdepth"
       - "{{ args.max_depth }}"
+      - "("
+      - "-path"
+      - "/etc/ssh"
+      - "-o"
+      - "-path"
+      - "/etc/ssl/private"
+      - "-o"
+      - "-path"
+      - "/root/.ssh"
+      - "-o"
+      - "-path"
+      - "/etc/sudoers.d"
+      - ")"
+      - "-prune"
+      - "-o"
       - "-name"
       - "{{ args.glob }}"
       - "-print"

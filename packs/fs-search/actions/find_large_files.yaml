@@ -9,7 +9,7 @@ side_effects:
   - Read-only.
 args:
   - name: path
-    type: string
+    type: path
     required: true
     description: Root path.
     validation:
@@ -19,12 +19,13 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
+      denied_prefixes:
         - /etc/ssl/private
         - /root/.ssh
         - /etc/ssh
-        - /etc/sudoers
         - /etc/sudoers.d
-        - /proc/kcore
   - name: min_mb
     type: integer
     required: false
@@ -38,7 +39,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "find {{ args.path }} -xdev -type f -size +{{ args.min_mb }}M -printf '%s %p\\n' 2>/dev/null | sort -rn | head -50"
+      - "find {{ args.path }} -xdev \\( -path /etc/ssh -o -path /etc/ssl/private -o -path /root/.ssh -o -path /etc/sudoers.d \\) -prune -o -type f -size +{{ args.min_mb }}M -printf '%s %p\\n' 2>/dev/null | sort -rn | head -50"
   timeout: 2m
 output:
   parser: text

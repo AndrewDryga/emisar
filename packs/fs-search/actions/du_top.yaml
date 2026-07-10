@@ -9,7 +9,7 @@ side_effects:
   - Read-only.
 args:
   - name: path
-    type: string
+    type: path
     required: true
     description: Root path.
     validation:
@@ -19,18 +19,19 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
+      denied_prefixes:
         - /etc/ssl/private
         - /root/.ssh
         - /etc/ssh
-        - /etc/sudoers
         - /etc/sudoers.d
-        - /proc/kcore
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "du -sh {{ args.path }}/* 2>/dev/null | sort -rh | head -20"
+      - "du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d {{ args.path }}/* 2>/dev/null | sort -rh | head -20"
   timeout: 5m
 output:
   parser: text

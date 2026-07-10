@@ -9,7 +9,7 @@ side_effects:
   - Read-only.
 args:
   - name: path
-    type: string
+    type: path
     required: true
     description: Root path.
     validation:
@@ -19,12 +19,13 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
+      denied_prefixes:
         - /etc/ssl/private
         - /root/.ssh
         - /etc/ssh
-        - /etc/sudoers
         - /etc/sudoers.d
-        - /proc/kcore
   - name: pattern
     type: string
     required: true
@@ -36,7 +37,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "grep -rEnH --no-messages -m 500 \"$P\" \"{{ args.path }}\""
+      - "grep -rEnH --no-messages -m 500 --exclude-dir=.ssh --exclude-dir=ssh --exclude-dir=private --exclude-dir=sudoers.d --exclude=shadow --exclude=gshadow --exclude=shadow- --exclude=gshadow- --exclude=sudoers --exclude=kcore \"$P\" \"{{ args.path }}\""
   env:
     P: "{{ args.pattern }}"
   timeout: 5m
