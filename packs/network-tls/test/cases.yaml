@@ -17,6 +17,15 @@ cases:
   args:
     name: example.com
   expect_exit: 0
+# A leading '-' in a dig `name` must be rejected by arg validation so it can
+# never reach dig as an OPTION (e.g. name "-4" / "-fbatchfile" / "-b1.2.3.4").
+# `action run` exits 0 for a validation failure — the verdict is in the JSON
+# status, so we assert on stdout, not the exit code.
+- action: net.dig_dnssec
+  args:
+    name: "-fnonexistent"
+  expect_exit: 0
+  expect_stdout_contains: ["validation_failed"]
 - action: net.http_headers
   args:
     url: https://example.com/

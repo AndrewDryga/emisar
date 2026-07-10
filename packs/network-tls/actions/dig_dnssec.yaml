@@ -13,7 +13,7 @@ args:
     required: true
     description: Domain name.
     validation:
-      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9.\\-_]{0,252}$"
 execution:
   command:
     binary: dig

@@ -14,7 +14,7 @@ args:
     required: true
     description: Domain name to look up.
     validation:
-      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9.\\-_]{0,252}$"
   - name: type
     type: string
     required: false
