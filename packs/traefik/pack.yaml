@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.4
+version: 0.1.5
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +

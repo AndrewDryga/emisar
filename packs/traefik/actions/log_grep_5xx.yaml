@@ -25,7 +25,14 @@ args:
     default: /var/log/traefik/access.log
     description: Access log path.
     validation:
-      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+      pattern: "^/var/log/traefik/[A-Za-z0-9._/-]{1,128}$"
+      # The pattern blocks shell metacharacters (the value substitutes into a
+      # /bin/sh -c pipeline) but NOT `..` — `.` and `/` are literal charset
+      # members. allowed_prefixes runs the runner's Clean+EvalSymlinks
+      # containment, collapsing any `../` escape to its real path and rejecting
+      # anything outside the traefik log dir.
+      allowed_prefixes:
+        - /var/log/traefik
 execution:
   command:
     binary: /bin/sh

@@ -20,6 +20,13 @@ args:
     description: Path to Traefik's ACME storage file.
     validation:
       pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are
+      # literal charset members). allowed_prefixes runs the runner's
+      # Clean+EvalSymlinks containment, scoping the read to Traefik's own ACME
+      # storage dirs so this can't become an arbitrary-file read oracle.
+      allowed_prefixes:
+        - /etc/traefik
+        - /letsencrypt
 execution:
   command:
     binary: /bin/sh
