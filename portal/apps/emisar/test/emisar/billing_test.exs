@@ -732,6 +732,26 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "redacted_paddle_error/1" do
+    test "drops the response body from an HTTP failure, keeping only the status" do
+      assert Billing.redacted_paddle_error({:http, 500, ~s({"customer_id":"ctm_secret"})}) ==
+               {:http, 500}
+    end
+
+    test "summarizes a changeset by its failing field NAMES, never its .changes" do
+      changeset = Subscription.Changeset.upsert(%{status: "active"})
+
+      refute changeset.valid?
+
+      assert Billing.redacted_paddle_error(changeset) ==
+               {:invalid_changeset, [:account_id, :plan]}
+    end
+
+    test "passes any other reason through unchanged" do
+      assert Billing.redacted_paddle_error(:paddle_unavailable) == :paddle_unavailable
+    end
+  end
+
   describe "record_and_apply_event/3 — subscription.created" do
     test "persists a subscription with the plan derived from the embedded product" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_team_01"})

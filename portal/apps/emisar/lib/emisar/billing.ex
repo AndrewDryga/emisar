@@ -650,8 +650,21 @@ defmodule Emisar.Billing do
   defp last_account_id([]), do: nil
   defp last_account_id(accounts), do: List.last(accounts).id
 
-  defp redacted_paddle_error({:http, status, _body}), do: {:http, status}
-  defp redacted_paddle_error(reason), do: reason
+  @doc """
+  Internal — collapses a Paddle client / mirror-write failure into a loggable
+  term that carries no payload values, so every Paddle-error log line in this
+  context (customer sync + the hourly subscription reconciliation) shares one
+  scrub. An HTTP failure keeps only its status (never the response body); an
+  upsert changeset keeps only its failing field names (never `.changes`, which
+  echo mirrored subscription values); any other reason passes through.
+  """
+  def redacted_paddle_error({:http, status, _body}), do: {:http, status}
+
+  def redacted_paddle_error(%Ecto.Changeset{errors: errors}) do
+    {:invalid_changeset, errors |> Keyword.keys() |> Enum.uniq()}
+  end
+
+  def redacted_paddle_error(reason), do: reason
 
   @doc """
   Internal — the Paddle webhook controller's entry point; the request's

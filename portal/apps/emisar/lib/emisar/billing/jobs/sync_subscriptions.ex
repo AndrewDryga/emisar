@@ -47,7 +47,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
             Logger.warning("billing_sync.upsert_failed",
               paddle_subscription_id: paddle_subscription_id,
               account_id: account_id,
-              error: inspect(reason)
+              error: inspect(Billing.redacted_paddle_error(reason))
             )
         end
 
@@ -55,7 +55,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
         Logger.warning("billing_sync.retrieve_failed",
           paddle_subscription_id: paddle_subscription_id,
           account_id: account_id,
-          error: inspect(reason)
+          error: inspect(Billing.redacted_paddle_error(reason))
         )
 
         :ok

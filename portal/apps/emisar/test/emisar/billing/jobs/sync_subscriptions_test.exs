@@ -368,3 +368,88 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest do
     assert synced.current_period_end == stored
   end
 end
+
+# A Paddle client whose retrieve fails with a raw HTTP error carrying a response
+# body — the shape the live client returns on a non-2xx — so the sweep's error
+# log can be checked for payload leakage.
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClient do
+  @behaviour Emisar.Billing.PaddleClient
+
+  @impl true
+  def retrieve_subscription(_id),
+    do: {:error, {:http, 500, ~s({"customer_id":"ctm_secret"})}}
+
+  @impl true
+  def create_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def update_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  @impl true
+  def list_products, do: {:error, :unused}
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+  @impl true
+  def get_transaction_invoice(_id), do: {:error, :unused}
+
+  @impl true
+  def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
+end
+
+defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest do
+  @moduledoc """
+  The sweep's error log must not echo Paddle payload fragments: a non-2xx
+  retrieve returns `{:http, status, body}` with the raw vendor body, and that
+  body can carry customer ids / amounts. The log line routes through
+  `Billing.redacted_paddle_error/1`, which drops the body. `async: false` —
+  swaps the process-global `:paddle_client`.
+  """
+  use Emisar.DataCase, async: false
+  alias Emisar.Billing
+  alias Emisar.Billing.Jobs.SyncSubscriptions
+  alias Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClient
+  alias Emisar.Fixtures
+
+  setup do
+    prev_client = Application.get_env(:emisar, :paddle_client)
+    Application.put_env(:emisar, :paddle_client, HttpErrorPaddleClient)
+
+    on_exit(fn ->
+      case prev_client do
+        nil -> Application.delete_env(:emisar, :paddle_client)
+        value -> Application.put_env(:emisar, :paddle_client, value)
+      end
+    end)
+
+    :ok
+  end
+
+  @tag capture_log: true
+  test "execute/1 logs the retrieve failure without the raw Paddle response body" do
+    import ExUnit.CaptureLog
+
+    account = Fixtures.Accounts.create_account()
+
+    {:ok, _subscription} =
+      Billing.upsert_subscription(account.id, %{
+        paddle_subscription_id: "sub_redact_1",
+        plan: "team",
+        status: "past_due"
+      })
+
+    log =
+      capture_log(fn ->
+        assert :ok = SyncSubscriptions.execute([])
+      end)
+
+    # The failure surfaces with its subscription id and HTTP status…
+    assert log =~ "billing_sync.retrieve_failed"
+    assert log =~ "sub_redact_1"
+    assert log =~ "500"
+
+    # …but the raw vendor response body never reaches the log drain.
+    refute log =~ "ctm_secret"
+  end
+end
