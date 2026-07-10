@@ -3,10 +3,17 @@ id: tf.output
 title: terraform output -json
 kind: exec
 risk: low
-description: Show output values from the workspace's state.
+description: >
+  Show the workspace's output values (terraform output -json). The
+  -json form deliberately un-masks outputs marked `sensitive`, so the
+  values routinely carry secrets (a db_password, a kubeconfig, provider
+  credentials) in cleartext; scope it by policy. The runner's redaction
+  is a fail-closed backstop, not a guarantee — it is pattern-bound and
+  can't reliably mask output values whose arbitrary names and shapes
+  match no rule.
 side_effects:
   - Reads state file.
-  - Read-only.
+  - Read-only, but un-masks `sensitive` outputs (may include secrets).
 args: []
 execution:
   command:

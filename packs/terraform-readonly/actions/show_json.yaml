@@ -3,10 +3,16 @@ id: tf.show_json
 title: terraform show -json
 kind: exec
 risk: low
-description: Show the current state as JSON. Useful to programmatically query state.
+description: >
+  Show the full workspace state as JSON (terraform show -json), for
+  programmatic queries. This dumps every resource's attributes,
+  including ones marked `sensitive` (passwords, private keys, tokens),
+  in cleartext; scope it by policy. The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can't
+  reliably mask secrets whose names and shapes match no rule.
 side_effects:
   - Reads state file.
-  - Read-only.
+  - Read-only, but dumps every resource attribute (may include secrets).
 args: []
 execution:
   command:
