@@ -19,7 +19,7 @@ args:
     type: string
     required: false
     default: KILL
-    description: Signal name (KILL, TERM, HUP, USR1, USR2, INT).
+    description: Signal name (KILL, TERM, HUP, USR1, USR2, INT, QUIT).
     validation:
       enum: [KILL, TERM, HUP, USR1, USR2, INT, QUIT]
 execution:
