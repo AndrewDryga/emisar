@@ -3,7 +3,7 @@ id: mongo.explain_query
 title: explain a find()
 kind: exec
 risk: low
-description: Returns the execution plan for `find(filter)` on one collection at `executionStats` verbosity.
+description: Show the execution plan for `find(filter)` on one collection at `executionStats` verbosity.
 side_effects:
   - One explain command — does NOT execute the query.
   - Read-only.
