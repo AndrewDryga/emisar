@@ -195,7 +195,9 @@ defmodule EmisarWeb.AuditExportController do
   # SIEMs want exact JSON they can ingest as-is. Project every column
   # the audit row stores — including the request metadata the boundary
   # captured on the caller's %RequestContext{} — so downstream rules can
-  # correlate by `request_id` / `ip_address` / `user_agent`.
+  # correlate by `request_id` / `ip_address` / `user_agent`, plus the
+  # self-reported `mcp_client_metadata` promoted from the run payload to a stable
+  # top-level field so a SIEM can pivot on `asset_tag` / `device_id` / etc.
   defp serialize(%Emisar.Audit.Event{} = event) do
     %{
       id: event.id,
@@ -211,6 +213,7 @@ defmodule EmisarWeb.AuditExportController do
       ip_address: event.ip_address,
       user_agent: event.user_agent,
       request_id: event.request_id,
+      mcp_client_metadata: event.payload["mcp_client_metadata"],
       payload: event.payload
     }
     |> Jason.encode!()

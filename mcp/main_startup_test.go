@@ -236,6 +236,69 @@ func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 	}
 }
 
+// Invalid EMISAR_CLIENT_METADATA is fatal at startup — the operator gets a clear
+// local error and nothing partial ever reaches the control plane.
+func TestMain_BadClientMetadataIsFatal(t *testing.T) {
+	base := map[string]string{"EMISAR_URL": "https://emisar.dev", "EMISAR_API_KEY": "emk-x"}
+	cases := []struct {
+		name     string
+		metadata string
+		want     string
+	}{
+		{"not json", "nope", "must be a JSON object"},
+		{"array", `["x"]`, "must be a JSON object"},
+		{"too many keys", `{"a":"1","b":"2","c":"3","d":"4","e":"5","f":"6","g":"7","h":"8","i":"9","j":"10","k":"11"}`, "the maximum is 10"},
+		{"bool value", `{"managed":true}`, "must be a string or number"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			env := map[string]string{"EMISAR_CLIENT_METADATA": c.metadata}
+			for k, v := range base {
+				env[k] = v
+			}
+			stdout, stderr, code := runMain(t, "", nil, env)
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1 (fatalln)", code)
+			}
+			if !strings.Contains(stderr, c.want) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr, c.want)
+			}
+			if stdout != "" {
+				t.Errorf("a fatal startup should write nothing to stdout, got %q", stdout)
+			}
+		})
+	}
+}
+
+// Valid EMISAR_CLIENT_METADATA is forwarded (canonical) in the request header on
+// every frame the started bridge sends.
+func TestMain_ClientMetadataForwardedOnRequest(t *testing.T) {
+	var mu sync.Mutex
+	var gotMetadata string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotMetadata = r.Header.Get("Emisar-Client-Metadata")
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted) // notification → bridge writes nothing
+	}))
+	defer srv.Close()
+
+	frame := `{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"
+	_, stderr, code := runMain(t, frame, nil, map[string]string{
+		"EMISAR_URL":             srv.URL,
+		"EMISAR_API_KEY":         "emk-x",
+		"EMISAR_CLIENT_METADATA": `{"b":"2","asset_tag":"LT-4417"}`,
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotMetadata != `{"asset_tag":"LT-4417","b":"2"}` {
+		t.Errorf("forwarded metadata = %q, want the canonical sorted form", gotMetadata)
+	}
+}
+
 // / — the endpoint is composed as `base + /api/mcp/rpc`,
 // and a trailing slash on EMISAR_URL is trimmed first (so `https://x/` and
 // `https://x` produce the same endpoint). We point a started bridge at a real

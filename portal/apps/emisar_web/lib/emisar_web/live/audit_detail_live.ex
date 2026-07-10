@@ -200,6 +200,11 @@ defmodule EmisarWeb.AuditDetailLive do
           </div>
         </div>
 
+        <%!-- Self-reported MCP client metadata pulled from the run payload —
+           labeled as self-reported, never verified posture. Renders nothing
+           when the event carries none. --%>
+        <.mcp_client_metadata metadata={@event.payload["mcp_client_metadata"] || %{}} />
+
         <%!-- Policy-update diff — special-case rendering for the one
            event type where the payload diff is the whole reason
            anyone opens the page. Falls through to plain JSON below

@@ -48,6 +48,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const bridgeName = "emisar-mcp"
@@ -68,6 +69,20 @@ const maxResponseBytes = 32 * 1024 * 1024
 // maxFrameBytes caps a single inbound JSON-RPC line. An over-long frame is
 // rejected (the session kept alive), never allowed to kill the bridge.
 const maxFrameBytes = 16 * 1024 * 1024
+
+// Self-reported MCP client metadata: an operator-configured key/value map
+// (EMISAR_CLIENT_METADATA, a JSON object) the bridge validates once at startup
+// and forwards on every request so the portal can snapshot it onto MCP action
+// runs for audit/SIEM correlation with the operator's own MDM/EDR/inventory. It
+// is UNTRUSTED, self-reported enrichment — never an authorization, posture, or
+// approval input — so the portal independently re-validates these same limits at
+// its boundary (a direct HTTP caller or a modified bridge can send anything).
+const (
+	clientMetadataHeader   = "Emisar-Client-Metadata"
+	maxClientMetadataKeys  = 10
+	maxClientMetadataKey   = 128
+	maxClientMetadataValue = 512
+)
 
 // newHTTPClient builds the bridge's HTTP client: a hard request timeout plus a
 // redirect refusal — the RPC endpoint never legitimately redirects, and
@@ -98,6 +113,16 @@ Environment:
   EMISAR_CLIENT     Optional label that shows up in the audit log
                     (claude-desktop, cursor, codex, …). Defaults to
                     "unknown".
+  EMISAR_CLIENT_METADATA
+                    Optional self-reported client metadata as a JSON object of
+                    string keys to string or number values, e.g.
+                    {"asset_tag":"LT-4417","device_id":"…"}. Snapshotted onto
+                    each MCP action run so you can correlate Emisar activity with
+                    your own MDM/EDR/inventory in the audit log and SIEM export.
+                    Limits: at most 10 keys, keys ≤128 and values ≤512
+                    characters. It is UNTRUSTED, self-reported enrichment —
+                    never used for authorization, posture, or approval. Invalid
+                    metadata is a startup error.
   EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
                          (with EMISAR_SIGNING_CERT), the bridge signs each
                          tools/call so runners that enforce signatures will run
@@ -174,6 +199,13 @@ func main() {
 		apiKey = stored
 	}
 
+	// Self-reported client metadata: validated once at startup so a bad map is a
+	// clear local error, never a partial snapshot on the control plane.
+	clientMetadata, err := parseClientMetadata(os.Getenv("EMISAR_CLIENT_METADATA"))
+	if err != nil {
+		fatalln(err)
+	}
+
 	sessionID, err := newSessionID(rand.Reader)
 	if err != nil {
 		fatalln(err)
@@ -186,6 +218,7 @@ func main() {
 		client:          newHTTPClient(),
 		sessionID:       sessionID,
 		signer:          sign,
+		clientMetadata:  clientMetadata,
 		bootstrapPrefix: bootstrap,
 		credsPath:       credsPath,
 	}
@@ -208,6 +241,12 @@ type bridge struct {
 	// signer, when set, attaches a client attestation to each tools/call so an
 	// enforcing runner will run it. Nil = signing disabled.
 	signer *signer
+	// clientMetadata is the operator's self-reported client metadata as canonical
+	// JSON, validated once at startup and forwarded verbatim in every request's
+	// clientMetadataHeader; "" when unset. It is untrusted correlation enrichment
+	// the portal re-validates and snapshots onto MCP action runs — never an authz
+	// input.
+	clientMetadata string
 	// bootstrapPrefix identifies the ORIGINAL key from the client's config
 	// ("emk-" + the portal's 12-char prefix — non-secret); it stays the
 	// credentials-file lookup key across chained rotations. apiKey holds the
@@ -325,6 +364,13 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 	// actions can be correlated (stdio clients can't echo a server-issued
 	// Mcp-Session-Id, so we supply our own).
 	req.Header.Set("Mcp-Session-Id", b.sessionID)
+
+	// Self-reported client metadata (untrusted correlation enrichment). Forwarded
+	// verbatim on every request; the portal re-validates it and snapshots it onto
+	// MCP action runs. Omitted entirely when unconfigured.
+	if b.clientMetadata != "" {
+		req.Header.Set(clientMetadataHeader, b.clientMetadata)
+	}
 
 	// Idempotency key: stable per (process, request-id) so resends
 	// of the same JSON-RPC frame collapse to a single run on the
@@ -524,6 +570,66 @@ func persistSuccessor(path, bootstrapPrefix, secret string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// parseClientMetadata validates the operator's EMISAR_CLIENT_METADATA (a JSON
+// object of string keys to string-or-number values) and returns the canonical
+// JSON to forward in the clientMetadataHeader. It FAILS CLOSED: any malformed
+// input, disallowed value type (array/object/bool/null), or exceeded limit is a
+// startup error, never a partially-applied map. An empty/unset value — or an
+// empty object — yields "" (no header). The limits mirror the portal's boundary
+// check; both sides enforce them independently because the header is untrusted
+// (a direct HTTP caller or a modified bridge can send anything).
+func parseClientMetadata(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.UseNumber() // keep numbers exact — no float rounding of an asset id
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA must be a JSON object: %w", err)
+	}
+	if dec.More() {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA must be a single JSON object")
+	}
+	if len(m) > maxClientMetadataKeys {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA has %d keys, the maximum is %d", len(m), maxClientMetadataKeys)
+	}
+
+	clean := make(map[string]any, len(m))
+	for key, val := range m {
+		if utf8.RuneCountInString(key) > maxClientMetadataKey {
+			return "", fmt.Errorf("EMISAR_CLIENT_METADATA key %q exceeds %d characters", key, maxClientMetadataKey)
+		}
+		switch v := val.(type) {
+		case string:
+			if utf8.RuneCountInString(v) > maxClientMetadataValue {
+				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds %d characters", key, maxClientMetadataValue)
+			}
+		case json.Number:
+			if utf8.RuneCountInString(v.String()) > maxClientMetadataValue {
+				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds %d characters", key, maxClientMetadataValue)
+			}
+		default:
+			return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q must be a string or number", key)
+		}
+		clean[key] = val
+	}
+
+	if len(clean) == 0 {
+		return "", nil
+	}
+
+	// Re-marshal so the header is canonical (json.Marshal sorts object keys),
+	// dropping any formatting the operator's raw value carried.
+	canonical, err := json.Marshal(clean)
+	if err != nil {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA could not be encoded: %w", err)
+	}
+	return string(canonical), nil
 }
 
 // buildUserAgent stamps every cloud request with structured client +

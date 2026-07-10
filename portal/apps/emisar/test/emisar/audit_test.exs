@@ -291,6 +291,28 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(payload, :exit_code)
       refute Map.has_key?(payload, :duration_ms)
       refute Map.has_key?(payload, :executed_command)
+      # No self-reported metadata on this run → compacted out.
+      refute Map.has_key?(payload, :mcp_client_metadata)
+    end
+
+    test "carries self-reported MCP client metadata in the payload when the run has some" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      metadata = %{"asset_tag" => "LT-4417"}
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          mcp_client_metadata: metadata
+        })
+
+      changeset = Audit.run_event_changeset(run)
+      payload = Ecto.Changeset.get_field(changeset, :payload)
+      assert payload[:mcp_client_metadata] == metadata
     end
   end
 

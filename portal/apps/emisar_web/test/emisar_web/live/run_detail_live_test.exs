@@ -153,6 +153,51 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "MCP session"
   end
 
+  test "renders self-reported client metadata, labeled as not verified posture", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    run =
+      run_with(account, %{
+        source: "mcp",
+        mcp_client_metadata: %{"asset_tag" => "LT-4417", "device_id" => "d-99"}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Client metadata"
+    assert html =~ "asset_tag"
+    assert html =~ "LT-4417"
+    assert html =~ "device_id"
+    # Explicitly self-reported, never presented as verified device posture.
+    assert html =~ "not verified device posture"
+  end
+
+  test "hides the client-metadata block for a run with none", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{source: "mcp"})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute html =~ "Client metadata"
+  end
+
+  # Metadata keys/values are attacker-influenced (a hostile MCP client controls
+  # them), so they must render ESCAPED — never via raw/1 (IL-16).
+  test "escapes attacker-influenced client metadata (no stored XSS)", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    run =
+      run_with(account, %{
+        source: "mcp",
+        mcp_client_metadata: %{"asset_tag" => "<script>alert(1)</script>"}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute html =~ "<script>alert(1)</script>"
+    assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+  end
+
   test "renders output as a single pre with chunks as inline spans (no double spacing)",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

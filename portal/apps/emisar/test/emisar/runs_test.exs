@@ -690,6 +690,78 @@ defmodule Emisar.RunsTest do
       assert success.payload["action"] == "linux.uptime"
     end
 
+    test "snapshots self-reported MCP client metadata onto the run and its terminal audit event" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      user = Fixtures.Users.create_user()
+
+      metadata = %{"asset_tag" => "LT-4417", "device_id" => "d-99"}
+      context = %RequestContext{mcp_client_metadata: metadata}
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
+
+      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      # Snapshotted on the run at create time, not just on the api-key record.
+      assert run.mcp_client_metadata == metadata
+
+      # The terminal transition (written from the runner-socket path, long after
+      # the request) still carries the metadata that was present at dispatch.
+      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+
+      success =
+        Enum.find(
+          events,
+          &(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success")
+        )
+
+      assert success.payload["mcp_client_metadata"] == metadata
+    end
+
+    test "a run with no client metadata stores an empty map and omits it from the audit payload" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert run.mcp_client_metadata == %{}
+
+      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+
+      success =
+        Enum.find(
+          events,
+          &(&1.payload["run_id"] == run.id and &1.event_type == "action_run.success")
+        )
+
+      refute Map.has_key?(success.payload, "mcp_client_metadata")
+    end
+
+    test "client metadata does not change the policy decision (never an authz input)" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      user = Fixtures.Users.create_user()
+
+      # A key an over-strict design might have treated as "managed/compliant";
+      # policy must ignore it entirely — same decision as a bare dispatch.
+      context = %RequestContext{mcp_client_metadata: %{"managed" => "true", "role" => "admin"}}
+      with_metadata = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
+      without = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      {:ok, :running, run_with} = Runs.dispatch_run(base_attrs(account.id, runner.id), with_metadata)
+      {:ok, :running, run_without} = Runs.dispatch_run(base_attrs(account.id, runner.id), without)
+
+      assert run_with.policy_decision == run_without.policy_decision
+      assert run_with.policy_decision == "allow"
+    end
+
     test "wire envelope carries trusted pack hash when one is on file" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

@@ -318,6 +318,56 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
+  describe "self-reported client metadata" do
+    test "valid Emisar-Client-Metadata is snapshotted onto the dispatched run",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      subject = subject_for(account, user)
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("emisar-client-metadata", ~s({"asset_tag":"LT-4417","port":8080}))
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{"runner" => "host-1", "reason" => "metadata", "wait" => "0"}
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.mcp_client_metadata == %{"asset_tag" => "LT-4417", "port" => "8080"}
+    end
+
+    test "invalid metadata fails the request closed with -32602 and dispatches nothing",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      subject = subject_for(account, user)
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        # A boolean value is not a string/number → rejected at the boundary.
+        |> put_req_header("emisar-client-metadata", ~s({"managed":true}))
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{"runner" => "host-1", "reason" => "bad", "wait" => "0"}
+        })
+        |> json_response(200)
+
+      assert body["error"]["code"] == -32602
+      assert body["error"]["message"] =~ "must be a string or number"
+
+      {:ok, runs, _meta} = Runs.list_runs(subject)
+      assert runs == []
+    end
+  end
+
   describe "ping auth" do
     test "an unauthenticated ping is 401 (the auth plug runs first)", %{conn: conn} do
       body =

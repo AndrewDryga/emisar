@@ -80,6 +80,32 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ ~p"/app/#{account}/runs/#{run.id}"
   end
 
+  test "surfaces self-reported client metadata from the run payload, labeled as such", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(%{account_id: account.id, name: "web-02"})
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        args: %{},
+        mcp_client_metadata: %{"asset_tag" => "LT-4417"}
+      })
+
+    {:ok, event} = Audit.record(Audit.run_event_changeset(%{run | status: :success}))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert html =~ "Client metadata"
+    assert html =~ "asset_tag"
+    assert html =~ "LT-4417"
+    assert html =~ "not verified device posture"
+  end
+
   test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
     conn: conn
   } do

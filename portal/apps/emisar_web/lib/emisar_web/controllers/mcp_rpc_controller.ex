@@ -29,7 +29,8 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat}
-  alias EmisarWeb.MCP.{Attestation, Auth, ContentBlocks, Idempotency, Instructions, Service}
+  alias EmisarWeb.MCP.{Attestation, Auth, ClientMetadata, ContentBlocks}
+  alias EmisarWeb.MCP.{Idempotency, Instructions, Service}
   alias EmisarWeb.RequestContext
 
   @latest_protocol_version "2025-06-18"
@@ -41,6 +42,7 @@ defmodule EmisarWeb.MCPRpcController do
   plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
 
   plug :authenticate
+  plug :put_client_metadata
 
   # POST /api/mcp/rpc
   def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) when is_binary(method) do
@@ -481,6 +483,25 @@ defmodule EmisarWeb.MCPRpcController do
         conn
         |> put_status(:unauthorized)
         |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32001, message: "unauthorized"}})
+        |> halt()
+    end
+  end
+
+  # Self-reported MCP client metadata (Emisar-Client-Metadata header): validated
+  # here, then stamped onto the authenticated subject's request context so the
+  # dispatch snapshots it onto the run for audit/SIEM correlation. Untrusted
+  # enrichment — malformed input fails the request closed (never a partial
+  # snapshot); it is never an authorization/policy/approval input.
+  defp put_client_metadata(conn, _opts) do
+    case ClientMetadata.parse(get_req_header(conn, "emisar-client-metadata")) do
+      {:ok, metadata} ->
+        subject = conn.assigns.current_subject
+        context = %{subject.context | mcp_client_metadata: metadata}
+        assign(conn, :current_subject, %{subject | context: context})
+
+      {:error, message} ->
+        conn
+        |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32602, message: message}})
         |> halt()
     end
   end

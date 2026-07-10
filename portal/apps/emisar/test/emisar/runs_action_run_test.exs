@@ -139,6 +139,22 @@ defmodule Emisar.Runs.ActionRunTest do
 
       assert changeset.valid?
     end
+
+    test "casts self-reported mcp_client_metadata" do
+      metadata = %{"asset_tag" => "LT-4417"}
+      changeset = ActionRun.Changeset.create(create_attrs(%{mcp_client_metadata: metadata}))
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_field(changeset, :mcp_client_metadata) == metadata
+    end
+
+    test "backstops an oversized mcp_client_metadata map" do
+      huge = for i <- 1..500, into: %{}, do: {"k#{i}", String.duplicate("v", 100)}
+      changeset = ActionRun.Changeset.create(create_attrs(%{mcp_client_metadata: huge}))
+
+      refute changeset.valid?
+      assert Keyword.has_key?(changeset.errors, :mcp_client_metadata)
+    end
   end
 
   describe "transition/3 size caps" do

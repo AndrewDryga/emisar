@@ -374,15 +374,17 @@ defmodule Emisar.Runs do
     end
   end
 
-  # Snapshot the dispatcher's source ip/ua from the request context onto the run
-  # attrs, so every run-lifecycle audit event — including the terminal one logged
-  # from the runner socket — attributes the action to where it came from. The
-  # subject-less dispatch_run_for_account path (the runbook continuation) carries
-  # none, which is correct: no request, no dispatcher.
+  # Snapshot the dispatcher's source ip/ua + self-reported MCP client metadata
+  # from the request context onto the run attrs, so every run-lifecycle audit
+  # event — including the terminal one logged from the runner socket — attributes
+  # the action to where it came from and carries the caller's correlation
+  # metadata. The subject-less dispatch_run_for_account path (the runbook
+  # continuation) carries none, which is correct: no request, no dispatcher.
   defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context}) do
     attrs
     |> Map.put(:ip_address, context.ip_address)
     |> Map.put(:user_agent, context.user_agent)
+    |> Map.put(:mcp_client_metadata, context.mcp_client_metadata)
   end
 
   defp put_dispatcher_context(attrs, _subject), do: attrs

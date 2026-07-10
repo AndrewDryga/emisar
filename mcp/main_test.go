@@ -1046,3 +1046,140 @@ func newTestBridge(srv *httptest.Server) *bridge {
 		sessionID: "sess",
 	}
 }
+
+// -- parseClientMetadata: validated, canonical, fail-closed ---------
+
+func TestParseClientMetadata_AcceptsAndCanonicalizes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"unset", "", ""},
+		{"whitespace only", "  \n ", ""},
+		{"empty object", "{}", ""},
+		{"single string value", `{"asset_tag":"LT-4417"}`, `{"asset_tag":"LT-4417"}`},
+		{"keys canonicalized (sorted)", `{"b":"2","a":"1"}`, `{"a":"1","b":"2"}`},
+		{"integer value preserved", `{"port":8080}`, `{"port":8080}`},
+		{"reformatted to canonical", "{\n  \"asset_tag\" : \"x\"\n}", `{"asset_tag":"x"}`},
+		{"max keys allowed", tenKeyObject(), tenKeyObject()},
+		{"arbitrary key names allowed", `{"role":"admin","password":"x"}`, `{"password":"x","role":"admin"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseClientMetadata(c.in)
+			if err != nil {
+				t.Fatalf("parseClientMetadata(%q) error: %v", c.in, err)
+			}
+			if got != c.want {
+				t.Errorf("parseClientMetadata(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestParseClientMetadata_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"not json", "not json", "must be a JSON object"},
+		{"top-level array", `["a"]`, "must be a JSON object"},
+		{"top-level string", `"x"`, "must be a JSON object"},
+		{"top-level number", `5`, "must be a JSON object"},
+		{"trailing data", `{"a":"1"} {"b":"2"}`, "single JSON object"},
+		{"too many keys", elevenKeyObject(), "the maximum is 10"},
+		{"key too long", `{"` + strings.Repeat("k", 129) + `":"v"}`, "exceeds 128 characters"},
+		{"string value too long", `{"a":"` + strings.Repeat("v", 513) + `"}`, "exceeds 512 characters"},
+		{"array value", `{"a":["x"]}`, "must be a string or number"},
+		{"object value", `{"a":{"b":"c"}}`, "must be a string or number"},
+		{"bool value", `{"a":true}`, "must be a string or number"},
+		{"null value", `{"a":null}`, "must be a string or number"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseClientMetadata(c.in)
+			if err == nil {
+				t.Fatalf("parseClientMetadata(%q) = %q, want an error", c.in, got)
+			}
+			if got != "" {
+				t.Errorf("a failed parse must return no metadata, got %q", got)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), c.want)
+			}
+		})
+	}
+}
+
+// A number rendered to exactly 512 chars is accepted; one longer is rejected —
+// the limit is measured on the string representation, matching the portal.
+func TestParseClientMetadata_ValueLengthBoundary(t *testing.T) {
+	ok := `{"a":"` + strings.Repeat("v", 512) + `"}`
+	if _, err := parseClientMetadata(ok); err != nil {
+		t.Errorf("a 512-char value should be accepted, got %v", err)
+	}
+	tooLong := `{"a":"` + strings.Repeat("v", 513) + `"}`
+	if _, err := parseClientMetadata(tooLong); err == nil {
+		t.Error("a 513-char value should be rejected")
+	}
+}
+
+func TestForward_SetsClientMetadataHeaderWhenConfigured(t *testing.T) {
+	var got string
+	var present bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(clientMetadataHeader)
+		_, present = r.Header[clientMetadataHeader]
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	b.clientMetadata = `{"asset_tag":"LT-4417"}`
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if !present {
+		t.Fatal("configured metadata should set the header")
+	}
+	if got != `{"asset_tag":"LT-4417"}` {
+		t.Errorf("%s = %q, want the canonical metadata", clientMetadataHeader, got)
+	}
+}
+
+func TestForward_OmitsClientMetadataHeaderWhenUnset(t *testing.T) {
+	var present bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, present = r.Header[clientMetadataHeader]
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv) // clientMetadata is ""
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if present {
+		t.Error("unconfigured metadata must not set the header")
+	}
+}
+
+func tenKeyObject() string {
+	pairs := make([]string, 10)
+	for i := range pairs {
+		pairs[i] = `"k` + string(rune('0'+i)) + `":"v"`
+	}
+	return "{" + strings.Join(pairs, ",") + "}"
+}
+
+func elevenKeyObject() string {
+	pairs := make([]string, 11)
+	for i := range pairs {
+		pairs[i] = `"k` + string(rune('a'+i)) + `":"v"`
+	}
+	return "{" + strings.Join(pairs, ",") + "}"
+}

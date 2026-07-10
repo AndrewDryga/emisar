@@ -46,6 +46,13 @@ defmodule Emisar.Runs.ActionRun do
     # MCP clientInfo snapshot at dispatch time (e.g. %{"name" => "Claude
     # Code", "version" => "1.2.3"}); empty for non-MCP runs.
     field :client_info, :map, default: %{}
+    # Self-reported MCP client metadata snapshotted at dispatch time — the
+    # operator-configured key/value map (e.g. %{"asset_tag" => "LT-4417"}) an MCP
+    # caller sends so its activity can be correlated with the customer's own
+    # MDM/EDR/inventory in the audit log + SIEM export. UNTRUSTED, self-reported
+    # enrichment, validated at the MCP boundary; empty for non-MCP runs. Never a
+    # policy/approval/authorization input.
+    field :mcp_client_metadata, :map, default: %{}
     # MCP Streamable-HTTP session id (Mcp-Session-Id), for correlating the
     # runs from one session; nil for non-MCP runs.
     field :mcp_session_id, :string

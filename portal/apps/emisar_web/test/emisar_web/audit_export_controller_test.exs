@@ -413,12 +413,39 @@ defmodule EmisarWeb.AuditExportControllerTest do
         |> ndjson()
         |> parse_ndjson()
 
-      # The 14 projected columns are present; the 4 UI-only ones are absent.
+      # The projected columns are present; these 4 UI-only ones are absent.
       assert event["event_type"] == "user.signed_in"
       refute Map.has_key?(event, "mcp_session_id")
       refute Map.has_key?(event, "auth_method")
       refute Map.has_key?(event, "mfa")
       refute Map.has_key?(event, "user_identity_id")
+    end
+
+    test "promotes self-reported MCP client metadata to a stable top-level field", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      # A SIEM correlates on asset_tag/device_id without digging into the nested
+      # payload, so the run event's metadata is projected to a top-level field.
+      metadata = %{"asset_tag" => "LT-4417", "device_id" => "d-99"}
+
+      _ =
+        insert_event(account, "action_run.success",
+          target_kind: "runner",
+          payload: %{"run_id" => Ecto.UUID.generate(), "mcp_client_metadata" => metadata}
+        )
+
+      [event] =
+        conn
+        |> bearer(raw)
+        |> get(~p"/api/audit?event_type=action_run.success")
+        |> ndjson()
+        |> parse_ndjson()
+
+      assert event["mcp_client_metadata"] == metadata
+      # Still available inside the full payload too.
+      assert event["payload"]["mcp_client_metadata"] == metadata
     end
   end
 

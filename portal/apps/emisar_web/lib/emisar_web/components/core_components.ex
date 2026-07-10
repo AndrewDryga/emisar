@@ -3154,6 +3154,41 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Self-reported MCP client metadata — the operator-configured key/value map an
+  MCP caller sends so its Emisar activity can be correlated with the customer's
+  own MDM / EDR / device inventory. Rendered as a labeled definition list and
+  explicitly marked self-reported, so it is never mistaken for verified device
+  posture. Renders nothing when there is no metadata.
+
+      <.mcp_client_metadata metadata={@run.mcp_client_metadata} />
+  """
+  attr :metadata, :map, default: %{}
+  attr :class, :string, default: nil
+
+  def mcp_client_metadata(assigns) do
+    ~H"""
+    <section :if={is_map(@metadata) and @metadata != %{}} class={@class}>
+      <.section_header title="Client metadata">
+        <:subtitle>
+          Self-reported by the MCP client for correlation — not verified device posture.
+        </:subtitle>
+      </.section_header>
+      <dl class="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
+        <div :for={{key, value} <- Enum.sort(@metadata)} class="min-w-0">
+          <dt
+            class="truncate font-mono text-[11px] uppercase tracking-wide text-zinc-500"
+            title={key}
+          >
+            {key}
+          </dt>
+          <dd class="mt-0.5 truncate text-sm text-zinc-200" title={to_string(value)}>{value}</dd>
+        </div>
+      </dl>
+    </section>
+    """
+  end
+
+  @doc """
   Small count pill beside a section title. Renders nothing for a nil/zero count.
   """
   attr :count, :integer, default: nil

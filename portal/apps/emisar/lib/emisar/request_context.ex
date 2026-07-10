@@ -12,14 +12,25 @@ defmodule Emisar.RequestContext do
   engine origin — carries no request metadata, which is the point.
 
   Behind a proxy without `Plug.RemoteIp`, `ip_address` is the proxy IP.
+
+  `mcp_client_metadata` is the self-reported key/value map an MCP caller
+  configures on its bridge/client (validated at the MCP boundary). It is
+  untrusted correlation enrichment, defaults to `%{}` (no metadata), and is
+  snapshotted onto the MCP action run — never a policy/approval/authorization
+  input.
   """
-  defstruct ip_address: nil, user_agent: nil, request_id: nil, mcp_session_id: nil
+  defstruct ip_address: nil,
+            user_agent: nil,
+            request_id: nil,
+            mcp_session_id: nil,
+            mcp_client_metadata: %{}
 
   @type t :: %__MODULE__{
           ip_address: String.t() | nil,
           user_agent: String.t() | nil,
           request_id: String.t() | nil,
-          mcp_session_id: String.t() | nil
+          mcp_session_id: String.t() | nil,
+          mcp_client_metadata: %{optional(String.t()) => String.t()}
         }
 
   @doc """

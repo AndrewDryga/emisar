@@ -377,6 +377,11 @@ defmodule EmisarWeb.RunDetailLive do
           </dl>
         </section>
 
+        <%!-- Self-reported MCP client metadata (correlation with the operator's
+             own MDM/EDR/inventory) — labeled as self-reported, never verified
+             posture. Renders nothing for non-MCP runs. --%>
+        <.mcp_client_metadata metadata={@run.mcp_client_metadata} />
+
         <%!-- Arguments before output. Operators read the page top→down:
              "what was called → what came back" — all input context above the
              result. The code panels ARE the earned artifact boxes. --%>

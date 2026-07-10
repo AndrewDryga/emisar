@@ -222,7 +222,11 @@ defmodule Emisar.Audit do
               exit_code: run.exit_code,
               duration_ms: run.duration_ms,
               executed_command: run.executed_command,
-              reason: run.reason_text
+              reason: run.reason_text,
+              # Self-reported MCP client metadata snapshotted at dispatch, so a
+              # terminal event logged long after (from the runner socket) still
+              # carries it. Empty → dropped by compact, so non-MCP rows stay lean.
+              mcp_client_metadata: mcp_client_metadata(run)
             })
         ]
     )
@@ -262,6 +266,14 @@ defmodule Emisar.Audit do
   # Drop nil-valued keys so audit rows for pending/sent runs don't
   # bloat with fields that are still being filled in.
   defp compact(map), do: :maps.filter(fn _key, value -> not is_nil(value) end, map)
+
+  # Only carry self-reported metadata when the run actually has some — an empty
+  # snapshot becomes nil so `compact/1` drops it from non-MCP payloads.
+  defp mcp_client_metadata(%Runs.ActionRun{mcp_client_metadata: metadata})
+       when map_size(metadata) > 0,
+       do: metadata
+
+  defp mcp_client_metadata(%Runs.ActionRun{}), do: nil
 
   defp actor_kind(%Runs.ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
   defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"

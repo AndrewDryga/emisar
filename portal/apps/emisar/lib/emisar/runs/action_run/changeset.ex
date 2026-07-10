@@ -4,7 +4,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   alias Emisar.Runs.ActionRun
 
   @create_fields ~w[
-    account_id runner_id request_id action_id args args_sha256 client_info
+    account_id runner_id request_id action_id args args_sha256 client_info mcp_client_metadata
     mcp_session_id ip_address user_agent opts attestation reason source requested_by_id api_key_id idempotency_key
     runbook_id runbook_step_id runbook_execution_id expected_pack_hash
     policy_id policy_version policy_decision
@@ -30,6 +30,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # relayed wire envelope. The MCP boundary (normalize_attestation) already caps
   # each field; this backstops any other writer.
   @max_attestation_bytes 8_192
+  # Self-reported MCP client metadata is bounded at the MCP boundary (≤10 keys,
+  # keys ≤128 / values ≤512 chars ≈ 6 KB); 8 KB backstops any other writer.
+  @max_client_metadata_bytes 8_192
   # Runner-origin text can be large enough to explain a failure or show the
   # redacted command, but not unbounded. Plain string columns stay within the DB
   # string budget so malicious runner values fail as changeset errors first.
@@ -44,6 +47,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:mcp_session_id, max: @max_db_string_length)
     |> RepoChangeset.validate_json_size(:args, @max_args_bytes)
     |> RepoChangeset.validate_json_size(:attestation, @max_attestation_bytes)
+    |> RepoChangeset.validate_json_size(:mcp_client_metadata, @max_client_metadata_bytes)
     |> unique_constraint([:account_id, :request_id])
     |> unique_constraint([:api_key_id, :idempotency_key],
       name: :action_runs_api_key_idempotency_key_index
