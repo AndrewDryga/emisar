@@ -351,6 +351,10 @@ defmodule Emisar.Approvals do
     # context-switch into the app just to know what's being touched.
     run = Repo.preload(run, :runner)
 
+    # Preload the account so the email can build the canonical slugged
+    # approval link (/app/:account/approvals/:id) — a slug-less URL 404s.
+    request = Repo.preload(request, :account)
+
     notify_approvers_pages(request, run, requested_by_id, nil)
   end
 

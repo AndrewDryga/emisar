@@ -162,7 +162,9 @@ defmodule Emisar.Mailers.UserNotifier do
   from their inbox without context-switching into the app.
   """
   def deliver_approval_request(%Users.User{} = approver, %{} = request, %{} = run) do
-    url = PublicUrl.url("/app/approvals/#{request.id}")
+    # Canonical console route is /app/:account/approvals/:id — a slug-less
+    # link 404s, so the request must arrive with its account preloaded.
+    url = PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
     runner_label = runner_email_label(run)
     args_block = format_args_for_email(run)
     matched = format_matched_rules(run)

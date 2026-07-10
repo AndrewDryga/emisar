@@ -52,6 +52,16 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  # Drain the Swoosh test mailbox and collect the email structs, so a test
+  # can assert on both recipients and body (e.g. the approval deep link).
+  defp notified_emails(acc \\ []) do
+    receive do
+      {:email, email} -> notified_emails([email | acc])
+    after
+      0 -> acc
+    end
+  end
+
   # -- Grants ---------------------------------------------------------
 
   defp insert_grant(account, key, opts) do
@@ -769,7 +779,13 @@ defmodule Emisar.ApprovalsTest do
 
       assert_receive {:approval_updated, %Request{id: id}}
       assert id == request.id
-      assert decider.email in notified_recipients()
+
+      emails = notified_emails()
+      recipients = Enum.flat_map(emails, &Enum.map(&1.to, fn {_n, addr} -> addr end))
+      assert decider.email in recipients
+
+      # The queued email carries the canonical slugged approval deep link.
+      assert Enum.any?(emails, &(&1.text_body =~ "/app/#{account.slug}/approvals/#{request.id}"))
     end
   end
 

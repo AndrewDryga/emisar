@@ -247,7 +247,12 @@ defmodule Emisar.MailTest do
     test "surfaces action, runner name, reason, args, and the approval link", %{
       approver: approver
     } do
-      request = %{id: "req-id-123", reason: "rotate the cert", matched_rules: ["high → approve"]}
+      request = %{
+        id: "req-id-123",
+        reason: "rotate the cert",
+        matched_rules: ["high → approve"],
+        account: %{slug: "globex"}
+      }
 
       run = %{
         action_id: "caddy.reload_config",
@@ -266,13 +271,14 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "edge-1"
         assert email.text_body =~ "rotate the cert"
         assert email.text_body =~ "/etc/caddy"
-        assert email.text_body =~ "/app/approvals/req-id-123"
+        assert email.text_body =~ "/app/globex/approvals/req-id-123"
+        refute email.text_body =~ "/app/approvals/req-id-123"
         true
       end)
     end
 
     test "labels an unnamed runner by a truncated id", %{approver: approver} do
-      request = %{id: "req-id-9", reason: "x", matched_rules: []}
+      request = %{id: "req-id-9", reason: "x", matched_rules: [], account: %{slug: "acme"}}
 
       run = %{
         action_id: "linux.uptime",
@@ -294,7 +300,7 @@ defmodule Emisar.MailTest do
 
     test "skips a suppressed decider", %{approver: approver} do
       {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
-      request = %{id: "r", reason: "x", matched_rules: []}
+      request = %{id: "r", reason: "x", matched_rules: [], account: %{slug: "acme"}}
       run = %{action_id: "a", runner: %{name: "n"}, runner_id: "i", policy_reason: nil, args: %{}}
 
       assert {:ok, %{suppressed: true}} =
