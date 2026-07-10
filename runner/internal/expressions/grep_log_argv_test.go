@@ -35,7 +35,7 @@ func TestGrepLogArgv_LeadingDashPatternStaysAPattern(t *testing.T) {
 		t.Fatalf("parse grep_log action: %v", err)
 	}
 
-	const hostilePattern = "-r"     // the recursive flag, if it reaches grep as one
+	const hostilePattern = "-r" // the recursive flag, if it reaches grep as one
 	const file = "/var/log/nginx/access.log"
 	out, err := RenderArgv(spec.Execution.Command.Argv, map[string]any{
 		"max_lines": 2000,
