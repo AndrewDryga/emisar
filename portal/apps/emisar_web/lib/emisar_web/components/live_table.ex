@@ -785,14 +785,14 @@ defmodule EmisarWeb.LiveTable do
     end
   end
 
-  defp active_filter_label(%Filter{type: :boolean} = f, _value), do: f.title
+  defp active_filter_label(%Filter{type: :boolean} = filter, _value), do: filter.title
 
-  defp active_filter_label(%Filter{type: :datetime} = f, value),
-    do: "#{f.title}: #{String.replace(to_string(value), "T", " ")}"
+  defp active_filter_label(%Filter{type: :datetime} = filter, value),
+    do: "#{filter.title}: #{String.replace(to_string(value), "T", " ")}"
 
-  defp active_filter_label(%Filter{type: {:list, _}} = f, value) do
+  defp active_filter_label(%Filter{type: {:list, _}} = filter, value) do
     labels =
-      f.values
+      filter.values
       |> normalize_groups()
       |> Enum.flat_map(fn {_group, options} -> options end)
 
@@ -804,10 +804,10 @@ defmodule EmisarWeb.LiveTable do
         option -> option_label(option)
       end
     end)
-    |> then(&"#{f.title}: #{&1}")
+    |> then(&"#{filter.title}: #{&1}")
   end
 
-  defp active_filter_label(%Filter{} = f, value), do: "#{f.title}: #{value}"
+  defp active_filter_label(%Filter{} = filter, value), do: "#{filter.title}: #{value}"
 
   # Near-flush under the section header, like the populated list: the boxed
   # `empty_state` placeholder is self-framed (dashed border + its own padding),

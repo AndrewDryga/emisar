@@ -425,8 +425,8 @@ defmodule Emisar.Approvals do
   threshold, or `{:error, :self_approval_forbidden | :already_decided |
   :expired | :unauthorized | :not_found | {:grant_failed, changeset}}`.
   """
-  def approve_request(%Request{} = r, %Subject{} = s, reason \\ nil, opts \\ []),
-    do: record_decision(r, s, :approve, reason, opts)
+  def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, opts \\ []),
+    do: record_decision(request, subject, :approve, reason, opts)
 
   @doc """
   Deny a pending request — one deny finalizes DENIED, cancels the run, and no
@@ -434,8 +434,8 @@ defmodule Emisar.Approvals do
   Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
   :unauthorized | :not_found}`.
   """
-  def deny_request(%Request{} = r, %Subject{} = s, reason \\ nil),
-    do: record_decision(r, s, :deny, reason, [])
+  def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil),
+    do: record_decision(request, subject, :deny, reason, [])
 
   # The single decision path. Fetch the request through the subject scope before
   # evaluating any request-derived guard: callers can hold a stale struct, and
