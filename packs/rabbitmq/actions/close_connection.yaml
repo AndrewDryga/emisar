@@ -13,7 +13,7 @@ args:
     required: true
     description: Connection PID (from list_connections).
     validation:
-      pattern: "^<[0-9.]+>$"
+      pattern: "^<[A-Za-z0-9@._-]{1,255}>$"
   - name: note
     type: string
     required: false

@@ -589,3 +589,25 @@ func TestDispatch_IamDetachUserPolicy_ArnAcceptsManaged(t *testing.T) {
 		"user_name": "intern", "policy_arn": "arn:aws:s3:::aws:policy/x",
 	}), "policy_arn", "pattern")
 }
+
+// rmq.close_connection's `pid` gates the connection PID passed to `rabbitmqctl
+// close_connection`. Real RabbitMQ PIDs from `list_connections pid` carry the
+// node name — `<rabbit@host.1.123.0>` (the form in RabbitMQ's own docs, this
+// action's shipped example, and the pack test case). The old `^<[0-9.]+>$`
+// pattern allowed only bare-numeric `<0.123.0>` and rejected every real
+// node-prefixed PID, breaking the high-risk action at the dispatch seam. Drive
+// the real seam: the node-prefixed and bare-numeric forms both pass; a
+// shell-metacharacter value is still rejected on the pattern.
+func TestDispatch_RmqCloseConnection_PidAcceptsNodePrefix(t *testing.T) {
+	reg := loadRealLibrary(t)
+	const id = "rmq.close_connection"
+
+	// The node-prefixed PID — the action's own example and the value the old
+	// pattern wrongly rejected — plus the bare-numeric form.
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"pid": "<rabbit@host.1.123.0>"}))
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"pid": "<0.123.0>"}))
+
+	// Shell metacharacters and a missing bracket can't reach argv.
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "<rabbit@host; reboot>"}), "pid", "pattern")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "0.123.0"}), "pid", "pattern")
+}
