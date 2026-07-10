@@ -21,10 +21,12 @@
           Your AI agent needs production access&nbsp;— not your SSH key.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          emisar is the MCP server that connects Claude, Cursor, ChatGPT — any AI agent — to your
-          infrastructure. Your agent reads real production state to debug what it shipped and
-          help work incidents. Safe reads run on their own. The one risky change waits for a human
-          to approve it. No SSH key, no always-on access, every call on the record.
+          emisar is the one governed MCP server that connects Claude, Cursor, ChatGPT — any AI
+          agent — to your infrastructure. One server covers production access, debugging, alerting,
+          runbooks, and internal ops — so a new capability is one more pack, not another MCP to
+          roll out to every client. Your agent reads real production state to debug what it shipped
+          and help work incidents. Safe reads run on their own. The one risky change waits for a
+          human to approve it. No SSH key, no always-on access, every call on the record.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
@@ -307,7 +309,9 @@
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Packs live in git, and each one is fingerprinted by its contents. The AI sees only the
             actions you declared — it can't ask for anything else. Change a pack and emisar stops
-            running it until an admin trusts the new version.
+            running it until an admin trusts the new version. A new surface — another datastore,
+            your alerting stack, an internal API — is one more trusted pack on the same gate, not
+            another MCP server to roll out to every client.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
