@@ -425,6 +425,11 @@ func pathInList(path string, list []string) bool {
 func prefixInList(path string, prefixes []string) bool {
 	for _, p := range prefixes {
 		clean := filepath.Clean(p)
+		// Root covers every absolute path; clean+separator would be "//",
+		// which never prefixes a cleaned path, so special-case it.
+		if clean == string(filepath.Separator) {
+			return true
+		}
 		if path == clean || strings.HasPrefix(path, clean+string(filepath.Separator)) {
 			return true
 		}

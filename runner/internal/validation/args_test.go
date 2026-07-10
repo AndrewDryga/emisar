@@ -134,6 +134,29 @@ func TestValidate_AllowedPathsDenied(t *testing.T) {
 	}
 }
 
+func TestValidate_RootPrefix(t *testing.T) {
+	// A "/" prefix must cover every absolute path, not just the exact
+	// string "/". Otherwise allowed_prefixes:["/"] rejects everything
+	// (fail-closed but surprising) and denied_prefixes:["/"] denies
+	// nothing (fail-open). Non-existent paths keep symlink resolution
+	// deterministic across OSes.
+	allowed := []actionspec.Arg{{
+		Name: "p", Type: actionspec.ArgPath,
+		Validation: &actionspec.Validation{AllowedPrefixes: []string{"/"}},
+	}}
+	if _, err := Validate(allowed, map[string]any{"p": "/etc/no-such-file"}); err != nil {
+		t.Fatalf(`allowed_prefixes:["/"] should admit /etc/no-such-file: %v`, err)
+	}
+
+	denied := []actionspec.Arg{{
+		Name: "p", Type: actionspec.ArgPath,
+		Validation: &actionspec.Validation{DeniedPrefixes: []string{"/"}},
+	}}
+	if _, err := Validate(denied, map[string]any{"p": "/anything-no-such-file"}); err == nil {
+		t.Fatal(`denied_prefixes:["/"] should deny /anything-no-such-file`)
+	}
+}
+
 func TestValidate_SymlinkEscapeRejected(t *testing.T) {
 	// Create a symlink under tmpdir that points outside the allowed prefix,
 	// then confirm validation resolves the symlink and rejects the path.
