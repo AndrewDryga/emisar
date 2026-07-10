@@ -13,7 +13,7 @@ cases:
 - action: debugging.drop_caches
   args:
     mode: 1
-  skip: mutator skipped by default (medium); set --include=debugging.drop_caches to run
+  skip: mutator skipped by default (high); set --include=debugging.drop_caches to run
 - action: debugging.iostat
   args: {}
   expect_exit: 0
