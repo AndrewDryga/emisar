@@ -1,17 +1,25 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.emisar/emisar",
-  "title": "Emisar",
-  "description": "Give AI agents policy-gated, audited infrastructure actions from a live catalog, not shell access.",
+  "title": "emisar",
+  "description": "Governed MCP for real infrastructure actions — gated, approved, audited.",
+  "version": "0.23.0",
+  "websiteUrl": "https://emisar.dev",
   "repository": {
     "url": "https://github.com/andrewdryga/emisar",
     "source": "github"
   },
-  "version": "0.23.0",
   "remotes": [
     {
       "type": "streamable-http",
       "url": "https://emisar.dev/api/mcp/rpc"
+    }
+  ],
+  "icons": [
+    {
+      "src": "https://emisar.dev/android-chrome-512x512.png",
+      "mimeType": "image/png",
+      "sizes": "512x512"
     }
   ]
 }
