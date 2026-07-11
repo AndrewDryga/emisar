@@ -161,13 +161,98 @@ to "what are the limits" before a single request is sent.
    unthrottled; a stress pass should confirm a hostile enrollment key can't flood
    it (the account-row lock serializes but doesn't rate-limit).
 
+## Native boot (no Docker) — how the run below was produced
+
+No Docker? You don't need the compose stack; boot the portal natively and drive
+port **4000**. This is exactly how the measured run below was gathered.
+
+```sh
+# 1. Postgres (asdf, no docker) — see portal memory `portal-test-db-bootstrap`
+export ASDF_POSTGRES_VERSION=16.14
+PGBIN=$(asdf where postgres)/bin
+[ -d ~/.pgdata-emisar ] || "$PGBIN/initdb" -U postgres --auth=trust -D ~/.pgdata-emisar
+"$PGBIN/pg_ctl" -D ~/.pgdata-emisar -l /tmp/pglog.log \
+  -o "-p 5432 -k /tmp -c listen_addresses=localhost" start
+
+# 2. Dev DB (from portal/)
+cd portal && export PGHOST=localhost PGPORT=5432 MIX_ENV=dev
+mix ecto.create && mix ecto.migrate
+
+# 3. Boot the endpoint WITHOUT the asset watchers (the box has no Linux
+#    esbuild/tailwind binary) via a throwaway boot script — put_env disables
+#    watchers + code_reloader, sets server:true, then starts :emisar_web:
+#      ep = Application.get_env(:emisar_web, EmisarWeb.Endpoint)
+#      Application.put_env(:emisar_web, EmisarWeb.Endpoint,
+#        Keyword.merge(ep, watchers: [], server: true, code_reloader: false))
+#      {:ok, _} = Application.ensure_all_started(:emisar_web); Process.sleep(:infinity)
+#    Run it with:  mix run --no-start --no-halt /tmp/boot_portal.exs &
+```
+
+The full `seeds.exs` currently raises `missing shipped-pack baseline for caddy
+0.1.6` (its `pack_versions` are ahead of `priv/packs/catalog.json`) — **you don't
+need it.** Mint the MCP keys you drive directly against the already-seeded demo
+account with a tiny `mix run --no-start` script (start only `:emisar` so the
+`:prometheus_metrics` port doesn't collide with the running endpoint), building
+each key row exactly as `seeds.exs` does — `ApiKeys.ApiKey.Changeset.create(...,
+String.slice(raw,0,12), Emisar.Crypto.hash(raw), attrs)`. Each key needs a
+**distinct 12-char prefix** (`peek_api_key_by_secret` looks up by prefix), so vary
+the first 12 chars per key.
+
 ## Results log
 
-Record measured runs here so the next agent inherits the numbers.
+Measured run — 2026-07-11, native boot (above), portal `dev` env, pool=10, MCP
+rate limit ON, on a shared 12-vCPU / 16 GB coop container. **Read the caveat under
+the table before quoting any absolute number.**
 
-| Date | Scenario | clients / runners | throughput | p50 / p95 / p99 | errors | bottleneck | env |
-|---|---|---|---|---|---|---|---|
-| _tbd_ | tools_list | — | — | — | — | — | needs Docker-capable host |
+| Scenario | offered conc. (16 keys ×) | throughput | p50 | p95 | rate-limited | pg active peak (of 10) |
+|---|---|---|---|---|---|---|
+| tools_list | 16 (×1) | 162 req/s | ~98 ms | ~110 ms | 0 | 2 |
+| tools_list | 32 (×2) | 203 req/s | ~156 ms | ~176 ms | 291 | 5 |
+| tools_list | 64 (×4) | 235 req/s | ~262 ms | ~294 ms | 2816 | ≤5 |
+| tools_list | 128 (×8) | **192 req/s** (collapse) | ~575 ms | ~857 ms | 768 | ≤5 |
+| ping | 16 → 128 | 160 → 235 req/s | 98 → 511 ms | 113 → 580 ms | 0 → engages | ≤2 |
+
+Single-client, unthrottled per-request latency (warm): `initialize` p50 26 ms /
+p95 31 ms · `ping` p50 22 ms / p95 26 ms · `tools_list` p50 22 ms / p95 26 ms.
+
+**Two limits pinned to exact numbers:**
+
+- **MCP rate limit = 300 req / 60 s / bearer, shared across methods.** A *fresh*
+  bearer fired 800 pings as fast as possible returned **exactly 300 × `200` then
+  500 × `429`** with `retry-after: 60`. `initialize` counts against the same
+  window as `ping`/`tools/call` (an `initialize`-then-`ping` run exhausts one
+  shared budget). The "2×-at-edge burst" only appears when a burst straddles two
+  windows; wholly inside one window the allowance is a hard 300.
+- **`/runner/register` is unthrottled.** 600 rapid POSTs with distinct bogus
+  enrollment bearers returned **600 × `401`, zero `429`** — confirming the abuse
+  surface: a hostile enrollment key floods register (one DB lookup each) with no
+  plug-layer backpressure. Rec #4 stands.
+
+**What the numbers say (the transferable findings — trust these over the absolute req/s):**
+
+1. **The DB pool (10) is NOT the bottleneck for MCP read/control methods.**
+   Postgres active connections peaked at ≤5 of 10 at every concurrency level;
+   `ping` (≈no DB) and `tools_list` (a DB read + large JSON) share the *same*
+   throughput ceiling, so the cost is per-request pipeline/CPU, not pool checkout.
+   The pool-starvation path is specifically `tools/call`'s 60 s long-poll (each
+   holds a connection) — **not exercised here** (needs connected runners
+   dispatching real actions), so tuning rec #1/#2 remains a hypothesis for that
+   path, not something this read-path run reproduced.
+2. **Latency scales linearly with offered concurrency** (Little's law: ~98 ms at
+   16 → ~575 ms at 128) and **throughput plateaus ~200–240 req/s then suffers
+   congestion collapse past ~64 offered concurrency** (192 req/s at 128). The knee
+   is ~32–64 concurrent MCP requests on this box.
+3. **The rate limiter, not the server, is the first wall a single busy agent
+   hits** — one key is capped at 300/min long before it can pressure the pool.
+
+> **Caveat — absolute req/s here is a floor, not a capacity claim.** This ran in
+> `MIX_ENV=dev` (`plug_init_mode: :runtime` re-inits plugs per request;
+> `enable_expensive_runtime_checks`) on a *shared* coop container. Those are dev
+> artifacts, not server limits — a `prod` release on dedicated hardware will do
+> materially more req/s. What transfers is the **shape** (linear latency, ~200/s
+> plateau + collapse past the knee) and the **bottleneck ordering** (rate limit →
+> per-request CPU → pool), plus the two exact limits above. Re-run on a `prod`
+> build / dedicated host to get quotable capacity ceilings.
 
 > Harness self-validation (not a portal number): built binary against an
 > in-process stub sustained ~6k req/s at `-clients 8` with an all-`ok` profile —
