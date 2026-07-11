@@ -5092,13 +5092,13 @@
     {
       "id": "docker",
       "name": "Docker operations pack",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "description": "Operator pack for Docker hosts: read-only inventory and per-container introspection, plus narrow mutators (restart, stop, kill, prune). Includes docker-compose support. The runner uid must be in the docker group; this pack does NOT escalate.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/docker",
-      "content_hash": "sha256:862c285668df8a64a1646f85b00fbca7ea5a36406e7699cca4abd4111b942de2",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/docker/0.2.5/862c285668df8a64a1646f85b00fbca7ea5a36406e7699cca4abd4111b942de2/pack.tar.gz",
+      "content_hash": "sha256:94ead8a686fb83fe8a19cf7c2a6a38efd0f7a7570a2e64a4aec9b3f53df4bb7b",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/docker/0.2.6/94ead8a686fb83fe8a19cf7c2a6a38efd0f7a7570a2e64a4aec9b3f53df4bb7b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

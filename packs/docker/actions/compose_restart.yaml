@@ -15,6 +15,22 @@ args:
     description: Path to docker-compose.yml.
     validation:
       pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+      # The pattern blocks shell metacharacters but NOT `..` — `.` and `/` are
+      # literal charset members. allowed_prefixes runs the runner's
+      # Clean+EvalSymlinks containment, collapsing any `../` escape to its real
+      # path and rejecting anything outside a standard compose-project root: this
+      # is a mutator (docker compose PARSES the file and then acts on the named
+      # project), so an unscoped path is both a read oracle over any
+      # runner-readable secret and a way to point the restart at an arbitrary
+      # project file. Scoped to service-deployment roots (compose stacks on
+      # managed hosts live here) — /home and /root are excluded to keep it off
+      # user/root dotfile secrets (.ssh/.pgpass/.aws/.env).
+      allowed_prefixes:
+        - /opt
+        - /srv
+        - /var/www
+        - /data
+        - /usr/local
   - name: service
     type: string
     required: true

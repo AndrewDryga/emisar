@@ -786,3 +786,43 @@ func TestDispatch_CaddyConfigPaths_ScopedToConfigRoots(t *testing.T) {
 		})
 	}
 }
+
+// docker's compose_ps/compose_logs/compose_restart each take a compose-file
+// `file` arg (`docker compose -f {{file}} …`). The old `^/[A-Za-z0-9._/-]{1,256}$`
+// pattern anchored only to `/`, so ANY absolute path passed and — with no
+// allowed/denied paths — applyPathValidation early-returned and the runner's
+// Clean+EvalSymlinks jail never ran. docker compose PARSES the file and quotes
+// offending lines back in its errors (a filtered read oracle over any
+// runner-readable secret); compose_restart additionally acts on the project.
+// The fix scopes each `file` to standard service-deployment roots via
+// allowed_prefixes, which engages the jail. Drive the real dispatch seam: an
+// in-scope path passes, a plain out-of-scope path is rejected, and a `..`
+// traversal that still matches the charset is cleaned back and caught.
+func TestDispatch_DockerComposePaths_ScopedToDeployRoots(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	for _, id := range []string{"docker.compose_ps", "docker.compose_logs", "docker.compose_restart"} {
+		t.Run(id, func(t *testing.T) {
+			args := map[string]any{"file": "/opt/stack/docker-compose.yml"}
+			if id != "docker.compose_ps" {
+				args["service"] = "api"
+			}
+			// A compose file under a standard deploy root — in scope.
+			accepted(t, dispatchValidate(t, reg, id, args))
+
+			// A plain out-of-scope absolute path — the arbitrary-file read the
+			// finding named — is rejected before it can reach docker.
+			bad := map[string]any{"file": "/etc/shadow"}
+			trav := map[string]any{"file": "/opt/stack/../../etc/shadow"}
+			if id != "docker.compose_ps" {
+				bad["service"] = "api"
+				trav["service"] = "api"
+			}
+			rejected(t, dispatchValidate(t, reg, id, bad), "file", "allowed_prefixes")
+
+			// A `..` traversal passes the charset pattern but the jail cleans it
+			// back to /etc/shadow and rejects it as outside the allowed prefix.
+			rejected(t, dispatchValidate(t, reg, id, trav), "file", "allowed_prefixes")
+		})
+	}
+}
