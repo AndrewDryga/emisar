@@ -63,6 +63,91 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
       assert [%{id: "redis.info", command: %{binary: "redis"}}] = redis.actions
     end
 
+    test "a pack with no version window carries an empty history and no watermark" do
+      assert {:ok, packs} = Catalog.parse(valid_catalog())
+      redis = Enum.find(packs, &(&1.id == "redis"))
+      assert redis.previous_versions == []
+      assert redis.retired_below == nil
+    end
+
+    test "decodes a pack's previous_versions window + retirement watermark" do
+      history = [
+        %{
+          "version" => "0.1.0",
+          "content_hash" => "sha256:#{String.duplicate("b", 64)}",
+          "tarball_url" =>
+            "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.1.0/x.tar.gz"
+        }
+      ]
+
+      catalog =
+        valid_catalog()
+        |> put_in_pack(0, "version", "0.2.0")
+        |> put_in_pack(0, "previous_versions", history)
+        |> put_in_pack(0, "retired_below", "0.1.0")
+
+      assert {:ok, packs} = Catalog.parse(catalog)
+      redis = Enum.find(packs, &(&1.id == "redis"))
+
+      assert redis.version == "0.2.0"
+      assert redis.retired_below == "0.1.0"
+
+      assert redis.previous_versions == [
+               %{
+                 version: "0.1.0",
+                 content_hash: "sha256:#{String.duplicate("b", 64)}",
+                 tarball_url:
+                   "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.1.0/x.tar.gz"
+               }
+             ]
+    end
+
+    test "rejects the whole catalog on a malformed previous_versions hash" do
+      bad = [
+        %{
+          "version" => "0.1.0",
+          "content_hash" => "sha256:nothex",
+          "tarball_url" => "https://storage.googleapis.com/emisar-pack-registry/x.tar.gz"
+        }
+      ]
+
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", bad)
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "content_hash"
+    end
+
+    test "rejects the whole catalog on a cleartext previous_versions tarball URL" do
+      bad = [
+        %{
+          "version" => "0.1.0",
+          "content_hash" => "sha256:#{String.duplicate("b", 64)}",
+          "tarball_url" => "http://evil.example/x.tar.gz"
+        }
+      ]
+
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", bad)
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "unsafe tarball_url"
+    end
+
+    test "rejects a previous_versions entry that is not an object" do
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", ["0.1.0"])
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "previous_versions entry"
+    end
+
+    test "rejects a previous_versions value that is not a list" do
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", "0.1.0")
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "previous_versions must be a list"
+    end
+
+    test "rejects a malformed retired_below watermark" do
+      catalog = put_in_pack(valid_catalog(), 0, "retired_below", 42)
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "retired_below"
+    end
+
     test "decodes a valid catalog from a JSON string" do
       json = Jason.encode!(valid_catalog())
       assert {:ok, packs} = Catalog.parse(json)

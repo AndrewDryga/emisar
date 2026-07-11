@@ -4,9 +4,13 @@ defmodule EmisarWeb.PackRegistryController do
   `emisar pack install`:
 
     * `GET /packs.json`            — index of every pack (id, version,
-                                     content hash, requirements, tarball URL)
+                                     content hash, requirements, tarball URL,
+                                     version window + retirement watermark)
     * `GET /packs/:id/pack.tar.gz` — 302-redirect to the pack's immutable,
                                      content-addressed tarball
+    * `GET /packs/:id/versions/:version/pack.tar.gz` — 302-redirect to a
+                                     SPECIFIC version's tarball (current or a
+                                     remembered prior one)
 
   The human-facing `/packs` + `/packs/:id` HTML pages live in
   `MarketingController`. Both read from the same `EmisarWeb.PacksRegistry`
@@ -27,11 +31,23 @@ defmodule EmisarWeb.PackRegistryController do
           description: p.description,
           requires_os: p.requires_os,
           requires_binaries: p.requires_binaries,
-          tarball: url(~p"/packs/#{p.id}/pack.tar.gz")
+          tarball: url(~p"/packs/#{p.id}/pack.tar.gz"),
+          previous_versions: Enum.map(p.previous_versions, &previous_version_entry(p, &1)),
+          retired_below: p.retired_below
         }
       end)
 
     json(conn, %{packs: packs})
+  end
+
+  # A prior version's tarball points at the versioned portal route (which
+  # 302s to the immutable bytes), mirroring the current entry's `tarball`.
+  defp previous_version_entry(pack, %{version: version, content_hash: hash}) do
+    %{
+      version: version,
+      hash: hash,
+      tarball: url(~p"/packs/#{pack.id}/versions/#{version}/pack.tar.gz")
+    }
   end
 
   @doc """
@@ -52,18 +68,35 @@ defmodule EmisarWeb.PackRegistryController do
   `emisar pack install` still rejects a poisoned mirror.
   """
   def tarball(conn, %{"id" => id}) do
-    case PacksRegistry.tarball_url(id) do
-      {:ok, tarball_url} ->
-        conn
-        # A pack version's bytes are immutable (content-addressed), so the
-        # redirect itself is cacheable; clients follow it to the real bytes.
-        |> put_resp_header("cache-control", "public, max-age=300")
-        |> redirect(external: tarball_url)
+    redirect_to_tarball(conn, PacksRegistry.tarball_url(id), "unknown pack #{id}")
+  end
 
-      :error ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "unknown pack #{id}", browse: url(~p"/packs")})
-    end
+  @doc """
+  Redirect to a SPECIFIC pack version's immutable tarball — the pack's
+  current version or a remembered prior one — or a 404 when the id or version
+  is unknown. Lets an operator pin an exact release with `emisar pack install
+  <id>=<version>`; a retired version is still installable here (the trust gate
+  is what blocks dispatching it), so history stays a break-glass path.
+  """
+  def tarball_version(conn, %{"id" => id, "version" => version}) do
+    redirect_to_tarball(
+      conn,
+      PacksRegistry.tarball_url(id, version),
+      "unknown pack #{id} version #{version}"
+    )
+  end
+
+  defp redirect_to_tarball(conn, {:ok, tarball_url}, _not_found) do
+    conn
+    # A pack version's bytes are immutable (content-addressed), so the
+    # redirect itself is cacheable; clients follow it to the real bytes.
+    |> put_resp_header("cache-control", "public, max-age=300")
+    |> redirect(external: tarball_url)
+  end
+
+  defp redirect_to_tarball(conn, :error, not_found) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: not_found, browse: url(~p"/packs")})
   end
 end

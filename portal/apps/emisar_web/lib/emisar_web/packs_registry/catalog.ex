@@ -79,6 +79,8 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
          {:ok, homepage} <- fetch_url(raw, "homepage", id),
          {:ok, tarball_url} <- fetch_url(raw, "tarball_url", id),
          {:ok, content_hash} <- fetch_hash(raw, id),
+         {:ok, previous_versions} <- fetch_previous_versions(raw, id),
+         {:ok, retired_below} <- fetch_retired_below(raw, id),
          {:ok, requires_os, requires_binaries} <- fetch_requires(raw, id),
          {:ok, detect} <- fetch_detect(raw, id),
          {:ok, actions} <- fetch_actions(raw, id) do
@@ -95,6 +97,8 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
          requires_binaries: requires_binaries,
          content_hash: content_hash,
          tarball_url: tarball_url,
+         previous_versions: previous_versions,
+         retired_below: retired_below,
          detect: detect,
          actions: actions
        }}
@@ -141,6 +145,40 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
     do: {:error, "action #{inspect(action_id)} has a malformed command"}
 
   defp fetch_command(_raw, _action_id), do: {:ok, nil}
+
+  # A carried-forward version window is optional; when present each entry
+  # must pass the SAME shape checks as the current entry (non-empty version,
+  # `sha256:` hash, HTTPS tarball), so a malformed history rejects the whole
+  # catalog exactly like a malformed current entry does.
+  defp fetch_previous_versions(raw, pack_id) do
+    case Map.get(raw, "previous_versions") do
+      nil -> {:ok, []}
+      versions when is_list(versions) -> reduce_ok(versions, &parse_previous_version(&1, pack_id))
+      _ -> {:error, "pack #{inspect(pack_id)} previous_versions must be a list"}
+    end
+  end
+
+  defp parse_previous_version(%{} = raw, pack_id) do
+    with {:ok, version} <- fetch_string(raw, "version"),
+         {:ok, content_hash} <- fetch_hash(raw, pack_id),
+         {:ok, tarball_url} <- fetch_url(raw, "tarball_url", pack_id) do
+      {:ok, %{version: version, content_hash: content_hash, tarball_url: tarball_url}}
+    end
+  end
+
+  defp parse_previous_version(_raw, pack_id),
+    do: {:error, "pack #{inspect(pack_id)} has a previous_versions entry that is not an object"}
+
+  # retired_below is optional; when present it is a version string (the same
+  # shape as the current version — non-empty). The dispatch-time retirement
+  # comparison lives portal-side in PackBaseline, not in this parser.
+  defp fetch_retired_below(raw, pack_id) do
+    case Map.get(raw, "retired_below") do
+      nil -> {:ok, nil}
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, "pack #{inspect(pack_id)} has a malformed retired_below"}
+    end
+  end
 
   defp fetch_requires(raw, pack_id) do
     case Map.get(raw, "requires") do

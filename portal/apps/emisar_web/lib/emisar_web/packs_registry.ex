@@ -117,6 +117,21 @@ defmodule EmisarWeb.PacksRegistry do
     end
   end
 
+  @doc """
+  The immutable tarball URL for a specific pack VERSION — the pack's current
+  version or any version still in its carried-forward history — or `:error`
+  if the id is unknown or the version is neither current nor remembered. The
+  `/packs/:id/versions/:version/pack.tar.gz` endpoint 302-redirects here, so
+  `emisar pack install <id>=<version>` resolves an exact prior release.
+  """
+  @spec tarball_url(String.t(), String.t()) :: {:ok, String.t()} | :error
+  def tarball_url(id, version) when is_binary(id) and is_binary(version) do
+    case get(id) do
+      %Pack{} = pack -> Pack.tarball_url(pack, version)
+      nil -> :error
+    end
+  end
+
   @doc "Fetch a single pack by id, or nil if not in the registry."
   @spec get(String.t()) :: Pack.t() | nil
   def get(id) when is_binary(id), do: Enum.find(list(), &(&1.id == id))

@@ -41,6 +41,15 @@ defmodule EmisarWeb.PacksRegistry.Pack do
     # portal's `/packs/:id/pack.tar.gz` endpoint 302-redirects here; the
     # bytes are no longer carried in the release.
     :tarball_url,
+    # previous_versions carries the last few prior releases of this pack
+    # (newest first, excluding the current version), each with its own
+    # immutable content_hash + tarball_url. Empty on a pack with no shipped
+    # history. The versioned tarball route resolves an install against these
+    # too, and the portal trust window (PackBaseline) auto-trusts them.
+    # retired_below, when set, is the watermark below which every version is
+    # retired — enforced at dispatch (PackBaseline), not here.
+    previous_versions: [],
+    retired_below: nil,
     # detect is the service-presence signal for `emisar pack suggest`:
     # the binaries/processes/ports that mean "this service runs here".
     # Computed at compile time = the pack's declared `detect` block, else
@@ -62,6 +71,10 @@ defmodule EmisarWeb.PacksRegistry.Pack do
           requires_binaries: [String.t()],
           content_hash: String.t(),
           tarball_url: String.t(),
+          previous_versions: [
+            %{version: String.t(), content_hash: String.t(), tarball_url: String.t()}
+          ],
+          retired_below: String.t() | nil,
           detect: %{
             binaries: [String.t()],
             processes: [String.t()],
@@ -69,4 +82,20 @@ defmodule EmisarWeb.PacksRegistry.Pack do
           },
           actions: [EmisarWeb.PacksRegistry.Action.t()]
         }
+
+  @doc """
+  The immutable tarball URL for this pack at `version` — its current version
+  or one of its remembered prior versions — or `:error` when `version` is
+  neither. Pure resolution over the pack's own catalog entry; the cache read
+  by pack id happens in `EmisarWeb.PacksRegistry`.
+  """
+  @spec tarball_url(t(), String.t()) :: {:ok, String.t()} | :error
+  def tarball_url(%__MODULE__{version: version, tarball_url: url}, version), do: {:ok, url}
+
+  def tarball_url(%__MODULE__{previous_versions: previous}, version) do
+    case Enum.find(previous, &(&1.version == version)) do
+      %{tarball_url: url} -> {:ok, url}
+      nil -> :error
+    end
+  end
 end

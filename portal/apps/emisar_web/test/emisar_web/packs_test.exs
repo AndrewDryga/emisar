@@ -278,6 +278,22 @@ defmodule EmisarWeb.PacksTest do
       assert PacksRegistry.tarball_url("nope") == :error
     end
 
+    test "tarball_url/2 resolves a pack's current version to its tarball" do
+      pack = PacksRegistry.get("redis")
+      assert PacksRegistry.tarball_url("redis", pack.version) == {:ok, pack.tarball_url}
+    end
+
+    test "tarball_url/2 is :error for a version the pack doesn't advertise" do
+      # No pack yet ships history in the bundled catalog, so any non-current
+      # version is unknown; the remembered-version branch is covered purely in
+      # EmisarWeb.PacksRegistry.PackTest.
+      assert PacksRegistry.tarball_url("redis", "9.9.9") == :error
+    end
+
+    test "tarball_url/2 is :error for an unknown id" do
+      assert PacksRegistry.tarball_url("nope", "0.1.0") == :error
+    end
+
     test "build_action parses an exec action's command template" do
       pack = PacksRegistry.get("cloud-init")
       action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
@@ -430,6 +446,26 @@ defmodule EmisarWeb.PacksTest do
       assert json_response(conn, 404)["error"] =~ "unknown pack"
     end
 
+    test "GET /packs/:id/versions/:version/pack.tar.gz redirects the current version", %{
+      conn: conn
+    } do
+      redis = PacksRegistry.get("redis")
+      conn = get(conn, ~p"/packs/redis/versions/#{redis.version}/pack.tar.gz")
+
+      assert redirected_to(conn, 302) == redis.tarball_url
+      assert get_resp_header(conn, "cache-control") == ["public, max-age=300"]
+    end
+
+    test "GET /packs/:id/versions/:version/pack.tar.gz 404s for an unknown version", %{conn: conn} do
+      conn = get(conn, ~p"/packs/redis/versions/9.9.9/pack.tar.gz")
+      assert json_response(conn, 404)["error"] =~ "unknown pack redis version 9.9.9"
+    end
+
+    test "GET /packs/:id/versions/:version/pack.tar.gz 404s for an unknown pack", %{conn: conn} do
+      conn = get(conn, ~p"/packs/this-does-not-exist/versions/0.1.0/pack.tar.gz")
+      assert json_response(conn, 404)["error"] =~ "unknown pack"
+    end
+
     # The literal /packs.json, /packs/suggest.json, /packs/:id/pack.tar.gz
     # routes are declared before /packs/:id, so Phoenix's top-to-bottom
     # matching must dispatch them to the machine controller — never to the
@@ -461,12 +497,17 @@ defmodule EmisarWeb.PacksTest do
       # path or secret leaking into the registry index would be served to
       # every unauthenticated `emisar pack install`.
       assert entry |> Map.keys() |> Enum.sort() ==
-               ~w(description hash id name requires_binaries requires_os tarball version)
+               ~w(description hash id name previous_versions requires_binaries requires_os retired_below tarball version)
 
       pack = PacksRegistry.get("redis")
       assert entry["hash"] == pack.content_hash
       assert entry["version"] == pack.version
       assert entry["tarball"] =~ "/packs/redis/pack.tar.gz"
+
+      # No pack ships history in the bundled catalog yet, so the window is
+      # empty and the retirement watermark is null — both keys still present.
+      assert entry["previous_versions"] == []
+      assert entry["retired_below"] == nil
     end
 
     test "GET /packs/:id/pack.tar.gz redirect is briefly cacheable", %{conn: conn} do
