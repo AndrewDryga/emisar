@@ -245,6 +245,8 @@ defmodule Emisar.Catalog do
              subject,
              Authorizer.manage_catalog_permission()
            ) do
+      overridden_by_id = Subject.actor_id(subject)
+
       Multi.new()
       |> Multi.run(:before, fn repo, _changes ->
         lock_pending_pack_version(repo, pack_version_id, subject)
@@ -252,11 +254,19 @@ defmodule Emisar.Catalog do
       |> Multi.run(:manifest, fn repo, %{before: pending} ->
         {:ok, snapshot_action_set(repo, pending)}
       end)
-      |> Multi.run(:pack_version, fn repo, %{before: pending, manifest: manifest} ->
-        repo.update(PackVersion.Changeset.trust(pending, manifest))
+      # Trusting a RETIRED version IS the override — an explicit,
+      # permission-gated action. Compute it inside the transaction (retirement
+      # is release-controlled, so this can't race the lock) and thread it to
+      # both the changeset and the audit payload from one source.
+      |> Multi.run(:retired, fn _repo, %{before: pending} ->
+        {:ok, PackBaseline.retired?(pending.pack_id, pending.version)}
       end)
-      |> Multi.insert(:audit, fn %{before: pending} ->
-        Audit.Events.pack_trust_adopted(subject, pending)
+      |> Multi.run(:pack_version, fn repo,
+                                     %{before: pending, manifest: manifest, retired: retired} ->
+        repo.update(trust_changeset(pending, manifest, retired, overridden_by_id))
+      end)
+      |> Multi.insert(:audit, fn %{before: pending, retired: retired} ->
+        Audit.Events.pack_trust_adopted(subject, pending, retired)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: updated} ->
@@ -327,6 +337,64 @@ defmodule Emisar.Catalog do
   defp reject_changeset(%PackVersion{} = pack_version),
     do: PackVersion.Changeset.reject(pack_version)
 
+  # Adopt the pending hash, and — when the version is retired — stamp the
+  # override in the SAME changeset so trusting a retired version re-enables
+  # dispatch atomically with the trust flip.
+  defp trust_changeset(%PackVersion{} = pending, manifest, true, overridden_by_id) do
+    pending
+    |> PackVersion.Changeset.trust(manifest)
+    |> PackVersion.Changeset.override_retirement(overridden_by_id)
+  end
+
+  defp trust_changeset(%PackVersion{} = pending, manifest, false, _overridden_by_id),
+    do: PackVersion.Changeset.trust(pending, manifest)
+
+  @doc """
+  Explicitly re-trust an already-trusted pack version whose version the
+  shipped catalog has RETIRED — the deliberate, audited admin override that
+  lets it dispatch again. The `Trust` action covers a still-pending retired
+  version; this covers a row that was trusted BEFORE its version was retired.
+  Requires the same manage-catalog permission as Trust; returns
+  `{:error, :not_trusted}` for a non-trusted row and `{:error, :not_found}`
+  cross-account.
+  """
+  def override_pack_retirement(pack_version_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ) do
+      overridden_by_id = Subject.actor_id(subject)
+
+      if Repo.valid_uuid?(pack_version_id) do
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_id(pack_version_id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(PackVersion.Query,
+          with: &override_retirement_changeset(&1, overridden_by_id),
+          audit: &Audit.Events.pack_retirement_overridden(subject, &1),
+          after_commit: fn updated ->
+            broadcast_pack_trust(updated.account_id)
+            :ok
+          end
+        )
+      else
+        {:error, :not_found}
+      end
+    end
+  end
+
+  # Only a TRUSTED row can be overridden (the override re-enables dispatch for
+  # a version trusted before it was retired). Any other state aborts the
+  # fetch_and_update as `{:error, :not_trusted}`.
+  defp override_retirement_changeset(
+         %PackVersion{trust_state: :trusted} = pack_version,
+         overridden_by_id
+       ),
+       do: PackVersion.Changeset.override_retirement(pack_version, overridden_by_id)
+
+  defp override_retirement_changeset(%PackVersion{}, _overridden_by_id), do: :not_trusted
+
   # Locked re-read for the Trust/Reject decision: the row is fetched
   # FOR NO KEY UPDATE inside the transaction (account-scoped via
   # for_subject) and must still be pending — so two operators racing
@@ -386,17 +454,20 @@ defmodule Emisar.Catalog do
   DELETED it on reject), `:pending`, or `:rejected` all refuse — `runner_actions`
   reference the version by string with no FK, so a missing row must never read
   as trusted.
+
+  A trusted row whose version the shipped catalog has RETIRED
+  (`PackBaseline.retired?/2`) refuses with a distinct `{:error,
+  :pack_retired, pack_version}` unless an admin has overridden it — the
+  operator action differs (update the pack vs. review a hash).
   """
   def check_pack_trusted(%RunnerAction{pack_id: nil}), do: {:ok, nil}
   def check_pack_trusted(%RunnerAction{pack_version: nil}), do: {:ok, nil}
 
   def check_pack_trusted(%RunnerAction{} = action) do
     case peek_pack_version_for_action(action) do
-      # Trusted → hand back the trusted hash so the caller can SNAPSHOT it onto
-      # the run; never the pending one, so the runner verifies the bytes the
-      # operator actually said yes to.
-      %PackVersion{trust_state: :trusted, hash: hash} ->
-        {:ok, hash}
+      %PackVersion{trust_state: :trusted} = pack_version ->
+        retired? = PackBaseline.retired?(pack_version.pack_id, pack_version.version)
+        trusted_row_dispatch_decision(pack_version, retired?)
 
       %PackVersion{} = pack_version ->
         {:error, :pack_untrusted, pack_version}
@@ -408,6 +479,34 @@ defmodule Emisar.Catalog do
         {:error, :pack_untrusted, :no_pin}
     end
   end
+
+  @doc """
+  Internal — the dispatch decision for a TRUSTED pack-version row, given
+  whether the shipped catalog retired its version. Pattern-matched clause
+  heads carry the exhaustive branch coverage because the compiled
+  `PackBaseline` can't be fixtured; `check_pack_trusted/1` composes this
+  with the real `PackBaseline.retired?/2`.
+
+  Not retired → hand back the trusted hash so the caller can SNAPSHOT it onto
+  the run; never the pending one, so the runner verifies the bytes the
+  operator actually said yes to. Retired with an explicit override → still
+  trusted. Retired with no override → fail closed with `:pack_retired`.
+  """
+  @spec trusted_row_dispatch_decision(PackVersion.t(), boolean()) ::
+          {:ok, String.t()} | {:error, :pack_retired, PackVersion.t()}
+  def trusted_row_dispatch_decision(%PackVersion{hash: hash}, false), do: {:ok, hash}
+
+  def trusted_row_dispatch_decision(
+        %PackVersion{retirement_overridden_at: %DateTime{}, hash: hash},
+        true
+      ),
+      do: {:ok, hash}
+
+  def trusted_row_dispatch_decision(
+        %PackVersion{retirement_overridden_at: nil} = pack_version,
+        true
+      ),
+      do: {:error, :pack_retired, pack_version}
 
   # The pinned pack_version row for an action's (account, pack_id, version),
   # or nil — shared by the two dispatch-gate reads. `peek` (nil-or-struct)

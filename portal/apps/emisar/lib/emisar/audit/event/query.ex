@@ -43,7 +43,9 @@ defmodule Emisar.Audit.Event.Query do
     {"pack_trust_drift_detected", "Pack drift detected"},
     {"pack_trust_adopted", "Pack hash trusted"},
     {"pack_trust_rejected", "Pack hash rejected"},
+    {"pack_retirement_overridden", "Pack retirement overridden"},
     {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
+    {"dispatch_blocked_pack_retired", "Dispatch blocked (pack retired)"},
     {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"},
     {"user.signed_up", "User signed up"},
     {"user.signed_in", "User signed in"},
@@ -165,7 +167,9 @@ defmodule Emisar.Audit.Event.Query do
        {"pack_trust_drift_detected", "Drift detected"},
        {"pack_trust_adopted", "Hash trusted"},
        {"pack_trust_rejected", "Hash rejected"},
-       {"dispatch_blocked_pack_untrusted", "Dispatch blocked"}
+       {"pack_retirement_overridden", "Retirement overridden"},
+       {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
+       {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
      ]},
     {"Auth key",
      [
@@ -677,8 +681,14 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator trusted a pack hash — runners advertising it may execute."},
     "pack_trust_rejected" =>
       {true, true, true, "An operator rejected a pack hash — dispatches with it are refused."},
+    "pack_retirement_overridden" =>
+      {true, true, true,
+       "An admin re-trusted a retired pack version — dispatches with it are allowed again."},
     "dispatch_blocked_pack_untrusted" =>
       {true, false, true, "A dispatch was refused because the runner's pack isn't trusted."},
+    "dispatch_blocked_pack_retired" =>
+      {true, false, true,
+       "A dispatch was refused because the runner's pack version was retired — a fixed version is available."},
     "dispatch_blocked_requires_attestation" =>
       {true, false, true,
        "A dispatch was refused because the request wasn't signed (attestation required)."},

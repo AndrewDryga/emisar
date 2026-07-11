@@ -43,6 +43,22 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> validate_required([:hash])
   end
 
+  @doc """
+  Stamp the deliberate admin override of this version's retirement —
+  trusting a retired version anyway. Accepts a `%PackVersion{}` (the
+  standalone `override_pack_retirement` on an already-trusted row) or a
+  changeset (composed onto `trust/2` when the version being trusted is
+  retired), so both entry points write the same override in one changeset.
+  """
+  def override_retirement(pack_version_or_changeset, overridden_by_id) do
+    pack_version_or_changeset
+    |> change(%{
+      retirement_overridden_at: DateTime.utc_now(),
+      retirement_overridden_by_id: overridden_by_id
+    })
+    |> validate_required([:retirement_overridden_by_id])
+  end
+
   @doc "Discard pending_hash; revert to the previously-trusted hash."
   def reject(%PackVersion{} = pack_version) do
     pack_version

@@ -353,6 +353,8 @@ defmodule Emisar.CatalogTest do
       assert trusted.trust_state == :trusted
       assert trusted.hash == "sha256:NEW"
       assert trusted.pending_hash == nil
+      # A non-retired version is not overridden by the trust — trust_changeset(false).
+      assert trusted.retirement_overridden_at == nil
     end
 
     test "trust on a never-trusted custom pack adopts the advertised hash", %{
@@ -405,6 +407,8 @@ defmodule Emisar.CatalogTest do
       assert audit.payload["previous_hash"] == nil
       assert audit.payload["new_hash"] == "sha256:ADOPT"
       assert audit.payload["pack_id"] == "p"
+      # A non-retired version threads retired: false through to the audit payload.
+      assert audit.payload["retired"] == false
     end
 
     test "a viewer subject is denied trust", %{
@@ -670,6 +674,82 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "override_pack_retirement/2" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}})
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      {:ok, trusted} = Catalog.trust_pack_version(pending.id, subject)
+
+      %{user: user, account: account, subject: subject, runner: runner, pack_version: trusted}
+    end
+
+    test "stamps retirement_overridden_at + who and audits the override", %{
+      user: user,
+      subject: subject,
+      pack_version: pack_version
+    } do
+      assert {:ok, overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
+      assert %DateTime{} = overridden.retirement_overridden_at
+      assert overridden.retirement_overridden_by_id == user.id
+      assert overridden.trust_state == :trusted
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_retirement_overridden"))
+
+      assert audit, "expected a pack_retirement_overridden audit row"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_id == pack_version.id
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert audit.payload["pack_id"] == "custom"
+      assert audit.payload["version"] == "1.0"
+    end
+
+    test "a viewer subject is denied", %{account: account, pack_version: pack_version} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Catalog.override_pack_retirement(pack_version.id, viewer_subject)
+    end
+
+    test "override of another account's pin is :not_found (cross-account)", %{
+      pack_version: pack_version
+    } do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Catalog.override_pack_retirement(pack_version.id, subject_b)
+    end
+
+    test "a pending (non-trusted) row is rejected with :not_trusted", %{
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"other" => %{"version" => "2.0", "hash" => "sha256:P"}})
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      pending = Enum.find(versions, &(&1.pack_id == "other"))
+      assert pending.trust_state == :pending
+
+      assert {:error, :not_trusted} = Catalog.override_pack_retirement(pending.id, subject)
+    end
+
+    test "an invalid id is :not_found", %{subject: subject} do
+      assert {:error, :not_found} = Catalog.override_pack_retirement("not-a-uuid", subject)
+    end
+  end
+
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -773,6 +853,28 @@ defmodule Emisar.CatalogTest do
 
     test "a pack-less action (no pack_id) → {:ok, nil}" do
       assert {:ok, nil} = Catalog.check_pack_trusted(%RunnerAction{pack_id: nil})
+    end
+  end
+
+  # The compiled PackBaseline can't be fixtured (no shipped pack is retired), so
+  # this pure fn — the dispatch seam check_pack_trusted composes with the real
+  # PackBaseline.retired?/2 — carries the exhaustive retirement branch coverage.
+  describe "trusted_row_dispatch_decision/2" do
+    test "not retired → {:ok, hash}" do
+      pack_version = %PackVersion{hash: "sha256:OK", retirement_overridden_at: nil}
+      assert Catalog.trusted_row_dispatch_decision(pack_version, false) == {:ok, "sha256:OK"}
+    end
+
+    test "retired but overridden → {:ok, hash}" do
+      pack_version = %PackVersion{hash: "sha256:OK", retirement_overridden_at: DateTime.utc_now()}
+      assert Catalog.trusted_row_dispatch_decision(pack_version, true) == {:ok, "sha256:OK"}
+    end
+
+    test "retired with no override → {:error, :pack_retired, pack_version}" do
+      pack_version = %PackVersion{hash: "sha256:OK", retirement_overridden_at: nil}
+
+      assert Catalog.trusted_row_dispatch_decision(pack_version, true) ==
+               {:error, :pack_retired, pack_version}
     end
   end
 

@@ -690,6 +690,10 @@ defmodule Emisar.Runs do
       {:error, :pack_untrusted, pack_info} ->
         Audit.record(Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, action))
         {:error, :pack_untrusted}
+
+      {:error, :pack_retired, pack_version} ->
+        Audit.record(Audit.Events.dispatch_blocked_pack_retired(account_id, pack_version, action))
+        {:error, :pack_retired}
     end
   end
 

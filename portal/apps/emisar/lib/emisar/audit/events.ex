@@ -561,14 +561,30 @@ defmodule Emisar.Audit.Events do
 
   @doc """
   Operator adopted a pending pack hash. Takes the PRE-trust row so the
-  payload can show what flipped (`previous_hash` → `new_hash`).
+  payload can show what flipped (`previous_hash` → `new_hash`). `retired`
+  records that the adopted version was retired — trusting it IS the
+  deliberate override.
   """
-  def pack_trust_adopted(%Subject{} = subject, %Catalog.PackVersion{} = pack_version) do
+  def pack_trust_adopted(%Subject{} = subject, %Catalog.PackVersion{} = pack_version, retired)
+      when is_boolean(retired) do
     pack_trust_event(subject, pack_version, "pack_trust_adopted", %{
       pack_id: pack_version.pack_id,
       version: pack_version.version,
       previous_hash: pack_version.hash,
-      new_hash: pack_version.pending_hash
+      new_hash: pack_version.pending_hash,
+      retired: retired
+    })
+  end
+
+  @doc """
+  Admin explicitly re-trusted an already-trusted pack version whose version
+  was retired — the deliberate override that re-enables dispatch.
+  """
+  def pack_retirement_overridden(%Subject{} = subject, %Catalog.PackVersion{} = pack_version) do
+    pack_trust_event(subject, pack_version, "pack_retirement_overridden", %{
+      pack_id: pack_version.pack_id,
+      version: pack_version.version,
+      trusted_hash: pack_version.hash
     })
   end
 
@@ -822,6 +838,24 @@ defmodule Emisar.Audit.Events do
       payload: %{
         pack_id: action.pack_id,
         version: action.pack_version,
+        action_id: action.action_id,
+        runner_id: action.runner_id
+      }
+    )
+  end
+
+  # Dispatch refused because the action's pack version was RETIRED by the
+  # shipped catalog (a critical fix shipped a newer version) and no admin has
+  # overridden it. System actor.
+  def dispatch_blocked_pack_retired(account_id, %Catalog.PackVersion{} = pack_version, action) do
+    Audit.changeset(account_id, "dispatch_blocked_pack_retired",
+      actor_kind: "system",
+      target_kind: "pack_version",
+      target_id: pack_version.id,
+      target_label: "#{pack_version.pack_id}@#{pack_version.version}",
+      payload: %{
+        pack_id: pack_version.pack_id,
+        version: pack_version.version,
         action_id: action.action_id,
         runner_id: action.runner_id
       }
