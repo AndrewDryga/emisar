@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.3
+version: 0.3.4
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection
@@ -44,6 +44,7 @@ setup:
     - name: REDISCLI_AUTH
       description: Password sent via AUTH. Omit for an instance with no requirepass/ACL. The matching user must hold the commands the actions you enable will run.
   notes:
+    - "REDISCLI_AUTH must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - Host and port are not configurable through this pack's env — redis-cli takes them as -h/-p flags, which the actions do not set, so it always targets 127.0.0.1:6379.
     - "REDISCLI_AUTH supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
     - Critical mutators (flush_db, flushall, swapdb, shutdown_nosave) and config writes need an ACL/user permitted to run them.

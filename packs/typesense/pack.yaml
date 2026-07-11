@@ -2,7 +2,7 @@ schema_version: 1
 
 id: typesense
 name: Typesense search
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only diagnostics for a Typesense search node over its HTTP API:
   health and node/raft state, per-endpoint request stats and system
@@ -47,6 +47,7 @@ setup:
         argv. Most diagnostic endpoints need the admin key — a search-only
         key cannot read stats/metrics/debug.
   notes:
+    - "Any of TYPESENSE_URL / TYPESENSE_API_KEY you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Every action is a read-only GET. /health needs no key; the rest expect the admin key in TYPESENSE_API_KEY."
     - "Mutating operations are deliberately excluded: POST /config, /operations/snapshot, /operations/vote, /operations/db/compact, and /operations/cache/clear are not part of this pack."
     - "Typesense has no slow-query endpoint — slow requests are written to the server log (enable with --log-slow-requests-time-ms) and read via the slow_requests action."

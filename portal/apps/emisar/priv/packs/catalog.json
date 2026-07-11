@@ -9696,13 +9696,13 @@
     {
       "id": "minio",
       "name": "MinIO operations",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "description": "Cluster + bucket + user introspection plus operator surface (user enable/disable, bucket heal, cluster service restart). Talks to mc CLI configured via MC_HOST_<alias> env var on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/minio",
-      "content_hash": "sha256:bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/minio/0.1.7/bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4/pack.tar.gz",
+      "content_hash": "sha256:782740d114f55d43b51d864e001f269f565a2d971904cb473318683f6d96d31b",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/minio/0.1.8/782740d114f55d43b51d864e001f269f565a2d971904cb473318683f6d96d31b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9899,6 +9899,13 @@
               "{{ args.user }}"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.7",
+          "content_hash": "sha256:bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/minio/0.1.7/bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4/pack.tar.gz"
         }
       ]
     },
@@ -12624,13 +12631,13 @@
     {
       "id": "pfsense",
       "name": "pfSense firewall",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "description": "Operate a pfSense firewall over its REST API: read firewall rules, NAT, aliases, virtual IPs, interface / gateway (config + status) / service / VPN status, DHCP leases, routes, ARP, CARP, pf tables, installed packages, the config-change history, and firewall / system / auth / DHCP / OpenVPN logs, plus a few gated mutators (apply filter, flush states, restart a service, reboot). Uses the community pfSense-pkg-RESTAPI package (/api/v2), which runs on the firewall and works across CE and Plus.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/pfsense",
-      "content_hash": "sha256:719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pfsense/0.4.0/719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6/pack.tar.gz",
+      "content_hash": "sha256:0857d187604a41ed1f9cb3be56f442c9e2abaa428f4b988b6cdd00e51ed6eadc",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pfsense/0.4.1/0857d187604a41ed1f9cb3be56f442c9e2abaa428f4b988b6cdd00e51ed6eadc/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -12867,6 +12874,13 @@
           "title": "GET /api/v2/firewall/virtual_ips",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.4.0",
+          "content_hash": "sha256:719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pfsense/0.4.0/719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6/pack.tar.gz"
         }
       ]
     },
@@ -14487,13 +14501,13 @@
     {
       "id": "pure-flasharray",
       "name": "Pure Storage FlashArray (Purity//FA REST)",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "description": "Read-only access to a Pure Storage FlashArray over its Purity//FA REST API 2.x: array identity / capacity / performance, alerts, controller and hardware / drive health, volumes and per-volume space, the host -> volume -> LUN connection map, host and target-port identities, per-controller network interface state, and replication / array-connection status. Drives a remote array via curl; every call is a GET.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/pure-flasharray",
-      "content_hash": "sha256:26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pure-flasharray/0.1.2/26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be/pack.tar.gz",
+      "content_hash": "sha256:bf0978ad585451b1e4d8d81623114b820031af71ebb3ce376ba5d3acc88c3c58",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pure-flasharray/0.1.3/bf0978ad585451b1e4d8d81623114b820031af71ebb3ce376ba5d3acc88c3c58/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14591,6 +14605,13 @@
           "title": "GET /volumes/space",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.2",
+          "content_hash": "sha256:26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pure-flasharray/0.1.2/26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be/pack.tar.gz"
         }
       ]
     },
@@ -15024,13 +15045,13 @@
     {
       "id": "redis",
       "name": "Redis operations pack",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "description": "Deep Redis ops — INFO + memory accounting, slowlog + per-event latency, command stats, client list/kill/pause, keyspace introspection (SCAN, TYPE, TTL, OBJECT encoding/refcount/idle/freq, MEMORY USAGE), config get/set/rewrite/resetstat, ACL list/whoami/getuser, cluster topology (info, nodes, slots, slot-count, check), cluster operators (failover, forget, replicaof), Sentinel HA topology (masters, master, replicas, sentinels, get-master-addr, ckquorum, is-master-down, Sentinel INFO) and operators (failover, reset), persistence (lastsave, bgsave, bgrewriteaof, memory purge/doctor), streams + pub/sub introspection, script cache flush, and tier-critical actions (flush_db, flushall, swapdb, shutdown_nosave). Sentinel actions target the Sentinel on port 26379; all others default to 127.0.0.1:6379. Authenticates via REDISCLI_AUTH / REDIS_* env vars on the runner host — never via per-call credentials.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/redis",
-      "content_hash": "sha256:f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.3.3/f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1/pack.tar.gz",
+      "content_hash": "sha256:221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.3.4/221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -15874,6 +15895,13 @@
             ]
           }
         }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.3.3",
+          "content_hash": "sha256:f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.3.3/f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1/pack.tar.gz"
+        }
       ]
     },
     {
@@ -16113,13 +16141,13 @@
     {
       "id": "snmp",
       "name": "SNMP (net-snmp)",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Read a network device over SNMP with the net-snmp CLI — system group, interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group (OSPF-MIB), plus a generic single-OID get and a bounded subtree walk. The routing reads exist to give operators visibility into BGP / OSPF state on devices this control plane can't reach by a native API — e.g. a pfSense + FRR edge firewall, where the REST API exposes no routing-protocol state. All read-only.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/snmp",
-      "content_hash": "sha256:4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/snmp/0.2.0/4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6/pack.tar.gz",
+      "content_hash": "sha256:751dd09d8deaf6834e3aa0f888a7eb42792945e8580cb4a7bbc0d468ee839427",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/snmp/0.2.1/751dd09d8deaf6834e3aa0f888a7eb42792945e8580cb4a7bbc0d468ee839427/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16179,6 +16207,13 @@
           "title": "snmpwalk an OID subtree",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.2.0",
+          "content_hash": "sha256:4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/snmp/0.2.0/4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6/pack.tar.gz"
         }
       ]
     },
@@ -17061,13 +17096,13 @@
     {
       "id": "traefik",
       "name": "Traefik ingress / reverse proxy",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API: the overview, entrypoints, and the full HTTP/TCP/UDP router + service + middleware inventory (each carrying its status and error list, so you can see which router is broken), a compact per-service health summary, plus a per-host readiness check that joins the router and service views into one cutover-preflight verdict, the raw dynamic-config dump, version, liveness ping, and Prometheus metrics. ACME/Let's Encrypt certificate state is read from the on-disk acme.json (no API exposes it), and access-log 4xx/5xx tails mirror the nginx pack. Default API at http://127.0.0.1:8080 (api.insecure mode); override via TRAEFIK_URL.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/traefik",
-      "content_hash": "sha256:2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/traefik/0.1.5/2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6/pack.tar.gz",
+      "content_hash": "sha256:535763a96ef1e17886f5d37dfac1f7361be327be7377c594d2ac27aeb28977a7",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/traefik/0.1.6/535763a96ef1e17886f5d37dfac1f7361be327be7377c594d2ac27aeb28977a7/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17224,18 +17259,25 @@
           "kind": "script",
           "risk": "low"
         }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.5",
+          "content_hash": "sha256:2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/traefik/0.1.5/2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6/pack.tar.gz"
+        }
       ]
     },
     {
       "id": "typesense",
       "name": "Typesense search",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Read-only diagnostics for a Typesense search node over its HTTP API: health and node/raft state, per-endpoint request stats and system metrics, the collection catalog and individual schemas, API-key metadata, and a tail of slow requests from the server log. One admin API key, streamed over curl stdin, unlocks the stats/metrics/debug endpoints a search-only key cannot read.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/typesense",
-      "content_hash": "sha256:0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/typesense/0.1.1/0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e/pack.tar.gz",
+      "content_hash": "sha256:09bc1dad3d391892787f901f6a335a8201e2d5bba7d78a2b34127ca10a38cd44",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/typesense/0.1.2/09bc1dad3d391892787f901f6a335a8201e2d5bba7d78a2b34127ca10a38cd44/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17308,6 +17350,13 @@
           "title": "GET /stats.json",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.1",
+          "content_hash": "sha256:0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/typesense/0.1.1/0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e/pack.tar.gz"
         }
       ]
     },
@@ -17672,13 +17721,13 @@
     {
       "id": "victorialogs",
       "name": "VictoriaLogs queries",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "description": "Read-only LogsQL access to VictoriaLogs over its HTTP API: search log entries, hit histograms over time, stats aggregations (instant + range), and field / stream discovery. Express time ranges inside the LogsQL query via the _time filter. One base URL serves single-node and vmauth-fronted deployments; multitenancy via optional headers.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/victorialogs",
-      "content_hash": "sha256:b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victorialogs/0.1.2/b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f/pack.tar.gz",
+      "content_hash": "sha256:b5f03ee99fe04d612a77de1388269c89907c7b018763edd10927d3445a5ad8c3",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victorialogs/0.1.3/b5f03ee99fe04d612a77de1388269c89907c7b018763edd10927d3445a5ad8c3/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17742,18 +17791,25 @@
           "kind": "script",
           "risk": "low"
         }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.2",
+          "content_hash": "sha256:b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victorialogs/0.1.2/b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f/pack.tar.gz"
+        }
       ]
     },
     {
       "id": "victoriametrics",
       "name": "VictoriaMetrics queries",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "description": "Read-only PromQL / MetricsQL access to VictoriaMetrics over its HTTP API: instant and range queries, series and label discovery, and the VM-specific status endpoints (TSDB cardinality, active queries, top queries). One base URL serves single-node, cluster (vmselect), and vmauth-fronted deployments.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/victoriametrics",
-      "content_hash": "sha256:8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victoriametrics/0.1.2/8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a/pack.tar.gz",
+      "content_hash": "sha256:672d43dc055a0954edf68b0e2673febcd56411439d13034b3b6e9cbc9a66ff83",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victoriametrics/0.1.3/672d43dc055a0954edf68b0e2673febcd56411439d13034b3b6e9cbc9a66ff83/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17823,6 +17879,13 @@
           "title": "GET /api/v1/status/tsdb",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.2",
+          "content_hash": "sha256:8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victoriametrics/0.1.2/8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a/pack.tar.gz"
         }
       ]
     },
@@ -18302,13 +18365,13 @@
     {
       "id": "zot",
       "name": "zot OCI registry",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Read-only inspection of a zot OCI registry over its HTTP API: the OCI distribution endpoints (version check, catalog, tags, manifests) plus the zot extensions — registry config/health (mgmt), Prometheus metrics, and a GraphQL search query that returns per-repo size and a newest-image vulnerability summary. Optional basic-auth credentials are streamed over curl stdin; many zot deployments allow anonymous read.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zot",
-      "content_hash": "sha256:8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zot/0.1.1/8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec/pack.tar.gz",
+      "content_hash": "sha256:430b71e9d8e51bd20e2cf2914c82e76bd77a58ce5a7fb3a6c1aaa14780c05190",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zot/0.1.2/430b71e9d8e51bd20e2cf2914c82e76bd77a58ce5a7fb3a6c1aaa14780c05190/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18368,6 +18431,13 @@
           "title": "GET /v2/",
           "kind": "script",
           "risk": "low"
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.1",
+          "content_hash": "sha256:8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zot/0.1.1/8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec/pack.tar.gz"
         }
       ]
     }

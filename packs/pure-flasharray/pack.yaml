@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pure-flasharray
 name: Pure Storage FlashArray (Purity//FA REST)
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
   2.x: array identity / capacity / performance, alerts, controller and
@@ -45,6 +45,7 @@ setup:
       description: >
         true to skip TLS verification of the array's self-signed certificate.
   notes:
+    - "Any of PURE_URL / PURE_API_TOKEN / PURE_INSECURE you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Every action is a read-only GET — none write, delete, or mutate array state."
     - "Issue the token from a readonly-role array user (Settings -> Users) as defense-in-depth, so the credential itself cannot change anything even though the pack only ever issues GETs."
     - "The session token auto-expires after ~30 min of inactivity; the script re-logins on every call, so there is no session to manage."

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.5
+version: 0.1.6
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
@@ -58,6 +58,7 @@ setup:
       required: false
       description: Set to "true" to skip TLS verification when the API is served over https with a self-signed certificate.
   notes:
+    - "Any of TRAEFIK_URL / TRAEFIK_BASICAUTH / TRAEFIK_INSECURE you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Enable the API to use this pack: --api=true (production, behind a router + auth) or --api.insecure=true (exposes it unauthenticated on the :8080 traefik entrypoint — dev only)."
     - "Every API action is a read-only GET. The OSS Traefik API has no write endpoints; config changes only happen through providers (file/docker/k8s), never the API."
     - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: zot
 name: zot OCI registry
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only inspection of a zot OCI registry over its HTTP API: the OCI
   distribution endpoints (version check, catalog, tags, manifests) plus the
@@ -48,6 +48,7 @@ setup:
         and sent as an Authorization header over curl stdin, never argv. Leave
         unset for anonymous-read registries.
   notes:
+    - "Any of ZOT_URL / ZOT_BASICAUTH you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Every action is read-only: GET, plus POST only to the read-only search GraphQL extension. Push/delete of manifests and blobs, and userprefs writes, are deliberately excluded."
     - "The search/mgmt/metrics extensions require the full (extended) zot build — search/ui/mgmt are on by default; metrics must be enabled in config."
     - "mgmt and metrics typically require auth and are denied to anonymous clients; set ZOT_BASICAUTH for those."

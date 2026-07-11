@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pfsense
 name: pfSense firewall
-version: 0.4.0
+version: 0.4.1
 description: >
   Operate a pfSense firewall over its REST API: read firewall rules, NAT,
   aliases, virtual IPs, interface / gateway (config + status) / service / VPN
@@ -50,6 +50,7 @@ setup:
         Set to "true" to skip TLS verification — needed for the default
         self-signed GUI certificate. Prefer pinning a CA via CURL_CA_BUNDLE.
   notes:
+    - "Any of PFSENSE_URL / PFSENSE_API_KEY / PFSENSE_INSECURE you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Requires the community REST API package (pfSense-pkg-RESTAPI, /api/v2) installed on the firewall — not Netgate's Nexus controller API. The package's read_only switch (System → REST API) forces the whole API GET-only; pair it with a read-only key for a diagnostics deployment."
     - "TLS is verified by default. pfSense ships a self-signed GUI cert, so set PFSENSE_INSECURE=true, or set CURL_CA_BUNDLE to a CA file (curl reads it natively) to verify properly."
     - "Reads that would expose secrets (user passwords, IPsec phase pre-shared keys) are intentionally omitted, and the API's arbitrary-command endpoint (/diagnostics/command_prompt — a remote shell) is deliberately not wired: that belongs in the default-denied `shell` break-glass pack, not here. The certificate-store reads (certificates / certificate_authorities / crls) select only non-secret fields with jq, so the certificate private key (`prv` PEM) is never returned — by design, not just redaction. The mutators are risk-gated; reboot is critical."

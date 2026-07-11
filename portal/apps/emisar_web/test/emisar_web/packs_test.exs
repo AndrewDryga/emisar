@@ -258,7 +258,7 @@ defmodule EmisarWeb.PacksTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PacksRegistry.get("redis").content_hash ==
-               "sha256:f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1"
+               "sha256:221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae"
 
       assert PacksRegistry.get("cassandra").content_hash ==
                "sha256:5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af"
@@ -504,9 +504,15 @@ defmodule EmisarWeb.PacksTest do
       assert entry["version"] == pack.version
       assert entry["tarball"] =~ "/packs/redis/pack.tar.gz"
 
-      # No pack ships history in the bundled catalog yet, so the window is
-      # empty and the retirement watermark is null — both keys still present.
-      assert entry["previous_versions"] == []
+      # previous_versions + retired_below are always present. redis carries
+      # its prior version in the window after a bump — assert the nested
+      # public shape, not a fixed version, so a re-bump doesn't churn this.
+      assert entry["previous_versions"] != []
+
+      for prev <- entry["previous_versions"] do
+        assert prev |> Map.keys() |> Enum.sort() == ~w(hash tarball version)
+      end
+
       assert entry["retired_below"] == nil
     end
 

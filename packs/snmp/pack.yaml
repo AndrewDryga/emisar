@@ -2,7 +2,7 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.2.0
+version: 0.2.1
 description: >
   Read a network device over SNMP with the net-snmp CLI — system group,
   interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group
@@ -66,6 +66,7 @@ setup:
       required: false
       description: SNMPv3 privacy passphrase. Streamed via snmp.conf, never in argv.
   notes:
+    - "Any of the SNMP_* credentials you set (SNMP_COMMUNITY, SNMP_USER, SNMP_AUTH_PASS, SNMP_PRIV_PASS, and the SNMP_VERSION/SNMP_LEVEL/proto settings) must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Actions query by NUMERIC OID so they work without MIB files (Debian's `snmp` package ships none by default — `mibs :` is commented out). Output is therefore numeric too; each routing action's description maps the columns and decodes the state enums. Install `snmp-mibs-downloader` on the runner for symbolic names if you prefer."
     - "Enable SNMP on the device first. pfSense: Services → SNMP (set an RO community, bind it to the management interface, not WAN). The host arg is the device address; an unreachable device or wrong community fails the action (non-zero exit), it is not reported as empty."
     - "BGP4-MIB / OSPF-MIB are not served by the base snmpd — FRR exports them over AgentX. On the firewall/router, enable AgentX in FRR (`agentx` in the daemon config) and run bgpd/ospfd with the SNMP module, and set `master agentx` in snmpd.conf. Without that, bgp_peers / ospf_* return nothing even though SNMP itself works (snmp.system will still answer)."
