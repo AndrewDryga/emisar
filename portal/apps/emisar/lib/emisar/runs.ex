@@ -1464,17 +1464,26 @@ defmodule Emisar.Runs do
       # Re-read under the row lock: the caller's struct can be stale, and the
       # terminal-guard + budget check must judge (and charge) the CURRENT row so
       # concurrent appends can't each pass on a stale count.
-      loaded_run =
+      locked_run =
         ActionRun.Query.all()
         |> ActionRun.Query.by_id(run.id)
         |> ActionRun.Query.lock_for_update()
-        |> repo.one()
 
-      cond do
-        is_nil(loaded_run) -> {:error, :unknown_run}
-        ActionRun.terminal?(loaded_run.status) -> {:error, :run_terminal}
-        progress_budget_exceeded?(loaded_run, event_bytes) -> {:error, :progress_budget_exceeded}
-        true -> {:ok, loaded_run}
+      case repo.fetch(locked_run, ActionRun.Query) do
+        {:ok, loaded_run} ->
+          cond do
+            ActionRun.terminal?(loaded_run.status) ->
+              {:error, :run_terminal}
+
+            progress_budget_exceeded?(loaded_run, event_bytes) ->
+              {:error, :progress_budget_exceeded}
+
+            true ->
+              {:ok, loaded_run}
+          end
+
+        {:error, :not_found} ->
+          {:error, :unknown_run}
       end
     end)
     |> Multi.insert(:event, RunEvent.Changeset.create(attrs))

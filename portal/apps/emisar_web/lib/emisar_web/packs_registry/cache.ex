@@ -80,6 +80,10 @@ defmodule EmisarWeb.PacksRegistry.Cache do
   @spec evaluate({:ok, binary()} | {:error, term()}) :: {:ok, [Pack.t()]} | {:keep, String.t()}
   def evaluate({:ok, body}) do
     case Catalog.parse(body) do
+      # A valid-but-EMPTY published catalog would blank /packs and every
+      # resolve_command lookup — never a real publish. Treat it as a bad
+      # document and hold the last-good catalog rather than serving nothing.
+      {:ok, []} -> {:keep, "rejected published catalog: no packs"}
       {:ok, packs} -> {:ok, packs}
       {:error, reason} -> {:keep, "rejected published catalog: #{reason}"}
     end

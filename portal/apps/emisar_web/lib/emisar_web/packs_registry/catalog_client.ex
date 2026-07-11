@@ -12,23 +12,46 @@ defmodule EmisarWeb.PacksRegistry.CatalogClient do
 
   @receive_timeout 10_000
 
+  # The published catalog is small (KBs to a few MB). A body past this cap is a
+  # defect or a hostile/compromised origin trying to OOM the fetch, so stream and
+  # abort at the cap instead of buffering an unbounded response into memory.
+  @max_body_bytes 8_000_000
+
   @doc """
-  GET `url` and return its body. `{:error, reason}` on any transport
-  failure or non-2xx status — the caller keeps its last-good catalog.
+  GET `url` and return its body. `{:error, reason}` on any transport failure,
+  non-2xx status, or a body exceeding `@max_body_bytes` — the caller keeps its
+  last-good catalog. Streams so an oversized body is aborted, never buffered.
   """
   @spec fetch(String.t()) :: {:ok, binary()} | {:error, term()}
   def fetch(url) when is_binary(url) do
     request = Finch.build(:get, url)
+    acc = %{status: nil, chunks: [], bytes: 0, too_large: false}
 
-    case Finch.request(request, Emisar.Finch, receive_timeout: @receive_timeout) do
-      {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
-        {:ok, body}
+    case Finch.stream_while(request, Emisar.Finch, acc, &accumulate/2,
+           receive_timeout: @receive_timeout
+         ) do
+      {:ok, %{too_large: true}} ->
+        {:error, :body_too_large}
 
-      {:ok, %Finch.Response{status: status}} ->
+      {:ok, %{status: status, chunks: chunks}} when status in 200..299 ->
+        {:ok, chunks |> Enum.reverse() |> IO.iodata_to_binary()}
+
+      {:ok, %{status: status}} ->
         {:error, {:http, status}}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp accumulate({:status, status}, acc), do: {:cont, %{acc | status: status}}
+  defp accumulate({:headers, _headers}, acc), do: {:cont, acc}
+
+  defp accumulate({:data, chunk}, %{chunks: chunks, bytes: bytes} = acc) do
+    bytes = bytes + byte_size(chunk)
+
+    if bytes > @max_body_bytes,
+      do: {:halt, %{acc | too_large: true}},
+      else: {:cont, %{acc | chunks: [chunk | chunks], bytes: bytes}}
   end
 end

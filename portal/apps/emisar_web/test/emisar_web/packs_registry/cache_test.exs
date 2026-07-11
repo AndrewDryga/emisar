@@ -39,6 +39,12 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
       assert {:keep, message} = Cache.evaluate({:ok, "{garbage"})
       assert message =~ "rejected published catalog"
     end
+
+    test "a valid but empty published catalog keeps the last-good catalog" do
+      empty = Jason.encode!(%{"schema_version" => 1, "packs" => []})
+      assert {:keep, message} = Cache.evaluate({:ok, empty})
+      assert message =~ "no packs"
+    end
   end
 
   describe "boot" do
