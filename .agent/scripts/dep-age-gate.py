@@ -115,6 +115,40 @@ def parse_go(text: str) -> dict[str, str]:
 PARSERS = {"hex": parse_hex, "go": parse_go}
 
 
+_HEX_NONREG_LINE = re.compile(r'^\s*"(?P<name>[^"]+)":\s*\{:(?P<kind>git|path)\b')
+
+
+def parse_nonregistry(eco: str, text: str) -> dict[str, str]:
+    """{name: source-descriptor} for deps with NO registry release date — hex
+    :git / :path packages and go `replace` targets. These bypass age
+    enforcement entirely (there is nothing to age-check), which is exactly the
+    shape a malicious dependency takes to slip a lockfile gate. An added or
+    changed one is FAILED for human review rather than silently trusted."""
+    out: dict[str, str] = {}
+    if eco == "hex":
+        for line in text.splitlines():
+            m = _HEX_NONREG_LINE.match(line)
+            if m:
+                out[m.group("name")] = f"{m.group('kind')}: {line.strip()}"
+    elif eco == "go":
+        in_block = False
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("replace ("):
+                in_block = True
+                continue
+            if in_block:
+                if line == ")":
+                    in_block = False
+                elif "=>" in line:
+                    out[line.split(None, 1)[0]] = "replace: " + line.split("=>", 1)[1].strip()
+                continue
+            if line.startswith("replace ") and "=>" in line:
+                body = line[len("replace ") :]
+                out[body.split(None, 1)[0]] = "replace: " + body.split("=>", 1)[1].strip()
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Semver bump classification
 # --------------------------------------------------------------------------- #
@@ -272,6 +306,25 @@ def collect_candidates(base_ref: str):
     return candidates
 
 
+def collect_nonregistry_changes(base_ref: str):
+    """Added or changed non-registry sources vs base_ref -> [(eco, name, src)].
+    A hex :git/:path or a go replace that is new (or whose target changed) can't
+    be age-verified, so it is surfaced for review."""
+    changes = []
+    for eco, path in MANIFESTS:
+        full = os.path.join(REPO_ROOT, path)
+        if not os.path.exists(full):
+            continue
+        with open(full, encoding="utf-8") as fh:
+            head = parse_nonregistry(eco, fh.read())
+        base_text = git_show(base_ref, path)
+        base = parse_nonregistry(eco, base_text) if base_text else {}
+        for name, src in head.items():
+            if base.get(name) != src:
+                changes.append((eco, name, src))
+    return changes
+
+
 def ref_exists(ref: str) -> bool:
     return (
         subprocess.run(
@@ -290,12 +343,29 @@ def run_check(base_ref: str) -> int:
         # the PR gate, so skip instead — the PR path is the real enforcement point.
         print(f"dep-age-gate: base ref {base_ref!r} does not resolve; nothing to diff, skipping.")
         return 0
+
+    allowed = load_allowlist()
+
+    # A non-registry source (hex :git/:path, go replace) has no release date to
+    # age-check, so it would sail through the age gate — the exact bypass a
+    # malicious dep uses. Fail on any added/changed one unless it's audited in
+    # the allowlist under the `nonregistry` keyword.
+    nonreg = [c for c in collect_nonregistry_changes(base_ref) if (c[0], c[1], "nonregistry") not in allowed]
+    if nonreg:
+        print("::error::dep-age-gate: added/changed non-registry dependency source(s) — cannot age-verify, needs review:")
+        for eco, name, src in nonreg:
+            print(f"  - {eco} {name}: {src}")
+        print(
+            "\nA :git/:path (hex) or replace (go) dependency bypasses release-age enforcement. "
+            "Vet it (/deps-audit), then add `<eco> <name> nonregistry <reason>` to .dep-age-allow."
+        )
+        return 1
+
     candidates = collect_candidates(base_ref)
     if not candidates:
         print(f"dep-age-gate: no dependency version changes vs {base_ref}.")
         return 0
 
-    allowed = load_allowlist()
     print(f"dep-age-gate: checking {len(candidates)} changed dependency version(s) vs {base_ref}…")
 
     ages = {}
@@ -354,6 +424,21 @@ def run_self_test() -> int:
         "example.com/single": "v2.0.0",
     }, "go parser (block + single-line + indirect)"
 
+    # Non-registry source detection — these have no release date and must be
+    # surfaced, not silently skipped like the registry parsers do.
+    hex_nonreg = parse_nonregistry(
+        "hex",
+        '  "some_git": {:git, "https://x", "ref", []},\n'
+        '  "plug": {:hex, :plug, "1.0.0", "h", [:mix], [], "hexpm", "h"},\n',
+    )
+    assert set(hex_nonreg) == {"some_git"} and hex_nonreg["some_git"].startswith("git:"), "hex nonreg detect"
+    assert parse_nonregistry("go", "replace example.com/x => ./local\n") == {
+        "example.com/x": "replace: ./local"
+    }, "go single replace"
+    assert parse_nonregistry("go", "replace (\n\texample.com/y => ../y v1.0.0\n)\n") == {
+        "example.com/y": "replace: ../y v1.0.0"
+    }, "go block replace"
+
     # Bump classification.
     assert bump_type(None, "1.0.0") == "new"
     assert bump_type("1.2.3", "2.0.0") == "major"
@@ -385,6 +470,7 @@ def run_self_test() -> int:
     print("  rejected too-fresh: hex fresh_patch 1.2.4 (2d < 7d), go .../major v2.0.0 (20d < 30d)")
     print("  allowed old-enough: hex aged_patch 1.2.4 (30d >= 7d)")
     print("  allowlist exempts:  hex fresh_patch 1.2.4 when listed in .dep-age-allow")
+    print("  non-registry flag:  hex :git/:path + go replace surfaced for review")
     return 0
 
 
