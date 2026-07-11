@@ -865,7 +865,11 @@ defmodule EmisarWeb.AgentsLive do
                 <:title>
                   <span class="truncate font-medium text-zinc-100">{key.name}</span>
                   <.client_status_pill key={key} />
-                  <.version_chip kind={:mcp} version={mcp_bridge_version(key)} />
+                  <.version_chip
+                    kind={:mcp}
+                    version={mcp_bridge_version(key)}
+                    id={"mcp-version-#{key.id}"}
+                  />
                 </:title>
                 <:meta>
                   <%!-- Identity + liveness only. The OWNER leads — whose

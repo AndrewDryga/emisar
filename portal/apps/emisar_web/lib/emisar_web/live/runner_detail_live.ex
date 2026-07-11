@@ -239,7 +239,11 @@ defmodule EmisarWeb.RunnerDetailLive do
             <.meta_field label="Version">
               <span class="inline-flex items-center gap-2">
                 <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
-                <.version_chip kind={:runner} version={@runner.runner_version} />
+                <.version_chip
+                  kind={:runner}
+                  version={@runner.runner_version}
+                  id={"runner-version-#{@runner.id}"}
+                />
               </span>
             </.meta_field>
             <.meta_field label="Group">

@@ -3451,21 +3451,27 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :kind, :atom, required: true, values: [:runner, :mcp]
   attr :version, :string, default: nil
+
+  attr :id, :string,
+    default: nil,
+    doc: "unique tooltip id — pass a per-row id where the chip repeats"
+
   attr :class, :string, default: nil
 
   def version_chip(assigns) do
     assigns = assign(assigns, :status, version_status(assigns.kind, assigns.version))
 
     ~H"""
-    <.chip
+    <.tooltip
       :if={@status in [:outdated, :unsupported]}
-      tone={version_chip_tone(@status)}
-      icon="hero-exclamation-triangle"
+      id={@id}
+      text={version_chip_title(@kind, @status)}
       class={@class}
-      title={version_chip_title(@kind, @status)}
     >
-      {version_chip_label(@status)}
-    </.chip>
+      <.chip tone={version_chip_tone(@status)} icon="hero-exclamation-triangle">
+        {version_chip_label(@status)}
+      </.chip>
+    </.tooltip>
     """
   end
 
