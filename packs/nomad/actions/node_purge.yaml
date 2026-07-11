@@ -17,7 +17,7 @@ args:
     required: true
     description: Node ID.
     validation:
-      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
 execution:
   command:
     binary: /bin/sh

@@ -25,13 +25,13 @@ args:
     required: true
     description: Allocation ID or prefix (from nomad.job_allocations / nomad.alloc_status).
     validation:
-      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
   - name: task
     type: string
     required: true
     description: Task name inside the allocation that runs Redis.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: section
     type: string
     required: false

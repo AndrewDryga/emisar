@@ -11805,13 +11805,13 @@
     {
       "id": "nomad",
       "name": "HashiCorp Nomad",
-      "version": "0.1.23",
+      "version": "0.1.24",
       "description": "Deep Nomad operations — full job lifecycle (inspect, history, scale horizontally + vertically, dispatch, revert, promote, stop), per-task CPU/memory resource read + set, allocation introspection + health checks + filesystem ls/stat (metadata only, never file contents) + fixed in-container Redis probes (ping/info via alloc exec, no freeform command) + restart + signal + stop, native service discovery (no Consul) — the high-use reads take optional namespace/region for cross-namespace incident debugging — node fleet management (drain, eligibility, purge), evaluation + deployment status, operator raft + autopilot, CSI + host volumes, ACL policies + tokens, namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nomad",
-      "content_hash": "sha256:6a6696f2163053bb7a74aa9001d84e458221f3b2389ca0ddbb8a995970d7bc8d",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.23/6a6696f2163053bb7a74aa9001d84e458221f3b2389ca0ddbb8a995970d7bc8d/pack.tar.gz",
+      "content_hash": "sha256:c1b873f0254cd9919534116afe43709a77f941dd058fd0c54d86b54d781e2cb1",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.24/c1b873f0254cd9919534116afe43709a77f941dd058fd0c54d86b54d781e2cb1/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

@@ -13,7 +13,7 @@ args:
     required: true
     description: Node ID or prefix.
     validation:
-      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
 execution:
   command: {binary: nomad, argv: ["node", "drain", "-disable", "-yes", "{{ args.node_id }}"]}
   timeout: 30s

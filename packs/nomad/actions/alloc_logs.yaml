@@ -18,13 +18,13 @@ args:
     required: true
     description: Allocation ID or prefix (from nomad.job_allocations when you only have the job name).
     validation:
-      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+      pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
   - name: task
     type: string
     required: true
     description: Task name.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: tail
     type: integer
     required: false
@@ -39,14 +39,14 @@ args:
     default: ""
     description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
   - name: region
     type: string
     required: false
     default: ""
     description: Nomad region to target. Empty (default) keeps the runner's ambient NOMAD_REGION or the agent's region.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
 execution:
   script:
     path: scripts/read_nsr.sh

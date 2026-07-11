@@ -39,7 +39,7 @@ args:
     default: ""
     description: Filter to one namespace (empty = the runner's ambient/default).
     validation:
-      pattern: "^[a-zA-Z0-9_-]{0,128}$"
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})?$"
 execution:
   script:
     path: scripts/event_snapshot.sh
