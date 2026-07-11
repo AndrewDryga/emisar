@@ -11577,13 +11577,13 @@
     {
       "id": "nodejs-pm2",
       "name": "Node.js / PM2 operations",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "PM2 process inventory + logs + per-app introspection, plus narrow mutators (restart, reload, stop, scale). Requires the runner to be the same uid as the PM2 daemon (or set PM2_HOME).",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nodejs-pm2",
-      "content_hash": "sha256:af1789958ac1ba3f23465903a16c637eb5067e4e74f7b8e5bcaff325e76dc671",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nodejs-pm2/0.1.5/af1789958ac1ba3f23465903a16c637eb5067e4e74f7b8e5bcaff325e76dc671/pack.tar.gz",
+      "content_hash": "sha256:9bf4fd1bbac8704548ea43b58a3d0564f3e991b5d913df11a5cf4182da498b55",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nodejs-pm2/0.1.6/9bf4fd1bbac8704548ea43b58a3d0564f3e991b5d913df11a5cf4182da498b55/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11607,10 +11607,10 @@
           "kind": "exec",
           "risk": "low",
           "command": {
-            "binary": "pm2",
+            "binary": "/bin/sh",
             "argv": [
-              "describe",
-              "{{ args.name }}"
+              "-c",
+              "pm2 jlist | jq --arg n \"{{ args.name }}\" 'map(select(.name == $n or (.pm_id|tostring) == $n)) | map({name, pm_id, pid, monit, namespace: .pm2_env.namespace, status: .pm2_env.status, uptime: .pm2_env.pm_uptime, restarts: .pm2_env.restart_time, unstable_restarts: .pm2_env.unstable_restarts, mode: .pm2_env.exec_mode, instances: .pm2_env.instances, script: .pm2_env.pm_exec_path, cwd: .pm2_env.pm_cwd, interpreter: .pm2_env.exec_interpreter, node_args: .pm2_env.node_args, created_at: .pm2_env.created_at, version: .pm2_env.version, autorestart: .pm2_env.autorestart, max_memory_restart: .pm2_env.max_memory_restart})'"
             ]
           }
         },
