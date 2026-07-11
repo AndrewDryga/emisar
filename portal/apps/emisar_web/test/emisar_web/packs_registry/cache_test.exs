@@ -2,7 +2,16 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
   use ExUnit.Case, async: true
   alias EmisarWeb.PacksRegistry.Cache
 
-  defp catalog_json(id) do
+  @catalog_url "https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json"
+
+  defp catalog_json(id, opts \\ []) do
+    tarball_url =
+      Keyword.get(
+        opts,
+        :tarball_url,
+        "https://storage.googleapis.com/emisar-pack-registry/v1/#{id}.tar.gz"
+      )
+
     Jason.encode!(%{
       "schema_version" => 1,
       "packs" => [
@@ -15,7 +24,8 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
           "homepage" => "https://github.com/andrewdryga/emisar",
           "source_url" => "https://github.com/andrewdryga/emisar/tree/main/packs/#{id}",
           "content_hash" => "sha256:#{String.duplicate("b", 64)}",
-          "tarball_url" => "https://storage.googleapis.com/emisar-pack-registry/#{id}.tar.gz",
+          "tarball_url" => tarball_url,
+          "previous_versions" => Keyword.get(opts, :previous_versions, []),
           "requires" => %{"os" => [], "binaries" => []},
           "detect" => %{"binaries" => [], "processes" => [], "ports" => []},
           "actions" => []
@@ -24,26 +34,66 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
     })
   end
 
-  describe "evaluate/1" do
-    test "a validated fetch replaces the catalog" do
-      assert {:ok, [pack]} = Cache.evaluate({:ok, catalog_json("redis")})
+  describe "evaluate/2" do
+    test "a validated fetch under the registry base replaces the catalog" do
+      assert {:ok, [pack]} = Cache.evaluate({:ok, catalog_json("redis")}, @catalog_url)
       assert pack.id == "redis"
     end
 
     test "a fetch failure keeps the last-good catalog" do
-      assert {:keep, message} = Cache.evaluate({:error, :timeout})
+      assert {:keep, message} = Cache.evaluate({:error, :timeout}, @catalog_url)
       assert message =~ "fetch failed"
     end
 
     test "a malformed published catalog keeps the last-good catalog" do
-      assert {:keep, message} = Cache.evaluate({:ok, "{garbage"})
+      assert {:keep, message} = Cache.evaluate({:ok, "{garbage"}, @catalog_url)
       assert message =~ "rejected published catalog"
     end
 
     test "a valid but empty published catalog keeps the last-good catalog" do
       empty = Jason.encode!(%{"schema_version" => 1, "packs" => []})
-      assert {:keep, message} = Cache.evaluate({:ok, empty})
+      assert {:keep, message} = Cache.evaluate({:ok, empty}, @catalog_url)
       assert message =~ "no packs"
+    end
+
+    test "an off-base tarball_url is rejected on the remote path" do
+      off_base = catalog_json("redis", tarball_url: "https://evil.example.com/redis.tar.gz")
+      assert {:keep, message} = Cache.evaluate({:ok, off_base}, @catalog_url)
+      assert message =~ "not under the registry base"
+    end
+
+    test "an off-base tarball_url in previous_versions is rejected" do
+      previous = [
+        %{
+          "version" => "0.0.9",
+          "content_hash" => "sha256:#{String.duplicate("c", 64)}",
+          "tarball_url" => "https://evil.example.com/redis-old.tar.gz"
+        }
+      ]
+
+      catalog = catalog_json("redis", previous_versions: previous)
+      assert {:keep, message} = Cache.evaluate({:ok, catalog}, @catalog_url)
+      assert message =~ "not under the registry base"
+    end
+
+    test "a self-host catalog_url override pins tarballs to that base" do
+      self_host_url = "https://packs.acme.internal/registry/catalog.json"
+
+      under_base =
+        catalog_json("redis", tarball_url: "https://packs.acme.internal/registry/redis.tar.gz")
+
+      assert {:ok, [pack]} = Cache.evaluate({:ok, under_base}, self_host_url)
+      assert pack.id == "redis"
+
+      # The canonical GCS URL is off-base for a self-hoster — the pin follows
+      # the configured catalog_url, not a hardcoded registry base.
+      off_base =
+        catalog_json("redis",
+          tarball_url: "https://storage.googleapis.com/emisar-pack-registry/v1/redis.tar.gz"
+        )
+
+      assert {:keep, message} = Cache.evaluate({:ok, off_base}, self_host_url)
+      assert message =~ "not under the registry base"
     end
   end
 

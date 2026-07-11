@@ -56,7 +56,7 @@ defmodule EmisarWeb.PacksRegistry.Cache do
   @impl true
   def handle_info(:refresh, state) do
     state =
-      case evaluate(CatalogClient.fetch(state.url)) do
+      case evaluate(CatalogClient.fetch(state.url), state.url) do
         {:ok, packs} ->
           :persistent_term.put(@term_key, packs)
           %{state | source: :remote, loaded_at: DateTime.utc_now()}
@@ -73,23 +73,65 @@ defmodule EmisarWeb.PacksRegistry.Cache do
   @doc """
   Decide what a fetch result means for the cached catalog. `{:ok, packs}`
   to replace the last-good catalog with the freshly-validated one, or
-  `{:keep, message}` to hold the last-good catalog (fetch failed, or the
-  published document didn't validate). Pure, so the last-good contract is
-  directly testable.
+  `{:keep, message}` to hold the last-good catalog (fetch failed, the
+  published document didn't validate, or a tarball_url pointed off the
+  registry base derived from `catalog_url`). Pure, so the last-good
+  contract is directly testable.
   """
-  @spec evaluate({:ok, binary()} | {:error, term()}) :: {:ok, [Pack.t()]} | {:keep, String.t()}
-  def evaluate({:ok, body}) do
+  @spec evaluate({:ok, binary()} | {:error, term()}, String.t()) ::
+          {:ok, [Pack.t()]} | {:keep, String.t()}
+  def evaluate({:ok, body}, catalog_url) do
     case Catalog.parse(body) do
       # A valid-but-EMPTY published catalog would blank /packs and every
       # resolve_command lookup — never a real publish. Treat it as a bad
       # document and hold the last-good catalog rather than serving nothing.
       {:ok, []} -> {:keep, "rejected published catalog: no packs"}
-      {:ok, packs} -> {:ok, packs}
+      {:ok, packs} -> pin_tarballs(packs, tarball_base(catalog_url))
       {:error, reason} -> {:keep, "rejected published catalog: #{reason}"}
     end
   end
 
-  def evaluate({:error, reason}), do: {:keep, "catalog fetch failed: #{inspect(reason)}"}
+  def evaluate({:error, reason}, _catalog_url),
+    do: {:keep, "catalog fetch failed: #{inspect(reason)}"}
+
+  # Pin every tarball_url (current + carried-forward history) to the
+  # registry base derived from the configured catalog_url: the portal
+  # 302s installers to these URLs, so a poisoned REMOTE catalog naming an
+  # off-base tarball could redirect an install to another host or bucket
+  # (supply chain). The bundled boot parse deliberately skips this — it
+  # ships the canonical GCS URLs while a self-hoster overrides catalog_url,
+  # so the pin is the remote path's alone.
+  defp pin_tarballs(packs, base) do
+    case find_off_base_tarball(packs, base) do
+      nil ->
+        {:ok, packs}
+
+      {pack_id, url} ->
+        {:keep,
+         "rejected published catalog: pack #{inspect(pack_id)} tarball_url #{inspect(url)} " <>
+           "is not under the registry base #{inspect(base)}"}
+    end
+  end
+
+  defp find_off_base_tarball(packs, base) do
+    Enum.find_value(packs, fn pack ->
+      urls = [pack.tarball_url | Enum.map(pack.previous_versions, & &1.tarball_url)]
+
+      case Enum.find(urls, &(not String.starts_with?(&1, base))) do
+        nil -> nil
+        url -> {pack.id, url}
+      end
+    end)
+  end
+
+  # The registry base is the directory the configured catalog.json lives
+  # in (…/v1/catalog.json → …/v1/); every published tarball must sit under it.
+  defp tarball_base(catalog_url) do
+    uri = URI.parse(catalog_url)
+    dir = Path.dirname(uri.path || "/")
+    base_path = if String.ends_with?(dir, "/"), do: dir, else: dir <> "/"
+    URI.to_string(%{uri | path: base_path, query: nil, fragment: nil})
+  end
 
   # The bundled catalog is a committed, test-verified artifact — a parse
   # failure here is a build defect, so fail loud rather than boot empty.
