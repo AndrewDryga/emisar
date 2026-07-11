@@ -91,7 +91,8 @@ defmodule Emisar.Runbooks do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_runbooks_permission()
+             {:one_of,
+              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ) do
       user_id = Subject.user_id(subject)
 

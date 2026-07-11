@@ -83,6 +83,25 @@ defmodule Emisar.RunbooksTest do
     runbook
   end
 
+  # A genuine api_client subject (an MCP key) — NOT subject_for(role: :api_client),
+  # which falls back to least-privilege because :api_client is not a membership
+  # role. for_api_key carries the real api_client permission set (draft + view).
+  defp api_client_subject(account) do
+    # An owner mints the MCP key (key creation needs manage_api_keys); the key
+    # itself then acts as :api_client, whose permissions come from
+    # for_role(:api_client) — draft + view — not the minter's role.
+    owner = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: owner.id,
+      role: "owner"
+    )
+
+    {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+    Emisar.Auth.Subject.for_api_key(key, account)
+  end
+
   defp finish!(run), do: {:ok, _} = Runs.mark_finished(run, %{"status" => "success"})
 
   defp execution_runs(account, execution_id),
@@ -344,9 +363,19 @@ defmodule Emisar.RunbooksTest do
       operator =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
 
-      # Operators hold view_runbooks but not manage_runbooks — create_runbook gates
-      # on manage, so they're refused (an operator can RUN a runbook, not edit one).
+      # create_runbook gates on manage-OR-draft; an operator holds view only
+      # (neither), so it's refused — an operator can RUN a runbook, not author one.
       assert {:error, :unauthorized} = save_runbook(operator, uptime_steps(1))
+    end
+
+    test "an api_client (draft permission, no manage) can create a draft", %{account: account} do
+      api_client = api_client_subject(account)
+
+      # MCP keys draft runbooks for operator review: create_runbook accepts
+      # manage OR draft, and an api_client carries draft (but not manage, so it
+      # can't publish/version/delete — see those describes).
+      assert {:ok, runbook} = save_runbook(api_client, uptime_steps(1))
+      assert runbook.status == :draft
     end
 
     test "an owner of another account can't create against this account (cross-account)" do
@@ -516,12 +545,20 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, _} = Runbooks.fetch_runbook_by_id(v1.id, subject)
     end
 
-    test "a viewer (no manage permission) is refused", %{account: account, subject: subject} do
+    test "a viewer or api_client (no manage permission) is refused", %{
+      account: account,
+      subject: subject
+    } do
       v1 = draft_runbook!(subject, "guard-book")
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
+      api_client = api_client_subject(account)
+
       assert {:error, :unauthorized} =
                Runbooks.save_new_version(v1, %{"title" => "nope"}, viewer)
+
+      assert {:error, :unauthorized} =
+               Runbooks.save_new_version(v1, %{"title" => "nope"}, api_client)
     end
 
     test "an owner of another account can't version this runbook" do
@@ -703,7 +740,10 @@ defmodule Emisar.RunbooksTest do
       assert "every step needs a unique ID before publishing" in errors_on(changeset).definition
     end
 
-    test "a non-manager (viewer or operator) cannot publish", %{account: account, subject: owner} do
+    test "a non-manager (viewer, operator, or api_client) cannot publish", %{
+      account: account,
+      subject: owner
+    } do
       draft =
         draft_with_steps(owner, [
           %{
@@ -715,15 +755,19 @@ defmodule Emisar.RunbooksTest do
         ])
 
       # Publish gates on manage_runbooks (owner/admin only). A viewer and an
-      # operator both hold only view_runbooks, so the authz gate refuses both
+      # operator hold only view_runbooks; an api_client holds draft (it can
+      # create a draft, not promote one) — so the authz gate refuses all three
       # before the publishable-steps changeset even runs.
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
       operator =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
 
+      api_client = api_client_subject(account)
+
       assert {:error, :unauthorized} = Runbooks.publish(draft, viewer)
       assert {:error, :unauthorized} = Runbooks.publish(draft, operator)
+      assert {:error, :unauthorized} = Runbooks.publish(draft, api_client)
     end
 
     test "cross-account: account B cannot publish account A's runbook → :not_found" do
@@ -776,11 +820,17 @@ defmodule Emisar.RunbooksTest do
       assert deleted.target_id == runbook.id
     end
 
-    test "a viewer (no manage permission) is refused", %{account: account, subject: subject} do
+    test "a viewer or api_client (no manage permission) is refused", %{
+      account: account,
+      subject: subject
+    } do
       runbook = draft_runbook!(subject, "guard-delete-book")
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
+      api_client = api_client_subject(account)
+
       assert {:error, :unauthorized} = Runbooks.delete_runbook(runbook, viewer)
+      assert {:error, :unauthorized} = Runbooks.delete_runbook(runbook, api_client)
       assert {:ok, _} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
     end
 
