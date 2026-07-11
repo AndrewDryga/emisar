@@ -3500,19 +3500,28 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Wraps a trigger element with a styled hover/focus tooltip — a dark bubble
-  carrying `text`, for the "why" a control is locked/disabled/limited. CSS-only
-  (named `group/tooltip`, so it's safe inside a row that has its own `group`); the
-  bubble is right-anchored so it grows leftward and won't clip off a right-edge
-  badge. `placement` picks which side it opens on — default `:top`, but use
-  `:bottom` for a trigger near the top of the viewport (a title-row control),
+  carrying `text`, for the "why" a control is locked/disabled/limited. The reveal
+  is CSS (named `group/tooltip`, so it's safe inside a row that has its own
+  `group`); the bubble is right-anchored so it grows leftward and won't clip off a
+  right-edge badge. `placement` picks which side it opens on — default `:top`, but
+  use `:bottom` for a trigger near the top of the viewport (a title-row control),
   where an upward bubble would clip off-screen.
 
-  The `text` carries load-bearing "why locked/limited" copy, so it can't rest on
-  hover alone: the wrapper is a focusable trigger (`tabindex="0"`) whose reveal
-  also fires on `focus-within`, so a touch tap or keyboard `Tab` opens the bubble;
-  `aria-describedby` links the trigger to the `role="tooltip"` bubble so assistive
-  tech announces the reason (WCAG 1.4.13). Pass an explicit `id` when the same tip
-  renders more than once on a page (a per-row lock) to keep bubble ids unique.
+  The `text` carries load-bearing "why locked/limited" copy, so it's a full WCAG
+  1.4.13 tooltip, not a hover-only hint:
+
+    * **Perceivable on touch/keyboard/SR** — the wrapper is a focusable trigger
+      (`tabindex="0"`) whose reveal also fires on `focus-within`, and
+      `aria-describedby` links it to the `role="tooltip"` bubble, so a tap, `Tab`,
+      or screen reader all surface the reason.
+    * **Hoverable** — the revealed bubble takes pointer events (with a transparent
+      bridge spanning the gap to the trigger), so the pointer can move onto it to
+      read or select without the tip vanishing.
+    * **Dismissable** — the `Tooltip` hook hides the bubble on `Escape` while
+      keeping focus on the trigger, re-arming on the next hover/focus.
+
+  Pass an explicit `id` when the same tip renders more than once on a page (a
+  per-row lock) to keep the trigger + bubble ids unique.
 
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
@@ -3531,19 +3540,31 @@ defmodule EmisarWeb.CoreComponents do
 
     ~H"""
     <span
+      id={"#{@tooltip_id}-tt"}
       class={["group/tooltip relative inline-flex", @class]}
       tabindex="0"
       aria-describedby={@tooltip_id}
+      phx-hook="Tooltip"
     >
       {render_slot(@inner_block)}
+      <%!-- Revealed, the bubble is pointer-interactive and a transparent `before`
+           bridge closes the gap to the trigger (WCAG 1.4.13 hoverable); hidden, it
+           stays pointer-events-none so the invisible bubble can't intercept clicks
+           over whatever sits above/below the trigger. --%>
       <span
         id={@tooltip_id}
         role="tooltip"
+        data-tooltip-bubble
         class={[
           "pointer-events-none absolute right-0 z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
           "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
           "transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
-          if(@placement == :bottom, do: "top-full mt-2", else: "bottom-full mb-2")
+          "group-hover/tooltip:pointer-events-auto group-focus-within/tooltip:pointer-events-auto",
+          "before:absolute before:inset-x-0 before:h-2 before:content-['']",
+          if(@placement == :bottom,
+            do: "top-full mt-2 before:bottom-full",
+            else: "bottom-full mb-2 before:top-full"
+          )
         ]}
       >
         {@text}

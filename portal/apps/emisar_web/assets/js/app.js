@@ -439,11 +439,34 @@ const FlashAutoClose = {
   }
 }
 
+// Escape-to-dismiss for the shared <.tooltip> (WCAG 1.4.13 "Dismissable"). The
+// bubble reveals purely in CSS on :hover / :focus-within; this hook adds only the
+// Escape leg the CSS can't — it hides the bubble WITHOUT moving focus off the
+// trigger (so the operator keeps their place), then re-arms on the next hover or
+// focus so the tip can show again.
+const Tooltip = {
+  mounted() {
+    this.bubble = this.el.querySelector("[data-tooltip-bubble]")
+    if (!this.bubble) return
+    this.onKey = (e) => { if (e.key === "Escape") this.bubble.classList.add("hidden") }
+    this.rearm = () => this.bubble.classList.remove("hidden")
+    this.el.addEventListener("keydown", this.onKey)
+    this.el.addEventListener("mouseenter", this.rearm)
+    this.el.addEventListener("focusin", this.rearm)
+  },
+  destroyed() {
+    if (!this.bubble) return
+    this.el.removeEventListener("keydown", this.onKey)
+    this.el.removeEventListener("mouseenter", this.rearm)
+    this.el.removeEventListener("focusin", this.rearm)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose }
+  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip }
 })
 
 // Show progress bar on live navigation and form submits
