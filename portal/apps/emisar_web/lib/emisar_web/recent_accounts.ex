@@ -12,10 +12,10 @@ defmodule EmisarWeb.RecentAccounts do
   # A year — long enough that a returning operator still sees their team.
   @max_age 60 * 60 * 24 * 365
 
-  # `secure` follows the same runtime knob as the session + remember-me cookies
-  # (UserAuth.remember_me_options/0): forced on behind HTTPS, off so local dev over
-  # http://localhost still returns the cookie. A hardcoded `secure: true` would
-  # silently drop the recent-teams buttons in dev.
+  # `secure` follows the `:force_secure_cookies` runtime knob (runtime.exs):
+  # forced on behind HTTPS, off so local dev over http://localhost still returns
+  # the cookie. A hardcoded `secure: true` would silently drop the recent-teams
+  # buttons in dev.
   defp opts do
     [
       sign: true,

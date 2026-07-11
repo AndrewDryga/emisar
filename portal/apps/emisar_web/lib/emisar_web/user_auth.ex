@@ -13,37 +13,21 @@ defmodule EmisarWeb.UserAuth do
   alias EmisarWeb.Analytics
   alias EmisarWeb.RequestContext
 
-  @remember_me_cookie "_emisar_user_remember_me"
-
   # Session provenance for an unauthenticated request — no method, no SSO
   # identity. `fetch_user_and_token_by_session_token/1` returns the `%UserToken{}`
   # on a hit; this is the miss/anonymous default the Subject build reads from.
   @no_auth %{auth_method: nil, mfa: nil, user_identity_id: nil}
 
-  # Built per-call rather than as a module attribute so `secure:` can
-  # be flipped at runtime via the FORCE_SSL env knob (see runtime.exs).
-  # If we baked it in with `Application.compile_env`, the release would
-  # refuse to boot whenever the runtime value diverged from compile.
-  defp remember_me_options do
-    [
-      encrypt: true,
-      max_age: 60 * 60 * 24 * 60,
-      same_site: "Lax",
-      http_only: true,
-      secure: Application.get_env(:emisar_web, :force_secure_cookies, false)
-    ]
-  end
-
   # -- Public surface -------------------------------------------------
 
   @doc """
-  Logs in `user`, persisting the session token in the cookie, and optionally
-  setting the "remember me" cookie. Always renews the session ID (CSRF defence
-  in depth) and redirects. `auth_method` (how they signed in) and `mfa` (was a
-  second factor verified) are stamped onto the persisted token so they reach
-  every audit row; `opts` carry the SSO-only `:user_identity_id`.
+  Logs in `user`, persisting the session token in the cookie. Always renews the
+  session ID (CSRF defence in depth) and redirects. `auth_method` (how they
+  signed in) and `mfa` (was a second factor verified) are stamped onto the
+  persisted token so they reach every audit row; `opts` carry the SSO-only
+  `:user_identity_id`.
   """
-  def log_in_user(conn, user, auth_method, mfa, params \\ %{}, opts \\ []) do
+  def log_in_user(conn, user, auth_method, mfa, opts \\ []) do
     # `registered?` rides in opts (not params/conn) so the FIRST sign-in after a
     # registration — magic-link round-trip or SSO JIT — fires sign_up_completed.
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
@@ -63,7 +47,6 @@ defmodule EmisarWeb.UserAuth do
     conn
     |> renew_session()
     |> put_token_in_session(token)
-    |> maybe_write_remember_me_cookie(token, params)
     |> maybe_flash_just_registered(user, registered?)
     |> Analytics.track_authentication(user, auth_method, mfa, registered?)
     |> redirect(to: user_return_to || signed_in_path(conn))
@@ -77,12 +60,6 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp maybe_flash_just_registered(conn, _user, false), do: conn
-
-  defp maybe_write_remember_me_cookie(conn, token, %{"remember_me" => "true"}) do
-    put_resp_cookie(conn, @remember_me_cookie, token, remember_me_options())
-  end
-
-  defp maybe_write_remember_me_cookie(conn, _, _), do: conn
 
   defp renew_session(conn) do
     delete_csrf_token()
@@ -120,18 +97,15 @@ defmodule EmisarWeb.UserAuth do
     conn
     |> Analytics.track_sign_out()
     |> renew_session()
-    |> delete_resp_cookie(@remember_me_cookie)
     |> redirect(to: ~p"/")
   end
 
   # -- Plugs ----------------------------------------------------------
 
-  @doc "Fetch the current user from the session/cookie token."
+  @doc "Fetch the current user from the session token."
   def fetch_current_user(conn, _opts) do
-    {user_token, conn} = ensure_user_token(conn)
-
     {user, auth} =
-      with token when is_binary(token) <- user_token,
+      with token when is_binary(token) <- get_session(conn, :user_token),
            {:ok, user, auth} <- Auth.fetch_user_and_token_by_session_token(token) do
         {user, auth}
       else
@@ -141,20 +115,6 @@ defmodule EmisarWeb.UserAuth do
     conn
     |> assign(:current_user, user)
     |> assign(:current_auth, auth)
-  end
-
-  defp ensure_user_token(conn) do
-    if token = get_session(conn, :user_token) do
-      {token, conn}
-    else
-      conn = fetch_cookies(conn, signed: [@remember_me_cookie])
-
-      if token = conn.cookies[@remember_me_cookie] do
-        {token, put_token_in_session(conn, token)}
-      else
-        {nil, conn}
-      end
-    end
   end
 
   @doc "Used in router/pipeline: redirects unauthenticated requests to login."
@@ -287,7 +247,6 @@ defmodule EmisarWeb.UserAuth do
 
     conn
     |> renew_session()
-    |> delete_resp_cookie(@remember_me_cookie)
     |> put_flash(:error, message)
     |> redirect(to: to)
   end

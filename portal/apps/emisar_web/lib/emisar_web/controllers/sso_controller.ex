@@ -59,7 +59,7 @@ defmodule EmisarWeb.SSOController do
       |> delete_session(@stash_key)
       |> put_session(:user_return_to, ~p"/app/#{account}")
       |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-      |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider), %{},
+      |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider),
         user_identity_id: identity.id,
         registered?: created?
       )

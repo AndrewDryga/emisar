@@ -120,10 +120,10 @@ if config_env() == :prod do
 
   config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
 
-  # Force `secure: true` on the remember-me cookie + tighten the session
-  # cookie. Combined with the compile-time `force_ssl` (prod.exs), browsers
-  # never send the cookie over plain HTTP. Disabled when FORCE_SSL=false so
-  # local dev over http://localhost can still complete sign-in.
+  # Force `secure: true` on the recent-accounts cookie (`RecentAccounts.opts/0`).
+  # Combined with the compile-time `force_ssl` (prod.exs), browsers never send it
+  # over plain HTTP. Disabled when FORCE_SSL=false so local dev over
+  # http://localhost can still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
   config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

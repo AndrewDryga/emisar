@@ -218,7 +218,7 @@ defmodule EmisarWeb.UserSessionController do
       |> clear_mfa_pending()
       |> complete_branded_sign_in(
         user,
-        &UserAuth.log_in_user(&1, user, :magic_link, true, %{}, registered?: registered?)
+        &UserAuth.log_in_user(&1, user, :magic_link, true, registered?: registered?)
       )
     else
       _ ->
@@ -373,7 +373,7 @@ defmodule EmisarWeb.UserSessionController do
       complete_branded_sign_in(
         conn,
         user,
-        &UserAuth.log_in_user(&1, user, :magic_link, false, %{}, registered?: registered?)
+        &UserAuth.log_in_user(&1, user, :magic_link, false, registered?: registered?)
       )
     end
   end

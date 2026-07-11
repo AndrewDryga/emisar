@@ -2,8 +2,6 @@ defmodule EmisarWeb.UserAuthTest do
   use EmisarWeb.ConnCase, async: true
   alias EmisarWeb.UserAuth
 
-  @remember_me_cookie "_emisar_user_remember_me"
-
   # Session provenance for an unauthenticated request — the miss/anonymous
   # default the Subject build reads from. Mirrors `UserAuth`'s private @no_auth.
   @no_auth %{auth_method: nil, mfa: nil, user_identity_id: nil}
@@ -165,36 +163,17 @@ defmodule EmisarWeb.UserAuthTest do
     end
   end
 
-  describe "log_in_user/3" do
-    test "remember_me writes a persistent signed cookie alongside the session token", %{
-      conn: conn
-    } do
-      # `remember_me: "true"` writes the persistent token
-      # cookie (alongside the session token) with the documented 60-DAY max-age, so
-      # the operator stays signed in across browser restarts for exactly that window.
-      conn =
-        UserAuth.log_in_user(
-          conn,
-          Fixtures.Users.create_user(),
-          :magic_link,
-          false,
-          %{"remember_me" => "true"}
-        )
-
-      assert Plug.Conn.get_session(conn, :user_token)
-      assert %{max_age: max_age, value: value} = conn.resp_cookies[@remember_me_cookie]
-      assert is_binary(value)
-      # 60 days, matching UserAuth.remember_me_options/0.
-      assert max_age == 60 * 60 * 24 * 60
-    end
-
-    test "without remember_me, only the session token is set — no persistent cookie", %{
+  describe "log_in_user/5" do
+    test "persists the session token + its live-socket topic, writes no other cookie", %{
       conn: conn
     } do
       conn = UserAuth.log_in_user(conn, Fixtures.Users.create_user(), :magic_link, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
-      refute conn.resp_cookies[@remember_me_cookie]
+      assert Plug.Conn.get_session(conn, :live_socket_id)
+      # Sign-in is passwordless/SSO — there is no "keep me signed in" control, so
+      # only the session cookie ever carries auth; log_in_user writes no other.
+      assert conn.resp_cookies == %{}
     end
   end
 end
