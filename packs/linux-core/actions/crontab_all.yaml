@@ -8,11 +8,15 @@ risk: low
 description: >
   Dumps every per-user crontab AND the system cron dirs (/etc/crontab,
   /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to
-  answer "what's scheduled on this host?" Read-only.
+  answer "what's scheduled on this host?" Read-only. Cron command lines
+  routinely carry inline credentials (a `curl` bearer token, a `mysql
+  -p<pw>`), so this can surface secrets. The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can
+  miss a bespoke secret whose name and value match no rule.
 
 side_effects:
   - Iterates user crontabs + reads /etc/cron.*.
-  - Requires root.
+  - Requires root; exposes cron command lines (may include inline secrets).
 
 args: []
 

@@ -1368,13 +1368,13 @@
     {
       "id": "caddy",
       "name": "Caddy web server",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "description": "Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI. Config dump, upstream health, PKI inventory, config validation, plus reload (live config swap). Set CADDY_ADMIN env var if not on default.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/caddy",
-      "content_hash": "sha256:8aceb89e56fed892a8b8b788df337954b75fb068b9ada8ff56d3227b0cf2f9f5",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/caddy/0.1.8/8aceb89e56fed892a8b8b788df337954b75fb068b9ada8ff56d3227b0cf2f9f5/pack.tar.gz",
+      "content_hash": "sha256:67b7b8e59ddeb947987978f65dbcd9a060778620626b79b7953600b72b0b94f2",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/caddy/0.1.9/67b7b8e59ddeb947987978f65dbcd9a060778620626b79b7953600b72b0b94f2/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -5992,13 +5992,13 @@
     {
       "id": "envoy",
       "name": "Envoy proxy / service mesh",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "Envoy admin-API ops: cluster + listener + runtime + config + cert inventory, server info, logging level read/write, plus traffic-shifting mutators (drain listeners, healthcheck fail/ok, reset counters) for planned failovers and incident response. Default admin URL http://127.0.0.1:9901; override via ENVOY_ADMIN env.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/envoy",
-      "content_hash": "sha256:21894b094d7bd2f0b664ace97c9e120adb3d7f0968627f4f7513e81786fff16a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/envoy/0.1.5/21894b094d7bd2f0b664ace97c9e120adb3d7f0968627f4f7513e81786fff16a/pack.tar.gz",
+      "content_hash": "sha256:dece1f45f21bad649ba63c57ff24ca28984106e90100ec3b9449ab9dd6397368",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/envoy/0.1.6/dece1f45f21bad649ba63c57ff24ca28984106e90100ec3b9449ab9dd6397368/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9066,13 +9066,13 @@
     {
       "id": "linux-core",
       "name": "Linux core operations pack",
-      "version": "0.3.15",
+      "version": "0.3.16",
       "description": "Read-only Linux diagnostics plus narrow service control. Disk, mem, uptime, journalctl, log grep + tail, users/auth introspection, cron audit, network state, kernel info, and systemctl control. The front-line pack every Linux host gets.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/linux-core",
-      "content_hash": "sha256:810138b82628800413adf2fefe3eab7ce90f88286350fbe379cef4ef19f711bf",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/linux-core/0.3.15/810138b82628800413adf2fefe3eab7ce90f88286350fbe379cef4ef19f711bf/pack.tar.gz",
+      "content_hash": "sha256:e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/linux-core/0.3.16/e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11818,13 +11818,13 @@
     {
       "id": "nomad",
       "name": "HashiCorp Nomad",
-      "version": "0.1.24",
+      "version": "0.1.25",
       "description": "Deep Nomad operations — full job lifecycle (inspect, history, scale horizontally + vertically, dispatch, revert, promote, stop), per-task CPU/memory resource read + set, allocation introspection + health checks + filesystem ls/stat (metadata only, never file contents) + fixed in-container Redis probes (ping/info via alloc exec, no freeform command) + restart + signal + stop, native service discovery (no Consul) — the high-use reads take optional namespace/region for cross-namespace incident debugging — node fleet management (drain, eligibility, purge), evaluation + deployment status, operator raft + autopilot, CSI + host volumes, ACL policies + tokens, namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nomad",
-      "content_hash": "sha256:c1b873f0254cd9919534116afe43709a77f941dd058fd0c54d86b54d781e2cb1",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.24/c1b873f0254cd9919534116afe43709a77f941dd058fd0c54d86b54d781e2cb1/pack.tar.gz",
+      "content_hash": "sha256:eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.25/eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16303,13 +16303,13 @@
     {
       "id": "systemd-deep",
       "name": "Systemd deep introspection pack",
-      "version": "0.1.6",
+      "version": "0.1.7",
       "description": "Deeper systemd state than linux-core: failed units, list-units, timers, cgroup tree, journal disk usage, systemd-analyze for boot diagnosis, plus full operator surface (daemon-reload, start/stop/ restart/reload, kill -s signal, mask/unmask, reset-failed) for remediating runtime issues.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/systemd-deep",
-      "content_hash": "sha256:29ae9b335f314831b7eb51577abba29865f9fd38347aa389ee9fc05b64c9eeca",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/systemd-deep/0.1.6/29ae9b335f314831b7eb51577abba29865f9fd38347aa389ee9fc05b64c9eeca/pack.tar.gz",
+      "content_hash": "sha256:3efb4faba9c8742105ac43e42233e389249c81fee5fb1b35afe41a68ca59a7de",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/systemd-deep/0.1.7/3efb4faba9c8742105ac43e42233e389249c81fee5fb1b35afe41a68ca59a7de/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18156,13 +18156,13 @@
     {
       "id": "zookeeper",
       "name": "ZooKeeper operations",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "description": "Cluster + 4lw command + watch + session introspection. Read-only. Set ZK_SERVERS env var (host:port,host:port,…). All four-letter words need to be in zoo.cfg's `4lw.commands.whitelist`.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zookeeper",
-      "content_hash": "sha256:cfec3d0d4e8425475d03b8f37b83172b4838a557b1934d88d178f9f56d292f15",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zookeeper/0.1.4/cfec3d0d4e8425475d03b8f37b83172b4838a557b1934d88d178f9f56d292f15/pack.tar.gz",
+      "content_hash": "sha256:5081146ff6ad83ef059ea0db57bb1fab2ef652b70d640d4515c4769e45736aa8",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zookeeper/0.1.5/5081146ff6ad83ef059ea0db57bb1fab2ef652b70d640d4515c4769e45736aa8/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

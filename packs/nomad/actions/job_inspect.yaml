@@ -3,8 +3,15 @@ id: nomad.job_inspect
 title: nomad job inspect <id>
 kind: exec
 risk: low
-description: Dump one job's full spec as JSON.
-side_effects: ["One API call.", "Read-only."]
+description: >
+  Dump one job's full spec as JSON. This surfaces the job's `env` and
+  `template` blocks, which routinely carry injected secrets (DB URLs, API
+  keys, rendered Vault templates). The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can
+  miss a bespoke secret whose name and value match no rule.
+side_effects:
+  - One API call.
+  - Read-only, but exposes the job's env/template blocks (may include secrets).
 args:
   - name: job
     type: string

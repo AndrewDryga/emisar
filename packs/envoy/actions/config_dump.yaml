@@ -3,8 +3,16 @@ id: envoy.config_dump
 title: GET /config_dump
 kind: exec
 risk: low
-description: Dump full xDS config — bootstrap, clusters, routes, listeners.
-side_effects: ["One admin GET.", "Read-only."]
+description: >
+  Dump full xDS config — bootstrap, clusters, routes, listeners. This
+  surfaces the entire effective config, which can carry secrets (TLS
+  private keys / SDS material, upstream credentials, auth headers). The
+  runner's redaction is a fail-closed backstop, not a guarantee — it is
+  pattern-bound and can miss a bespoke secret whose name and value match
+  no rule.
+side_effects:
+  - One admin GET.
+  - Read-only, but exposes the full xDS config (may include secrets).
 args: []
 execution:
   command:

@@ -3,10 +3,17 @@ id: systemd.unit_show
 title: systemctl show <unit>
 kind: exec
 risk: low
-description: 'Show the full property dump for one unit — every directive (CPUShares, MemoryMax, Restart, ExecStart, etc).'
+description: >
+  Show the full property dump for one unit — every directive (CPUShares,
+  MemoryMax, Restart, ExecStart, etc). This surfaces the unit's
+  `Environment=` values and full ExecStart command line, which commonly
+  carry injected secrets (DB URLs, API keys, tokens). The runner's
+  redaction is a fail-closed backstop, not a guarantee — it is
+  pattern-bound and can miss a bespoke secret whose name and value match
+  no rule.
 side_effects:
   - One systemctl invocation.
-  - Read-only.
+  - Read-only, but exposes the unit's Environment= values and ExecStart (may include secrets).
 args:
   - name: unit
     type: string

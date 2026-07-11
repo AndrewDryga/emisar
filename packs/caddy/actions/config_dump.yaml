@@ -3,8 +3,16 @@ id: caddy.config_dump
 title: GET /config (current config)
 kind: exec
 risk: low
-description: Dump the currently-loaded Caddy configuration as JSON.
-side_effects: ["One admin GET.", "Read-only."]
+description: >
+  Dump the currently-loaded Caddy configuration as JSON. This surfaces the
+  full config, which can carry secrets (TLS private-key material,
+  basic-auth hashes, upstream credentials, API tokens). The runner's
+  redaction is a fail-closed backstop, not a guarantee — it is
+  pattern-bound and can miss a bespoke secret whose name and value match
+  no rule.
+side_effects:
+  - One admin GET.
+  - Read-only, but exposes the full Caddy config (may include secrets).
 args: []
 execution:
   command:

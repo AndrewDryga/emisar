@@ -2,7 +2,7 @@ schema_version: 1
 
 id: envoy
 name: Envoy proxy / service mesh
-version: 0.1.5
+version: 0.1.6
 description: >
   Envoy admin-API ops: cluster + listener + runtime + config + cert
   inventory, server info, logging level read/write, plus traffic-shifting

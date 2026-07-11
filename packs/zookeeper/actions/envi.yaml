@@ -3,8 +3,18 @@ id: zk.envi
 title: envi (server env)
 kind: exec
 risk: low
-description: Show the server JVM + OS environment.
-side_effects: ["One 4lw command.", "Read-only."]
+description: >
+  Show the server's JVM + OS environment via the `envi` four-letter word.
+  This deliberately dumps the node's environment — JVM system properties
+  and OS/user details (java.class.path, java.io.tmpdir, java.home,
+  user.name, user.home, user.dir, os.*) — which discloses install paths,
+  usernames, and topology, and on some builds carries values injected via
+  system properties. The runner's redaction is a fail-closed backstop, not
+  a guarantee — it is pattern-bound and can miss a bespoke secret whose
+  name and value match no rule.
+side_effects:
+  - One 4lw command.
+  - Read-only, but exposes the server's full JVM/OS environment (may include secrets).
 args:
   - name: server
     type: string
