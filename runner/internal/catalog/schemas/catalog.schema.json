@@ -38,7 +38,19 @@
           }
         },
         "detect": {"$ref": "#/$defs/detect"},
-        "actions": {"type": "array", "items": {"$ref": "#/$defs/action"}}
+        "actions": {"type": "array", "items": {"$ref": "#/$defs/action"}},
+        "previous_versions": {"type": "array", "items": {"$ref": "#/$defs/previous_version"}},
+        "retired_below": {"type": "string", "minLength": 1}
+      }
+    },
+    "previous_version": {
+      "type": "object",
+      "required": ["version", "content_hash", "tarball_url"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "tarball_url": {"type": "string", "format": "uri"}
       }
     },
     "detect": {

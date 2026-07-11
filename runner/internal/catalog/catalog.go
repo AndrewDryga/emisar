@@ -17,6 +17,7 @@ package catalog
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -26,6 +27,11 @@ import (
 // SchemaVersion is the catalog.json document schema version. It is
 // independent of the pack/action on-disk schema versions.
 const SchemaVersion = 1
+
+// DefaultPreviousKept is how many prior versions of each pack the catalog
+// carries in previous_versions — "the last few" the portal trust window
+// auto-trusts alongside the current version. Not an operator knob.
+const DefaultPreviousKept = 3
 
 // DefaultRepoURL is the public source repository the catalog links back to
 // for pack and action source. Overridable via BuildOptions.
@@ -65,6 +71,24 @@ type Pack struct {
 	Requires    Requires `json:"requires"`
 	Detect      Detect   `json:"detect"`
 	Actions     []Action `json:"actions"`
+	// PreviousVersions carries the last few prior versions of this pack
+	// (newest first, excluding the current version, capped at
+	// DefaultPreviousKept). Absent on a pack with no shipped history; the
+	// portal trust window auto-trusts these alongside the current version.
+	PreviousVersions []PreviousVersion `json:"previous_versions,omitempty"`
+	// RetiredBelow, when set, retires every version of this pack STRICTLY
+	// below it: a runner still advertising such a version is untrusted at
+	// dispatch until the operator updates the pack. Absent = nothing retired.
+	RetiredBelow string `json:"retired_below,omitempty"`
+}
+
+// PreviousVersion is one carried-forward prior release of a pack — enough to
+// resolve its immutable tarball and to seed the portal trust window. The
+// tarball it points at was published under a past build and is immutable.
+type PreviousVersion struct {
+	Version     string `json:"version"`
+	ContentHash string `json:"content_hash"`
+	TarballURL  string `json:"tarball_url"`
 }
 
 // Requires mirrors the pack's declared host requirements.
@@ -116,8 +140,13 @@ type BuildOptions struct {
 	// Previous, when non-nil, is the currently-published catalog. Build
 	// fails if any pack changed bytes for an already-published id+version
 	// (the "preserve every version/hash" guarantee) — bump the version to
-	// publish new bytes.
+	// publish new bytes. Previous is also the source of each pack's carried-
+	// forward previous_versions history and retired_below watermark.
 	Previous *Catalog
+	// RetireOlder is the set of pack IDs to retire older versions of: each
+	// named pack's retired_below is set to its current version and its
+	// version history is cleared. An unknown ID is a build error.
+	RetireOlder []string
 }
 
 // Build turns a loaded pack registry into a Catalog. The registry must have
@@ -144,6 +173,12 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 		if !ok {
 			return nil, fmt.Errorf("catalog: no content hash for pack %q", p.ID)
 		}
+		// Every catalog version must be dot-numeric so the portal's retirement
+		// compare (fail-closed on junk) has well-formed input — this artifact
+		// is ours, so fail the build rather than ship an uncomparable version.
+		if _, err := parseVersion(p.Version); err != nil {
+			return nil, fmt.Errorf("catalog: pack %q: %w", p.ID, err)
+		}
 		actions := actionsByPack[p.ID]
 		if actions == nil {
 			actions = []Action{}
@@ -165,10 +200,169 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	}
 	sort.Slice(cat.Packs, func(i, j int) bool { return cat.Packs[i].ID < cat.Packs[j].ID })
 
+	if err := cat.carryForward(opts.Previous, opts.RetireOlder); err != nil {
+		return nil, err
+	}
 	if err := cat.checkDrift(opts.Previous); err != nil {
 		return nil, err
 	}
 	return cat, nil
+}
+
+// carryForward fills each pack's previous_versions history and retired_below
+// watermark from the previously-published catalog, applying any --retire-older
+// requests. All version comparisons are dot-numeric and fail the build on junk.
+func (c *Catalog) carryForward(prev *Catalog, retireOlder []string) error {
+	known := make(map[string]bool, len(c.Packs))
+	for _, p := range c.Packs {
+		known[p.ID] = true
+	}
+	retire := make(map[string]bool, len(retireOlder))
+	for _, id := range retireOlder {
+		if !known[id] {
+			return fmt.Errorf("catalog: --retire-older names unknown pack %q", id)
+		}
+		retire[id] = true
+	}
+
+	prevByID := map[string]*Pack{}
+	if prev != nil {
+		for i := range prev.Packs {
+			prevByID[prev.Packs[i].ID] = &prev.Packs[i]
+		}
+	}
+
+	for i := range c.Packs {
+		history, watermark, err := packHistory(&c.Packs[i], prevByID[c.Packs[i].ID], retire[c.Packs[i].ID])
+		if err != nil {
+			return err
+		}
+		c.Packs[i].PreviousVersions = history
+		c.Packs[i].RetiredBelow = watermark
+	}
+	return nil
+}
+
+// packHistory computes one pack's carried-forward history and retirement
+// watermark. Retiring a pack sets its watermark to the current version and
+// clears history; otherwise the watermark carries forward unchanged and the
+// history is dedupe([prev current] ++ prev history) minus current, pruned
+// below the watermark and capped at DefaultPreviousKept.
+func packHistory(current, prev *Pack, retire bool) ([]PreviousVersion, string, error) {
+	prevWatermark := ""
+	if prev != nil {
+		prevWatermark = prev.RetiredBelow
+	}
+
+	watermark := prevWatermark
+	if retire {
+		watermark = current.Version
+	}
+	if watermark != "" && watermark != prevWatermark && prevWatermark != "" {
+		cmp, err := compareVersion(watermark, prevWatermark)
+		if err != nil {
+			return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+		}
+		if cmp < 0 {
+			return nil, "", fmt.Errorf("pack %q: retired_below would regress from %q to %q", current.ID, prevWatermark, watermark)
+		}
+	}
+	if watermark != "" {
+		cmp, err := compareVersion(current.Version, watermark)
+		if err != nil {
+			return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+		}
+		if cmp < 0 {
+			return nil, "", fmt.Errorf("pack %q: current version %q is below retired_below %q", current.ID, current.Version, watermark)
+		}
+	}
+
+	if retire || prev == nil {
+		return nil, watermark, nil
+	}
+
+	var cand []PreviousVersion
+	if prev.Version != current.Version {
+		cand = append(cand, PreviousVersion{Version: prev.Version, ContentHash: prev.ContentHash, TarballURL: prev.TarballURL})
+	}
+	cand = append(cand, prev.PreviousVersions...)
+
+	seen := map[string]bool{current.Version: true}
+	history := []PreviousVersion{}
+	for _, pv := range cand {
+		if seen[pv.Version] {
+			continue
+		}
+		seen[pv.Version] = true
+		if watermark != "" {
+			cmp, err := compareVersion(pv.Version, watermark)
+			if err != nil {
+				return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+			}
+			if cmp < 0 {
+				continue
+			}
+		}
+		history = append(history, pv)
+		if len(history) >= DefaultPreviousKept {
+			break
+		}
+	}
+	if len(history) == 0 {
+		return nil, watermark, nil
+	}
+	return history, watermark, nil
+}
+
+// compareVersion compares two dot-separated non-negative integer versions
+// (1.2.3), padding the shorter with zeros. It returns -1/0/+1, or an error if
+// either side is not dot-numeric — the retirement machinery must never guess
+// an ordering for an unparseable version.
+func compareVersion(a, b string) (int, error) {
+	pa, err := parseVersion(a)
+	if err != nil {
+		return 0, err
+	}
+	pb, err := parseVersion(b)
+	if err != nil {
+		return 0, err
+	}
+	n := len(pa)
+	if len(pb) > n {
+		n = len(pb)
+	}
+	for i := 0; i < n; i++ {
+		var x, y int
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		if x != y {
+			if x < y {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func parseVersion(v string) ([]int, error) {
+	if v == "" {
+		return nil, fmt.Errorf("empty version")
+	}
+	parts := strings.Split(v, ".")
+	out := make([]int, len(parts))
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("invalid version %q: component %q is not a non-negative integer", v, p)
+		}
+		out[i] = n
+	}
+	return out, nil
 }
 
 // SuggestIndex is the lean per-pack index `emisar pack suggest` matches
@@ -204,26 +398,52 @@ func (c *Catalog) Suggest() SuggestIndex {
 	return out
 }
 
+// checkDrift enforces the per-version immutability guarantee: for every
+// (id, version) present in BOTH catalogs — across each side's current version
+// AND its previous_versions history — the content_hash must be identical. A
+// version DISAPPEARING (pruned below a retirement watermark, or dropped past
+// the history cap) is allowed; only a hash CHANGE for a surviving version is
+// drift. Immutable content-addressed tarballs keep the bytes reachable.
 func (c *Catalog) checkDrift(prev *Catalog) error {
 	if prev == nil {
 		return nil
 	}
-	prevHash := make(map[string]string, len(prev.Packs))
-	for _, p := range prev.Packs {
-		prevHash[p.ID+"\x00"+p.Version] = p.ContentHash
-	}
+	prevHash := versionHashes(prev)
 	var drift []string
 	for _, p := range c.Packs {
-		if h, ok := prevHash[p.ID+"\x00"+p.Version]; ok && h != p.ContentHash {
-			drift = append(drift, fmt.Sprintf(
-				"pack %q version %q changed bytes (%s → %s) — bump the version to publish new content",
-				p.ID, p.Version, h, p.ContentHash))
+		for version, hash := range packVersionHashes(p) {
+			if h, ok := prevHash[p.ID+"\x00"+version]; ok && h != hash {
+				drift = append(drift, fmt.Sprintf(
+					"pack %q version %q changed bytes (%s → %s) — bump the version to publish new content",
+					p.ID, version, h, hash))
+			}
 		}
 	}
 	if len(drift) > 0 {
+		sort.Strings(drift)
 		return fmt.Errorf("pack registry drift vs previous catalog:\n  %s", strings.Join(drift, "\n  "))
 	}
 	return nil
+}
+
+// versionHashes indexes every (id, version) → content_hash across each pack's
+// current version and its previous_versions history.
+func versionHashes(cat *Catalog) map[string]string {
+	m := map[string]string{}
+	for _, p := range cat.Packs {
+		for version, hash := range packVersionHashes(p) {
+			m[p.ID+"\x00"+version] = hash
+		}
+	}
+	return m
+}
+
+func packVersionHashes(p Pack) map[string]string {
+	m := map[string]string{p.Version: p.ContentHash}
+	for _, pv := range p.PreviousVersions {
+		m[pv.Version] = pv.ContentHash
+	}
+	return m
 }
 
 func catalogAction(a *actionspec.Action) Action {
