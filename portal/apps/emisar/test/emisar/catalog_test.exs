@@ -135,15 +135,15 @@ defmodule Emisar.CatalogTest do
       _ =
         Catalog.observe_state(
           runner,
-          state_payload(actions: [action("a"), action("b"), action("c")])
+          state_payload(actions: [action("linux.a"), action("linux.b"), action("linux.c")])
         )
 
       assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert length(actions) == 3
 
-      _ = Catalog.observe_state(runner, state_payload(actions: [action("a")]))
+      _ = Catalog.observe_state(runner, state_payload(actions: [action("linux.a")]))
 
-      assert {:ok, [%RunnerAction{action_id: "a"}], _} =
+      assert {:ok, [%RunnerAction{action_id: "linux.a"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
     end
 
@@ -184,9 +184,9 @@ defmodule Emisar.CatalogTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
 
       assert {:ok, _runner} =
-               Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
+               Catalog.observe_state(runner.id, state_payload(actions: [action("linux.a")]))
 
-      assert {:ok, [%RunnerAction{action_id: "a"}], _} =
+      assert {:ok, [%RunnerAction{action_id: "linux.a"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
     end
 

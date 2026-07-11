@@ -1043,8 +1043,8 @@ defmodule EmisarWeb.MCPControllerTest do
     } do
       active = make_runner!(account, name: "active-host")
       disabled = make_runner!(account, name: "disabled-host")
-      advertise_action!(active, action_id: "x")
-      advertise_action!(disabled, action_id: "y")
+      advertise_action!(active, action_id: "linux.x")
+      advertise_action!(disabled, action_id: "linux.y")
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, _} = Runners.disable_runner(disabled, subject)
@@ -1068,11 +1068,11 @@ defmodule EmisarWeb.MCPControllerTest do
       user: user
     } do
       mine = make_runner!(account, name: "mine-host")
-      advertise_action!(mine, action_id: "x")
+      advertise_action!(mine, action_id: "linux.x")
 
       other = setup_other_account()
       theirs = make_runner!(other.account, name: "their-host")
-      advertise_action!(theirs, action_id: "y")
+      advertise_action!(theirs, action_id: "linux.y")
 
       raw = make_api_key!(account, user)
 
@@ -1628,8 +1628,8 @@ defmodule EmisarWeb.MCPControllerTest do
       # the live grant set gates the key — no re-mint needed.
       a = make_runner!(account, name: "scope-a", group: "team-a")
       b = make_runner!(account, name: "scope-b", group: "team-b")
-      advertise_action!(a, action_id: "x")
-      advertise_action!(b, action_id: "y")
+      advertise_action!(a, action_id: "linux.x")
+      advertise_action!(b, action_id: "linux.y")
 
       raw = make_api_key!(account, user)
 

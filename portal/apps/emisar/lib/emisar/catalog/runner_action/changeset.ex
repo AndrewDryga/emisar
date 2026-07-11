@@ -25,6 +25,20 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   @max_json_bytes 65_536
   @json_fields ~w[args_schema examples side_effects]a
 
+  # action_id is unbounded by the socket frame alone, yet it becomes the MCP
+  # tool NAME and renders on every UI/MCP surface — so a hostile runner could
+  # advertise a megabyte-long or garbage id. Mirror the runner's own action-id
+  # rule (runner/pkg/actionspec/action.go `validActionID`): "<ns>.<name>" with
+  # optional extra dot segments, each `[a-z][a-z0-9_-]*`, whole thing ≤ 128.
+  # Every trusted pack's id already satisfies this (verified against the
+  # bundled catalog), so it's defense-in-depth, not a live break. Anchored
+  # with \A…\z, not ^…$, so a trailing-newline id can't slip past. The
+  # connector 64-char/no-dot tool-name limit is a per-platform MAPPING concern
+  # (docs/distribution/mcp-catalog-submission.md §9), not enforced here — a
+  # shared bound would reject the legitimate dotted ids we accept.
+  @max_action_id_length 128
+  @action_id_format ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
+
   def upsert(attrs) do
     %RunnerAction{}
     |> cast(attrs, @fields)
@@ -40,6 +54,8 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   defp shared(changeset) do
     changeset
     |> validate_required([:account_id, :runner_id, :action_id, :title, :kind, :risk])
+    |> validate_length(:action_id, max: @max_action_id_length)
+    |> validate_format(:action_id, @action_id_format)
     |> validate_length(:title, max: @max_title_length)
     |> validate_length(:description, max: @max_description_length)
     |> validate_json_sizes()
