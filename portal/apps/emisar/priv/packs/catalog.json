@@ -4224,13 +4224,13 @@
     {
       "id": "debugging",
       "name": "Linux debugging toolkit",
-      "version": "0.2.6",
+      "version": "0.2.7",
       "description": "General-purpose Linux diagnostics + low-level remediation: process and memory tops, vmstat/iostat snapshots, socket inventories, per-PID inspection, kernel-state checks, network reachability, plus fix-it actions (drop_caches, kill_pid by signal, sysctl_set). Use as the first-touch pack when something is wrong.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/debugging",
-      "content_hash": "sha256:f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debugging/0.2.6/f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3/pack.tar.gz",
+      "content_hash": "sha256:94c5c94553e8a408410a4692e2c7427f265bf3944a18ece7f7b18114c7491d22",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debugging/0.2.7/94c5c94553e8a408410a4692e2c7427f265bf3944a18ece7f7b18114c7491d22/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4653,6 +4653,13 @@
               "{{ args.samples }}"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.2.6",
+          "content_hash": "sha256:f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debugging/0.2.6/f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3/pack.tar.gz"
         }
       ]
     },

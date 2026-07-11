@@ -7,8 +7,9 @@ risk: low
 
 description: >
   Returns the PID/process that has a given TCP port open (listening or
-  connected). Use to answer "EADDRINUSE: who's on 8080?" or to confirm
-  a stuck connection to an upstream. Read-only.
+  connected), via `ss -tnp` (not lsof, despite the name). Use to answer
+  "EADDRINUSE: who's on 8080?" or to confirm a stuck connection to an
+  upstream. Read-only.
 
 side_effects:
   - One ss invocation.
