@@ -103,7 +103,10 @@ outside this repo (📋).
   impersonate `terraform@emisar.iam.gserviceaccount.com`, which carries a
   deliberate bundle: `roles/editor` + `roles/resourcemanager.projectIamAdmin`
   (the config manages project IAM + audit config) + `roles/secretmanager.admin`
-  + `roles/iam.serviceAccountUser`. Honest note: `projectIamAdmin` makes this SA
+  + `roles/iam.serviceAccountUser` + `roles/servicenetworking.networksAdmin`
+  (Editor lacks `servicenetworking.services.addPeering`, which the private
+  services access peering requires — found at first full apply, 2026-07-11).
+  Honest note: `projectIamAdmin` makes this SA
   project-admin-equivalent — acceptable because the project is single-purpose
   and the SA is reachable only through the pinned, audit-logged TFC workspace.
 
