@@ -15,6 +15,16 @@ args:
     description: Destination file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
+      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are literal
+      # charset members), so on its own it lets `save` WRITE a .snap-named file
+      # anywhere the runner can write (`/etc/cron.d/x.snap`, etc.). allowed_prefixes
+      # engages the runner's Clean+EvalSymlinks containment, scoping the write to
+      # Consul's data dir and standard backup roots. Keep the .snap suffix.
+      allowed_prefixes:
+        - /var/lib/consul
+        - /var/backups
+        - /opt
+        - /tmp
 execution:
   command: {binary: consul, argv: ["snapshot", "save", "{{ args.path }}"]}
   timeout: 5m

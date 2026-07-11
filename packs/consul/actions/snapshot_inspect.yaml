@@ -12,6 +12,16 @@ args:
     description: Snapshot file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
+      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are literal
+      # charset members), so on its own this risk:low read would inspect any
+      # .snap-named path the runner can read. allowed_prefixes engages the runner's
+      # Clean+EvalSymlinks containment, scoping it to Consul's data dir and standard
+      # backup roots (same set save writes to). Keep the .snap suffix.
+      allowed_prefixes:
+        - /var/lib/consul
+        - /var/backups
+        - /opt
+        - /tmp
 execution:
   command: {binary: consul, argv: ["snapshot", "inspect", "{{ args.path }}"]}
   timeout: 60s
