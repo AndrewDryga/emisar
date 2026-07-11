@@ -15,6 +15,15 @@ args:
     description: Config path.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are
+      # literal charset members). allowed_prefixes runs the runner's
+      # Clean+EvalSymlinks containment, scoping this to Caddy's standard config
+      # roots so a caller can't point the live-config swap at an arbitrary file
+      # (reload reads, parses AND APPLIES the config) or escape via `..`/symlink.
+      allowed_prefixes:
+        - /etc/caddy
+        - /srv
+        - /opt
 execution:
   command:
     binary: caddy

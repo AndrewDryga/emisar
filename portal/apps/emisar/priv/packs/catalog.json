@@ -1368,13 +1368,13 @@
     {
       "id": "caddy",
       "name": "Caddy web server",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "description": "Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI. Config dump, upstream health, PKI inventory, config validation, plus reload (live config swap). Set CADDY_ADMIN env var if not on default.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/caddy",
-      "content_hash": "sha256:4e501c8acb2bf4278b49d32e04a98003b30a923a7b32960ad7d5233ea80d11d2",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/caddy/0.1.7/4e501c8acb2bf4278b49d32e04a98003b30a923a7b32960ad7d5233ea80d11d2/pack.tar.gz",
+      "content_hash": "sha256:8aceb89e56fed892a8b8b788df337954b75fb068b9ada8ff56d3227b0cf2f9f5",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/caddy/0.1.8/8aceb89e56fed892a8b8b788df337954b75fb068b9ada8ff56d3227b0cf2f9f5/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

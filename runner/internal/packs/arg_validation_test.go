@@ -756,3 +756,33 @@ func TestDispatch_TraefikPaths_ScopedToProxyDirs(t *testing.T) {
 		})
 	}
 }
+
+// caddy's validate_config/adapt_caddyfile/reload_config each take a `file` arg
+// (`caddy validate|adapt|reload --config {{file}}`). The old
+// `^/[a-zA-Z0-9_./-]{1,512}$` pattern anchored only to `/`, so ANY absolute path
+// passed and — with no allowed/denied paths — applyPathValidation early-returned
+// and the runner's Clean+EvalSymlinks jail never ran. validate/adapt PARSE the
+// file and quote offending lines back in their errors (a filtered read oracle
+// over any runner-readable secret); reload additionally APPLIES the config. The
+// fix scopes each `file` to Caddy's standard config roots via allowed_prefixes,
+// which engages the jail. Drive the real dispatch seam: the in-scope default
+// passes, a plain out-of-scope path is rejected, and a `..` traversal that still
+// matches the charset is cleaned back and caught by the prefix jail.
+func TestDispatch_CaddyConfigPaths_ScopedToConfigRoots(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	for _, id := range []string{"caddy.validate_config", "caddy.adapt_caddyfile", "caddy.reload_config"} {
+		t.Run(id, func(t *testing.T) {
+			// The Caddy config default lives under /etc/caddy — in scope.
+			accepted(t, dispatchValidate(t, reg, id, map[string]any{"file": "/etc/caddy/Caddyfile"}))
+
+			// A plain out-of-scope absolute path — the arbitrary-file read the
+			// finding named — is rejected before it can reach caddy.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"file": "/etc/shadow"}), "file", "allowed_prefixes")
+
+			// A `..` traversal passes the charset pattern but the jail cleans it
+			// back to /etc/shadow and rejects it as outside the allowed prefix.
+			rejected(t, dispatchValidate(t, reg, id, map[string]any{"file": "/etc/caddy/../../etc/shadow"}), "file", "allowed_prefixes")
+		})
+	}
+}
