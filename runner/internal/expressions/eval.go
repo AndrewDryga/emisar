@@ -5,8 +5,13 @@
 //	"{{ args.host }}"
 //	"--port={{ args.port }}"
 //	"{{ args.paths }}"          // expands in argv if it resolves to an array
+//	"-namespace={{ args.ns? }}" // optional: RenderArgv drops the whole argv
+//	                            // element when args.ns is empty or absent
 //
-// There are no functions, no comparisons, no arithmetic. Runbook logic
+// The only modifier is a trailing "?" on an expression ("{{ args.ns? }}"),
+// which marks it optional: an absent arg resolves to empty instead of being
+// an error, and RenderArgv drops any argv element whose optional expression is
+// empty. There are no functions, no comparisons, no arithmetic. Runbook logic
 // (asserts, when conditions, multi-step orchestration) lives in the cloud
 // control plane; the runner never evaluates it.
 package expressions
@@ -24,7 +29,17 @@ import (
 // Whole-template expressions that resolve to arrays are an error here; use
 // RenderArgv if you want array expansion.
 func Render(tmpl string, args map[string]any) (string, error) {
+	s, _, err := renderTemplate(tmpl, args)
+	return s, err
+}
+
+// renderTemplate substitutes every "{{ args.x }}" block in tmpl. It also
+// reports whether any optional expression ("{{ args.x? }}") in tmpl resolved
+// to an empty value — RenderArgv uses that to drop the whole argv element,
+// while Render (env values, scalar rendering) ignores it and substitutes "".
+func renderTemplate(tmpl string, args map[string]any) (string, bool, error) {
 	var b strings.Builder
+	dropEmpty := false
 	i := 0
 	for i < len(tmpl) {
 		j := strings.Index(tmpl[i:], "{{")
@@ -36,21 +51,28 @@ func Render(tmpl string, args map[string]any) (string, error) {
 		i += j + 2
 		end := strings.Index(tmpl[i:], "}}")
 		if end < 0 {
-			return "", fmt.Errorf("unterminated template at offset %d", i-2)
+			return "", false, fmt.Errorf("unterminated template at offset %d", i-2)
 		}
 		expr := strings.TrimSpace(tmpl[i : i+end])
 		i += end + 2
-		v, err := resolve(expr, args)
+		v, optional, err := resolve(expr, args)
 		if err != nil {
-			return "", fmt.Errorf("template %q: %w", expr, err)
+			return "", false, fmt.Errorf("template %q: %w", expr, err)
+		}
+		if optional && isEmpty(v) {
+			// Substitute nothing; the caller decides whether to drop. Skipping
+			// formatScalar here also lets an optional empty array pass without a
+			// "cannot format" error, since the element is discarded anyway.
+			dropEmpty = true
+			continue
 		}
 		s, err := formatScalar(v)
 		if err != nil {
-			return "", fmt.Errorf("template %q: %w", expr, err)
+			return "", false, fmt.Errorf("template %q: %w", expr, err)
 		}
 		b.WriteString(s)
 	}
-	return b.String(), nil
+	return b.String(), dropEmpty, nil
 }
 
 // RenderArgv renders each element of argv. An element that is exactly a
@@ -67,14 +89,25 @@ func Render(tmpl string, args map[string]any) (string, error) {
 // literal "--" end-of-options marker before user-controlled positionals
 // (["curl", "--", "{{ args.url }}"]) and/or constrain the arg with a
 // validation.pattern. Keep this in mind when reviewing exec-kind packs.
+//
+// Optional flags: an element containing an optional expression ("{{ args.x? }}")
+// is DROPPED in full — contributing zero tokens — when that expression is empty
+// or the arg is absent, so ["nomad", "job", "status", "-namespace={{ args.ns? }}"]
+// omits the flag entirely rather than passing "-namespace=" (which would clobber
+// the ambient NOMAD_NAMESPACE). Dropping only removes the element; it never
+// merges with or reorders its neighbors. A non-optional empty value still
+// renders its (possibly empty) token — only "?" opts an element into dropping.
 func RenderArgv(argv []string, args map[string]any) ([]string, error) {
 	out := make([]string, 0, len(argv))
 	for _, raw := range argv {
 		expr, ok := wholeExpression(raw)
 		if ok {
-			v, err := resolve(expr, args)
+			v, optional, err := resolve(expr, args)
 			if err != nil {
 				return nil, fmt.Errorf("argv %q: %w", raw, err)
+			}
+			if optional && isEmpty(v) {
+				continue
 			}
 			expanded, did, err := expandArray(v)
 			if err != nil {
@@ -91,9 +124,12 @@ func RenderArgv(argv []string, args map[string]any) ([]string, error) {
 			out = append(out, s)
 			continue
 		}
-		s, err := Render(raw, args)
+		s, dropEmpty, err := renderTemplate(raw, args)
 		if err != nil {
 			return nil, err
+		}
+		if dropEmpty {
+			continue
 		}
 		out = append(out, s)
 	}
@@ -116,22 +152,57 @@ func RenderEnv(env map[string]string, args map[string]any) (map[string]string, e
 	return out, nil
 }
 
-// resolve evaluates a single "args.<name>" expression. Unknown variables and
-// any other syntax (function calls, operators, etc.) are errors.
-func resolve(expr string, args map[string]any) (any, error) {
+// resolve evaluates a single "args.<name>" expression, honoring a trailing "?"
+// optional marker. It returns the resolved value and whether the expression was
+// optional. Unknown variables and any other syntax (function calls, operators,
+// etc.) are errors; an absent arg is an error only when the expression is not
+// optional — an absent optional resolves to nil so callers can drop it.
+func resolve(expr string, args map[string]any) (any, bool, error) {
+	body, optional := splitOptional(expr)
 	const prefix = "args."
-	if !strings.HasPrefix(expr, prefix) {
-		return nil, fmt.Errorf("unknown variable %q (only args.* is supported)", expr)
+	if !strings.HasPrefix(body, prefix) {
+		return nil, optional, fmt.Errorf("unknown variable %q (only args.* is supported)", body)
 	}
-	name := expr[len(prefix):]
+	name := body[len(prefix):]
 	if name == "" || !validIdent(name) {
-		return nil, fmt.Errorf("invalid args reference %q", expr)
+		return nil, optional, fmt.Errorf("invalid args reference %q", body)
 	}
 	v, ok := args[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown variable args.%s", name)
+		if optional {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("unknown variable args.%s", name)
 	}
-	return v, nil
+	return v, optional, nil
+}
+
+// splitOptional strips a trailing "?" optional marker from an expression body,
+// reporting whether one was present. "args.ns?" → ("args.ns", true).
+func splitOptional(expr string) (string, bool) {
+	if s := strings.TrimSpace(expr); strings.HasSuffix(s, "?") {
+		return strings.TrimSpace(s[:len(s)-1]), true
+	}
+	return expr, false
+}
+
+// isEmpty reports whether a resolved value is "empty" for the purpose of
+// dropping an optional argv element: nil, the empty string, or an empty array.
+// A numeric zero or boolean false is a real value, not empty.
+func isEmpty(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case []string:
+		return len(t) == 0
+	case []any:
+		return len(t) == 0
+	case []int64:
+		return len(t) == 0
+	}
+	return false
 }
 
 func validIdent(s string) bool {
