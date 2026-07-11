@@ -52,12 +52,20 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       assert :ok = MonthlyReports.execute([])
 
+      {period_start, _period_end} = CalendarMonth.previous_month(DateTime.utc_now())
+      period = Calendar.strftime(period_start, "%B %Y")
+
       assert_received {:email, email}
       assert email.to == [{"", owner.email}]
-      assert email.subject == "Your emisar monthly report for #{account.name}"
+      assert email.subject == "Your emisar report for #{account.name} — #{period}"
+      assert email.reply_to == {"", "support@emisar.dev"}
       assert email.text_body =~ "Total:     3"
       assert email.text_body =~ "Succeeded: 3"
+      assert email.text_body =~ "Active runners:"
       assert email.text_body =~ "/app/#{account.slug}"
+      assert email.text_body =~ "Unsubscribe: "
+      assert email.headers["List-Unsubscribe"] =~ "/unsubscribe/monthly-report/"
+      assert email.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
 
       assert Repo.reload(account).last_report_sent_at
     end
@@ -111,6 +119,16 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     test "a suppressed owner address receives nothing and stays unstamped" do
       %{account: account, owner: owner} = active_account()
       {:ok, _} = Mail.suppress(owner.email, :hard_bounce, "HardBounce")
+
+      assert :ok = MonthlyReports.execute([])
+
+      refute_received {:email, _}
+      refute Repo.reload(account).last_report_sent_at
+    end
+
+    test "an account opted out of reports receives nothing and stays unstamped" do
+      %{account: account} = active_account()
+      Fixtures.Accounts.set_account_settings(account, %{monthly_report_opt_out: true})
 
       assert :ok = MonthlyReports.execute([])
 

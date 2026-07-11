@@ -3,6 +3,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Accounts
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Audit
+  alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Mail
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
@@ -3147,6 +3148,63 @@ defmodule Emisar.AccountsTest do
       )
 
       assert Accounts.fetch_account_report_recipient(account) == {:error, :no_recipient}
+    end
+  end
+
+  describe "fetch_account_for_report_unsubscribe/1" do
+    test "resolves the account a valid token addresses" do
+      account = Fixtures.Accounts.create_account()
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+
+      assert {:ok, %Account{} = resolved} = Accounts.fetch_account_for_report_unsubscribe(token)
+      assert resolved.id == account.id
+    end
+
+    test "rejects a forged or mangled token" do
+      assert Accounts.fetch_account_for_report_unsubscribe("not-a-real-token") ==
+               {:error, :invalid}
+    end
+
+    test "rejects a valid token for a since-deleted account" do
+      account = Fixtures.Accounts.create_account()
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Accounts.fetch_account_for_report_unsubscribe(token) == {:error, :invalid}
+    end
+  end
+
+  describe "unsubscribe_from_monthly_report/1" do
+    test "flips monthly_report_opt_out on for the token's account" do
+      account = Fixtures.Accounts.create_account()
+      refute account.settings.monthly_report_opt_out
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+
+      assert {:ok, %Account{} = updated} = Accounts.unsubscribe_from_monthly_report(token)
+      assert updated.settings.monthly_report_opt_out
+      assert Repo.reload!(account).settings.monthly_report_opt_out
+    end
+
+    test "is idempotent" do
+      account = Fixtures.Accounts.create_account()
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+
+      assert {:ok, _} = Accounts.unsubscribe_from_monthly_report(token)
+      assert {:ok, %Account{} = updated} = Accounts.unsubscribe_from_monthly_report(token)
+      assert updated.settings.monthly_report_opt_out
+    end
+
+    test "a token for one account never opts another out" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      token = Crypto.monthly_report_unsubscribe_token(account.id)
+
+      assert {:ok, _} = Accounts.unsubscribe_from_monthly_report(token)
+      refute Repo.reload!(other_account).settings.monthly_report_opt_out
+    end
+
+    test "rejects a forged token" do
+      assert Accounts.unsubscribe_from_monthly_report("nope") == {:error, :invalid}
     end
   end
 

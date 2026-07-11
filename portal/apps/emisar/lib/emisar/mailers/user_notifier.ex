@@ -5,6 +5,7 @@ defmodule Emisar.Mailers.UserNotifier do
   intentionally not LiveView's heex.
   """
   import Swoosh.Email
+  alias Emisar.Crypto
   alias Emisar.Mail
   alias Emisar.Mailer
   alias Emisar.PublicUrl
@@ -253,9 +254,12 @@ defmodule Emisar.Mailers.UserNotifier do
   """
   def deliver_monthly_account_report(%Users.User{} = recipient, account, report) do
     dashboard_url = PublicUrl.url("/app/#{account.slug}")
-    runs_url = PublicUrl.url("/app/#{account.slug}/runs")
-    approvals_url = PublicUrl.url("/app/#{account.slug}/approvals")
-    audit_url = PublicUrl.url("/app/#{account.slug}/audit")
+
+    unsubscribe_url =
+      PublicUrl.url(
+        "/unsubscribe/monthly-report/#{Crypto.monthly_report_unsubscribe_token(account.id)}"
+      )
+
     period = Calendar.strftime(report.period_start, "%B %Y")
     runs = report.runs
     approvals = report.approvals
@@ -278,22 +282,25 @@ defmodule Emisar.Mailers.UserNotifier do
       Denied:    #{approvals.denied}
 
     Right now
-      Connected runners: #{report.runners}
+      Active runners:    #{report.runners}
       Team members:      #{report.team_size}
-      Approvals waiting:  #{approvals.pending}
+      Approvals waiting: #{approvals.pending}
 
     Open your dashboard:
       #{dashboard_url}
 
-    Jump to runs, approvals, or the audit trail:
-      #{runs_url}
-      #{approvals_url}
-      #{audit_url}
-
-    — emisar
+    —
+    You're receiving this monthly report as an owner of #{account.name}.
+    Unsubscribe: #{unsubscribe_url}
     """
 
-    deliver(recipient.email, "Your emisar monthly report for #{account.name}", body)
+    deliver(recipient.email, "Your emisar report for #{account.name} — #{period}", body,
+      reply_to: "support@emisar.dev",
+      headers: [
+        {"List-Unsubscribe", "<#{unsubscribe_url}>"},
+        {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}
+      ]
+    )
   end
 
   # The branded sign-in pages thread a `/app/<slug>` return_to through these
@@ -304,7 +311,7 @@ defmodule Emisar.Mailers.UserNotifier do
   defp return_to_query(return_to) when is_binary(return_to),
     do: "?" <> URI.encode_query(return_to: return_to)
 
-  defp deliver(to, subject, body) do
+  defp deliver(to, subject, body, opts \\ []) do
     if Mail.suppressed?(to) do
       # `to` hard-bounced or filed a spam complaint (recorded from the
       # Postmark webhook). Sending again only degrades sender reputation,
@@ -315,11 +322,19 @@ defmodule Emisar.Mailers.UserNotifier do
       new()
       |> to(to)
       |> from(from())
+      |> maybe_reply_to(Keyword.get(opts, :reply_to))
       |> subject(subject)
       |> text_body(body)
+      |> put_extra_headers(Keyword.get(opts, :headers, []))
       |> Mailer.deliver()
     end
   end
+
+  defp maybe_reply_to(email, nil), do: email
+  defp maybe_reply_to(email, address) when is_binary(address), do: reply_to(email, address)
+
+  defp put_extra_headers(email, headers),
+    do: Enum.reduce(headers, email, fn {key, value}, acc -> header(acc, key, value) end)
 
   # Log recipients coarsely — first char + domain — so a suppression line
   # in the drain doesn't carry a full address.

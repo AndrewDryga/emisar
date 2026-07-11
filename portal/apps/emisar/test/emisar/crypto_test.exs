@@ -224,4 +224,21 @@ defmodule Emisar.CryptoTest do
       refute Crypto.secure_compare("x", :not_a_binary)
     end
   end
+
+  describe "monthly_report_unsubscribe_token/1 and verify_monthly_report_unsubscribe_token/1" do
+    test "round-trips the account id" do
+      account_id = Ecto.UUID.generate()
+      token = Crypto.monthly_report_unsubscribe_token(account_id)
+      assert Crypto.verify_monthly_report_unsubscribe_token(token) == {:ok, account_id}
+    end
+
+    test "rejects a tampered token" do
+      token = Crypto.monthly_report_unsubscribe_token(Ecto.UUID.generate())
+      assert Crypto.verify_monthly_report_unsubscribe_token(token <> "x") == {:error, :invalid}
+    end
+
+    test "rejects a garbage token" do
+      assert Crypto.verify_monthly_report_unsubscribe_token("nope") == {:error, :invalid}
+    end
+  end
 end

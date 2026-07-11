@@ -1703,6 +1703,40 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Internal — pre-auth: resolve the account a monthly-report unsubscribe token
+  addresses, for the confirm page. Read-only; the signed token IS the
+  authorization. `{:error, :invalid}` on a forged/mangled token or a deleted
+  account.
+  """
+  def fetch_account_for_report_unsubscribe(token) when is_binary(token) do
+    with {:ok, account_id} <- Crypto.verify_monthly_report_unsubscribe_token(token) do
+      queryable = Account.Query.not_deleted() |> Account.Query.by_id(account_id)
+
+      case Repo.fetch(queryable, Account.Query) do
+        {:ok, %Account{} = account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :invalid}
+      end
+    end
+  end
+
+  @doc """
+  Internal — pre-auth: flip `monthly_report_opt_out` on via the signed token in
+  the report email's `List-Unsubscribe` link. The token binds one account id and
+  is unforgeable, so it IS the authorization (no subject) — the emailed-link
+  analog of the SCIM / magic-link pre-auth paths. Idempotent. `{:error, :invalid}`
+  on a forged token or deleted account.
+  """
+  def unsubscribe_from_monthly_report(token) when is_binary(token) do
+    with {:ok, %Account{} = account} <- fetch_account_for_report_unsubscribe(token) do
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account.id)
+      |> Repo.fetch_and_update(Account.Query,
+        with: &Account.Changeset.update(&1, %{settings: %{monthly_report_opt_out: true}})
+      )
+    end
+  end
+
   defp fetch_stable_billing_owner(%Account{paddle_billing_contact_user_id: user_id} = account)
        when is_binary(user_id) do
     case fetch_active_owner_user(account.id, user_id) do

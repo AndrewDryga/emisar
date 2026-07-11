@@ -72,6 +72,17 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
       :ok
   end
 
+  # An account that used the email's List-Unsubscribe link gets nothing —
+  # stays unstamped so it resumes if it opts back in.
+  defp maybe_send_report(
+         %Account{settings: %{monthly_report_opt_out: true}},
+         _recipient,
+         _cutoff,
+         _period_start,
+         _period_end
+       ),
+       do: :ok
+
   defp maybe_send_report(account, recipient, cutoff, period_start, period_end) do
     # A suppressed (hard-bounced / complained) owner stays unstamped so a future
     # report can still go out if the address recovers.

@@ -16,9 +16,12 @@ defmodule Emisar.Accounts.Account.Settings do
     # nil = no cap · N = grants may live at most N seconds · 0 = standing
     # grants DISABLED (mint + match both refuse; every approval is single-use)
     field :max_grant_lifetime_seconds, :integer
+    # Opt-out for the monthly account-health report email. Default false =
+    # receiving; the email's one-click List-Unsubscribe link flips it true.
+    field :monthly_report_opt_out, :boolean, default: false
   end
 
-  @fields ~w[require_mfa require_sso max_grant_lifetime_seconds]a
+  @fields ~w[require_mfa require_sso max_grant_lifetime_seconds monthly_report_opt_out]a
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings

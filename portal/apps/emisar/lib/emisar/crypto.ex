@@ -77,6 +77,35 @@ defmodule Emisar.Crypto do
     end
   end
 
+  # Salt namespacing the monthly-report unsubscribe signature.
+  @monthly_report_unsubscribe_salt "monthly report unsubscribe"
+
+  @doc """
+  A signed, account-scoped monthly-report unsubscribe token for an emailed
+  `List-Unsubscribe` link. Unlike the stored single-use `email_token/0`, this is
+  **stateless** — the account id rides inside a `Phoenix.Token` MAC, so no digest
+  is stored and there's nothing to revoke; it only ever flips one notification
+  preference. The link never expires (a months-old email must still unsubscribe).
+  Verify with `verify_monthly_report_unsubscribe_token/1`.
+  """
+  def monthly_report_unsubscribe_token(account_id) when is_binary(account_id),
+    do: Phoenix.Token.sign(email_link_secret(), @monthly_report_unsubscribe_salt, account_id)
+
+  @doc """
+  Verifies a monthly-report unsubscribe token, returning `{:ok, account_id}` or
+  `{:error, :invalid}` on a forged/mangled token. Signature-only (no expiry).
+  """
+  def verify_monthly_report_unsubscribe_token(token) when is_binary(token) do
+    case Phoenix.Token.verify(email_link_secret(), @monthly_report_unsubscribe_salt, token,
+           max_age: :infinity
+         ) do
+      {:ok, account_id} -> {:ok, account_id}
+      {:error, _reason} -> {:error, :invalid}
+    end
+  end
+
+  defp email_link_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
+
   # The emailed magic-link secret is a short, typable code; the browser-side
   # nonce carries the entropy, so a 6-char code + the attempt cap is safe (an
   # email interceptor lacks the nonce and gets @magic_link_attempts guesses).

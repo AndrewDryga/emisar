@@ -32,7 +32,11 @@ config :emisar,
   mixpanel_groups_enabled: false,
   # Secret salt for the cookieless daily anonymous-visitor hash. Prod overrides
   # it with SECRET_KEY_BASE (runtime.exs); this non-secret default is dev/test.
-  analytics_salt: "emisar-dev-analytics-salt"
+  analytics_salt: "emisar-dev-analytics-salt",
+  # Signing secret for stateless emailed links (the monthly-report
+  # unsubscribe token). Prod derives it from SECRET_KEY_BASE (runtime.exs);
+  # this non-secret default is dev/test.
+  email_link_secret: "emisar-dev-email-link-secret-value"
 
 # Control-plane version-compatibility policy for runners and the
 # emisar-mcp bridge (Emisar.Compat). Thresholds are unset by default —

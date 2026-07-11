@@ -32,7 +32,7 @@ defmodule Emisar.Fixtures.Accounts do
     account
   end
 
-  @doc "Test helper: update an existing account's embedded settings (require_mfa / require_sso / max_grant_lifetime_seconds)."
+  @doc "Test helper: update an existing account's embedded settings (require_mfa / require_sso / max_grant_lifetime_seconds / monthly_report_opt_out)."
   def set_account_settings(%Account{} = account, settings_attrs) do
     account
     |> Account.Changeset.update(%{settings: settings_attrs})

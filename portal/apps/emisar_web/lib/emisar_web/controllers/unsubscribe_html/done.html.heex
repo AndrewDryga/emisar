@@ -1,0 +1,22 @@
+<main
+  id="main-content"
+  class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16"
+>
+  <div class="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8">
+    <h1 class="text-xl font-semibold text-zinc-100">You're unsubscribed</h1>
+    <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+      No more monthly reports for <span class="font-medium text-zinc-200">{@account_name}</span>. Sign-in and
+      approval emails still work as before. Changed your mind? Email
+      <a href="mailto:support@emisar.dev" class="text-brand-400 hover:text-brand-300">
+        support@emisar.dev
+      </a>
+      and we'll turn them back on.
+    </p>
+    <a
+      href={~p"/"}
+      class="mt-6 inline-block text-sm font-medium text-brand-400 hover:text-brand-300"
+    >
+      Back to emisar &rarr;
+    </a>
+  </div>
+</main>

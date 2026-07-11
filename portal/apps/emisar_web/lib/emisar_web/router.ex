@@ -54,6 +54,19 @@ defmodule EmisarWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Emailed unsubscribe links: a read-only GET confirm page + a one-click POST
+  # (RFC 8058 `List-Unsubscribe-Post`). CSRF-free by design — a mail provider's
+  # one-click POST carries no browser session or token; the unforgeable signed
+  # token in the path is the authorization, and the action only flips one
+  # notification preference.
+  pipeline :public_unauth do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :put_root_layout, html: {EmisarWeb.Layouts, :root}
+    plug :put_secure_browser_headers
+    plug :put_noindex
+  end
+
   @auth_live_session_keys [
     :magic_link_email,
     :magic_link_expires_at,
@@ -153,6 +166,15 @@ defmodule EmisarWeb.Router do
     get "/install-mcp.sh", InstallMCPController, :show
     # Footer "get launch updates" capture — CSRF-protected by the :browser pipeline.
     post "/subscribe", MarketingController, :subscribe
+  end
+
+  # -- Emailed unsubscribe (unauthenticated, signed-token) ------------
+
+  scope "/unsubscribe", EmisarWeb do
+    pipe_through :public_unauth
+
+    get "/monthly-report/:token", UnsubscribeController, :show
+    post "/monthly-report/:token", UnsubscribeController, :create
   end
 
   # -- Auth surface (only when signed-out) ----------------------------
