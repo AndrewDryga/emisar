@@ -62,6 +62,36 @@ func TestRenderArgv_ArrayExpansion(t *testing.T) {
 	}
 }
 
+func TestArgStrings(t *testing.T) {
+	cases := []struct {
+		name string
+		v    any
+		want []string
+	}{
+		{"string scalar", "hunter2", []string{"hunter2"}},
+		{"int64 scalar", int64(7199), []string{"7199"}},
+		{"bool scalar", true, []string{"true"}},
+		{"string slice expands per element", []string{"a", "b"}, []string{"a", "b"}},
+		{"int64 slice expands per element", []int64{1, 2}, []string{"1", "2"}},
+		{"any slice expands per element", []any{"a", int64(2)}, []string{"a", "2"}},
+		{"empty slice", []string{}, []string{}},
+		{"unformattable yields nothing", map[string]any{"k": "v"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ArgStrings(tc.v)
+			if len(got) != len(tc.want) {
+				t.Fatalf("ArgStrings(%v) = %v, want %v", tc.v, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("ArgStrings(%v) = %v, want %v", tc.v, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestRenderArgv_TextSubstitution(t *testing.T) {
 	out, err := RenderArgv([]string{"--port={{ args.port }}"}, args())
 	if err != nil {

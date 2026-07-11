@@ -167,6 +167,25 @@ func wholeExpression(s string) (string, bool) {
 	return body, true
 }
 
+// ArgStrings returns the argv token string form(s) of a resolved arg value,
+// mirroring RenderArgv's expansion: each element for an array-typed value, or
+// the single scalar form otherwise. Callers that mask secrets out of the
+// rendered command (engine redaction) use it so they match the exact tokens
+// that reach argv — a list secret expands into separate tokens, not one
+// bracketed "%v" blob. Values it cannot format yield no strings.
+func ArgStrings(v any) []string {
+	if elems, ok, err := expandArray(v); ok {
+		if err != nil {
+			return nil
+		}
+		return elems
+	}
+	if s, err := formatScalar(v); err == nil {
+		return []string{s}
+	}
+	return nil
+}
+
 func expandArray(v any) ([]string, bool, error) {
 	switch arr := v.(type) {
 	case []string:

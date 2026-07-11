@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
+	"github.com/andrewdryga/emisar/runner/internal/expressions"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -180,3 +181,37 @@ output:
   max_stdout_bytes: 1024
   max_stderr_bytes: 1024
 `
+
+// TestEngine_SensitiveListRedactedPerElement proves a list-typed sensitive arg
+// is masked element-by-element in executed_command. RenderArgv expands the list
+// into separate argv tokens; sensitiveValues used to stringify it only as the
+// bracketed "[a b]" whole form, which matches no individual token — so the raw
+// elements leaked into the one command string that leaves the host. Redaction
+// is a security boundary, so this lives in the security suite.
+func TestEngine_SensitiveListRedactedPerElement(t *testing.T) {
+	schema := []actionspec.Arg{
+		{Name: "iface"},
+		{Name: "keys", Sensitive: true, Type: actionspec.ArgStringArray},
+	}
+	args := map[string]any{
+		"iface": "wg0",
+		"keys":  []string{"s3cr3t-alpha", "s3cr3t-beta"},
+	}
+
+	// Build argv through the real render path so the tokens are exactly what
+	// would reach exec: the sensitive list expands into two separate elements.
+	argv, err := expressions.RenderArgv([]string{"--iface", "{{ args.iface }}", "{{ args.keys }}"}, args)
+	if err != nil {
+		t.Fatalf("RenderArgv: %v", err)
+	}
+
+	got := redactedCommand("wg", argv, args, schema)
+	for _, secret := range []string{"s3cr3t-alpha", "s3cr3t-beta"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("executed_command leaked list secret %q: %s", secret, got)
+		}
+	}
+	if want := `wg --iface wg0 '[REDACTED]' '[REDACTED]'`; got != want {
+		t.Fatalf("redactedCommand() = %q, want %q", got, want)
+	}
+}

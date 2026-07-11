@@ -558,17 +558,30 @@ func redactedCommand(binary string, argv []string, cleanArgs map[string]any, sch
 }
 
 // sensitiveValues returns the string forms of every arg the schema marks
-// `sensitive: true`, so they can be masked out of the recorded command.
+// `sensitive: true`, so they can be masked out of the recorded command. A
+// list-typed sensitive arg expands into separate argv tokens (RenderArgv), so
+// each element is its own secret — the bracketed "%v" whole form never appears
+// as a token on its own, and masking only that would leave the raw elements in
+// executed_command. We add both: the per-element tokens (via ArgStrings, which
+// mirrors the exact rendering) and the whole "%v" form as defense-in-depth for
+// any context that stringifies the value as one blob.
 func sensitiveValues(args map[string]any, schema []actionspec.Arg) []string {
 	var out []string
 	for _, a := range schema {
 		if !a.Sensitive {
 			continue
 		}
-		if v, ok := args[a.Name]; ok {
-			if s := fmt.Sprintf("%v", v); s != "" {
+		v, ok := args[a.Name]
+		if !ok {
+			continue
+		}
+		for _, s := range expressions.ArgStrings(v) {
+			if s != "" {
 				out = append(out, s)
 			}
+		}
+		if s := fmt.Sprintf("%v", v); s != "" {
+			out = append(out, s)
 		}
 	}
 	return out
