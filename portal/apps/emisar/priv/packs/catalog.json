@@ -17802,13 +17802,13 @@
     {
       "id": "wireguard",
       "name": "WireGuard VPN",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "description": "WireGuard state — interfaces, peers, transfer counts, last handshakes — plus operator actions: bring iface up/down via wg-quick, remove a peer from a live iface. Use to debug connectivity or evict a compromised peer.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/wireguard",
-      "content_hash": "sha256:e0f12507547a9601516b3e35629744aae2bcfafc2c609e6f762f1f964af09e12",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/wireguard/0.1.4/e0f12507547a9601516b3e35629744aae2bcfafc2c609e6f762f1f964af09e12/pack.tar.gz",
+      "content_hash": "sha256:8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/wireguard/0.1.5/8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

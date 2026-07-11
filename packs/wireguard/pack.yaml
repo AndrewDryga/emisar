@@ -2,7 +2,7 @@ schema_version: 1
 
 id: wireguard
 name: WireGuard VPN
-version: 0.1.4
+version: 0.1.5
 description: >
   WireGuard state — interfaces, peers, transfer counts, last
   handshakes — plus operator actions: bring iface up/down via wg-quick,
@@ -22,7 +22,7 @@ setup:
     Reads and manages WireGuard interfaces on the local runner host — no
     credentials needed.
   notes:
-    - "wg show / showconf read interface and peer state via netlink, which needs root (CAP_NET_ADMIN); showconf can include private keys in its output."
+    - "wg show / showconf read interface and peer state via netlink, which needs root (CAP_NET_ADMIN); showconf's PrivateKey/PresharedKey lines are masked at the source before output leaves the host."
     - "Mutators (wg-quick up/down, removing a peer) also need root."
   verify: wg.show
 

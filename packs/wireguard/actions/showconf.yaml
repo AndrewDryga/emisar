@@ -3,8 +3,11 @@ id: wg.showconf
 title: wg showconf <iface>
 kind: exec
 risk: low
-description: Show effective config for one interface (peer pubkeys + allowed-ips).
-side_effects: ["One netlink query.", "Read-only — private keys may be in the output; rely on audit redaction."]
+description: Show the effective config for one WireGuard interface (`[Interface]`/`[Peer]` sections, peer pubkeys, allowed-ips, endpoints). PrivateKey and PresharedKey lines are masked at the source.
+side_effects:
+  - "One netlink query."
+  - "Read-only."
+  - "`wg showconf` emits the interface PrivateKey and per-peer PresharedKey; the action masks both at the source before any output leaves the host."
 args:
   - name: interface
     type: string
@@ -19,6 +22,18 @@ output:
   parser: text
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+  redact:
+    # `wg showconf` prints INI `Key = value` lines; the interface PrivateKey and
+    # per-peer PresharedKey are secret. The default rules catch PrivateKey but
+    # NOT PresharedKey, so both are masked here at the source, fail-closed.
+    - name: wg-private-key
+      type: regex
+      pattern: '(?im)^([ \t]*PrivateKey[ \t]*=[ \t]*).+$'
+      replacement: '${1}[REDACTED]'
+    - name: wg-preshared-key
+      type: regex
+      pattern: '(?im)^([ \t]*PresharedKey[ \t]*=[ \t]*).+$'
+      replacement: '${1}[REDACTED]'
 examples:
   - title: wg0 config
     args:
