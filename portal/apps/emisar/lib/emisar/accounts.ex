@@ -166,7 +166,8 @@ defmodule Emisar.Accounts do
   @doc """
   Update an account's settings. The required permission is **field-aware**:
   changing a security setting needs `manage_security_settings` (owner +
-  admin), while renaming/rebranding only needs `manage_own_account`.
+  admin), while a rename/rebrand or a plain preference (the monthly-report
+  opt-out) only needs `manage_own_account`.
 
   When `require_mfa` is flipped on, every signed-in user without
   `mfa_enabled_at` is funneled to MFA setup by
@@ -220,11 +221,17 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # All account settings (require_mfa, require_sso, max_grant_lifetime_seconds)
-  # live in the `settings` embed and all three are security settings, so any
-  # change to the embed is a security change.
-  defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
-    do: Map.has_key?(changes, :settings)
+  # The `settings` embed carries both security knobs and plain preferences, so
+  # "is this a security change?" is FIELD-aware: only require_mfa, require_sso,
+  # and max_grant_lifetime_seconds need manage_security_settings. A preference
+  # like monthly_report_opt_out rides the same embed but is not security — over-
+  # gating it at the most-privileged level would wrongly block low-privilege edits.
+  @security_settings_fields ~w[require_mfa require_sso max_grant_lifetime_seconds]a
+
+  defp security_setting_changed?(%Ecto.Changeset{} = changeset) do
+    settings_changes = settings_changes(changeset)
+    Enum.any?(@security_settings_fields, &Map.has_key?(settings_changes, &1))
+  end
 
   # Each changed security setting gets its own audit event. The UI normally
   # sends one setting at a time, but the context also records every change from
@@ -1839,6 +1846,13 @@ defmodule Emisar.Accounts do
   @doc "Whether `subject` may manage team memberships (admin+)."
   def subject_can_manage_team?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_team_permission())
+
+  @doc """
+  Whether `subject` may change the account itself — its name and non-security
+  preferences like the monthly-report opt-out (owner or admin).
+  """
+  def subject_can_manage_account?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_own_account_permission())
 
   @doc """
   Whether `subject` may change account security settings such as MFA

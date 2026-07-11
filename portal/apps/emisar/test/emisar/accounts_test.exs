@@ -408,6 +408,75 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — monthly_report_opt_out (a non-security preference)" do
+    test "an owner can opt out of the monthly report and back in" do
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      assert {:ok, %Account{settings: %{monthly_report_opt_out: true}}} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{monthly_report_opt_out: true}},
+                 owner_subject
+               )
+
+      assert {:ok, %Account{settings: %{monthly_report_opt_out: false}}} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{monthly_report_opt_out: false}},
+                 owner_subject
+               )
+    end
+
+    test "it is NOT a security change — audited as account.updated, not a security event" do
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      assert {:ok, _account} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{monthly_report_opt_out: true}},
+                 owner_subject
+               )
+
+      assert Enum.map(Repo.all(Audit.Event), & &1.event_type) == ["account.updated"]
+    end
+
+    test "an operator cannot toggle it (no manage_own_account)" do
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert Accounts.update_account(
+               account,
+               %{settings: %{monthly_report_opt_out: true}},
+               operator_subject
+             ) == {:error, :unauthorized}
+
+      refute Repo.reload!(account).settings.monthly_report_opt_out
+    end
+
+    test "an owner of another account can't toggle this account's report (cross-account)" do
+      account_a = Fixtures.Accounts.create_account()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert Accounts.update_account(
+               account_a,
+               %{settings: %{monthly_report_opt_out: true}},
+               subject_b
+             ) == {:error, :unauthorized}
+
+      refute Repo.reload!(account_a).settings.monthly_report_opt_out
+    end
+  end
+
   describe "change_account/2" do
     test "builds an update changeset for the form (no DB write)" do
       account = Fixtures.Accounts.create_account()
@@ -3323,6 +3392,49 @@ defmodule Emisar.AccountsTest do
 
       refute Accounts.subject_can_manage_team?(operator_subject)
       refute Accounts.subject_can_manage_team?(viewer_subject)
+    end
+  end
+
+  describe "subject_can_manage_account?/1" do
+    test "is true for an owner and an admin (they hold manage_own_account)" do
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      admin = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+
+      assert Accounts.subject_can_manage_account?(owner_subject)
+      assert Accounts.subject_can_manage_account?(admin_subject)
+    end
+
+    test "is false for an operator and a viewer" do
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      refute Accounts.subject_can_manage_account?(operator_subject)
+      refute Accounts.subject_can_manage_account?(viewer_subject)
     end
   end
 

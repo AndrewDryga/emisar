@@ -205,6 +205,38 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event("toggle_monthly_report", _params, socket) do
+    account = socket.assigns.current_account
+    opt_out = not account.settings.monthly_report_opt_out
+
+    # Not destructive, so a plain toggle — the domain re-authorizes (IL-15);
+    # a non-manager who forges the event lands on the :unauthorized flash.
+    case Accounts.update_account(
+           account,
+           %{settings: %{monthly_report_opt_out: opt_out}},
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> put_flash(
+           :info,
+           if opt_out do
+             "Monthly report turned off. Turn it back on here anytime."
+           else
+             "Monthly report turned back on — you'll get the next one."
+           end
+         )}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update the monthly report setting.")}
+    end
+  end
+
   def handle_event("approve_request", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
@@ -1495,6 +1527,46 @@ defmodule EmisarWeb.TeamLive do
                 <% true -> %>
                   <span class="text-[11px] text-zinc-600">Add an enabled connection first</span>
               <% end %>
+            </div>
+          </div>
+
+          <%!-- ===== Notifications ===== account-wide email preferences, distinct
+               from the security knobs above (owner/admin, but not a security change). --%>
+          <h3 class="pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Notifications
+          </h3>
+
+          <%!-- ── Monthly report ── --%>
+          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
+          <div class="rounded-xl border border-zinc-800/80 p-4">
+            <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
+            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+              A once-a-month email to the account owner summarizing what emisar did — runs executed,
+              approvals that gated risky work, current posture. Sign-in and approval emails are
+              separate and keep working either way.
+            </p>
+            <p class="mt-3">
+              <.chip tone={
+                if @current_account.settings.monthly_report_opt_out, do: :neutral, else: :brand
+              }>
+                {if @current_account.settings.monthly_report_opt_out, do: "Off", else: "On"}
+              </.chip>
+            </p>
+            <div class="mt-4">
+              <.switch
+                :if={Accounts.subject_can_manage_account?(@current_subject)}
+                on={not @current_account.settings.monthly_report_opt_out}
+                on_label="Turn off"
+                off_label="Turn back on"
+                aria-label="Monthly account-health report email"
+                phx-click="toggle_monthly_report"
+              />
+              <span
+                :if={not Accounts.subject_can_manage_account?(@current_subject)}
+                class="text-[11px] text-zinc-600"
+              >
+                Owner/admin only
+              </span>
             </div>
           </div>
         </aside>

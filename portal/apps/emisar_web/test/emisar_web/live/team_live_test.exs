@@ -1026,6 +1026,44 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "monthly-report toggle" do
+    setup %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      %{conn: conn, account: account}
+    end
+
+    test "an owner turns the report off and back on", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned off."
+      assert Emisar.Repo.reload!(account).settings.monthly_report_opt_out
+
+      assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned back on"
+      refute Emisar.Repo.reload!(account).settings.monthly_report_opt_out
+    end
+
+    test "an operator is refused at the event level (IL-15 — owners + admins only)", %{
+      account: account
+    } do
+      operator = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/settings/team")
+
+      html = render_click(lv, "toggle_monthly_report", %{})
+
+      assert html =~ "Only owners and admins can change this setting."
+      refute Emisar.Repo.reload!(account).settings.monthly_report_opt_out
+    end
+  end
+
   describe "2FA enrollment stat" do
     test "renders account-wide enrollment, not just the visible page", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
