@@ -13,7 +13,8 @@ args:
     required: true
     description: Service ID (not name).
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-:]{1,128}$"
+      # First char is non-dash so the value can't be parsed as a flag by consul's argv flag parser.
+      pattern: "^[a-zA-Z0-9_.:][a-zA-Z0-9_.\\-:]{0,127}$"
 execution:
   command:
     binary: consul

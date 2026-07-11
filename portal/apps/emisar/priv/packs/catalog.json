@@ -3448,13 +3448,13 @@
     {
       "id": "consul",
       "name": "HashiCorp Consul operations",
-      "version": "0.2.15",
+      "version": "0.2.16",
       "description": "Deep Consul ops — agent self/metrics/host introspection, operator raft + autopilot + reload, catalog (services + nodes + datacenters), health (passing/warning/critical) with force-pass/fail/warn check mutators, KV (get/list/recursive), ACL tokens/policies/roles, Connect mesh (CA roots, intentions), sessions, prepared queries, snapshots (save/inspect/restore), and narrow operator actions (deregister, maintenance, raft remove-peer). Auth via CONSUL_HTTP_ADDR + CONSUL_HTTP_TOKEN env vars.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/consul",
-      "content_hash": "sha256:53efc95d8f255eb030d726522d8dd23ceda995100b8ae9493a78c8b335cdcbe6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/consul/0.2.15/53efc95d8f255eb030d726522d8dd23ceda995100b8ae9493a78c8b335cdcbe6/pack.tar.gz",
+      "content_hash": "sha256:af58a1e4c15e86ac4baafe9dbdbe4f34b055dc2839b8fdbb7769d5b13b615b1e",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/consul/0.2.16/af58a1e4c15e86ac4baafe9dbdbe4f34b055dc2839b8fdbb7769d5b13b615b1e/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

@@ -11,7 +11,8 @@ args:
     required: true
     description: Destination service.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+      # First char is non-dash so a "-flag"-shaped value can't be parsed as a flag if this ever lands as a bare positional.
+      pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,127}$"
 execution:
   command:
     binary: /bin/sh
