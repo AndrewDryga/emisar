@@ -7,8 +7,11 @@ public-read GCS bucket `emisar-pack-registry` (provisioned in
 version/hash ever published must stay installable — publishing **appends**,
 never overwrites history.
 
-Both steps run through the runner CLI, so local verification and CI publishing
-use the same code and the same content hash the runner enforces at load time.
+Both steps run through `packctl`, the maintainer CLI built from `runner/cmd/packctl`
+(`go build -o ../bin/packctl ./cmd/packctl` from `runner/`). It shares the runner's
+module, so local verification and CI publishing use the same loader — and the same
+content hash the runner enforces at load time. `packctl` is a maintainer tool, not
+the host `emisar` binary, which ships operator verbs only.
 
 ## Object layout
 
@@ -35,13 +38,13 @@ transport adds no trust the hash doesn't already carry.
 
 ```bash
 # Build the artifact tree from the repo packs dir.
-emisar pack catalog build --packs ./packs --out ./dist
+packctl catalog build --packs ./packs --out ./dist
 
 # Enforce the "preserve every version/hash" guarantee: fetch the currently
 # published catalog first and pass it as --previous. The build FAILS if any
 # pack changed bytes for an already-published id+version — bump the version.
 curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
-emisar pack catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
+packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
 ```
 
 The build is deterministic: identical packs produce an identical catalog hash
@@ -54,12 +57,12 @@ and byte-identical tarballs, so re-running it is safe.
 export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)
 
 # Preview first — no network calls.
-emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run
+packctl catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run
 
 # Upload. Immutable objects use an if-generation-match:0 precondition, so an
 # existing object is never overwritten (a precondition failure = identical bytes
 # already published = skipped). The mutable pointers are overwritten last.
-emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry
+packctl catalog publish --dir ./dist --bucket emisar-pack-registry
 ```
 
 The publisher service account (`emisar-pack-publisher`) holds **`objectCreator`
@@ -97,16 +100,16 @@ catalog can neither auto-trust a new hash nor mass-retire the fleet.
 #    current. --retire-older sets redis's retired_below to its current
 #    version and clears its carried history. Requires --previous.
 curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
-emisar pack catalog build --packs ./packs --out ./dist \
+packctl catalog build --packs ./packs --out ./dist \
   --previous ./current-catalog.json --retire-older redis
 
 # 3. Publish the new immutable artifacts + catalog pointer (old tarballs stay
 #    installable — retirement blocks dispatch, not installation).
-emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry
+packctl catalog publish --dir ./dist --bucket emisar-pack-registry
 
 # 4. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
 #    commit as the pack edit (retired_below is baked into PackBaseline):
-emisar pack catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis
+packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis
 cp ./dist/v1/catalog.json ../portal/apps/emisar/priv/packs/catalog.json
 #    then from portal/: mix test test/emisar/catalog/pack_baseline_test.exs (apps/emisar)
 #                       mix test test/emisar_web/packs_registry/cache_test.exs (apps/emisar_web)

@@ -9,7 +9,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/catalog"
 )
 
-// `emisar pack catalog build` writes the artifact tree and (with --json) the
+// `packctl catalog build` writes the artifact tree and (with --json) the
 // manifest. Driven end-to-end against a temp packs dir.
 func TestPackCatalogBuildCmd(t *testing.T) {
 	packsDir := t.TempDir()
@@ -42,7 +42,7 @@ func TestPackCatalogBuildCmd(t *testing.T) {
 	}
 }
 
-// `pack catalog build` errors clearly when the packs dir has no packs.
+// `catalog build` errors clearly when the packs dir has no packs.
 func TestPackCatalogBuildCmd_NoPacks(t *testing.T) {
 	empty := t.TempDir()
 	cmd := packCatalogBuildCmd()
@@ -53,7 +53,7 @@ func TestPackCatalogBuildCmd_NoPacks(t *testing.T) {
 	}
 }
 
-// `pack catalog publish --dry-run` runs without a token or network.
+// `catalog publish --dry-run` runs without a token or network.
 func TestPackCatalogPublishCmd_DryRun(t *testing.T) {
 	packsDir := t.TempDir()
 	writeValidPack(t, packsDir, "redis")

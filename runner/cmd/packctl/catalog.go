@@ -67,9 +67,9 @@ Pass --retire-older <pack-id> (repeatable) on a critical fix to retire every
 older version of that pack in one operation: its retired_below is set to the
 current version and its carried history is cleared. Requires --previous.
 
-  emisar pack catalog build --packs ./packs --out ./dist
-  emisar pack catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
-  emisar pack catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis`,
+  packctl catalog build --packs ./packs --out ./dist
+  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
+  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg, err := packs.LoadAll([]string{packsDir}, packs.LoadOptions{})
@@ -140,8 +140,8 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 (in CI from Workload Identity; locally 'gcloud auth print-access-token').
 
   GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
-    emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry
-  emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run`,
+    packctl catalog publish --dir ./dist --bucket emisar-pack-registry
+  packctl catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts := catalog.PublishOptions{

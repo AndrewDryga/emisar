@@ -21,6 +21,8 @@ Run the same gate from `mcp/` for that module. Linux-only behavior (Pdeathsig, `
 
 Top-level files are the cobra CLI commands: `connect` (the long-running daemon), `pack`, `action`, `state`, `events`, `audit`, `version`. The work lives under `internal/`:
 
+**The host `emisar` binary ships operator verbs only.** Maintainer/publisher tooling lives in a separate `cmd/` binary in the **same module** (today: `cmd/packctl`, the pack-registry `catalog build|publish`). New-verb test: *does a host need this?* No → it belongs in a `cmd/` binary, not the `emisar` root — so the host binary never links publisher-only surface (e.g. the GCS publish client, the whole `internal/catalog` build path) or handles a publisher token. Same *module*, not same *binary*, is what the hash constraint requires: publisher tooling must hash packs with the exact `internal/packs` loader the runner enforces, so it stays in-module (`go tool nm bin/emisar | grep internal/catalog` must be empty; the equivalent grep on `bin/packctl` is non-empty). `pack validate` stays in `emisar` — the loader is linked for install/daemon anyway, and operators validate third-party packs on hosts.
+
 | Package | Owns |
 |---|---|
 | `internal/cloud/` | the outbound websocket client — connect loop, message (de)serialization, reconnect backoff |
