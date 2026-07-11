@@ -106,9 +106,10 @@ defmodule EmisarWeb.MCP.Service do
   # -- Runbooks (read-only) -------------------------------------------
 
   @doc """
-  Published runbooks for the account — latest version per slug, as
-  summary maps. The MCP exposes these read-only so an LLM can follow a
-  runbook by dispatching its steps itself; the cloud never runs them.
+  Published runbooks for the account — latest version per slug, as summary
+  maps. An LLM discovers a runbook here, then either dispatches its steps
+  itself (`get_runbook` resolves each step's runner target) or hands the whole
+  runbook to `execute_runbook` to run it governed, end to end.
   """
   @spec list_runbooks(Plug.Conn.t()) :: {:ok, [map()]} | {:error, :unauthorized}
   def list_runbooks(conn) do
@@ -139,19 +140,11 @@ defmodule EmisarWeb.MCP.Service do
   def get_runbook(conn, slug_or_id) do
     subject = conn.assigns.current_subject
 
-    case Runbooks.list_runbooks(subject, page: [limit: 1000]) do
-      {:ok, runbooks, _meta} ->
-        case find_runbook(published_latest_per_slug(runbooks), slug_or_id) do
-          nil ->
-            {:error, :not_found}
-
-          runbook ->
-            {:ok, runners} = Runners.list_all_runners_for_account(subject)
-            {:ok, runbook_detail(runbook, runners)}
-        end
-
-      {:error, :unauthorized} ->
-        {:error, :unauthorized}
+    # Reuse the context's slug-or-id published lookup instead of listing every
+    # runbook and filtering in memory — same result, one indexed read.
+    with {:ok, runbook} <- Runbooks.fetch_published_runbook(slug_or_id, subject),
+         {:ok, runners} <- Runners.list_all_runners_for_account(subject) do
+      {:ok, runbook_detail(runbook, runners)}
     end
   end
 
@@ -160,11 +153,6 @@ defmodule EmisarWeb.MCP.Service do
     |> Enum.filter(&(&1.status == :published))
     |> Enum.group_by(& &1.slug)
     |> Enum.map(fn {_slug, versions} -> Enum.max_by(versions, & &1.version) end)
-  end
-
-  defp find_runbook(runbooks, slug_or_id) do
-    Enum.find(runbooks, &(&1.slug == slug_or_id)) ||
-      Enum.find(runbooks, &(&1.id == slug_or_id))
   end
 
   defp runbook_summary(runbook) do
@@ -272,12 +260,8 @@ defmodule EmisarWeb.MCP.Service do
     }
   end
 
-  defp draft_slug(slug, title) do
-    case slug do
-      s when is_binary(s) and s != "" -> s
-      _ -> Emisar.Slug.slugify(title, max_length: 79)
-    end
-  end
+  defp draft_slug(slug, _title) when is_binary(slug) and slug != "", do: slug
+  defp draft_slug(_slug, title), do: Emisar.Slug.slugify(title, max_length: 79)
 
   defp draft_payload(runbook, subject) do
     %{
@@ -639,7 +623,15 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Tool descriptor builder ----------------------------------------
 
-  defp mcp_tool_from_group([first | _] = group, runners_by_id) do
+  defp mcp_tool_from_group(group, runners_by_id) do
+    # Sort the per-runner variants by runner_id so the representative `first` —
+    # and thus the description + arg schema the descriptor advertises — is
+    # byte-stable across rebuilds regardless of the incoming group's order (the
+    # byte-stable tool-metadata goal). The tool name is the shared action_id, so
+    # ordering never changes it.
+    group = Enum.sort_by(group, & &1.runner_id)
+    [first | _] = group
+
     runners =
       group
       |> Enum.map(&Map.get(runners_by_id, &1.runner_id))
