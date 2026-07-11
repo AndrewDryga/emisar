@@ -18,6 +18,18 @@ args:
     description: Zone file path.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      # The pattern blocks shell metacharacters but NOT `..` (`.`/`/` are literal
+      # charset members). named-checkzone PARSES the file and quotes offending
+      # lines back in its errors, so an unscoped path is a filtered read oracle
+      # over any runner-readable secret. allowed_prefixes engages the runner's
+      # Clean+EvalSymlinks containment, scoping the read to BIND's standard zone
+      # roots (Debian /etc/bind + /var/lib/bind dynamic zones, RHEL /var/named
+      # incl. its chroot, /etc/named).
+      allowed_prefixes:
+        - /etc/bind
+        - /var/lib/bind
+        - /var/named
+        - /etc/named
 execution:
   command:
     binary: named-checkzone

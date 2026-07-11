@@ -1130,13 +1130,13 @@
     {
       "id": "bind",
       "name": "BIND DNS server",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "description": "Authoritative/recursive BIND ops: rndc status + stats, zone validation, cache inspection, local resolution probes, plus narrow operator actions (rndc reload, zone freeze/thaw). Requires rndc key on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/bind",
-      "content_hash": "sha256:5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bind/0.1.5/5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9/pack.tar.gz",
+      "content_hash": "sha256:58e39adad92e4e736d07973856cb86393729fb2d0b8c4db70b84be2fee9b325b",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bind/0.1.6/58e39adad92e4e736d07973856cb86393729fb2d0b8c4db70b84be2fee9b325b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -1295,6 +1295,13 @@
               "dig @127.0.0.1 {{ args.zone }} SOA +short | awk '{print $3}'"
             ]
           }
+        }
+      ],
+      "previous_versions": [
+        {
+          "version": "0.1.5",
+          "content_hash": "sha256:5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9",
+          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bind/0.1.5/5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9/pack.tar.gz"
         }
       ]
     },
