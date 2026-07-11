@@ -27,6 +27,17 @@ PACK_DIR="${PACK_DIR:-/packs}"
 CONFIG="${EMISAR_CONFIG:-/workspace/test-packs/test-config.yaml}"
 CASES_FILE="$PACK_DIR/$PACK/test/cases.yaml"
 
+# The emisar binary is mounted from the host at ./bin (git-ignored); the
+# runner-tools image has no Go toolchain, so it must be cross-built on the HOST
+# before `docker compose run`. Fail fast with the exact command rather than an
+# obscure per-case exec error when it's absent.
+if [ ! -x "$EMISAR" ]; then
+    echo "emisar binary not found (or not executable) at: $EMISAR" >&2
+    echo "Build it on the host first (LINUX binary matching the image arch):" >&2
+    echo "    ( cd runner && GOOS=linux GOARCH=\"\$(go env GOARCH)\" go build -o ../dev/test-packs/bin/emisar . )" >&2
+    exit 4
+fi
+
 if [ ! -f "$CASES_FILE" ]; then
     echo "no cases file: $CASES_FILE"
     exit 2

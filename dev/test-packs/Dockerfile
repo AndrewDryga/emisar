@@ -46,21 +46,24 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/sh
 # Docker CLI (for docker pack tests; runs against host docker socket)
 RUN curl -fsSL https://get.docker.com | sh || true
 
-# Pack-specific binaries via apt where available
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Pack-specific binaries. Two gotchas make this a single honest install rather
+# than a best-effort one: `fail2ban-client` is NOT a package (the client binary
+# ships in `fail2ban`), and `zfsutils-linux` lives in `contrib`, which
+# debian:12-slim doesn't enable — so add the contrib pocket first. Fail the
+# build loudly if any of these go missing; a silent gap hides broken pack
+# coverage (nginx/apache/bind/nfs/php-fpm/rabbitmq/zfs tests need these tools).
+RUN echo "deb http://deb.debian.org/debian bookworm contrib" > /etc/apt/sources.list.d/contrib.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
     nginx-common apache2-utils \
     bind9-utils bind9-dnsutils \
-    fail2ban-client \
+    fail2ban \
     haproxy socat \
     wireguard-tools \
     nfs-common rpcbind \
     zfsutils-linux \
     php-cli php-fpm composer \
     rabbitmq-server \
-    || apt-get install -y --no-install-recommends \
-        nginx-common bind9-utils fail2ban haproxy socat \
-        wireguard-tools nfs-common php-cli composer \
-    ; rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # JVM diagnostic tools come with default-jdk
 RUN apt-get update && apt-get install -y --no-install-recommends default-jdk-headless \
