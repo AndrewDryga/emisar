@@ -3,6 +3,17 @@ defmodule EmisarWeb.RunDetailLive do
   alias Emisar.{Approvals, Runners, Runs}
   alias EmisarWeb.Permissions
 
+  # The output terminal shows the most-recent N chunks — the live stream caps at
+  # it (stream_insert :limit) AND the initial mount load fetches exactly it — so
+  # a >N-chunk run reads identically whether watched live or reloaded, instead of
+  # live showing the newest N and a reload showing the oldest N. A note flags the
+  # trim so partial output never reads as complete.
+  @event_window 500
+
+  defp event_window, do: @event_window
+  defp events_truncated?(%{progress_event_count: count}), do: count > @event_window
+  defp events_truncated?(_), do: false
+
   def mount(%{"id" => id}, _session, socket) do
     subject = socket.assigns.current_subject
 
@@ -22,12 +33,13 @@ defmodule EmisarWeb.RunDetailLive do
           Runners.subscribe_connections(run.account_id)
         end
 
-        # The event list (up to 500 rows) is secondary to the run itself and
-        # streamed — defer it behind connected?/1 so the dead render doesn't
+        # Load the SAME window the live stream converges to — the most-recent
+        # @event_window chunks, chronological — so a >window run reads identically
+        # live or reloaded. Deferred behind connected?/1 so the dead render doesn't
         # run the heavy read a second time (same pattern as run_new_live).
         events =
           if connected?(socket) do
-            {:ok, evts, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 500])
+            {:ok, evts} = Runs.list_recent_events_for_run(run.id, event_window(), subject)
             evts
           else
             []
@@ -58,6 +70,14 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
+    # The broadcast carries a preload-less run; keep the associations loaded at
+    # mount (:runner, :api_key, :requested_by) so "Dispatched by" and the runner
+    # label don't degrade to "—"/"LLM agent" on the first live status flip. The
+    # run's own columns (status, policy, timing, progress counts) come from the
+    # fresh struct — only the immutable dispatch-time associations are carried.
+    old = socket.assigns.run
+    run = %{run | runner: old.runner, api_key: old.api_key, requested_by: old.requested_by}
+
     # If status flips to/from pending_approval, refresh the linked
     # approval row so the banner updates without a page reload.
     approval_request = lookup_approval(socket.assigns.current_subject, run)
@@ -75,7 +95,9 @@ defmodule EmisarWeb.RunDetailLive do
   # memory is unaffected (streams are write-only to the client).
   def handle_info({:run_event, event}, socket) do
     {:noreply,
-     socket |> stream_insert(:events, event, limit: -500) |> assign(:output_present?, true)}
+     socket
+     |> stream_insert(:events, event, limit: -@event_window)
+     |> assign(:output_present?, true)}
   end
 
   # The runner's live connection changed — re-derive its state so an
@@ -431,7 +453,14 @@ defmodule EmisarWeb.RunDetailLive do
                 <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
               </span>
             </div>
-            <span class="font-mono text-[11px] text-zinc-500">stderr in rose</span>
+            <div class="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-500">
+              <%!-- More chunks were produced than the window shows — say so, so a
+                   trimmed head never reads as the complete output. --%>
+              <span :if={events_truncated?(@run)} class="text-amber-400/80">
+                latest {event_window()} chunks · earlier output trimmed
+              </span>
+              <span>stderr in rose</span>
+            </div>
           </header>
           <%!-- Each chunk already carries its trailing newline (the runner
                streams line-by-line via ReadBytes('\n')), so output is one
