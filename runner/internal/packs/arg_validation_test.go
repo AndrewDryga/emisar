@@ -714,3 +714,45 @@ func TestDispatch_DnfRpmPackage_NoLeadingDashFlag(t *testing.T) {
 		})
 	}
 }
+
+// traefik's log_path/acme_path args substitute into a /bin/sh grep/jq pipeline
+// (`grep -E … {{log_path}}`, `jq … {{acme_path}}`). The old `^/[A-Za-z0-9._/-]…`
+// pattern anchored only to `/`, so ANY absolute path passed and — because the
+// actions declared no allowed/denied paths — applyPathValidation early-returned
+// and the runner's Clean+EvalSymlinks jail never ran: a filtered read oracle
+// over any runner-readable file (another service's access log, acme.json). The
+// fix scopes each arg to the proxy's own dirs via allowed_prefixes (which
+// engages the jail, collapsing `..` and blocking symlink escape); log_grep also
+// tightens the pattern to `^/var/log/traefik/…`. Drive the real dispatch seam:
+// the in-scope default passes, a plain out-of-scope absolute path is rejected,
+// and a `..` traversal that still matches the charset is caught by the jail.
+func TestDispatch_TraefikPaths_ScopedToProxyDirs(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	cases := []struct {
+		id, arg  string
+		valid    string // an in-scope path that passes
+		outOfDir string // a plain out-of-scope absolute path (the flagship /etc/passwd oracle)
+		absCode  string // its rejection code: log_grep narrows the pattern; acme relies on the prefix jail
+		escape   string // a `..` value that matches the charset but resolves outside the prefix
+	}{
+		{"traefik.log_grep_5xx", "log_path", "/var/log/traefik/access.log", "/etc/passwd", "pattern", "/var/log/traefik/../../../etc/passwd"},
+		{"traefik.log_grep_4xx", "log_path", "/var/log/traefik/access.log", "/etc/passwd", "pattern", "/var/log/traefik/../../../etc/passwd"},
+		{"traefik.acme_cert_expiry", "acme_path", "/etc/traefik/acme.json", "/etc/passwd", "allowed_prefixes", "/etc/traefik/../../etc/passwd"},
+		{"traefik.acme_domains", "acme_path", "/etc/traefik/acme.json", "/etc/passwd", "allowed_prefixes", "/etc/traefik/../../etc/passwd"},
+	}
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			// The proxy's own log/storage path is in scope.
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: c.valid}))
+
+			// A plain out-of-scope absolute path — the arbitrary-file read the
+			// finding named — is rejected before it can reach the shell.
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: c.outOfDir}), c.arg, c.absCode)
+
+			// A `..` traversal passes the charset pattern but the jail cleans it
+			// back to /etc/passwd and rejects it as outside the allowed prefix.
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: c.escape}), c.arg, "allowed_prefixes")
+		})
+	}
+}
