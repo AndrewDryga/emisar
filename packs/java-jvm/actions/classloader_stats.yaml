@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.classloader_stats
+title: jcmd VM.classloader_stats
+kind: exec
+risk: low
+description: 'Show per-classloader statistics — instance count, loaded classes, and chunk/block bytes. Use to spot a class-loader leak. Uses the attach API, so it works on JVMs running -XX:+PerfDisableSharedMem (the Cassandra default) where jvm.jstat_class fails.'
+side_effects:
+  - One jcmd call.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: jcmd
+    argv: ["{{ args.pid }}", "VM.classloader_stats"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Classloader stats for PID 4321
+    args:
+      pid: 4321

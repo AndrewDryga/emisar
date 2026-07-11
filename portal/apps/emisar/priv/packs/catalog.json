@@ -7930,13 +7930,13 @@
     {
       "id": "java-jvm",
       "name": "JVM introspection",
-      "version": "0.1.9",
+      "version": "0.1.10",
       "description": "JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid to match the JVM process owner (or CAP_SYS_PTRACE) — actions return a permission error cleanly when uid doesn't match.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/java-jvm",
-      "content_hash": "sha256:298a188fa21b848bfbd6f5935a19a532734f0cd04b979096ab1a22d25c56fa27",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.9/298a188fa21b848bfbd6f5935a19a532734f0cd04b979096ab1a22d25c56fa27/pack.tar.gz",
+      "content_hash": "sha256:0a6dc0afb1b6993592fc43f0c60ce1c9369511bca17ef74e58a4fd9d8f1a7bfa",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.10/0a6dc0afb1b6993592fc43f0c60ce1c9369511bca17ef74e58a4fd9d8f1a7bfa/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7955,6 +7955,19 @@
         "ports": []
       },
       "actions": [
+        {
+          "id": "jvm.classloader_stats",
+          "title": "jcmd VM.classloader_stats",
+          "kind": "exec",
+          "risk": "low",
+          "command": {
+            "binary": "jcmd",
+            "argv": [
+              "{{ args.pid }}",
+              "VM.classloader_stats"
+            ]
+          }
+        },
         {
           "id": "jvm.heap_dump",
           "title": "jmap -dump:live (heap dump)",
