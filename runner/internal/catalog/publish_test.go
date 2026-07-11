@@ -2,8 +2,11 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -19,6 +22,20 @@ func buildTree(t *testing.T) string {
 	return out
 }
 
+// readManifest loads the manifest.json a built tree carries at its root.
+func readManifest(t *testing.T, dir string) Manifest {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+	return m
+}
+
 // fakeGCS records upload requests and lets a test choose the status per
 // object path (default 200).
 type fakeGCS struct {
@@ -26,6 +43,7 @@ type fakeGCS struct {
 	requests map[string]string // object name -> ifGenerationMatch value ("" if absent)
 	auth     map[string]string // object name -> Authorization header
 	status   map[string]int    // object name -> forced status
+	order    []string          // object names in the order they were uploaded
 }
 
 func newFakeGCS() *fakeGCS {
@@ -43,6 +61,7 @@ func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 		f.mu.Lock()
 		f.requests[name] = r.URL.Query().Get("ifGenerationMatch")
 		f.auth[name] = r.Header.Get("Authorization")
+		f.order = append(f.order, name)
 		code := f.status[name]
 		f.mu.Unlock()
 		if code == 0 {
@@ -97,6 +116,44 @@ func TestPublish_PreconditionsPerObjectKind(t *testing.T) {
 	}
 	if got := f.auth["v1/catalog.json"]; got != "Bearer tok" {
 		t.Errorf("Authorization = %q, want Bearer tok", got)
+	}
+}
+
+func TestPublish_ImmutableObjectsUploadedBeforeMutablePointers(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	srv := f.server(t)
+
+	if _, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	// Classify every object from the manifest so the guarantee holds for any
+	// future pointer, not just today's catalog.json/suggest.json.
+	immutable := map[string]bool{}
+	for _, obj := range readManifest(t, dir).Objects {
+		immutable[obj.Path] = obj.Immutable
+	}
+
+	// A mutable pointer must never be uploaded before an immutable object it may
+	// reference — otherwise a mid-publish crash leaves the live pointer resolving
+	// to a 404 (PUBLISHING.md: "the mutable pointers are overwritten last").
+	sawMutable := false
+	for _, name := range f.order {
+		if immutable[name] {
+			if sawMutable {
+				t.Errorf("immutable %s uploaded after a mutable pointer; immutable must go first", name)
+			}
+			continue
+		}
+		sawMutable = true
+	}
+	if !sawMutable {
+		t.Fatal("expected at least one mutable pointer in the upload order")
 	}
 }
 
