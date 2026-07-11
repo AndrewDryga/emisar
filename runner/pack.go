@@ -13,6 +13,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // defaultRegistry is the pack registry the runner fetches named packs
@@ -181,6 +182,8 @@ The source can be:
 
   * a pack name      (e.g. "redis") — fetched from the registry at
                      <registry>/packs/<name>/pack.tar.gz
+  * name=version     (e.g. "redis=0.2.3") — a specific published version at
+                     <registry>/packs/<name>/versions/<version>/pack.tar.gz
   * a local directory (e.g. "./my-pack" or an absolute path)
   * an https:// URL  to a pack tarball
 
@@ -194,6 +197,7 @@ The pack is copied to <dest>/<pack-id>. After install, reload the runner
 (systemctl reload emisar, or SIGHUP) so it re-reads the catalog.
 
   emisar pack install redis --dest /etc/emisar/packs
+  emisar pack install redis=0.2.3 --hash sha256:... --dest /etc/emisar/packs
   emisar pack install redis --hash sha256:... --dest /etc/emisar/packs
   emisar pack install ./my-pack --dest /etc/emisar/packs`,
 		Args: cobra.ExactArgs(1),
@@ -286,8 +290,19 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 	case looksLikeLocalPath(arg):
 		return arg, nil, nil
 	default:
-		// Bare name → registry URL.
 		base := strings.TrimRight(registry, "/")
+		// name=version pins a specific published version; a bare name resolves
+		// to the current one. Split on the FIRST '=' only (checked after the
+		// local-path case, so a path containing '=' still resolves as a path).
+		if name, version, versioned := strings.Cut(arg, "="); versioned {
+			if !packspec.ValidPackID(name) || !packspec.ValidVersion(version) {
+				return "", nil, fmt.Errorf("invalid pack spec %q: expected <name>=<version> with a valid pack id and version", arg)
+			}
+			url := fmt.Sprintf("%s/packs/%s/versions/%s/pack.tar.gz", base, name, version)
+			banner("fetching pack %q version %s from %s", name, version, base)
+			return packs.Fetch(ctx, url, nil)
+		}
+		// Bare name → current-version registry URL.
 		url := fmt.Sprintf("%s/packs/%s/pack.tar.gz", base, arg)
 		banner("fetching pack %q from %s", arg, base)
 		return packs.Fetch(ctx, url, nil)

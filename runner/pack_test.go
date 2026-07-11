@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -470,4 +471,100 @@ func TestPackUninstall_Aliases(t *testing.T) {
 			t.Errorf("alias %q routed to %q, want uninstall", alias, c.Name())
 		}
 	}
+}
+
+// `pack install <name>=<version>` fetches a specific published version from
+// <registry>/packs/<name>/versions/<version>/pack.tar.gz (S2). The httptest
+// server serves ONLY the versioned path, so the install only succeeds if the
+// versioned URL was built exactly right.
+func TestPackInstall_VersionedName(t *testing.T) {
+	src := writeValidPack(t, t.TempDir(), "redis")
+	tarball := tarDir(t, src)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.URL.Path != "/packs/redis/versions/0.2.3/pack.tar.gz" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(tarball)
+	}))
+	defer srv.Close()
+
+	dest := t.TempDir()
+	cmd := packInstallCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"redis=0.2.3", "--registry", srv.URL, "--dest", dest})
+	if out := captureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("versioned install: %v (server saw %q)", err, gotPath)
+		}
+	}); !strings.Contains(out, "installed redis") {
+		t.Errorf("versioned install should report the installed pack; output:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "redis", "pack.yaml")); err != nil {
+		t.Fatalf("versioned install should have copied the pack: %v", err)
+	}
+}
+
+// A bare name still resolves to the current-version registry path, unchanged
+// by the name=version support.
+func TestPackInstall_BareNameCurrentVersion(t *testing.T) {
+	src := writeValidPack(t, t.TempDir(), "redis")
+	tarball := tarDir(t, src)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/packs/redis/pack.tar.gz" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(tarball)
+	}))
+	defer srv.Close()
+
+	dest := t.TempDir()
+	cmd := packInstallCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"redis", "--registry", srv.URL, "--dest", dest})
+	if out := captureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("bare-name install: %v", err)
+		}
+	}); !strings.Contains(out, "installed redis") {
+		t.Errorf("bare-name install should report the installed pack; output:\n%s", out)
+	}
+}
+
+// resolvePackSource rejects malformed name=version specs BEFORE any fetch, and
+// never misreads a local path that happens to contain '=' as a versioned name.
+func TestResolvePackSource_VersionedParsing(t *testing.T) {
+	const reg = "https://reg.example"
+
+	t.Run("malformed specs rejected", func(t *testing.T) {
+		// Note: an arg containing '/' (e.g. "redis=../x") is caught by the
+		// local-path branch first, so path escapes never reach version parsing.
+		for _, arg := range []string{"redis=", "=0.1.0", "a=b=c", "redis=0.2 3", "redis=v1;rm"} {
+			if _, _, err := resolvePackSource(context.Background(), arg, reg); err == nil {
+				t.Errorf("resolvePackSource(%q) should reject the spec", arg)
+			}
+		}
+	})
+
+	t.Run("local path with '=' stays a path", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "my=pack")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, cleanup, err := resolvePackSource(context.Background(), dir, reg)
+		if err != nil {
+			t.Fatalf("absolute path with '=' should resolve as a path, not a version spec: %v", err)
+		}
+		if cleanup != nil {
+			cleanup()
+		}
+		if got != dir {
+			t.Errorf("resolvePackSource returned %q, want the path %q verbatim", got, dir)
+		}
+	})
 }

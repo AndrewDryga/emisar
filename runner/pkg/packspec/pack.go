@@ -211,6 +211,14 @@ func (p *Pack) Validate() error {
 	return nil
 }
 
+// ValidPackID and ValidVersion expose the pack-id and version charsets for
+// the install CLI's pre-fetch validation of `name=version`, so it shares this
+// exact boundary rather than mirroring a copy that could drift.
+func ValidPackID(id string) bool { return validPackID(id) }
+
+// ValidVersion reports whether v is within the safe pack-version charset.
+func ValidVersion(v string) bool { return validVersion(v) }
+
 // validVersion bounds the version to a safe charset. It flows into
 // content-addressed object PATHS (catalog TarballObject) and filesystem writes,
 // so a value like "1.0/../x" must never escape the output dir. Semver plus its
