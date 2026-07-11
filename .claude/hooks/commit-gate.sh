@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash) commit gate. Fires only on `git commit`; inspects the STAGED
 # tree; blocks (exit 2, reason on stderr) on a violation. Fails OPEN on any infra
-# problem so it can never wedge commits. Three scoped, fast checks:
+# problem so it can never wedge commits. Four scoped, fast checks:
 #
 #   1. Frozen migrations — refuse a commit that MODIFIES or DELETES a migration
 #      already in git. The control plane is deployed (Fly `release_command` runs
@@ -9,9 +9,13 @@
 #      so editing the file never re-applies and prod's schema silently drifts from
 #      the code → outages. Add a NEW forward migration instead. (IL-11 / portal
 #      AGENTS.md §8 / .agent/rules/migrations-frozen.md.)
-#   2. Terraform format — refuse to commit `terraform fmt`-dirty staged .tf files
+#   2. Cross-impl hash golden — refuse a commit that changes redis/ or cassandra/
+#      bytes without refreshing the content_hash golden in packs_test.exs; a stale
+#      golden turns the portal build RED silently. Fails open if emisar can't run.
+#      (packs/AGENTS.md / packs/.agent/scripts/check-hash-golden.sh.)
+#   3. Terraform format — refuse to commit `terraform fmt`-dirty staged .tf files
 #      (infra/). Fails open if terraform isn't on PATH.
-#   3. Go format — refuse to commit gofmt-dirty staged .go files.
+#   4. Go format — refuse to commit gofmt-dirty staged .go files.
 #
 # Portal Elixir format/compile/credo/test is the agent's per-task gate (Definition
 # of Done) plus CI; a whole-project Elixir check on every commit is slow and would
@@ -45,7 +49,26 @@ if [[ -n "$frozen" ]]; then
   exit 2
 fi
 
-# 2. Terraform format — staged .tf files (infra/) must be `terraform fmt`-clean.
+# 2. Cross-impl hash golden — a staged redis/ or cassandra/ byte change must
+#    refresh the content_hash golden in packs_test.exs, or the portal build goes
+#    RED silently (packs/AGENTS.md). The guard recomputes both hashes from the
+#    working tree and compares; exit 1 = stale (block), exit 0 = clean, exit 2 =
+#    emisar not runnable (fail open — never wedges a commit).
+if git diff --cached --name-only --diff-filter=ACMR -- 'packs/redis/*' 'packs/cassandra/*' 2>/dev/null | grep -q .; then
+  guard="$root/packs/.agent/scripts/check-hash-golden.sh"
+  if [[ -x "$guard" ]]; then
+    golden_out=$("$guard" 2>&1)
+    if [[ $? -eq 1 ]]; then
+      {
+        echo "commit blocked — cross-impl hash golden is stale:"
+        printf '%s\n' "$golden_out" | sed 's/^/  /'
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
+# 3. Terraform format — staged .tf files (infra/) must be `terraform fmt`-clean.
 # Fails open if terraform isn't on PATH; only exits on a violation, so a clean run
 # falls through to the Go check below.
 if command -v terraform >/dev/null 2>&1; then
@@ -69,7 +92,7 @@ if command -v terraform >/dev/null 2>&1; then
   fi
 fi
 
-# 3. Go format — staged .go files must be gofmt-clean.
+# 4. Go format — staged .go files must be gofmt-clean.
 command -v gofmt >/dev/null 2>&1 || exit 0
 
 go_files=()
