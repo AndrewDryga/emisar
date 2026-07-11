@@ -45,11 +45,16 @@ __pycache__/
 /.env
 
 # Local docs working dir at the repo root (notes, not the marketing /docs assets
-# under priv/static — a bare `docs/` would also swallow those). Exception:
+# under priv/static — a bare `docs/` would also swallow those). Exceptions:
 # docs/distribution/ holds versioned go-to-market artifacts (the MCP catalog
-# submission kit) that the team reuses across submissions, so it IS committed.
+# submission kit) that the team reuses across submissions, so it IS committed —
+# and the security reference set (security-model, signed-dispatch, wire-protocol)
+# is the authoritative spec reviews cite, so it is tracked and review-gated too.
 /docs/*
 !/docs/distribution/
+!/docs/security-model.md
+!/docs/signed-dispatch.md
+!/docs/wire-protocol.md
 
 # .agent/ is local working state — only rules/ (the shared taste KB), scripts/
 # (maintained dev tooling), and project.yaml (the committed per-project config:
