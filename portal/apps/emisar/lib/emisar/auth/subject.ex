@@ -152,6 +152,15 @@ defmodule Emisar.Auth.Subject do
   def user_id(%__MODULE__{}), do: nil
 
   @doc """
+  The acting API key's id, or `nil` when the actor isn't an API key (user /
+  runner / system). Scopes MCP idempotency to the credential — a retried call
+  from the SAME key collapses; the same key string from a different key does
+  not — mirroring the single-action `(api_key_id, idempotency_key)` shape.
+  """
+  def api_key_id(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{id: id}}), do: id
+  def api_key_id(%__MODULE__{}), do: nil
+
+  @doc """
   The acting user's email, or `nil` when the actor isn't a user
   (API key / runner / system). Used to attach the buyer's email to a
   Paddle customer for invoices and receipts.

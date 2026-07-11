@@ -44,7 +44,7 @@ defmodule Emisar.Runbooks do
   Requires `view_runbooks`; scoped to the subject's account. Returns
   `{:ok, runbook}` or `{:error, :not_found | :unauthorized}`. Drafts and
   cross-account rows read as `:not_found` — this is the resolver behind the
-  MCP `execute_runbook` tool, which then dispatches through `dispatch_runbook/3`.
+  MCP `execute_runbook` tool, which then dispatches through `dispatch_runbook/4`.
   """
   def fetch_published_runbook(slug_or_id, %Subject{} = subject) when is_binary(slug_or_id) do
     with :ok <-
@@ -243,8 +243,12 @@ defmodule Emisar.Runbooks do
   `dispatch_next_batch/1` as runs finish. Any failed/denied run or row-less
   dispatch failure halts the waves that follow it.
 
-  Requires `dispatch_run` permission; the runbook must be in the
-  subject's account. Returns
+  Requires `dispatch_run` permission; the runbook must be in the subject's
+  account. `opts[:idempotency_key]` (the MCP execute path threads the caller's
+  `Idempotency-Key`) makes a retried dispatch from the same API key resolve to
+  the ORIGINAL execution — its existing runs are returned and nothing new fires,
+  so the runbook can't double-run; a keyless (web) dispatch always runs fresh.
+  Returns
   `{:ok, %{execution_id: …, total: …, plan: […], runs: […], errors: […]}}`
   once at least one run row exists — `plan` is the full resolved work-list
   (`%{step_id, step_index, action_id, runner_id}` per step×runner the
@@ -256,8 +260,10 @@ defmodule Emisar.Runbooks do
   `{:step_no_runners, n}` when step `n`'s group resolves to no active runners,
   or `{:fan_out_too_large, max}` when the resolved work exceeds the cap.
   """
-  def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject)
+  def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject, opts \\ [])
       when is_binary(reason) do
+    idempotency_key = Keyword.get(opts, :idempotency_key)
+
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -268,35 +274,55 @@ defmodule Emisar.Runbooks do
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
          :ok <- ensure_unique_step_ids(steps),
-         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps),
-         {:ok, execution} <- create_execution(runbook, reason, subject, work_list) do
-      outcomes =
-        work_list
-        |> Enum.take(@batch_size)
-        |> Enum.map(fn item ->
-          dispatch_item(runbook, execution, item, &Emisar.Runs.dispatch_run(&1, subject))
-        end)
-
-      runs = for {:ok, run} <- outcomes, do: run
-      errors = for {:error, dispatch_error} <- outcomes, do: dispatch_error
-      rows = length(runs) + Enum.count(outcomes, &(&1 == :row_exists))
-
-      if rows == 0 and errors != [] do
-        # Nothing dispatched at all → the whole start failed; hand the caller
-        # the bare reason (the per-row identity is only useful when some rows
-        # did dispatch and others didn't).
-        {:error, hd(errors).reason}
-      else
-        {:ok,
-         %{
-           execution_id: execution.id,
-           total: length(work_list),
-           plan: build_plan(work_list),
-           runs: runs,
-           errors: errors
-         }}
-      end
+         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
+      dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key)
     end
+  end
+
+  # Persist (or replay) the execution, then dispatch its first wave. A retried
+  # MCP execute — same `(api_key_id, idempotency_key)` — resolves to the
+  # existing execution: we return ITS already-dispatched runs and fire nothing,
+  # so the runbook can't double-run.
+  defp dispatch_first_wave(runbook, reason, subject, work_list, idempotency_key) do
+    case create_execution(runbook, reason, subject, work_list, idempotency_key) do
+      {:ok, execution} ->
+        outcomes =
+          work_list
+          |> Enum.take(@batch_size)
+          |> Enum.map(fn item ->
+            dispatch_item(runbook, execution, item, &Emisar.Runs.dispatch_run(&1, subject))
+          end)
+
+        runs = for {:ok, run} <- outcomes, do: run
+        errors = for {:error, dispatch_error} <- outcomes, do: dispatch_error
+        rows = length(runs) + Enum.count(outcomes, &(&1 == :row_exists))
+
+        if rows == 0 and errors != [] do
+          # Nothing dispatched at all → the whole start failed; hand the caller
+          # the bare reason (the per-row identity is only useful when some rows
+          # did dispatch and others didn't).
+          {:error, hd(errors).reason}
+        else
+          {:ok, execution_result(execution.id, work_list, runs, errors)}
+        end
+
+      {:replay, execution} ->
+        runs = Emisar.Runs.list_runs_for_runbook_execution(runbook.account_id, execution.id)
+        {:ok, execution_result(execution.id, work_list, runs, [])}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp execution_result(execution_id, work_list, runs, errors) do
+    %{
+      execution_id: execution_id,
+      total: length(work_list),
+      plan: build_plan(work_list),
+      runs: runs,
+      errors: errors
+    }
   end
 
   @doc """
@@ -607,42 +633,72 @@ defmodule Emisar.Runbooks do
   # membership) + the frozen authorized work-list — once, at the first wave.
   # Returns the in-memory dispatch descriptor the wave loop + every continuation
   # share. Already inside `dispatch_runbook`'s authorized + account-scoped flow.
-  defp create_execution(%Runbook{} = runbook, reason, %Subject{} = subject, work_list) do
+  defp create_execution(%Runbook{} = runbook, reason, %Subject{} = subject, work_list, key) do
+    id = Repo.generate_id()
+
     attrs = %{
-      id: Repo.generate_id(),
+      id: id,
       account_id: runbook.account_id,
       runbook_id: runbook.id,
       initiating_membership_id: subject.membership_id,
       requested_by_id: Subject.user_id(subject),
+      api_key_id: Subject.api_key_id(subject),
+      idempotency_key: key,
       reason: reason,
       work_list: freeze_work_list(work_list)
     }
 
     Multi.new()
-    |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs))
-    |> Multi.insert(:audit, fn %{execution: execution} ->
-      Audit.Events.runbook_dispatched(
-        subject,
-        runbook,
-        execution,
-        length(work_list),
-        ceil(length(work_list) / @batch_size)
-      )
+    # ON CONFLICT on the partial (api_key_id, idempotency_key) index turns a
+    # retried execute into RETURNING the original execution row — no rescue, no
+    # re-fetch. A keyless dispatch (nil idempotency_key, the web path) can't
+    # match the partial index and always inserts fresh.
+    |> Multi.insert(:execution, RunbookExecution.Changeset.create(attrs),
+      on_conflict: [set: [updated_at: DateTime.utc_now()]],
+      conflict_target:
+        {:unsafe_fragment, "(api_key_id, idempotency_key) WHERE idempotency_key IS NOT NULL"},
+      returning: true
+    )
+    |> Multi.run(:audit, fn repo, %{execution: execution} ->
+      # Skip the audit row on a replay (the returned winner's id differs from
+      # the one THIS call minted) — the original insert already logged it.
+      if execution.id == id do
+        repo.insert(
+          Audit.Events.runbook_dispatched(
+            subject,
+            runbook,
+            execution,
+            length(work_list),
+            ceil(length(work_list) / @batch_size)
+          )
+        )
+      else
+        {:ok, nil}
+      end
     end)
     |> Repo.commit_multi()
     |> case do
+      {:ok, %{execution: %RunbookExecution{id: ^id} = execution}} ->
+        {:ok, execution_descriptor(execution)}
+
+      # Conflict path: the returned row is the earlier winner's — replay.
       {:ok, %{execution: %RunbookExecution{} = execution}} ->
-        {:ok,
-         %{
-           id: execution.id,
-           reason: execution.reason,
-           user_id: execution.requested_by_id,
-           membership_id: execution.initiating_membership_id
-         }}
+        {:replay, execution_descriptor(execution)}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # The in-memory dispatch descriptor the wave loop + every continuation share:
+  # the id + the frozen authorization anchors read back off the persisted row.
+  defp execution_descriptor(%RunbookExecution{} = execution) do
+    %{
+      id: execution.id,
+      reason: execution.reason,
+      user_id: execution.requested_by_id,
+      membership_id: execution.initiating_membership_id
+    }
   end
 
   # Internal lookup (no Subject) for the continuation callback — account-scoped

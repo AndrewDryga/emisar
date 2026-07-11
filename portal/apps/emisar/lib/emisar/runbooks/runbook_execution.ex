@@ -21,6 +21,13 @@ defmodule Emisar.Runbooks.RunbookExecution do
     # step's action/args are re-read from the immutable runbook version by index.
     field :work_list, {:array, :map}, default: []
 
+    # MCP execute_runbook idempotency: a retried call carrying the same
+    # `(api_key_id, idempotency_key)` returns THIS execution instead of minting
+    # a fresh one that re-runs every step. Both nil on the user-initiated (web)
+    # path — no api key, no key — so the partial unique index never engages.
+    field :api_key_id, Ecto.UUID
+    field :idempotency_key, :string
+
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
     belongs_to :initiating_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]

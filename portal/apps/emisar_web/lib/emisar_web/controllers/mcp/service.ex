@@ -205,23 +205,26 @@ defmodule EmisarWeb.MCP.Service do
 
   @doc """
   Execute a published runbook by slug or id through the governed
-  `Runbooks.dispatch_runbook/3` path — every step flows through the same
+  `Runbooks.dispatch_runbook/4` path — every step flows through the same
   policy / approval / runner-scope / pack-trust / audit gates as a normal
   action dispatch. `reason` is required (audit "why"). Returns
   `{:ok, execution_payload}` or a `dispatch_runbook`/resolution error tuple.
 
-  Not idempotent by design: each call mints a fresh governed execution (the
-  per-step idempotency the domain guarantees still holds — routing through
-  `dispatch_runbook` keeps the `(execution, step, runner)` unique index).
+  `idempotency_key` (Layer-2 tool arg over the Layer-1 transport header,
+  resolved by the controller) makes a retried execute from the same API key
+  return the ORIGINAL execution instead of double-running the runbook — the
+  key rides through `dispatch_runbook` to the `(api_key_id, idempotency_key)`
+  execution index. `nil` runs fresh.
   """
-  @spec execute_runbook(Plug.Conn.t(), String.t(), String.t() | nil) ::
+  @spec execute_runbook(Plug.Conn.t(), String.t(), String.t() | nil, String.t() | nil) ::
           {:ok, map()} | {:error, atom() | tuple() | Ecto.Changeset.t()}
-  def execute_runbook(conn, slug_or_id, reason) do
+  def execute_runbook(conn, slug_or_id, reason, idempotency_key) do
     subject = conn.assigns.current_subject
 
     with :ok <- validate_reason(reason),
          {:ok, runbook} <- Runbooks.fetch_published_runbook(slug_or_id, subject),
-         {:ok, result} <- Runbooks.dispatch_runbook(runbook, reason, subject) do
+         {:ok, result} <-
+           Runbooks.dispatch_runbook(runbook, reason, subject, idempotency_key: idempotency_key) do
       {:ok, execution_payload(runbook, result, subject)}
     end
   end

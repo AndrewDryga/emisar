@@ -1347,6 +1347,47 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       # Never dispatched into account A.
       assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
+
+    test "a retried execute (same idempotency key) replays the original execution, not a new run",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1", group: "default")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      publish_runbook!(account, user, slug: "eu-health")
+
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      call = fn ->
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "execute_runbook",
+          "arguments" => %{
+            "runbook" => "eu-health",
+            "reason" => "nightly health sweep",
+            "idempotency_key" => "exec-replay"
+          }
+        })
+        |> json_response(200)
+      end
+
+      first = call.()
+      assert first["result"]["isError"] == false
+      # The single governed execution the first call minted.
+      execution = Repo.one(Emisar.Runbooks.RunbookExecution)
+
+      # The replay resolves to THAT execution (its id echoes in the guidance)
+      # and dispatches nothing new.
+      replay = call.()
+      assert replay["result"]["isError"] == false
+      assert content_text(replay) =~ execution.id
+
+      # One execution row, one run — `Repo.one` raises on a second of either.
+      assert Repo.one(Emisar.Runbooks.RunbookExecution).id == execution.id
+      {:ok, runs, _meta} = Runs.list_runs(subject)
+      assert [run] = runs
+      assert run.runbook_execution_id == execution.id
+    end
   end
 
   describe "create_runbook_draft tool" do

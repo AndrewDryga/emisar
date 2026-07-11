@@ -437,10 +437,11 @@ defmodule EmisarWeb.MCPRpcController do
 
   defp handle_execute_runbook(conn, args) do
     reason = Map.get(args, "reason")
+    idempotency_key = Idempotency.resolve(conn, args)
 
     case Map.get(args, "runbook") do
       slug when is_binary(slug) and slug != "" ->
-        run_execute_runbook(conn, slug, reason)
+        run_execute_runbook(conn, slug, reason, idempotency_key)
 
       _ ->
         tool_error(
@@ -450,8 +451,8 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
-  defp run_execute_runbook(conn, slug, reason) do
-    case Service.execute_runbook(conn, slug, reason) do
+  defp run_execute_runbook(conn, slug, reason, idempotency_key) do
+    case Service.execute_runbook(conn, slug, reason, idempotency_key) do
       {:ok, payload} ->
         {content, is_err} = ContentBlocks.from_runbook_execution(payload)
         {:ok, %{content: content, isError: is_err}}

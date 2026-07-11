@@ -25,8 +25,11 @@ defmodule EmisarWeb.MCP.ToolMetadata do
   end
 
   # Executing a published runbook fans out real infrastructure actions — open
-  # world (it touches systems beyond the portal), risk-bearing (a step may
-  # mutate/destroy), and never a safe replay (each call is a fresh execution).
+  # world (it touches systems beyond the portal) and risk-bearing (a step may
+  # mutate/destroy). Not `idempotentHint`: an `Idempotency-Key` collapses a
+  # RETRY of the same call, but a keyless repeat still mints a fresh execution —
+  # same posture as a destructive single action, which supports the key yet
+  # advertises `idempotentHint: false`.
   def execute_runbook_annotations do
     %{
       readOnlyHint: false,

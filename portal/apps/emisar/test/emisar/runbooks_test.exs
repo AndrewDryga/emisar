@@ -1,6 +1,6 @@
 defmodule Emisar.RunbooksTest do
   @moduledoc """
-  The runbook context: CRUD + the wave engine. `dispatch_runbook/3` expands
+  The runbook context: CRUD + the wave engine. `dispatch_runbook/4` expands
   each step against its own target runner(s) into an execution, releases work
   in waves of five, and `dispatch_next_batch/1` (fired from
   `Runs.mark_finished/2`) advances the waves — halting behind any failed or
@@ -864,7 +864,7 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "dispatch_runbook/3" do
+  describe "dispatch_runbook/4" do
     setup do
       {account, subject, runner} = account_with_runner()
       %{account: account, subject: subject, runner: runner}
