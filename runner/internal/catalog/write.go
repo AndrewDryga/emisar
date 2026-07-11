@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,13 +90,15 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		}
 	}
 
-	// One immutable tarball per pack, content-addressed.
+	// One immutable tarball per pack, content-addressed. Built from the pack's
+	// hash-input files (never a directory walk) so the archived bytes match what
+	// the content hash covers exactly.
 	for _, p := range cat.Packs {
-		pack, ok := reg.Pack(p.ID)
-		if !ok {
-			return nil, fmt.Errorf("catalog: pack %q not in registry", p.ID)
+		files, err := reg.PackFiles(p.ID)
+		if err != nil {
+			return nil, err
 		}
-		tarball, err := Tarball(pack.Root)
+		tarball, err := Tarball(files)
 		if err != nil {
 			return nil, err
 		}

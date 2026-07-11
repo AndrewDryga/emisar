@@ -193,6 +193,9 @@ func (p *Pack) Validate() error {
 	if p.Version == "" {
 		return fmt.Errorf("pack %s: missing version", p.ID)
 	}
+	if !validVersion(p.Version) {
+		return fmt.Errorf("pack %s: invalid version %q (allowed: alphanumerics, dot, hyphen, plus)", p.ID, p.Version)
+	}
 	if p.Description == "" {
 		return fmt.Errorf("pack %s: missing description", p.ID)
 	}
@@ -206,6 +209,28 @@ func (p *Pack) Validate() error {
 		return err
 	}
 	return nil
+}
+
+// validVersion bounds the version to a safe charset. It flows into
+// content-addressed object PATHS (catalog TarballObject) and filesystem writes,
+// so a value like "1.0/../x" must never escape the output dir. Semver plus its
+// pre-release/build metadata all fit within a leading alphanumeric followed by
+// [A-Za-z0-9.+-]; anything with a slash or path segment is rejected.
+func validVersion(v string) bool {
+	if v == "" || len(v) > 64 {
+		return false
+	}
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		alnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if i == 0 && !alnum {
+			return false
+		}
+		if !alnum && c != '.' && c != '-' && c != '+' {
+			return false
+		}
+	}
+	return true
 }
 
 // validPackID accepts simple ids ("cassandra") and dot-namespaced ones

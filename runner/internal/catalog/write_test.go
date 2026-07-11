@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"io"
 	"os"
@@ -10,6 +11,69 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
+
+// TestTarball_ExcludesUnreferencedFiles is the trust invariant for the
+// content-addressed artifact: the tarball carries exactly the files the content
+// hash covers (pack.yaml + referenced actions/scripts), never a stray file that
+// happens to sit in the pack dir — otherwise unhashed bytes ship immutably.
+func TestTarball_ExcludesUnreferencedFiles(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "alpha", map[string]string{
+		"pack.yaml":      packYAML("alpha", "1.0.0", "requires:\n  binaries: [curl]\n"),
+		"actions/a.yaml": execAction("alpha"),
+		"README.md":      "not a hash input",
+		".DS_Store":      "editor junk",
+	})
+	reg := loadReg(t, root)
+
+	files, err := reg.PackFiles("alpha")
+	if err != nil {
+		t.Fatalf("PackFiles: %v", err)
+	}
+	got := map[string]bool{}
+	for _, f := range files {
+		got[f.Rel] = true
+	}
+	if !got["pack.yaml"] || !got["actions/a.yaml"] {
+		t.Fatalf("hash-input set missing a referenced file: %v", got)
+	}
+	if got["README.md"] || got[".DS_Store"] {
+		t.Errorf("hash-input set leaked an unreferenced file: %v", got)
+	}
+
+	tb, err := Tarball(files)
+	if err != nil {
+		t.Fatalf("Tarball: %v", err)
+	}
+	entries := tarballEntryNames(t, tb)
+	if !entries["pack.yaml"] || !entries["actions/a.yaml"] {
+		t.Errorf("tarball missing a referenced file: %v", entries)
+	}
+	if entries["README.md"] || entries[".DS_Store"] {
+		t.Errorf("tarball shipped an unreferenced file: %v", entries)
+	}
+}
+
+func tarballEntryNames(t *testing.T, tb []byte) map[string]bool {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(tb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	names := map[string]bool{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[hdr.Name] = true
+	}
+	return names
+}
 
 func buildFixtureCatalog(t *testing.T) (*packs.Registry, *Catalog) {
 	t.Helper()

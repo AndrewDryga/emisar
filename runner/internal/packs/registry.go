@@ -90,6 +90,40 @@ func (r *Registry) RecomputePackHash(packID string) (string, error) {
 	return computePackHash(fresh), nil
 }
 
+// PackFile is one file that contributes to a pack's content hash — its
+// pack-relative path and current on-disk bytes.
+type PackFile struct {
+	Rel  string
+	Data []byte
+}
+
+// PackFiles returns exactly the files that form packID's content hash
+// (pack.yaml + its referenced action YAMLs + referenced scripts), read fresh
+// from disk. The published tarball is built from THIS set, never a directory
+// walk, so no unreferenced file (a stray README, a .DS_Store, an editor backup)
+// ever ships inside the content-addressed artifact outside what the hash covers.
+func (r *Registry) PackFiles(packID string) ([]PackFile, error) {
+	pack, ok := r.packs[packID]
+	if !ok {
+		return nil, fmt.Errorf("packs: pack %q not loaded", packID)
+	}
+	entries := r.packHashInputs[packID]
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("packs: no hash inputs cached for %q", packID)
+	}
+
+	files := make([]PackFile, len(entries))
+	for i, e := range entries {
+		full := filepath.Join(pack.Root, e.rel)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return nil, fmt.Errorf("packs: read %s: %w", full, err)
+		}
+		files[i] = PackFile{Rel: e.rel, Data: data}
+	}
+	return files, nil
+}
+
 // Packs returns all packs sorted by id.
 func (r *Registry) Packs() []*packspec.Pack {
 	out := make([]*packspec.Pack, 0, len(r.packs))

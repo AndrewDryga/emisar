@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -79,11 +81,27 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 		return nil, fmt.Errorf("catalog: parse manifest: %w", err)
 	}
 
+	// Upload immutable, content-addressed objects (tarballs, snapshots, schemas)
+	// BEFORE the mutable pointers (catalog.json / latest) that reference them, so
+	// a mid-publish failure never leaves the live pointer resolving to a 404
+	// tarball. Stable so objects of the same class keep their manifest order.
+	sort.SliceStable(m.Objects, func(i, j int) bool {
+		return m.Objects[i].Immutable && !m.Objects[j].Immutable
+	})
+
 	res := &PublishResult{}
 	for _, obj := range m.Objects {
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(obj.Path)))
 		if err != nil {
 			return nil, fmt.Errorf("catalog: read object %s: %w", obj.Path, err)
+		}
+		// Verify the bytes against the manifest before uploading — a stale or
+		// partial dist tree would otherwise write WRONG bytes to an immutable,
+		// content-addressed path that can never be corrected. Rebuild, don't push.
+		if got := hex.EncodeToString(sha256Sum(data)); got != obj.SHA256 {
+			return nil, fmt.Errorf(
+				"catalog: object %s sha256 mismatch (manifest=%s on-disk=%s) — stale or partial dist tree; rebuild before publishing",
+				obj.Path, obj.SHA256, got)
 		}
 		if opts.DryRun {
 			logf("would upload %s (%d bytes, immutable=%v)", obj.Path, len(data), obj.Immutable)
