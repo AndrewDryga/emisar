@@ -80,6 +80,71 @@ curl -fsS "$(curl -fsS .../v1/catalog.json | jq -r '.packs[]|select(.id=="redis"
   | tar -xz -C /tmp/redis && emisar pack validate /tmp/redis
 ```
 
+## Retiring older versions (critical fix)
+
+When a shipped pack version carries a critical defect, retire **every** older
+version in one operation so a runner still advertising an old version fails
+closed at dispatch. Retirement is release-controlled — it ships with the same
+portal deploy that ships the fixed pack's auto-trust — so a compromised remote
+catalog can neither auto-trust a new hash nor mass-retire the fleet.
+
+```bash
+# 1. Fix the pack and BUMP its version (a retired version must be strictly
+#    below the new current — the build rejects a current < retired_below).
+#    e.g. edit packs/redis/pack.yaml: version 0.2.3 → 0.2.4
+
+# 2. Build against the live catalog and retire everything below the new
+#    current. --retire-older sets redis's retired_below to its current
+#    version and clears its carried history. Requires --previous.
+curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
+emisar pack catalog build --packs ./packs --out ./dist \
+  --previous ./current-catalog.json --retire-older redis
+
+# 3. Publish the new immutable artifacts + catalog pointer (old tarballs stay
+#    installable — retirement blocks dispatch, not installation).
+emisar pack catalog publish --dir ./dist --bucket emisar-pack-registry
+
+# 4. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
+#    commit as the pack edit (retired_below is baked into PackBaseline):
+emisar pack catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis
+cp ./dist/v1/catalog.json ../portal/apps/emisar/priv/packs/catalog.json
+#    then from portal/: mix test test/emisar/catalog/pack_baseline_test.exs (apps/emisar)
+#                       mix test test/emisar_web/packs_registry/cache_test.exs (apps/emisar_web)
+
+# 5. Deploy the portal. Retirement takes effect on that deploy — the same
+#    motion that ships the fix. Verify in a test account: a runner pinned to
+#    the retired version now blocks with `pack_retired` at dispatch, telling
+#    the operator to update the pack (an admin can still explicitly re-trust
+#    the retired version on the Packs page — a deliberate, audited override).
+```
+
+Retirement is monotonic: the build refuses to LOWER an already-published
+`retired_below`, so a stale `--previous` can never un-retire a version.
+
+## Installing a specific version
+
+`emisar pack install <name>=<version>` installs one published version by name,
+resolving `<registry>/packs/<name>/versions/<version>/pack.tar.gz`:
+
+```bash
+emisar pack install redis=0.2.3 --hash sha256:… --dest /etc/emisar/packs
+```
+
+The version window keeps the last few published versions of each pack
+auto-trusted, so a runner on a slightly-older shipped version dispatches
+without landing in pending review.
+
+**Retired versions — break-glass.** A retired version is still installable (the
+immutable tarball is permanent) but is **not dispatchable** without an admin
+override — defense sits at the trust gate, not installability. To pull a retired
+tarball directly, use its content-addressed GCS URL from a prior catalog
+generation (see Rollback for listing generations):
+
+```bash
+gcloud storage cat gs://emisar-pack-registry/v1/catalog.json#<generation> \
+  | jq -r '.packs[]|select(.id=="redis").tarball_url'
+```
+
 ## Rollback
 
 Immutable objects are never rolled back — they are content-addressed and
