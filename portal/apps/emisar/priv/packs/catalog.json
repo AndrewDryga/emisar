@@ -10804,13 +10804,13 @@
     {
       "id": "network-tls",
       "name": "Network + TLS diagnostics",
-      "version": "0.1.6",
+      "version": "0.1.7",
       "description": "DNS lookups, reachability probes, TLS certificate inspection, and HTTP timing tests. All read-only. Use for \"is X reachable?\" and \"what's the cert expiry on Y?\" questions.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/network-tls",
-      "content_hash": "sha256:3fed46e6188fe90814216868f5802ec1f53c81a5f89125d4e98cf530af59ed74",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/network-tls/0.1.6/3fed46e6188fe90814216868f5802ec1f53c81a5f89125d4e98cf530af59ed74/pack.tar.gz",
+      "content_hash": "sha256:afa64ac7a0b6d6766fdb5c48543ccc67823e90c6de0446683d4ab9eb4620f56c",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/network-tls/0.1.7/afa64ac7a0b6d6766fdb5c48543ccc67823e90c6de0446683d4ab9eb4620f56c/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11805,13 +11805,13 @@
     {
       "id": "nomad",
       "name": "HashiCorp Nomad",
-      "version": "0.1.22",
+      "version": "0.1.23",
       "description": "Deep Nomad operations — full job lifecycle (inspect, history, scale horizontally + vertically, dispatch, revert, promote, stop), per-task CPU/memory resource read + set, allocation introspection + health checks + filesystem ls/stat (metadata only, never file contents) + fixed in-container Redis probes (ping/info via alloc exec, no freeform command) + restart + signal + stop, native service discovery (no Consul) — the high-use reads take optional namespace/region for cross-namespace incident debugging — node fleet management (drain, eligibility, purge), evaluation + deployment status, operator raft + autopilot, CSI + host volumes, ACL policies + tokens, namespaces + quotas. Authenticates via NOMAD_ADDR + NOMAD_TOKEN on the runner host.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nomad",
-      "content_hash": "sha256:32ba24cc2b2b719038d6835597a630c73119f9fb0ea33975cc4c72c0a140c706",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.22/32ba24cc2b2b719038d6835597a630c73119f9fb0ea33975cc4c72c0a140c706/pack.tar.gz",
+      "content_hash": "sha256:6a6696f2163053bb7a74aa9001d84e458221f3b2389ca0ddbb8a995970d7bc8d",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.23/6a6696f2163053bb7a74aa9001d84e458221f3b2389ca0ddbb8a995970d7bc8d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -12846,13 +12846,13 @@
     {
       "id": "php-fpm",
       "name": "PHP-FPM",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "description": "PHP runtime + FPM pool introspection — version, modules, ini, pool status (via fpm_status endpoint), error + slow logs, OPcache state, Composer manifest. Read-only. Set PHP_FPM_STATUS_URL env to point to the FPM status endpoint.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/php-fpm",
-      "content_hash": "sha256:f0339c49280ca4d1186168ab260b8bc49e21a763f2c48980030a86b124bae208",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/php-fpm/0.1.4/f0339c49280ca4d1186168ab260b8bc49e21a763f2c48980030a86b124bae208/pack.tar.gz",
+      "content_hash": "sha256:b3c099a5a81e101fade66fc62c3f31cef99362b082b7b862f85161f6c64ac566",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/php-fpm/0.1.5/b3c099a5a81e101fade66fc62c3f31cef99362b082b7b862f85161f6c64ac566/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

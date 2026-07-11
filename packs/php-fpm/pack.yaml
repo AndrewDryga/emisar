@@ -2,7 +2,7 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.4
+version: 0.1.5
 description: >
   PHP runtime + FPM pool introspection — version, modules, ini, pool
   status (via fpm_status endpoint), error + slow logs, OPcache state,

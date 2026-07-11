@@ -13,7 +13,7 @@ args:
     required: true
     description: Target hostname or IP.
     validation:
-      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-:]{0,252}$"
   - name: count
     type: integer
     required: false

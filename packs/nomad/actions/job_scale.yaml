@@ -13,13 +13,13 @@ args:
     required: true
     description: Job ID.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: group
     type: string
     required: true
     description: Task group.
     validation:
-      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: count
     type: integer
     required: true

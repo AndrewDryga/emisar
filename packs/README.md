@@ -81,10 +81,10 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `bonding` | 3 | low | local-host |
 | `caddy` | 10 | high | CADDY_* (opt) |
 | `cassandra` | 45 | critical | CQLSH_* (opt) |
-| `clickhouse` | 31 | critical | CH_* (opt) |
+| `clickhouse` | 32 | critical | CH_* (opt) |
 | `cloud-init` | 23 | critical | local-host |
 | `cloudflare` | 11 | critical | CF_API_TOKEN |
-| `cockroach` | 25 | high | COCKROACH_URL |
+| `cockroach` | 26 | critical | COCKROACH_URL |
 | `consul` | 44 | critical | CONSUL_HTTP_* (opt) |
 | `debian` | 9 | high | local-host |
 | `debugging` | 31 | high | local-host |
@@ -97,7 +97,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `envoy` | 14 | high | ENVOY_ADMIN (opt) |
 | `fail2ban` | 8 | high | local-host |
 | `firewall` | 11 | critical | local-host |
-| `frr` | 5 | low | local-host |
+| `frr` | 6 | high | local-host |
 | `fs-search` | 15 | low | local-host |
 | `git-local` | 8 | low | GIT_REPO |
 | `github-cli` | 19 | high | GH_TOKEN (opt) |
@@ -119,8 +119,8 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `nginx` | 22 | critical | local-host |
 | `nic` | 6 | low | local-host |
 | `nodejs-pm2` | 15 | high | local-host |
-| `nomad` | 49 | critical | NOMAD_* (opt) |
-| `pfsense` | 29 | critical | PFSENSE_* |
+| `nomad` | 60 | critical | NOMAD_* (opt) |
+| `pfsense` | 37 | critical | PFSENSE_* |
 | `php-fpm` | 10 | low | PHP_FPM_STATUS_URL (opt) |
 | `podman` | 12 | high | local-host |
 | `postfix` | 14 | critical | local-host |
@@ -131,7 +131,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `python-app` | 10 | low | PY_VENV (opt) |
 | `rabbitmq` | 18 | critical | local-host |
 | `redis` | 59 | critical | REDISCLI_AUTH (opt) |
-| `rke2` | 5 | low | local-host |
+| `rke2` | 6 | low | local-host |
 | `shell` ⚠️ | 1 | critical | local-host |
 | `showcase` | 5 | low | local-host |
 | `snmp` | 7 | low | SNMP_* |
@@ -140,7 +140,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `tailscale` | 9 | low | local-host |
 | `terraform-readonly` | 8 | medium | TF_DIR |
 | `time-sync` | 7 | high | local-host |
-| `traefik` | 16 | low | TRAEFIK_* (opt) |
+| `traefik` | 18 | low | TRAEFIK_* (opt) |
 | `typesense` | 8 | low | TYPESENSE_* (opt) |
 | `vault` | 14 | critical | VAULT_* |
 | `vector` | 7 | low | VECTOR_API (opt) |
