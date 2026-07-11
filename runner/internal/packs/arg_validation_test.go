@@ -674,3 +674,43 @@ func TestDispatch_RmqCloseConnection_PidAcceptsNodePrefix(t *testing.T) {
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "<rabbit@host; reboot>"}), "pid", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "0.123.0"}), "pid", "pattern")
 }
+
+// dnf-rpm's package/pkg args are interpolated as BARE positionals into
+// `dnf remove -y <package>` / `dnf upgrade -y <pkg>` / `rpm -qi <package>` — no
+// `--` end-of-flags guard. The old `^[a-zA-Z0-9_.+\-]{1,128}$` pattern admitted a
+// leading `-`, so a value like `--duplicates` / `--security` reached dnf as a
+// flag: `dnf remove -y --duplicates` removes a whole CLASS of packages and
+// `dnf upgrade -y --security` upgrades everything security-flagged, defeating the
+// pack's "single named package, others untouched" intent (three of these are
+// high-risk, approval-gated — this is scope-broadening WITHIN a gated action).
+// The fix anchors the first char to `^[a-zA-Z0-9]…` (mirroring reinstall_pkg), so
+// a flag-looking value can never reach argv. Drive the real dispatch seam: real
+// package names pass; the flag-injection values are rejected on the pattern.
+func TestDispatch_DnfRpmPackage_NoLeadingDashFlag(t *testing.T) {
+	reg := loadRealLibrary(t)
+
+	// (action id, arg name) for every mutator/read that carries the package arg.
+	cases := []struct {
+		id, arg string
+	}{
+		{"rpm.dnf_remove", "package"},
+		{"dnf.upgrade_pkg", "pkg"},
+		{"rpm.dnf_install", "package"},
+		{"rpm.rpm_qi", "package"},
+		{"rpm.rpm_ql", "package"},
+	}
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			// Real package names — plain, versioned, and dotted — all pass.
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "nginx"}))
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "kernel-core"}))
+			accepted(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "python3.11"}))
+
+			// A leading-dash value the old loose pattern admitted — the concrete
+			// dnf/rpm flag-injection payloads — is now rejected on the pattern.
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "--duplicates"}), c.arg, "pattern")
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "--security"}), c.arg, "pattern")
+			rejected(t, dispatchValidate(t, reg, c.id, map[string]any{c.arg: "-y"}), c.arg, "pattern")
+		})
+	}
+}
