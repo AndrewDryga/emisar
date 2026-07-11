@@ -7930,13 +7930,13 @@
     {
       "id": "java-jvm",
       "name": "JVM introspection",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "description": "JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid to match the JVM process owner (or CAP_SYS_PTRACE) — actions return a permission error cleanly when uid doesn't match.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/java-jvm",
-      "content_hash": "sha256:3490d161e40077fcc3ceebef5f6fa67ef10fcfbfec5f69ddb99e49b01057fb8d",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.8/3490d161e40077fcc3ceebef5f6fa67ef10fcfbfec5f69ddb99e49b01057fb8d/pack.tar.gz",
+      "content_hash": "sha256:298a188fa21b848bfbd6f5935a19a532734f0cd04b979096ab1a22d25c56fa27",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.9/298a188fa21b848bfbd6f5935a19a532734f0cd04b979096ab1a22d25c56fa27/pack.tar.gz",
       "requires": {
         "os": [
           "linux"

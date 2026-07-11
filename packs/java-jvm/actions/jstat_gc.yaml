@@ -3,7 +3,7 @@ id: jvm.jstat_gc
 title: jstat -gc (10 samples)
 kind: exec
 risk: low
-description: 'Show ten 1-second samples of GC stats. Surfaces young + old GC time, survivor sizes, metaspace usage. Use to spot a GC storm.'
+description: 'Show ten 1-second samples of GC stats. Surfaces young + old GC time, survivor sizes, metaspace usage. Use to spot a GC storm. Needs jvmstat perf data: fails with "<pid> not found" on JVMs running -XX:+PerfDisableSharedMem (the Cassandra default) — there use jvm.heap_summary for heap state, or JFR (jvm.jfr_start / jvm.jfr_dump) for GC behavior over time.'
 side_effects:
   - One jstat invocation lasting ~10s.
   - Read-only.

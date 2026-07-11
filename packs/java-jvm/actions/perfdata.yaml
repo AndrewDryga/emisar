@@ -3,7 +3,7 @@ id: jvm.perfdata
 title: jcmd PerfCounter.print
 kind: exec
 risk: low
-description: 'Show JVM performance counters — class loading, JIT, GC. Cheaper than jstat for one-shot.'
+description: 'Show JVM performance counters — class loading, JIT, GC. Cheaper than jstat for one-shot. Reads the same jvmstat perf data as jstat: fails on JVMs running -XX:+PerfDisableSharedMem (the Cassandra default) — there use the attach-based reads (jvm.heap_summary, jvm.vm_flags, jvm.jstack) or JFR.'
 side_effects:
   - One jcmd call.
   - Read-only.
