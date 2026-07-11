@@ -2,7 +2,7 @@ schema_version: 1
 
 id: java-jvm
 name: JVM introspection
-version: 0.1.7
+version: 0.1.8
 description: >
   JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
   to match the JVM process owner (or CAP_SYS_PTRACE) — actions return
@@ -40,8 +40,8 @@ actions:
   - actions/jstack.yaml
   - actions/jstack_blocked.yaml
   - actions/thread_count.yaml
-  # Heap (jmap)
-  - actions/jmap_heap_summary.yaml
+  # Heap
+  - actions/heap_summary.yaml
   - actions/jmap_histo_live.yaml
   - actions/heap_dump.yaml
   # GC (jstat + jcmd)

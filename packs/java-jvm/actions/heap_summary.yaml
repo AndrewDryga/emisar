@@ -1,11 +1,11 @@
 schema_version: 1
-id: jvm.jmap_heap_summary
-title: jmap -heap
+id: jvm.heap_summary
+title: jcmd GC.heap_info
 kind: exec
 risk: low
-description: Show heap geometry — used/free/committed per generation (Eden, Survivor, Old, Metaspace).
+description: 'Show heap geometry — used/committed per generation (Eden, Survivor, Old, Metaspace) via the attach API. Works on JDK 9+ where `jmap -heap` was removed, and on JVMs running -XX:+PerfDisableSharedMem (e.g. Cassandra).'
 side_effects:
-  - One jmap invocation.
+  - One jcmd invocation.
   - Read-only.
 args:
   - name: pid
@@ -17,8 +17,8 @@ args:
       max: 4194304
 execution:
   command:
-    binary: jmap
-    argv: ["-heap", "{{ args.pid }}"]
+    binary: jcmd
+    argv: ["{{ args.pid }}", "GC.heap_info"]
   timeout: 30s
 output:
   parser: text

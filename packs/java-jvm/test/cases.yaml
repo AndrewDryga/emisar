@@ -36,7 +36,7 @@ cases:
   - 0
   - 1
   skip: mutator skipped by default (medium)
-- action: jvm.jmap_heap_summary
+- action: jvm.heap_summary
   args:
     pid: 4321
   expect_exit: 0

@@ -7930,13 +7930,13 @@
     {
       "id": "java-jvm",
       "name": "JVM introspection",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "description": "JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid to match the JVM process owner (or CAP_SYS_PTRACE) — actions return a permission error cleanly when uid doesn't match.",
       "vendor": "emisar",
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/java-jvm",
-      "content_hash": "sha256:deb033c42de8405437fcab5510320c612254e017b2310dfe3b8e98b4823ef3c5",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.7/deb033c42de8405437fcab5510320c612254e017b2310dfe3b8e98b4823ef3c5/pack.tar.gz",
+      "content_hash": "sha256:3490d161e40077fcc3ceebef5f6fa67ef10fcfbfec5f69ddb99e49b01057fb8d",
+      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.8/3490d161e40077fcc3ceebef5f6fa67ef10fcfbfec5f69ddb99e49b01057fb8d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7965,6 +7965,19 @@
             "argv": [
               "-dump:live,format=b,file=/tmp/{{ args.pid }}-heap.hprof",
               "{{ args.pid }}"
+            ]
+          }
+        },
+        {
+          "id": "jvm.heap_summary",
+          "title": "jcmd GC.heap_info",
+          "kind": "exec",
+          "risk": "low",
+          "command": {
+            "binary": "jcmd",
+            "argv": [
+              "{{ args.pid }}",
+              "GC.heap_info"
             ]
           }
         },
@@ -8023,19 +8036,6 @@
               "{{ args.pid }}",
               "JFR.stop",
               "name=emisar"
-            ]
-          }
-        },
-        {
-          "id": "jvm.jmap_heap_summary",
-          "title": "jmap -heap",
-          "kind": "exec",
-          "risk": "low",
-          "command": {
-            "binary": "jmap",
-            "argv": [
-              "-heap",
-              "{{ args.pid }}"
             ]
           }
         },
