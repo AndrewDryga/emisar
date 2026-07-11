@@ -310,6 +310,11 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(:pack_untrusted),
     do: "a target runner is advertising an untrusted version of the action's pack"
 
+  defp format_reason(:pack_retired) do
+    "a target runner is advertising a retired version of the action's pack — update the pack " <>
+      "on the runner, or re-trust the version on the Packs page"
+  end
+
   defp format_reason(:duplicate_step_ids),
     do: "two steps share the same ID — give each step a unique ID in the editor before running"
 

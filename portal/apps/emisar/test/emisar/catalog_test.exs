@@ -878,6 +878,27 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "pack_version_retirement/1" do
+    # The `{:retired, current}` branch lives at the same compiled-baseline seam
+    # as `trusted_row_dispatch_decision/2`: no shipped pack carries a retirement
+    # watermark, so a real row is always `:active`. The retired branch's parts —
+    # `PackBaseline.retired?/2` + `current_version/1` — are unit-tested against
+    # a synthetic watermark in `PackBaselineTest`; here we lock the `:active`
+    # composition over real rows.
+    test "is :active for a shipped current version" do
+      {{pack_id, version}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
+      pack_version = %PackVersion{pack_id: pack_id, version: version}
+
+      assert Catalog.pack_version_retirement(pack_version) == :active
+    end
+
+    test "is :active for a custom pack the release does not ship" do
+      pack_version = %PackVersion{pack_id: "definitely-not-a-real-pack", version: "9.9.9"}
+
+      assert Catalog.pack_version_retirement(pack_version) == :active
+    end
+  end
+
   describe "list_actions_for_runner/3" do
     setup do
       {account, subject} = account_with_owner()
@@ -1378,6 +1399,28 @@ defmodule Emisar.CatalogTest do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert {:error, :unauthorized} = Catalog.list_pack_versions(no_view)
+    end
+
+    test "preload: [:retirement_overridden_by] loads the overriding admin, and it's absent by default",
+         %{subject: subject, runner: runner} do
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:OK"}})
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      {:ok, trusted} = Catalog.trust_pack_version(pending.id, subject)
+      {:ok, _} = Catalog.override_pack_retirement(trusted.id, subject)
+
+      {:ok, [preloaded], _} =
+        Catalog.list_pack_versions(subject, preload: [:retirement_overridden_by])
+
+      assert %Emisar.Users.User{id: user_id} = preloaded.retirement_overridden_by
+      assert user_id == preloaded.retirement_overridden_by_id
+
+      {:ok, [bare], _} = Catalog.list_pack_versions(subject)
+      assert %Ecto.Association.NotLoaded{} = bare.retirement_overridden_by
     end
   end
 

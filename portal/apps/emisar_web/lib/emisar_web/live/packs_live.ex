@@ -269,6 +269,8 @@ defmodule EmisarWeb.PacksLive do
   defp fetch_rows(socket) do
     case Catalog.list_pack_versions(socket.assigns.current_subject,
            order_by: [{:packs, :asc, :pack_id}, {:packs, :asc, :version}],
+           # The retirement-override note names who re-trusted a retired version.
+           preload: [:retirement_overridden_by],
            page: [limit: 500]
          ) do
       # A `:rejected` row persists in the DB so dispatch fails closed (a missing
@@ -330,6 +332,34 @@ defmodule EmisarWeb.PacksLive do
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not reject pack — try again.")}
+    end
+  end
+
+  # Re-trust a version the shipped catalog RETIRED — the deliberate, audited
+  # admin override that unblocks dispatch again. `override_pack_retirement/2`
+  # re-checks manage_catalog (IL-15), so a crafted event from a viewer denies.
+  def handle_event("override_retirement", %{"id" => id}, socket) do
+    case Catalog.override_pack_retirement(id, socket.assigns.current_subject) do
+      {:ok, pack_version} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Re-trusted retired #{pack_version.pack_id} v#{pack_version.version}. Dispatch is unblocked for this version — update the pack on your runners when you can."
+         )
+         |> restream_pack(pack_version.pack_id)}
+
+      {:error, :not_trusted} ->
+        {:noreply, put_flash(socket, :error, "Only a trusted version can be re-trusted.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Admin required to override pack retirement.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not override retirement — try again.")}
     end
   end
 
@@ -542,6 +572,98 @@ defmodule EmisarWeb.PacksLive do
     "#{n} matching #{if n == 1, do: "action", else: "actions"}"
   end
 
+  attr :version, :map, required: true
+  attr :pack_id, :string, required: true
+  attr :can_manage, :boolean, required: true
+
+  # A trusted version the shipped catalog RETIRED — a newer release marked every
+  # version below a watermark unsafe (a critical fix). Dispatch fails closed
+  # against it until the pack is updated on the runner OR an admin re-trusts it
+  # here. An already-overridden row shows a muted, dated note instead of the
+  # block + CTA — the override is deliberate and audited, so it doesn't nag.
+  # Renders nothing for a version that isn't retired.
+  defp retired_notice(assigns) do
+    {retired?, current} =
+      case Catalog.pack_version_retirement(assigns.version) do
+        {:retired, current} -> {true, current}
+        :active -> {false, nil}
+      end
+
+    assigns =
+      assigns
+      |> assign(:retired?, retired?)
+      |> assign(:current_version, current)
+      |> assign(:overridden?, not is_nil(assigns.version.retirement_overridden_at))
+
+    ~H"""
+    <div
+      :if={@retired? and not @overridden?}
+      class="mt-2 rounded border border-rose-800/60 bg-rose-950/30 p-3"
+    >
+      <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-100">
+        <.icon name="hero-shield-exclamation" class="h-3.5 w-3.5" /> Retired by a newer release
+      </div>
+      <p class="mt-1 text-xs text-rose-100/90">
+        A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
+        v{@version.version} until you update the pack on the runner.
+      </p>
+      <p class="mt-1 font-mono text-[11px] text-rose-100/80">
+        <span :if={@current_version} class="not-italic">→ v{@current_version}: </span>emisar pack install {@pack_id}
+      </p>
+      <%!-- Overriding a critical-fix retirement is a deliberate bypass — rose
+           confirm, admin-only. It re-enables dispatch for this exact retired
+           version; the audited context fn stays the server gate (IL-15). --%>
+      <.confirm_button
+        :if={@can_manage}
+        id={"override-#{@version.id}"}
+        variant={:primary}
+        tone={:rose}
+        size={:sm}
+        class="mt-3"
+        title={"Re-trust retired #{@pack_id} v#{@version.version}?"}
+        confirm_label="Trust anyway"
+        on_confirm={JS.push("override_retirement", value: %{id: @version.id})}
+      >
+        <:body>
+          This version was retired by a newer release. Re-trusting lets its actions run again
+          despite the fix — do this only if you can't yet update the pack on the runner. The
+          override is audited.
+        </:body>
+        Trust anyway
+      </.confirm_button>
+    </div>
+    <p
+      :if={@retired? and @overridden?}
+      class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500"
+    >
+      <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-600" />
+      Retired by a newer release — overridden by {overrider_name(@version)}
+      <.local_time
+        id={"pack-version-override-#{@version.id}"}
+        value={@version.retirement_overridden_at}
+        mode={:relative}
+        class="inline"
+      />
+    </p>
+    """
+  end
+
+  # Retirement is an overlay on a trusted row (release-frozen `PackBaseline`),
+  # not a trust_state — so it's a pure per-row check, not a row field.
+  defp pack_version_retired?(version),
+    do: match?({:retired, _}, Catalog.pack_version_retirement(version))
+
+  # The admin who overrode a retirement, human-first (name, then email). The
+  # user is preloaded; a soft-deleted overrider reads as "an admin".
+  defp overrider_name(%{retirement_overridden_by: %{full_name: name}})
+       when is_binary(name) and name != "",
+       do: name
+
+  defp overrider_name(%{retirement_overridden_by: %{email: email}}) when is_binary(email),
+    do: email
+
+  defp overrider_name(_), do: "an admin"
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -704,6 +826,10 @@ defmodule EmisarWeb.PacksLive do
                     <%!-- If this exact trusted hash is a published pack version,
                          link out to its public registry page (opens in a new tab). --%>
                     <.registry_link version={v} />
+                    <%!-- A trusted version a newer release RETIRED — a scannable
+                         rose flag in the list; the full warning + admin override
+                         renders below via `retired_notice`. --%>
+                    <.chip :if={pack_version_retired?(v)} upcase tone={:rose}>Retired</.chip>
                   </div>
                   <%!-- "View contents" sits directly under the version line (in
                        the left column), NOT below the taller trust/timestamps
@@ -718,6 +844,12 @@ defmodule EmisarWeb.PacksLive do
                     inspected={@inspected_actions[v.id]}
                     matched={@matched_actions[v.id]}
                     open={MapSet.member?(@open_versions, v.id)}
+                  />
+                  <.retired_notice
+                    :if={v.trust_state == :trusted}
+                    version={v}
+                    pack_id={pack.id}
+                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
                   />
                 </div>
                 <%!-- The meta column caps with the trust state (dot + word, not a
@@ -879,6 +1011,10 @@ defmodule EmisarWeb.PacksLive do
                     <:body>
                       Cloud will allow its actions to run on {length(@advertising[v.id] || [])} advertising
                       runner(s). Trusting adopts this exact code fleet-wide.
+                      <span :if={pack_version_retired?(v)} class="text-rose-300">
+                        This version was retired by a newer release — trusting it also overrides
+                        that retirement, so its actions run despite the fix.
+                      </span>
                     </:body>
                     {if is_nil(v.hash), do: "Trust pack", else: "Trust new contents"}
                   </.confirm_button>

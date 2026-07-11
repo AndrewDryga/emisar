@@ -188,6 +188,16 @@ defmodule EmisarWeb.RunNewLive do
                  "Review and trust it on the Packs page before dispatching."
              )}
 
+          {:error, :pack_retired} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This runner is advertising a retired version of the action's pack — a newer " <>
+                 "release superseded it. Update the pack on the runner, or re-trust the version " <>
+                 "on the Packs page."
+             )}
+
           {:error, :runner_requires_attestation} ->
             {:noreply,
              put_flash(

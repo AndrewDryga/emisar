@@ -508,6 +508,24 @@ defmodule Emisar.Catalog do
       ),
       do: {:error, :pack_retired, pack_version}
 
+  @doc """
+  Retirement state of a pack row against the shipped catalog, for the Packs
+  page: `:active`, or `{:retired, current_version}` when the row's version is
+  below its pack's retirement watermark — `current_version` is the fixed
+  version to update to (`nil` if we no longer ship the pack). Pure over the
+  release-frozen `PackBaseline`. An already-overridden row still reports
+  `{:retired, _}`; the override is a row field (`retirement_overridden_at`) the
+  caller reads alongside.
+  """
+  @spec pack_version_retirement(PackVersion.t()) :: :active | {:retired, String.t() | nil}
+  def pack_version_retirement(%PackVersion{pack_id: pack_id, version: version}) do
+    if PackBaseline.retired?(pack_id, version) do
+      {:retired, PackBaseline.current_version(pack_id)}
+    else
+      :active
+    end
+  end
+
   # The pinned pack_version row for an action's (account, pack_id, version),
   # or nil — shared by the two dispatch-gate reads. `peek` (nil-or-struct)
   # per §1.1: a missing row is a meaningful "nothing pinned yet" state.
@@ -889,10 +907,23 @@ defmodule Emisar.Catalog do
              subject,
              Authorizer.view_catalog_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       PackVersion.Query.all()
+      |> apply_pack_version_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(PackVersion.Query, opts)
     end
+  end
+
+  # Rendering concern: the Packs page passes `preload:
+  # [:retirement_overridden_by]` only where it renders the retirement-override
+  # note; a counting caller omits it and pays for no join. Unknown atoms raise.
+  defp apply_pack_version_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :retirement_overridden_by, queryable ->
+        PackVersion.Query.with_preloaded_retirement_overridden_by(queryable)
+    end)
   end
 
   @doc """

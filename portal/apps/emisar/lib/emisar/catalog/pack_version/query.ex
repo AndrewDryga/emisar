@@ -31,6 +31,31 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 
+  @doc """
+  Left-join the row's (non-deleted) retirement-override user, idempotently —
+  the admin who re-trusted a retired version. LEFT, not inner: almost every
+  row has no override, and they must not be dropped from the list.
+  """
+  def with_joined_retirement_overridden_by(queryable) do
+    with_named_binding(queryable, :retirement_overridden_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [packs: p],
+        user in ^Emisar.Users.User.Query.not_deleted(),
+        on: p.retirement_overridden_by_id == user.id,
+        as: ^binding
+      )
+    end)
+  end
+
+  @doc "Join (if needed) and preload the retirement-override user. See `with_joined_retirement_overridden_by/1`."
+  def with_preloaded_retirement_overridden_by(queryable) do
+    queryable
+    |> with_joined_retirement_overridden_by()
+    |> preload([packs: p, retirement_overridden_by: user], retirement_overridden_by: user)
+  end
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

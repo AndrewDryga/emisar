@@ -378,6 +378,60 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 
+    test "a trusted, non-retired version shows no Retired flag or override CTA (overlay dormant)",
+         %{conn: conn, user: user, account: account} do
+      # No shipped pack carries a retirement watermark, so a real trusted row is
+      # never retired — the rose flag, the warning block, and the "Trust anyway"
+      # CTA all stay off. This locks the overlay against false positives while
+      # exercising the `retired_notice` render path on an ordinary row.
+      subject = Fixtures.Subjects.subject_for(user, account)
+      pack_version = observe_pending_pack!(account)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      refute html =~ "Retired"
+      refute html =~ "Trust anyway"
+      refute has_element?(lv, ~s([id^="override-"]))
+    end
+
+    test "the override-retirement handler re-trusts and stays gated when dispatched directly",
+         %{conn: conn, user: user, account: account} do
+      # The "Trust anyway" CTA only renders on a genuinely-retired row (no
+      # shipped watermark, so none render E2E) — but a crafted event still hits
+      # the server-authz-gated handler, which stamps the audited override on the
+      # trusted row and flashes the confirmation.
+      subject = Fixtures.Subjects.subject_for(user, account)
+      pack_version = observe_pending_pack!(account)
+      {:ok, trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      html = render_click(lv, "override_retirement", %{"id" => trusted.id})
+
+      assert html =~ "Re-trusted retired acme-tools"
+    end
+
+    test "a viewer's crafted override-retirement event is denied", %{account: account} do
+      pack_version = observe_pending_pack!(account)
+
+      viewer = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+
+      html = render_click(lv, "override_retirement", %{"id" => pack_version.id})
+
+      assert html =~ "Admin required to override pack retirement."
+    end
+
     test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
          %{conn: conn, user: user, account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)

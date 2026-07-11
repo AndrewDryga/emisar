@@ -42,6 +42,10 @@ defmodule EmisarWeb.MCP.Instructions do
   - `pack_untrusted`: the runner advertises a pack version no operator has trusted yet, so the \
   cloud refuses to run it. A human must trust the pack on the portal's Packs page. Retrying or \
   reloading will NOT clear it — tell the user, then offer to retry once it's trusted.
+  - `pack_retired`: the runner advertises a pack version a newer release RETIRED (a critical fix \
+  superseded it), so the cloud refuses to run it. Update the pack on the runner (`emisar pack \
+  install <pack>`), or an admin can re-trust this exact version on the Packs page. Retrying will \
+  NOT clear it — tell the user.
   - "No runner advertises <action>" / "Action not found": no currently-connected runner \
   advertises this action. The runner may be offline, the pack isn't loaded on it, or the pack \
   that provides it simply isn't installed (see "Missing a capability?" below). Re-call \

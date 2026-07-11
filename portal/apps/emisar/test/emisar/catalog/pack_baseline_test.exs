@@ -19,6 +19,27 @@ defmodule Emisar.Catalog.PackBaselineTest do
     end
   end
 
+  describe "current_version/1" do
+    test "returns the shipped current version for a pack, and it parses as SemVer" do
+      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
+
+      current = PackBaseline.current_version(pack_id)
+      assert is_binary(current)
+      assert {:ok, _} = Version.parse(current)
+      # The current version is the top of that pack's trust window — never below
+      # nothing, and (with no shipped watermark) never retired.
+      refute PackBaseline.retired?(pack_id, current)
+    end
+
+    test "returns nil for a pack the release does not ship" do
+      assert PackBaseline.current_version("definitely-not-a-real-pack") == nil
+    end
+
+    test "returns nil for non-binary arguments" do
+      assert PackBaseline.current_version(nil) == nil
+    end
+  end
+
   describe "retired?/2" do
     # No shipped pack carries a retirement watermark yet (the window and
     # watermarks fill as versions bump through publish), so this also locks

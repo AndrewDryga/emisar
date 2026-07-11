@@ -58,6 +58,13 @@ defmodule Emisar.Catalog.PackBaseline do
             end)
             |> Map.new()
 
+  # The current shipped version of every pack — `id => version` — the fixed
+  # version a runner on a retired version should update to. `@packs` is never
+  # empty, so this is typed `map()` (no empty-map warning; see `retired_below`).
+  @current_versions Map.new(@packs, fn %{"id" => id, "version" => version} ->
+                      {id, to_string(version)}
+                    end)
+
   # Baked as a list, not a map: the shipped catalog carries no watermark
   # until the first critical-fix retirement, so a baked `%{}` would be
   # typed `empty_map()` and make `Map.get/2` in `retired?/2` a compile
@@ -91,6 +98,16 @@ defmodule Emisar.Catalog.PackBaseline do
     do: Map.get(@baseline, {pack_id, version})
 
   def lookup(_, _), do: nil
+
+  @doc """
+  The current shipped version for a pack id — the fixed version an operator on
+  a retired version should update to — or `nil` if we don't ship the pack.
+  """
+  @spec current_version(String.t()) :: String.t() | nil
+  def current_version(pack_id) when is_binary(pack_id),
+    do: Map.get(@current_versions, pack_id)
+
+  def current_version(_), do: nil
 
   @doc """
   Whether `(pack_id, version)` is retired per the shipped catalog's

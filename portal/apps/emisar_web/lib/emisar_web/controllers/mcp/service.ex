@@ -1067,6 +1067,18 @@ defmodule EmisarWeb.MCP.Service do
           "reloading tools will NOT clear this. Tell the user, and offer to retry once it's trusted."
     }
 
+  defp error_payload(name, :pack_retired),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "pack_retired",
+      message:
+        "Runner `#{name}` advertises a pack version that a newer release RETIRED (a critical " <>
+          "fix superseded it), so the cloud won't run it. Update the pack on the runner " <>
+          "(`emisar pack install <pack>`), or an admin can re-trust this exact version on the " <>
+          "portal's Packs page. Retrying will NOT clear this — tell the user."
+    }
+
   defp error_payload(name, :runner_requires_attestation),
     do: %{
       runner: name,

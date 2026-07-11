@@ -142,6 +142,7 @@
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {err, means, todo} <- [
                 {"pack_untrusted", "The runner advertises a pack version no operator has trusted yet, so the cloud refuses to run it.", "A human trusts the pack on the Packs page. Retrying or reloading will not clear it."},
+                {"pack_retired", "The runner advertises a pack version a newer release retired (a critical fix superseded it), so the cloud refuses to run it.", "Update the pack on the runner (emisar pack install <pack>), or an admin re-trusts the version on the Packs page."},
                 {"No runner advertises <action> / Action not found", "No currently-connected runner advertises this action — it's offline, the pack isn't loaded, or the pack isn't installed.", "Re-call tools/list; if it's still missing, check the runner is online on the Runners page."},
                 {"No runner in scope", "The action exists, but no runner you're permitted to reach advertises it.", "An access-grant issue — an admin widens your per-user runner scope."}
               ] do %>
