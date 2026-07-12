@@ -6,8 +6,8 @@ name: CD · Portal
 #
 # Publish builds the release image from portal/Dockerfile and pushes it to
 # PUBLIC GHCR (ghcr.io/andrewdryga/emisar) — the production deployment and
-# self-hosters pull the same artifact (infra/COMPLIANCE.md: supply-chain
-# transparency). A DEPLOY IS A TERRAFORM RUN: this workflow sets the TFC
+# self-hosters pull the same artifact (supply-chain transparency: nothing
+# runs in prod that isn't publicly pullable and scannable). A DEPLOY IS A TERRAFORM RUN: this workflow sets the TFC
 # workspace's container_image variable to the freshly pushed digest and queues
 # an apply — the instance-template replace rolls the fleet under the MIG's
 # update policy, and Terraform state always records exactly what production
@@ -120,8 +120,8 @@ jobs:
           done
 
       - name: Vulnerability scan (trivy — blocks the publish)
-        # COMPLIANCE.md lists image scanning as the CI-side control for the
-        # public-GHCR supply chain: refuse to publish an image with known
+        # Image scanning is the CI-side control for the public-GHCR supply
+        # chain: refuse to publish an image with known
         # fixable HIGH/CRITICAL vulns. Pinned + checksum-verified like the
         # other external tools (same pattern as CI's infra job).
         env:

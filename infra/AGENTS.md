@@ -4,7 +4,8 @@ Terraform for running emisar on **Google Cloud** to a **SOC 2 Type II** posture
 (compute + Cloud SQL + LB + DNS + secrets + monitoring), adapted from
 `../onlytty/infra`. **Prepared, not applied** — emisar serves from Fly today;
 applying this is a deliberate Fly→GCP migration. Read `README.md` for the shape and
-`COMPLIANCE.md` for the control mapping; this file is the rules.
+`.agent/COMPLIANCE.md` (internal, git-ignored) for the control mapping; this file
+is the rules.
 
 ## Gate
 
@@ -63,5 +64,6 @@ reference configuration, never the production deployment's actual shape.**
 Environment sizing (machine type, node count, DB tier/availability/disk) and
 contact addresses are Terraform Cloud workspace variables; never commit values,
 prose, or comments that reveal the deployment's scale, spend posture, or a
-personal email. When you change what the stack enforces, keep `COMPLIANCE.md`
-honest and current in the same change.
+personal email. When you change what the stack enforces, keep `.agent/COMPLIANCE.md`
+(the internal control mapping — git-ignored BY DECISION: candid gap notes are
+for us, not the public repo) honest and current in the same change.

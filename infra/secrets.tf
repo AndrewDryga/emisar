@@ -4,7 +4,7 @@
 # place to set credentials (the TFC workspace), and a single apply stands the
 # whole stack up — no out-of-band `gcloud secrets versions add` step. The
 # trade-off, accepted deliberately: secret values live in TFC variables + state,
-# so the workspace's RBAC is the trust boundary (see main.tf + COMPLIANCE.md).
+# so the workspace's RBAC is the trust boundary (see main.tf).
 #
 # Machine-generated secrets are not variables at all: SECRET_KEY_BASE is created
 # here (random_password) and DATABASE_URL is assembled in db.tf — no human ever

@@ -92,8 +92,8 @@ resource "google_sql_database" "emisar" {
 # App DB credential. Generated here (so a single apply stands the stack up) and
 # stored in Secret Manager. It lands in TF state — consistent with the decision
 # that secrets live in the Terraform Cloud workspace (vars + state, RBAC-gated);
-# the harder hardening is Cloud SQL IAM auth (no password) via the Auth Proxy,
-# noted in COMPLIANCE.md. Alphanumeric so it needs no URL-encoding in the URL.
+# the harder hardening is Cloud SQL IAM auth (no password) via the Auth Proxy.
+# Alphanumeric so it needs no URL-encoding in the URL.
 resource "random_password" "db" {
   length  = 32
   special = false

@@ -40,10 +40,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /h
 | Pack registry | GCS bucket, **public-read** (the one deliberate public surface), object-versioned, create-only publisher SA; serves catalog/suggest/schema + immutable pack tarballs | integrity; supply-chain transparency |
 | IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
 | DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
-| Monitoring | uptime check + alert policies (DB CPU/disk, unreachable) → email channel | detection |
-
-`COMPLIANCE.md` maps each of these to the SOC 2 Trust Services Criteria and is
-honest about what's enforced in code vs. configured vs. org-owned.
+| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel | detection |
 
 ## Files
 
@@ -179,4 +176,4 @@ tflint --init && tflint
 CI (the `infra` job in `.github/workflows/ci.yml`) runs the same with no cloud credentials.
 State and the sensitive secret variables live in the Terraform Cloud workspace
 (org `Dryga` / project `emisar`) — encrypted at rest, RBAC-gated, audit-logged;
-treat workspace membership as production access. See `COMPLIANCE.md`.
+treat workspace membership as production access.

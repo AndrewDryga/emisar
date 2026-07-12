@@ -4,7 +4,7 @@ terraform {
   # workspace variables and machine secrets are generated in-config, so the
   # workspace's variables and state hold production credentials. TFC encrypts
   # both at rest and gates them behind workspace RBAC + audit logs — treat
-  # access to this workspace as access to production (COMPLIANCE.md).
+  # access to this workspace as access to production.
   cloud {
     organization = "Dryga"
 
