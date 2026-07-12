@@ -282,12 +282,11 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   # the output panel renders a BOUNDED, streamed slice
-  # (`phx-update="stream"`, IL-18), never an unbounded assign of every event. The
-  # mount requests `page: [limit: 500]`, but `Repo.list` hard-caps the page at
-  # @max_limit (100), so the effective render cap is the first 100 events: seq-100
-  # renders, seq-101 (the next page) does not. (The catalog's "capped at 500" is
-  # the requested limit; the paginator's max is the real ceiling — see the note in
-  # the agent report.)
+  # (`phx-update="stream"`, IL-18), never an unbounded assign of every event.
+  # Mount loads the most-recent @event_window (500) progress chunks in seq order
+  # (`Runs.list_recent_events_for_run/3`) — the same window the live stream
+  # converges to via `stream_insert(limit: -500)` — so with 501 chunks the
+  # newest 500 render and the oldest falls outside the window.
   test "the output panel renders a bounded, streamed event slice (not unbounded)", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "success"})
@@ -295,7 +294,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     now = DateTime.utc_now()
 
     rows =
-      for seq <- 1..101 do
+      for seq <- 1..501 do
         %{
           id: Repo.generate_id(),
           run_id: run.id,
@@ -308,16 +307,17 @@ defmodule EmisarWeb.RunDetailLiveTest do
         }
       end
 
-    {101, _} = Repo.insert_all(RunEvent, rows)
+    {501, _} = Repo.insert_all(RunEvent, rows)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The output is a streamed <pre> (bounded), not a plain assign of all rows.
     assert has_element?(lv, "pre#run-output[phx-update=\"stream\"]")
 
-    # The first page (oldest 100) renders; the 101st is over the page cap.
-    assert html =~ "chunk-100\n"
-    refute html =~ "chunk-101\n"
+    # The most-recent 500 render (seq 2..501); the oldest is outside the window.
+    assert html =~ "chunk-2\n"
+    assert html =~ "chunk-501\n"
+    refute html =~ "chunk-1\n"
   end
 
   # A live-appending stream never evicts on its own, so a chatty run would grow

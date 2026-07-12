@@ -58,10 +58,12 @@ defmodule EmisarWeb.Router do
   # (RFC 8058 `List-Unsubscribe-Post`). CSRF-free by design — a mail provider's
   # one-click POST carries no browser session or token; the unforgeable signed
   # token in the path is the authorization, and the action only flips one
-  # notification preference.
+  # notification preference. Deliberately NO `fetch_session` either: nothing on
+  # this surface reads it, `protect_from_forgery` would 403 the provider's
+  # tokenless POST, and a session-fetching pipeline without CSRF protection is
+  # exactly the shape Sobelow (rightly) flags.
   pipeline :public_unauth do
     plug :accepts, ["html"]
-    plug :fetch_session
     plug :put_root_layout, html: {EmisarWeb.Layouts, :root}
     plug :put_secure_browser_headers
     plug :put_noindex

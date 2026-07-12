@@ -135,6 +135,9 @@ defmodule EmisarWeb.PacksRegistry.Cache do
 
   # The bundled catalog is a committed, test-verified artifact — a parse
   # failure here is a build defect, so fail loud rather than boot empty.
+  # sobelow_skip ["Traversal.FileModule"] — the path is a compile-known
+  # app_dir constant, no request input reaches it; Sobelow's low-confidence
+  # traversal heuristic can't see that.
   defp load_bundled! do
     path = Application.app_dir(:emisar, "priv/packs/catalog.json")
 

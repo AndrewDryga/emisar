@@ -19,10 +19,11 @@ defmodule EmisarWeb.MCPRegistryTest do
     descriptor = @repo_root |> Path.join("server.json") |> File.read!() |> Jason.decode!()
 
     assert descriptor["name"] == "dev.emisar/emisar"
-    assert descriptor["title"] == "Emisar"
+    # Lowercase on purpose — the brand renders lowercase everywhere.
+    assert descriptor["title"] == "emisar"
 
     assert descriptor["description"] ==
-             "Give AI agents policy-gated, audited infrastructure actions from a live catalog, not shell access."
+             "Governed MCP for real infrastructure actions — gated, approved, audited."
 
     assert String.length(descriptor["description"]) <= 100
 

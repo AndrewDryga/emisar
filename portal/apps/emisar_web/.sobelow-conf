@@ -12,9 +12,15 @@
 # still fails the build on any other finding at Low confidence or above —
 # XSS (raw/1), SQLi, command injection, path traversal, CSRF, insecure
 # config, hardcoded secrets.
+#
+# `skip: true` honors per-site `# sobelow_skip ["Check"]` annotations — the
+# reviewed, greppable escape hatch for a single false positive (each carries
+# its why-comment at the function). A global `ignore:` entry would silence a
+# whole check class; the annotation silences one audited call site.
 [
   verbose: false,
   private: false,
+  skip: true,
   ignore: ["Config.CSP"],
   exit: "Low"
 ]
