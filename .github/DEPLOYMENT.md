@@ -8,13 +8,14 @@ commit, then performs delivery:
 1. `Required - CI` completes for the exact commit.
 2. The already-smoke-tested portal image is scanned, published by digest, and
    attested. No second image build occurs.
-3. The same commit's `infra/` directory is uploaded as an HCP Terraform
-   configuration version and planned with the immutable image digest.
+3. The same commit's `infra/` directory is uploaded as a provisional HCP
+   Terraform configuration version and planned with the immutable image digest.
 4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's
    **Confirm & Apply** button. GitHub never calls the apply API. Before applying,
    verify the run's commit in its `main <sha>` message is the commit intended
-   for deployment. HCP queues plans in order; CI never cancels or discards a
-   prior run. A reviewer explicitly discards superseded runs in HCP.
+   for deployment. CD creates saved plans: they can plan concurrently without
+   holding the workspace lock, never auto-apply, and HCP discards them if an
+   earlier apply changes state before confirmation.
 
 ## GitHub environments
 
@@ -31,7 +32,8 @@ Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
 has no team RBAC; the workflow never calls the apply API, and the environment
 exposes the token only to protected `main`. Review and apply the saved plan in
-HCP Terraform.
+HCP Terraform. Do not change CD back to standard plan-and-apply runs: an
+unconfirmed standard plan holds the workspace lock indefinitely.
 
 ## Repository rules
 
