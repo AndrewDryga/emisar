@@ -984,13 +984,54 @@ jobs:
           set -euo pipefail
           api=https://app.terraform.io/api/v2
           auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
-          workspace=$(curl -fsS "${auth[@]}" "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}")
+          workspace=$(curl -fsS "${auth[@]}" \
+            "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}?include=current_run")
           workspace_id=$(jq -er '.data.id' <<< "$workspace")
           auto_apply=$(jq -r '.data.attributes["auto-apply"]' <<< "$workspace")
           test "$auto_apply" = false || {
             echo "::error::HCP Terraform workspace auto-apply must remain disabled"
             exit 1
           }
+
+          if [ "$(jq -r '.data.attributes.locked' <<< "$workspace")" = true ]; then
+            current_run_id=$(jq -er '.data.relationships["current-run"].data.id' <<< "$workspace")
+            current_run=$(curl -fsS "${auth[@]}" "${api}/runs/${current_run_id}")
+            current_status=$(jq -r '.data.attributes.status' <<< "$current_run")
+            current_source=$(jq -r '.data.attributes.source' <<< "$current_run")
+            current_message=$(jq -r '.data.attributes.message // ""' <<< "$current_run")
+            discardable=$(jq -r \
+              '.data.attributes.actions | .["is-discardable"] // .IsDiscardable // false' \
+              <<< "$current_run")
+
+            if [ "$current_source" != tfe-api ] || [ "$discardable" != true ] || \
+              [[ ! "$current_message" =~ ^main\ ([0-9a-f]{40})\  ]]; then
+              echo "::error::HCP workspace is locked by ${current_run_id} (${current_status}); refusing to replace it"
+              exit 1
+            fi
+            current_sha=${BASH_REMATCH[1]}
+            if [ "$current_sha" = "$GITHUB_SHA" ]; then
+              echo "::error::HCP workspace already has a plan for ${GITHUB_SHA}; review or discard it before rerunning"
+              exit 1
+            fi
+
+            echo "discarding superseded HCP plan ${current_run_id} for ${current_sha}"
+            discard_payload=$(jq -cn --arg comment "Superseded by main ${GITHUB_SHA}" '{comment: $comment}')
+            curl -fsS "${auth[@]}" -X POST -d "$discard_payload" \
+              "${api}/runs/${current_run_id}/actions/discard" >/dev/null
+
+            for attempt in $(seq 1 30); do
+              workspace=$(curl -fsS "${auth[@]}" \
+                "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}")
+              if [ "$(jq -r '.data.attributes.locked' <<< "$workspace")" = false ]; then
+                break
+              fi
+              if [ "$attempt" = 30 ]; then
+                echo "::error::HCP workspace remained locked after discarding ${current_run_id}"
+                exit 1
+              fi
+              sleep 2
+            done
+          fi
 
           image="$PUBLISHED_IMAGE"
           if [ -z "$image" ]; then
@@ -1029,7 +1070,6 @@ jobs:
           workspace: emisar
           configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
           message: "main ${{ github.sha }} (@${{ github.actor }}, gh run ${{ github.run_id }})"
-          save_plan: true
 
       - name: Read Terraform plan
         id: plan

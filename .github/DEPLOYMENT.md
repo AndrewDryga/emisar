@@ -12,7 +12,8 @@ push to `main`:
 4. CI stops. A reviewer inspects the linked plan and uses HCP Terraform's
    **Confirm & Apply** button. GitHub never calls the apply API. Before applying,
    verify the run's commit in its `main <sha>` message is still current `main`;
-   discard superseded plans.
+   the next main run automatically discards an older, unapplied API plan. It
+   refuses to replace applying, manually-created, malformed, or same-SHA runs.
 
 ## GitHub environments
 
