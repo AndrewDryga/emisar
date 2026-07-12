@@ -50,6 +50,11 @@ func runCLI(t *testing.T, args []string, env map[string]string) (stdout, stderr 
 		"EMISAR_CONFIG=",      // never auto-discover a config off the host
 		"HOME=" + t.TempDir(), // and never the per-user well-known path
 		"PATH=" + os.Getenv("PATH"),
+		// Under CI's -coverprofile the re-exec'd child is coverage-instrumented
+		// and warns "GOCOVERDIR not set" on stderr, breaking every stderr-empty
+		// assertion. Point it at a scratch dir (the child's coverage is discarded
+		// on purpose — the parent's profile is the one that counts).
+		"GOCOVERDIR=" + t.TempDir(),
 	}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)

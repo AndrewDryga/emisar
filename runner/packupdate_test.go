@@ -197,8 +197,8 @@ func installPackInto(t *testing.T, dest, id string) string {
 }
 
 // runUpdate drives `pack update` against registry with --packs-dir pointed at
-// dest, capturing stdout. It returns the command error and the printed output.
-func runUpdate(t *testing.T, dest, registry string, extraArgs ...string) (error, string) {
+// dest, capturing stdout. It returns the printed output and the command error.
+func runUpdate(t *testing.T, dest, registry string, extraArgs ...string) (string, error) {
 	t.Helper()
 	withFlags(t)
 	flagPacksDir = []string{dest}
@@ -208,7 +208,7 @@ func runUpdate(t *testing.T, dest, registry string, extraArgs ...string) (error,
 	cmd.SetArgs(append([]string{"--registry", registry}, extraArgs...))
 	var err error
 	out := captureStdout(t, func() { err = cmd.Execute() })
-	return err, out
+	return out, err
 }
 
 // A pack whose installed hash equals the registry's is reported "up to date"
@@ -221,7 +221,7 @@ func TestPackUpdate_UpToDateSkipped(t *testing.T) {
 
 	registry := fakeRegistry(t, []registryPack{{ID: "redis", Version: "0.0.1", Hash: hash}}, nil)
 
-	err, out := runUpdate(t, dest, registry)
+	out, err := runUpdate(t, dest, registry)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestPackUpdate_NotInRegistryLeftAsIs(t *testing.T) {
 	// Registry knows a different pack, so "homegrown" is not in the index.
 	registry := fakeRegistry(t, []registryPack{{ID: "redis", Version: "1", Hash: "sha256:" + strings.Repeat("a", 64)}}, nil)
 
-	err, out := runUpdate(t, dest, registry)
+	out, err := runUpdate(t, dest, registry)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestPackUpdate_DryRunTouchesNothing(t *testing.T) {
 		{ID: "redis", Version: "9.9.9", Hash: "sha256:" + strings.Repeat("b", 64)},
 	}, nil)
 
-	err, out := runUpdate(t, dest, registry, "--dry-run")
+	out, err := runUpdate(t, dest, registry, "--dry-run")
 	if err != nil {
 		t.Fatalf("update --dry-run: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestPackUpdate_TypoReportedNotInstalled(t *testing.T) {
 	registry := fakeRegistry(t, []registryPack{{ID: "redis", Version: "0.0.1", Hash: hash}}, nil)
 
 	// Ask to update an id that isn't installed.
-	err, out := runUpdate(t, dest, registry, "notreal")
+	out, err := runUpdate(t, dest, registry, "notreal")
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestPackUpdate_NoPacksInstalled(t *testing.T) {
 	dest := t.TempDir()
 	registry := fakeRegistry(t, nil, nil)
 
-	err, out := runUpdate(t, dest, registry)
+	out, err := runUpdate(t, dest, registry)
 	if err != nil {
 		t.Fatalf("update with no packs: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestPackUpdate_PartialFailureNonZeroExit(t *testing.T) {
 		},
 	)
 
-	err, out := runUpdate(t, dest, registry)
+	out, err := runUpdate(t, dest, registry)
 	if err == nil {
 		t.Fatal("a partial failure must return a non-zero error")
 	}

@@ -25,8 +25,8 @@ func writeCatalogFile(t *testing.T, packs string) string {
 
 // runSuggest drives `pack suggest --catalog <file>` with --packs-dir pointed at
 // packsDir (which determines which packs are excluded as already-installed),
-// capturing stdout.
-func runSuggest(t *testing.T, catalog, packsDir string, extraArgs ...string) (error, string) {
+// capturing stdout. It returns the printed output and the command error.
+func runSuggest(t *testing.T, catalog, packsDir string, extraArgs ...string) (string, error) {
 	t.Helper()
 	withFlags(t)
 	flagPacksDir = []string{packsDir}
@@ -37,7 +37,7 @@ func runSuggest(t *testing.T, catalog, packsDir string, extraArgs ...string) (er
 	cmd.SetArgs(append([]string{"--catalog", catalog}, extraArgs...))
 	var err error
 	out := captureStdout(t, func() { err = cmd.Execute() })
-	return err, out
+	return out, err
 }
 
 // Offline against a --catalog file, the read-only baseline (linux-core,
@@ -53,7 +53,7 @@ func TestPackSuggest_BaselineRecommended(t *testing.T) {
 		{"id":"debugging","name":"Debugging","os":[],"detect":{}},
 		{"id":"ghost","name":"Ghost","os":[],"detect":{"ports":[59999],"processes":["definitely-not-running-xyzzy"]}}
 	`)
-	err, out := runSuggest(t, catalog, t.TempDir()) // empty packs dir → no exclusions
+	out, err := runSuggest(t, catalog, t.TempDir()) // empty packs dir → no exclusions
 	if err != nil {
 		t.Fatalf("suggest: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestPackSuggest_NamesOnly(t *testing.T) {
 		{"id":"linux-core","name":"Linux core","os":[],"detect":{}},
 		{"id":"debugging","name":"Debugging","os":[],"detect":{}}
 	`)
-	err, out := runSuggest(t, catalog, t.TempDir(), "--names-only")
+	out, err := runSuggest(t, catalog, t.TempDir(), "--names-only")
 	if err != nil {
 		t.Fatalf("suggest --names-only: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestPackSuggest_OfflineCatalogDir(t *testing.T) {
 	// matches any host.
 	writePack(t, catalogDir, "linux-core")
 
-	err, out := runSuggest(t, catalogDir, t.TempDir()) // catalog = a DIR, empty installed
+	out, err := runSuggest(t, catalogDir, t.TempDir()) // catalog = a DIR, empty installed
 	if err != nil {
 		t.Fatalf("suggest --catalog <dir>: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestPackSuggest_AlreadyInstalledExcluded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err, out := runSuggest(t, catalog, installed)
+	out, err := runSuggest(t, catalog, installed)
 	if err != nil {
 		t.Fatalf("suggest: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestPackSuggest_NothingToSuggestMessage(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(installed, "linux-core"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err, out := runSuggest(t, catalog, installed)
+	out, err := runSuggest(t, catalog, installed)
 	if err != nil {
 		t.Fatalf("suggest: %v", err)
 	}
