@@ -1165,61 +1165,41 @@ jobs:
           workspace=$(curl -fsS "${auth[@]}" "${api}/workspaces/${WORKSPACE_ID}")
           current_run_id=$(jq -r '.data.relationships["current-run"].data.id // ""' <<< "$workspace")
           if [ "$current_run_id" != "$run_id" ]; then
-            echo "queued=true" >> "$GITHUB_OUTPUT"
+            position=queued
           else
-            echo "queued=false" >> "$GITHUB_OUTPUT"
-            for _ in $(seq 1 30); do
-              run=$(curl -fsS "${auth[@]}" "${api}/runs/${run_id}")
-              plan_id=$(jq -r '.data.relationships.plan.data.id // ""' <<< "$run")
-              [ -z "$plan_id" ] || break
-              sleep 2
-            done
-            test -n "$plan_id" || { echo "::error::HCP run did not create a plan"; exit 1; }
-            echo "plan_id=$plan_id" >> "$GITHUB_OUTPUT"
+            position=current
           fi
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "run_link=$run_link" >> "$GITHUB_OUTPUT"
-
-      - name: Read Terraform plan
-        if: steps.current.outputs.current == 'true' && steps.run.outputs.queued == 'false'
-        id: plan
-        uses: hashicorp/tfc-workflows-github/actions/plan-output@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
-        env:
-          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
-        with:
-          plan: ${{ steps.run.outputs.plan_id }}
+          {
+            echo "position=$position"
+            echo "run_id=$run_id"
+            echo "run_link=$run_link"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Summarize manual apply
         if: steps.current.outputs.current == 'true'
         env:
           RUN_LINK: ${{ steps.run.outputs.run_link }}
           RUN_ID: ${{ steps.run.outputs.run_id }}
-          QUEUED: ${{ steps.run.outputs.queued }}
-          ADD: ${{ steps.plan.outputs.add }}
-          CHANGE: ${{ steps.plan.outputs.change }}
-          DESTROY: ${{ steps.plan.outputs.destroy }}
+          POSITION: ${{ steps.run.outputs.position }}
           IMAGE: ${{ steps.image.outputs.image }}
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
         run: |
           set -euo pipefail
+          run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
+            "https://app.terraform.io/api/v2/runs/${RUN_ID}")
+          status=$(jq -er '.data.attributes.status' <<< "$run")
           {
             echo "### Production Terraform plan"
             echo "- commit: \`${GITHUB_SHA}\`"
             echo "- image: \`${IMAGE}\`"
             echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
-            if [ "$QUEUED" = true ]; then
-              echo "- status: **queued** behind the current workspace run; no prior plan was canceled"
-              echo "- HCP will plan this configuration in order after the current run finishes"
+            echo "- HCP status: **${status}**"
+            if [ "$POSITION" = queued ]; then
+              echo "- queued behind the current workspace run; no prior plan was canceled"
             else
-              run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
-                "https://app.terraform.io/api/v2/runs/${RUN_ID}")
-              has_changes=$(jq -r '.data.attributes["has-changes"]' <<< "$run")
-              echo "- resources: **${ADD} add, ${CHANGE} change, ${DESTROY} destroy**"
+              echo "- submitted as the current workspace run; no prior plan was canceled"
             fi
-            if [ "${has_changes:-false}" = true ]; then
-              echo "- CI stops here: review the plan, then use HCP Terraform's **Confirm & Apply** button"
-              echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the current main commit"
-            elif [ "$QUEUED" != true ]; then
-              echo "- no apply is required"
-            fi
+            echo "- HCP processes workspace runs in order; wait for the complete plan before deciding"
+            echo "- CI stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
+            echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the commit you intend to deploy"
           } >> "$GITHUB_STEP_SUMMARY"
