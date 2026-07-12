@@ -329,31 +329,39 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ ~p"/zero-trust"
   end
 
-  test "healthz returns 200 when the DB is reachable", %{conn: conn} do
+  test "healthz returns process liveness", %{conn: conn} do
     conn = get(conn, ~p"/healthz")
     assert json_response(conn, 200) == %{"status" => "ok"}
   end
 
-  test "healthz carries cache-control: no-store so a 200 is never cached", %{conn: conn} do
-    conn = get(conn, ~p"/healthz")
-    assert get_resp_header(conn, "cache-control") == ["no-store"]
+  test "readyz returns readiness when the DB is reachable", %{conn: conn} do
+    conn = get(conn, ~p"/readyz")
+    assert json_response(conn, 200) == %{"status" => "ok"}
   end
 
-  test "healthz is reachable with no session/auth/CSRF", %{conn: conn} do
+  test "health probes are never cached", %{conn: conn} do
+    for path <- [~p"/healthz", ~p"/readyz"] do
+      conn = get(conn, path)
+      assert get_resp_header(conn, "cache-control") == ["no-store"]
+    end
+  end
+
+  test "health probes are reachable with no session/auth/CSRF", %{conn: conn} do
     # The route rides the bare :api pipeline (no fetch_session / fetch_current_user
-    # / protect_from_forgery), so a probe with no cookies still answers 200 — Fly's
-    # health checker carries no session.
-    conn = get(conn, ~p"/healthz")
-    assert json_response(conn, 200) == %{"status" => "ok"}
-    refute conn.assigns[:current_user]
-    assert conn.req_cookies == %{}
+    # / protect_from_forgery), so infrastructure probes need no cookies.
+    for path <- [~p"/healthz", ~p"/readyz"] do
+      conn = get(conn, path)
+      assert json_response(conn, 200) == %{"status" => "ok"}
+      refute conn.assigns[:current_user]
+      assert conn.req_cookies == %{}
+    end
   end
 
-  test "healthz only answers GET — POST hits no route and parses no input", %{conn: conn} do
-    # The route is `get "/healthz"` only, so a POST matches nothing and falls to
-    # the not-found path (404) — the probe handler never runs, no body is parsed.
-    conn = post(conn, "/healthz")
-    assert conn.status == 404
+  test "health probes only answer GET", %{conn: conn} do
+    for path <- ["/healthz", "/readyz"] do
+      conn = post(conn, path)
+      assert conn.status == 404
+    end
   end
 
   describe "marketing nav" do

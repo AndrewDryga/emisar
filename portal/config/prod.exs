@@ -28,11 +28,12 @@ config :emisar_web, EmisarWeb.Endpoint,
   # compile time here — setting it in runtime.exs aborts release boot with
   # `validate_compile_env`. `rewrite_on` trusts fly-proxy's `x-forwarded-proto`
   # (it terminates TLS and forwards plain HTTP), so real requests get HSTS
-  # instead of a 301 loop; `exclude` always lets the plain-HTTP `/healthz` probe
-  # through, plus the dev-only hosts above only when this is the docker build.
+  # instead of a 301 loop; `exclude` always lets the plain-HTTP liveness and
+  # readiness probes through, plus the dev-only hosts above only when this is
+  # the docker build.
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
-    exclude: dev_host_excludes ++ [{:paths, ["/healthz"]}],
+    exclude: dev_host_excludes ++ [{:paths, ["/healthz", "/readyz"]}],
     # Strong HSTS (Plug.SSL builds the Strict-Transport-Security header):
     # two-year max-age, every subdomain, and the `preload` directive so the
     # domain is eligible for the browsers' built-in preload list. Getting onto

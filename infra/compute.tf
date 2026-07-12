@@ -16,10 +16,16 @@ locals {
   })
 }
 
-# ── Health check (drives both the LB backend and MIG auto-healing) ────────────
-# /healthz is excluded from the compile-time force_ssl redirect (config/prod.exs),
-# so a plain-HTTP probe returns 200 instead of a 301.
-resource "google_compute_health_check" "app" {
+# ── Health checks: repair liveness is not traffic readiness ──────────────────
+# Both paths bypass force_ssl because GCP probes the backend over plain HTTP.
+# Auto-healing checks only the BEAM: a database outage must not restart every
+# healthy VM. The load balancer additionally checks PostgreSQL before routing.
+moved {
+  from = google_compute_health_check.app
+  to   = google_compute_health_check.liveness
+}
+
+resource "google_compute_health_check" "liveness" {
   name                = "emisar-healthz"
   check_interval_sec  = 10
   timeout_sec         = 5
@@ -34,14 +40,27 @@ resource "google_compute_health_check" "app" {
   depends_on = [google_project_service.apis]
 }
 
-# ── Capacity reservation: the base count is always schedulable ────────────────
+resource "google_compute_health_check" "readiness" {
+  name                = "emisar-readyz"
+  check_interval_sec  = 10
+  timeout_sec         = 5
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+
+  http_health_check {
+    request_path = "/readyz"
+    port         = var.app_port
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# ── Capacity reservation: base fleet plus one rollout surge ──────────────────
 # Rollouts and auto-healing fail when the zone happens to be out of capacity at
-# the moment a replacement instance is created — the classic stuck deploy.
-# Reserve exactly var.instance_count (the running base; surge is deliberately
-# NOT reserved): the update policy below replaces WITHOUT surge, so every
-# recreate frees its reserved slot and re-fills it — capacity-guaranteed
-# rollouts, and the reservation is always consumed by the fleet (an idle
-# reservation bills like a running instance, so consumed == free).
+# the moment a replacement instance is created. Reserve the base fleet plus the
+# single surge slot required by the zero-unavailable update policy. The extra
+# slot bills while idle, but without it a zonal stockout can turn the availability
+# guarantee into a stuck rollout.
 resource "google_compute_reservation" "emisar" {
   name = "emisar"
   zone = var.zone
@@ -51,7 +70,7 @@ resource "google_compute_reservation" "emisar" {
   specific_reservation_required = true
 
   specific_reservation {
-    count = var.instance_count
+    count = var.instance_count + 1
     instance_properties {
       machine_type = var.machine_type
     }
@@ -97,8 +116,7 @@ resource "google_compute_instance_template" "emisar" {
     enable_integrity_monitoring = true
   }
 
-  # Every fleet instance consumes the base-count reservation above — this is
-  # what makes replacement creates immune to zonal capacity stockouts.
+  # Every fleet and surge instance consumes the dedicated reservation above.
   reservation_affinity {
     type = "SPECIFIC_RESERVATION"
     specific_reservation {
@@ -159,21 +177,20 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   }
 
   auto_healing_policies {
-    health_check = google_compute_health_check.app.id
-    # Generous: the container pulls, runs migrations, then boots.
+    health_check = google_compute_health_check.liveness.id
+    # Generous: the container pulls and successfully migrates before the BEAM
+    # starts answering /healthz.
     initial_delay_sec = 240
   }
 
-  # NO surge, on purpose: a surge instance needs capacity OUTSIDE the
-  # reservation and fails the whole rollout on a zonal stockout — the exact
-  # deploys-often-fail mode reservations exist to kill. Delete-then-recreate
-  # frees a reserved slot and re-fills it, so a rollout can always complete;
-  # the cost is a brief per-instance unavailability window during deploys.
+  # Create one healthy replacement before removing an old VM. Combined with LB
+  # readiness and connection draining, this keeps target capacity serving for
+  # the whole rollout, including when target_size == 1.
   update_policy {
     type                  = "PROACTIVE"
     minimal_action        = "REPLACE"
-    max_surge_fixed       = 0
-    max_unavailable_fixed = 1
+    max_surge_fixed       = 1
+    max_unavailable_fixed = 0
     # Required explicitly: the BALANCED target shape does not support
     # proactive cross-zone redistribution, and the API rejects the default
     # (UNSPECIFIED) instead of inferring NONE.
@@ -201,7 +218,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
 
   # Runtime boot prerequisites: without explicit edges the MIG can come up before
   # NAT / firewall / IAM / the database converge, so instances fail to pull the
-  # image, read secrets, migrate, or pass /healthz.
+  # image, read secrets, migrate, or pass its health probes.
   depends_on = [
     google_project_service.apis,
     google_compute_router_nat.emisar,

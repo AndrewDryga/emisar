@@ -66,8 +66,8 @@ write_files:
       [ -n "$NODE_IP" ] || { echo "no instance internal IP" >&2; exit 1; }
 
       # Non-secret runtime env. FORCE_SSL=true: the LB terminates TLS and forwards
-      # X-Forwarded-Proto, so force_ssl serves (no redirect loop); /healthz is
-      # excluded so the plain-HTTP LB probe still gets 200.
+      # X-Forwarded-Proto, so force_ssl serves (no redirect loop); /healthz and
+      # /readyz are excluded so plain-HTTP infrastructure probes get 200.
       {
         printf 'PHX_HOST=%s\n' "${domain}"
         printf 'MAILER_FROM_EMAIL=%s\n' "${mailer_from_email}"
