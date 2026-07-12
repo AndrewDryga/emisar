@@ -79,6 +79,16 @@ versions. Adding a secret requires:
 
 Never place values in git, defaults, command history, or `.tfvars` files.
 
+Changing an externally issued secret's workspace value alone is intentionally
+not a rotation: write-only values cannot produce a useful Terraform diff at a
+stable version. Rotate one in a reviewed maintenance commit by changing the
+credential and incrementing the optional resource's `secret_data_wo_version` in
+`secrets.tf`. That resource shares one version number, so the
+maintenance apply writes fresh versions for every populated optional secret;
+inspect that exact set and the resulting instance-template rollout.
+Machine-generated database and `SECRET_KEY_BASE` rotation is separate
+maintenance and is not part of ordinary deployment.
+
 ## DNS and DNSSEC
 
 `dns.tf` is the complete authoritative zone. Add durable records there before

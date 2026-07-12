@@ -32,24 +32,47 @@ write_files:
       # Metadata access token: auth for both Secret Manager and the Artifact
       # Registry pull. A successful-but-empty grep/cut won't fail under pipefail,
       # so guard each step explicitly.
-      TOKEN=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | cut -d'"' -f4)
+      token_response=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+        --retry-connrefused --connect-timeout 5 --max-time 30 \
+        -H "Metadata-Flavor: Google" \
+        http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token)
+      TOKEN=$(printf '%s' "$token_response" | grep -oE '"access_token": ?"[^"]+"' | cut -d'"' -f4 || true)
       [ -n "$TOKEN" ] || { echo "no metadata access token" >&2; exit 1; }
 
-      # $1 = secret id, $2 = env var. Silently skips a secret with no version yet
-      # (an unpopulated optional) — never write an empty value; the release treats
-      # unset as "feature off".
+      # $1 = secret id, $2 = env var. Terraform omits intentionally unpopulated
+      # optional secrets from this script, so every secret rendered here must be
+      # readable and non-empty before the instance may start.
       fetch_secret() {
-        local data value
+        local body status data value
+        body=$(mktemp /run/emisar/secret.XXXXXX)
         # Header via stdin (curl -H @-) so the cloud-platform token never lands on
         # curl's argv, readable by any host process via /proc/<pid>/cmdline.
-        data=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | curl -s -H @- "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access" | grep -oE '"data": ?"[^"]*"' | cut -d'"' -f4 || true)
-        [ -n "$data" ] || return 0
-        value=$(printf '%s' "$data" | base64 -d)
-        [ -n "$value" ] || return 0
+        if ! status=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | \
+          curl --silent --show-error --retry 5 --retry-delay 2 \
+            --retry-connrefused --connect-timeout 5 --max-time 30 \
+            -H @- -o "$body" -w '%%{http_code}' \
+            "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$1/versions/latest:access"); then
+          echo "Secret Manager request failed for $1" >&2
+          rm -f "$body"
+          return 1
+        fi
+        if [ "$status" != 200 ]; then
+          echo "Secret Manager returned HTTP $status for required secret $1" >&2
+          rm -f "$body"
+          return 1
+        fi
+        data=$(grep -oE '"data": ?"[^"]+"' "$body" | cut -d'"' -f4 || true)
+        rm -f "$body"
+        [ -n "$data" ] || { echo "Secret Manager returned no payload for $1" >&2; return 1; }
+        value=$(printf '%s' "$data" | base64 -d) || {
+          echo "Secret Manager returned invalid base64 for $1" >&2
+          return 1
+        }
+        [ -n "$value" ] || { echo "Secret Manager returned an empty value for $1" >&2; return 1; }
         printf '%s=%s\n' "$2" "$value" >> "$ENV_FILE"
       }
 
-%{ for secret_id, env_name in app_secrets ~}
+%{ for secret_id, env_name in runtime_secrets ~}
       fetch_secret "${secret_id}" "${env_name}"
 %{ endfor ~}
 
@@ -63,7 +86,10 @@ write_files:
       printf 'RELEASE_COOKIE=%s\n' "$(printf 'emisar-release-cookie:%s' "$SKB" | sha256sum | cut -d' ' -f1)" >> "$ENV_FILE"
 
       # This instance's internal IP becomes the BEAM node name (emisar@<ip>).
-      NODE_IP=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+      NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+        --retry-connrefused --connect-timeout 5 --max-time 30 \
+        -H "Metadata-Flavor: Google" \
+        http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
       [ -n "$NODE_IP" ] || { echo "no instance internal IP" >&2; exit 1; }
 
       # Non-secret runtime env. FORCE_SSL=true: the LB terminates TLS and forwards

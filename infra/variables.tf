@@ -82,11 +82,11 @@ variable "cos_image" {
 
 variable "container_image" {
   type        = string
-  description = "Fully-qualified portal image on public GHCR, pinned by digest or immutable `sha-<sha>` tag — NEVER a floating tag like `:latest` (a mutable tag means the registry, not Terraform state, decides what boots on the next auto-heal or scale-out). No default on purpose: CI passes the tested digest into an approval-gated Terraform run; rollback = apply a previous digest."
+  description = "Fully-qualified portal image on public GHCR, pinned by digest. No default on purpose: CI passes the tested digest into an approval-gated Terraform run; rollback = apply a previous digest."
 
   validation {
-    condition     = can(regex("@sha256:[0-9a-f]{64}$|:sha-[0-9a-f]+$", var.container_image))
-    error_message = "container_image must be pinned — a @sha256:<digest> reference or an immutable :sha-<sha> tag, never a floating tag."
+    condition     = can(regex("^ghcr\\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$", var.container_image))
+    error_message = "container_image must be an immutable ghcr.io/andrewdryga/emisar@sha256:<64 hex> digest reference."
   }
 }
 
@@ -128,17 +128,6 @@ variable "mailer_from_email" {
   type        = string
   description = "From address for outbound product mail (MAILER_FROM_EMAIL); unset, the release falls back to no-reply@emisar.dev."
   default     = "hello@emisar.dev"
-}
-
-variable "secret_generation" {
-  type        = number
-  description = "Monotonic generation for write-only database and Secret Manager payloads. Increment this workspace value whenever any externally supplied secret is rotated; one apply then rewrites every payload without storing it in Terraform state."
-  default     = 1
-
-  validation {
-    condition     = var.secret_generation >= 1 && floor(var.secret_generation) == var.secret_generation
-    error_message = "secret_generation must be an integer >= 1."
-  }
 }
 
 # ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────

@@ -91,9 +91,10 @@ resource "google_sql_database" "emisar" {
   instance = google_sql_database_instance.emisar.name
 }
 
-# App DB credential. Generated ephemerally so a single apply stands the stack up,
-# then sent to Cloud SQL and Secret Manager through write-only arguments. The
-# payload never enters new state snapshots. Alphanumeric avoids URL encoding.
+# App DB credential. Generated ephemerally during initial provisioning, then
+# sent to Cloud SQL and Secret Manager through write-only arguments. The payload
+# never enters new state snapshots. Rotation is a deliberate maintenance change,
+# not a shared generation knob on ordinary infrastructure applies.
 ephemeral "random_password" "db" {
   length  = 32
   special = false
@@ -103,7 +104,7 @@ resource "google_sql_user" "emisar" {
   name                = "emisar"
   instance            = google_sql_database_instance.emisar.name
   password_wo         = ephemeral.random_password.db.result
-  password_wo_version = var.secret_generation
+  password_wo_version = 1
 }
 
 # DATABASE_URL the release reads (the secret CONTAINER is declared in secrets.tf;
@@ -118,5 +119,5 @@ resource "google_secret_manager_secret_version" "database_url" {
     google_sql_database_instance.emisar.private_ip_address,
     google_sql_database.emisar.name,
   )
-  secret_data_wo_version = var.secret_generation
+  secret_data_wo_version = 1
 }

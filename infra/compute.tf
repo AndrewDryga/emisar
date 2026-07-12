@@ -7,7 +7,7 @@ locals {
     mailer_from_email = var.mailer_from_email
     cluster_value     = "emisar"
     disable_billing   = var.disable_billing
-    app_secrets       = local.app_secrets
+    runtime_secrets   = local.runtime_secrets
     # Cloud SQL's per-instance server CA — the app pins DB TLS verification to
     # it (no public CA can vouch for a Cloud SQL cert). Google rotating the CA
     # changes this value, which replaces the template and rolls the fleet —
