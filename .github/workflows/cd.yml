@@ -108,17 +108,43 @@ jobs:
           sbom-path: /tmp/emisar-portal.cdx.json
           push-to-registry: true
 
-  packs-publish:
-    name: CD - Publish pack registry
+  packs-approval:
+    name: CD - Approve pack registry release
     if: needs.ci.outputs.packs_release == 'true'
     needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pack-registry-approval
+      # Supersede only an approval that has not released publication yet. The
+      # publication job below has a different, non-cancellable concurrency group.
+      cancel-in-progress: true
+    environment:
+      name: pack-registry
+    permissions:
+      contents: read
+    steps:
+      - name: Record approved release
+        run: |
+          {
+            echo "### Pack registry release approved"
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- publication remains serialized and cannot be canceled once started"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  packs-publish:
+    name: CD - Publish pack registry
+    if: needs.packs-approval.result == 'success'
+    needs: [ci, packs-approval]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
       group: packs-publish
       cancel-in-progress: false
     environment:
-      name: pack-registry
+      # No reviewer here: the preceding job is the human gate. This environment
+      # exists to bind the GCP OIDC token to this exact publication job.
+      name: pack-registry-publish
     permissions:
       contents: read
       id-token: write

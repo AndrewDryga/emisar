@@ -134,10 +134,12 @@ jobs:
             portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; mcp_listing=true
           fi
 
-          # Either half of the pipeline is a delivery input. After merge,
-          # exercise image, registry, and plan paths with real secrets.
+          # Either half of the pipeline is a portal/infra delivery input. Pack
+          # publication is irreversible and requires an actual pack source
+          # change; workflow-only changes validate its code without creating a
+          # stale approval request.
           if grep -Eq '^\.github/workflows/(ci|cd)\.yml$' <<< "$files"; then
-            portal_release=true; packs_release=true; infra_release=true
+            portal_release=true; infra_release=true
           fi
 
           mods=()
