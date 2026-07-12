@@ -93,7 +93,7 @@ resource "google_compute_backend_service" "app" {
   port_name                       = "http"
   timeout_sec                     = var.backend_timeout_sec
   connection_draining_timeout_sec = 120
-  health_checks                   = [google_compute_health_check.app.id]
+  health_checks                   = [google_compute_health_check.readiness.id]
 
   # Structured request logging at the edge (SOC 2: access log / forensics).
   log_config {

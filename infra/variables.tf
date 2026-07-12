@@ -11,7 +11,7 @@ variable "region" {
 
 variable "zone" {
   type        = string
-  description = "Zone the MIG places instances in and the capacity reservation lives in (must be inside var.region). Single-zone by design at the current size — the base-count reservation is what guarantees rollouts and auto-healing can always get instances back; at 2+ instances, zone redundancy means adding zones with a per-zone reservation each (a deliberate change, not a default)."
+  description = "Zone the MIG places instances in and the capacity reservation lives in (must be inside var.region). Single-zone by design at the current size — the reservation covers the base fleet plus one zero-downtime rollout surge; at 2+ instances, zone redundancy means adding zones with a per-zone reservation each (a deliberate change, not a default)."
   default     = "us-central1-a"
 }
 

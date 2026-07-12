@@ -1,0 +1,402 @@
+name: CD
+
+# Main-only delivery. Validation is the reusable CI workflow from this exact
+# commit; write/OIDC permissions remain scoped to the individual delivery jobs.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  portal-publish:
+    name: CD - Publish portal image
+    if: needs.ci.outputs.portal_release == 'true'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: portal-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Download tested image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: portal-image-${{ github.sha }}
+          path: /tmp/portal-image
+
+      - name: Load tested image
+        run: |
+          set -euo pipefail
+          gunzip -c /tmp/portal-image/emisar-portal-image.tar.gz | docker load
+
+      - name: Install Trivy (pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: "0.72.0"
+          TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+        run: |
+          set -euo pipefail
+          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
+          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+
+      - name: Scan image vulnerabilities
+        run: trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed emisar/portal:ci
+
+      - name: Generate SBOM
+        run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
+
+      - name: Sign in to GHCR
+        run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish tested image
+        id: push
+        env:
+          IMAGE: ghcr.io/andrewdryga/emisar
+        run: |
+          set -euo pipefail
+          # Include run identity so a re-run can never overwrite a tag with
+          # different bytes if an upstream package repository changed.
+          immutable="${IMAGE}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag emisar/portal:ci "$immutable"
+          docker push "$immutable"
+          repo_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$immutable")
+          digest=${repo_digest#*@}
+          test -n "$digest" && test "$digest" != "$repo_digest"
+
+          # Mutable convenience tag moves only after the immutable push works.
+          docker tag emisar/portal:ci "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
+
+          echo "image=${IMAGE}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published portal image"
+            echo "- immutable tag: \`${immutable}\`"
+            echo "- digest: \`${IMAGE}@${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v4.1.0
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: /tmp/emisar-portal.cdx.json
+          push-to-registry: true
+
+  packs-publish:
+    name: CD - Publish pack registry
+    if: needs.ci.outputs.packs_release == 'true'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: packs-publish
+      cancel-in-progress: false
+    environment:
+      name: pack-registry
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GOTOOLCHAIN: local
+      REGISTRY_BASE: https://storage.googleapis.com/emisar-pack-registry
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Build pack publisher
+        run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
+
+      - name: Require live registry domain
+        run: |
+          set -euo pipefail
+          getent ahosts registry.emisar.dev >/dev/null || {
+            echo "::error::registry.emisar.dev does not resolve; apply the Terraform plan and add the registrar records before approving pack publication"
+            exit 1
+          }
+          curl -fsS --retry 5 --retry-delay 2 \
+            "https://registry.emisar.dev/v1/catalog.json" -o /tmp/domain-catalog.json
+          jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/domain-catalog.json >/dev/null
+
+      - name: Fetch published catalog
+        run: |
+          set -euo pipefail
+          metadata_url="https://storage.googleapis.com/storage/v1/b/emisar-pack-registry/o/v1%2Fcatalog.json"
+          status=$(curl -sS -o /tmp/catalog-metadata.json -w '%{http_code}' "$metadata_url")
+          case "$status" in
+            200)
+              media_url=$(jq -er .mediaLink /tmp/catalog-metadata.json)
+              curl -fsS "$media_url" -o /tmp/previous.json
+              echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
+              ;;
+            404)
+              echo "registry is empty; bootstrapping from the committed catalog"
+              cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json
+              ;;
+            *) echo "::error::Registry catalog returned HTTP ${status}"; exit 1 ;;
+          esac
+
+      - name: Build registry artifacts
+        run: |
+          /tmp/packctl catalog build \
+            --packs packs \
+            --out dist \
+            --previous /tmp/previous.json
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-pack-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish registry artifacts
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          /tmp/packctl catalog publish --dir dist | tee /tmp/publish.log
+          {
+            echo "### Pack registry published"
+            echo '```'
+            tail -20 /tmp/publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify published catalog
+        run: |
+          set -euo pipefail
+          metadata_url="https://storage.googleapis.com/storage/v1/b/emisar-pack-registry/o/v1%2Fcatalog.json"
+          for attempt in $(seq 1 5); do
+            curl -fsS "$metadata_url" -o /tmp/catalog-metadata.json
+            media_url=$(jq -er .mediaLink /tmp/catalog-metadata.json)
+            curl -fsS "$media_url" -o /tmp/gcs-catalog.json
+            cmp dist/v1/catalog.json /tmp/gcs-catalog.json && break
+            [ "$attempt" = 5 ] && { echo "::error::published catalog bytes did not converge"; exit 1; }
+            sleep 2
+          done
+          cmp dist/v1/catalog.json /tmp/gcs-catalog.json
+          test "$(jq -r .cacheControl /tmp/catalog-metadata.json)" = no-store || {
+            echo "::error::mutable catalog must publish with Cache-Control: no-store"
+            exit 1
+          }
+          pack_object=$(jq -er '.objects[] | select(.path | startswith("v1/packs/linux-core/")) | .path' dist/manifest.json)
+          curl -fsS --retry 3 --retry-delay 2 \
+            "${REGISTRY_BASE}/${pack_object}" -o /tmp/gcs-linux-core.tar.gz
+          cmp "dist/${pack_object}" /tmp/gcs-linux-core.tar.gz
+
+          if getent ahosts registry.emisar.dev >/dev/null; then
+            curl -fsS --retry 5 --retry-delay 2 \
+              "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
+            cmp dist/v1/catalog.json /tmp/canonical-catalog.json
+          else
+            echo "::warning::registry.emisar.dev is not delegated yet; verified the backing GCS registry only"
+          fi
+
+  deployment-plan:
+    name: CD - Plan production
+    if: >-
+      always() &&
+      needs.ci.result == 'success' &&
+      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped') &&
+      (needs.ci.outputs.portal_release == 'true' || needs.ci.outputs.infra_release == 'true')
+    needs: [ci, portal-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production-plan
+    permissions:
+      contents: read
+    env:
+      TF_CLOUD_ORGANIZATION: Dryga
+      TFC_WORKSPACE: emisar
+      PUBLISHED_IMAGE: ${{ needs.portal-publish.outputs.image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify commit is still current main
+        id: current
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          current_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [ "$current_sha" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Production Terraform plan"
+              echo "Skipped because \`${GITHUB_SHA}\` is no longer current main (\`${current_sha}\`)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Verify HCP workspace and select image
+        if: steps.current.outputs.current == 'true'
+        id: image
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          api=https://app.terraform.io/api/v2
+          auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
+          workspace=$(curl -fsS "${auth[@]}" \
+            "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}")
+          workspace_id=$(jq -er '.data.id' <<< "$workspace")
+          auto_apply=$(jq -r '.data.attributes["auto-apply"]' <<< "$workspace")
+          test "$auto_apply" = false || {
+            echo "::error::HCP Terraform workspace auto-apply must remain disabled"
+            exit 1
+          }
+
+          variables=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars")
+          image="$PUBLISHED_IMAGE"
+          if [ -z "$image" ]; then
+            # The workspace variable is desired state. It is updated whenever CI
+            # publishes a tested portal image, even while that image's plan is
+            # queued. Reading current state first would make a later infra-only
+            # run plan a rollback to the last-applied image.
+            image=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .attributes.value' <<< "$variables")
+            if [[ ! "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]]; then
+              # Bootstrap only: an older workspace may not have the variable yet.
+              state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
+              image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
+            fi
+          fi
+          [[ "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"
+            exit 1
+          }
+
+          # Keep the workspace default aligned too. CI runs override it with a
+          # run-specific value, while manual/drift runs must never plan a
+          # rollback because an old workspace value was left behind.
+          variable_id=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .id' <<< "$variables")
+          if [ -n "$variable_id" ]; then
+            variable_payload=$(jq -cn --arg id "$variable_id" --arg value "$image" \
+              '{data: {type: "vars", id: $id, attributes: {value: $value, hcl: false, sensitive: false}}}')
+            curl -fsS "${auth[@]}" -X PATCH -d "$variable_payload" \
+              "${api}/workspaces/${workspace_id}/vars/${variable_id}" >/dev/null
+          else
+            variable_payload=$(jq -cn --arg value "$image" \
+              '{data: {type: "vars", attributes: {key: "container_image", value: $value, category: "terraform", hcl: false, sensitive: false}}}')
+            curl -fsS "${auth[@]}" -X POST -d "$variable_payload" \
+              "${api}/workspaces/${workspace_id}/vars" >/dev/null
+          fi
+
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Terraform configuration
+        if: steps.current.outputs.current == 'true'
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        with:
+          workspace: emisar
+          directory: ./infra
+          speculative: false
+
+      - name: Queue HCP Terraform plan
+        if: steps.current.outputs.current == 'true'
+        id: run
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+          WORKSPACE_ID: ${{ steps.image.outputs.workspace_id }}
+          CONFIGURATION_VERSION_ID: ${{ steps.upload.outputs.configuration_version_id }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          api=https://app.terraform.io/api/v2
+          auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
+          hcl_image=$(jq -cn --arg image "$IMAGE" '$image')
+          payload=$(jq -cn \
+            --arg message "main ${GITHUB_SHA} (@${GITHUB_ACTOR}, gh run ${GITHUB_RUN_ID})" \
+            --arg workspace "$WORKSPACE_ID" \
+            --arg configuration "$CONFIGURATION_VERSION_ID" \
+            --arg image "$hcl_image" \
+            '{data: {type: "runs", attributes: {message: $message, variables: [{key: "container_image", value: $image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
+          run=$(curl -fsS "${auth[@]}" -X POST -d "$payload" "${api}/runs")
+          run_id=$(jq -er '.data.id' <<< "$run")
+          run_link="https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${run_id}"
+
+          workspace=$(curl -fsS "${auth[@]}" "${api}/workspaces/${WORKSPACE_ID}")
+          current_run_id=$(jq -r '.data.relationships["current-run"].data.id // ""' <<< "$workspace")
+          if [ "$current_run_id" != "$run_id" ]; then
+            position=queued
+          else
+            position=current
+          fi
+          {
+            echo "position=$position"
+            echo "run_id=$run_id"
+            echo "run_link=$run_link"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize manual apply
+        if: steps.current.outputs.current == 'true'
+        env:
+          RUN_LINK: ${{ steps.run.outputs.run_link }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+          POSITION: ${{ steps.run.outputs.position }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
+            "https://app.terraform.io/api/v2/runs/${RUN_ID}")
+          status=$(jq -er '.data.attributes.status' <<< "$run")
+          {
+            echo "### Production Terraform plan"
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- image: \`${IMAGE}\`"
+            echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
+            echo "- HCP status: **${status}**"
+            if [ "$POSITION" = queued ]; then
+              echo "- queued behind the current workspace run; no prior plan was canceled"
+            else
+              echo "- submitted as the current workspace run; no prior plan was canceled"
+            fi
+            echo "- HCP processes workspace runs in order; wait for the complete plan before deciding"
+            echo "- CD stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
+            echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the commit you intend to deploy"
+          } >> "$GITHUB_STEP_SUMMARY"

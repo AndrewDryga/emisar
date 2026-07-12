@@ -10,14 +10,14 @@ resource "google_monitoring_notification_channel" "email" {
   depends_on = [google_project_service.apis]
 }
 
-# External uptime check on the public URL — proves the site is reachable + serving.
+# External readiness check proves the site and its database are serving.
 resource "google_monitoring_uptime_check_config" "https" {
   display_name = "emisar https"
   timeout      = "10s"
   period       = "60s"
 
   http_check {
-    path         = "/healthz"
+    path         = "/readyz"
     port         = 443
     use_ssl      = true
     validate_ssl = true
@@ -150,8 +150,8 @@ resource "google_monitoring_alert_policy" "db_txid" {
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
-# Users seeing errors while the uptime check still passes (/healthz is the
-# cheapest route in the app) — a sustained 5xx ratio at the LB is the signal
+# Users seeing errors while the readiness check still passes — a sustained 5xx
+# ratio at the LB is the signal
 # that real traffic is failing. Ratio, not count, so it doesn't scale with
 # traffic volume.
 resource "google_monitoring_alert_policy" "lb_5xx" {
@@ -210,11 +210,8 @@ resource "google_monitoring_alert_policy" "cert_expiry" {
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
-# The MIG sitting below target means auto-healing or a rollout is stuck —
-# instances failing their health check faster than they're replaced, or
-# creation erroring outright. 15m tolerates a normal no-surge rolling
-# replace (each instance is deleted, then its replacement boots on the
-# freed reservation slot) without paging on every deploy.
+# The zero-unavailable rollout should never put the MIG below target. Remaining
+# below target for 15m means repair or creation is genuinely stuck.
 resource "google_monitoring_alert_policy" "mig_below_target" {
   display_name = "emisar instance group below target size"
   combiner     = "OR"
@@ -252,7 +249,7 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
       duration        = "300s"
       aggregations {
         alignment_period   = "300s"
-        per_series_aligner = "ALIGN_MAX"
+        per_series_aligner = "ALIGN_COUNT_TRUE"
       }
     }
   }

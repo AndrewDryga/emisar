@@ -1,19 +1,20 @@
 # CI/CD production setup
 
 Workflow files are public. Store only secret **names**, never values, in the
-repository. Production delivery runs from `.github/workflows/ci.yml` after a
-push to `main`:
+repository. Pull requests run `.github/workflows/ci.yml`. After a push to
+`main`, `.github/workflows/cd.yml` calls that reusable CI workflow from the same
+commit, then performs delivery:
 
 1. `Required - CI` completes for the exact commit.
 2. The already-smoke-tested portal image is scanned, published by digest, and
    attested. No second image build occurs.
 3. The same commit's `infra/` directory is uploaded as an HCP Terraform
    configuration version and planned with the immutable image digest.
-4. CI stops. A reviewer inspects the linked plan and uses HCP Terraform's
+4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's
    **Confirm & Apply** button. GitHub never calls the apply API. Before applying,
-   verify the run's commit in its `main <sha>` message is still current `main`;
-   the next main run automatically discards an older, unapplied API plan. It
-   refuses to replace applying, manually-created, malformed, or same-SHA runs.
+   verify the run's commit in its `main <sha>` message is the commit intended
+   for deployment. HCP queues plans in order; CI never cancels or discards a
+   prior run. A reviewer explicitly discards superseded runs in HCP.
 
 ## GitHub environments
 

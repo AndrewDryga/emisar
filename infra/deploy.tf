@@ -1,14 +1,14 @@
 # ── Keyless GitHub Actions → GCP federation (packs publishing only) ───────────
 # GitHub's OIDC token exchanges at this pool, so no service-account key exists
 # anywhere (AGENTS.md §2). Its ONE consumer is the pack-publish job in the
-# main CI/CD workflow, which impersonates the pack-registry publisher
+# main-only CD workflow, which impersonates the pack-registry publisher
 # (packs_registry.tf) to upload artifacts.
 #
 # Deliberately NOT used for app deploys: a deploy IS a Terraform run — the
-# CI uploads the exact infra configuration it tested and queues an HCP
+# CD uploads the exact infra configuration CI tested and queues an HCP
 # Terraform run. A human confirms that exact saved plan in HCP Terraform, so
 # state records exactly what runs and no imperative gcloud deploy identity or
-# automated apply credential exists in CI.
+# automated apply credential exists in GitHub Actions.
 #
 # Trust is pinned twice: the provider admits only the pack-registry environment job
 # in the main workflow on main, and the publisher SA binding trusts only this
@@ -41,7 +41,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   attribute_condition = join(" && ", [
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.ref == \"refs/heads/main\"",
-    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/ci.yml@refs/heads/main\"",
+    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\"",
     "assertion.environment == \"pack-registry\"",
   ])
 }

@@ -40,7 +40,7 @@ output "dnssec_ds_record" {
 }
 
 output "packs_workload_identity_provider" {
-  description = "Full WIF provider resource name the main CI/CD workflow authenticates against for pack publishing (google-github-actions/auth `workload_identity_provider`)."
+  description = "Full WIF provider resource name the main-only CD workflow authenticates against for pack publishing (google-github-actions/auth `workload_identity_provider`)."
   value       = google_iam_workload_identity_pool_provider.github.name
 }
 
@@ -71,13 +71,15 @@ output "pack_registry_godaddy_records" {
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Merge through the required «Required - CI» check. CI publishes the exact tested
-       portal image, uploads this commit's infra configuration to HCP Terraform,
-       and produces the reviewable plan. FIRST publish only: flip the GHCR
+    1. Merge through the required «Required - CI» check. Main-only CD reuses that
+       exact CI workflow, publishes its tested portal image, uploads this commit's
+       infra configuration to HCP Terraform, and produces the reviewable plan.
+       FIRST publish only: flip the GHCR
        package to Public, or the unauthenticated instance pull 403s.
     2. Review the complete saved plan and click «Confirm & Apply» in HCP
-       Terraform. CI never calls apply. The run blocks until the MIG serves
-       /healthz; rollback is another reviewed plan using a previous digest.
+       Terraform. CD never calls apply. The run blocks until the MIG is updated
+       and stable; the LB routes only /readyz-healthy VMs. Rollback is another
+       reviewed plan using a previous digest.
     3. BEFORE any traffic move (README has the commands):
          a. import the Fly database into Cloud SQL (freeze Fly writes first);
          b. optional: add Fly's SECRET_KEY_BASE as a NEW secret version so
@@ -85,7 +87,7 @@ output "next_steps" {
          c. at GoDaddy (still the live DNS): add the FOUR cert DNS-auth CNAMEs
             (apex, www, mta-sts, registry) + CAA `0 issue "pki.goog"`, wait for
             the certs to be ACTIVE, then
-            verify: curl --resolve ${var.domain}:443:<lb_ipv4> https://${var.domain}/healthz
+            verify: curl --resolve ${var.domain}:443:<lb_ipv4> https://${var.domain}/readyz
          d. registry.${var.domain} can go live INDEPENDENTLY, before any traffic
             move: add its A/AAAA at GoDaddy (terraform output
             pack_registry_godaddy_records), verify

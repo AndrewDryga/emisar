@@ -52,6 +52,12 @@ the separate, creds-gated deploy step.
    `testing → enforce`, gated on clean reports.
 8. **Migrations run on boot under Ecto's advisory lock** (cloud-init), so concurrent
    instances are safe. Committed portal migrations stay frozen (portal AGENTS.md §8).
+9. **Portal rollouts preserve serving capacity.** Keep one reserved surge slot,
+   `max_surge_fixed = 1`, and `max_unavailable_fixed = 0`. Auto-healing uses
+   DB-independent `/healthz`; the load balancer uses DB-aware `/readyz`. Never
+   collapse the probes or return to delete-before-create updates. Old and new
+   app versions overlap during a rollout, so schema changes must be compatible
+   with both until a later release contracts the old shape.
 
 ## House style
 

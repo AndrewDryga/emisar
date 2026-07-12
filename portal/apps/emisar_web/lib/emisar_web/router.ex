@@ -112,7 +112,8 @@ defmodule EmisarWeb.Router do
 
   scope "/" do
     pipe_through :api
-    get "/healthz", EmisarWeb.HealthController, :index
+    get "/healthz", EmisarWeb.HealthController, :live
+    get "/readyz", EmisarWeb.HealthController, :ready
   end
 
   # -- Marketing site (public, anyone) --------------------------------
