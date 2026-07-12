@@ -535,10 +535,10 @@ resolve_latest_version() {
   # robust than trusting the Latest pointer.
   local out
   out=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/${REPO}/releases?per_page=30") \
+    "https://api.github.com/repos/${REPO}/releases?per_page=100") \
     || die "could not query GitHub releases API"
   printf '%s\n' "$out" \
-    | grep -oE '"tag_name":[[:space:]]*"runner-v[^"]+"' \
+    | grep -oE '"tag_name":[[:space:]]*"runner-v[0-9]+\.[0-9]+\.[0-9]+"' \
     | head -1 \
     | sed -E 's/.*"(runner-v[^"]+)".*/\1/'
 }
@@ -701,7 +701,7 @@ drop_config_skeleton() {
 }
 
 install_binary() {
-  local src="$1/emisar"
+  local src="$1/emisar" ver_output expected
   if [ ! -f "${src}" ]; then
     die "expected binary at ${src} but it is missing"
   fi
@@ -710,11 +710,12 @@ install_binary() {
   # Exec the newly-installed binary to confirm it runs and matches the
   # version we asked for. Lets operators catch arch mismatches or
   # truncated downloads immediately.
-  if ver_output=$("${BIN_DIR}/emisar" version 2>/dev/null); then
-    log "installed: $(echo "${ver_output}" | head -1)"
-  else
-    warn "installed binary did not respond to 'version' subcommand"
-  fi
+  ver_output=$("${BIN_DIR}/emisar" version 2>/dev/null) || \
+    die "installed binary did not respond to the version command"
+  expected="emisar version ${VERSION#runner-v}"
+  [ "${ver_output}" = "${expected}" ] || \
+    die "installed binary reported '${ver_output}', expected '${expected}'"
+  log "installed: ${ver_output}"
 }
 
 # install_default_packs installs the starter packs from the bundle shipped
@@ -964,6 +965,8 @@ do_install() {
   else
     log "pinned release: ${VERSION}"
   fi
+  [[ "${VERSION}" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+    die "release version must match runner-vMAJOR.MINOR.PATCH (got '${VERSION}')"
 
   local prompt
   if [ "${INIT}" = "none" ]; then

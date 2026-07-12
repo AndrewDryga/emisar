@@ -3,6 +3,8 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,6 +44,7 @@ type fakeGCS struct {
 	mu       sync.Mutex
 	requests map[string]string // object name -> ifGenerationMatch value ("" if absent)
 	auth     map[string]string // object name -> Authorization header
+	cache    map[string]string // object name -> Cache-Control metadata
 	status   map[string]int    // object name -> forced status
 	order    []string          // object names in the order they were uploaded
 }
@@ -50,6 +53,7 @@ func newFakeGCS() *fakeGCS {
 	return &fakeGCS{
 		requests: map[string]string{},
 		auth:     map[string]string{},
+		cache:    map[string]string{},
 		status:   map[string]int{},
 	}
 }
@@ -57,10 +61,32 @@ func newFakeGCS() *fakeGCS {
 func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := r.URL.Query().Get("name")
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Errorf("parse upload content type: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		part, err := multipart.NewReader(r.Body, params["boundary"]).NextPart()
+		if err != nil {
+			t.Errorf("read metadata part: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var metadata struct {
+			Name         string `json:"name"`
+			CacheControl string `json:"cacheControl"`
+		}
+		if err := json.NewDecoder(part).Decode(&metadata); err != nil {
+			t.Errorf("decode metadata: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		name := metadata.Name
 		f.mu.Lock()
 		f.requests[name] = r.URL.Query().Get("ifGenerationMatch")
 		f.auth[name] = r.Header.Get("Authorization")
+		f.cache[name] = metadata.CacheControl
 		f.order = append(f.order, name)
 		code := f.status[name]
 		f.mu.Unlock()
@@ -116,6 +142,17 @@ func TestPublish_PreconditionsPerObjectKind(t *testing.T) {
 	}
 	if got := f.auth["v1/catalog.json"]; got != "Bearer tok" {
 		t.Errorf("Authorization = %q, want Bearer tok", got)
+	}
+	if got := f.cache["v1/catalog.json"]; got != "no-store" {
+		t.Errorf("mutable catalog Cache-Control = %q, want no-store", got)
+	}
+	for name, cacheControl := range f.cache {
+		if name == "v1/catalog.json" || name == "v1/suggest.json" {
+			continue
+		}
+		if cacheControl != "public, max-age=31536000, immutable" {
+			t.Errorf("immutable %s Cache-Control = %q", name, cacheControl)
+		}
 	}
 }
 

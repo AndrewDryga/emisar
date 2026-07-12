@@ -89,6 +89,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
     groups:
       terraform-minor-patch:
         patterns: ["*"]
@@ -102,6 +107,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "docker"
     directory: "/runner/docker"
@@ -111,6 +121,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "docker"
     directory: "/mcp"
@@ -120,6 +135,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "docker"
     directory: "/dev/test-packs"
@@ -129,6 +149,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "docker"
     directory: "/dev/test-packs/snmpd"
@@ -138,6 +163,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "docker"
     directory: "/dev/test-packs/snmpd-frr"
@@ -147,6 +177,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
 
   - package-ecosystem: "npm"
     # The docs-screenshot tooling — the repo's only npm surface (dev-only,

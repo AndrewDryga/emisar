@@ -115,8 +115,8 @@ if [ -z "${VERSION}" ]; then
   log "querying latest mcp-v* release"
   VERSION=$(
     curl -fsSL -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/${REPO}/releases?per_page=30" \
-      | grep -oE '"tag_name":[[:space:]]*"mcp-v[^"]+"' \
+      "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+      | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
       | head -1 \
       | sed -E 's/.*"(mcp-v[^"]+)".*/\1/'
   ) || die "could not query GitHub releases API"
@@ -125,6 +125,8 @@ if [ -z "${VERSION}" ]; then
 else
   log "pinned release: ${VERSION}"
 fi
+[[ "${VERSION}" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+  die "release version must match mcp-vMAJOR.MINOR.PATCH (got '${VERSION}')"
 
 VERSION_NUM="${VERSION#mcp-v}"
 TAR_NAME="emisar-mcp-${VERSION_NUM}-${OS}-${ARCH}"
@@ -198,7 +200,11 @@ install -m 0755 "${bin_src}" "${bin_dst}"
 # ---------------------------------------------------------------------
 
 log "installed:"
-"${bin_dst}" --version || true
+installed_version=$("${bin_dst}" --version) || die "installed binary did not respond to --version"
+expected_version="emisar-mcp ${VERSION_NUM}"
+[ "${installed_version}" = "${expected_version}" ] || \
+  die "installed binary reported '${installed_version}', expected '${expected_version}'"
+log "${installed_version}"
 
 cat <<NEXT
 

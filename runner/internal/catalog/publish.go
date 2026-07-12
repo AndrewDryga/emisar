@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -123,24 +125,56 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 	return res, nil
 }
 
-// putObject uploads one object via the GCS JSON media-upload API. It returns
+// putObject uploads one object via the GCS JSON multipart-upload API. It returns
 // (true, nil) on a successful upload, (false, nil) when an immutable object
 // already exists (precondition failed), and an error otherwise.
 func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket string, obj Object, data []byte) (bool, error) {
 	q := url.Values{}
-	q.Set("uploadType", "media")
-	q.Set("name", obj.Path)
+	q.Set("uploadType", "multipart")
 	if obj.Immutable {
 		q.Set("ifGenerationMatch", "0")
 	}
 	uploadURL := fmt.Sprintf("%s/upload/storage/v1/b/%s/o?%s", endpoint, url.PathEscape(bucket), q.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, bytes.NewReader(data))
+	var uploadBody bytes.Buffer
+	writer := multipart.NewWriter(&uploadBody)
+	metadataHeader := make(textproto.MIMEHeader)
+	metadataHeader.Set("Content-Type", "application/json; charset=UTF-8")
+	metadataPart, err := writer.CreatePart(metadataHeader)
+	if err != nil {
+		return false, fmt.Errorf("catalog: create metadata part for %s: %w", obj.Path, err)
+	}
+	cacheControl := "no-store"
+	if obj.Immutable {
+		cacheControl = "public, max-age=31536000, immutable"
+	}
+	metadata := struct {
+		Name         string `json:"name"`
+		ContentType  string `json:"contentType"`
+		CacheControl string `json:"cacheControl"`
+	}{obj.Path, obj.ContentType, cacheControl}
+	if err := json.NewEncoder(metadataPart).Encode(metadata); err != nil {
+		return false, fmt.Errorf("catalog: encode metadata for %s: %w", obj.Path, err)
+	}
+	dataHeader := make(textproto.MIMEHeader)
+	dataHeader.Set("Content-Type", obj.ContentType)
+	dataPart, err := writer.CreatePart(dataHeader)
+	if err != nil {
+		return false, fmt.Errorf("catalog: create data part for %s: %w", obj.Path, err)
+	}
+	if _, err := dataPart.Write(data); err != nil {
+		return false, fmt.Errorf("catalog: encode data for %s: %w", obj.Path, err)
+	}
+	if err := writer.Close(); err != nil {
+		return false, fmt.Errorf("catalog: finish upload body for %s: %w", obj.Path, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, &uploadBody)
 	if err != nil {
 		return false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", obj.ContentType)
+	req.Header.Set("Content-Type", "multipart/related; boundary="+writer.Boundary())
 
 	resp, err := client.Do(req)
 	if err != nil {
