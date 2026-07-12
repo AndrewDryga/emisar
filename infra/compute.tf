@@ -95,7 +95,7 @@ resource "google_compute_instance_template" "emisar" {
 # Presence span nodes and runs don't strand in :sent. DB migrations run on boot
 # guarded by Ecto's advisory lock (cloud-init), so concurrent instances are safe.
 resource "google_compute_region_instance_group_manager" "emisar" {
-  name                             = "emisar-mig"
+  name                             = "emisar"
   base_instance_name               = "emisar"
   region                           = var.region
   target_size                      = var.instance_count
@@ -126,6 +126,11 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     minimal_action        = "REPLACE"
     max_surge_fixed       = 3
     max_unavailable_fixed = 0
+    # Required explicitly: the BALANCED target shape does not support
+    # proactive cross-zone redistribution, and the API rejects the default
+    # (UNSPECIFIED) instead of inferring NONE. Instances still auto-heal and
+    # roll — they just aren't shuffled between zones after a zone recovers.
+    instance_redistribution_type = "NONE"
   }
 
   timeouts {

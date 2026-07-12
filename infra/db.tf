@@ -9,7 +9,7 @@
 #     swap in CMEK via `encryption_key_name` if key custody is required).
 #   • deletion_protection so the production database can't be torn down by accident.
 resource "google_sql_database_instance" "emisar" {
-  name   = "emisar-pg"
+  name   = "emisar"
   region = var.region
   # Latest Cloud SQL major (GA and Cloud SQL's default since late 2025). Bump as
   # new majors go GA — it's a deliberate in-place major upgrade with a maintenance

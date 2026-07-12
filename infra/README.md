@@ -122,7 +122,7 @@ terraform apply
 
 # 3. Import production data — the portal serves an EMPTY schema until this runs.
 #    Stop writers on both sides first: fly scale count 0 (freezes prod), and
-#    gcloud compute instance-groups managed resize emisar-mig --region=us-central1 --size=0
+#    gcloud compute instance-groups managed resize emisar --region=us-central1 --size=0
 #    (recurrent jobs on the GCP side would fight the import).
 #    Dump through the Fly Managed Postgres tunnel (`fly mpg proxy`, then pg_dump
 #    against the local port it prints):

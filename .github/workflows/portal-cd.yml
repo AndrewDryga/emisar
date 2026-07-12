@@ -235,17 +235,17 @@ jobs:
         # means the old instance keeps serving until its replacement is healthy.
         run: |
           set -euo pipefail
-          gcloud compute instance-groups managed rolling-action replace emisar-mig \
+          gcloud compute instance-groups managed rolling-action replace emisar \
             --project=emisar --region=us-central1 \
             --max-surge=3 --max-unavailable=0
 
       - name: Wait until stable
         run: |
           set -euo pipefail
-          gcloud compute instance-groups managed wait-until emisar-mig \
+          gcloud compute instance-groups managed wait-until emisar \
             --stable --project=emisar --region=us-central1 --timeout=1200
           {
             echo "### 🚀 Deployed"
             echo ""
-            echo "Fleet \`emisar-mig\` (us-central1) is stable on \`${{ needs.publish.outputs.digest }}\`."
+            echo "Fleet \`emisar\` (us-central1) is stable on \`${{ needs.publish.outputs.digest }}\`."
           } >> "$GITHUB_STEP_SUMMARY"
