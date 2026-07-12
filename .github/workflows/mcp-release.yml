@@ -7,7 +7,7 @@ run-name: Release ${{ github.ref_name }}
 # signs build provenance via Sigstore, uploads to GitHub releases.
 #
 # Same security posture as runner-release.yml: no PR triggers, all
-# write scopes confined to publish, `release` environment requires
+# write scopes confined to publish, `public-releases` requires
 # maintainer approval.
 #
 # Asset naming:
@@ -99,13 +99,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify]
-    # `release` environment gate at BUILD so the Sigstore OIDC token
+    # `public-releases` environment gate at BUILD so the Sigstore OIDC token
     # used to sign the attestation isn't minted until a maintainer
     # approves. Defense in depth against tag-push from a compromised
     # collaborator: even if publish blocks, an attested artefact with
     # a real signature would otherwise be minted automatically.
     environment:
-      name: release
+      name: public-releases
     strategy:
       fail-fast: true
       matrix:

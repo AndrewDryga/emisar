@@ -23,10 +23,10 @@ Configure these environments with deployment branches restricted to `main`:
 
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
-| `production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; the reviewer gate protects this powerful token, workspace auto-apply stays disabled, and apply remains manual. |
-| `pack-registry` | Required reviewer | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
-| `pack-registry-publish` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived GCP WIF credentials; starts only after `pack-registry` approval succeeds. |
-| `release` | Required reviewer | `MCP_PRIVATE_KEY` | Signed tag releases. The MCP Registry listing uses the HTTP signing key; binary releases use keyless Sigstore. |
+| `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
+| `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
+| `pack-registry-production` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials; starts only after approval succeeds. |
+| `public-releases` | Required reviewer + `v*`, `runner-v*`, and `mcp-v*` tag policies | `MCP_PRIVATE_KEY` | Signed public product, runner, and MCP releases. The MCP Registry listing uses the HTTP signing key; binaries use keyless Sigstore. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -35,6 +35,15 @@ reviewer-protected environment exposes the token only to protected `main`.
 Treat approving this GitHub job as production access, then review and apply the
 saved plan in HCP Terraform. Do not change CD back to standard plan-and-apply
 runs: an unconfirmed standard plan holds the workspace lock indefinitely.
+
+HCP dynamic GCP credentials use separate identities. Plans impersonate
+`terraform-plan@emisar.iam.gserviceaccount.com`, which has Viewer, IAM Security
+Reviewer, and Secret Manager Viewer only; it cannot access secret payloads or
+mutate the project. Applies impersonate `terraform@emisar.iam.gserviceaccount.com`
+through an apply-phase-only WIF binding and service-specific administrative
+roles. The provider condition is pinned to workspace `Dryga/emisar/emisar` and
+the `plan`/`apply` phases. Never restore the pool-wide impersonation binding or
+`roles/editor`.
 
 ## Repository rules
 

@@ -43,6 +43,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.ref == \"refs/heads/main\"",
     "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\"",
-    "assertion.environment == \"pack-registry-publish\"",
+    "assertion.environment == \"pack-registry-production\"",
   ])
 }

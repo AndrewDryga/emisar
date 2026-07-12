@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
-      name: release
+      name: public-releases
     permissions:
       contents: read
     env:
@@ -111,7 +111,7 @@ jobs:
           openssl pkey -inform DER -in private.der -pubout -outform DER -out public.der
           public_key=$(tail -c 32 public.der | base64 -w0)
           proof=$(curl --fail --silent --show-error --retry 3 \
-            https://emisar.dev/.well-known/mcp-publisher-proof)
+            https://emisar.dev/.well-known/mcp-registry-auth)
           grep -Fq "p=${public_key}" <<< "$proof" || {
             echo "::error::MCP_PRIVATE_KEY does not match the live emisar.dev publisher proof"
             exit 1

@@ -121,7 +121,7 @@ jobs:
       # publication job below has a different, non-cancellable concurrency group.
       cancel-in-progress: true
     environment:
-      name: pack-registry
+      name: pack-registry-approval
     permissions:
       contents: read
     steps:
@@ -145,7 +145,7 @@ jobs:
     environment:
       # No reviewer here: the preceding job is the human gate. This environment
       # exists to bind the GCP OIDC token to this exact publication job.
-      name: pack-registry-publish
+      name: pack-registry-production
     permissions:
       contents: read
       id-token: write
@@ -271,7 +271,7 @@ jobs:
       # that is already uploading a configuration.
       cancel-in-progress: false
     environment:
-      name: production-plan
+      name: portal-production-plan
     permissions:
       contents: read
     env:

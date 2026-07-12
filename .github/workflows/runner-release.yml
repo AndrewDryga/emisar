@@ -9,7 +9,7 @@ run-name: Release ${{ github.ref_name }}
 # A PR cannot reach this workflow:
 #
 #   * `on:` does not include `pull_request` or `pull_request_target`.
-#   * The publish step gates on `environment: release`, which the repo
+#   * The build step gates on `environment: public-releases`, which the repo
 #     settings configure with required reviewers — at least one
 #     maintainer must approve before binaries are uploaded.
 #   * Default token permissions are read-only; the publish job is the
@@ -154,14 +154,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify, validate-packs]
-    # `release` environment gate at BUILD (not just publish) so the
+    # `public-releases` environment gate at BUILD (not just publish) so the
     # Sigstore OIDC token used for attestation isn't minted until a
     # maintainer approves. Without this, anyone who can push a tag
     # (collaborators with write access) can mint an attested-by-our-
     # workflow artefact — even if the publish step blocks them from
     # uploading, the attestation itself carries a real signature.
     environment:
-      name: release
+      name: public-releases
     strategy:
       fail-fast: true
       matrix:
@@ -307,7 +307,7 @@ jobs:
     timeout-minutes: 10
     needs: [build]
     # No `environment:` block here — the `build` job is already gated
-    # by `environment: release`, and GitHub Actions prompts for an
+    # by `environment: public-releases`, and GitHub Actions prompts for an
     # approval per env-gated job (not per env, per workflow run). One
     # approval at build covers the whole release flow; double-gating
     # publish would just mean clicking approve twice for no extra

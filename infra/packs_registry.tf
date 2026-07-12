@@ -94,14 +94,14 @@ resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
   member = "serviceAccount:${google_service_account.pack_publisher.email}"
 }
 
-# Let only the pack-registry-publish environment impersonate the publisher
+# Let only the pack-registry-production environment impersonate the publisher
 # through the keyless GitHub WIF pool (deploy.tf). The provider independently
 # restricts the workflow, ref, and environment, so widening either side alone
 # cannot give another job this identity.
 resource "google_service_account_iam_member" "pack_publisher_wif" {
   service_account_id = google_service_account.pack_publisher.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/pack-registry-publish"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/pack-registry-production"
 }
 
 # ── Serving domain: registry.<domain> on the SHARED HTTPS LB ──────────────────
