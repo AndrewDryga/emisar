@@ -11,14 +11,23 @@ enforcement layer: it runs in CI on every PR that touches a lockfile, diffs the
 dependency versions against the base branch, and rejects any *added or upgraded*
 version published more recently than the policy window for its bump type.
 
-Native package-manager release-age enforcement, verified 2026-07: Hex/Mix has
-no resolver-level minimum-age (`mix deps.get` takes whatever the lock pins); Go
-modules have none (the proxy serves any published version regardless of age);
-npm gained `.npmrc` `minimum-release-age` (npm >= 11) but emisar ships no npm
-manifests, so there is nothing to configure. Only GitHub's Dependabot exposes a
-`cooldown` knob, and only for the PRs it opens. That leaves CI as the one place
-an age policy can actually be *enforced* across all three ecosystems — this
-script.
+Native package-manager release-age enforcement, re-verified 2026-07-12:
+  * Hex >= 2.5 HAS a resolver-level `cooldown` ("7d"/"2w"/"1mo"; user config or
+    HEX_COOLDOWN) — adopted: CI exports HEX_COOLDOWN and devs set
+    `mix hex.config cooldown 7d`. But versions already in mix.lock BYPASS it by
+    design, so a hand-edited lock still needs this gate.
+  * Go modules: none age-based (the proxy serves any published version
+    regardless of age); the native integrity layer — sumdb verification +
+    GOTOOLCHAIN=local in CI so a go.mod toolchain directive can't pull a remote
+    toolchain — is enabled.
+  * npm: none as of npm 11.17 (`npm config list -l` has no such key; pnpm's
+    `minimumReleaseAge` is the feature — we use npm). The npm dir's .npmrc sets
+    ignore-scripts instead (the lifecycle-script worm vector).
+  * pip/PyPI: none age-based; hash-checking mode IS enabled — requirements.txt
+    is `--hash`-locked and installed with `--require-hashes`.
+Dependabot's `cooldown` knob applies only to the PRs Dependabot itself opens.
+So CI remains the one place an age policy is *enforced* across every ecosystem
+and every author — this script, diffing the committed manifests themselves.
 
 Windows mirror the Dependabot `cooldown` config so the two layers agree; keep
 them in sync when either changes. Escape hatch for an urgent security fix that
@@ -43,6 +52,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -61,6 +71,8 @@ MANIFESTS = [
     ("hex", "portal/mix.lock"),
     ("go", "runner/go.mod"),
     ("go", "mcp/go.mod"),
+    ("npm", "portal/.agent/scripts/package-lock.json"),
+    ("pip", "dev/test-packs/requirements.txt"),
 ]
 
 
@@ -112,7 +124,65 @@ def parse_go(text: str) -> dict[str, str]:
     return out
 
 
-PARSERS = {"hex": parse_hex, "go": parse_go}
+def parse_npm(text: str) -> dict[str, str]:
+    """package-lock.json (lockfileVersion 2/3) -> {package: version} from the
+    `packages` map, npm-registry entries only. The "" key is the project
+    itself; `link:` entries and non-registry `resolved` URLs (git/file/tarball)
+    have no registry release date and are surfaced by parse_nonregistry."""
+    data = json.loads(text)
+    out: dict[str, str] = {}
+    for path, meta in (data.get("packages") or {}).items():
+        if not path.startswith("node_modules/"):
+            continue
+        if meta.get("link"):
+            continue
+        resolved = str(meta.get("resolved") or "")
+        if resolved and not resolved.startswith("https://registry.npmjs.org/"):
+            continue
+        version = meta.get("version")
+        if version:
+            name = meta.get("name") or path.rsplit("node_modules/", 1)[-1]
+            out[name] = version
+    return out
+
+
+_PIP_PIN = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)==(?P<ver>[A-Za-z0-9.!+_-]+)$")
+
+
+def _pip_logical_lines(text: str) -> list[str]:
+    """requirements.txt -> logical requirement lines: backslash continuations
+    joined, comments stripped, `--hash=…` options dropped (hash-checking mode is
+    pip's own integrity layer; the version pin is what this gate ages)."""
+    joined: list[str] = []
+    pending = ""
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if line.endswith("\\"):
+            pending += line[:-1] + " "
+            continue
+        pending += line
+        if pending.strip():
+            joined.append(pending.strip())
+        pending = ""
+    if pending.strip():
+        joined.append(pending.strip())
+    return [" ".join(t for t in line.split() if not t.startswith("--hash")) .strip() for line in joined]
+
+
+def parse_pip(text: str) -> dict[str, str]:
+    """requirements.txt -> {package: version}, exact `name==version` pins only
+    (hash options stripped first). Anything looser (a range, a bare name, a
+    VCS/URL requirement) is deliberately NOT parsed here — parse_nonregistry
+    flags it, so the requirements file stays pins-only by construction."""
+    out: dict[str, str] = {}
+    for line in _pip_logical_lines(text):
+        m = _PIP_PIN.match(line)
+        if m:
+            out[m.group("name")] = m.group("ver")
+    return out
+
+
+PARSERS = {"hex": parse_hex, "go": parse_go, "npm": parse_npm, "pip": parse_pip}
 
 
 _HEX_NONREG_LINE = re.compile(r'^\s*"(?P<name>[^"]+)":\s*\{:(?P<kind>git|path)\b')
@@ -146,6 +216,19 @@ def parse_nonregistry(eco: str, text: str) -> dict[str, str]:
             if line.startswith("replace ") and "=>" in line:
                 body = line[len("replace ") :]
                 out[body.split(None, 1)[0]] = "replace: " + body.split("=>", 1)[1].strip()
+    elif eco == "npm":
+        data = json.loads(text)
+        for path, meta in (data.get("packages") or {}).items():
+            if not path.startswith("node_modules/"):
+                continue
+            resolved = str(meta.get("resolved") or "")
+            if meta.get("link") or (resolved and not resolved.startswith("https://registry.npmjs.org/")):
+                name = meta.get("name") or path.rsplit("node_modules/", 1)[-1]
+                out[name] = f"non-registry: {resolved or 'link'}"
+    elif eco == "pip":
+        for line in _pip_logical_lines(text):
+            if line and not _PIP_PIN.match(line):
+                out[line.split()[0]] = f"unpinned/non-registry requirement: {line}"
     return out
 
 
@@ -204,6 +287,16 @@ def published_at(eco: str, package: str, version: str) -> datetime:
     elif eco == "go":
         data = _get_json(f"https://proxy.golang.org/{_go_escape(package)}/@v/{version}.info")
         ts = data["Time"]
+    elif eco == "npm":
+        # Scoped names keep the "@" but escape the "/" (@scope%2Fname).
+        data = _get_json(f"https://registry.npmjs.org/{urllib.parse.quote(package, safe='@')}")
+        ts = data["time"][version]
+    elif eco == "pip":
+        data = _get_json(f"https://pypi.org/pypi/{package}/{version}/json")
+        uploads = data.get("urls") or []
+        if not uploads:
+            raise RuntimeError(f"pypi has no upload artifacts for {package} {version}")
+        ts = uploads[0]["upload_time_iso_8601"]
     else:
         raise ValueError(f"unknown ecosystem {eco!r}")
     return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -424,6 +517,34 @@ def run_self_test() -> int:
         "example.com/single": "v2.0.0",
     }, "go parser (block + single-line + indirect)"
 
+    npm_lock = json.dumps(
+        {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "tooling"},
+                "node_modules/puppeteer-core": {
+                    "version": "25.2.0",
+                    "resolved": "https://registry.npmjs.org/puppeteer-core/-/puppeteer-core-25.2.0.tgz",
+                },
+                "node_modules/@scoped/pkg": {
+                    "version": "1.0.0",
+                    "resolved": "https://registry.npmjs.org/@scoped/pkg/-/pkg-1.0.0.tgz",
+                },
+                "node_modules/evil": {"version": "1.0.0", "resolved": "git+https://x/evil.git#abc"},
+                "node_modules/local": {"version": "0.0.1", "link": True},
+            },
+        }
+    )
+    assert parse_npm(npm_lock) == {
+        "puppeteer-core": "25.2.0",
+        "@scoped/pkg": "1.0.0",
+    }, "npm parser (root/link/git skip, scoped name)"
+
+    assert parse_pip("# tooling\nPyYAML==6.0.3\n") == {"PyYAML": "6.0.3"}, "pip parser"
+    assert parse_pip("PyYAML==6.0.3 \\\n    --hash=sha256:aa \\\n    --hash=sha256:bb\n") == {
+        "PyYAML": "6.0.3"
+    }, "pip parser (hash-checking continuations)"
+
     # Non-registry source detection — these have no release date and must be
     # surfaced, not silently skipped like the registry parsers do.
     hex_nonreg = parse_nonregistry(
@@ -438,6 +559,10 @@ def run_self_test() -> int:
     assert parse_nonregistry("go", "replace (\n\texample.com/y => ../y v1.0.0\n)\n") == {
         "example.com/y": "replace: ../y v1.0.0"
     }, "go block replace"
+    npm_nonreg = parse_nonregistry("npm", npm_lock)
+    assert set(npm_nonreg) == {"evil", "local"}, f"npm nonreg detect: {npm_nonreg}"
+    pip_nonreg = parse_nonregistry("pip", "PyYAML==6.0.3 \\\n    --hash=sha256:aa\nrequests>=2\ngit+https://x/y.git\n")
+    assert set(pip_nonreg) == {"requests>=2", "git+https://x/y.git"}, f"pip nonreg detect: {pip_nonreg}"
 
     # Bump classification.
     assert bump_type(None, "1.0.0") == "new"

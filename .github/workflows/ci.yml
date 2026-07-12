@@ -101,7 +101,7 @@ jobs:
             esac
             case "$f" in infra/*|.tool-versions) infra=true ;; esac
             case "$f" in
-              portal/mix.lock|runner/go.mod|mcp/go.mod|.dep-age-allow|.agent/scripts/dep-age-gate.py) deps=true ;;
+              portal/mix.lock|runner/go.mod|mcp/go.mod|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|dev/test-packs/requirements.txt|.dep-age-allow|.agent/scripts/dep-age-gate.py) deps=true ;;
             esac
             case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
           done <<< "$files"
@@ -171,6 +171,11 @@ jobs:
     env:
       MIX_ENV: test
       DATABASE_URL: postgres://postgres:postgres@localhost/emisar_test
+      # Hex's native release-age cooldown (hex >= 2.5). Mostly a no-op here —
+      # lock-pinned versions bypass it by design — but any resolution CI does
+      # perform can't pick up a release younger than the policy window. The
+      # dep-age job enforces the same windows on the lock diff itself.
+      HEX_COOLDOWN: 7d
 
     steps:
       - uses: actions/checkout@v6
@@ -342,6 +347,10 @@ jobs:
     env:
       # runner ships install.sh; the mcp bridge ships install-mcp.sh.
       INSTALL_SCRIPT: ${{ matrix.module == 'runner' && 'install.sh' || 'install-mcp.sh' }}
+      # Native toolchain pin: a go.mod/go.work `toolchain` directive in a
+      # malicious bump could otherwise make the go command download and run a
+      # remote toolchain; `local` locks CI to the setup-go-installed one.
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v6
         with:
@@ -447,6 +456,9 @@ jobs:
     if: needs.changes.outputs.packs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Same toolchain pin as the go job (see its comment).
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v6
         with:

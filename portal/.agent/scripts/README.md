@@ -18,7 +18,7 @@ walks the console, and rewrites each WebP.
 
 ```sh
 cd portal/.agent/scripts
-npm install
+npm ci                   # locked, reproducible install (.npmrc keeps scripts off)
 npm run capture          # or: node capture-docs-screenshots.mjs
 ```
 

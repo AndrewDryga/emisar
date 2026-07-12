@@ -1,2 +1,5 @@
+# node_modules only — package-lock.json IS committed on purpose: the lockfile
+# is npm's native pin (reproducible `npm ci`), the input .agent/scripts/
+# dep-age-gate.py diffs, and what Dependabot bumps on a cooldown. Ignoring it
+# meant every `npm install` re-resolved ^ranges fresh — the supply-chain hole.
 node_modules/
-package-lock.json
