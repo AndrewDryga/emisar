@@ -65,4 +65,17 @@ if (cd "$tmp" && "$frozen" push "$base" >"$tmp/delete-frozen.log" 2>&1); then
   exit 1
 fi
 
+# A CD-only change validates workflows and every area, but CD transports the
+# already-tested artifact and must not republish identical portal bytes.
+git -C "$tmp" reset --hard -q "$base"
+mkdir -p "$tmp/.github/workflows"
+printf 'name: CD\n' >"$tmp/.github/workflows/cd.yml"
+git -C "$tmp" add .
+git -C "$tmp" commit -qm cd-only
+out="$tmp/cd-only.out"
+(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
+assert_output workflows=true "$out"
+assert_output portal_release=false "$out"
+assert_output infra_release=false "$out"
+
 echo "ok: CI selector and frozen-migration adversarial cases pass"

@@ -82,12 +82,14 @@ if [ "$workflows" = true ]; then
   portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; mcp_listing=true
 fi
 
-# Either half of the delivery pipeline is a portal/infra release input. Pack
-# publication remains tied to actual pack bytes, not workflow-only changes.
+# Reusable CI defines the tested artifact, so changing it republishes. CD only
+# transports that artifact and queues every successful main commit already; a
+# CD-only edit validates every gate but must not publish identical image bytes.
+# Pack publication remains tied to actual pack bytes.
 workflow_delivery=false
 while IFS= read -r -d '' file; do
   case "$file" in
-    .github/workflows/ci.yml|.github/workflows/cd.yml) workflow_delivery=true ;;
+    .github/workflows/ci.yml) workflow_delivery=true ;;
   esac
 done <"$files"
 if [ "$workflow_delivery" = true ]; then
