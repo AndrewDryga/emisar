@@ -5,7 +5,8 @@ public-read GCS bucket `emisar-pack-registry` (provisioned in
 `infra/packs_registry.tf`; see `infra/README.md`). `emisar pack install` and
 `emisar pack suggest` resolve against it unauthenticated, so every pack
 version/hash ever published must stay installable — publishing **appends**,
-never overwrites history.
+never overwrites history. Public access is GET-only for exact object paths; the
+bucket root is not a supported listing or discovery endpoint.
 
 Both steps run through `packctl`, the maintainer CLI built from `runner/cmd/packctl`
 (`go build -o ../bin/packctl ./cmd/packctl` from `runner/`). It shares the runner's

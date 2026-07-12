@@ -67,7 +67,9 @@ the immutable pack tarballs — live in a **public-read** GCS bucket
 nothing secret or account-scoped is ever written there (only pack bytes that are
 already public source in `packs/` plus their metadata), and install trust doesn't
 rest on the transport — snippets pin `--hash sha256:...` and the runner rejects any
-tampered tarball. History is preserved by **object versioning** (no lifecycle
+tampered tarball. Anonymous access is limited to GET by exact object path; the
+bucket root is intentionally not a directory listing. History is preserved by
+**object versioning** (no lifecycle
 delete rule; the bucket is `prevent_destroy`), and the CI publisher SA
 (`emisar-pack-publisher`) holds bucket-scoped **`objectUser`** (objects
 create/get/list/delete — no bucket config, no IAM). It can't be create-only:
