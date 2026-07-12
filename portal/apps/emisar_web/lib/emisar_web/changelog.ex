@@ -13,10 +13,10 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-07-12],
       slug: "release-integrity-and-pack-registry",
-      title: "Safer releases and a reliable pack registry",
+      title: "Hardened hosting, safer releases, and a public status page",
       tag: "v0.24.0",
       summary:
-        "Portal releases now publish the exact image exercised by CI, binary releases are immutable and reproducible, and production plans queue in order without replacing an operator's pending review. Pack publication gained fresh mutable pointers, generation-specific verification, and end-to-end tarball checks; until the vendor-neutral registry hostname is live, every catalog and redirect uses the working GCS endpoint instead of sending installers to a dead host."
+        "The hosted platform moved to hardened cloud infrastructure with zero-downtime rollouts, a private-network database, and independent external monitoring behind a public status page at status.emisar.dev. Portal releases now publish the exact image exercised by CI, binary releases are immutable and reproducible, and production plans queue in order without replacing an operator's pending review. The pack registry serves from its own hostname, registry.emisar.dev, with anonymous access narrowed to exact object reads, generation-specific verification, and end-to-end tarball checks."
     },
     %{
       date: ~D[2026-07-07],

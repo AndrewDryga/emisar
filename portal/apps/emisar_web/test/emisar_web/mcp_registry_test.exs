@@ -27,7 +27,10 @@ defmodule EmisarWeb.MCPRegistryTest do
 
     assert String.length(descriptor["description"]) <= 100
 
-    assert descriptor["version"] == "0.23.0"
+    # The product line has ONE version source (portal/VERSION); server.json
+    # rides it, and the publish workflow re-stamps it from the release tag.
+    product_version = @repo_root |> Path.join("portal/VERSION") |> File.read!() |> String.trim()
+    assert descriptor["version"] == product_version
 
     assert descriptor["remotes"] == [
              %{

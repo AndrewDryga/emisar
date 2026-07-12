@@ -3,7 +3,7 @@
   "name": "dev.emisar/emisar",
   "title": "emisar",
   "description": "Governed MCP for real infrastructure actions — gated, approved, audited.",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "websiteUrl": "https://emisar.dev",
   "repository": {
     "url": "https://github.com/andrewdryga/emisar",
