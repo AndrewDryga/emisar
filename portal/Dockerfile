@@ -13,25 +13,33 @@
 # from that file; docker-compose and local builds use these defaults — keep them
 # in sync when .tool-versions bumps. (ELIXIR_VERSION drops the asdf `-otp-NN`
 # suffix; the hexpm image tag doesn't carry it.)
-ARG ELIXIR_VERSION=1.20.1
-ARG OTP_VERSION=29.0.2
-ARG DEBIAN_VERSION=bookworm-20260518-slim
+ARG ELIXIR_VERSION=1.20.2
+ARG OTP_VERSION=29.0.3
+ARG DEBIAN_VERSION=bookworm-20260623-slim
 
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:4ced3cb72e20ff8ad8315ec05af520c43431ea2ae459a205f5217670df45f2cf"
 # The runtime base needs to match the builder's libc/ssl; use the same
 # debian snapshot so any compiled NIFs link against compatible libs.
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder
 
+COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update -y \
-  && apt-get install -y build-essential git curl ca-certificates \
+  && apt-get install -y --no-install-recommends build-essential git curl ca-certificates \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN mix local.hex --force && mix local.rebar --force
+ARG HEX_VERSION=2.5.1
+ARG REBAR3_VERSION=3.27.0
+ARG REBAR3_SHA512=0d00494d849fdc521a55142278d1f6ba552954fbd65b80d40df8022f594f05d6c99ed1d731bc263691a04176e11d4c6e126c56ba20dca19c5e42d4ffab2e7e36
+RUN mix local.hex "${HEX_VERSION}" --force \
+  && curl -fsSL "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" -o /tmp/rebar3 \
+  && printf '%s  %s\n' "$REBAR3_SHA512" /tmp/rebar3 | sha512sum --check -- \
+  && mix local.rebar rebar3 /tmp/rebar3 --force \
+  && rm -f /tmp/rebar3
 
 ENV MIX_ENV="prod"
 
@@ -94,13 +102,11 @@ RUN mix release
 # --- Runtime stage -------------------------------------------------
 FROM ${RUNNER_IMAGE}
 
-# `upgrade` pulls security patches published after the pinned base snapshot
-# (e.g. the libgnutls30 deb12u7 fix) so the runtime image carries no fixable
-# HIGH/CRITICAL OS CVEs — the blocking CI publish scan refuses to
-# publish an image that does.
+# The apt snapshot makes package bytes reproducible. Bump the snapshot and base
+# digests together; the required CI vulnerability scan reviews that exact image.
+COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update -y \
-  && apt-get upgrade -y \
-  && apt-get install -y libstdc++6 openssl libncurses5 locales ca-certificates curl \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libtinfo6 locales ca-certificates \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 

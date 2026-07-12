@@ -76,6 +76,8 @@ jobs:
             echo "::error::tag target does not match the checked-out commit"; exit 1; }
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+            echo "::error::new release tags must target current main"; exit 1; }
 
       - name: Full runner release gate
         working-directory: runner
@@ -89,7 +91,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
           go install honnef.co/go/tools/cmd/staticcheck@2026.1
           staticcheck ./...
-          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
           go test -race -count=1 ./...
 
@@ -237,14 +239,15 @@ jobs:
           # (~73 packs) is fetched on demand via `emisar pack install
           # <name>` from the registry — we do NOT ship all of them.
           mkdir -p "dist/${name}/packs"
-          for pack in linux-core debugging debian dnf-rpm systemd-deep docker; do
+          while IFS= read -r pack; do
+            test -n "$pack" || continue
             if [ -d "packs/${pack}" ]; then
               cp -R "packs/${pack}" "dist/${name}/packs/${pack}"
             else
               echo "::error::bundled default pack ${pack} not found"
               exit 1
             fi
-          done
+          done < runner/bundled-packs.txt
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
@@ -264,7 +267,8 @@ jobs:
           test -x "/tmp/release-check/${name}/install.sh"
           test -f "/tmp/release-check/${name}/LICENSE"
           test -f "/tmp/release-check/${name}/README.md"
-          test "$(find "/tmp/release-check/${name}/packs" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 6
+          expected_packs=$(grep -cve '^[[:space:]]*$' runner/bundled-packs.txt)
+          test "$(find "/tmp/release-check/${name}/packs" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$expected_packs"
           go version -m "/tmp/release-check/${name}/emisar"
           if [ "$GOOS/$GOARCH" = linux/amd64 ]; then
             test "$("/tmp/release-check/${name}/emisar" --version)" = "emisar version ${VERSION}"

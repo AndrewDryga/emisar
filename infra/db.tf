@@ -96,15 +96,16 @@ resource "google_sql_database" "emisar" {
 # that secrets live in the Terraform Cloud workspace (vars + state, RBAC-gated);
 # the harder hardening is Cloud SQL IAM auth (no password) via the Auth Proxy.
 # Alphanumeric so it needs no URL-encoding in the URL.
-resource "random_password" "db" {
+ephemeral "random_password" "db" {
   length  = 32
   special = false
 }
 
 resource "google_sql_user" "emisar" {
-  name     = "emisar"
-  instance = google_sql_database_instance.emisar.name
-  password = random_password.db.result
+  name                = "emisar"
+  instance            = google_sql_database_instance.emisar.name
+  password_wo         = ephemeral.random_password.db.result
+  password_wo_version = var.secret_generation
 }
 
 # DATABASE_URL the release reads (the secret CONTAINER is declared in secrets.tf;
@@ -112,11 +113,12 @@ resource "google_sql_user" "emisar" {
 # by the instance and switched on in the release via DATABASE_SSL=1 (compute.tf).
 resource "google_secret_manager_secret_version" "database_url" {
   secret = google_secret_manager_secret.app["emisar-database-url"].id
-  secret_data = format(
+  secret_data_wo = format(
     "ecto://%s:%s@%s/%s",
     google_sql_user.emisar.name,
-    random_password.db.result,
+    ephemeral.random_password.db.result,
     google_sql_database_instance.emisar.private_ip_address,
     google_sql_database.emisar.name,
   )
+  secret_data_wo_version = var.secret_generation
 }

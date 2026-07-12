@@ -38,7 +38,8 @@ run_and_check() {
   cat "$output"
 }
 
-bash -lc 'cd apps/emisar && mix ecto.create --quiet && mix ecto.migrate --quiet'
+run_and_check "database setup and migrations" bash -lc \
+  'cd apps/emisar && mix ecto.create --quiet && mix ecto.migrate --quiet'
 
 run_and_check "emisar app tests" bash -lc 'cd apps/emisar && mix test'
 run_and_check "emisar_web app tests" bash -lc 'cd apps/emisar_web && mix test'

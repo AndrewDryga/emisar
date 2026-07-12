@@ -206,9 +206,9 @@ func parseNonregistry(eco, text string) map[string]string {
 
 var semverRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
 
-// bumpType classifies old->new as major/minor/patch, "new" when there was no
-// prior version, or "unknown" when either side isn't parseable semver (e.g. a
-// Go pseudo-version bump we can't rank — treated conservatively).
+// bumpType classifies old->new as major/minor/patch/downgrade, "new" when there
+// was no prior version, or "unknown" when either side isn't parseable semver
+// (e.g. a Go pseudo-version bump we can't rank — treated conservatively).
 func bumpType(old, new string) string {
 	if old == "" {
 		return "new"
@@ -225,6 +225,14 @@ func bumpType(old, new string) string {
 		return out
 	}
 	o, n := toInts(mo), toInts(mn)
+	for i := 0; i < len(o); i++ {
+		if n[i] < o[i] {
+			return "downgrade"
+		}
+		if n[i] > o[i] {
+			break
+		}
+	}
 	switch {
 	case o[0] != n[0]:
 		return "major"
@@ -379,6 +387,7 @@ type violation struct {
 	publishedAt             time.Time
 	ageDays                 float64
 	windowDays              int
+	downgrade               bool
 }
 
 func evaluate(candidates []candidate, ages map[allowKey]time.Time, allowed map[allowKey]bool, now time.Time) []violation {
@@ -389,11 +398,18 @@ func evaluate(candidates []candidate, ages map[allowKey]time.Time, allowed map[a
 			continue
 		}
 		kind := bumpType(c.old, c.new)
+		if kind == "downgrade" {
+			out = append(out, violation{eco: c.eco, pkg: c.pkg, version: c.new, bump: kind, downgrade: true})
+			continue
+		}
 		window := windows[kind]
 		pub := ages[key]
 		ageDays := now.Sub(pub).Hours() / 24
 		if ageDays < float64(window) {
-			out = append(out, violation{c.eco, c.pkg, c.new, kind, pub, ageDays, window})
+			out = append(out, violation{
+				eco: c.eco, pkg: c.pkg, version: c.new, bump: kind,
+				publishedAt: pub, ageDays: ageDays, windowDays: window,
+			})
 		}
 	}
 	return out
@@ -515,7 +531,7 @@ func runCheck(baseRef string) int {
 	ages := map[allowKey]time.Time{}
 	for _, c := range candidates {
 		key := allowKey{c.eco, c.pkg, c.new}
-		if allowed[key] || !ages[key].IsZero() {
+		if allowed[key] || bumpType(c.old, c.new) == "downgrade" || !ages[key].IsZero() {
 			continue
 		}
 		pub, err := publishedAt(c.eco, c.pkg, c.new)
@@ -544,12 +560,17 @@ func runCheck(baseRef string) int {
 	}
 
 	sort.Slice(violations, func(i, j int) bool { return violations[i].ageDays < violations[j].ageDays })
-	fmt.Println("::error::dep-age-gate: dependency bump(s) are too fresh (supply-chain risk):")
+	fmt.Println("::error::dep-age-gate: unsafe dependency version change(s):")
 	for _, v := range violations {
+		if v.downgrade {
+			fmt.Printf("  - %s %s %s: version downgrade requires an audited allowlist entry\n",
+				v.eco, v.pkg, v.version)
+			continue
+		}
 		fmt.Printf("  - %s %s %s (%s): published %s, %.1fd old, needs >= %dd\n",
 			v.eco, v.pkg, v.version, v.bump, v.publishedAt.Format(time.RFC3339), v.ageDays, v.windowDays)
 	}
-	fmt.Println("\nWait until each version clears its window (windows mirror .github/dependabot.yml cooldown). " +
-		"For an urgent security fix that must land sooner, add an audited entry to " + allowlistPath + ".")
+	fmt.Println("\nWait until fresh versions clear their windows (which mirror .github/dependabot.yml cooldown). " +
+		"Downgrades require explicit review. Add an audited entry to " + allowlistPath + " only when the exception is intentional.")
 	return 1
 }

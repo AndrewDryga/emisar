@@ -69,6 +69,8 @@ jobs:
             echo "::error::tag target does not match the checked-out commit"; exit 1; }
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+            echo "::error::new release tags must target current main"; exit 1; }
 
       - name: Full MCP release gate
         working-directory: mcp
@@ -82,7 +84,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
           go install honnef.co/go/tools/cmd/staticcheck@2026.1
           staticcheck ./...
-          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
           go test -race -count=1 ./...
 
@@ -183,7 +185,7 @@ jobs:
           Drop the binary somewhere on $PATH (`/usr/local/bin` is the
           convention). Then point your MCP client at the binary path
           and set `EMISAR_URL` + `EMISAR_API_KEY` in the launcher's
-          env block. The portal at https://app.emisar.dev/app/agents
+          env block. The portal at https://emisar.dev/app/agents
           generates a copy-pasteable snippet per client.
           EOF
           sed -i "s/__VERSION__/${VERSION}/g; s/__GOOS__/${GOOS}/g; s/__GOARCH__/${GOARCH}/g" \

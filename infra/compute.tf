@@ -88,7 +88,7 @@ resource "google_compute_reservation" "emisar" {
 # ── Instance template: Container-Optimized OS running the portal container ────
 data "google_compute_image" "cos" {
   project = "cos-cloud"
-  family  = "cos-stable"
+  name    = var.cos_image
 }
 
 resource "google_compute_instance_template" "emisar" {
@@ -158,7 +158,7 @@ resource "google_compute_instance_template" "emisar" {
 # emisar clusters via the GCE libcluster strategy (see Emisar.Cluster.GCE +
 # rel/env.sh.eex), so target_size > 1 forms one BEAM cluster — Phoenix PubSub +
 # Presence span nodes and runs don't strand in :sent. DB migrations run on boot
-# guarded by Ecto's advisory lock (cloud-init), so concurrent instances are safe.
+# guarded by Ecto's advisory lock in the release entrypoint, so concurrent instances are safe.
 resource "google_compute_region_instance_group_manager" "emisar" {
   name                             = "emisar"
   base_instance_name               = "emisar"

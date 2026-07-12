@@ -1,9 +1,10 @@
 #cloud-config
 # Container-Optimized OS. Boots the emisar portal behind the Google HTTPS load
 # balancer: fetches every runtime secret from Secret Manager into a root-only env
-# file, runs DB migrations (Ecto's advisory lock makes this safe across instances),
-# then runs the release. epmd + the Erlang distribution ports let sibling instances
-# form one BEAM cluster; peer discovery is Emisar.Cluster.GCE (Compute API by label).
+# file, then starts the release. Its server entrypoint runs DB migrations under
+# Ecto's advisory lock before starting the endpoint. epmd + the Erlang distribution
+# ports let sibling instances form one BEAM cluster; peer discovery is
+# Emisar.Cluster.GCE (Compute API by label).
 #
 # Dollar-brace placeholders are Terraform interpolation; $NAME (no braces) is shell.
 
@@ -88,13 +89,8 @@ write_files:
       # run a reviewer approves, so state records what actually boots.
       docker pull ${container_image}
 
-      # Migrations first — Ecto's advisory lock serializes concurrent instances, so
-      # only one runs them and the rest wait, then all boot.
-      docker run --rm --network host --env-file "$ENV_FILE" \
-        -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
-        ${container_image} /app/bin/migrate
-
       docker rm -f emisar 2>/dev/null || true
+      # /app/bin/server runs the advisory-locked migration before the endpoint.
       exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
         -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
         ${container_image}

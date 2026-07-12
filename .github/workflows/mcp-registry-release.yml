@@ -1,6 +1,6 @@
 name: Portal - Publish MCP Registry Listing
 
-run-name: MCP Registry listing ${{ github.ref_name }}
+run-name: MCP Registry listing ${{ inputs.release_tag || github.ref_name }}
 
 # Product releases advertise the hosted MCP server. Binary bridge releases use
 # mcp-v* and are handled independently by mcp-release.yml.
@@ -8,6 +8,13 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable product release to recover
+        required: true
+        default: v0.24.0
+        type: string
 
 concurrency:
   group: mcp-registry-${{ github.ref }}
@@ -26,11 +33,11 @@ jobs:
       checks: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -45,21 +52,32 @@ jobs:
           tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
           test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
             echo "::error::GitHub could not verify the release tag signature"; exit 1; }
-          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
-            echo "::error::tag target does not match the checked-out commit"; exit 1; }
-          git merge-base --is-ancestor HEAD origin/main || {
+          tag_target=$(jq -r '.object.sha' <<< "$tag")
+          git merge-base --is-ancestor "$tag_target" origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$tag_target" = "$(git rev-parse HEAD)" || {
+              echo "::error::tag target does not match the checked-out commit"; exit 1; }
+            test "$tag_target" = "$(git rev-parse origin/main)" || {
+              echo "::error::new release tags must target current main"; exit 1; }
+          else
+            immutable=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.immutable')
+            test "$immutable" = true || {
+              echo "::error::recovery publication requires an immutable existing release"; exit 1; }
+          fi
+          echo "tag_target=${tag_target}" >> "$GITHUB_OUTPUT"
+        id: tag
 
       - name: Require successful CI for tagged commit
         run: |
           set -euo pipefail
           # PR commits carry the check as "Required - CI"; on main the same job
           # arrives via cd.yml's workflow_call and registers as "CI / Required - CI".
-          source_sha=$(git rev-parse HEAD)
+          source_sha=${{ steps.tag.outputs.tag_target }}
           conclusion=$(gh api \
             -H 'Accept: application/vnd.github+json' \
             "repos/${GITHUB_REPOSITORY}/commits/${source_sha}/check-runs?per_page=100" \
-            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
+            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368 and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
           test "$conclusion" = success || {
             echo "::error::tagged commit has no successful Required - CI check (got '$conclusion')"
             exit 1
@@ -75,44 +93,46 @@ jobs:
     permissions:
       contents: read
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
-      MCP_PUBLISHER_VERSION: "1.7.9"
-      MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
           persist-credentials: false
 
-      - name: Prepare listing
+      - name: Normalize and verify publisher key
         env:
           MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          test -n "$MCP_PRIVATE_KEY" || {
-            echo "::error::MCP_PRIVATE_KEY is not configured in the release environment"
+          seed=$(.github/scripts/normalize-mcp-private-key.sh)
+          echo "::add-mask::${seed}"
+          printf '302e020100300506032b657004220420%s' "$seed" | xxd -r -p > private.der
+          openssl pkey -inform DER -in private.der -pubout -outform DER -out public.der
+          public_key=$(tail -c 32 public.der | base64 -w0)
+          proof=$(curl --fail --silent --show-error --retry 3 \
+            https://emisar.dev/.well-known/mcp-publisher-proof)
+          grep -Fq "p=${public_key}" <<< "$proof" || {
+            echo "::error::MCP_PRIVATE_KEY does not match the live emisar.dev publisher proof"
             exit 1
           }
+          printf 'MCP_PRIVATE_KEY_HEX=%s\n' "$seed" >> "$GITHUB_ENV"
+          rm -f private.der public.der
+
+      - name: Prepare listing
+        run: |
+          set -euo pipefail
           version=${RELEASE_TAG#v}
           jq --arg version "$version" '.version = $version' server.json > server.tmp
           mv server.tmp server.json
 
       - name: Install verified mcp-publisher
-        run: |
-          set -euo pipefail
-          artifact="mcp-publisher_linux_amd64.tar.gz"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}" \
-            --output "$artifact"
-          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
-          tar --extract --gzip --file "$artifact" mcp-publisher
+        run: .github/scripts/install-mcp-publisher.sh
 
       - name: Validate listing
         run: ./mcp-publisher validate server.json
 
       - name: Authenticate and publish
-        env:
-          MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
         run: |
-          ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY"
+          ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY_HEX"
           ./mcp-publisher publish server.json

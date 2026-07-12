@@ -111,6 +111,9 @@ func TestBumpType(t *testing.T) {
 		{"1.2.3", "2.0.0", "major"},
 		{"1.2.3", "1.3.0", "minor"},
 		{"1.2.3", "1.2.4", "patch"},
+		{"2.0.0", "1.99.99", "downgrade"},
+		{"1.3.0", "1.2.99", "downgrade"},
+		{"1.2.4", "1.2.3", "downgrade"},
 		{"1.2", "1.3", "unknown"}, // not full semver -> conservative window
 		{"v1.8.14", "v1.9.0", "minor"},
 	}
@@ -161,6 +164,21 @@ func TestEvaluate_RejectsTooFreshAndHonorsAllowlist(t *testing.T) {
 	got = evaluate(candidates, ages, allowed, now)
 	if len(got) != 1 || got[0].pkg != "github.com/x/major" {
 		t.Errorf("allowlist did not exempt: %v", got)
+	}
+}
+
+func TestEvaluate_RejectsDowngradeUnlessAllowlisted(t *testing.T) {
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	candidates := []candidate{{"go", "example.com/module", "v2.4.0", "v2.3.9"}}
+
+	got := evaluate(candidates, map[allowKey]time.Time{}, map[allowKey]bool{}, now)
+	if len(got) != 1 || !got[0].downgrade {
+		t.Fatalf("downgrade violations = %v, want one downgrade", got)
+	}
+
+	allowed := map[allowKey]bool{{"go", "example.com/module", "v2.3.9"}: true}
+	if got := evaluate(candidates, map[allowKey]time.Time{}, allowed, now); len(got) != 0 {
+		t.Fatalf("allowlisted downgrade violations = %v, want none", got)
 	}
 }
 

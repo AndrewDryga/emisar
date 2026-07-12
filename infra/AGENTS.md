@@ -38,7 +38,8 @@ the separate, creds-gated deploy step.
 4. **Secrets discipline.** Secret custody is Terraform Cloud BY DECISION:
    externally-issued credentials enter as SENSITIVE workspace variables
    (`variables.tf`), machine secrets (SECRET_KEY_BASE, DB password) are generated
-   in-config, and all flow through TFC state into Secret Manager for the instances.
+   ephemerally in-config, and write-only provider arguments keep payloads out of
+   new state snapshots while delivering them to Secret Manager and Cloud SQL.
    Never put a secret value in git, a `.tf` default, or a tfvars file — the TFC
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
    to it is production access. A new secret = a sensitive variable + an
@@ -51,7 +52,7 @@ the separate, creds-gated deploy step.
    topology empty.
 7. **DMARC / MTA-STS ramp, never jump.** `none → quarantine → reject` and
    `testing → enforce`, gated on clean reports.
-8. **Migrations run on boot under Ecto's advisory lock** (cloud-init), so concurrent
+8. **Migrations run on boot under Ecto's advisory lock** (the release server entrypoint), so concurrent
    instances are safe. Committed portal migrations stay frozen (portal AGENTS.md §8).
 9. **Portal rollouts preserve serving capacity.** Reserve exactly the steady-state
    fleet with automatic consumption and let the one-VM rollout surge use on-demand

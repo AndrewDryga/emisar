@@ -7,7 +7,9 @@
 # publication remains a registrar action gated on resolver convergence.
 
 terraform {
-  required_version = ">= 1.10" # `project` in the cloud{} workspaces block
+  # Keep exact parity with /.tool-versions and the HCP workspace. A broader
+  # constraint lets local CI validate with semantics production never uses.
+  required_version = "= 1.15.8"
 
   required_providers {
     google = {

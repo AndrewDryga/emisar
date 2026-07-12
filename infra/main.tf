@@ -1,9 +1,9 @@
 terraform {
   # State + variables live in Terraform Cloud (org Dryga, project emisar). This
-  # matters more than usual: by decision, runtime secrets enter as SENSITIVE
-  # workspace variables and machine secrets are generated in-config, so the
-  # workspace's variables and state hold production credentials. TFC encrypts
-  # both at rest and gates them behind workspace RBAC + audit logs — treat
+  # matters more than usual: runtime secrets enter as SENSITIVE workspace
+  # variables. Provider write-only arguments and ephemeral random values keep
+  # payloads out of new state snapshots, but TFC still holds the externally
+  # issued credentials and gates them behind workspace RBAC + audit logs. Treat
   # access to this workspace as access to production.
   cloud {
     organization = "Dryga"

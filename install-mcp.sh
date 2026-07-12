@@ -22,7 +22,7 @@
 # launcher's JSON/TOML config, which the portal generates for you on
 # the /app/agents page.
 
-set -euo pipefail
+set -Eeuo pipefail
 
 REPO="${EMISAR_REPO:-andrewdryga/emisar}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
@@ -70,6 +70,15 @@ done
 log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
+
+require_immutable_release() {
+  local version="$1" release
+  release=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO}/releases/tags/${version}") \
+    || die "could not verify release metadata for ${version}"
+  grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' <<<"$release" || \
+    die "release ${version} is mutable and is no longer trusted; install the latest immutable MCP release"
+}
 
 # Same TTY-fallback prompt the runner installer uses — curl|bash makes
 # stdin the script content, not a terminal, so a plain `read` consumes
@@ -127,6 +136,7 @@ else
 fi
 [[ "${VERSION}" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   die "release version must match mcp-vMAJOR.MINOR.PATCH (got '${VERSION}')"
+require_immutable_release "${VERSION}"
 
 VERSION_NUM="${VERSION#mcp-v}"
 TAR_NAME="emisar-mcp-${VERSION_NUM}-${OS}-${ARCH}"
@@ -174,11 +184,8 @@ tar -C "${tmp}" -xzf "${tmp}/${TARBALL}"
 # ---------------------------------------------------------------------
 
 if [ ! -d "${INSTALL_DIR}" ]; then
-  if [ "$(id -u)" -eq 0 ]; then
-    mkdir -p "${INSTALL_DIR}"
-  else
-    die "${INSTALL_DIR} does not exist (re-run with sudo, or set --install-dir to a writable path)"
-  fi
+  mkdir -p "${INSTALL_DIR}" 2>/dev/null || \
+    die "could not create ${INSTALL_DIR} (re-run with sudo, or set --install-dir to a writable path)"
 fi
 
 if [ ! -w "${INSTALL_DIR}" ]; then
@@ -187,13 +194,29 @@ fi
 
 bin_src="${tmp}/${TAR_NAME}/emisar-mcp"
 bin_dst="${INSTALL_DIR}/emisar-mcp"
+bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
+bin_backup="${INSTALL_DIR}/.emisar-mcp.previous.$$"
 
 if [ ! -x "${bin_src}" ]; then
   die "expected ${bin_src} inside tarball but it was missing"
 fi
 
-log "installing → ${bin_dst}"
-install -m 0755 "${bin_src}" "${bin_dst}"
+log "staging → ${bin_staged}"
+install -m 0755 "${bin_src}" "${bin_staged}"
+
+staged_version=$("${bin_staged}" --version) || die "staged binary did not respond to --version"
+expected_version="emisar-mcp ${VERSION_NUM}"
+[ "${staged_version}" = "${expected_version}" ] || \
+  die "staged binary reported '${staged_version}', expected '${expected_version}'"
+
+if [ -e "${bin_dst}" ]; then
+  mv "${bin_dst}" "${bin_backup}"
+fi
+if ! mv "${bin_staged}" "${bin_dst}"; then
+  [ ! -e "${bin_backup}" ] || mv "${bin_backup}" "${bin_dst}"
+  die "could not activate the new binary; restored the previous installation"
+fi
+rm -f "${bin_backup}"
 
 # ---------------------------------------------------------------------
 # Done
@@ -201,7 +224,6 @@ install -m 0755 "${bin_src}" "${bin_dst}"
 
 log "installed:"
 installed_version=$("${bin_dst}" --version) || die "installed binary did not respond to --version"
-expected_version="emisar-mcp ${VERSION_NUM}"
 [ "${installed_version}" = "${expected_version}" ] || \
   die "installed binary reported '${installed_version}', expected '${expected_version}'"
 log "${installed_version}"

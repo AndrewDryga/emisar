@@ -6,8 +6,8 @@
 # hand-sync. golang: go.work + every go.mod and local development share the
 # current security patch because CI and release builds use go-version-file.
 # Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
-erlang 29.0.2
-elixir 1.20.1-otp-29
+erlang 29.0.3
+elixir 1.20.2-otp-29
 golang 1.26.5
 # infra/ — Google Cloud DNS in Terraform; run `asdf plugin add terraform` once.
-terraform 1.15.7
+terraform 1.15.8

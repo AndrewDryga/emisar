@@ -6,8 +6,8 @@ repository. Pull requests run `.github/workflows/ci.yml`. After a push to
 commit, then performs delivery:
 
 1. `Required - CI` completes for the exact commit.
-2. The already-smoke-tested portal image is scanned, published by digest, and
-   attested. No second image build occurs.
+2. The already-smoke-tested and vulnerability-scanned portal image is published
+   by digest and attested with its CI-produced SBOM. No second image build occurs.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP
    Terraform configuration version and planned with the immutable image digest.
 4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's
@@ -23,17 +23,18 @@ Configure these environments with deployment branches restricted to `main`:
 
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
-| `production-plan` | Protected `main`, no reviewer | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; HCP workspace auto-apply stays disabled and apply remains manual. |
+| `production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; the reviewer gate protects this powerful token, workspace auto-apply stays disabled, and apply remains manual. |
 | `pack-registry` | Required reviewer | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-publish` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived GCP WIF credentials; starts only after `pack-registry` approval succeeds. |
 | `release` | Required reviewer | `MCP_PRIVATE_KEY` | Signed tag releases. The MCP Registry listing uses the HTTP signing key; binary releases use keyless Sigstore. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
-has no team RBAC; the workflow never calls the apply API, and the environment
-exposes the token only to protected `main`. Review and apply the saved plan in
-HCP Terraform. Do not change CD back to standard plan-and-apply runs: an
-unconfirmed standard plan holds the workspace lock indefinitely.
+has no team RBAC; the workflow never calls the apply API, and the
+reviewer-protected environment exposes the token only to protected `main`.
+Treat approving this GitHub job as production access, then review and apply the
+saved plan in HCP Terraform. Do not change CD back to standard plan-and-apply
+runs: an unconfirmed standard plan holds the workspace lock indefinitely.
 
 ## Repository rules
 
@@ -49,8 +50,9 @@ conclusion.
 ## Release tags
 
 Runner, MCP bridge, and product releases accept only exact SemVer signed
-annotated tags. Their workflows verify GitHub's signature result and the tag's
-commit before building or publishing. Product `v*` tags publish only the hosted
+annotated tags targeting current `main`. Their workflows verify GitHub's
+signature result and the tag's commit before building or publishing. Product
+`v*` tags publish only the hosted
 MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 
 | Workflow | Tag | Publishes |

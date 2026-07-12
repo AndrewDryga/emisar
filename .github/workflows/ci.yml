@@ -81,102 +81,13 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          set -euo pipefail
+        run: .github/scripts/select-ci.sh "$EVENT" "$BASE"
 
-          # An unknown base (first push to a branch, force-push, rewritten
-          # history) FAILS OPEN: run every area rather than silently skip a
-          # gate.
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            files="__run_all__"
-          elif [ "$EVENT" = "pull_request" ]; then
-            files=$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD)
-          else
-            files=$(git diff --name-only "$BASE" HEAD)
-          fi
-
-          portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false; mcp_listing=false
-          portal_release=false; packs_release=false; infra_release=false
-          while IFS= read -r f; do
-            [ -n "$f" ] || continue
-            case "$f" in
-              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true; mcp_listing=true; portal_release=true; packs_release=true; infra_release=true ;;
-            esac
-            # install.sh + packs/** are real source inputs to the portal
-            # release (InstallController embeds install.sh; PacksRegistry
-            # compile-scans packs/); .tool-versions is the single toolchain
-            # source of truth for both the test job and the release image.
-            case "$f" in
-              portal/*|.dockerignore|install.sh|install-mcp.sh|packs/*|.tool-versions) portal=true; portal_release=true ;;
-              .agent/scripts/check-portal-test-output.sh) portal=true ;;
-            esac
-            case "$f" in runner/*|install.sh|README.md|go.work|go.work.sum) runner=true ;; esac
-            case "$f" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
-            case "$f" in server.json) mcp_listing=true ;; esac
-            case "$f" in tools/*|go.work|go.work.sum) tools=true ;; esac
-            # Packs re-validate when the packs change OR the validator does.
-            case "$f" in
-              packs/*|runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs=true ;;
-            esac
-            case "$f" in
-              packs/*|runner/internal/packs/*|runner/internal/catalog/*|runner/cmd/packctl/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs_release=true ;;
-            esac
-            case "$f" in infra/*) infra=true; infra_release=true ;; .tool-versions) infra=true ;; esac
-            case "$f" in
-              portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|infra/.terraform.lock.hcl|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
-            esac
-            case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
-          done <<< "$files"
-
-          # A workflow/dependabot change re-gates every area — the old
-          # "own workflow file" trigger, generalized to the shared file.
-          if [ "$workflows" = "true" ]; then
-            portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; mcp_listing=true
-          fi
-
-          # Either half of the pipeline is a portal/infra delivery input. Pack
-          # publication is irreversible and requires an actual pack source
-          # change; workflow-only changes validate its code without creating a
-          # stale approval request.
-          if grep -Eq '^\.github/workflows/(ci|cd)\.yml$' <<< "$files"; then
-            portal_release=true; infra_release=true
-          fi
-
-          mods=()
-          if [ "$runner" = "true" ]; then mods+=('"runner"'); fi
-          if [ "$mcp" = "true" ]; then mods+=('"mcp"'); fi
-          if [ "$tools" = "true" ]; then mods+=('"tools"'); fi
-          modules="[$(IFS=,; echo "${mods[*]-}")]"
-
-          {
-            echo "portal=$portal"
-            echo "packs=$packs"
-            echo "infra=$infra"
-            echo "deps=$deps"
-            echo "workflows=$workflows"
-            echo "mcp_listing=$mcp_listing"
-            echo "go_modules=$modules"
-            echo "portal_release=$portal_release"
-            echo "packs_release=$packs_release"
-            echo "infra_release=$infra_release"
-          } >> "$GITHUB_OUTPUT"
-
-          mark() { if [ "$1" = "true" ]; then echo "run"; else echo "skip"; fi; }
-          {
-            echo "### Gates for this change"
-            echo "| Area | |"
-            echo "|---|---|"
-            echo "| Portal - Test | $(mark "$portal") |"
-            echo "| Portal - Image | $(mark "$portal") |"
-            echo "| Go - Runner | $(mark "$runner") |"
-            echo "| Go - MCP | $(mark "$mcp") |"
-            echo "| Go - Tools | $(mark "$tools") |"
-            echo "| Packs - Validate | $(mark "$packs") |"
-            echo "| Terraform - Validate | $(mark "$infra") |"
-            echo "| Dependencies - Release age | $(mark "$deps") |"
-            echo "| Actions - Validate workflows | $(mark "$workflows") |"
-            echo "| Portal - MCP Registry Listing | $(mark "$mcp_listing") |"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce frozen migration history
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: .github/scripts/check-frozen-migrations.sh "$EVENT" "$BASE"
 
   portal:
     name: Portal - Test
@@ -188,7 +99,7 @@ jobs:
       postgres:
         # Track prod's Cloud SQL major (POSTGRES_18, infra/db.tf) so the
         # suite runs against what production runs.
-        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        image: &postgres-image postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -260,10 +171,13 @@ jobs:
 
       - name: Audit dependencies
         # emisar is a security product — fail the build on a known
-        # advisory in any dependency. GHSA-g2wm-735q-3f56 (cowlib, low)
-        # has no upstream patch yet; ignore it explicitly and revisit
-        # when cowlib ships a fix.
-        run: mix deps.audit --ignore-advisory-ids GHSA-g2wm-735q-3f56
+        # cowlib 2.18.0 is current and has no upstream patch. Its affected
+        # response-header encoder is used only by the internal Prometheus
+        # listener, which emits fixed headers and is blocked by the GCP
+        # firewall. Keep the exact IDs visible until an upstream fix lands.
+        run: >-
+          mix deps.audit --ignore-advisory-ids
+          GHSA-g2wm-735q-3f56,EEF-CVE-2026-43966
 
       - name: Scan Phoenix security
         # Static analysis of the Phoenix surface (XSS, SQLi, command
@@ -299,17 +213,9 @@ jobs:
           persist-credentials: false
 
       - name: Validate registry listing
-        env:
-          MCP_PUBLISHER_VERSION: "1.7.9"
-          MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
         run: |
           set -euo pipefail
-          artifact="mcp-publisher_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
-            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}" \
-            --output "$artifact"
-          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
-          tar -xzf "$artifact" mcp-publisher
+          .github/scripts/install-mcp-publisher.sh ./mcp-publisher
           ./mcp-publisher validate server.json
 
   portal-image:
@@ -320,7 +226,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        image: *postgres-image
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -455,6 +361,26 @@ jobs:
 
           docker stop --time 15 "$cid" >/dev/null
 
+      - name: Install Trivy (pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: "0.72.0"
+          TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+        run: |
+          set -euo pipefail
+          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
+          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+
+      - name: Scan tested image vulnerabilities
+        run: >-
+          trivy image --exit-code 1 --severity HIGH,CRITICAL
+          --ignorefile .trivyignore.yaml emisar/portal:ci
+
+      - name: Generate tested image SBOM
+        run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
+
       - name: Export tested image
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
         run: |
@@ -468,6 +394,16 @@ jobs:
         with:
           name: portal-image-${{ github.sha }}
           path: /tmp/emisar-portal-image.tar.gz
+          retention-days: 2
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload tested image SBOM
+        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: portal-sbom-${{ github.sha }}
+          path: /tmp/emisar-portal.cdx.json
           retention-days: 2
           if-no-files-found: error
           overwrite: true
@@ -553,17 +489,15 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck "$INSTALL_SCRIPT"
           bash -n "$INSTALL_SCRIPT"
+          .github/scripts/smoke-installers.sh "${{ matrix.module }}"
 
       - name: Scan known vulnerabilities
-        # Informational by design — a same-day CVE in a transitive dep
-        # shouldn't block unrelated PRs. Surface as a warning, exit 0.
-        # Pinned version so a govulncheck behavior change can't rebreak CI.
+        # govulncheck reports reachable vulnerable symbols, not merely a module
+        # version. A reachable finding in client-shipped security code blocks.
         working-directory: ${{ matrix.module }}
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
-          if ! govulncheck ./...; then
-            echo "::warning::govulncheck reported findings — review and update deps"
-          fi
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
 
       - name: Run staticcheck
         # Blocking (unlike govulncheck): dead code / SA findings fail CI so
@@ -677,7 +611,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      TFLINT_VERSION: v0.61.0
+      TFLINT_VERSION: v0.63.1
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -781,6 +715,9 @@ jobs:
           printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
           tar -xzf "$artifact" actionlint
           ./actionlint -color
+
+      - name: Run workflow security regression tests
+        run: .github/scripts/test-ci-guards.sh
 
   ci-gate:
     name: Required - CI

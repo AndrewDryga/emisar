@@ -45,26 +45,17 @@ jobs:
           set -euo pipefail
           gunzip -c /tmp/portal-image/emisar-portal-image.tar.gz | docker load
 
-      - name: Install Trivy (pinned, checksum-verified)
-        env:
-          TRIVY_VERSION: "0.72.0"
-          TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
-        run: |
-          set -euo pipefail
-          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
-          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
-          tar -xzf "$artifact" trivy
-          sudo install -m 0755 trivy /usr/local/bin/trivy
-
-      - name: Scan image vulnerabilities
-        run: trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed emisar/portal:ci
-
-      - name: Generate SBOM
-        run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
+      - name: Download tested image SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: portal-sbom-${{ github.sha }}
+          path: /tmp/portal-sbom
 
       - name: Sign in to GHCR
-        run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
       - name: Publish tested image
         id: push
@@ -81,12 +72,11 @@ jobs:
           digest=${repo_digest#*@}
           test -n "$digest" && test "$digest" != "$repo_digest"
 
-          # Mutable convenience tag moves only after the immutable push works.
-          docker tag emisar/portal:ci "${IMAGE}:latest"
-          docker push "${IMAGE}:latest"
-
-          echo "image=${IMAGE}@${digest}" >> "$GITHUB_OUTPUT"
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image=${IMAGE}@${digest}"
+            echo "immutable=${immutable}"
+            echo "digest=${digest}"
+          } >> "$GITHUB_OUTPUT"
           {
             echo "### Published portal image"
             echo "- immutable tag: \`${immutable}\`"
@@ -105,8 +95,16 @@ jobs:
         with:
           subject-name: ghcr.io/andrewdryga/emisar
           subject-digest: ${{ steps.push.outputs.digest }}
-          sbom-path: /tmp/emisar-portal.cdx.json
+          sbom-path: /tmp/portal-sbom/emisar-portal.cdx.json
           push-to-registry: true
+
+      - name: Promote attested image to latest
+        env:
+          IMAGE: ghcr.io/andrewdryga/emisar
+        run: |
+          set -euo pipefail
+          docker tag emisar/portal:ci "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
 
   packs-approval:
     name: CD - Approve pack registry release
@@ -249,21 +247,20 @@ jobs:
             "${REGISTRY_BASE}/${pack_object}" -o /tmp/gcs-linux-core.tar.gz
           cmp "dist/${pack_object}" /tmp/gcs-linux-core.tar.gz
 
-          if getent ahosts registry.emisar.dev >/dev/null; then
-            curl -fsS --retry 5 --retry-delay 2 \
-              "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
-            cmp dist/v1/catalog.json /tmp/canonical-catalog.json
-          else
-            echo "::warning::registry.emisar.dev is not delegated yet; verified the backing GCS registry only"
-          fi
+          curl -fsS --retry 5 --retry-delay 2 \
+            "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
+          cmp dist/v1/catalog.json /tmp/canonical-catalog.json
 
   deployment-plan:
     name: CD - Plan production
+    # Every successful main commit reconciles production. This deliberately
+    # permits a no-op plan for docs-only commits: if a selected portal run is
+    # superseded by an unrelated commit, that later run must still queue the
+    # replacement plan instead of silently dropping the tested image.
     if: >-
       always() &&
       needs.ci.result == 'success' &&
-      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped') &&
-      (needs.ci.outputs.portal_release == 'true' || needs.ci.outputs.infra_release == 'true')
+      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped')
     needs: [ci, portal-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -321,41 +318,24 @@ jobs:
             echo "::error::HCP Terraform workspace auto-apply must remain disabled"
             exit 1
           }
+          expected_terraform=$(awk '$1 == "terraform" {print $2}' .tool-versions)
+          workspace_terraform=$(jq -r '.data.attributes["terraform-version"]' <<< "$workspace")
+          test "$workspace_terraform" = "$expected_terraform" || {
+            echo "::error::HCP workspace Terraform ${workspace_terraform} does not match tested ${expected_terraform}"
+            exit 1
+          }
 
-          variables=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars")
           image="$PUBLISHED_IMAGE"
           if [ -z "$image" ]; then
-            # The workspace variable is desired state. It is updated whenever CI
-            # publishes a tested portal image, even while that image's plan is
-            # queued. Reading current state first would make a later infra-only
-            # run plan a rollback to the last-applied image.
-            image=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .attributes.value' <<< "$variables")
-            if [[ ! "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]]; then
-              # Bootstrap only: an older workspace may not have the variable yet.
-              state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
-              image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
-            fi
+            # An infra-only or reconciliation run uses the last APPLIED image,
+            # never a workspace default advanced by an unreviewed/rejected plan.
+            state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
+            image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
           fi
           [[ "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]] || {
             echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"
             exit 1
           }
-
-          # Keep the workspace default aligned too. CI runs override it with a
-          # run-specific value, while manual/drift runs must never plan a
-          # rollback because an old workspace value was left behind.
-          variable_id=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .id' <<< "$variables")
-          if [ -n "$variable_id" ]; then
-            variable_payload=$(jq -cn --arg id "$variable_id" --arg value "$image" \
-              '{data: {type: "vars", id: $id, attributes: {value: $value, hcl: false, sensitive: false}}}')
-            curl -fsS "${auth[@]}" -X PATCH -d "$variable_payload" \
-              "${api}/workspaces/${workspace_id}/vars/${variable_id}" >/dev/null
-          else
-            variable_payload=$(jq -cn --arg value "$image" \
-              '{data: {type: "vars", attributes: {key: "container_image", value: $value, category: "terraform", hcl: false, sensitive: false}}}')
-            curl -fsS "${auth[@]}" -X POST -d "$variable_payload" \
-              "${api}/workspaces/${workspace_id}/vars" >/dev/null
-          fi
 
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
@@ -420,9 +400,23 @@ jobs:
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
         run: |
           set -euo pipefail
-          run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
-            "https://app.terraform.io/api/v2/runs/${RUN_ID}")
-          status=$(jq -er '.data.attributes.status' <<< "$run")
+          for attempt in $(seq 1 150); do
+            run=$(curl -fsS -H "Authorization: Bearer ${TF_API_TOKEN}" \
+              "https://app.terraform.io/api/v2/runs/${RUN_ID}")
+            status=$(jq -er '.data.attributes.status' <<< "$run")
+            case "$status" in
+              planned_and_saved) break ;;
+              errored|canceled|discarded|force_canceled)
+                echo "::error::HCP Terraform run ended ${status}"
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" = 150 ]; then
+              echo "::error::HCP Terraform run did not reach planned_and_saved within 25 minutes (last: ${status})"
+              exit 1
+            fi
+            sleep 10
+          done
           {
             echo "### Production Terraform plan"
             echo "- commit: \`${GITHUB_SHA}\`"
@@ -431,7 +425,7 @@ jobs:
             echo "- HCP status: **${status}**"
             echo "- saved plan: it does not hold the workspace lock or wait behind another plan"
             echo "- HCP automatically discards it if another apply changes state first"
-            echo "- wait for the complete saved plan before deciding"
+            echo "- GitHub waited for the complete saved plan before reporting success"
             echo "- CD stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
             echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the commit you intend to deploy"
           } >> "$GITHUB_STEP_SUMMARY"

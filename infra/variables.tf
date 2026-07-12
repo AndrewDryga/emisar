@@ -69,6 +69,17 @@ variable "instance_count" {
   }
 }
 
+variable "cos_image" {
+  type        = string
+  description = "Exact Container-Optimized OS image name for portal VMs. Keep this pinned so an unchanged Terraform configuration always boots the same host bytes; update deliberately after reviewing a newer cos-stable image."
+  default     = "cos-stable-121-18867-528-7"
+
+  validation {
+    condition     = can(regex("^cos-stable-[0-9]+-[0-9]+-[0-9]+-[0-9]+$", var.cos_image))
+    error_message = "cos_image must be an exact cos-stable image name, not a moving family."
+  }
+}
+
 variable "container_image" {
   type        = string
   description = "Fully-qualified portal image on public GHCR, pinned by digest or immutable `sha-<sha>` tag — NEVER a floating tag like `:latest` (a mutable tag means the registry, not Terraform state, decides what boots on the next auto-heal or scale-out). No default on purpose: CI passes the tested digest into an approval-gated Terraform run; rollback = apply a previous digest."
@@ -117,6 +128,17 @@ variable "mailer_from_email" {
   type        = string
   description = "From address for outbound product mail (MAILER_FROM_EMAIL); unset, the release falls back to no-reply@emisar.dev."
   default     = "hello@emisar.dev"
+}
+
+variable "secret_generation" {
+  type        = number
+  description = "Monotonic generation for write-only database and Secret Manager payloads. Increment this workspace value whenever any externally supplied secret is rotated; one apply then rewrites every payload without storing it in Terraform state."
+  default     = 1
+
+  validation {
+    condition     = var.secret_generation >= 1 && floor(var.secret_generation) == var.secret_generation
+    error_message = "secret_generation must be an integer >= 1."
+  }
 }
 
 # ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────

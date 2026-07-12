@@ -3,8 +3,10 @@
 # versions below → cloud-init fetches each at boot over the metadata token. One
 # place to set credentials (the TFC workspace), and a single apply stands the
 # whole stack up — no out-of-band `gcloud secrets versions add` step. The
-# trade-off, accepted deliberately: secret values live in TFC variables + state,
-# so the workspace's RBAC is the trust boundary (see main.tf).
+# Write-only provider arguments keep payloads out of new Terraform state. The
+# external values still live in sensitive TFC workspace variables, so workspace
+# access remains production access (see main.tf). Increment secret_generation
+# whenever any supplied value changes; write-only values cannot diff themselves.
 #
 # Machine-generated secrets are not variables at all: SECRET_KEY_BASE is created
 # here (random_password) and DATABASE_URL is assembled in db.tf — no human ever
@@ -69,18 +71,20 @@ resource "google_secret_manager_secret_iam_member" "vm_access" {
 
 # Phoenix's signing/encryption root — same length bar as `mix phx.gen.secret`.
 # Alphanumeric only so it survives every quoting context it passes through.
-resource "random_password" "secret_key_base" {
+ephemeral "random_password" "secret_key_base" {
   length  = 64
   special = false
 }
 
 resource "google_secret_manager_secret_version" "secret_key_base" {
-  secret      = google_secret_manager_secret.app["emisar-secret-key-base"].id
-  secret_data = random_password.secret_key_base.result
+  secret                 = google_secret_manager_secret.app["emisar-secret-key-base"].id
+  secret_data_wo         = ephemeral.random_password.secret_key_base.result
+  secret_data_wo_version = var.secret_generation
 }
 
 resource "google_secret_manager_secret_version" "optional" {
-  for_each    = toset(local.populated_optional_secrets)
-  secret      = google_secret_manager_secret.app[each.key].id
-  secret_data = local.optional_secret_values[each.key]
+  for_each               = toset(local.populated_optional_secrets)
+  secret                 = google_secret_manager_secret.app[each.key].id
+  secret_data_wo         = local.optional_secret_values[each.key]
+  secret_data_wo_version = var.secret_generation
 }

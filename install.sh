@@ -32,7 +32,7 @@
 # step has explicit success criteria; nothing partially applied is left
 # in a "running but broken" state.
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # -----------------------------------------------------------------------
 # Configuration (env or flags)
@@ -578,6 +578,15 @@ download_release() {
   printf '%s\n' "${tmp}/${name}"
 }
 
+require_immutable_release() {
+  local version="$1" release
+  release=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO}/releases/tags/${version}") \
+    || die "could not verify release metadata for ${version}"
+  grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' <<<"$release" || \
+    die "release ${version} is mutable and is no longer trusted; install the latest immutable runner release"
+}
+
 # -----------------------------------------------------------------------
 # User + directory + service setup
 # -----------------------------------------------------------------------
@@ -700,22 +709,59 @@ drop_config_skeleton() {
   fi
 }
 
-install_binary() {
+STAGED_BINARY=""
+BACKUP_BINARY=""
+BINARY_ACTIVATED=0
+SERVICE_WAS_RUNNING=0
+INSTALL_TRANSACTION=0
+
+stage_binary() {
   local src="$1/emisar" ver_output expected
   if [ ! -f "${src}" ]; then
     die "expected binary at ${src} but it is missing"
   fi
-  log "installing binary to ${BIN_DIR}/emisar"
-  install -m 0755 "${src}" "${BIN_DIR}/emisar"
-  # Exec the newly-installed binary to confirm it runs and matches the
-  # version we asked for. Lets operators catch arch mismatches or
-  # truncated downloads immediately.
-  ver_output=$("${BIN_DIR}/emisar" version 2>/dev/null) || \
-    die "installed binary did not respond to the version command"
+  mkdir -p "${BIN_DIR}"
+  chmod 755 "${BIN_DIR}"
+  STAGED_BINARY="${BIN_DIR}/.emisar.new.$$"
+  log "staging binary at ${STAGED_BINARY}"
+  install -m 0755 "${src}" "${STAGED_BINARY}"
+  # Use the one-line machine contract the release workflow verifies. The
+  # human `version` command deliberately includes build metadata.
+  ver_output=$("${STAGED_BINARY}" --version 2>/dev/null) || \
+    die "staged binary did not respond to --version"
   expected="emisar version ${VERSION#runner-v}"
   [ "${ver_output}" = "${expected}" ] || \
-    die "installed binary reported '${ver_output}', expected '${expected}'"
-  log "installed: ${ver_output}"
+    die "staged binary reported '${ver_output}', expected '${expected}'"
+  log "verified: ${ver_output}"
+}
+
+activate_binary() {
+  local target="${BIN_DIR}/emisar"
+  if [ -e "${target}" ]; then
+    BACKUP_BINARY="${BIN_DIR}/.emisar.previous.$$"
+    mv "${target}" "${BACKUP_BINARY}"
+  fi
+  mv "${STAGED_BINARY}" "${target}"
+  STAGED_BINARY=""
+  BINARY_ACTIVATED=1
+  log "installed binary to ${target}"
+}
+
+rollback_binary() {
+  local target="${BIN_DIR}/emisar"
+  [ -z "${STAGED_BINARY}" ] || rm -f "${STAGED_BINARY}"
+  if [ "${BINARY_ACTIVATED}" = "1" ]; then
+    rm -f "${target}"
+    if [ -n "${BACKUP_BINARY}" ] && [ -e "${BACKUP_BINARY}" ]; then
+      mv "${BACKUP_BINARY}" "${target}"
+      log "restored previous binary after failed upgrade"
+    fi
+  fi
+}
+
+discard_binary_backup() {
+  [ -z "${BACKUP_BINARY}" ] || rm -f "${BACKUP_BINARY}"
+  BACKUP_BINARY=""
 }
 
 # install_default_packs installs the starter packs from the bundle shipped
@@ -938,18 +984,43 @@ stop_service_if_running() {
   case "${INIT}" in
     systemd)
       if systemctl is-active --quiet emisar.service; then
+        SERVICE_WAS_RUNNING=1
         log "stopping emisar.service for upgrade"
         systemctl stop emisar.service
       fi
       ;;
     launchd)
       local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
-      if [ -f "${plist}" ]; then
+      if launchctl print system/com.emisar.runner >/dev/null 2>&1; then
+        SERVICE_WAS_RUNNING=1
         log "unloading com.emisar.runner for upgrade"
         launchctl bootout system "${plist}" 2>/dev/null || true
       fi
       ;;
   esac
+}
+
+restore_previous_service() {
+  [ "${SERVICE_WAS_RUNNING}" = "1" ] || return 0
+  case "${INIT}" in
+    systemd) systemctl start emisar.service ;;
+    launchd)
+      launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist
+      ;;
+  esac
+}
+
+finish_install() {
+  local rc=$1
+  trap - EXIT
+  set +e
+  if [ "$rc" -ne 0 ] && [ "${INSTALL_TRANSACTION}" = "1" ]; then
+    rollback_binary
+    restore_previous_service
+    warn "installation failed; restored the previous runner and service state"
+  fi
+  [ -z "${tmp:-}" ] || rm -rf "${tmp}"
+  exit "$rc"
 }
 
 # -----------------------------------------------------------------------
@@ -967,6 +1038,7 @@ do_install() {
   fi
   [[ "${VERSION}" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
     die "release version must match runner-vMAJOR.MINOR.PATCH (got '${VERSION}')"
+  require_immutable_release "${VERSION}"
 
   local prompt
   if [ "${INIT}" = "none" ]; then
@@ -983,11 +1055,15 @@ do_install() {
   # and `set -u` would trip on the bare reference. Default-empty in the
   # trap so an early exit before mktemp doesn't print "unbound variable".
   tmp="$(mktemp -d -t emisar-install.XXXXXX)"
-  trap '[ -n "${tmp:-}" ] && rm -rf "${tmp}"' EXIT
+  trap 'finish_install $?' EXIT
 
   local extracted
   extracted="$(download_release "${VERSION}" "${tmp}")"
 
+  # Download, stage, and execute the new binary before interrupting a running
+  # service. Architecture/version failures leave the current runner untouched.
+  stage_binary "${extracted}"
+  INSTALL_TRANSACTION=1
   stop_service_if_running
 
   # --no-service skips the daemon user — without an init unit, the
@@ -1001,7 +1077,7 @@ do_install() {
   fi
 
   ensure_dirs
-  install_binary "${extracted}"
+  activate_binary
   # EMISAR_PACKS set (even empty) or --packs given ⇒ the pack set is
   # explicit: install exactly it, never host-detect or suggest.
   if [ "${PACKS_EXPLICIT}" = "1" ]; then
@@ -1019,6 +1095,9 @@ do_install() {
   esac
 
   start_service
+
+  discard_binary_backup
+  INSTALL_TRANSACTION=0
 
   log "installed emisar ${VERSION}"
   print_next_steps

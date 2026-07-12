@@ -1,0 +1,6 @@
+linux-core
+debugging
+debian
+dnf-rpm
+systemd-deep
+docker
