@@ -1,4 +1,4 @@
-name: Release · MCP Bridge
+name: Release - MCP Bridge
 
 run-name: Release ${{ github.ref_name }}
 

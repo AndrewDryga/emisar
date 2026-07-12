@@ -50,6 +50,9 @@ jobs:
       workflows: ${{ steps.detect.outputs.workflows }}
       mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
+      portal_release: ${{ steps.detect.outputs.portal_release }}
+      packs_release: ${{ steps.detect.outputs.packs_release }}
+      infra_release: ${{ steps.detect.outputs.infra_release }}
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -78,17 +81,19 @@ jobs:
           fi
 
           portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false; mcp_listing=false
+          portal_release=false; packs_release=false; infra_release=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
-              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true; mcp_listing=true ;;
+              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true; mcp_listing=true; portal_release=true; packs_release=true; infra_release=true ;;
             esac
             # install.sh + packs/** are real source inputs to the portal
             # release (InstallController embeds install.sh; PacksRegistry
             # compile-scans packs/); .tool-versions is the single toolchain
             # source of truth for both the test job and the release image.
             case "$f" in
-              portal/*|.dockerignore|.agent/scripts/check-portal-test-output.sh|install.sh|install-mcp.sh|server.json|packs/*|.tool-versions) portal=true ;;
+              portal/*|.dockerignore|install.sh|install-mcp.sh|packs/*|.tool-versions) portal=true; portal_release=true ;;
+              .agent/scripts/check-portal-test-output.sh) portal=true ;;
             esac
             case "$f" in runner/*|install.sh|README.md|go.work|go.work.sum) runner=true ;; esac
             case "$f" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
@@ -98,7 +103,10 @@ jobs:
             case "$f" in
               packs/*|runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs=true ;;
             esac
-            case "$f" in infra/*|.tool-versions) infra=true ;; esac
+            case "$f" in
+              packs/*|runner/internal/packs/*|runner/internal/catalog/*|runner/cmd/packctl/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs_release=true ;;
+            esac
+            case "$f" in infra/*) infra=true; infra_release=true ;; .tool-versions) infra=true ;; esac
             case "$f" in
               portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
             esac
@@ -125,6 +133,9 @@ jobs:
             echo "workflows=$workflows"
             echo "mcp_listing=$mcp_listing"
             echo "go_modules=$modules"
+            echo "portal_release=$portal_release"
+            echo "packs_release=$packs_release"
+            echo "infra_release=$infra_release"
           } >> "$GITHUB_OUTPUT"
 
           mark() { if [ "$1" = "true" ]; then echo "run"; else echo "skip"; fi; }
@@ -133,6 +144,7 @@ jobs:
             echo "| Area | |"
             echo "|---|---|"
             echo "| Elixir - Portal | $(mark "$portal") |"
+            echo "| Portal - Image | $(mark "$portal") |"
             echo "| Go - Runner | $(mark "$runner") |"
             echo "| Go - MCP | $(mark "$mcp") |"
             echo "| Go - Tools | $(mark "$tools") |"
@@ -140,7 +152,7 @@ jobs:
             echo "| Terraform - Validate | $(mark "$infra") |"
             echo "| Dependencies - Release age | $(mark "$deps") |"
             echo "| Actions - Validate workflows | $(mark "$workflows") |"
-            echo "| MCP Registry listing | $(mark "$mcp_listing") |"
+            echo "| MCP - Validate registry listing | $(mark "$mcp_listing") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   portal:
@@ -152,7 +164,7 @@ jobs:
     services:
       postgres:
         # Track prod's Cloud SQL major (POSTGRES_18, infra/db.tf) so the
-        # suite and the migrate smoke run against what production runs.
+        # suite runs against what production runs.
         image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
@@ -251,9 +263,19 @@ jobs:
         # noise. Dirty test output is a regression: fix the source, don't hide it.
         run: ../.agent/scripts/check-portal-test-output.sh
 
-      - name: Validate MCP Registry listing
-        if: needs.changes.outputs.mcp_listing == 'true'
-        working-directory: ${{ github.workspace }}
+  mcp-listing:
+    name: MCP - Validate registry listing
+    needs: changes
+    if: needs.changes.outputs.mcp_listing == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate registry listing
         env:
           MCP_PUBLISHER_VERSION: "1.7.9"
           MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
@@ -265,18 +287,39 @@ jobs:
           tar -xzf "$artifact" mcp-publisher
           ./mcp-publisher validate server.json
 
+  portal-image:
+    name: Portal - Image
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: emisar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
       - name: Read release toolchain
         id: release-toolchain
-        # Build context must be the REPO ROOT (the Dockerfile pulls in
-        # ../install.sh and ../packs). Toolchain --build-args come from
-        # /.tool-versions so the release image compiles with the same
-        # Erlang/Elixir as the test job — one source of truth, no drift.
-        working-directory: ${{ github.workspace }}
         run: |
           elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
           otp_version=$(awk '$1=="erlang"{print $2}' .tool-versions)
           if [ -z "$elixir_version" ] || [ -z "$otp_version" ]; then
-            echo "::error::could not parse Elixir/OTP from .tool-versions"
+            echo "::error::Could not parse Elixir and OTP versions from .tool-versions"
             exit 1
           fi
           echo "elixir=${elixir_version}" >> "$GITHUB_OUTPUT"
@@ -302,30 +345,18 @@ jobs:
           cache-to: type=gha,mode=max,scope=portal-release
 
       - name: Smoke-test release image
-        # `docker build` passing only proves the Dockerfile compiles — not
-        # that the image boots. Three checks: Emisar.Release.migrate()
-        # (runtime.exs + migrator), /app/bin/server serving /healthz
-        # (supervision-tree crashes), and a clean `docker stop` (hung
-        # terminate/2). `--network host` reaches the postgres service.
-        working-directory: ${{ github.workspace }}
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost/emisar_smoke
           SECRET_KEY_BASE: smoke-key-base-64-chars-of-non-secret-text-aaaaaaaaaaaaaaaaaaaaaaa
           PHX_HOST: localhost
           PORT: "4000"
-          # runtime.exs raises in :prod if neither PADDLE_API_KEY nor
-          # EMISAR_DISABLE_BILLING is set — use the stub, no key in CI.
           EMISAR_DISABLE_BILLING: "1"
-          # FORCE_SSL=false disables the secure-cookie pin. Requests carry
-          # x-forwarded-proto=https, matching the production proxy boundary.
           FORCE_SSL: "false"
         run: |
           set -euo pipefail
 
-          # Fresh DB next to the running postgres service. `|| true` is fine —
-          # the migrate step below fails loudly if the DB really isn't there.
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
-            -c 'CREATE DATABASE emisar_smoke;' || true
+            -c 'CREATE DATABASE emisar_smoke;' >/dev/null
 
           docker run --rm --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
@@ -337,9 +368,18 @@ jobs:
             -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
             emisar/portal:ci)
 
-          # Always dump tail on exit so a boot failure is debuggable from
-          # the CI log without re-running.
-          trap 'docker logs "$cid" 2>&1 | tail -80; docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          cleanup() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ]; then
+              echo "::group::Portal container logs"
+              docker logs "$cid" 2>&1 | tail -80
+              echo "::endgroup::"
+            fi
+            docker rm -f "$cid" >/dev/null 2>&1 || true
+            exit "$rc"
+          }
+          trap cleanup EXIT
 
           health_error=/tmp/emisar-healthz-error
           for i in $(seq 1 30); do
@@ -356,37 +396,29 @@ jobs:
             sleep 2
           done
 
-          # The pack registry tarball endpoint 302-redirects to the pack's
-          # immutable, content-addressed tarball on the public registry (the
-          # install snippet pins --hash, so the redirect target is
-          # tamper-evident). Assert the redirect + its target shape from the
-          # running image — catches a missing compile-time catalog bake or a
-          # broken route — WITHOUT following it off to the external registry,
-          # which keeps the smoke hermetic.
           location=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
             -H 'x-forwarded-proto: https' \
             http://localhost:4000/packs/linux-core/pack.tar.gz)
-          echo "pack tarball redirect: ${location}"
           case "$location" in
-            */v1/packs/linux-core/*/pack.tar.gz) echo "pack tarball redirect target OK" ;;
-            *) echo "::error::/packs/linux-core/pack.tar.gz did not 302 to a content-addressed tarball (got '${location}')"; exit 1 ;;
+            */v1/packs/linux-core/*/pack.tar.gz) ;;
+            *) echo "::error::Pack endpoint returned an invalid redirect: ${location}"; exit 1 ;;
           esac
-          curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/packs.json | grep -q '"linux-core"' \
-            || { echo "::error::/packs.json missing linux-core"; exit 1; }
+          curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/packs.json \
+            | grep -q '"linux-core"' \
+            || { echo "::error::Pack catalog does not contain linux-core"; exit 1; }
           echo "pack registry endpoints OK"
 
-          docker stop --time 15 "$cid"
+          docker stop --time 15 "$cid" >/dev/null
 
       - name: Export tested image
-        if: github.event_name == 'push'
-        working-directory: ${{ github.workspace }}
+        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
         run: |
           set -euo pipefail
           docker save emisar/portal:ci | gzip -1 > /tmp/emisar-portal-image.tar.gz
           test -s /tmp/emisar-portal-image.tar.gz
 
       - name: Upload tested image
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: portal-image-${{ github.sha }}
@@ -708,12 +740,14 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, go, packs, infra, dep-age, actionlint]
+    needs: [changes, portal, portal-image, mcp-listing, go, packs, infra, dep-age, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       CHANGES: ${{ needs.changes.result }}
       PORTAL: ${{ needs.portal.result }}
+      PORTAL_IMAGE: ${{ needs.portal-image.result }}
+      MCP_LISTING: ${{ needs.mcp-listing.result }}
       GO: ${{ needs.go.result }}
       PACKS: ${{ needs.packs.result }}
       INFRA: ${{ needs.infra.result }}
@@ -724,7 +758,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$CHANGES" = success || { echo "::error::Changes ended $CHANGES"; exit 1; }
-          for gate in PORTAL GO PACKS INFRA DEP_AGE ACTIONLINT; do
+          for gate in PORTAL PORTAL_IMAGE MCP_LISTING GO PACKS INFRA DEP_AGE ACTIONLINT; do
             result=${!gate}
             case "$result" in
               success|skipped) ;;
@@ -734,7 +768,7 @@ jobs:
 
   portal-publish:
     name: CD - Publish portal image
-    if: github.event_name == 'push' && needs.changes.outputs.portal == 'true'
+    if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
     needs: [changes, ci-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -826,7 +860,7 @@ jobs:
 
   packs-publish:
     name: CD - Publish pack registry
-    if: github.event_name == 'push' && needs.changes.outputs.packs == 'true'
+    if: github.event_name == 'push' && needs.changes.outputs.packs_release == 'true'
     needs: [changes, ci-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -834,7 +868,7 @@ jobs:
       group: packs-publish
       cancel-in-progress: false
     environment:
-      name: release
+      name: pack-registry
     permissions:
       contents: read
       id-token: write
@@ -918,7 +952,7 @@ jobs:
       always() &&
       github.event_name == 'push' &&
       needs.ci-gate.result == 'success' &&
-      (needs.changes.outputs.portal == 'true' || needs.changes.outputs.infra == 'true')
+      (needs.changes.outputs.portal_release == 'true' || needs.changes.outputs.infra_release == 'true')
     needs: [changes, ci-gate, portal-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1011,7 +1045,9 @@ jobs:
           IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -euo pipefail
-          confirmable=$(jq -er '.data.attributes.actions["is-confirmable"]' <<< "$RUN_PAYLOAD")
+          confirmable=$(jq -r \
+            '.data.attributes.actions | .IsConfirmable // .["is-confirmable"] // false' \
+            <<< "$RUN_PAYLOAD")
           {
             echo "### Production Terraform plan"
             echo "- commit: \`${GITHUB_SHA}\`"

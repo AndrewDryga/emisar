@@ -10,7 +10,7 @@
 # state records exactly what runs and no imperative gcloud deploy identity or
 # automated apply credential exists in CI.
 #
-# Trust is pinned twice: the provider admits only the release-environment job
+# Trust is pinned twice: the provider admits only the pack-registry environment job
 # in the main workflow on main, and the publisher SA binding trusts only this
 # repository's principalSet.
 
@@ -42,6 +42,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.ref == \"refs/heads/main\"",
     "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/ci.yml@refs/heads/main\"",
-    "assertion.environment == \"release\"",
+    "assertion.environment == \"pack-registry\"",
   ])
 }

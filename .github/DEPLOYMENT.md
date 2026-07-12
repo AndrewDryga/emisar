@@ -21,7 +21,8 @@ Configure these environments with deployment branches restricted to `main`:
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
 | `production-plan` | Protected `main`, no reviewer | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; HCP workspace auto-apply stays disabled and apply remains manual. |
-| `release` | Required reviewer | `MCP_PRIVATE_KEY` | MCP Registry HTTP signing key. GCP pack publishing uses short-lived OIDC and has no stored cloud credential. |
+| `pack-registry` | Required reviewer | None | Main-branch pack publishing through short-lived GCP WIF credentials. |
+| `release` | Required reviewer | `MCP_PRIVATE_KEY` | Signed tag releases. The MCP Registry listing uses the HTTP signing key; binary releases use keyless Sigstore. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -46,3 +47,9 @@ Runner, MCP bridge, and product releases accept only exact SemVer signed
 annotated tags. Their workflows verify GitHub's signature result and the tag's
 commit before building or publishing. Product `v*` tags publish only the hosted
 MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
+
+| Workflow | Tag | Publishes |
+|---|---|---|
+| `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, pack assets, and provenance. |
+| `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and provenance. |
+| `Release - MCP Registry Listing` | `vX.Y.Z` | The hosted server's signed `server.json` listing; no binary artifact. |

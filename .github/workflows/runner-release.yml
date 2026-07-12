@@ -1,4 +1,4 @@
-name: Release · Runner
+name: Release - Runner
 
 run-name: Release ${{ github.ref_name }}
 
