@@ -152,7 +152,7 @@ jobs:
             echo "| Terraform - Validate | $(mark "$infra") |"
             echo "| Dependencies - Release age | $(mark "$deps") |"
             echo "| Actions - Validate workflows | $(mark "$workflows") |"
-            echo "| MCP - Validate registry listing | $(mark "$mcp_listing") |"
+            echo "| Portal - MCP Registry Listing | $(mark "$mcp_listing") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   portal:
@@ -264,7 +264,7 @@ jobs:
         run: ../.agent/scripts/check-portal-test-output.sh
 
   mcp-listing:
-    name: MCP - Validate registry listing
+    name: Portal - MCP Registry Listing
     needs: changes
     if: needs.changes.outputs.mcp_listing == 'true'
     runs-on: ubuntu-latest
