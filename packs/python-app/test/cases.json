@@ -1,0 +1,59 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "py.pip_cache_info",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.pip_check",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.pip_freeze",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.pip_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.pip_outdated",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.pip_show",
+      "args": {
+        "package": "django"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "py.python_version_system",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.site_packages_du",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.sys_path",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "py.venv_python_version",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

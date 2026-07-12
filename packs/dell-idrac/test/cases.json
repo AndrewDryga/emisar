@@ -1,0 +1,131 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "idrac.clear_job_queue",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "idrac.clear_sel",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "idrac.delete_job",
+      "args": {
+        "host": "idrac-web01.mgmt",
+        "job_id": "JID_123456789012"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "idrac.firmware",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.get",
+      "args": {
+        "host": "idrac-web01.mgmt",
+        "path": "/Chassis/System.Embedded.1/Sensors?$expand=*($levels=1)"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.health",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.jobs",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.lclog",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.manager",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.power",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.power_control",
+      "args": {
+        "host": "idrac-web01.mgmt",
+        "reset_type": "GracefulRestart"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    },
+    {
+      "action": "idrac.sel",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.storage",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.system",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "idrac.thermal",
+      "args": {
+        "host": "idrac-web01.mgmt"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

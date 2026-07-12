@@ -1,0 +1,49 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "typesense.collection",
+      "args": {
+        "name": "products"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.collections",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.debug",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.health",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.keys",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.slow_requests",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "typesense.stats",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

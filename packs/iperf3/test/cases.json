@@ -1,0 +1,48 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "iperf3.client",
+      "args": {
+        "host": "10.0.0.5"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "iperf3.server",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "iperf3.udp",
+      "args": {
+        "bitrate": "50M",
+        "host": "10.0.0.5"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "iperf3.version",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    }
+  ]
+}

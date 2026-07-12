@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/andrewdryga/emisar/tools/internal/repo"
 )
 
 // Age windows in days, keyed by bump type, mirroring .github/dependabot.yml
@@ -33,6 +35,7 @@ var manifests = []manifest{
 	{"hex", "portal/mix.lock"},
 	{"go", "runner/go.mod"},
 	{"go", "mcp/go.mod"},
+	{"go", "tools/go.mod"},
 	{"npm", "portal/.agent/scripts/package-lock.json"},
 }
 
@@ -400,14 +403,6 @@ func evaluate(candidates []candidate, ages map[allowKey]time.Time, allowed map[a
 // check: diff the manifests vs a base ref, query registries, enforce
 // --------------------------------------------------------------------------
 
-func repoRoot() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return "", fmt.Errorf("resolving repo root: %w", err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 // gitShow returns path's contents at ref, or "" and false when the file is
 // absent there (a brand-new lockfile: every entry is treated as newly added).
 func gitShow(root, ref, path string) (string, bool) {
@@ -433,7 +428,7 @@ func readManifest(root, path string) (string, bool) {
 // runCheck is the `check` subcommand body. Exit codes: 0 clean, 1 a too-fresh
 // or unverifiable dependency (or an unvetted non-registry source), 2 internal.
 func runCheck(baseRef string) int {
-	root, err := repoRoot()
+	root, err := repo.Root()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: %v\n", err)
 		return 2

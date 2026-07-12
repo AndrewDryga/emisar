@@ -1,0 +1,47 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "zot.catalog",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.manifest",
+      "args": {
+        "reference": "latest",
+        "repo": "library/alpine"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.mgmt",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.search",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.tags",
+      "args": {
+        "repo": "library/alpine"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "zot.v2_base",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

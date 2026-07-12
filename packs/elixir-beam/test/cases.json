@@ -1,0 +1,166 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "beam.elixir_version",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.epmd_names",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.erl_system_version",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.process_limits",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.process_memory",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.process_status",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.process_tree",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.processes",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.recon_trace_calls",
+      "args": {
+        "arity": 2,
+        "duration_ms": 2000,
+        "function": "call",
+        "max_traces": 10,
+        "module": "MyAppWeb.Endpoint"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "beam.recon_trace_clear",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "beam.release_allocators",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_applications",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_binary_leak",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "beam.release_debug_tools",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_ets_tables",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_memory",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_pid",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_ports",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_process_info",
+      "args": {
+        "erlang_pid": "\u003c0.123.0\u003e"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_registered",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_runtime",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_scheduler_usage",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_supervisor_tree",
+      "args": {
+        "depth": 2,
+        "registered_name": "MyApp.Supervisor"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_targets",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "beam.release_top_processes",
+      "args": {
+        "limit": 25,
+        "sort_by": "memory"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

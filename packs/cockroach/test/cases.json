@@ -1,0 +1,191 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "cockroach.cancel_job",
+      "args": {
+        "job_id": 891234567890123456
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cockroach.cancel_query",
+      "args": {
+        "query_id": "16f8c5a0b2c3d4e50000000000000001"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cockroach.cancel_session",
+      "args": {
+        "session_id": "16f8c5a0b2c3d4e50000000000000001"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cockroach.cluster_queries",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.cluster_sessions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.cluster_settings",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.cluster_transactions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.contention_events",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.contention_leaderboard",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.databases",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.jobs",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.locks",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.node_decommission",
+      "args": {
+        "node_id": 4
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cockroach.node_liveness",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.node_recommission",
+      "args": {
+        "node_id": 4
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cockroach.node_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.node_status_one",
+      "args": {
+        "node_id": 3
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.pause_job",
+      "args": {
+        "job_id": 891234567890123456
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cockroach.replication_constraints",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.replication_stats",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.resume_job",
+      "args": {
+        "job_id": 891234567890123456
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cockroach.set_cluster_setting",
+      "args": {
+        "name": "kv.snapshot_rebalance.max_rate",
+        "value": "'64 MiB'"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    },
+    {
+      "action": "cockroach.statement_stats",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.store_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.table_ranges",
+      "args": {
+        "database": "movr",
+        "table": "rides"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "cockroach.table_row_counts",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

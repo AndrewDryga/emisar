@@ -1,0 +1,26 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "bonding.link",
+      "args": {
+        "bond": "bond0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "bonding.list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "bonding.status",
+      "args": {
+        "bond": "bond0"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

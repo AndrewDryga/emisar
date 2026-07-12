@@ -1,0 +1,56 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "rds.create_snapshot",
+      "args": {
+        "instance": "prod-postgres-1",
+        "snapshot_id": "prod-postgres-1-pre-migration-2026-06-01"
+      },
+      "skip": "mutator skipped by default (high); set --include=rds.create_snapshot to run"
+    },
+    {
+      "action": "rds.describe_cluster",
+      "args": {
+        "cluster": "prod-aurora"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.describe_instance",
+      "args": {
+        "instance": "prod-postgres-1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.list_clusters",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.list_instances",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.list_snapshots",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.parameter_groups",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rds.reboot_instance",
+      "args": {
+        "instance": "prod-postgres-1"
+      },
+      "skip": "mutator skipped by default (high); set --include=rds.reboot_instance to run"
+    }
+  ]
+}

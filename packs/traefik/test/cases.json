@@ -1,0 +1,99 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "traefik.acme_cert_expiry",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.acme_domains",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.entrypoints",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.http_host_readiness",
+      "args": {
+        "host": "app.va1.example.com"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.http_middlewares",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.http_routers",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.http_services",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.http_services_summary",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.log_grep_4xx",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.log_grep_5xx",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.overview",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.ping",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.rawdata",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.tcp_routers",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.tcp_services",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.udp_routers",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "traefik.version",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

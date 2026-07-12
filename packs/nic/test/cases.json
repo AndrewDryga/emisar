@@ -1,0 +1,47 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "nic.driver_info",
+      "args": {
+        "iface": "eth0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "nic.features",
+      "args": {
+        "iface": "eth0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "nic.firmware",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nic.link",
+      "args": {
+        "iface": "eth0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "nic.ring",
+      "args": {
+        "iface": "eth0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "nic.stats",
+      "args": {
+        "iface": "eth0"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

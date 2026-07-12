@@ -1,0 +1,272 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "kubernetes.api_versions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.auth_can_i",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.cluster_info",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.control_plane_health",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.cordon",
+      "args": {
+        "name": "ip-10-0-1-23.eu-west-1.compute.internal"
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.cordon to run"
+    },
+    {
+      "action": "kubernetes.crds_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.cronjobs_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.daemonsets_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.delete_pod",
+      "args": {
+        "name": "api-7d4f8c5b8c-x2nzp",
+        "namespace": "default"
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.delete_pod to run"
+    },
+    {
+      "action": "kubernetes.deployments_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.drain",
+      "args": {
+        "name": "ip-10-0-1-23.eu-west-1.compute.internal"
+      },
+      "skip": "mutator skipped by default (critical); set --include=kubernetes.drain to run"
+    },
+    {
+      "action": "kubernetes.endpoints_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.events_for_pod",
+      "args": {
+        "name": "api-7d4f8c5b8c-x2nzp",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.events_recent",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.events_warnings",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.get_yaml",
+      "args": {
+        "kind": "deployment",
+        "name": "api",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.hpa_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.ingresses_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.jobs_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.namespaces",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.networkpolicies_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.node_describe",
+      "args": {
+        "name": "ip-10-0-1-23.eu-west-1.compute.internal"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.nodes_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.nodes_top",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pod_describe",
+      "args": {
+        "name": "api-7d4f8c5b8c-x2nzp",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pod_logs",
+      "args": {
+        "name": "api-7d4f8c5b8c-x2nzp",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pod_previous_logs",
+      "args": {
+        "name": "api-7d4f8c5b8c-x2nzp",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pods_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pods_problem",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pods_top",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pv_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.pvcs_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.quotas_list",
+      "args": {
+        "namespace": "production"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.rollout_history",
+      "args": {
+        "name": "api",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.rollout_restart",
+      "args": {
+        "name": "api",
+        "namespace": "default"
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.rollout_restart to run"
+    },
+    {
+      "action": "kubernetes.rollout_status",
+      "args": {
+        "name": "api",
+        "namespace": "default"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.rollout_undo",
+      "args": {
+        "name": "api",
+        "namespace": "default"
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.rollout_undo to run"
+    },
+    {
+      "action": "kubernetes.scale_deployment",
+      "args": {
+        "name": "api",
+        "namespace": "default",
+        "replicas": 10
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.scale_deployment to run"
+    },
+    {
+      "action": "kubernetes.services_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.set_image",
+      "args": {
+        "container": "api",
+        "image": "ghcr.io/example/api:v1.42.0",
+        "name": "api",
+        "namespace": "default"
+      },
+      "skip": "mutator skipped by default (high); set --include=kubernetes.set_image to run"
+    },
+    {
+      "action": "kubernetes.statefulsets_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.storageclasses_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kubernetes.uncordon",
+      "args": {
+        "name": "ip-10-0-1-23.eu-west-1.compute.internal"
+      },
+      "skip": "mutator skipped by default (medium); set --include=kubernetes.uncordon to run"
+    }
+  ]
+}

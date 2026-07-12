@@ -1,0 +1,44 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "frr.bfd_peers",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "frr.bgp_neighbor_shutdown",
+      "args": {
+        "asn": 65010,
+        "peer": "10.0.0.1"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "frr.bgp_neighbors",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "frr.bgp_summary",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "frr.interfaces",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "frr.route_summary",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

@@ -1,0 +1,196 @@
+{
+  "defaults": {
+    "env": {
+      "CH_HOST": "clickhouse",
+      "CH_USER": "default"
+    }
+  },
+  "cases": [
+    {
+      "action": "ch.asynchronous_metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.backups",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.detached_parts",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.dictionaries",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.disks",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.distribution_queue",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.errors",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.keeper_status",
+      "args": {
+        "path": "/clickhouse"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.kill_mutation",
+      "args": {
+        "database": "default",
+        "mutation_id": "mutation_3.txt",
+        "table": "events"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    },
+    {
+      "action": "ch.kill_query",
+      "args": {
+        "query_id": "abc123-def4-5678"
+      },
+      "skip": "mutator skipped by default (high); set --include=ch.kill_query to run"
+    },
+    {
+      "action": "ch.merge_queue",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.mutation_queue",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.optimize_table",
+      "args": {
+        "database": "default",
+        "table": "events"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.parts_by_partition",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.parts_summary",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.processes",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.query_errors",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.reload_config",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "ch.replicas_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.replication_queue",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.slow_queries",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.stuck_mutations",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.system_drop_replica",
+      "args": {
+        "replica": "replica-7",
+        "table": "analytics.events"
+      },
+      "skip": "mutator skipped by default (critical); set --include=ch.system_drop_replica to run"
+    },
+    {
+      "action": "ch.system_events",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.system_flush_logs",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.system_metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.system_restart_replica",
+      "args": {
+        "table": "analytics.events"
+      },
+      "skip": "mutator skipped by default (high); set --include=ch.system_restart_replica to run"
+    },
+    {
+      "action": "ch.system_sync_replica",
+      "args": {
+        "table": "analytics.events"
+      },
+      "skip": "mutator skipped by default (medium); set --include=ch.system_sync_replica to run"
+    },
+    {
+      "action": "ch.table_sizes",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.tables_overview",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.uptime",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "ch.zookeeper_connection",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

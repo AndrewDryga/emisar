@@ -1,0 +1,89 @@
+{
+  "defaults": {
+    "env": {
+      "ENVOY_ADMIN": "http://envoy:9901"
+    }
+  },
+  "cases": [
+    {
+      "action": "envoy.certs",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.clusters",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.config_dump",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.drain_listeners",
+      "args": {
+        "inboundonly": true
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.healthcheck_fail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.healthcheck_ok",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.listeners",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.logging_get",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.logging_set",
+      "args": {
+        "level": "debug"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "envoy.ready",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.reset_counters",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.runtime",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.server_info",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "envoy.stats",
+      "args": {
+        "filter": "cluster"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

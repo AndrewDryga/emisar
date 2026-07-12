@@ -1,0 +1,27 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "multipath.config",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "multipath.daemon_maps",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "multipath.daemon_paths",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "multipath.topology",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "s3.bucket_encryption",
+      "args": {
+        "bucket": "my-bucket"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.bucket_lifecycle",
+      "args": {
+        "bucket": "my-bucket"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.bucket_location",
+      "args": {
+        "bucket": "my-bucket"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.bucket_policy",
+      "args": {
+        "bucket": "my-bucket"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.bucket_versioning",
+      "args": {
+        "bucket": "my-bucket"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.list_buckets",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.list_objects",
+      "args": {
+        "bucket": "my-bucket",
+        "prefix": "logs/2026/"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "s3.object_metadata",
+      "args": {
+        "bucket": "my-bucket",
+        "key": "logs/2026/06/01.log"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

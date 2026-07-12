@@ -1,0 +1,54 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "vl.field_names",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.field_values",
+      "args": {
+        "field": "level"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.hits",
+      "args": {
+        "query": "_time:24h error",
+        "step": "1h"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.query",
+      "args": {
+        "query": "_time:15m error"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.stats_query",
+      "args": {
+        "query": "_time:1h * | stats by (level) count() logs"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.stats_query_range",
+      "args": {
+        "query": "_time:6h error | stats count() errors",
+        "step": "1h"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vl.streams",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

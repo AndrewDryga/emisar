@@ -1,0 +1,156 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "cloud-init.analyze_blame",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.analyze_dump",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.analyze_show",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.clean",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    },
+    {
+      "action": "cloud-init.clean_logs",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cloud-init.cloud_config_dump",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.collect_logs",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (medium)"
+    },
+    {
+      "action": "cloud-init.init",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cloud-init.init_local",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cloud-init.instance_id",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.journal_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.log_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.modules_config",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cloud-init.modules_final",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cloud-init.output_log_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.query_metadata",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.schema_validate",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.single_module",
+      "args": {
+        "module": "users_groups"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "cloud-init.status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.status_long",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.userdata_dump",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.vendor_data_dump",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "cloud-init.version",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

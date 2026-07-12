@@ -1,0 +1,44 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "vector.component_metrics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.graph",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.health",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.tap",
+      "args": {
+        "component": "parse_json"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.validate",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vector.version",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

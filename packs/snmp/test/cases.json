@@ -1,0 +1,58 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "snmp.bgp_peers",
+      "args": {
+        "host": "10.11.13.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.get",
+      "args": {
+        "host": "10.11.13.1",
+        "oid": "1.3.6.1.2.1.1.5.0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.interfaces",
+      "args": {
+        "host": "10.11.13.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.ospf_general",
+      "args": {
+        "host": "10.11.13.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.ospf_neighbors",
+      "args": {
+        "host": "10.11.13.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.system",
+      "args": {
+        "host": "10.11.13.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "snmp.walk",
+      "args": {
+        "host": "10.11.13.1",
+        "oid": "1.3.6.1.2.1.4.20"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

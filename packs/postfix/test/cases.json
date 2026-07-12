@@ -1,0 +1,91 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "postfix.check_config",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.delete_qid",
+      "args": {
+        "queue_id": "3F7A8C001234"
+      },
+      "skip": "mutator skipped by default (critical); set --include=postfix.delete_qid to run"
+    },
+    {
+      "action": "postfix.flush_queue",
+      "args": {},
+      "skip": "mutator skipped by default (high); set --include=postfix.flush_queue to run"
+    },
+    {
+      "action": "postfix.maillog_grep",
+      "args": {
+        "pattern": "user@example.com"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.maillog_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.mailq",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.postcat_qid",
+      "args": {
+        "queue_id": "3F7A8C001234"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.postconf",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.postsuper_hold",
+      "args": {
+        "qid": "3ABCDEF12345"
+      },
+      "skip": "mutator skipped by default (medium); set --include=postfix.postsuper_hold to run"
+    },
+    {
+      "action": "postfix.postsuper_release",
+      "args": {
+        "qid": "3ABCDEF12345"
+      },
+      "skip": "mutator skipped by default (medium); set --include=postfix.postsuper_release to run"
+    },
+    {
+      "action": "postfix.postsuper_requeue",
+      "args": {
+        "qid": "3ABCDEF12345"
+      },
+      "skip": "mutator skipped by default (high); set --include=postfix.postsuper_requeue to run"
+    },
+    {
+      "action": "postfix.qshape",
+      "args": {
+        "queue": "deferred"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.queue_counts",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "postfix.reload",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

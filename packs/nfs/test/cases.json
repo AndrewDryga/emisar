@@ -1,0 +1,63 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "nfs.cat_etab",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.exportfs_r",
+      "args": {},
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "nfs.exportfs_unexport_path",
+      "args": {
+        "client": "10.1.2.3",
+        "path": "/exports/data"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "nfs.exportfs_v",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.nfs_mounts",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.nfsstat_c",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.nfsstat_s",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.rpcinfo_p",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "nfs.showmount_e",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

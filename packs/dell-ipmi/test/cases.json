@@ -1,0 +1,127 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "ipmi.bootdev",
+      "args": {
+        "device": "pxe",
+        "host": "10.0.0.10"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "ipmi.chassis_status",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.dcmi_power",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.fru",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.lan_print",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.mc_info",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.mc_selftest",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.power_control",
+      "args": {
+        "host": "10.0.0.10",
+        "operation": "soft"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    },
+    {
+      "action": "ipmi.power_status",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.sdr",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.sdr_type",
+      "args": {
+        "host": "10.0.0.10",
+        "type": "Temperature"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.sel",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.sel_clear",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (high)"
+    },
+    {
+      "action": "ipmi.sel_info",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "ipmi.sensor",
+      "args": {
+        "host": "10.0.0.10"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

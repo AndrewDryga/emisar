@@ -1,0 +1,77 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "pure.alerts",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.array_connections",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.arrays",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.arrays_performance",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.arrays_space",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.connections",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.controllers",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.drives",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.hardware",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.hosts",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.network_interfaces",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.ports",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.volumes",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "pure.volumes_space",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

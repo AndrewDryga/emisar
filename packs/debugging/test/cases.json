@@ -1,0 +1,189 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "debugging.disk_free",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.dmesg_oom",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.dmesg_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.drop_caches",
+      "args": {
+        "mode": 1
+      },
+      "skip": "mutator skipped by default (high); set --include=debugging.drop_caches to run"
+    },
+    {
+      "action": "debugging.iostat",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.kernel_taint",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.kill_pid",
+      "args": {
+        "pid": 12345
+      },
+      "skip": "mutator skipped by default (high); set --include=debugging.kill_pid to run"
+    },
+    {
+      "action": "debugging.loadavg",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.lsof_port",
+      "args": {
+        "port": 8080
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.mem_top",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.netstat_connections",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.netstat_listen",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_cwd",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_environ",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_fds",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_io",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_limits",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_stack",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_status",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.pid_threads",
+      "args": {
+        "pid": 4321
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.ping_host",
+      "args": {
+        "host": "1.1.1.1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.processes_top",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.sar_recent",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.slabtop",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.socket_summary",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.swap_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.sysctl_set",
+      "args": {
+        "key": "net.ipv4.tcp_max_syn_backlog",
+        "value": "4096"
+      },
+      "skip": "mutator skipped by default (high); set --include=debugging.sysctl_set to run"
+    },
+    {
+      "action": "debugging.tcp_retrans_top",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.tcp_summary",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.top_open_files",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "debugging.vmstat",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

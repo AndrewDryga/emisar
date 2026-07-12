@@ -1,0 +1,18 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "shell.run_script",
+      "args": {
+        "script": "systemctl is-active nginx \u0026\u0026 curl -fsS http://localhost/health"
+      },
+      "expect_exit": [
+        0,
+        1
+      ],
+      "skip": "mutator skipped by default (critical)"
+    }
+  ]
+}

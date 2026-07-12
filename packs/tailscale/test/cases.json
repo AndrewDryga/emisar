@@ -1,0 +1,56 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "tailscale.debug_prefs",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.dns_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.exit_node_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.ip",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.netcheck",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.ping",
+      "args": {
+        "host": "db-1"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.version",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "tailscale.whois",
+      "args": {
+        "ip": "100.101.102.103"
+      },
+      "expect_exit": 0
+    }
+  ]
+}

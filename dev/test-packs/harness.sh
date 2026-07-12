@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Run every action in a pack's test/cases.yaml.
+# Run every action in a pack's test/cases.json.
 # Usage: harness.sh <pack-name>
-# Reads cases from /packs/<pack>/test/cases.yaml
+# Reads cases from /packs/<pack>/test/cases.json — a GENERATED artifact
+# (tools/cmd/gencases); never hand-edit one, regenerate.
 # Exit 0 if every case passes, 1 otherwise.
 #
-# cases.yaml schema:
+# cases.json schema:
 #   defaults:
 #     env:
 #       KEY: value         # set before every run
@@ -25,7 +26,7 @@ PACK_DIR="${PACK_DIR:-/packs}"
 # `emisar action run` needs a config (packs dir + execution.inherit_env); without
 # --config it falls back to /etc/emisar/config.yaml, which the image doesn't have.
 CONFIG="${EMISAR_CONFIG:-/workspace/test-packs/test-config.yaml}"
-CASES_FILE="$PACK_DIR/$PACK/test/cases.yaml"
+CASES_FILE="$PACK_DIR/$PACK/test/cases.json"
 
 # The emisar binary is mounted from the host at ./bin (git-ignored); the
 # runner-tools image has no Go toolchain, so it must be cross-built on the HOST
@@ -43,19 +44,16 @@ if [ ! -f "$CASES_FILE" ]; then
     exit 2
 fi
 
-# cases.yaml is parsed with jq, on JSON produced from the YAML by python3 — the
-# expressions below are jq's (to_entries, \(...), // empty), and jq is the
-# unambiguous, always-available tool in the image. (mikefarah yq speaks a
-# different language and silently dropped skips/args.)
-for tool in jq python3; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        echo "$tool not installed in runner-tools image; can't parse cases"
-        exit 3
-    fi
-done
+# cases.json is consumed with jq directly — the generated artifact IS JSON,
+# so there is no YAML bridge (and no python) in the image. The expressions
+# below are jq's (to_entries, \(...), // empty).
+if ! command -v jq >/dev/null 2>&1; then
+    echo "jq not installed in runner-tools image; can't parse cases"
+    exit 3
+fi
 
-CASES_JSON=$(python3 -c 'import yaml, json, sys; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)' "$CASES_FILE") || {
-    echo "failed to parse $CASES_FILE as YAML"
+CASES_JSON=$(jq -c . "$CASES_FILE") || {
+    echo "failed to parse $CASES_FILE as JSON"
     exit 3
 }
 

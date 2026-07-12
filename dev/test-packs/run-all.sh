@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run harness.sh against every pack that has a test/cases.yaml.
+# Run harness.sh against every pack that has a test/cases.json.
 # Usage: run-all.sh [pack-name-pattern]
 #
-# Spawns the SUT(s) declared in cases.yaml, runs the pack, tears them down.
+# Spawns the SUT(s) declared in cases.json, runs the pack, tears them down.
 # Prints per-pack summary then a grand-total.
 set -uo pipefail
 
@@ -15,7 +15,7 @@ mkdir -p "$REPORT_DIR"
 
 TOTAL_PASS=0; TOTAL_FAIL=0; TOTAL_SKIP=0; PACKS_RUN=0; PACKS_FAILED=0
 
-for cases in "$PACK_ROOT"/*/test/cases.yaml; do
+for cases in "$PACK_ROOT"/*/test/cases.json; do
     [ -f "$cases" ] || continue
     pack=$(basename "$(dirname "$(dirname "$cases")")")
     [ -n "$PATTERN" ] && [[ "$pack" != *"$PATTERN"* ]] && continue

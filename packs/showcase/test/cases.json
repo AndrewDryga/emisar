@@ -1,0 +1,43 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "showcase.every_arg_type",
+      "args": {
+        "mode": "fast"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "showcase.json_output",
+      "args": {
+        "name": "alice"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "showcase.opts_envelope",
+      "args": {
+        "payload": "ok"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "showcase.path_validation",
+      "args": {
+        "file": "/var/log/syslog"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "showcase.script_action",
+      "args": {
+        "message": "hello",
+        "repeat": 2
+      },
+      "expect_exit": 0
+    }
+  ]
+}

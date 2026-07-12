@@ -1,9 +1,12 @@
 # Pack test harness
 
-Every pack has a `test/cases.yaml` listing one test case per action. The
-harness boots the backing services that the actions need, invokes
-`emisar action run` for each case, and asserts on exit code + stdout
-substrings.
+Every pack has a `test/cases.json` listing one test case per action. It is a
+**generated artifact** — `cd tools && go run ./cmd/gencases` derives it from
+each pack's `actions/*.yaml` plus the policy tables in
+`tools/cmd/gencases/policy.go`; never hand-edit one, change the policy or the
+action YAML and regenerate. The harness boots the backing services the
+actions need, invokes `emisar action run` for each case, and asserts on exit
+code + stdout substrings.
 
 ## Layout
 
@@ -12,33 +15,31 @@ packs/<pack>/                # at the repo root (a sibling of runner/)
 ├── pack.yaml
 ├── actions/*.yaml
 └── test/
-    └── cases.yaml          # one entry per action under actions/
+    └── cases.json          # GENERATED: one entry per action under actions/
 
 dev/test-packs/              # mounted in the container at /workspace/test-packs
 ├── Dockerfile               # builds emisar-runner-tools (all CLI binaries)
 ├── docker-compose.yaml      # backing services (postgres, redis, …); mounts packs/ at /packs
 ├── harness.sh               # run a single pack's cases
-├── run-all.sh               # run every pack with a cases.yaml
+├── run-all.sh               # run every pack with a cases.json
 └── fixtures/                # seed configs, init SQL, etc.
 ```
 
-## cases.yaml schema
+## cases.json schema
 
-```yaml
-defaults:
-  env:
-    PGHOST: postgres
-    PGPASSWORD: testpass
-
-cases:
-  - action: postgres.uptime
-    args: {}
-    expect_exit: 0
-    expect_stdout_contains: ["start"]
-  - action: postgres.kill_pid
-    args: { pid: 99999 }
-    expect_exit: [0, 1]      # accept either — pid may not exist
-    skip: ""                  # set to non-empty to skip with a note
+```json
+{
+  "defaults": {
+    "env": {"PGHOST": "postgres", "PGPASSWORD": "testpass"}
+  },
+  "cases": [
+    {"action": "postgres.uptime", "args": {}, "expect_exit": 0,
+     "expect_stdout_contains": ["start"]},
+    {"action": "postgres.kill_pid", "args": {"pid": 99999},
+     "expect_exit": [0, 1],
+     "skip": "set to non-empty to skip with a note"}
+  ]
+}
 ```
 
 - `args`: passed verbatim as `--arg key=value` to `emisar action run`.

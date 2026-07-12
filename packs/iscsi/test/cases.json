@@ -1,0 +1,27 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "iscsi.ifaces",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "iscsi.nodes",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "iscsi.session_detail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "iscsi.sessions",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

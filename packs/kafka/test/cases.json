@@ -1,0 +1,132 @@
+{
+  "defaults": {
+    "env": {
+      "KAFKA_BOOTSTRAP": "kafka:9092"
+    }
+  },
+  "cases": [
+    {
+      "action": "kafka.alter_topic_retention",
+      "args": {
+        "retention_ms": 604800000,
+        "topic": "orders"
+      },
+      "skip": "mutator skipped by default (high); set --include=kafka.alter_topic_retention to run"
+    },
+    {
+      "action": "kafka.broker_api_versions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.broker_configs",
+      "args": {
+        "broker_id": "0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.cluster_info",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.consumer_lag",
+      "args": {
+        "group": "order-processor"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.delete_consumer_group",
+      "args": {
+        "group": "legacy-consumer"
+      },
+      "skip": "mutator skipped by default (high); set --include=kafka.delete_consumer_group to run"
+    },
+    {
+      "action": "kafka.describe_group",
+      "args": {
+        "group": "order-processor"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.describe_topic",
+      "args": {
+        "topic": "orders"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.leader_partitions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.list_acls",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.list_consumer_offsets",
+      "args": {
+        "group": "order-processor"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.list_groups",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.list_topics",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.preferred_leader_election",
+      "args": {},
+      "skip": "mutator skipped by default (high); set --include=kafka.preferred_leader_election to run"
+    },
+    {
+      "action": "kafka.reassign_status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.reset_offsets_to_earliest",
+      "args": {
+        "group": "order-processor",
+        "topic": "orders"
+      },
+      "skip": "mutator skipped by default (critical); set --include=kafka.reset_offsets_to_earliest to run"
+    },
+    {
+      "action": "kafka.reset_offsets_to_latest",
+      "args": {
+        "group": "order-processor",
+        "topic": "orders"
+      },
+      "skip": "mutator skipped by default (critical); set --include=kafka.reset_offsets_to_latest to run"
+    },
+    {
+      "action": "kafka.topic_configs",
+      "args": {
+        "topic": "orders"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.unavailable_partitions",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "kafka.under_replicated",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

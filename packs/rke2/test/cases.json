@@ -1,0 +1,37 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "rke2.certificate_check",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rke2.crictl_images",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rke2.crictl_pods",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rke2.crictl_ps",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rke2.etcd_health",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "rke2.etcd_snapshot_list",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

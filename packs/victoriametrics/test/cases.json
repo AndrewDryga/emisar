@@ -1,0 +1,57 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "vm.active_queries",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.label_values",
+      "args": {
+        "label": "job"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.labels",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.query_instant",
+      "args": {
+        "query": "up == 0"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.query_range",
+      "args": {
+        "query": "sum(rate(vm_http_requests_total[5m]))",
+        "step": "60s",
+        "window": "1h"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.series",
+      "args": {
+        "match": "node_cpu_seconds_total"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.top_queries",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "vm.tsdb_status",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

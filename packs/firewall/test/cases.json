@@ -1,0 +1,68 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "fw.conntrack_count",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.conntrack_list",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.ip_rule_show",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.iptables_block_ip",
+      "args": {
+        "ip": "203.0.113.42"
+      },
+      "skip": "mutator skipped by default (high); set --include=fw.iptables_block_ip to run"
+    },
+    {
+      "action": "fw.iptables_filter",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.iptables_flush_chain",
+      "args": {
+        "chain": "RATELIMIT"
+      },
+      "skip": "mutator skipped by default (critical); set --include=fw.iptables_flush_chain to run"
+    },
+    {
+      "action": "fw.iptables_mangle",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.iptables_nat",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.iptables_unblock_ip",
+      "args": {
+        "ip": "10.0.5.12"
+      },
+      "skip": "mutator skipped by default (high); set --include=fw.iptables_unblock_ip to run"
+    },
+    {
+      "action": "fw.nft_list_ruleset",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "fw.tc_qdisc_show",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}

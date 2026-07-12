@@ -1,0 +1,57 @@
+{
+  "defaults": {
+    "env": {}
+  },
+  "cases": [
+    {
+      "action": "f2b.banip",
+      "args": {
+        "ip": "203.0.113.42",
+        "jail": "sshd"
+      },
+      "skip": "mutator skipped by default (high); set --include=f2b.banip to run"
+    },
+    {
+      "action": "f2b.banned_ips",
+      "args": {
+        "jail": "sshd"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "f2b.jail_status",
+      "args": {
+        "jail": "sshd"
+      },
+      "expect_exit": 0
+    },
+    {
+      "action": "f2b.log_tail",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "f2b.reload",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "f2b.status",
+      "args": {},
+      "expect_exit": 0
+    },
+    {
+      "action": "f2b.unban_ip",
+      "args": {
+        "ip": "203.0.113.10",
+        "jail": "sshd"
+      },
+      "skip": "mutator skipped by default (medium); set --include=f2b.unban_ip to run"
+    },
+    {
+      "action": "f2b.version",
+      "args": {},
+      "expect_exit": 0
+    }
+  ]
+}
