@@ -2,14 +2,14 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
   use ExUnit.Case, async: true
   alias EmisarWeb.PacksRegistry.Cache
 
-  @catalog_url "https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json"
+  @catalog_url "https://registry.emisar.dev/v1/catalog.json"
 
   defp catalog_json(id, opts \\ []) do
     tarball_url =
       Keyword.get(
         opts,
         :tarball_url,
-        "https://storage.googleapis.com/emisar-pack-registry/v1/#{id}.tar.gz"
+        "https://registry.emisar.dev/v1/#{id}.tar.gz"
       )
 
     Jason.encode!(%{
@@ -85,12 +85,9 @@ defmodule EmisarWeb.PacksRegistry.CacheTest do
       assert {:ok, [pack]} = Cache.evaluate({:ok, under_base}, self_host_url)
       assert pack.id == "redis"
 
-      # The canonical GCS URL is off-base for a self-hoster — the pin follows
-      # the configured catalog_url, not a hardcoded registry base.
-      off_base =
-        catalog_json("redis",
-          tarball_url: "https://storage.googleapis.com/emisar-pack-registry/v1/redis.tar.gz"
-        )
+      # Our canonical registry.emisar.dev URL is off-base for a self-hoster —
+      # the pin follows the configured catalog_url, not a hardcoded base.
+      off_base = catalog_json("redis", tarball_url: "https://registry.emisar.dev/v1/redis.tar.gz")
 
       assert {:keep, message} = Cache.evaluate({:ok, off_base}, self_host_url)
       assert message =~ "not under the registry base"

@@ -11,8 +11,7 @@ defmodule EmisarWeb.PacksRegistry.PackTest do
       vendor: "emisar",
       source_url: "https://github.com/andrewdryga/emisar/tree/main/packs/redis",
       content_hash: "sha256:#{String.duplicate("a", 64)}",
-      tarball_url:
-        "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/#{version}/x.tar.gz",
+      tarball_url: "https://registry.emisar.dev/v1/packs/redis/#{version}/x.tar.gz",
       previous_versions: previous_versions,
       actions: []
     }
@@ -22,8 +21,7 @@ defmodule EmisarWeb.PacksRegistry.PackTest do
     %{
       version: version,
       content_hash: "sha256:#{String.duplicate("b", 64)}",
-      tarball_url:
-        "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/#{version}/y.tar.gz"
+      tarball_url: "https://registry.emisar.dev/v1/packs/redis/#{version}/y.tar.gz"
     }
   end
 

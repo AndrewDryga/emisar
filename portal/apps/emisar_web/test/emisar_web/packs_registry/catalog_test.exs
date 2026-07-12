@@ -21,8 +21,7 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
       "homepage" => "https://github.com/andrewdryga/emisar",
       "source_url" => "https://github.com/andrewdryga/emisar/tree/main/packs/#{id}",
       "content_hash" => "sha256:#{String.duplicate("a", 64)}",
-      "tarball_url" =>
-        "https://storage.googleapis.com/emisar-pack-registry/v1/packs/#{id}/x.tar.gz",
+      "tarball_url" => "https://registry.emisar.dev/v1/packs/#{id}/x.tar.gz",
       "requires" => %{"os" => ["linux"], "binaries" => ["#{id}ctl"]},
       "detect" => %{"binaries" => ["#{id}ctl"], "processes" => [id], "ports" => [6379]},
       "actions" => [
@@ -57,7 +56,7 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
       redis = Enum.find(packs, &(&1.id == "redis"))
       assert %Pack{name: "redis operations", version: "0.1.0"} = redis
       assert redis.content_hash == "sha256:#{String.duplicate("a", 64)}"
-      assert redis.tarball_url =~ "storage.googleapis.com"
+      assert redis.tarball_url =~ "registry.emisar.dev"
       assert redis.source_url =~ "/packs/redis"
       assert redis.detect == %{binaries: ["redisctl"], processes: ["redis"], ports: [6379]}
       assert [%{id: "redis.info", command: %{binary: "redis"}}] = redis.actions
@@ -75,8 +74,7 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
         %{
           "version" => "0.1.0",
           "content_hash" => "sha256:#{String.duplicate("b", 64)}",
-          "tarball_url" =>
-            "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.1.0/x.tar.gz"
+          "tarball_url" => "https://registry.emisar.dev/v1/packs/redis/0.1.0/x.tar.gz"
         }
       ]
 
@@ -96,8 +94,7 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
                %{
                  version: "0.1.0",
                  content_hash: "sha256:#{String.duplicate("b", 64)}",
-                 tarball_url:
-                   "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.1.0/x.tar.gz"
+                 tarball_url: "https://registry.emisar.dev/v1/packs/redis/0.1.0/x.tar.gz"
                }
              ]
     end
@@ -107,7 +104,7 @@ defmodule EmisarWeb.PacksRegistry.CatalogTest do
         %{
           "version" => "0.1.0",
           "content_hash" => "sha256:nothex",
-          "tarball_url" => "https://storage.googleapis.com/emisar-pack-registry/x.tar.gz"
+          "tarball_url" => "https://registry.emisar.dev/v1/x.tar.gz"
         }
       ]
 
