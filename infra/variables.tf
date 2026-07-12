@@ -205,6 +205,12 @@ variable "alert_email" {
   description = "Email address that receives monitoring alerts (uptime, DB CPU/disk). No default on purpose — set per-workspace (Terraform Cloud variable), and make sure the mailbox actually exists: alerts to an unprovisioned alias silently bounce."
 }
 
+variable "betterstack_api_token" {
+  type        = string
+  description = "Better Stack (BetterUptime) API token — the provider credential for the external uptime monitors + public status page (uptime.tf). Same custody as the app secrets: a SENSITIVE Terraform Cloud workspace variable, never a committed value. No default on purpose — the workspace must hold it before any plan runs."
+  sensitive   = true
+}
+
 # ── DNS records (email posture) ───────────────────────────────────────────────
 variable "dmarc_policy" {
   type        = string

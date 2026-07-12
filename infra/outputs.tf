@@ -68,6 +68,11 @@ output "pack_registry_godaddy_records" {
   }
 }
 
+output "status_page_url" {
+  description = "Public status page (Better Stack). The custom domain resolves once the zone is authoritative — or earlier by adding `status CNAME statuspage.betteruptime.com` at the current registrar; until then the page serves at https://<subdomain>.betteruptime.com."
+  value       = "https://status.${var.domain}"
+}
+
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
