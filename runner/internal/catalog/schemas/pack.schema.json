@@ -16,6 +16,7 @@
     },
     "name": {"type": "string", "minLength": 1},
     "version": {"type": "string", "minLength": 1, "description": "Bumped on any contract change; new packs start at 0.1.0."},
+    "retired_below": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$", "description": "Retire every version strictly below this (dot-numeric). Author on a critical fix; permanent and monotonic once published."},
     "description": {"type": "string", "minLength": 1},
     "vendor": {"type": "string"},
     "homepage": {"type": "string", "format": "uri"},

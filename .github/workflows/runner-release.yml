@@ -1,10 +1,10 @@
 name: Release · Runner
 
-run-name: Release ${{ inputs.ref || github.ref_name }}
+run-name: Release ${{ github.ref_name }}
 
-# Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`,
-# or by manual `workflow_dispatch` (also restricted to maintainers via
-# the `release` environment's required-reviewers config).
+# Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`
+# (the /release skill cuts the signed tag). Re-running a release is a re-run
+# of that tag's run from the Actions UI — no separate manual trigger.
 #
 # A PR cannot reach this workflow:
 #
@@ -31,12 +31,6 @@ on:
   push:
     tags:
       - "runner-v*.*.*"
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: "git tag to release (e.g. runner-v0.3.0)"
-        required: true
-        type: string
 
 concurrency:
   group: runner-release-${{ github.ref }}
@@ -47,14 +41,19 @@ permissions:
 
 jobs:
   verify:
-    name: Verify (vet + test)
+    name: Verify release source
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -62,8 +61,43 @@ jobs:
           cache: true
           cache-dependency-path: runner/go.sum
 
-      - run: cd runner && go vet ./...
-      - run: cd runner && go test -race -count=1 ./...
+      - name: Verify exact signed annotated tag
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::tag must exactly match runner-vMAJOR.MINOR.PATCH"; exit 1; }
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+          test "$(jq -r '.object.type' <<< "$ref")" = tag || {
+            echo "::error::release tags must be signed annotated tags"; exit 1; }
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+          test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
+            echo "::error::GitHub could not verify the release tag signature"; exit 1; }
+          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
+            echo "::error::tag target does not match the checked-out commit"; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::release tag target is not on main"; exit 1; }
+
+      - name: Full runner release gate
+        working-directory: runner
+        run: |
+          set -euo pipefail
+          files=$(gofmt -l -s .)
+          test -z "$files" || { echo "::error::gofmt required for: $files"; exit 1; }
+          go vet ./...
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          staticcheck ./...
+          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+          govulncheck ./...
+          go test -race -count=1 ./...
+
+      - name: Verify installer
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck install.sh
+          bash -n install.sh
 
   validate-packs:
     # Runs every shipped pack through `emisar pack validate` before
@@ -74,10 +108,12 @@ jobs:
     name: Validate packs
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -143,10 +179,13 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -158,14 +197,12 @@ jobs:
       - name: derive version
         id: ver
         run: |
-          ref="${{ inputs.ref || github.ref_name }}"
-          ref="${ref#refs/tags/}"
-          if [[ ! "$ref" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::tag $ref doesn't match runner-vMAJOR.MINOR.PATCH"
+          if [[ ! "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag $RELEASE_TAG doesn't match runner-vMAJOR.MINOR.PATCH"
             exit 1
           fi
-          version="${ref#runner-v}"
-          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          version="${RELEASE_TAG#runner-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: build
@@ -251,10 +288,12 @@ jobs:
     # protection.
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: download artefacts
@@ -275,10 +314,9 @@ jobs:
       - name: derive version
         id: ver
         run: |
-          ref="${{ inputs.ref || github.ref_name }}"
-          ref="${ref#refs/tags/}"
-          version="${ref#runner-v}"
-          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#runner-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: create GitHub release

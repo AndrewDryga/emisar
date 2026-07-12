@@ -71,7 +71,7 @@ variable "instance_count" {
 
 variable "container_image" {
   type        = string
-  description = "Fully-qualified portal image on public GHCR, pinned by digest or immutable `sha-<sha>` tag — NEVER a floating tag like `:latest` (a mutable tag means the registry, not Terraform state, decides what boots on the next auto-heal or scale-out). No default on purpose: CD · Portal sets this workspace variable to the freshly pushed digest and queues the apply; rollback = redeploy a previous digest."
+  description = "Fully-qualified portal image on public GHCR, pinned by digest or immutable `sha-<sha>` tag — NEVER a floating tag like `:latest` (a mutable tag means the registry, not Terraform state, decides what boots on the next auto-heal or scale-out). No default on purpose: CI passes the tested digest into an approval-gated Terraform run; rollback = apply a previous digest."
 
   validation {
     condition     = can(regex("@sha256:[0-9a-f]{64}$|:sha-[0-9a-f]+$", var.container_image))

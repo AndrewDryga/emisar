@@ -45,12 +45,11 @@ immutable object.`,
 
 func packCatalogBuildCmd() *cobra.Command {
 	var (
-		packsDir    string
-		outDir      string
-		baseURL     string
-		repoURL     string
-		previous    string
-		retireOlder []string
+		packsDir string
+		outDir   string
+		baseURL  string
+		repoURL  string
+		previous string
 	)
 	cmd := &cobra.Command{
 		Use:   "build",
@@ -69,15 +68,12 @@ Pass --previous <catalog.json> (the currently-published catalog) to enforce
 the "preserve every version/hash" guarantee: the build fails if any pack
 changed bytes for an already-published id+version — bump the version instead.
 --previous also carries each pack's prior versions forward into its trust
-window (previous_versions) and its retirement watermark.
-
-Pass --retire-older <pack-id> (repeatable) on a critical fix to retire every
-older version of that pack in one operation: its retired_below is set to the
-current version and its carried history is cleared. Requires --previous.
+window (previous_versions) and enforces its retirement floor (retired_below):
+that floor is authored in the pack.yaml itself, and the build refuses to lower
+or drop an already-published one.
 
   packctl catalog build --packs ./packs --out ./dist
-  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
-  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis`,
+  packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg, err := packs.LoadAll([]string{packsDir}, packs.LoadOptions{})
@@ -88,10 +84,7 @@ current version and its carried history is cleared. Requires --previous.
 				return fmt.Errorf("no packs found in %s", packsDir)
 			}
 
-			if len(retireOlder) > 0 && previous == "" {
-				return fmt.Errorf("--retire-older requires --previous (retirement is applied against the currently-published catalog)")
-			}
-			opts := catalog.BuildOptions{BaseURL: baseURL, RepoURL: repoURL, RetireOlder: retireOlder}
+			opts := catalog.BuildOptions{BaseURL: baseURL, RepoURL: repoURL}
 			if previous != "" {
 				prev, err := loadPreviousCatalog(previous)
 				if err != nil {
@@ -122,7 +115,6 @@ current version and its carried history is cleared. Requires --previous.
 	cmd.Flags().StringVar(&baseURL, "base-url", defaultRegistryBaseURL, "public base URL tarball URLs join onto")
 	cmd.Flags().StringVar(&repoURL, "repo-url", catalog.DefaultRepoURL, "source repository URL for source links")
 	cmd.Flags().StringVar(&previous, "previous", "", "currently-published catalog.json to check version/hash drift against and carry version history forward from")
-	cmd.Flags().StringArrayVar(&retireOlder, "retire-older", nil, "pack id to retire all older versions of (repeatable; requires --previous)")
 	return cmd
 }
 

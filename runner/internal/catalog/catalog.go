@@ -141,12 +141,9 @@ type BuildOptions struct {
 	// fails if any pack changed bytes for an already-published id+version
 	// (the "preserve every version/hash" guarantee) — bump the version to
 	// publish new bytes. Previous is also the source of each pack's carried-
-	// forward previous_versions history and retired_below watermark.
+	// forward previous_versions history, and the published retired_below
+	// floor the build enforces monotonicity against.
 	Previous *Catalog
-	// RetireOlder is the set of pack IDs to retire older versions of: each
-	// named pack's retired_below is set to its current version and its
-	// version history is cleared. An unknown ID is a build error.
-	RetireOlder []string
 }
 
 // Build turns a loaded pack registry into a Catalog. The registry must have
@@ -184,23 +181,24 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 			actions = []Action{}
 		}
 		cat.Packs = append(cat.Packs, Pack{
-			ID:          p.ID,
-			Name:        p.Name,
-			Version:     p.Version,
-			Description: normalizeDescription(p.Description),
-			Vendor:      vendorOr(p.Vendor),
-			Homepage:    homepageOr(p.Homepage, repoURL),
-			SourceURL:   repoURL + "/tree/main/packs/" + p.ID,
-			ContentHash: hash,
-			TarballURL:  base + "/" + TarballObject(p.ID, p.Version, hash),
-			Requires:    Requires{OS: nonNil(p.Requires.OS), Binaries: nonNil(p.Requires.Binaries)},
-			Detect:      deriveDetect(p.Requires.Binaries, p.Detect.Binaries, p.Detect.Processes, p.Detect.Ports),
-			Actions:     actions,
+			ID:           p.ID,
+			Name:         p.Name,
+			Version:      p.Version,
+			Description:  normalizeDescription(p.Description),
+			Vendor:       vendorOr(p.Vendor),
+			Homepage:     homepageOr(p.Homepage, repoURL),
+			SourceURL:    repoURL + "/tree/main/packs/" + p.ID,
+			ContentHash:  hash,
+			TarballURL:   base + "/" + TarballObject(p.ID, p.Version, hash),
+			Requires:     Requires{OS: nonNil(p.Requires.OS), Binaries: nonNil(p.Requires.Binaries)},
+			Detect:       deriveDetect(p.Requires.Binaries, p.Detect.Binaries, p.Detect.Processes, p.Detect.Ports),
+			Actions:      actions,
+			RetiredBelow: p.RetiredBelow,
 		})
 	}
 	sort.Slice(cat.Packs, func(i, j int) bool { return cat.Packs[i].ID < cat.Packs[j].ID })
 
-	if err := cat.carryForward(opts.Previous, opts.RetireOlder, base); err != nil {
+	if err := cat.carryForward(opts.Previous, base); err != nil {
 		return nil, err
 	}
 	if err := cat.checkDrift(opts.Previous); err != nil {
@@ -209,23 +207,13 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	return cat, nil
 }
 
-// carryForward fills each pack's previous_versions history and retired_below
-// watermark from the previously-published catalog, applying any --retire-older
-// requests. All version comparisons are dot-numeric and fail the build on junk.
-// base re-homes carried tarball URLs (see packHistory).
-func (c *Catalog) carryForward(prev *Catalog, retireOlder []string, base string) error {
-	known := make(map[string]bool, len(c.Packs))
-	for _, p := range c.Packs {
-		known[p.ID] = true
-	}
-	retire := make(map[string]bool, len(retireOlder))
-	for _, id := range retireOlder {
-		if !known[id] {
-			return fmt.Errorf("catalog: --retire-older names unknown pack %q", id)
-		}
-		retire[id] = true
-	}
-
+// carryForward fills each pack's previous_versions history and enforces its
+// retired_below floor against the previously-published catalog. The floor is
+// authored in the pack (RetiredBelow, seeded before this runs); the previous
+// catalog is consulted only to reject a lowered or dropped floor. All version
+// comparisons are dot-numeric and fail the build on junk. base re-homes
+// carried tarball URLs (see packHistory).
+func (c *Catalog) carryForward(prev *Catalog, base string) error {
 	prevByID := map[string]*Pack{}
 	if prev != nil {
 		for i := range prev.Packs {
@@ -234,21 +222,22 @@ func (c *Catalog) carryForward(prev *Catalog, retireOlder []string, base string)
 	}
 
 	for i := range c.Packs {
-		history, watermark, err := packHistory(&c.Packs[i], prevByID[c.Packs[i].ID], retire[c.Packs[i].ID], base)
+		history, err := packHistory(&c.Packs[i], prevByID[c.Packs[i].ID], base)
 		if err != nil {
 			return err
 		}
 		c.Packs[i].PreviousVersions = history
-		c.Packs[i].RetiredBelow = watermark
 	}
 	return nil
 }
 
-// packHistory computes one pack's carried-forward history and retirement
-// watermark. Retiring a pack sets its watermark to the current version and
-// clears history; otherwise the watermark carries forward unchanged and the
-// history is dedupe([prev current] ++ prev history) minus current, pruned
-// below the watermark and capped at DefaultPreviousKept.
+// packHistory validates one pack's authored retired_below floor and computes
+// its carried-forward history. The floor (current.RetiredBelow, from the pack
+// YAML) is permanent and monotonic: the build fails if it regresses below —
+// or is dropped from — the previously-published floor, or if the current
+// version is itself below the floor. History is dedupe([prev current] ++ prev
+// history) minus current, pruned below the floor and capped at
+// DefaultPreviousKept.
 //
 // Carried tarball URLs are REBUILT from base + TarballObject (never copied
 // verbatim): the objects are content-addressed, so version+hash pin the path,
@@ -256,37 +245,37 @@ func (c *Catalog) carryForward(prev *Catalog, retireOlder []string, base string)
 // storage.googleapis.com → registry.<domain>) — otherwise the first build
 // after a base flip would mix hosts and the portal's tarball-base pin would
 // reject the catalog wholesale.
-func packHistory(current, prev *Pack, retire bool, base string) ([]PreviousVersion, string, error) {
+func packHistory(current, prev *Pack, base string) ([]PreviousVersion, error) {
+	watermark := current.RetiredBelow
+
 	prevWatermark := ""
 	if prev != nil {
 		prevWatermark = prev.RetiredBelow
 	}
-
-	watermark := prevWatermark
-	if retire {
-		watermark = current.Version
-	}
-	if watermark != "" && watermark != prevWatermark && prevWatermark != "" {
+	if prevWatermark != "" {
+		if watermark == "" {
+			return nil, fmt.Errorf("pack %q: retired_below %q may not be dropped (retirement is permanent)", current.ID, prevWatermark)
+		}
 		cmp, err := compareVersion(watermark, prevWatermark)
 		if err != nil {
-			return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+			return nil, fmt.Errorf("pack %q: %w", current.ID, err)
 		}
 		if cmp < 0 {
-			return nil, "", fmt.Errorf("pack %q: retired_below would regress from %q to %q", current.ID, prevWatermark, watermark)
+			return nil, fmt.Errorf("pack %q: retired_below would regress from %q to %q", current.ID, prevWatermark, watermark)
 		}
 	}
 	if watermark != "" {
 		cmp, err := compareVersion(current.Version, watermark)
 		if err != nil {
-			return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+			return nil, fmt.Errorf("pack %q: %w", current.ID, err)
 		}
 		if cmp < 0 {
-			return nil, "", fmt.Errorf("pack %q: current version %q is below retired_below %q", current.ID, current.Version, watermark)
+			return nil, fmt.Errorf("pack %q: current version %q is below retired_below %q", current.ID, current.Version, watermark)
 		}
 	}
 
-	if retire || prev == nil {
-		return nil, watermark, nil
+	if prev == nil {
+		return nil, nil
 	}
 
 	var cand []PreviousVersion
@@ -305,7 +294,7 @@ func packHistory(current, prev *Pack, retire bool, base string) ([]PreviousVersi
 		if watermark != "" {
 			cmp, err := compareVersion(pv.Version, watermark)
 			if err != nil {
-				return nil, "", fmt.Errorf("pack %q: %w", current.ID, err)
+				return nil, fmt.Errorf("pack %q: %w", current.ID, err)
 			}
 			if cmp < 0 {
 				continue
@@ -318,9 +307,9 @@ func packHistory(current, prev *Pack, retire bool, base string) ([]PreviousVersi
 		}
 	}
 	if len(history) == 0 {
-		return nil, watermark, nil
+		return nil, nil
 	}
-	return history, watermark, nil
+	return history, nil
 }
 
 // compareVersion compares two dot-separated non-negative integer versions

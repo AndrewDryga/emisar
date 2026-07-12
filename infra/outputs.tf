@@ -71,12 +71,13 @@ output "pack_registry_godaddy_records" {
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Publish + deploy the portal image (Actions → «CD · Portal» → Run
-       workflow); FIRST publish only: flip the GHCR package to Public, or the
-       unauthenticated instance pull 403s. A deploy IS a Terraform run: CD sets
-       container_image to the pushed digest in the TFC workspace and queues an
-       apply — rollback = redeploy a previous digest the same way.
-    2. terraform apply — blocks until the MIG serves /healthz.
+    1. Merge through the required «CI Gate». CI publishes the exact tested
+       portal image, uploads this commit's infra configuration to HCP Terraform,
+       and produces the reviewable plan. FIRST publish only: flip the GHCR
+       package to Public, or the unauthenticated instance pull 403s.
+    2. Review the complete saved plan and click «Confirm & Apply» in HCP
+       Terraform. CI never calls apply. The run blocks until the MIG serves
+       /healthz; rollback is another reviewed plan using a previous digest.
     3. BEFORE any traffic move (README has the commands):
          a. import the Fly database into Cloud SQL (freeze Fly writes first);
          b. optional: add Fly's SECRET_KEY_BASE as a NEW secret version so

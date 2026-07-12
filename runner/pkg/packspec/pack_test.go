@@ -58,6 +58,7 @@ func TestPack_Validate(t *testing.T) {
 		{"invalid id", func(p *Pack) { p.ID = "Capital" }},
 		{"missing name", func(p *Pack) { p.Name = "" }},
 		{"missing version", func(p *Pack) { p.Version = "" }},
+		{"non-numeric retired_below", func(p *Pack) { p.RetiredBelow = "1.2.x" }},
 		{"missing description", func(p *Pack) { p.Description = "" }},
 		{"no actions", func(p *Pack) { p.Actions = nil }},
 	}

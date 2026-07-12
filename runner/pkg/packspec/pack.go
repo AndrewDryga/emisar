@@ -4,6 +4,7 @@ package packspec
 import (
 	"fmt"
 	"runtime"
+	"strings"
 )
 
 // SchemaVersion is the currently supported pack schema version.
@@ -19,6 +20,15 @@ type Pack struct {
 	Description   string `yaml:"description"`
 	Vendor        string `yaml:"vendor,omitempty"`
 	Homepage      string `yaml:"homepage,omitempty"`
+
+	// RetiredBelow declares that every version of this pack STRICTLY below it
+	// is retired: a runner still advertising such a version is refused at
+	// dispatch until the operator updates the pack. Author it (dot-numeric,
+	// e.g. "0.2.4") in the SAME commit that ships a critical fix + version
+	// bump, so the retirement floor lives in the pack's own git history and
+	// ships through the normal publish. Retirement is permanent and monotonic:
+	// the registry build refuses to lower or drop an already-published floor.
+	RetiredBelow string `yaml:"retired_below,omitempty"`
 
 	Requires Requirements `yaml:"requires,omitempty"`
 
@@ -196,6 +206,9 @@ func (p *Pack) Validate() error {
 	if !validVersion(p.Version) {
 		return fmt.Errorf("pack %s: invalid version %q (allowed: alphanumerics, dot, hyphen, plus)", p.ID, p.Version)
 	}
+	if p.RetiredBelow != "" && !validDotNumeric(p.RetiredBelow) {
+		return fmt.Errorf("pack %s: retired_below %q must be a dot-numeric version (e.g. 0.2.4)", p.ID, p.RetiredBelow)
+	}
 	if p.Description == "" {
 		return fmt.Errorf("pack %s: missing description", p.ID)
 	}
@@ -236,6 +249,26 @@ func validVersion(v string) bool {
 		}
 		if !alnum && c != '.' && c != '-' && c != '+' {
 			return false
+		}
+	}
+	return true
+}
+
+// validDotNumeric reports whether s is a dot-separated run of non-negative
+// integers ("0.2.4") — the strict shape retirement comparisons require, so a
+// version the ordering machinery can't compare never reaches it.
+func validDotNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, seg := range strings.Split(s, ".") {
+		if seg == "" {
+			return false
+		}
+		for i := 0; i < len(seg); i++ {
+			if seg[i] < '0' || seg[i] > '9' {
+				return false
+			}
 		}
 	}
 	return true

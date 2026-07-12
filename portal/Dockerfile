@@ -94,7 +94,12 @@ RUN mix release
 # --- Runtime stage -------------------------------------------------
 FROM ${RUNNER_IMAGE}
 
+# `upgrade` pulls security patches published after the pinned base snapshot
+# (e.g. the libgnutls30 deb12u7 fix) so the runtime image carries no fixable
+# HIGH/CRITICAL OS CVEs — the blocking CI publish scan refuses to
+# publish an image that does.
 RUN apt-get update -y \
+  && apt-get upgrade -y \
   && apt-get install -y libstdc++6 openssl libncurses5 locales ca-certificates curl \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
