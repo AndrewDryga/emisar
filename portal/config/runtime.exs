@@ -25,6 +25,8 @@ import Config
 #   POOL_SIZE              — Ecto pool size (default 10)
 #   ECTO_IPV6              — "1" / "true" to dial Postgres over IPv6
 #   DATABASE_SSL           — "1" / "true" to require TLS to Postgres
+#   DATABASE_SSL_CACERTFILE — PEM file to verify the server cert against
+#                            (Cloud SQL / private-CA Postgres); implies TLS
 #   DNS_CLUSTER_QUERY      — libcluster DNS query for multi-node deploys
 #   POSTMARK_API_TOKEN     — mailer adapter (Postmark)
 #   MAILGUN_API_KEY        — mailer adapter (Mailgun); requires MAILGUN_DOMAIN
@@ -65,11 +67,32 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  # Cloud SQL (and any private-CA Postgres) signs its server cert with an
+  # instance-specific CA that no public trust store carries, so `ssl: true`'s
+  # public-CA verification can never pass (unknown_ca). With a CA file we pin
+  # verification to that CA instead: validating the chain against the
+  # per-instance CA IS the server authentication. Hostname matching is
+  # skipped deliberately — the cert names "<project>:<instance>", never the
+  # private IP we dial, so it could never match and adds nothing on top of
+  # the pinned chain.
+  database_ssl =
+    case System.get_env("DATABASE_SSL_CACERTFILE") do
+      nil ->
+        System.get_env("DATABASE_SSL") in ~w(true 1)
+
+      cacertfile ->
+        [
+          verify: :verify_peer,
+          cacertfile: cacertfile,
+          customize_hostname_check: [match_fun: fn _reference, _presented -> true end]
+        ]
+    end
+
   config :emisar, Emisar.Repo,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     socket_options: maybe_ipv6,
-    ssl: System.get_env("DATABASE_SSL") in ~w(true 1)
+    ssl: database_ssl
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
