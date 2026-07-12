@@ -1092,26 +1092,28 @@ jobs:
             exit 1
           }
 
+          variables=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars")
           image="$PUBLISHED_IMAGE"
           if [ -z "$image" ]; then
-            state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
-            image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
+            # The workspace variable is desired state. It is updated whenever CI
+            # publishes a tested portal image, even while that image's plan is
+            # queued. Reading current state first would make a later infra-only
+            # run plan a rollback to the last-applied image.
+            image=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .attributes.value' <<< "$variables")
             if [[ ! "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]]; then
-              # One-time bootstrap: the last state predates digest pinning, but
-              # the workspace variable was already corrected by the old CD.
-              image=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars" \
-                | jq -er '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .attributes.value')
+              # Bootstrap only: an older workspace may not have the variable yet.
+              state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
+              image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
             fi
           fi
-          case "$image" in
-            ghcr.io/andrewdryga/emisar@sha256:*) ;;
-            *) echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"; exit 1 ;;
-          esac
+          [[ "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"
+            exit 1
+          }
 
           # Keep the workspace default aligned too. CI runs override it with a
           # run-specific value, while manual/drift runs must never plan a
           # rollback because an old workspace value was left behind.
-          variables=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars")
           variable_id=$(jq -r '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .id' <<< "$variables")
           if [ -n "$variable_id" ]; then
             variable_payload=$(jq -cn --arg id "$variable_id" --arg value "$image" \
