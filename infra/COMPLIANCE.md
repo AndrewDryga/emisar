@@ -40,7 +40,7 @@ outside this repo (📋).
 | Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
 | Reproducible infra (IaC) | ✅ | whole stack; `git log` is the change record |
 | State + secret custody | ⚙️ | Terraform Cloud (org Dryga / project emisar) — encrypted at rest, workspace RBAC, audit log; **workspace access = prod-secret access** |
-| Keyless deploy identities (WIF) | ✅/⚙️ | two, no stored key anywhere: pool `terraform-cloud` / provider `emisar-workspace` pinned to `organization:Dryga:project:emisar:workspace:emisar` → SA `terraform@emisar.iam` (applies); pool `github-actions` pinned to this repository → SA `emisar-deployer` with a custom MIG-rolling-replace-only role (deploy.tf, CD) |
+| Keyless deploy identities (WIF) | ✅/⚙️ | two, no stored key anywhere: pool `terraform-cloud` / provider `emisar-workspace` pinned to `organization:Dryga:project:emisar:workspace:emisar` → SA `terraform@emisar.iam` (applies — and app deploys ARE applies: CD only updates the workspace's `container_image` variable and queues a TFC run); pool `github-actions` pinned to this repository → SA `emisar-pack-publisher`, bucket-scoped objectUser on the pack registry only (deploy.tf, CD · Packs) |
 
 ## SOC 2 Trust Services Criteria — how the platform maps
 

@@ -74,9 +74,9 @@ write_files:
 %{ endif ~}
 
       # Public GHCR pull, no credentials — prod runs the exact artifact
-      # self-hosters pull. `latest` here is what makes one-click CD work (a MIG
-      # rolling replace re-runs this); the per-build `sha-<sha>` tags are the
-      # immutable pointers for pinning or rollback.
+      # self-hosters pull. The image reference is pinned per deploy: CD · Portal
+      # sets var.container_image to the pushed digest and queues a Terraform
+      # apply, so a deploy is a template replace and state records what runs.
       docker pull ${container_image}
 
       # Migrations first — Ecto's advisory lock serializes concurrent instances, so

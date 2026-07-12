@@ -32,7 +32,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /h
 | Area | Resources | SOC 2 relevance |
 |---|---|---|
 | Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; DB/compute private (the only public read is the pack bucket) |
-| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates; `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
+| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates against a matching capacity reservation (no surge — a rollout can never fail on zone stockout); `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
 | Database | Cloud SQL Postgres 18 (latest major) — private IP, PITR backups, SSL-required, deletion-protected; `db_availability_type = "REGIONAL"` runs a synchronous standby with automatic failover | availability, durability/DR, confidentiality |
 | TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
 | Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
@@ -112,9 +112,10 @@ gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleap
 # 1. Publish the portal image: Actions → "CD · Portal" → Run workflow (or push
 #    a v* tag). FIRST publish only: GHCR creates the package PRIVATE — flip it
 #    to Public in the package settings or the unauthenticated instance pull
-#    403s. container_image stays `:latest` BY DESIGN — that's what one-click CD
-#    rolls; every publish also pushes an immutable `sha-<sha>` tag, and
-#    rollback = retag an old sha as latest, deploy again (portal-cd.yml header).
+#    403s. A deploy IS a Terraform run: CD points the workspace's
+#    container_image variable at the pushed immutable digest and queues an
+#    apply on the TFC workspace — rollback = redeploy a previous digest
+#    (portal-cd.yml header). Nothing but Terraform ever mutates the infra.
 
 # 2. Full apply. Blocks until the MIG boots the release, migrates the (empty)
 #    Cloud SQL, and serves /healthz.

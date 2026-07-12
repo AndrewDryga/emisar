@@ -9,6 +9,12 @@ variable "region" {
   default     = "us-central1"
 }
 
+variable "zone" {
+  type        = string
+  description = "Zone the MIG places instances in and the capacity reservation lives in (must be inside var.region). Single-zone by design at the current size — the base-count reservation is what guarantees rollouts and auto-healing can always get instances back; at 2+ instances, zone redundancy means adding zones with a per-zone reservation each (a deliberate change, not a default)."
+  default     = "us-central1-a"
+}
+
 variable "domain" {
   type        = string
   description = "Public hostname, no trailing dot (served by the HTTPS LB)."
@@ -65,7 +71,7 @@ variable "instance_count" {
 
 variable "container_image" {
   type        = string
-  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). `latest` is what one-click CD rolls (the MIG replace re-pulls it); every publish also pushes an immutable `sha-<sha>` tag — set one here (or a digest) to freeze an environment."
+  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). Deploys are TERRAFORM RUNS: CD · Portal sets this to the freshly pushed immutable `sha-<sha>` tag in the TFC workspace and queues an apply — the template replace rolls the fleet, and state always records exactly what runs. Rollback = redeploy a previous tag."
   default     = "ghcr.io/andrewdryga/emisar:latest"
 }
 

@@ -29,6 +29,30 @@ resource "google_compute_health_check" "app" {
   depends_on = [google_project_service.apis]
 }
 
+# ── Capacity reservation: the base count is always schedulable ────────────────
+# Rollouts and auto-healing fail when the zone happens to be out of capacity at
+# the moment a replacement instance is created — the classic stuck deploy.
+# Reserve exactly var.instance_count (the running base; surge is deliberately
+# NOT reserved): the update policy below replaces WITHOUT surge, so every
+# recreate frees its reserved slot and re-fills it — capacity-guaranteed
+# rollouts, and the reservation is always consumed by the fleet (an idle
+# reservation bills like a running instance, so consumed == free).
+resource "google_compute_reservation" "emisar" {
+  name = "emisar"
+  zone = var.zone
+
+  # Only instances that explicitly target this reservation consume it — a
+  # stray VM in the project can't silently eat the fleet's slots.
+  specific_reservation_required = true
+
+  specific_reservation {
+    count = var.instance_count
+    instance_properties {
+      machine_type = var.machine_type
+    }
+  }
+}
+
 # ── Instance template: Container-Optimized OS running the portal container ────
 data "google_compute_image" "cos" {
   project = "cos-cloud"
@@ -68,6 +92,16 @@ resource "google_compute_instance_template" "emisar" {
     enable_integrity_monitoring = true
   }
 
+  # Every fleet instance consumes the base-count reservation above — this is
+  # what makes replacement creates immune to zonal capacity stockouts.
+  reservation_affinity {
+    type = "SPECIFIC_RESERVATION"
+    specific_reservation {
+      key    = "compute.googleapis.com/reservation-name"
+      values = [google_compute_reservation.emisar.name]
+    }
+  }
+
   metadata = {
     user-data                 = local.cloud_init
     google-logging-enabled    = "true"
@@ -100,6 +134,10 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   region                           = var.region
   target_size                      = var.instance_count
   distribution_policy_target_shape = "BALANCED"
+  # Pinned to the reservation's zone so every instance can consume it. Zone
+  # redundancy at 2+ instances = more zones with a per-zone reservation each —
+  # a deliberate change (see var.zone).
+  distribution_policy_zones = [var.zone]
 
   # Block `terraform apply` until the rollout is healthy, so a broken deploy FAILS
   # the apply instead of returning while the fleet is down.
@@ -121,15 +159,19 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     initial_delay_sec = 240
   }
 
+  # NO surge, on purpose: a surge instance needs capacity OUTSIDE the
+  # reservation and fails the whole rollout on a zonal stockout — the exact
+  # deploys-often-fail mode reservations exist to kill. Delete-then-recreate
+  # frees a reserved slot and re-fills it, so a rollout can always complete;
+  # the cost is a brief per-instance unavailability window during deploys.
   update_policy {
     type                  = "PROACTIVE"
     minimal_action        = "REPLACE"
-    max_surge_fixed       = 3
-    max_unavailable_fixed = 0
+    max_surge_fixed       = 0
+    max_unavailable_fixed = 1
     # Required explicitly: the BALANCED target shape does not support
     # proactive cross-zone redistribution, and the API rejects the default
-    # (UNSPECIFIED) instead of inferring NONE. Instances still auto-heal and
-    # roll — they just aren't shuffled between zones after a zone recovers.
+    # (UNSPECIFIED) instead of inferring NONE.
     instance_redistribution_type = "NONE"
   }
 
