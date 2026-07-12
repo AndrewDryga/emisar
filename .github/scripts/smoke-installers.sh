@@ -19,17 +19,18 @@ sha256() {
 case "$module" in
   runner)
     EMISAR_PACKS="" bash install.sh --yes --no-service \
-      --version runner-v0.9.1 \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/etc" \
       --data-dir "$tmp/data" \
       --log-dir "$tmp/log" >/dev/null
-    test "$("$tmp/bin/emisar" --version)" = "emisar version 0.9.1"
+    installed=$("$tmp/bin/emisar" --version)
+    [[ "$installed" =~ ^emisar\ version\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+    version=${installed#emisar version }
 
     before=$(sha256 "$tmp/bin/emisar")
     mkdir -p "$tmp/bad-etc/config.yaml"
     if EMISAR_PACKS="" bash install.sh --yes --no-service \
-      --version runner-v0.9.1 \
+      --version "runner-v${version}" \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/bad-etc" \
       --data-dir "$tmp/data" \
@@ -42,8 +43,8 @@ case "$module" in
     grep -Fq "restored previous binary after failed upgrade" "$tmp/failure.log"
     ;;
   mcp)
-    bash install-mcp.sh --yes --version mcp-v0.2.1 --install-dir "$tmp/bin" >/dev/null
-    test "$("$tmp/bin/emisar-mcp" --version)" = "emisar-mcp 0.2.1"
+    bash install-mcp.sh --yes --install-dir "$tmp/bin" >/dev/null
+    [[ "$("$tmp/bin/emisar-mcp" --version)" =~ ^emisar-mcp\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
     ;;
   *)
     echo "unknown installer module: $module" >&2

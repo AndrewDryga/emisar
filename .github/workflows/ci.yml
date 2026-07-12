@@ -39,9 +39,6 @@ on:
       packs_release:
         description: Whether CD must publish the pack registry.
         value: ${{ jobs.changes.outputs.packs_release }}
-      infra_release:
-        description: Whether CD must queue a production Terraform plan.
-        value: ${{ jobs.changes.outputs.infra_release }}
 
 # Cancel obsolete PR revisions. A reusable main call uses its caller's run ID,
 # so separate CD runs never cancel one another.
@@ -67,7 +64,6 @@ jobs:
       go_modules: ${{ steps.detect.outputs.go_modules }}
       portal_release: ${{ steps.detect.outputs.portal_release }}
       packs_release: ${{ steps.detect.outputs.packs_release }}
-      infra_release: ${{ steps.detect.outputs.infra_release }}
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -152,7 +148,19 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-mix-
 
       - name: Install Hex and Rebar
-        run: mix local.hex --force && mix local.rebar --force
+        env:
+          HEX_VERSION: "2.5.1"
+          REBAR3_VERSION: "3.27.0"
+          REBAR3_SHA512: 0d00494d849fdc521a55142278d1f6ba552954fbd65b80d40df8022f594f05d6c99ed1d731bc263691a04176e11d4c6e126c56ba20dca19c5e42d4ffab2e7e36
+        run: |
+          set -euo pipefail
+          grep -Fqx "ARG HEX_VERSION=${HEX_VERSION}" Dockerfile
+          grep -Fqx "ARG REBAR3_VERSION=${REBAR3_VERSION}" Dockerfile
+          grep -Fqx "ARG REBAR3_SHA512=${REBAR3_SHA512}" Dockerfile
+          mix local.hex "$HEX_VERSION" --force
+          curl -fsSL "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" -o /tmp/rebar3
+          printf '%s  %s\n' "$REBAR3_SHA512" /tmp/rebar3 | sha512sum --check --
+          mix local.rebar rebar3 /tmp/rebar3 --force
 
       - name: Fetch locked dependencies
         run: mix deps.get --check-locked
@@ -170,7 +178,7 @@ jobs:
         run: mix credo
 
       - name: Audit dependencies
-        # emisar is a security product — fail the build on a known
+        # emisar is a security product — fail the build on a known advisory.
         # cowlib 2.18.0 is current and has no upstream patch. Its affected
         # response-header encoder is used only by the internal Prometheus
         # listener, which emits fixed headers and is blocked by the GCP
@@ -336,24 +344,15 @@ jobs:
           location=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
             -H 'x-forwarded-proto: https' \
             http://localhost:4000/packs/linux-core/pack.tar.gz)
-          case "$location" in
-            https://registry.emisar.dev/v1/packs/linux-core/*/pack.tar.gz) ;;
-            *) echo "::error::Pack endpoint returned an invalid redirect: ${location}"; exit 1 ;;
-          esac
-          object_path=${location#https://registry.emisar.dev}
-          if getent ahosts registry.emisar.dev >/dev/null; then
-            download_url=$location
-          else
-            # During the one-time DNS migration, verify the exact backing
-            # object bytes. The approval-gated publish job refuses to move the
-            # catalog pointer until the custom domain itself is live.
-            download_url="https://storage.googleapis.com/emisar-pack-registry${object_path}"
-          fi
-          curl -fsS --retry 3 --retry-delay 2 "$download_url" -o /tmp/linux-core.tar.gz
-          mkdir -p /tmp/linux-core-live
-          tar -xzf /tmp/linux-core.tar.gz -C /tmp/linux-core-live
-          cmp packs/linux-core/pack.yaml /tmp/linux-core-live/pack.yaml
-          diff -r packs/linux-core/actions /tmp/linux-core-live/actions
+          pack_version=$(awk -F': ' '$1 == "version" {gsub(/"/, "", $2); print $2; exit}' packs/linux-core/pack.yaml)
+          prefix="https://registry.emisar.dev/v1/packs/linux-core/${pack_version}/"
+          object=${location#"$prefix"}
+          hash=${object%/pack.tar.gz}
+          test -n "$pack_version" && test "$location" = "${prefix}${hash}/pack.tar.gz" && \
+            [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || {
+              echo "::error::Pack endpoint returned an invalid local-catalog redirect: ${location}"
+              exit 1
+            }
           curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/packs.json \
             | grep -q '"linux-core"' \
             || { echo "::error::Pack catalog does not contain linux-core"; exit 1; }
@@ -682,7 +681,9 @@ jobs:
       - name: Enforce dependency release age
         # Supply-chain enforcement: reject a bump to a version published more
         # recently than its release-age window. Dependabot's cooldown only
-        # throttles Dependabot's own PRs; this gate covers ANY lockfile change.
+        # throttles Dependabot's own PRs; this gate covers supported Hex, Go,
+        # and npm manifest changes. Terraform providers deliberately rely on
+        # Dependabot cooldown plus review of the resulting Terraform plan.
         # PR: diff against the PR base. Push to main: diff against the prior
         # tip. The gate's own logic is tested by the Go - Tools job whenever
         # tools/cmd/depgate changes.
@@ -690,7 +691,12 @@ jobs:
         env:
           DEP_AGE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           GOTOOLCHAIN: local
-        run: go run ./cmd/depgate check
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            DEP_AGE_BASE_REF=$(git merge-base "$DEP_AGE_BASE_REF" HEAD)
+            export DEP_AGE_BASE_REF
+          fi
+          go run ./cmd/depgate check
 
   actionlint:
     name: Actions - Validate workflows
@@ -717,6 +723,9 @@ jobs:
           printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
           tar -xzf "$artifact" actionlint
           ./actionlint -color
+
+      - name: Check workflow shell helpers
+        run: shellcheck .github/scripts/*.sh
 
       - name: Run workflow security regression tests
         run: .github/scripts/test-ci-guards.sh

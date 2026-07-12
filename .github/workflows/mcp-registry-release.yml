@@ -31,6 +31,8 @@ jobs:
     permissions:
       contents: read
       checks: read
+    outputs:
+      tag_target: ${{ steps.tag.outputs.tag_target }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
@@ -69,14 +71,15 @@ jobs:
         id: tag
 
       - name: Require successful CI for tagged commit
+        env:
+          SOURCE_SHA: ${{ steps.tag.outputs.tag_target }}
         run: |
           set -euo pipefail
           # PR commits carry the check as "Required - CI"; on main the same job
           # arrives via cd.yml's workflow_call and registers as "CI / Required - CI".
-          source_sha=${{ steps.tag.outputs.tag_target }}
           conclusion=$(gh api \
             -H 'Accept: application/vnd.github+json' \
-            "repos/${GITHUB_REPOSITORY}/commits/${source_sha}/check-runs?per_page=100" \
+            "repos/${GITHUB_REPOSITORY}/commits/${SOURCE_SHA}/check-runs?per_page=100" \
             --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368 and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
           test "$conclusion" = success || {
             echo "::error::tagged commit has no successful Required - CI check (got '$conclusion')"
@@ -89,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
-      name: public-releases
+      name: mcp-registry-publication
     permissions:
       contents: read
     env:
@@ -98,6 +101,13 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          persist-credentials: false
+
+      - name: Check out verified release source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.verify.outputs.tag_target }}
+          path: release-source
           persist-credentials: false
 
       - name: Normalize and verify publisher key
@@ -123,16 +133,15 @@ jobs:
         run: |
           set -euo pipefail
           version=${RELEASE_TAG#v}
-          jq --arg version "$version" '.version = $version' server.json > server.tmp
-          mv server.tmp server.json
+          jq --arg version "$version" '.version = $version' release-source/server.json > /tmp/server.json
 
       - name: Install verified mcp-publisher
         run: .github/scripts/install-mcp-publisher.sh
 
       - name: Validate listing
-        run: ./mcp-publisher validate server.json
+        run: ./mcp-publisher validate /tmp/server.json
 
       - name: Authenticate and publish
         run: |
           ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY_HEX"
-          ./mcp-publisher publish server.json
+          ./mcp-publisher publish /tmp/server.json

@@ -26,6 +26,15 @@ assert_output() {
   }
 }
 
+assert_no_output() {
+  local unexpected=$1 output=$2
+  if grep -Fqx "$unexpected" "$output"; then
+    echo "unexpected selector output '$unexpected'" >&2
+    cat "$output" >&2
+    exit 1
+  fi
+}
+
 # A rename out of portal is a deletion plus an addition. Portal validation must
 # still run for the deleted source path.
 mkdir -p "$tmp/docs"
@@ -76,6 +85,18 @@ out="$tmp/cd-only.out"
 (cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
 assert_output workflows=true "$out"
 assert_output portal_release=false "$out"
-assert_output infra_release=false "$out"
+
+# Terraform lock updates still run Terraform validation, but provider release
+# age is deliberately reviewed through Dependabot cooldown and the saved plan.
+git -C "$tmp" reset --hard -q "$base"
+mkdir -p "$tmp/infra"
+printf 'provider lock\n' >"$tmp/infra/.terraform.lock.hcl"
+git -C "$tmp" add .
+git -C "$tmp" commit -qm terraform-provider
+out="$tmp/terraform-provider.out"
+(cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
+assert_output infra=true "$out"
+assert_output deps=false "$out"
+assert_no_output infra_release=true "$out"
 
 echo "ok: CI selector and frozen-migration adversarial cases pass"

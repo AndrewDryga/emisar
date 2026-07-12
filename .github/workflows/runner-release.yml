@@ -4,7 +4,9 @@ run-name: Release ${{ github.ref_name }}
 
 # Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`
 # (the /release skill cuts the signed tag). Re-running a release is a re-run
-# of that tag's run from the Actions UI — no separate manual trigger.
+# of that tag's run from the Actions UI — no separate manual trigger. The
+# first attempt requires current main; a rerun preserves the original SHA/ref
+# and therefore needs only the signed tag's continuing ancestry on main.
 #
 # A PR cannot reach this workflow:
 #
@@ -47,6 +49,7 @@ jobs:
     env:
       GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -76,8 +79,12 @@ jobs:
             echo "::error::tag target does not match the checked-out commit"; exit 1; }
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
-            echo "::error::new release tags must target current main"; exit 1; }
+          if [ "$RUN_ATTEMPT" = 1 ]; then
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+              echo "::error::new release tags must target current main"; exit 1; }
+          else
+            echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
+          fi
 
       - name: Full runner release gate
         working-directory: runner

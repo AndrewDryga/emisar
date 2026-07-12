@@ -98,7 +98,21 @@ jobs:
           sbom-path: /tmp/portal-sbom/emisar-portal.cdx.json
           push-to-registry: true
 
+      - name: Check current main before moving latest
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          current_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [ "$current_sha" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping latest: ${GITHUB_SHA} is superseded by ${current_sha}."
+          fi
+
       - name: Promote attested image to latest
+        if: steps.latest.outputs.current == 'true'
         env:
           IMAGE: ghcr.io/andrewdryga/emisar
         run: |
@@ -251,6 +265,21 @@ jobs:
             "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
           cmp dist/v1/catalog.json /tmp/canonical-catalog.json
 
+          while IFS= read -r path; do
+            published=/tmp/"$(basename "$(dirname "$path")")-$(basename "$path")"
+            curl -fsS --retry 3 --retry-delay 2 \
+              "https://registry.emisar.dev/${path}" -o "$published"
+            cmp "dist/${path}" "$published"
+          done < <(jq -r '.objects[] | select(.path | endswith("/pack.tar.gz")) | .path' dist/manifest.json)
+
+          while IFS= read -r url; do
+            case "$url" in
+              https://registry.emisar.dev/v1/packs/*/pack.tar.gz) ;;
+              *) echo "::error::catalog contains a non-canonical tarball URL: ${url}"; exit 1 ;;
+            esac
+            curl -fsSI --retry 3 --retry-delay 2 "$url" >/dev/null
+          done < <(jq -r '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-catalog.json | sort -u)
+
   deployment-plan:
     name: CD - Plan production
     # Every successful main commit reconciles production. This deliberately
@@ -260,8 +289,10 @@ jobs:
     if: >-
       always() &&
       needs.ci.result == 'success' &&
-      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped')
-    needs: [ci, portal-publish]
+      (needs.portal-publish.result == 'success' || needs.portal-publish.result == 'skipped') &&
+      ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
+       (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
+    needs: [ci, portal-publish, packs-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -339,6 +370,17 @@ jobs:
 
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
+
+      - name: Require published pack catalog
+        if: steps.current.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 2 \
+            https://registry.emisar.dev/v1/catalog.json -o /tmp/live-catalog.json
+          cmp portal/apps/emisar/priv/packs/catalog.json /tmp/live-catalog.json || {
+            echo "::error::Committed pack catalog is not published at registry.emisar.dev; recover pack publication, then rerun this deployment-plan job"
+            exit 1
+          }
 
       - name: Upload provisional Terraform configuration
         if: steps.current.outputs.current == 'true'

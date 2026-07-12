@@ -24,8 +24,9 @@ import (
 // `default-days`. Keep the two in sync when either changes.
 var windows = map[string]int{"major": 30, "minor": 14, "patch": 7, "new": 7, "unknown": 7}
 
-// manifest is one gated lockfile: its ecosystem decides the parser and the
-// registry the publish timestamps come from.
+// manifest is one supported manifest: its ecosystem decides the parser and the
+// registry the publish timestamps come from. Terraform providers are excluded
+// deliberately; Dependabot cooldown and Terraform plan review gate that ecosystem.
 type manifest struct {
 	eco  string
 	path string

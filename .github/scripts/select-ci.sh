@@ -21,14 +21,14 @@ else
 fi
 
 portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false; mcp_listing=false
-portal_release=false; packs_release=false; infra_release=false
+portal_release=false; packs_release=false
 
 while IFS= read -r -d '' file; do
   [ -n "$file" ] || continue
   case "$file" in
     __run_all__)
       portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true; mcp_listing=true
-      portal_release=true; packs_release=true; infra_release=true
+      portal_release=true; packs_release=true
       ;;
   esac
 
@@ -69,9 +69,9 @@ while IFS= read -r -d '' file; do
   esac
   if [ "$pack_source" = true ]; then packs_release=true; fi
 
-  case "$file" in infra/*) infra=true; infra_release=true ;; .tool-versions) infra=true ;; esac
+  case "$file" in infra/*) infra=true ;; .tool-versions) infra=true ;; esac
   case "$file" in
-    portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|infra/.terraform.lock.hcl|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*)
+    portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*)
       deps=true
       ;;
   esac
@@ -93,7 +93,7 @@ while IFS= read -r -d '' file; do
   esac
 done <"$files"
 if [ "$workflow_delivery" = true ]; then
-  portal_release=true; infra_release=true
+  portal_release=true
 fi
 
 modules=()
@@ -112,7 +112,6 @@ go_modules="[$(IFS=,; echo "${modules[*]-}")]"
   echo "go_modules=$go_modules"
   echo "portal_release=$portal_release"
   echo "packs_release=$packs_release"
-  echo "infra_release=$infra_release"
 } >>"$output"
 
 mark() { if [ "$1" = true ]; then echo run; else echo skip; fi; }

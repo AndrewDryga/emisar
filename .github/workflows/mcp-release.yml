@@ -4,7 +4,9 @@ run-name: Release ${{ github.ref_name }}
 
 # Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
 # `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64),
-# signs build provenance via Sigstore, uploads to GitHub releases.
+# signs build provenance via Sigstore, uploads to GitHub releases. The first
+# attempt requires current main; Actions UI reruns preserve the original
+# SHA/ref and require only that the signed tag remains on main.
 #
 # Same security posture as runner-release.yml: no PR triggers, all
 # write scopes confined to publish, `public-releases` requires
@@ -40,6 +42,7 @@ jobs:
     env:
       GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -69,8 +72,12 @@ jobs:
             echo "::error::tag target does not match the checked-out commit"; exit 1; }
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
-            echo "::error::new release tags must target current main"; exit 1; }
+          if [ "$RUN_ATTEMPT" = 1 ]; then
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+              echo "::error::new release tags must target current main"; exit 1; }
+          else
+            echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
+          fi
 
       - name: Full MCP release gate
         working-directory: mcp

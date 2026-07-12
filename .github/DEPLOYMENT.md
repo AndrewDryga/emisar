@@ -17,6 +17,12 @@ commit, then performs delivery:
    holding the workspace lock, never auto-apply, and HCP discards them if an
    earlier apply changes state before confirmation.
 
+When one commit changes packs and the portal, production planning waits for the
+reviewed pack publication. Rejecting or canceling that publication halts the
+plan. After the pack is published, rerun the newer commit's failed
+`deployment-plan` job; its canonical-catalog check must pass before HCP receives
+a configuration.
+
 ## GitHub environments
 
 Configure these environments with deployment branches restricted to `main`:
@@ -26,7 +32,8 @@ Configure these environments with deployment branches restricted to `main`:
 | `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials; starts only after approval succeeds. |
-| `public-releases` | Required reviewer + `v*`, `runner-v*`, `mcp-v*`, and `main` recovery policies | `MCP_PRIVATE_KEY` | Signed public product, runner, and MCP releases. `main` is allowed only so a reviewed manual recovery can run the current hardened publisher for an existing immutable product release. |
+| `public-releases` | Required reviewer + `runner-v*` and `mcp-v*` policies | None | Signed runner and MCP bridge builds. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
+| `mcp-registry-publication` | Required reviewer + `v*` and `main` recovery policies | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. `main` is allowed only so the current hardened publisher can recover an existing product release. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -60,8 +67,10 @@ conclusion.
 
 Runner, MCP bridge, and product releases accept only exact SemVer signed
 annotated tags targeting current `main`. Their workflows verify GitHub's
-signature result and the tag's commit before building or publishing. Product
-`v*` tags publish only the hosted
+signature result and the tag's commit before building or publishing. A runner
+or MCP bridge rerun keeps the original tag and source SHA, so recovery after
+`main` advances requires rerunning the failed Actions run rather than creating
+another trigger. Product `v*` tags publish only the hosted
 MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 
 | Workflow | Tag | Publishes |
