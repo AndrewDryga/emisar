@@ -1,4 +1,6 @@
-name: Publish MCP Registry metadata
+name: Release · MCP registry listing
+
+run-name: Listing for ${{ github.ref_name }}
 
 on:
   push:
@@ -14,7 +16,7 @@ permissions:
 
 jobs:
   publish:
-    name: publish remote MCP listing
+    name: Publish listing
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

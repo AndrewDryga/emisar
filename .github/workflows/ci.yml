@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   changes:
-    name: detect changed areas
+    name: Changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -126,10 +126,23 @@ jobs:
             echo "workflows=$workflows"
             echo "go_modules=$modules"
           } >> "$GITHUB_OUTPUT"
-          echo "portal=$portal runner=$runner mcp=$mcp packs=$packs infra=$infra deps=$deps workflows=$workflows"
+
+          mark() { if [ "$1" = "true" ]; then echo "▶️ run"; else echo "⏭️ skip"; fi; }
+          {
+            echo "### Gates for this change"
+            echo "| Area | |"
+            echo "|---|---|"
+            echo "| Portal | $(mark "$portal") |"
+            echo "| Go · runner | $(mark "$runner") |"
+            echo "| Go · mcp | $(mark "$mcp") |"
+            echo "| Packs | $(mark "$packs") |"
+            echo "| Infra | $(mark "$infra") |"
+            echo "| Dependency age | $(mark "$deps") |"
+            echo "| Workflow lint | $(mark "$workflows") |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   portal:
-    name: portal
+    name: Portal
     needs: changes
     if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-24.04
@@ -317,7 +330,7 @@ jobs:
           docker stop --time 15 "$cid"
 
   go:
-    name: go (${{ matrix.module }})
+    name: Go · ${{ matrix.module }}
     needs: changes
     if: needs.changes.outputs.go_modules != '[]'
     runs-on: ubuntu-latest
@@ -402,7 +415,10 @@ jobs:
       - name: coverage summary
         if: always()
         working-directory: ${{ matrix.module }}
-        run: go tool cover -func=coverage.out | tail -50
+        run: |
+          go tool cover -func=coverage.out | tail -50
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
+          echo "**Go · ${{ matrix.module }}** coverage: ${total}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: upload coverage
         if: always()
@@ -426,7 +442,7 @@ jobs:
           done
 
   packs:
-    name: validate packs
+    name: Packs
     needs: changes
     if: needs.changes.outputs.packs == 'true'
     runs-on: ubuntu-latest
@@ -479,9 +495,10 @@ jobs:
           fi
 
           printf '\n\033[1;32m✓ all %d packs valid\033[0m\n' "${#packs[@]}"
+          echo "✅ all ${#packs[@]} packs valid" >> "$GITHUB_STEP_SUMMARY"
 
   infra:
-    name: infra (fmt + validate + tflint)
+    name: Infra
     needs: changes
     if: needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
@@ -534,7 +551,7 @@ jobs:
           tflint
 
   dep-age:
-    name: dependency age gate
+    name: Dependency age
     needs: changes
     if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-24.04
@@ -559,7 +576,7 @@ jobs:
         run: python3 .agent/scripts/dep-age-gate.py check
 
   actionlint:
-    name: lint workflows
+    name: Workflow lint
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest

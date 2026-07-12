@@ -1,25 +1,39 @@
-name: Portal image
+name: CD · portal
 
-# Builds the portal release image and pushes it to PUBLIC GHCR
-# (ghcr.io/andrewdryga/emisar) — the production deployment and self-hosters
-# pull the same artifact (infra/COMPLIANCE.md: supply-chain transparency).
+# One-click continuous delivery for the portal:
 #
-# Trigger model mirrors runner-release.yml: a version tag (`v*`, the unified
-# product line) or a manual `workflow_dispatch`; never a PR. The job gates on
-# the `release` environment (required reviewers), so an image can't reach GHCR
-# without a maintainer approving the run. Correctness of the image itself is
-# portal-ci's job — it builds and boot-smokes the same Dockerfile on every
-# main push, so this workflow only builds and publishes.
+#   Actions → "CD · portal" → Run workflow  →  build → scan → publish → deploy
 #
-# Tags pushed:
-#   latest           — what infra's default container_image tracks
-#   sha-<short-sha>  — immutable pointer; the digest for pinning is printed
-#                      in the run summary
-#   <version>        — additionally, when triggered by a `v*` tag
+# Publish builds the release image from portal/Dockerfile and pushes it to
+# PUBLIC GHCR (ghcr.io/andrewdryga/emisar) — the production deployment and
+# self-hosters pull the same artifact (infra/COMPLIANCE.md: supply-chain
+# transparency). Deploy then rolls the GCP MIG: instances re-run cloud-init's
+# `docker pull :latest`, so the roll IS the deploy. A `v*` tag publishes the
+# image but never deploys — cutting a release and shipping it are separate
+# decisions.
 #
-# FIRST publish only: GHCR creates a new package PRIVATE. Flip it to Public in
+# Guardrails:
+#   * The publish job gates on the `release` environment (required
+#     reviewers) — one approval covers the whole run; deploy needs publish.
+#   * A blocking trivy scan runs BEFORE anything is pushed.
+#   * Deploy authenticates keylessly: GitHub's OIDC token exchanges at the
+#     `github-actions` WIF pool (infra/deploy.tf) for `emisar-deployer`, a
+#     custom role that can do exactly one thing — roll this MIG.
+#   * The MIG's health check gates the rollout (max-unavailable 0): a broken
+#     image never drains the fleet, and `wait-until --stable` fails the run.
+#
+# Rollback = retag a previous immutable pointer as latest, deploy again:
+#
+#   docker pull ghcr.io/andrewdryga/emisar:sha-<old>
+#   docker tag  ghcr.io/andrewdryga/emisar:sha-<old> ghcr.io/andrewdryga/emisar:latest
+#   docker push ghcr.io/andrewdryga/emisar:latest
+#   → Actions → "CD · portal" → Run workflow
+#
+# FIRST publish only: GHCR creates the package PRIVATE. Flip it to Public in
 # the package settings (Packages → emisar → Package settings → Change
-# visibility), or the unauthenticated `docker pull` on the instances 403s.
+# visibility) or the unauthenticated `docker pull` on the instances 403s.
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Portal · publish{0} · by @{1}', (inputs.deploy && ' → deploy') || '', github.actor) || format('Portal · image for {0}', github.ref_name) }}
 
 on:
   push:
@@ -31,17 +45,22 @@ on:
         description: "git ref to build (default: the ref you dispatch from)"
         required: false
         type: string
+      deploy:
+        description: "Roll the GCP fleet to the freshly published image"
+        required: false
+        type: boolean
+        default: true
 
 concurrency:
-  group: portal-image-${{ github.ref }}
+  group: portal-cd-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  build-push:
-    name: build + push ghcr.io/andrewdryga/emisar
+  publish:
+    name: Build · scan · publish
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
@@ -49,13 +68,15 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - name: derive image tags
+      - name: Derive image tags
         id: meta
         run: |
           image="ghcr.io/andrewdryga/emisar"
@@ -69,12 +90,12 @@ jobs:
           echo "image=${image}" >> "$GITHUB_OUTPUT"
           echo "tags=${tags}"   >> "$GITHUB_OUTPUT"
 
-      - name: build release image
+      - name: Build release image
         # Build context is the REPO ROOT (the Dockerfile pulls in install.sh and
         # packs/), and the toolchain --build-args come from /.tool-versions —
-        # exactly like portal-ci, one source of truth with local dev. No
-        # EMISAR_DEV_HOST_EXCLUDES here: that build-arg is for portal-ci's
-        # plain-HTTP smoke image only, never a published artifact.
+        # exactly like CI's portal job, one source of truth with local dev. No
+        # EMISAR_DEV_HOST_EXCLUDES here: that build-arg is for CI's plain-HTTP
+        # smoke image only, never a published artifact.
         run: |
           elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
           otp_version=$(awk '$1=="erlang"{print $2}' .tool-versions)
@@ -94,11 +115,11 @@ jobs:
             docker tag "${{ steps.meta.outputs.image }}:latest" "$tag"
           done
 
-      - name: vulnerability scan (trivy, blocks the publish)
+      - name: Vulnerability scan (trivy — blocks the publish)
         # COMPLIANCE.md lists image scanning as the CI-side control for the
         # public-GHCR supply chain: refuse to publish an image with known
         # fixable HIGH/CRITICAL vulns. Pinned + checksum-verified like the
-        # other external tools (same pattern as the CI infra job).
+        # other external tools (same pattern as CI's infra job).
         env:
           TRIVY_VERSION: "0.72.0"
           TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
@@ -110,21 +131,70 @@ jobs:
           tar -xzf "$artifact" trivy
           ./trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
             "${{ steps.meta.outputs.image }}:latest"
+          echo "🛡️ trivy: no fixable HIGH/CRITICAL findings" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: login to GHCR
+      - name: Login to GHCR
         run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: push
+      - name: Push
+        id: push
         run: |
           for tag in ${{ steps.meta.outputs.tags }}; do
             docker push "$tag"
           done
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ steps.meta.outputs.image }}:latest")
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           {
-            echo "### Published"
+            echo "### 📦 Published"
             echo '```'
             printf '%s\n' ${{ steps.meta.outputs.tags }}
             echo "digest: ${digest}"
             echo '```'
-            echo "Pin for a reproducible rollout: \`container_image = \"${digest}\"\` (TFC workspace variable)."
+            echo "Freeze an environment by setting the TFC \`container_image\` variable to a \`sha-\` tag or the digest."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy · roll the fleet
+    needs: publish
+    # Dispatch-only, opt-out via the input. A v* tag publishes the image but
+    # never deploys — shipping is its own click. No second `environment:` gate
+    # here: publish is already release-gated and this job can't run without it
+    # (GitHub prompts per env-gated job, so doubling up = approving twice).
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # OIDC token for the keyless WIF exchange (infra/deploy.tf).
+      id-token: write
+    steps:
+      - name: Authenticate to GCP (keyless, WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          # `terraform output deploy_workload_identity_provider` / `_service_account`.
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-deployer@emisar.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Rolling replace (health-gated, zero-downtime)
+        # Recreate instances from the (unchanged) template: cloud-init re-pulls
+        # :latest, migrations run under Ecto's advisory lock, and the MIG's
+        # auto-healing /healthz check gates each new instance. max-unavailable=0
+        # means the old instance keeps serving until its replacement is healthy.
+        run: |
+          set -euo pipefail
+          gcloud compute instance-groups managed rolling-action replace emisar-mig \
+            --project=emisar --region=us-central1 \
+            --max-surge=3 --max-unavailable=0
+
+      - name: Wait until stable
+        run: |
+          set -euo pipefail
+          gcloud compute instance-groups managed wait-until emisar-mig \
+            --stable --project=emisar --region=us-central1 --timeout=1200
+          {
+            echo "### 🚀 Deployed"
+            echo ""
+            echo "Fleet \`emisar-mig\` (us-central1) is stable on \`${{ needs.publish.outputs.digest }}\`."
           } >> "$GITHUB_STEP_SUMMARY"

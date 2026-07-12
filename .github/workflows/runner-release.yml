@@ -1,4 +1,6 @@
-name: Runner release
+name: Release · runner
+
+run-name: Release ${{ inputs.ref || github.ref_name }}
 
 # Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`,
 # or by manual `workflow_dispatch` (also restricted to maintainers via
@@ -45,7 +47,7 @@ permissions:
 
 jobs:
   verify:
-    name: verify (vet + test)
+    name: Verify (vet + test)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -69,7 +71,7 @@ jobs:
     # release tarball would only fail when an operator extracted it
     # — packs-ci catches it on PR, but a force-push to main after the
     # PR closed could slip a regression past that gate. Defense in depth.
-    name: validate packs
+    name: Validate packs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -110,7 +112,7 @@ jobs:
           printf '\n✓ all %d packs valid\n' "${#packs[@]}"
 
   build:
-    name: build ${{ matrix.os }}/${{ matrix.arch }}
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify, validate-packs]
@@ -237,7 +239,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: publish GitHub release
+    name: Publish release
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build]

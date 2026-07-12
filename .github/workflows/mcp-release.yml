@@ -1,4 +1,6 @@
-name: MCP bridge release
+name: Release · MCP bridge
+
+run-name: Release ${{ inputs.ref || github.ref_name }}
 
 # Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
 # `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64),
@@ -38,7 +40,7 @@ permissions:
 
 jobs:
   verify:
-    name: verify (vet + test)
+    name: Verify (vet + test)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -57,7 +59,7 @@ jobs:
       - run: cd mcp && go test -race -count=1 ./...
 
   build:
-    name: build ${{ matrix.os }}/${{ matrix.arch }}
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify]
@@ -176,7 +178,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: publish GitHub release
+    name: Publish release
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build]
