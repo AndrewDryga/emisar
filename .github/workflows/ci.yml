@@ -21,8 +21,9 @@ name: CI
 #     beyond artifact upload — publishing lives in the tag-triggered,
 #     `release`-environment-gated release workflows.
 #   * `actions/checkout` always runs with `persist-credentials: false`.
-#   * Third-party actions are SHA-pinned; first-party `actions/*` track
-#     major-version tags (GitHub owns that namespace).
+#   * Every action — first-party included — is pinned to a full commit SHA
+#     (the version tag rides along as a comment); an org-level setting
+#     enforces this repo-wide.
 #   * External tools (terraform, tflint, actionlint) are installed at a
 #     pinned version AND checksum-verified before use; Go tools are
 #     version-pinned `go install`s.
@@ -55,7 +56,7 @@ jobs:
       workflows: ${{ steps.detect.outputs.workflows }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           # Full history: PR diffs use the merge-base, push diffs the
@@ -180,7 +181,7 @@ jobs:
       HEX_COOLDOWN: 7d
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
@@ -194,7 +195,7 @@ jobs:
           version-type: strict
 
       - name: Restore deps cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             portal/deps
@@ -354,11 +355,11 @@ jobs:
       # remote toolchain; `local` locks CI to the setup-go-installed one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
@@ -449,7 +450,7 @@ jobs:
 
       - name: upload coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.module }}-coverage
           path: ${{ matrix.module }}/coverage.out
@@ -480,11 +481,11 @@ jobs:
       # Same toolchain pin as the go job (see its comment).
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: runner/go.mod
           cache: true
@@ -538,7 +539,7 @@ jobs:
     env:
       TFLINT_VERSION: v0.61.0
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
@@ -589,13 +590,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           # Need the base commit in history to diff lockfile versions against.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: tools/go.mod
           cache: true
@@ -624,7 +625,7 @@ jobs:
       ACTIONLINT_VERSION: "1.7.12"
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 

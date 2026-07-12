@@ -7,29 +7,31 @@ name: CD · Portal
 # Publish builds the release image from portal/Dockerfile and pushes it to
 # PUBLIC GHCR (ghcr.io/andrewdryga/emisar) — the production deployment and
 # self-hosters pull the same artifact (infra/COMPLIANCE.md: supply-chain
-# transparency). Deploy then rolls the GCP MIG: instances re-run cloud-init's
-# `docker pull :latest`, so the roll IS the deploy. A `v*` tag publishes the
-# image AND refreshes the MCP registry listing (server.json describes the
-# HOSTED remote server, so its version rides the product tag — the mcp-v*
-# bridge binary is a separate stream) but never deploys — cutting a release
-# and shipping it are separate decisions.
+# transparency). A DEPLOY IS A TERRAFORM RUN: this workflow sets the TFC
+# workspace's container_image variable to the freshly pushed digest and queues
+# an apply — the instance-template replace rolls the fleet under the MIG's
+# update policy, and Terraform state always records exactly what production
+# runs. No gcloud, no GCP identity in CI: infrastructure changes go through
+# Terraform, full stop. A `v*` tag publishes the image AND refreshes the MCP
+# registry listing (server.json describes the HOSTED remote server, so its
+# version rides the product tag — the mcp-v* bridge binary is a separate
+# stream) but never deploys — cutting a release and shipping it are separate
+# decisions.
 #
 # Guardrails:
 #   * The publish job gates on the `release` environment (required
 #     reviewers) — one approval covers the whole run; deploy needs publish.
 #   * A blocking trivy scan runs BEFORE anything is pushed.
-#   * Deploy authenticates keylessly: GitHub's OIDC token exchanges at the
-#     `github-actions` WIF pool (infra/deploy.tf) for `emisar-deployer`, a
-#     custom role that can do exactly one thing — roll this MIG.
-#   * The MIG's health check gates the rollout (max-unavailable 0): a broken
-#     image never drains the fleet, and `wait-until --stable` fails the run.
+#   * The apply itself is capacity-safe: the MIG replaces into a base-count
+#     reservation with no surge (infra/compute.tf), and wait_for_instances
+#     fails the run if the new image never turns healthy.
+#   * TFC_TOKEN is a TFC team token scoped to the emisar workspace — it can
+#     set variables and queue runs there, nothing else.
 #
-# Rollback = retag a previous immutable pointer as latest, deploy again:
-#
-#   docker pull ghcr.io/andrewdryga/emisar:sha-<old>
-#   docker tag  ghcr.io/andrewdryga/emisar:sha-<old> ghcr.io/andrewdryga/emisar:latest
-#   docker push ghcr.io/andrewdryga/emisar:latest
-#   → Actions → "CD · Portal" → Run workflow
+# Rollback = redeploy a previous immutable digest the same way: TFC → the
+# emisar workspace → set container_image to the prior digest (every publish
+# prints it in the run summary) → queue an apply. Or re-dispatch this
+# workflow from the old ref.
 #
 # FIRST publish only: GHCR creates the package PRIVATE. Flip it to Public in
 # the package settings (Packages → emisar → Package settings → Change
@@ -73,7 +75,7 @@ jobs:
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
@@ -174,7 +176,7 @@ jobs:
       MCP_PUBLISHER_VERSION: "1.7.9"
       MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
@@ -205,7 +207,7 @@ jobs:
         run: ./mcp-publisher publish server.json
 
   deploy:
-    name: Deploy · roll the fleet
+    name: Deploy · terraform apply
     needs: publish
     # Dispatch-only, opt-out via the input. A v* tag publishes the image but
     # never deploys — shipping is its own click. No second `environment:` gate
@@ -213,39 +215,62 @@ jobs:
     # (GitHub prompts per env-gated job, so doubling up = approving twice).
     if: github.event_name == 'workflow_dispatch' && inputs.deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     permissions:
       contents: read
-      # OIDC token for the keyless WIF exchange (infra/deploy.tf).
-      id-token: write
+    env:
+      # hashicorp/tfc-workflows-github actions read these two.
+      TF_API_TOKEN: ${{ secrets.TFC_TOKEN }}
+      TF_CLOUD_ORGANIZATION: Dryga
+      TFC_WORKSPACE: emisar
+      IMAGE: ${{ needs.publish.outputs.digest }}
     steps:
-      - name: Authenticate to GCP (keyless, WIF)
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      - name: Point the workspace at the new image
+        # Upsert the container_image workspace variable to the immutable digest
+        # just pushed — the pin Terraform state will record as what runs. The
+        # one curl in this job: the official action set covers runs, not
+        # workspace-variable writes.
+        run: |
+          set -euo pipefail
+          api=https://app.terraform.io/api/v2
+          auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
+          ws=$(curl -fsS "${auth[@]}" "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}" | jq -r .data.id)
+          var_id=$(curl -fsS "${auth[@]}" "${api}/workspaces/${ws}/vars" \
+            | jq -r '.data[] | select(.attributes.key == "container_image") | .id')
+          payload=$(jq -n --arg v "$IMAGE" \
+            '{data:{type:"vars",attributes:{key:"container_image",value:$v,category:"terraform",hcl:false,sensitive:false,description:"deployed image — set by CD · Portal"}}}')
+          if [ -n "$var_id" ]; then
+            curl -fsS -X PATCH "${auth[@]}" -d "$payload" "${api}/workspaces/${ws}/vars/${var_id}" > /dev/null
+          else
+            curl -fsS -X POST "${auth[@]}" -d "$payload" "${api}/workspaces/${ws}/vars" > /dev/null
+          fi
+          echo "pinned container_image = ${IMAGE}"
+
+      - name: Plan (Terraform run on the workspace's current configuration)
+        id: run
+        uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         with:
-          # `terraform output deploy_workload_identity_provider` / `_service_account`.
-          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: emisar-deployer@emisar.iam.gserviceaccount.com
+          workspace: emisar
+          message: "CD · Portal deploy ${{ needs.publish.outputs.digest }} (@${{ github.actor }}, gh run ${{ github.run_id }})"
 
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Apply
+        # The apply replaces the instance template and the MIG's update policy
+        # rolls the fleet — no surge, each replacement recreates into the
+        # capacity reservation (infra/compute.tf), and wait_for_instances
+        # fails the run if the new image never turns healthy. Skipped when the
+        # plan has nothing to confirm (redeploying the already-live digest).
+        if: fromJSON(steps.run.outputs.payload).data.attributes.actions['is-confirmable']
+        uses: hashicorp/tfc-workflows-github/actions/apply-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        with:
+          run: ${{ steps.run.outputs.run_id }}
+          comment: "Applied by CD · Portal (gh run ${{ github.run_id }})"
 
-      - name: Rolling replace (health-gated, zero-downtime)
-        # Recreate instances from the (unchanged) template: cloud-init re-pulls
-        # :latest, migrations run under Ecto's advisory lock, and the MIG's
-        # auto-healing /healthz check gates each new instance. max-unavailable=0
-        # means the old instance keeps serving until its replacement is healthy.
+      - name: Deploy summary
+        env:
+          RUN_ID: ${{ steps.run.outputs.run_id }}
         run: |
-          set -euo pipefail
-          gcloud compute instance-groups managed rolling-action replace emisar \
-            --project=emisar --region=us-central1 \
-            --max-surge=3 --max-unavailable=0
-
-      - name: Wait until stable
-        run: |
-          set -euo pipefail
-          gcloud compute instance-groups managed wait-until emisar \
-            --stable --project=emisar --region=us-central1 --timeout=1200
           {
             echo "### 🚀 Deployed"
             echo ""
-            echo "Fleet \`emisar\` (us-central1) is stable on \`${{ needs.publish.outputs.digest }}\`."
+            echo "\`${IMAGE}\` applied via [Terraform run](https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${RUN_ID}) — state records exactly what production runs."
           } >> "$GITHUB_STEP_SUMMARY"
