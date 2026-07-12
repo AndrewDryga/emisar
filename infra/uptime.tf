@@ -36,17 +36,13 @@ resource "betteruptime_monitor" "portal" {
   sms   = false
 }
 
-# The unauthenticated `emisar pack install` path. Paused until
-# registry.<domain> resolves publicly (README cutover runbook — the registry
-# can go live independently, before any traffic move); unpause it then, or the
-# monitor pages about DNS that is intentionally not delegated yet.
+# The unauthenticated `emisar pack install` path — live ahead of the main
+# cutover (the registry went public independently, per the runbook).
 resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
   monitor_type = "status"
 
   pronounceable_name = "emisar pack registry"
-
-  paused = true
 
   follow_redirects = false
   remember_cookies = false

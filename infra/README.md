@@ -97,9 +97,9 @@ credential is `betterstack_api_token`, a **sensitive TFC workspace variable**
 `https://emisar.betteruptime.com` immediately; `status.emisar.dev` (CNAME in
 `dns.tf`, Let's Encrypt already in `var.caa_issuers`) activates at NS
 delegation — or earlier by adding the same CNAME at GoDaddy, which needs no CAA
-change (the runbook keeps `letsencrypt.org` for Fly). The pack-registry monitor
-ships **paused**: unpause it when `registry.emisar.dev` resolves publicly
-(runbook step 3d in `terraform output next_steps`), not before.
+change (the runbook keeps `letsencrypt.org` for Fly). Both monitors are live:
+`registry.emisar.dev` already resolves publicly (it went live independently,
+ahead of the traffic cutover).
 
 ## Clustering (emisar-specific vs onlytty)
 
