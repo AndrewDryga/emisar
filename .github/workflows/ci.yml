@@ -348,11 +348,12 @@ jobs:
           prefix="https://registry.emisar.dev/v1/packs/linux-core/${pack_version}/"
           object=${location#"$prefix"}
           hash=${object%/pack.tar.gz}
-          test -n "$pack_version" && test "$location" = "${prefix}${hash}/pack.tar.gz" && \
-            [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || {
+          if [ -z "$pack_version" ] || \
+            [ "$location" != "${prefix}${hash}/pack.tar.gz" ] || \
+            ! [[ "$hash" =~ ^[0-9a-f]{64}$ ]]; then
               echo "::error::Pack endpoint returned an invalid local-catalog redirect: ${location}"
               exit 1
-            }
+          fi
           curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/packs.json \
             | grep -q '"linux-core"' \
             || { echo "::error::Pack catalog does not contain linux-core"; exit 1; }
