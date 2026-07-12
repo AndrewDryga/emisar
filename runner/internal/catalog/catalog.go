@@ -200,7 +200,7 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	}
 	sort.Slice(cat.Packs, func(i, j int) bool { return cat.Packs[i].ID < cat.Packs[j].ID })
 
-	if err := cat.carryForward(opts.Previous, opts.RetireOlder); err != nil {
+	if err := cat.carryForward(opts.Previous, opts.RetireOlder, base); err != nil {
 		return nil, err
 	}
 	if err := cat.checkDrift(opts.Previous); err != nil {
@@ -212,7 +212,8 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 // carryForward fills each pack's previous_versions history and retired_below
 // watermark from the previously-published catalog, applying any --retire-older
 // requests. All version comparisons are dot-numeric and fail the build on junk.
-func (c *Catalog) carryForward(prev *Catalog, retireOlder []string) error {
+// base re-homes carried tarball URLs (see packHistory).
+func (c *Catalog) carryForward(prev *Catalog, retireOlder []string, base string) error {
 	known := make(map[string]bool, len(c.Packs))
 	for _, p := range c.Packs {
 		known[p.ID] = true
@@ -233,7 +234,7 @@ func (c *Catalog) carryForward(prev *Catalog, retireOlder []string) error {
 	}
 
 	for i := range c.Packs {
-		history, watermark, err := packHistory(&c.Packs[i], prevByID[c.Packs[i].ID], retire[c.Packs[i].ID])
+		history, watermark, err := packHistory(&c.Packs[i], prevByID[c.Packs[i].ID], retire[c.Packs[i].ID], base)
 		if err != nil {
 			return err
 		}
@@ -248,7 +249,14 @@ func (c *Catalog) carryForward(prev *Catalog, retireOlder []string) error {
 // clears history; otherwise the watermark carries forward unchanged and the
 // history is dedupe([prev current] ++ prev history) minus current, pruned
 // below the watermark and capped at DefaultPreviousKept.
-func packHistory(current, prev *Pack, retire bool) ([]PreviousVersion, string, error) {
+//
+// Carried tarball URLs are REBUILT from base + TarballObject (never copied
+// verbatim): the objects are content-addressed, so version+hash pin the path,
+// and rebuilding re-homes the whole history when the serving base moves (e.g.
+// storage.googleapis.com → registry.<domain>) — otherwise the first build
+// after a base flip would mix hosts and the portal's tarball-base pin would
+// reject the catalog wholesale.
+func packHistory(current, prev *Pack, retire bool, base string) ([]PreviousVersion, string, error) {
 	prevWatermark := ""
 	if prev != nil {
 		prevWatermark = prev.RetiredBelow
@@ -283,7 +291,7 @@ func packHistory(current, prev *Pack, retire bool) ([]PreviousVersion, string, e
 
 	var cand []PreviousVersion
 	if prev.Version != current.Version {
-		cand = append(cand, PreviousVersion{Version: prev.Version, ContentHash: prev.ContentHash, TarballURL: prev.TarballURL})
+		cand = append(cand, PreviousVersion{Version: prev.Version, ContentHash: prev.ContentHash})
 	}
 	cand = append(cand, prev.PreviousVersions...)
 
@@ -303,6 +311,7 @@ func packHistory(current, prev *Pack, retire bool) ([]PreviousVersion, string, e
 				continue
 			}
 		}
+		pv.TarballURL = base + "/" + TarballObject(current.ID, pv.Version, pv.ContentHash)
 		history = append(history, pv)
 		if len(history) >= DefaultPreviousKept {
 			break

@@ -287,6 +287,47 @@ func TestBuild_CarryForwardWindow(t *testing.T) {
 	}
 }
 
+func TestBuild_CarryForwardRehomesTarballURLs(t *testing.T) {
+	root := t.TempDir()
+
+	// Two publishes on the original base fill the history with old-base URLs.
+	writeSolo(t, root, "1.0.0")
+	first, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
+	if err != nil {
+		t.Fatalf("build 1.0.0: %v", err)
+	}
+	writeSolo(t, root, "1.0.1")
+	second, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: first})
+	if err != nil {
+		t.Fatalf("build 1.0.1: %v", err)
+	}
+
+	// The next build moves the serving base: every carried entry must re-home
+	// onto it (same content-addressed path, new host) — a verbatim copy would
+	// mix hosts and trip the portal's tarball-base pin.
+	newBase := "https://registry.example"
+	writeSolo(t, root, "1.0.2")
+	moved, err := Build(loadReg(t, root), BuildOptions{BaseURL: newBase, Previous: second})
+	if err != nil {
+		t.Fatalf("build 1.0.2 on new base: %v", err)
+	}
+	p := soloPack(t, moved)
+	if got := historyVersions(p); strings.Join(got, ",") != "1.0.1,1.0.0" {
+		t.Fatalf("history = %v, want [1.0.1 1.0.0]", got)
+	}
+	for _, pv := range p.PreviousVersions {
+		want := newBase + "/" + TarballObject("solo", pv.Version, pv.ContentHash)
+		if pv.TarballURL != want {
+			t.Errorf("carried %s tarball_url = %q, want %q", pv.Version, pv.TarballURL, want)
+		}
+	}
+
+	// Version + hash survive the re-home untouched.
+	if p.PreviousVersions[0].ContentHash != soloPack(t, second).ContentHash {
+		t.Errorf("re-home changed the carried head's content hash")
+	}
+}
+
 func TestBuild_RetireClearsHistoryAndSetsWatermark(t *testing.T) {
 	root := t.TempDir()
 	var prev *Catalog
