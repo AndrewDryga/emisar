@@ -111,6 +111,9 @@ jobs:
               portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
             esac
             case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
+            # The main workflow owns production-plan semantics. Re-plan its
+            # changes against the current image, but never auto-apply them.
+            case "$f" in .github/workflows/ci.yml) infra_release=true ;; esac
           done <<< "$files"
 
           # A workflow/dependabot change re-gates every area — the old
@@ -1026,6 +1029,7 @@ jobs:
           workspace: emisar
           configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
           message: "main ${{ github.sha }} (@${{ github.actor }}, gh run ${{ github.run_id }})"
+          save_plan: true
 
       - name: Read Terraform plan
         id: plan
@@ -1045,16 +1049,14 @@ jobs:
           IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -euo pipefail
-          confirmable=$(jq -r \
-            '.data.attributes.actions | .IsConfirmable // .["is-confirmable"] // false' \
-            <<< "$RUN_PAYLOAD")
+          has_changes=$(jq -r '.data.attributes["has-changes"]' <<< "$RUN_PAYLOAD")
           {
             echo "### Production Terraform plan"
             echo "- commit: \`${GITHUB_SHA}\`"
             echo "- image: \`${IMAGE}\`"
             echo "- resources: **${ADD} add, ${CHANGE} change, ${DESTROY} destroy**"
             echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
-            if [ "$confirmable" = true ]; then
+            if [ "$has_changes" = true ]; then
               echo "- CI stops here: review the plan, then use HCP Terraform's **Confirm & Apply** button"
               echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the current main commit"
             else
