@@ -16,11 +16,13 @@ resource "google_sql_database_instance" "emisar" {
   # window, never an edit-and-forget.
   database_version = "POSTGRES_18"
 
-  # Guards `terraform destroy` / a destructive replacement at the API level, on top
-  # of the Terraform lifecycle guard below.
+  # Blocks Terraform-driven deletion; the API-level guard below separately blocks
+  # direct gcloud/API deletion outside Terraform.
   deletion_protection = true
 
   settings {
+    deletion_protection_enabled = true
+
     # Pinned: left unset, Postgres 18 instances default to ENTERPRISE_PLUS,
     # which only accepts db-perf-optimized-N-* tiers — the create then 400s on
     # any shared-core or db-custom tier. ENTERPRISE covers our whole tier dial;
