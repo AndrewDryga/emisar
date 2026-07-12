@@ -110,6 +110,9 @@ jobs:
 
   packs-approval:
     name: CD - Approve pack registry release
+    # Pack sources are compile-time portal inputs. Wait for the complete
+    # reusable CI call so publication cannot outpace the portal compatibility
+    # and image checks selected for the same commit.
     if: needs.ci.outputs.packs_release == 'true'
     needs: ci
     runs-on: ubuntu-latest
@@ -264,6 +267,12 @@ jobs:
     needs: [ci, portal-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: production-plan
+      # Saved plans do not lock HCP. Serialize their creation here so rapid
+      # pushes keep only the newest pending GitHub job without interrupting one
+      # that is already uploading a configuration.
+      cancel-in-progress: false
     environment:
       name: production-plan
     permissions:
@@ -351,18 +360,31 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Terraform configuration
+      - name: Upload provisional Terraform configuration
         if: steps.current.outputs.current == 'true'
         id: upload
-        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         env:
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
-        with:
-          workspace: emisar
-          directory: ./infra
-          speculative: false
+        run: |
+          set -euo pipefail
+          # tfci v1.3.2 supports provisional configuration versions, but its
+          # GitHub Action wrapper does not expose the flag. Run the same pinned
+          # tool directly so an unapplied plan cannot replace the workspace's
+          # current configuration.
+          upload=$(docker run --rm \
+            --env TF_API_TOKEN \
+            --env TF_CLOUD_ORGANIZATION \
+            --volume "${GITHUB_WORKSPACE}:/workspace:ro" \
+            --workdir /workspace \
+            hashicorp/tfci@sha256:6fc488db7a14bddb98bd92138cda8e0113758448d908981a479a1207546e48a8 \
+            tfci upload -json \
+              -workspace="${TFC_WORKSPACE}" \
+              -directory=./infra \
+              -provisional=true)
+          configuration_version_id=$(jq -er .configuration_version_id <<< "$upload")
+          echo "configuration_version_id=$configuration_version_id" >> "$GITHUB_OUTPUT"
 
-      - name: Queue HCP Terraform plan
+      - name: Create saved HCP Terraform plan
         if: steps.current.outputs.current == 'true'
         id: run
         env:
@@ -380,20 +402,11 @@ jobs:
             --arg workspace "$WORKSPACE_ID" \
             --arg configuration "$CONFIGURATION_VERSION_ID" \
             --arg image "$hcl_image" \
-            '{data: {type: "runs", attributes: {message: $message, variables: [{key: "container_image", value: $image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
+            '{data: {type: "runs", attributes: {message: $message, "save-plan": true, variables: [{key: "container_image", value: $image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
           run=$(curl -fsS "${auth[@]}" -X POST -d "$payload" "${api}/runs")
           run_id=$(jq -er '.data.id' <<< "$run")
           run_link="https://app.terraform.io/app/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}/runs/${run_id}"
-
-          workspace=$(curl -fsS "${auth[@]}" "${api}/workspaces/${WORKSPACE_ID}")
-          current_run_id=$(jq -r '.data.relationships["current-run"].data.id // ""' <<< "$workspace")
-          if [ "$current_run_id" != "$run_id" ]; then
-            position=queued
-          else
-            position=current
-          fi
           {
-            echo "position=$position"
             echo "run_id=$run_id"
             echo "run_link=$run_link"
           } >> "$GITHUB_OUTPUT"
@@ -403,7 +416,6 @@ jobs:
         env:
           RUN_LINK: ${{ steps.run.outputs.run_link }}
           RUN_ID: ${{ steps.run.outputs.run_id }}
-          POSITION: ${{ steps.run.outputs.position }}
           IMAGE: ${{ steps.image.outputs.image }}
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
         run: |
@@ -417,12 +429,9 @@ jobs:
             echo "- image: \`${IMAGE}\`"
             echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
             echo "- HCP status: **${status}**"
-            if [ "$POSITION" = queued ]; then
-              echo "- queued behind the current workspace run; no prior plan was canceled"
-            else
-              echo "- submitted as the current workspace run; no prior plan was canceled"
-            fi
-            echo "- HCP processes workspace runs in order; wait for the complete plan before deciding"
+            echo "- saved plan: it does not hold the workspace lock or wait behind another plan"
+            echo "- HCP automatically discards it if another apply changes state first"
+            echo "- wait for the complete saved plan before deciding"
             echo "- CD stops here: review in HCP, then use **Confirm & Apply** only if the plan is correct"
             echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the commit you intend to deploy"
           } >> "$GITHUB_STEP_SUMMARY"
