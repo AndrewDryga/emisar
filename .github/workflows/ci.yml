@@ -111,9 +111,6 @@ jobs:
               portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
             esac
             case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
-            # The main workflow owns production-plan semantics. Re-plan its
-            # changes against the current image, but never auto-apply them.
-            case "$f" in .github/workflows/ci.yml) infra_release=true ;; esac
           done <<< "$files"
 
           # A workflow/dependabot change re-gates every area — the old
@@ -146,7 +143,7 @@ jobs:
             echo "### Gates for this change"
             echo "| Area | |"
             echo "|---|---|"
-            echo "| Elixir - Portal | $(mark "$portal") |"
+            echo "| Portal - Test | $(mark "$portal") |"
             echo "| Portal - Image | $(mark "$portal") |"
             echo "| Go - Runner | $(mark "$runner") |"
             echo "| Go - MCP | $(mark "$mcp") |"
@@ -159,7 +156,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   portal:
-    name: Elixir - Portal
+    name: Portal - Test
     needs: changes
     if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-24.04

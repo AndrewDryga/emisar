@@ -1,4 +1,4 @@
-name: Release - MCP Registry Listing
+name: Publish - MCP Registry Listing
 
 run-name: MCP Registry listing ${{ github.ref_name }}
 

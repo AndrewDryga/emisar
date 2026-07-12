@@ -53,4 +53,4 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 |---|---|---|
 | `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, pack assets, and provenance. |
 | `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and provenance. |
-| `Release - MCP Registry Listing` | `vX.Y.Z` | The hosted server's signed `server.json` listing; no binary artifact. |
+| `Publish - MCP Registry Listing` | `vX.Y.Z` | The hosted server's signed `server.json` listing; no binary artifact. |
