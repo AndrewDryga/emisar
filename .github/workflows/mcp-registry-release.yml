@@ -53,11 +53,13 @@ jobs:
       - name: Require successful CI for tagged commit
         run: |
           set -euo pipefail
+          # PR commits carry the check as "Required - CI"; on main the same job
+          # arrives via cd.yml's workflow_call and registers as "CI / Required - CI".
           source_sha=$(git rev-parse HEAD)
           conclusion=$(gh api \
             -H 'Accept: application/vnd.github+json' \
             "repos/${GITHUB_REPOSITORY}/commits/${source_sha}/check-runs?per_page=100" \
-            --jq '[.check_runs[] | select(.name == "Required - CI" and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
+            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
           test "$conclusion" = success || {
             echo "::error::tagged commit has no successful Required - CI check (got '$conclusion')"
             exit 1
