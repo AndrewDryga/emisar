@@ -185,10 +185,11 @@ resource "betteruptime_status_page" "emisar" {
   subdomain     = "emisar"
   custom_domain = "status.${var.domain}"
 
-  # Customers can subscribe to incident updates, and reports are generated
-  # automatically when a monitor goes down — communication starts even before a
-  # human picks up the incident.
-  subscribable      = true
+  # Reports are generated automatically when a monitor goes down —
+  # communication starts even before a human picks up the incident.
+  # (`subscribable` is deliberately absent: subscription settings are gated to
+  # a paid Better Stack tier — the API 403s on it — so it stays at the account
+  # default until the plan supports it.)
   automatic_reports = true
 
   # Show a full quarter of history; hide sub-minute blips (a flapping check is
