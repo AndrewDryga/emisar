@@ -34,7 +34,7 @@ git -C "$tmp" commit -qm rename
 out="$tmp/rename.out"
 (cd "$tmp" && GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null "$selector" push "$base")
 assert_output portal=true "$out"
-if (cd "$tmp" && "$frozen" push "$base"); then
+if (cd "$tmp" && "$frozen" push "$base" >"$tmp/rename-frozen.log" 2>&1); then
   echo "renaming a committed migration must fail" >&2
   exit 1
 fi
@@ -60,7 +60,7 @@ git -C "$tmp" reset --hard -q "$base"
 rm "$tmp/portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"
 git -C "$tmp" add -u
 git -C "$tmp" commit -qm delete-migration
-if (cd "$tmp" && "$frozen" push "$base"); then
+if (cd "$tmp" && "$frozen" push "$base" >"$tmp/delete-frozen.log" 2>&1); then
   echo "deleting a committed migration must fail" >&2
   exit 1
 fi

@@ -19,17 +19,17 @@ sha256() {
 case "$module" in
   runner)
     EMISAR_PACKS="" bash install.sh --yes --no-service \
-      --version runner-v0.9.0 \
+      --version runner-v0.9.1 \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/etc" \
       --data-dir "$tmp/data" \
       --log-dir "$tmp/log" >/dev/null
-    test "$("$tmp/bin/emisar" --version)" = "emisar version 0.9.0"
+    test "$("$tmp/bin/emisar" --version)" = "emisar version 0.9.1"
 
     before=$(sha256 "$tmp/bin/emisar")
     mkdir -p "$tmp/bad-etc/config.yaml"
     if EMISAR_PACKS="" bash install.sh --yes --no-service \
-      --version runner-v0.9.0 \
+      --version runner-v0.9.1 \
       --bin-dir "$tmp/bin" \
       --etc-dir "$tmp/bad-etc" \
       --data-dir "$tmp/data" \

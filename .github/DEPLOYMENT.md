@@ -26,7 +26,7 @@ Configure these environments with deployment branches restricted to `main`:
 | `portal-production-plan` | Required reviewer + protected `main` | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials; starts only after approval succeeds. |
-| `public-releases` | Required reviewer + `v*`, `runner-v*`, and `mcp-v*` tag policies | `MCP_PRIVATE_KEY` | Signed public product, runner, and MCP releases. The MCP Registry listing uses the HTTP signing key; binaries use keyless Sigstore. |
+| `public-releases` | Required reviewer + `v*`, `runner-v*`, `mcp-v*`, and `main` recovery policies | `MCP_PRIVATE_KEY` | Signed public product, runner, and MCP releases. `main` is allowed only so a reviewed manual recovery can run the current hardened publisher for an existing immutable product release. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
