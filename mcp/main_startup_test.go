@@ -40,7 +40,14 @@ func runMain(t *testing.T, stdinData string, args []string, env map[string]strin
 	cmd := exec.Command(os.Args[0], args...)
 	// A minimal, controlled environment — start from the sentinel only so a
 	// stray EMISAR_* in the developer's shell can't perturb the assertions.
-	cmd.Env = []string{runMainSentinel + "=1"}
+	cmd.Env = []string{
+		runMainSentinel + "=1",
+		// Under CI's -coverprofile the re-exec'd child is coverage-instrumented
+		// and warns "GOCOVERDIR not set" on stderr, breaking the stderr-empty
+		// assertions. Point it at a scratch dir (the child's coverage is
+		// discarded on purpose — the parent's profile is the one that counts).
+		"GOCOVERDIR=" + t.TempDir(),
+	}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
