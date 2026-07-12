@@ -11,6 +11,14 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-12],
+      slug: "release-integrity-and-pack-registry",
+      title: "Safer releases and a reliable pack registry",
+      tag: "v0.24.0",
+      summary:
+        "Portal releases now publish the exact image exercised by CI, binary releases are immutable and reproducible, and production plans queue in order without replacing an operator's pending review. Pack publication gained fresh mutable pointers, generation-specific verification, and end-to-end tarball checks; until the vendor-neutral registry hostname is live, every catalog and redirect uses the working GCS endpoint instead of sending installers to a dead host."
+    },
+    %{
       date: ~D[2026-07-07],
       slug: "recurrent-jobs-billing-sync-runner-install",
       title: "More reliable background work and a cleaner runner setup",

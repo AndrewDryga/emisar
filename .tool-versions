@@ -1,6 +1,6 @@
 # asdf toolchain for emisar — `asdf install` from the repo root provisions the dev
 # environment for every toolchain, and this file is the single source of truth
-# for the Erlang + Elixir pins: portal-ci.yml reads it via setup-beam (version-file
+# for the Erlang + Elixir pins: the combined CI workflow reads it via setup-beam (version-file
 # + version-type: strict), and the portal Docker build derives its --build-arg
 # toolchain from it — so CI and the release image always match dev, nothing to
 # hand-sync. golang: the go.work + both go.mod floor is 1.26.3 (runner/ + mcp/),

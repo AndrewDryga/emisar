@@ -135,7 +135,7 @@ jobs:
           cache: true
           cache-dependency-path: mcp/go.*
 
-      - name: derive version
+      - name: Derive version
         id: ver
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -146,7 +146,7 @@ jobs:
           echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
-      - name: build
+      - name: Build deterministic archive
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
@@ -155,7 +155,7 @@ jobs:
         run: |
           mkdir -p dist
           (cd mcp && go build -trimpath \
-            -ldflags "-s -w -X main.Version=${VERSION}" \
+            -ldflags "-buildid= -s -w -X main.Version=${VERSION}" \
             -o "../dist/emisar-mcp" .)
           # The MCP bridge ships as a tiny tarball — just the binary,
           # LICENSE, and a short README. No installer script: the
@@ -188,11 +188,30 @@ jobs:
           EOF
           sed -i "s/__VERSION__/${VERSION}/g; s/__GOOS__/${GOOS}/g; s/__GOARCH__/${GOARCH}/g" \
             "dist/${name}/README.md"
-          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
           ls -la dist/
 
-      - name: attest build provenance
+      - name: Verify release archive
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p /tmp/release-check
+          tar -xzf "dist/${name}.tar.gz" -C /tmp/release-check
+          test -x "/tmp/release-check/${name}/emisar-mcp"
+          test -f "/tmp/release-check/${name}/LICENSE"
+          test -f "/tmp/release-check/${name}/README.md"
+          go version -m "/tmp/release-check/${name}/emisar-mcp"
+          if [ "$GOOS/$GOARCH" = linux/amd64 ]; then
+            test "$("/tmp/release-check/${name}/emisar-mcp" --version)" = "emisar-mcp ${VERSION}"
+          fi
+
+      - name: Attest build provenance
         # GitHub's attestation API rejects user-owned private repos
         # (free-tier feature gate). Skip on private; the step kicks
         # back in automatically once the repo is public. See
@@ -203,7 +222,7 @@ jobs:
           subject-path: |
             dist/emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
 
-      - name: upload artefact
+      - name: Upload release archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
@@ -211,6 +230,7 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
           retention-days: 7
+          overwrite: true
 
   publish:
     name: Publish release
@@ -229,12 +249,12 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: false
 
-      - name: download artefacts
+      - name: Download release archives
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artefacts/
 
-      - name: assemble release assets
+      - name: Assemble release assets
         run: |
           mkdir -p release
           find artefacts/ -name "emisar-mcp-*.tar.gz" -exec cp {} release/ \;
@@ -246,7 +266,7 @@ jobs:
           ( cd release && shasum -a 256 emisar-mcp-*.tar.gz > SHA256SUMS-MCP )
           ls -la release/
 
-      - name: derive version
+      - name: Derive version
         id: ver
         run: |
           [[ "$RELEASE_TAG" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -254,7 +274,7 @@ jobs:
           echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
-      - name: create GitHub release
+      - name: Publish immutable GitHub release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
