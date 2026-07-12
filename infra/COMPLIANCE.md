@@ -111,8 +111,11 @@ outside this repo (📋).
   (the config manages project IAM + audit config) + `roles/secretmanager.admin`
   + `roles/iam.serviceAccountUser` + `roles/servicenetworking.networksAdmin`
   (Editor lacks `servicenetworking.services.addPeering`, which the private
-  services access peering requires — found at first full apply, 2026-07-11).
-  Honest note: `projectIamAdmin` makes this SA
+  services access peering requires — found at first full apply, 2026-07-11)
+  + `roles/iam.workloadIdentityPoolAdmin`, `roles/iam.roleAdmin`, and
+  `roles/iam.serviceAccountAdmin` (the deploy-identity resources in deploy.tf:
+  Editor lacks WIF-pool create, custom-role create, and SA-level setIamPolicy —
+  found at the 2026-07-12 apply). Honest note: `projectIamAdmin` makes this SA
   project-admin-equivalent — acceptable because the project is single-purpose
   and the SA is reachable only through the pinned, audit-logged TFC workspace.
 

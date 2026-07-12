@@ -21,6 +21,11 @@ resource "google_sql_database_instance" "emisar" {
   deletion_protection = true
 
   settings {
+    # Pinned: left unset, Postgres 18 instances default to ENTERPRISE_PLUS,
+    # which only accepts db-perf-optimized-N-* tiers — the create then 400s on
+    # any shared-core or db-custom tier. ENTERPRISE covers our whole tier dial;
+    # moving to Plus is a deliberate edition+tier change, not a default.
+    edition           = "ENTERPRISE"
     tier              = var.db_tier
     availability_type = var.db_availability_type
     disk_type         = "PD_SSD"
