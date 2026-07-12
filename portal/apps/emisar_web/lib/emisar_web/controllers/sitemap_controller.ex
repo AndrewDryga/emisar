@@ -21,6 +21,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/quickstart",
     "/docs/action-packs",
     "/docs/publishing-packs",
+    "/docs/pack-registry",
     "/docs/policies-and-approvals",
     "/docs/runbooks",
     "/docs/teams-and-access",

@@ -12,6 +12,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/signed-dispatch
     /docs/connect-an-llm
     /docs/publishing-packs
+    /docs/pack-registry
     /docs/policies-and-approvals
     /docs/runbooks
     /docs/teams-and-access
@@ -490,6 +491,7 @@ defmodule EmisarWeb.MarketingTest do
             /docs/audit-and-siem
             /docs/action-packs
             /docs/publishing-packs
+            /docs/pack-registry
             /docs/security-model
             /docs/signed-dispatch
             /pricing
@@ -752,6 +754,22 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "--hash"
     end
 
+    test "the pack-registry guide renders the packctl flow and the BYO install flags",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/pack-registry") |> html_response(200)
+
+      # The full build → host → install path, including the non-GCS route.
+      assert html =~ "packctl catalog build"
+      assert html =~ "packctl catalog publish"
+      assert html =~ "--base-url"
+      assert html =~ "--previous"
+      assert html =~ "--registry"
+      assert html =~ "EMISAR_PACKS_REGISTRY"
+      assert html =~ "aws s3 sync"
+      # Trust never rests on the registry — the page must say so.
+      assert html =~ "trust never"
+    end
+
     test "the policies-and-approvals page renders the approval TTL and standing grants",
          %{conn: conn} do
       html = conn |> get(~p"/docs/policies-and-approvals") |> html_response(200)
@@ -901,7 +919,8 @@ defmodule EmisarWeb.MarketingTest do
     @cross_links %{
       "/docs/security-model" =>
         ~w(/security /docs/action-packs /docs/connect-an-llm /docs/signed-dispatch),
-      "/docs/publishing-packs" => ~w(/packs /docs/action-packs),
+      "/docs/publishing-packs" => ~w(/packs /docs/action-packs /docs/pack-registry),
+      "/docs/pack-registry" => ~w(/docs/publishing-packs /docs/action-packs /packs),
       "/docs/policies-and-approvals" =>
         ~w(/docs/runbooks /docs/audit-and-siem /docs/security-model),
       "/docs/runbooks" =>

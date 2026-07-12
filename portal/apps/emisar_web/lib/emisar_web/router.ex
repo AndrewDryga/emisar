@@ -156,6 +156,7 @@ defmodule EmisarWeb.Router do
     get "/packs/:id/versions/:version/pack.tar.gz", PackRegistryController, :tarball_version
     get "/packs/:id", MarketingController, :pack_detail
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
+    get "/docs/pack-registry", MarketingController, :docs_pack_registry
     get "/docs/policies-and-approvals", MarketingController, :docs_policies
     get "/docs/runbooks", MarketingController, :docs_runbooks
     get "/docs/teams-and-access", MarketingController, :docs_teams

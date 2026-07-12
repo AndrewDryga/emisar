@@ -189,6 +189,13 @@ sudo systemctl reload emisar</pre>
             re-trust the new hash once in the dashboard — the same review you'd give any production
             change. The pack is yours: its lifecycle, its hosts, its risk tiers, on your schedule.
           </p>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            Distributing many packs to a large fleet? Skip the copying and
+            <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">
+              host your own pack registry
+            </.link>
+            — a static file tree runners install from with <code>--registry</code>, built by the same tool that publishes ours.
+          </p>
         </li>
       </ol>
 

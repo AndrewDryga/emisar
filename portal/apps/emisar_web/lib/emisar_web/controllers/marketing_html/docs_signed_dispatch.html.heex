@@ -72,8 +72,9 @@
         <strong class="text-zinc-200">1. Bootstrap on an operator machine.</strong>
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signing init</code>
         mints the CA + leaf + cert in one shot. (Already have a CA? Use
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar ca init</code>
-        once, then <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar cert new</code>
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-ca</code>
+        once, then
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
         per operator.)
       </p>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -195,7 +196,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-            emisar cert new --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod --ttl 24h
+            emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod --ttl 24h
           </code>
           mints a new leaf + cert under the existing CA.
         </li>
@@ -357,7 +358,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_expired</code>
             — the certificate is outside its validity window. Mint a fresh one with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar cert new</code>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
             (and check the signing host's clock against NTP — the cert window is absolute, no skew
             tolerance).
           </span>
