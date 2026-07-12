@@ -3,12 +3,11 @@
 # for the Erlang + Elixir pins: the combined CI workflow reads it via setup-beam (version-file
 # + version-type: strict), and the portal Docker build derives its --build-arg
 # toolchain from it — so CI and the release image always match dev, nothing to
-# hand-sync. golang: the go.work + both go.mod floor is 1.26.3 (runner/ + mcp/),
-# which the Go CI tracks via go-version-file by design (it builds against the
-# minimum we support); 1.26.4 here is the latest compatible patch for local dev.
+# hand-sync. golang: go.work + every go.mod and local development share the
+# current security patch because CI and release builds use go-version-file.
 # Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
 erlang 29.0.2
 elixir 1.20.1-otp-29
-golang 1.26.4
+golang 1.26.5
 # infra/ — Google Cloud DNS in Terraform; run `asdf plugin add terraform` once.
 terraform 1.15.7
