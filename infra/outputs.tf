@@ -39,14 +39,9 @@ output "dnssec_ds_record" {
   value       = try(data.google_dns_keys.emisar.key_signing_keys[0].ds_record, "(pending — re-run after the zone's keys generate)")
 }
 
-output "deploy_workload_identity_provider" {
-  description = "Full WIF provider resource name the CD workflow authenticates against (google-github-actions/auth `workload_identity_provider`)."
+output "packs_workload_identity_provider" {
+  description = "Full WIF provider resource name the CD · Packs workflow authenticates against (google-github-actions/auth `workload_identity_provider`)."
   value       = google_iam_workload_identity_pool_provider.github.name
-}
-
-output "deploy_service_account" {
-  description = "Service account the CD workflow impersonates to roll the MIG."
-  value       = google_service_account.deployer.email
 }
 
 output "pack_registry_bucket" {
@@ -59,21 +54,43 @@ output "pack_registry_base_url" {
   value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
 }
 
+output "pack_registry_domain_url" {
+  description = "Vendor-neutral serving domain for the same artifacts (shared LB → backend bucket). Live once its cert is ACTIVE and DNS resolves — GoDaddy records pre-cutover (see pack_registry_godaddy_records), dns.tf after. Flip packctl's --base-url default + EMISAR_PACK_CATALOG_URL to this base only AFTER verifying it serves."
+  value       = "https://registry.${var.domain}"
+}
+
+output "pack_registry_godaddy_records" {
+  description = "Records to add at GoDaddy while it is still the live DNS, so registry.<domain> works BEFORE the NS cutover. The dns.tf copies take over once the zone is authoritative."
+  value = {
+    a         = "registry  A     ${google_compute_global_address.ipv4.address}"
+    aaaa      = "registry  AAAA  ${google_compute_global_address.ipv6.address}"
+    cert_auth = "${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].name} ${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].type} ${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].data}"
+  }
+}
+
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Publish the portal image (Actions → «CD · Portal» → Run workflow); FIRST
-       publish only: flip the GHCR package to Public, or the unauthenticated
-       instance pull 403s. container_image tracks :latest by design (one-click
-       CD rolls it); the per-build sha-<sha> tags are the rollback pointers.
+    1. Publish + deploy the portal image (Actions → «CD · Portal» → Run
+       workflow); FIRST publish only: flip the GHCR package to Public, or the
+       unauthenticated instance pull 403s. A deploy IS a Terraform run: CD sets
+       container_image to the pushed digest in the TFC workspace and queues an
+       apply — rollback = redeploy a previous digest the same way.
     2. terraform apply — blocks until the MIG serves /healthz.
     3. BEFORE any traffic move (README has the commands):
          a. import the Fly database into Cloud SQL (freeze Fly writes first);
          b. optional: add Fly's SECRET_KEY_BASE as a NEW secret version so
             operator sessions survive the cutover;
-         c. at GoDaddy (still the live DNS): add the three cert DNS-auth CNAMEs
-            + CAA `0 issue "pki.goog"`, wait for the cert to be ACTIVE, then
+         c. at GoDaddy (still the live DNS): add the FOUR cert DNS-auth CNAMEs
+            (apex, www, mta-sts, registry) + CAA `0 issue "pki.goog"`, wait for
+            the certs to be ACTIVE, then
             verify: curl --resolve ${var.domain}:443:<lb_ipv4> https://${var.domain}/healthz
+         d. registry.${var.domain} can go live INDEPENDENTLY, before any traffic
+            move: add its A/AAAA at GoDaddy (terraform output
+            pack_registry_godaddy_records), verify
+            https://registry.${var.domain}/v1/catalog.json, then flip the
+            catalog base (packctl --base-url default + EMISAR_PACK_CATALOG_URL —
+            see packs/PUBLISHING.md «Serving domain»)
     4. Converge traffic at GoDaddy FIRST (avoids a two-database split-brain
        while NS propagates): lower the A/AAAA TTLs, point A → lb_ipv4 and
        AAAA → lb_ipv6, watch runners reconnect.

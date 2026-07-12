@@ -111,6 +111,34 @@ resource "google_dns_record_set" "cert_auth_mta_sts" {
   rrdatas      = [google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].data]
 }
 
+# ── Pack registry host → the same LB anycast IPs ─────────────────────────────
+# A/AAAA on purpose, not a CNAME to the apex: pre-cutover the apex still points
+# at Fly (GoDaddy), and registry.<domain> must reach the GCP LB regardless of
+# where the apex lives — the two hosts migrate independently.
+resource "google_dns_record_set" "registry_a" {
+  name         = "registry.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.ipv4.address]
+}
+
+resource "google_dns_record_set" "registry_aaaa" {
+  name         = "registry.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "AAAA"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.ipv6.address]
+}
+
+resource "google_dns_record_set" "cert_auth_registry" {
+  name         = google_certificate_manager_dns_authorization.registry.dns_resource_record[0].name
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = google_certificate_manager_dns_authorization.registry.dns_resource_record[0].type
+  ttl          = 300
+  rrdatas      = [google_certificate_manager_dns_authorization.registry.dns_resource_record[0].data]
+}
+
 # ── Google Workspace inbound mail ─────────────────────────────────────────────
 resource "google_dns_record_set" "mx" {
   name         = "${var.domain}."

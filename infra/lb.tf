@@ -119,6 +119,19 @@ resource "google_compute_ssl_policy" "restricted" {
 resource "google_compute_url_map" "https" {
   name            = "emisar-https"
   default_service = google_compute_backend_service.app.id
+
+  # registry.<domain> serves the public pack-registry bucket straight from the
+  # LB (packs_registry.tf) — no portal hop, so `emisar pack install` keeps
+  # working even when the app tier is down or mid-deploy.
+  host_rule {
+    hosts        = ["registry.${var.domain}"]
+    path_matcher = "pack-registry"
+  }
+
+  path_matcher {
+    name            = "pack-registry"
+    default_service = google_compute_backend_bucket.pack_registry.id
+  }
 }
 
 resource "google_compute_target_https_proxy" "https" {
