@@ -19,9 +19,14 @@ const defaultRegistryBaseURL = "https://storage.googleapis.com/emisar-pack-regis
 func packCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalog",
-		Short: "Build and publish the versioned pack registry artifacts",
-		Long: `Build the published pack-registry artifacts from a packs directory and
-publish them to the public GCS bucket.
+		Short: "Build and publish a versioned pack registry",
+		Long: `Build a publishable pack registry from a packs directory, and upload it.
+
+Works for ANY registry, not just emisar's: point --base-url at wherever you
+host it and 'publish' to your own GCS bucket — or skip 'publish' and sync the
+built tree to S3, MinIO, or any static file host (it is plain files). Runners
+install from it with 'emisar pack install <id> --registry <your-base-url>'.
+Guide: https://emisar.dev/docs/pack-registry
 
 'build' produces, under an output dir, the immutable per-pack tarballs
 (content-addressed), catalog.json + a content-addressed snapshot,
@@ -127,21 +132,25 @@ func packCatalogPublishCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "publish",
-		Short: "Upload a built artifact tree to the pack registry GCS bucket",
-		Long: `Upload the artifact tree produced by 'build' to a GCS bucket. Immutable
-objects (tarballs, catalog snapshots, schemas) are uploaded with an
-if-generation-match:0 precondition, so an existing object is never
-overwritten — a precondition failure means the identical bytes are already
-published and the object is skipped. The mutable pointers (catalog.json,
-suggest.json) are overwritten; the bucket's object versioning retains every
-prior generation.
+		Short: "Upload a built artifact tree to a GCS registry bucket",
+		Long: `Upload the artifact tree produced by 'build' to a GCS bucket — emisar's
+public one or your own. Immutable objects (tarballs, catalog snapshots,
+schemas) are uploaded with an if-generation-match:0 precondition, so an
+existing object is never overwritten — a precondition failure means the
+identical bytes are already published and the object is skipped. The mutable
+pointers (catalog.json, suggest.json) are overwritten; enable object
+versioning on the bucket to retain every prior generation.
+
+Hosting somewhere else (S3, MinIO, plain nginx)? Skip 'publish' and sync the
+built --out tree there with any tool — it is plain static files; just upload
+immutable objects before the two mutable pointers.
 
 Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 (in CI from Workload Identity; locally 'gcloud auth print-access-token').
 
   GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
-    packctl catalog publish --dir ./dist --bucket emisar-pack-registry
-  packctl catalog publish --dir ./dist --bucket emisar-pack-registry --dry-run`,
+    packctl catalog publish --dir ./dist --bucket my-pack-registry
+  packctl catalog publish --dir ./dist --bucket my-pack-registry --dry-run`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts := catalog.PublishOptions{

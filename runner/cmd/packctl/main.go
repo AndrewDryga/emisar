@@ -28,13 +28,29 @@ var Version = "0.4.0-dev"
 func main() {
 	root := &cobra.Command{
 		Use:   "packctl",
-		Short: "Maintainer tooling for the emisar pack registry",
-		Long: `packctl builds and publishes the versioned pack-registry artifacts.
+		Short: "Build and publish pack registries — emisar's public one, or your own",
+		Long: `packctl builds and publishes versioned pack registries.
 
-It is maintainer/publisher tooling, not an on-host runner command — the emisar
-host binary carries operator verbs only. packctl shares the runner's module so
-the published pack content hash is computed by the same loader the runner uses
-at load time, matching 'emisar pack validate' byte-for-byte.`,
+Author packs, then 'catalog build --base-url <where you host>' and put the
+tree on any static HTTPS host (natively on GCS via 'catalog publish'; S3 /
+MinIO / nginx by syncing the files). Runners install from it with
+'emisar pack install <id> --registry <your-base-url>' — the same flow that
+serves emisar's public registry, published by this exact tool in our CI.
+Guide: https://emisar.dev/docs/pack-registry
+
+packctl is deliberately a separate binary from emisar: your fleet hosts never
+carry publish code or publisher credentials. It shares the runner's module so
+the published pack content hash is computed by the same loader the runner
+enforces at load time, matching 'emisar pack validate' byte-for-byte.
+
+Install it: go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest`,
+		Example: `  # Build a registry for your own host, preserving published history
+  packctl catalog build --packs ./packs --out ./dist \
+    --base-url https://packs.acme.internal --previous ./current-catalog.json
+
+  # Publish to your GCS bucket (or sync ./dist to S3/anything instead)
+  GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
+    packctl catalog publish --dir ./dist --bucket acme-pack-registry`,
 		// SilenceErrors: main prints the error itself (below); without this
 		// cobra prints it too, so a failing command shows the error twice.
 		SilenceUsage:  true,

@@ -21,14 +21,45 @@ import (
 const defaultRegistry = "https://emisar.dev"
 
 func packCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "pack", Short: "Manage action packs"}
-	cmd.AddCommand(packListCmd())
-	cmd.AddCommand(packInfoCmd())
-	cmd.AddCommand(packValidateCmd())
-	cmd.AddCommand(packInstallCmd())
-	cmd.AddCommand(packUpdateCmd())
-	cmd.AddCommand(packUninstallCmd())
-	cmd.AddCommand(packSuggestCmd())
+	cmd := &cobra.Command{
+		Use:   "pack",
+		Short: "Manage action packs",
+		Long: `Packs are the runner's action catalog: versioned bundles of action schemas
+this host may execute. Install them from a registry — the public one at
+https://emisar.dev by default, or your own (--registry / EMISAR_PACKS_REGISTRY;
+any static host serving the registry layout works). Installs pin an exact
+content hash, and the runner re-hashes on load, so trust never rests on the
+transport.
+
+Author your own packs and host a private registry with packctl — the same tool
+that builds and publishes the public registry. Guide:
+https://emisar.dev/docs/pack-registry`,
+		Example: `  # See what fits this host, then install with the hash the portal advertises
+  emisar pack suggest
+  emisar pack install redis --hash sha256:...
+
+  # Install from YOUR registry (or set EMISAR_PACKS_REGISTRY)
+  emisar pack install billing-tools --registry https://packs.acme.internal --hash sha256:...
+
+  # Validate a pack you're authoring
+  emisar pack validate ./my-pack`,
+	}
+	cmd.AddGroup(
+		&cobra.Group{ID: "install", Title: "Discover & install:"},
+		&cobra.Group{ID: "installed", Title: "Installed packs:"},
+		&cobra.Group{ID: "author", Title: "Author:"},
+	)
+	add := func(groupID string, c *cobra.Command) {
+		c.GroupID = groupID
+		cmd.AddCommand(c)
+	}
+	add("install", packSuggestCmd())
+	add("install", packInstallCmd())
+	add("install", packUpdateCmd())
+	add("installed", packListCmd())
+	add("installed", packInfoCmd())
+	add("installed", packUninstallCmd())
+	add("author", packValidateCmd())
 	return cmd
 }
 
