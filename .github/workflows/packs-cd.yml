@@ -4,7 +4,9 @@ name: CD · Packs
 # `emisar pack install` reads unauthenticated):
 #
 #   packs/** merges to main  →  approve the run  →  catalog built → published
-#   (or Actions → "CD · Packs" → Run workflow, e.g. to retire old versions)
+#
+# Retiring old versions needs no separate motion: a pack's retired_below floor
+# is authored in its pack.yaml and ships through this same merge → publish.
 #
 # The catalog is ALWAYS built against the currently-published catalog.json
 # (`--previous`): version history carries forward (the K-previous window +
@@ -21,8 +23,6 @@ name: CD · Packs
 # (infra/packs_registry.tf). Install trust never rests on this pipeline —
 # snippets pin `--hash sha256:…` and the runner rejects tampered tarballs.
 
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Packs · publish · by @{0}', github.actor) || 'Packs · publish' }}
-
 on:
   push:
     branches: [main]
@@ -37,12 +37,6 @@ on:
       - "runner/pkg/packspec/**"
       - "runner/pkg/actionspec/**"
       - ".github/workflows/packs-cd.yml"
-  workflow_dispatch:
-    inputs:
-      retire_older:
-        description: "Pack ids to retire all older versions of (space-separated)"
-        required: false
-        type: string
 
 # One publish at a time, queued — never cancelled mid-upload: concurrent runs
 # could interleave the mutable-pointer flips.
@@ -54,8 +48,36 @@ permissions:
   contents: read
 
 jobs:
+  require-ci:
+    name: Require same-SHA CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Wait for CI Gate on this commit
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            result=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name == "CI Gate")] | sort_by(.started_at) | last | if . == null then "missing:" else "\(.status):\(.conclusion // "")" end')
+            case "$result" in
+              completed:success) echo "CI Gate passed for ${GITHUB_SHA}"; exit 0 ;;
+              completed:*) echo "::error::CI Gate for ${GITHUB_SHA} ended ${result#completed:}"; exit 1 ;;
+              *) echo "CI Gate is ${result}; waiting (${attempt}/60)"; sleep 10 ;;
+            esac
+          done
+          echo "::error::timed out waiting for CI Gate on ${GITHUB_SHA}"
+          exit 1
+
   publish:
     name: Build · publish registry
+    needs: require-ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -82,27 +104,37 @@ jobs:
         run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
 
       - name: Fetch the currently-published catalog
-        # Fail loudly if it's unreachable: building WITHOUT --previous would
-        # drop the carried version history and the retirement watermark. (The
-        # registry has been live since 2026-07-09 — a 404 here means it's
-        # broken, not first-publish.)
-        run: curl -fsS "${REGISTRY_BASE}/v1/catalog.json" -o /tmp/previous.json
-
-      - name: Build the artifact tree
-        env:
-          # Env indirection — a dispatch input never lands raw in shell.
-          RETIRE_OLDER: ${{ inputs.retire_older || '' }}
+        # Bootstrap once from the reviewed catalog committed with the portal.
+        # After the first successful publish, every build carries forward only
+        # the public registry's history and retirement watermark.
         run: |
           set -euo pipefail
-          retire_flags=()
-          for id in $RETIRE_OLDER; do
-            retire_flags+=(--retire-older "$id")
-          done
+          status=$(curl -sS -o /tmp/previous.json -w '%{http_code}' "${REGISTRY_BASE}/v1/catalog.json")
+          case "$status" in
+            200) echo "using published catalog history" ;;
+            404)
+              echo "registry is empty; bootstrapping from the committed catalog"
+              cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json
+              ;;
+            *) echo "::error::registry catalog returned HTTP ${status}"; exit 1 ;;
+          esac
+
+      - name: Build the artifact tree
+        run: |
           /tmp/packctl catalog build \
             --packs packs \
             --out dist \
-            --previous /tmp/previous.json \
-            ${retire_flags[@]+"${retire_flags[@]}"}
+            --previous /tmp/previous.json
+
+      - name: Verify the canonical registry endpoint
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --retry 3 --connect-timeout 10 -o /dev/null -w '%{http_code}' \
+            https://registry.emisar.dev/v1/catalog.json)
+          case "$status" in
+            200|404) echo "registry.emisar.dev DNS and TLS are ready (HTTP ${status})" ;;
+            *) echo "::error::registry.emisar.dev is not ready (HTTP ${status})"; exit 1 ;;
+          esac
 
       - name: Authenticate to GCP (keyless, WIF)
         id: auth
@@ -126,3 +158,11 @@ jobs:
             tail -20 /tmp/publish.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify published pointers byte-for-byte
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 2 "${REGISTRY_BASE}/v1/catalog.json" -o /tmp/gcs-catalog.json
+          curl -fsS --retry 5 --retry-delay 2 "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
+          cmp dist/v1/catalog.json /tmp/gcs-catalog.json
+          cmp dist/v1/catalog.json /tmp/canonical-catalog.json

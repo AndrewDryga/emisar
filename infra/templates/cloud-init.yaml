@@ -84,9 +84,8 @@ write_files:
 %{ endif ~}
 
       # Public GHCR pull, no credentials — prod runs the exact artifact
-      # self-hosters pull. The image reference is pinned per deploy: CD · Portal
-      # sets var.container_image to the pushed digest and queues a Terraform
-      # apply, so a deploy is a template replace and state records what runs.
+      # self-hosters pull. CI passes the tested digest into the exact Terraform
+      # run a reviewer approves, so state records what actually boots.
       docker pull ${container_image}
 
       # Migrations first — Ecto's advisory lock serializes concurrent instances, so

@@ -36,10 +36,6 @@ on:
   push:
     branches: [main]
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -54,6 +50,7 @@ jobs:
       infra: ${{ steps.detect.outputs.infra }}
       deps: ${{ steps.detect.outputs.deps }}
       workflows: ${{ steps.detect.outputs.workflows }}
+      mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -81,21 +78,22 @@ jobs:
             files=$(git diff --name-only "$BASE" HEAD)
           fi
 
-          portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false
+          portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false; mcp_listing=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
-              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true ;;
+              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true; mcp_listing=true ;;
             esac
             # install.sh + packs/** are real source inputs to the portal
             # release (InstallController embeds install.sh; PacksRegistry
             # compile-scans packs/); .tool-versions is the single toolchain
             # source of truth for both the test job and the release image.
             case "$f" in
-              portal/*|.agent/scripts/check-portal-test-output.sh|install.sh|packs/*|.tool-versions) portal=true ;;
+              portal/*|.dockerignore|.agent/scripts/check-portal-test-output.sh|install.sh|install-mcp.sh|server.json|packs/*|.tool-versions) portal=true ;;
             esac
-            case "$f" in runner/*|install.sh|go.work|go.work.sum) runner=true ;; esac
+            case "$f" in runner/*|install.sh|README.md|go.work|go.work.sum) runner=true ;; esac
             case "$f" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
+            case "$f" in server.json) mcp_listing=true ;; esac
             case "$f" in tools/*|go.work|go.work.sum) tools=true ;; esac
             # Packs re-validate when the packs change OR the validator does.
             case "$f" in
@@ -103,7 +101,7 @@ jobs:
             esac
             case "$f" in infra/*|.tool-versions) infra=true ;; esac
             case "$f" in
-              portal/mix.lock|runner/go.mod|mcp/go.mod|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
+              portal/mix.lock|runner/go.mod|runner/go.sum|mcp/go.mod|mcp/go.sum|tools/go.mod|tools/go.sum|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
             esac
             case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
           done <<< "$files"
@@ -111,7 +109,7 @@ jobs:
           # A workflow/dependabot change re-gates every area — the old
           # "own workflow file" trigger, generalized to the shared file.
           if [ "$workflows" = "true" ]; then
-            portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true
+            portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; mcp_listing=true
           fi
 
           mods=()
@@ -126,6 +124,7 @@ jobs:
             echo "infra=$infra"
             echo "deps=$deps"
             echo "workflows=$workflows"
+            echo "mcp_listing=$mcp_listing"
             echo "go_modules=$modules"
           } >> "$GITHUB_OUTPUT"
 
@@ -142,7 +141,30 @@ jobs:
             echo "| Infra | $(mark "$infra") |"
             echo "| Dependency age | $(mark "$deps") |"
             echo "| Workflow lint | $(mark "$workflows") |"
+            echo "| MCP Registry listing | $(mark "$mcp_listing") |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reject edits to committed migrations
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "::warning::no trustworthy comparison base; area gates fail open"
+            exit 0
+          fi
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE=$(git merge-base "$BASE" HEAD)
+          fi
+          changed=$(git diff --name-status --diff-filter=MDR "$BASE" HEAD -- \
+            portal/apps/emisar/priv/repo/migrations \
+            portal/apps/emisar/priv/repo/tenant_migrations)
+          if [ -n "$changed" ]; then
+            echo "::error::committed migrations are immutable; add a new migration instead"
+            printf '%s\n' "$changed"
+            exit 1
+          fi
 
   portal:
     name: Portal
@@ -200,9 +222,9 @@ jobs:
           path: |
             portal/deps
             portal/_build
-          key: ${{ runner.os }}-mix-${{ hashFiles('portal/mix.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mix-${{ hashFiles('.tool-versions', 'portal/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            ${{ runner.os }}-${{ runner.arch }}-mix-
 
       - name: Install hex + rebar
         run: mix local.hex --force && mix local.rebar --force
@@ -250,13 +272,25 @@ jobs:
         # noise. Dirty test output is a regression: fix the source, don't hide it.
         run: ../.agent/scripts/check-portal-test-output.sh
 
+      - name: Validate MCP Registry listing
+        if: needs.changes.outputs.mcp_listing == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          MCP_PUBLISHER_VERSION: "1.7.9"
+          MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+        run: |
+          set -euo pipefail
+          artifact="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" mcp-publisher
+          ./mcp-publisher validate server.json
+
       - name: Docker build (release image)
         # Build context must be the REPO ROOT (the Dockerfile pulls in
         # ../install.sh and ../packs). Toolchain --build-args come from
         # /.tool-versions so the release image compiles with the same
         # Erlang/Elixir as the test job — one source of truth, no drift.
-        # The smoke image also gets the dev-host force_ssl excludes so
-        # plain-HTTP localhost probes can hit more than `/healthz`.
         working-directory: ${{ github.workspace }}
         run: |
           elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
@@ -269,7 +303,8 @@ jobs:
           docker build -f portal/Dockerfile \
             --build-arg ELIXIR_VERSION="${elixir_version}" \
             --build-arg OTP_VERSION="${otp_version}" \
-            --build-arg EMISAR_DEV_HOST_EXCLUDES=1 \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
             -t emisar/portal:ci .
 
       - name: Docker smoke (release boots + runs migrations + serves /healthz)
@@ -287,8 +322,8 @@ jobs:
           # runtime.exs raises in :prod if neither PADDLE_API_KEY nor
           # EMISAR_DISABLE_BILLING is set — use the stub, no key in CI.
           EMISAR_DISABLE_BILLING: "1"
-          # FORCE_SSL=false disables the secure-cookie pin; HTTPS redirects
-          # are compile-time, hence EMISAR_DEV_HOST_EXCLUDES=1 above.
+          # FORCE_SSL=false disables the secure-cookie pin. Requests carry
+          # x-forwarded-proto=https, matching the production proxy boundary.
           FORCE_SSL: "false"
         run: |
           set -euo pipefail
@@ -313,7 +348,7 @@ jobs:
           trap 'docker logs "$cid" 2>&1 | tail -80; docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:4000/healthz >/dev/null; then
+            if curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/healthz >/dev/null; then
               echo "healthz OK after ~${i}s"
               break
             fi
@@ -324,18 +359,43 @@ jobs:
             sleep 2
           done
 
-          # The pack registry endpoint must serve a real gzip tarball from
-          # the running image — catches a missing compile-time bake or a
-          # broken route before it reaches an install script.
-          ctype=$(curl -fsS -o /tmp/pack.tgz -w '%{content_type}' \
+          # The pack registry tarball endpoint 302-redirects to the pack's
+          # immutable, content-addressed tarball on the public registry (the
+          # install snippet pins --hash, so the redirect target is
+          # tamper-evident). Assert the redirect + its target shape from the
+          # running image — catches a missing compile-time catalog bake or a
+          # broken route — WITHOUT following it off to the external registry,
+          # which keeps the smoke hermetic.
+          location=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+            -H 'x-forwarded-proto: https' \
             http://localhost:4000/packs/linux-core/pack.tar.gz)
-          echo "pack tarball content-type: ${ctype}"
-          gzip -t /tmp/pack.tgz || { echo "::error::/packs/linux-core/pack.tar.gz is not valid gzip"; exit 1; }
-          curl -fsS http://localhost:4000/packs.json | grep -q '"linux-core"' \
+          echo "pack tarball redirect: ${location}"
+          case "$location" in
+            */v1/packs/linux-core/*/pack.tar.gz) echo "pack tarball redirect target OK" ;;
+            *) echo "::error::/packs/linux-core/pack.tar.gz did not 302 to a content-addressed tarball (got '${location}')"; exit 1 ;;
+          esac
+          curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/packs.json | grep -q '"linux-core"' \
             || { echo "::error::/packs.json missing linux-core"; exit 1; }
           echo "pack registry endpoints OK"
 
           docker stop --time 15 "$cid"
+
+      - name: Export the tested image
+        if: github.event_name == 'push'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          docker save emisar/portal:ci | gzip -1 > /tmp/emisar-portal-image.tar.gz
+          test -s /tmp/emisar-portal-image.tar.gz
+
+      - name: Upload the tested image
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: portal-image-${{ github.sha }}
+          path: /tmp/emisar-portal-image.tar.gz
+          retention-days: 2
+          if-no-files-found: error
 
   go:
     name: Go · ${{ matrix.module }}
@@ -639,3 +699,235 @@ jobs:
           printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
           tar -xzf "$artifact" actionlint
           ./actionlint -color
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [changes, portal, go, packs, infra, dep-age, actionlint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES: ${{ needs.changes.result }}
+      PORTAL: ${{ needs.portal.result }}
+      GO: ${{ needs.go.result }}
+      PACKS: ${{ needs.packs.result }}
+      INFRA: ${{ needs.infra.result }}
+      DEP_AGE: ${{ needs.dep-age.result }}
+      ACTIONLINT: ${{ needs.actionlint.result }}
+    steps:
+      - name: Require every selected gate to pass
+        run: |
+          set -euo pipefail
+          test "$CHANGES" = success || { echo "::error::Changes ended $CHANGES"; exit 1; }
+          for gate in PORTAL GO PACKS INFRA DEP_AGE ACTIONLINT; do
+            result=${!gate}
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::$gate ended $result"; exit 1 ;;
+            esac
+          done
+
+  portal-publish:
+    name: Portal · scan · publish tested image
+    if: github.event_name == 'push' && needs.changes.outputs.portal == 'true'
+    needs: [changes, ci-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: portal-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Download the tested image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: portal-image-${{ github.sha }}
+          path: /tmp/portal-image
+
+      - name: Load the tested image
+        run: |
+          set -euo pipefail
+          gunzip -c /tmp/portal-image/emisar-portal-image.tar.gz | docker load
+
+      - name: Install Trivy (pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: "0.72.0"
+          TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+        run: |
+          set -euo pipefail
+          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
+          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+
+      - name: Vulnerability scan (blocks publish)
+        run: trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed emisar/portal:ci
+
+      - name: Generate CycloneDX SBOM
+        run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
+
+      - name: Login to GHCR
+        run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push immutable image, then latest
+        id: push
+        env:
+          IMAGE: ghcr.io/andrewdryga/emisar
+        run: |
+          set -euo pipefail
+          # Include run identity so a re-run can never overwrite a tag with
+          # different bytes if an upstream package repository changed.
+          immutable="${IMAGE}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag emisar/portal:ci "$immutable"
+          docker push "$immutable"
+          repo_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$immutable")
+          digest=${repo_digest#*@}
+          test -n "$digest" && test "$digest" != "$repo_digest"
+
+          # Mutable convenience tag moves only after the immutable push works.
+          docker tag emisar/portal:ci "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
+
+          echo "image=${IMAGE}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published portal image"
+            echo "- immutable tag: \`${immutable}\`"
+            echo "- digest: \`${IMAGE}@${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v4.1.0
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: /tmp/emisar-portal.cdx.json
+          push-to-registry: true
+
+  deployment-plan:
+    name: Production · Terraform plan
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.ci-gate.result == 'success' &&
+      (needs.changes.outputs.portal == 'true' || needs.changes.outputs.infra == 'true')
+    needs: [changes, ci-gate, portal-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: production-plan
+      cancel-in-progress: true
+    environment:
+      name: production-plan
+    permissions:
+      contents: read
+    env:
+      TF_CLOUD_ORGANIZATION: Dryga
+      TFC_WORKSPACE: emisar
+      PUBLISHED_IMAGE: ${{ needs.portal-publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify workspace safety and select image
+        id: image
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          api=https://app.terraform.io/api/v2
+          auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
+          workspace=$(curl -fsS "${auth[@]}" "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}")
+          workspace_id=$(jq -er '.data.id' <<< "$workspace")
+          auto_apply=$(jq -er '.data.attributes["auto-apply"]' <<< "$workspace")
+          test "$auto_apply" = false || {
+            echo "::error::HCP Terraform workspace auto-apply must remain disabled"
+            exit 1
+          }
+
+          image="$PUBLISHED_IMAGE"
+          if [ -z "$image" ]; then
+            state=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/current-state-version?include=outputs")
+            image=$(jq -er '.included[] | select(.type == "state-version-outputs" and .attributes.name == "container_image") | .attributes.value' <<< "$state")
+            if [[ ! "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]]; then
+              # One-time bootstrap: the last state predates digest pinning, but
+              # the workspace variable was already corrected by the old CD.
+              image=$(curl -fsS "${auth[@]}" "${api}/workspaces/${workspace_id}/vars" \
+                | jq -er '.data[] | select(.attributes.category == "terraform" and .attributes.key == "container_image") | .attributes.value')
+            fi
+          fi
+          case "$image" in
+            ghcr.io/andrewdryga/emisar@sha256:*) ;;
+            *) echo "::error::container_image must be an immutable emisar GHCR digest (got '$image')"; exit 1 ;;
+          esac
+          printf 'TF_VAR_container_image=%s\n' "$(jq -cn --arg image "$image" '$image')" >> "$GITHUB_ENV"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Upload this SHA's Terraform configuration
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        with:
+          workspace: emisar
+          directory: ./infra
+          speculative: false
+
+      - name: Create plan from the uploaded configuration
+        id: run
+        uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        with:
+          workspace: emisar
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+          message: "main ${{ github.sha }} (@${{ github.actor }}, gh run ${{ github.run_id }})"
+
+      - name: Read plan result
+        id: plan
+        uses: hashicorp/tfc-workflows-github/actions/plan-output@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
+        env:
+          TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
+        with:
+          plan: ${{ steps.run.outputs.plan_id }}
+
+      - name: Record manual apply instructions
+        env:
+          RUN_PAYLOAD: ${{ steps.run.outputs.payload }}
+          RUN_LINK: ${{ steps.run.outputs.run_link }}
+          ADD: ${{ steps.plan.outputs.add }}
+          CHANGE: ${{ steps.plan.outputs.change }}
+          DESTROY: ${{ steps.plan.outputs.destroy }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          confirmable=$(jq -er '.data.attributes.actions["is-confirmable"]' <<< "$RUN_PAYLOAD")
+          {
+            echo "### Production Terraform plan"
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- image: \`${IMAGE}\`"
+            echo "- resources: **${ADD} add, ${CHANGE} change, ${DESTROY} destroy**"
+            echo "- [review the complete HCP Terraform plan](${RUN_LINK})"
+            if [ "$confirmable" = true ]; then
+              echo "- CI stops here: review the plan, then use HCP Terraform's **Confirm & Apply** button"
+              echo "- before applying, verify the run's \`main ${GITHUB_SHA}\` message still matches the current main commit"
+            else
+              echo "- no apply is required"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

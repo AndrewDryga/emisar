@@ -15,8 +15,11 @@ dev
 **/deps
 **/.elixir_ls
 **/node_modules
+**/.env
+**/.env.*
 **/cover
 **/erl_crash.dump
 **/*.log
+portal/apps/emisar_web/priv/cert
 .DS_Store
 **/.DS_Store

@@ -63,6 +63,91 @@ updates:
           - "minor"
           - "patch"
 
+  - package-ecosystem: "gomod"
+    directory: "/tools"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      tools-go-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "terraform"
+    directory: "/infra"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+    groups:
+      terraform-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "docker"
+    directory: "/portal"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/runner/docker"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/mcp"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/dev/test-packs"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/dev/test-packs/snmpd"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "docker"
+    directory: "/dev/test-packs/snmpd-frr"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+
   - package-ecosystem: "npm"
     # The docs-screenshot tooling — the repo's only npm surface (dev-only,
     # never shipped). Same cooldown policy as every other ecosystem.

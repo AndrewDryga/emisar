@@ -218,6 +218,16 @@ func writeSolo(t *testing.T, root, version string) {
 	})
 }
 
+// writeSoloRetiring writes the solo pack at version, declaring a retired_below
+// floor in its manifest.
+func writeSoloRetiring(t *testing.T, root, version, retiredBelow string) {
+	t.Helper()
+	writePack(t, root, "solo", map[string]string{
+		"pack.yaml":      packYAML("solo", version, "retired_below: "+retiredBelow+"\nrequires:\n  binaries: [solo-bin]\n"),
+		"actions/a.yaml": execAction("solo"),
+	})
+}
+
 func soloPack(t *testing.T, cat *Catalog) Pack {
 	t.Helper()
 	for _, p := range cat.Packs {
@@ -328,7 +338,7 @@ func TestBuild_CarryForwardRehomesTarballURLs(t *testing.T) {
 	}
 }
 
-func TestBuild_RetireClearsHistoryAndSetsWatermark(t *testing.T) {
+func TestBuild_RetiredBelowFromPackSetsWatermarkAndPrunes(t *testing.T) {
 	root := t.TempDir()
 	var prev *Catalog
 	for _, v := range []string{"1.0.0", "1.0.1", "1.0.2"} {
@@ -339,71 +349,73 @@ func TestBuild_RetireClearsHistoryAndSetsWatermark(t *testing.T) {
 		}
 		prev = cat
 	}
-	// Critical fix at 1.0.2: retire everything older in one operation.
-	retired, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev, RetireOlder: []string{"solo"}})
+	// Critical fix at 1.0.3 that retires everything older: the manifest declares
+	// retired_below 1.0.3, so the catalog's floor becomes 1.0.3 and history below
+	// it is pruned.
+	writeSoloRetiring(t, root, "1.0.3", "1.0.3")
+	retired, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
 	if err != nil {
 		t.Fatalf("retire build: %v", err)
 	}
 	rp := soloPack(t, retired)
-	if len(rp.PreviousVersions) != 0 {
-		t.Errorf("retire should clear history, got %v", historyVersions(rp))
+	if rp.RetiredBelow != "1.0.3" {
+		t.Errorf("retired_below = %q, want 1.0.3", rp.RetiredBelow)
 	}
-	if rp.RetiredBelow != "1.0.2" {
-		t.Errorf("retired_below = %q, want 1.0.2", rp.RetiredBelow)
+	if len(rp.PreviousVersions) != 0 {
+		t.Errorf("retiring below the current version prunes all history, got %v", historyVersions(rp))
 	}
 
-	// The watermark sticks: a later normal publish keeps 1.0.2 as history head
-	// and never resurrects the pruned 1.0.0/1.0.1.
-	writeSolo(t, root, "1.0.3")
+	// The floor sticks and versions at/above it accumulate normally: the manifest
+	// keeps declaring 1.0.3, and 1.0.4 carries 1.0.3 as its history head without
+	// resurrecting the pruned 1.0.0/1.0.1/1.0.2.
+	writeSoloRetiring(t, root, "1.0.4", "1.0.3")
 	next, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: retired})
 	if err != nil {
 		t.Fatalf("post-retire build: %v", err)
 	}
 	np := soloPack(t, next)
-	if np.RetiredBelow != "1.0.2" {
-		t.Errorf("post-retire retired_below = %q, want carried 1.0.2", np.RetiredBelow)
+	if np.RetiredBelow != "1.0.3" {
+		t.Errorf("post-retire retired_below = %q, want 1.0.3", np.RetiredBelow)
 	}
-	if got := historyVersions(np); strings.Join(got, ",") != "1.0.2" {
-		t.Errorf("post-retire history = %v, want [1.0.2] (below-watermark pruned)", got)
-	}
-}
-
-func TestBuild_RetireUnknownPack(t *testing.T) {
-	reg := loadReg(t, threePackRoot(t))
-	_, err := Build(reg, BuildOptions{BaseURL: testBaseURL, RetireOlder: []string{"ghost"}})
-	if err == nil {
-		t.Fatal("expected error for unknown --retire-older pack")
-	}
-	if !strings.Contains(err.Error(), "ghost") {
-		t.Errorf("error should name the unknown pack: %v", err)
+	if got := historyVersions(np); strings.Join(got, ",") != "1.0.3" {
+		t.Errorf("post-retire history = %v, want [1.0.3] (below-floor pruned)", got)
 	}
 }
 
 func TestBuild_RetiredBelowGuards(t *testing.T) {
 	dummyHash := "sha256:" + strings.Repeat("a", 64)
 
-	t.Run("watermark may not regress", func(t *testing.T) {
+	t.Run("floor may not regress", func(t *testing.T) {
 		root := t.TempDir()
-		writeSolo(t, root, "1.5.0")
+		writeSoloRetiring(t, root, "9.9.9", "1.5.0")
 		prev := &Catalog{SchemaVersion: SchemaVersion, Packs: []Pack{
-			{ID: "solo", Version: "9.9.9", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
+			{ID: "solo", Version: "9.9.8", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
 		}}
-		// Retiring at 1.5.0 would lower the watermark from 2.0.0 → 1.5.0.
-		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev, RetireOlder: []string{"solo"}})
+		// Declaring 1.5.0 would lower the published floor from 2.0.0 → 1.5.0.
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
 		if err == nil || !strings.Contains(err.Error(), "regress") {
-			t.Fatalf("expected watermark regression error, got %v", err)
+			t.Fatalf("expected floor regression error, got %v", err)
 		}
 	})
 
-	t.Run("current may not be below the watermark", func(t *testing.T) {
+	t.Run("floor may not be dropped", func(t *testing.T) {
 		root := t.TempDir()
-		writeSolo(t, root, "1.5.0")
+		writeSolo(t, root, "9.9.9") // no retired_below
 		prev := &Catalog{SchemaVersion: SchemaVersion, Packs: []Pack{
-			{ID: "solo", Version: "2.5.0", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
+			{ID: "solo", Version: "9.9.8", ContentHash: dummyHash, RetiredBelow: "2.0.0"},
 		}}
 		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: prev})
+		if err == nil || !strings.Contains(err.Error(), "may not be dropped") {
+			t.Fatalf("expected floor-dropped error, got %v", err)
+		}
+	})
+
+	t.Run("current may not be below the floor", func(t *testing.T) {
+		root := t.TempDir()
+		writeSoloRetiring(t, root, "1.5.0", "2.0.0")
+		_, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
 		if err == nil || !strings.Contains(err.Error(), "below retired_below") {
-			t.Fatalf("expected current-below-watermark error, got %v", err)
+			t.Fatalf("expected current-below-floor error, got %v", err)
 		}
 	})
 }

@@ -39,7 +39,11 @@ defmodule EmisarWeb.PacksRegistry.CatalogClient do
       {:ok, %{status: status}} ->
         {:error, {:http, status}}
 
-      {:error, reason} ->
+      # stream_while/5 reports a transport failure as {:error, exception, acc}
+      # (the accumulator so far) — a 3-tuple, not {:error, reason}. Matching
+      # only the 2-tuple let an :nxdomain/timeout crash the Cache GenServer
+      # with a CaseClauseError instead of holding the last-good catalog.
+      {:error, reason, _acc} ->
         {:error, reason}
     end
   end

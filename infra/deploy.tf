@@ -5,16 +5,14 @@
 # artifacts.
 #
 # Deliberately NOT used for app deploys: a deploy IS a Terraform run — the
-# "CD · Portal" workflow sets container_image to the freshly pushed image in
-# the TFC workspace and queues an apply, so the template replace rolls the
-# fleet, state records exactly what runs, and no imperative gcloud (or GCP
-# deploy identity) exists in CI at all.
+# CI uploads the exact infra configuration it tested and queues an HCP
+# Terraform run. A human confirms that exact saved plan in HCP Terraform, so
+# state records exactly what runs and no imperative gcloud deploy identity or
+# automated apply credential exists in CI.
 #
-# Trust is pinned twice: the provider's attribute_condition only admits tokens
-# minted for THIS repository, and the publisher SA's workloadIdentityUser
-# binding only trusts that same repository's principalSet. The human gate
-# stays in GitHub — the consuming jobs are `release`-environment-gated
-# (required reviewers).
+# Trust is pinned twice: the provider admits only the release-environment job
+# in the packs publisher workflow on main, and the publisher SA binding trusts
+# only this repository's principalSet.
 
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-actions"
@@ -33,12 +31,17 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
-    "attribute.ref"        = "assertion.ref"
+    "google.subject"         = "assertion.sub"
+    "attribute.repository"   = "assertion.repository"
+    "attribute.ref"          = "assertion.ref"
+    "attribute.workflow_ref" = "assertion.workflow_ref"
+    "attribute.environment"  = "assertion.environment"
   }
 
-  # Only tokens minted for this repository exchange — a fork or any other repo
-  # on GitHub's shared OIDC issuer gets nothing.
-  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+  attribute_condition = join(" && ", [
+    "assertion.repository == \"${var.github_repository}\"",
+    "assertion.ref == \"refs/heads/main\"",
+    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/packs-cd.yml@refs/heads/main\"",
+    "assertion.environment == \"release\"",
+  ])
 }

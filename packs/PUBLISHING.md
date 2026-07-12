@@ -86,43 +86,48 @@ curl -fsS "$(curl -fsS .../v1/catalog.json | jq -r '.packs[]|select(.id=="redis"
 ## Retiring older versions (critical fix)
 
 When a shipped pack version carries a critical defect, retire **every** older
-version in one operation so a runner still advertising an old version fails
-closed at dispatch. Retirement is release-controlled — it ships with the same
-portal deploy that ships the fixed pack's auto-trust — so a compromised remote
-catalog can neither auto-trust a new hash nor mass-retire the fleet.
+version so a runner still advertising an old version fails closed at dispatch.
+Retirement is authored in the pack itself — a `retired_below` floor in
+`pack.yaml` — so the decision and its exact floor live in the pack's git
+history, get reviewed in the PR, and ship through the normal publish. It is
+still release-controlled: it takes effect on the deploy that ships the fixed
+pack's auto-trust, so a compromised remote catalog can neither auto-trust a
+new hash nor mass-retire the fleet.
+
+```yaml
+# 1. Fix the pack, BUMP its version, and declare the floor in packs/redis/pack.yaml.
+#    Everything strictly below retired_below is retired; the current version must
+#    be at or above it (the build rejects current < retired_below). To retire
+#    every older version, set retired_below to the new current version.
+version: 0.2.4         # was 0.2.3
+retired_below: 0.2.4   # 0.2.3 and earlier are now retired
+```
 
 ```bash
-# 1. Fix the pack and BUMP its version (a retired version must be strictly
-#    below the new current — the build rejects a current < retired_below).
-#    e.g. edit packs/redis/pack.yaml: version 0.2.3 → 0.2.4
-
-# 2. Build against the live catalog and retire everything below the new
-#    current. --retire-older sets redis's retired_below to its current
-#    version and clears its carried history. Requires --previous.
+# 2. Build against the live catalog (--previous enforces the monotonic floor:
+#    the build refuses to LOWER or DROP an already-published retired_below) and
+#    publish. Old tarballs stay installable — retirement blocks dispatch, not
+#    installation.
 curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
-packctl catalog build --packs ./packs --out ./dist \
-  --previous ./current-catalog.json --retire-older redis
-
-# 3. Publish the new immutable artifacts + catalog pointer (old tarballs stay
-#    installable — retirement blocks dispatch, not installation).
+packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
 packctl catalog publish --dir ./dist --bucket emisar-pack-registry
 
-# 4. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
+# 3. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
 #    commit as the pack edit (retired_below is baked into PackBaseline):
-packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json --retire-older redis
 cp ./dist/v1/catalog.json ../portal/apps/emisar/priv/packs/catalog.json
 #    then from portal/: mix test test/emisar/catalog/pack_baseline_test.exs (apps/emisar)
 #                       mix test test/emisar_web/packs_registry/cache_test.exs (apps/emisar_web)
 
-# 5. Deploy the portal. Retirement takes effect on that deploy — the same
+# 4. Deploy the portal. Retirement takes effect on that deploy — the same
 #    motion that ships the fix. Verify in a test account: a runner pinned to
 #    the retired version now blocks with `pack_retired` at dispatch, telling
 #    the operator to update the pack (an admin can still explicitly re-trust
 #    the retired version on the Packs page — a deliberate, audited override).
 ```
 
-Retirement is monotonic: the build refuses to LOWER an already-published
-`retired_below`, so a stale `--previous` can never un-retire a version.
+Retirement is permanent and monotonic: once `retired_below` is published the
+build refuses to lower or drop it, so a stale `--previous` can never un-retire
+a version, and the pack always tells the full truth about its floor.
 
 ## Installing a specific version
 

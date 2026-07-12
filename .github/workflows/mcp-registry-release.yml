@@ -1,0 +1,116 @@
+name: Release · MCP Registry Listing
+
+run-name: MCP Registry listing ${{ github.ref_name }}
+
+# Product releases advertise the hosted MCP server. Binary bridge releases use
+# mcp-v* and are handled independently by mcp-release.yml.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: mcp-registry-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact signed annotated tag
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::tag must exactly match vMAJOR.MINOR.PATCH"; exit 1; }
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+          test "$(jq -r '.object.type' <<< "$ref")" = tag || {
+            echo "::error::release tags must be signed annotated tags"; exit 1; }
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+          test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
+            echo "::error::GitHub could not verify the release tag signature"; exit 1; }
+          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
+            echo "::error::tag target does not match the checked-out commit"; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::release tag target is not on main"; exit 1; }
+
+      - name: Require CI Gate for the tagged commit
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          conclusion=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/commits/${source_sha}/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.name == "CI Gate" and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
+          test "$conclusion" = success || {
+            echo "::error::tagged commit has no successful CI Gate (got '$conclusion')"
+            exit 1
+          }
+
+  publish:
+    name: Publish listing
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: release
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      MCP_PUBLISHER_VERSION: "1.7.9"
+      MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Prepare listing
+        env:
+          MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$MCP_PRIVATE_KEY" || {
+            echo "::error::MCP_PRIVATE_KEY is not configured in the release environment"
+            exit 1
+          }
+          version=${RELEASE_TAG#v}
+          jq --arg version "$version" '.version = $version' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Install verified mcp-publisher
+        run: |
+          set -euo pipefail
+          artifact="mcp-publisher_linux_amd64.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}" \
+            --output "$artifact"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
+          tar --extract --gzip --file "$artifact" mcp-publisher
+
+      - name: Validate listing
+        run: ./mcp-publisher validate server.json
+
+      - name: Authenticate and publish
+        env:
+          MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
+        run: |
+          ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY"
+          ./mcp-publisher publish server.json
