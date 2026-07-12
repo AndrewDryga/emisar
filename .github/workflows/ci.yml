@@ -1,11 +1,10 @@
-name: CI
+name: CI / CD
 
-# ONE workflow for every per-area gate — portal, the two Go modules, packs,
-# infra, dependency age, and workflow lint. It replaces the six per-area
-# workflows (portal-ci, runner-ci, mcp-ci, packs-ci, infra-ci, dep-age): the
-# `changes` job computes which areas the diff touches with plain git (no
-# third-party path-filter action to trust), and each area job runs only when
-# its flag is set.
+# ONE workflow for per-area CI plus main-branch delivery: Elixir, the Go
+# modules, packs, Terraform, dependency age, workflow lint, portal image
+# publishing, pack registry publishing, and production planning. The `changes`
+# job computes which areas the diff touches with plain git (no third-party
+# path-filter action to trust), and each area job runs only when selected.
 #
 # Two properties this buys over per-workflow `paths:` filters:
 #
@@ -17,9 +16,8 @@ name: CI
 #
 # Security posture (carried over from the workflows this replaces):
 #
-#   * Default GITHUB_TOKEN is read-only; no CI job opts into write scopes
-#     beyond artifact upload — publishing lives in the tag-triggered,
-#     `release`-environment-gated release workflows.
+#   * Default GITHUB_TOKEN is read-only. Only delivery jobs opt into their
+#     explicit write/OIDC scopes; pack publishing remains `release`-gated.
 #   * `actions/checkout` always runs with `persist-credentials: false`.
 #   * Every action — first-party included — is pinned to a full commit SHA
 #     (the version tag rides along as a comment); an org-level setting
@@ -41,7 +39,7 @@ permissions:
 
 jobs:
   changes:
-    name: Changes
+    name: Select checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -53,7 +51,8 @@ jobs:
       mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           # Full history: PR diffs use the merge-base, push diffs the
@@ -128,46 +127,24 @@ jobs:
             echo "go_modules=$modules"
           } >> "$GITHUB_OUTPUT"
 
-          mark() { if [ "$1" = "true" ]; then echo "▶️ run"; else echo "⏭️ skip"; fi; }
+          mark() { if [ "$1" = "true" ]; then echo "run"; else echo "skip"; fi; }
           {
             echo "### Gates for this change"
             echo "| Area | |"
             echo "|---|---|"
-            echo "| Portal | $(mark "$portal") |"
-            echo "| Go · runner | $(mark "$runner") |"
-            echo "| Go · mcp | $(mark "$mcp") |"
-            echo "| Go · tools | $(mark "$tools") |"
-            echo "| Packs | $(mark "$packs") |"
-            echo "| Infra | $(mark "$infra") |"
-            echo "| Dependency age | $(mark "$deps") |"
-            echo "| Workflow lint | $(mark "$workflows") |"
+            echo "| Elixir - Portal | $(mark "$portal") |"
+            echo "| Go - Runner | $(mark "$runner") |"
+            echo "| Go - MCP | $(mark "$mcp") |"
+            echo "| Go - Tools | $(mark "$tools") |"
+            echo "| Packs - Validate | $(mark "$packs") |"
+            echo "| Terraform - Validate | $(mark "$infra") |"
+            echo "| Dependencies - Release age | $(mark "$deps") |"
+            echo "| Actions - Validate workflows | $(mark "$workflows") |"
             echo "| MCP Registry listing | $(mark "$mcp_listing") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Reject edits to committed migrations
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          set -euo pipefail
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            echo "::warning::no trustworthy comparison base; area gates fail open"
-            exit 0
-          fi
-          if [ "$EVENT" = "pull_request" ]; then
-            BASE=$(git merge-base "$BASE" HEAD)
-          fi
-          changed=$(git diff --name-status --diff-filter=MDR "$BASE" HEAD -- \
-            portal/apps/emisar/priv/repo/migrations \
-            portal/apps/emisar/priv/repo/tenant_migrations)
-          if [ -n "$changed" ]; then
-            echo "::error::committed migrations are immutable; add a new migration instead"
-            printf '%s\n' "$changed"
-            exit 1
-          fi
-
   portal:
-    name: Portal
+    name: Elixir - Portal
     needs: changes
     if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-24.04
@@ -203,11 +180,13 @@ jobs:
       HEX_COOLDOWN: 7d
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+      - name: Set up Erlang and Elixir
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           # Pinned in /.tool-versions (repo root) — the single source of
           # truth shared with local asdf, so CI can't drift from dev.
@@ -216,7 +195,7 @@ jobs:
           version-file: .tool-versions
           version-type: strict
 
-      - name: Restore deps cache
+      - name: Restore Elixir build cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
@@ -226,38 +205,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-mix-
 
-      - name: Install hex + rebar
+      - name: Install Hex and Rebar
         run: mix local.hex --force && mix local.rebar --force
 
-      - name: Fetch deps
+      - name: Fetch dependencies
         run: mix deps.get
 
-      - name: Compile (warnings as errors)
+      - name: Compile with warnings as errors
         run: mix compile --warnings-as-errors
 
-      - name: Format check
+      - name: Check formatting
         run: mix format --check-formatted
 
-      - name: Credo (Iron Laws)
+      - name: Run Credo and Iron Laws
         # The mechanical IL-20 gate: the custom Emisar.Checks.* AST checks
         # (.credo.exs, strict) + stock UnsafeToAtom/NoProcessDictionary —
         # the same `mix credo` an agent runs locally.
         run: mix credo
 
-      - name: Dependency audit (mix_audit)
+      - name: Audit dependencies
         # emisar is a security product — fail the build on a known
         # advisory in any dependency. GHSA-g2wm-735q-3f56 (cowlib, low)
         # has no upstream patch yet; ignore it explicitly and revisit
         # when cowlib ships a fix.
         run: mix deps.audit --ignore-advisory-ids GHSA-g2wm-735q-3f56
 
-      - name: Security scan (Sobelow)
+      - name: Scan Phoenix security
         # Static analysis of the Phoenix surface (XSS, SQLi, command
         # injection, CSRF, insecure config). Threshold + ignores live in
         # apps/emisar_web/.sobelow-conf.
         run: mix sobelow --root apps/emisar_web --config
 
-      - name: Compile-cycle budget
+      - name: Check compile-cycle budget
         # Keep the xref budget gate without dumping the known cycle into
         # normal CI output; print the report only when the budget breaks.
         run: |
@@ -266,7 +245,7 @@ jobs:
             exit 1
           fi
 
-      - name: Test output gate (clean ExUnit output)
+      - name: Run ExUnit suites
         # Runs both portal test suites and fails if the output contains
         # compiler warnings, Logger warning/error lines, or async DB teardown
         # noise. Dirty test output is a regression: fix the source, don't hide it.
@@ -286,7 +265,8 @@ jobs:
           tar -xzf "$artifact" mcp-publisher
           ./mcp-publisher validate server.json
 
-      - name: Docker build (release image)
+      - name: Read release toolchain
+        id: release-toolchain
         # Build context must be the REPO ROOT (the Dockerfile pulls in
         # ../install.sh and ../packs). Toolchain --build-args come from
         # /.tool-versions so the release image compiles with the same
@@ -299,15 +279,29 @@ jobs:
             echo "::error::could not parse Elixir/OTP from .tool-versions"
             exit 1
           fi
-          echo "building portal image with Elixir ${elixir_version} / OTP ${otp_version}"
-          docker build -f portal/Dockerfile \
-            --build-arg ELIXIR_VERSION="${elixir_version}" \
-            --build-arg OTP_VERSION="${otp_version}" \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            -t emisar/portal:ci .
+          echo "elixir=${elixir_version}" >> "$GITHUB_OUTPUT"
+          echo "otp=${otp_version}" >> "$GITHUB_OUTPUT"
 
-      - name: Docker smoke (release boots + runs migrations + serves /healthz)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build release image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: portal/Dockerfile
+          load: true
+          tags: emisar/portal:ci
+          build-args: |
+            ELIXIR_VERSION=${{ steps.release-toolchain.outputs.elixir }}
+            OTP_VERSION=${{ steps.release-toolchain.outputs.otp }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=portal-release
+          cache-to: type=gha,mode=max,scope=portal-release
+
+      - name: Smoke-test release image
         # `docker build` passing only proves the Dockerfile compiles — not
         # that the image boots. Three checks: Emisar.Release.migrate()
         # (runtime.exs + migrator), /app/bin/server serving /healthz
@@ -347,13 +341,16 @@ jobs:
           # the CI log without re-running.
           trap 'docker logs "$cid" 2>&1 | tail -80; docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 
+          health_error=/tmp/emisar-healthz-error
           for i in $(seq 1 30); do
-            if curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/healthz >/dev/null; then
+            if curl -fsS -H 'x-forwarded-proto: https' http://localhost:4000/healthz \
+              >/dev/null 2>"$health_error"; then
               echo "healthz OK after ~${i}s"
               break
             fi
             if [ "$i" = "30" ]; then
-              echo "::error::release container failed to serve /healthz within 60s"
+              echo "::error::Portal image did not become healthy within 60 seconds"
+              sed 's/^/last health probe: /' "$health_error"
               exit 1
             fi
             sleep 2
@@ -380,7 +377,7 @@ jobs:
 
           docker stop --time 15 "$cid"
 
-      - name: Export the tested image
+      - name: Export tested image
         if: github.event_name == 'push'
         working-directory: ${{ github.workspace }}
         run: |
@@ -388,7 +385,7 @@ jobs:
           docker save emisar/portal:ci | gzip -1 > /tmp/emisar-portal-image.tar.gz
           test -s /tmp/emisar-portal-image.tar.gz
 
-      - name: Upload the tested image
+      - name: Upload tested image
         if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -398,7 +395,7 @@ jobs:
           if-no-files-found: error
 
   go:
-    name: Go · ${{ matrix.module }}
+    name: Go - ${{ matrix.module == 'runner' && 'Runner' || matrix.module == 'mcp' && 'MCP' || 'Tools' }}
     needs: changes
     if: needs.changes.outputs.go_modules != '[]'
     runs-on: ubuntu-latest
@@ -415,18 +412,20 @@ jobs:
       # remote toolchain; `local` locks CI to the setup-go-installed one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
           # Glob: tools/ is deliberately dependency-free (no go.sum).
           cache-dependency-path: ${{ matrix.module }}/go.*
 
-      - name: client-module purity (runner/mcp ship only what hosts need)
+      - name: Check client module boundaries
         # runner/ and mcp/ are CLIENT-SHIPPED modules (self-hosters build and
         # audit them) — repo tooling lives in tools/, never there. packctl is
         # the one sanctioned exception (pack-hash parity; runner/AGENTS.md).
@@ -439,11 +438,11 @@ jobs:
           test ! -d mcp/cmd || {
             echo "::error::mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
 
-      - name: go vet
+      - name: Run go vet
         working-directory: ${{ matrix.module }}
         run: go vet ./...
 
-      - name: gofmt -s check
+      - name: Check formatting
         run: |
           diff=$(gofmt -d -s ${{ matrix.module }}/ | head -200)
           if [ -n "$diff" ]; then
@@ -452,13 +451,13 @@ jobs:
             exit 1
           fi
 
-      - name: go mod verify
+      - name: Verify module checksums
         # Verifies hashes in go.sum match the on-disk module bytes; a
         # tampered cache won't pass.
         working-directory: ${{ matrix.module }}
         run: go mod verify
 
-      - name: go mod tidy is up to date
+      - name: Check module tidiness
         working-directory: ${{ matrix.module }}
         run: |
           go mod tidy
@@ -467,7 +466,7 @@ jobs:
             exit 1
           fi
 
-      - name: shellcheck install script
+      - name: Check install script
         # The install script is a permanent part of the module's install
         # surface; if it's gone, that's a regression CI must flag. tools/ is
         # internal — it has no install surface.
@@ -477,7 +476,7 @@ jobs:
           shellcheck "$INSTALL_SCRIPT"
           bash -n "$INSTALL_SCRIPT"
 
-      - name: govulncheck
+      - name: Scan known vulnerabilities
         # Informational by design — a same-day CVE in a transitive dep
         # shouldn't block unrelated PRs. Surface as a warning, exit 0.
         # Pinned version so a govulncheck behavior change can't rebreak CI.
@@ -488,7 +487,7 @@ jobs:
             echo "::warning::govulncheck reported findings — review and update deps"
           fi
 
-      - name: staticcheck
+      - name: Run staticcheck
         # Blocking (unlike govulncheck): dead code / SA findings fail CI so
         # the Go audit's clean reading can't silently regress. Pinned.
         working-directory: ${{ matrix.module }}
@@ -496,19 +495,19 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2026.1
           staticcheck ./...
 
-      - name: go test (race + coverage)
+      - name: Run race tests with coverage
         working-directory: ${{ matrix.module }}
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
-      - name: coverage summary
+      - name: Summarize coverage
         if: always()
         working-directory: ${{ matrix.module }}
         run: |
           go tool cover -func=coverage.out | tail -50
           total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
-          echo "**Go · ${{ matrix.module }}** coverage: ${total}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Go - ${{ matrix.module }}** coverage: ${total}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: upload coverage
+      - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -516,7 +515,7 @@ jobs:
           path: ${{ matrix.module }}/coverage.out
           retention-days: 7
 
-      - name: cross-build (all release platforms)
+      - name: Cross-build release platforms
         # One loop instead of a 4-leg matrix: proves every release target
         # still compiles without burning four runners per module. tools/ is
         # never shipped, so it has no release platforms to prove.
@@ -532,7 +531,7 @@ jobs:
           done
 
   packs:
-    name: Packs
+    name: Packs - Validate
     needs: changes
     if: needs.changes.outputs.packs == 'true'
     runs-on: ubuntu-latest
@@ -541,23 +540,25 @@ jobs:
       # Same toolchain pin as the go job (see its comment).
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: runner/go.mod
           cache: true
           cache-dependency-path: runner/go.sum
 
-      - name: build emisar CLI
+      - name: Build emisar CLI
         run: |
           cd runner
           go build -trimpath -o /tmp/emisar .
           /tmp/emisar version
 
-      - name: validate every pack
+      - name: Validate every pack
         # Collect failures so the report names every bad pack instead of
         # bailing on the first — faster PR triage. `nullglob` + an explicit
         # floor: an empty packs/ must fail loudly, not masquerade as green.
@@ -591,7 +592,7 @@ jobs:
           echo "✅ all ${#packs[@]} packs valid" >> "$GITHUB_STEP_SUMMARY"
 
   infra:
-    name: Infra
+    name: Terraform - Validate
     needs: changes
     if: needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
@@ -599,7 +600,8 @@ jobs:
     env:
       TFLINT_VERSION: v0.61.0
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
@@ -627,47 +629,49 @@ jobs:
           sudo install -m 0755 tflint /usr/local/bin/tflint
           tflint --version
 
-      - name: terraform fmt
+      - name: Check Terraform formatting
         working-directory: infra
         run: terraform fmt -check -recursive
 
-      - name: terraform validate (no backend, no credentials)
+      - name: Validate Terraform
         working-directory: infra
         run: |
           terraform init -backend=false -input=false
           terraform validate
 
-      - name: tflint
+      - name: Run TFLint
         working-directory: infra
         run: |
           tflint --init
           tflint
 
   dep-age:
-    name: Dependency age
+    name: Dependencies - Release age
     needs: changes
     if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           # Need the base commit in history to diff lockfile versions against.
           fetch-depth: 0
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: tools/go.mod
           cache: true
           cache-dependency-path: tools/go.*
 
-      - name: Enforce dependency release age (depgate)
+      - name: Enforce dependency release age
         # Supply-chain enforcement: reject a bump to a version published more
         # recently than its release-age window. Dependabot's cooldown only
         # throttles Dependabot's own PRs; this gate covers ANY lockfile change.
         # PR: diff against the PR base. Push to main: diff against the prior
-        # tip. The gate's own logic is tested by the Go · tools job whenever
+        # tip. The gate's own logic is tested by the Go - Tools job whenever
         # tools/cmd/depgate changes.
         working-directory: tools
         env:
@@ -676,7 +680,7 @@ jobs:
         run: go run ./cmd/depgate check
 
   actionlint:
-    name: Workflow lint
+    name: Actions - Validate workflows
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
@@ -685,11 +689,12 @@ jobs:
       ACTIONLINT_VERSION: "1.7.12"
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - name: actionlint (pinned, checksum-verified)
+      - name: Run actionlint
         # The workflows ARE the supply chain's front door — lint them like
         # code: expression injection, wrong event fields, invalid globs.
         run: |
@@ -701,7 +706,7 @@ jobs:
           ./actionlint -color
 
   ci-gate:
-    name: CI Gate
+    name: Required - CI
     if: always()
     needs: [changes, portal, go, packs, infra, dep-age, actionlint]
     runs-on: ubuntu-latest
@@ -715,7 +720,7 @@ jobs:
       DEP_AGE: ${{ needs.dep-age.result }}
       ACTIONLINT: ${{ needs.actionlint.result }}
     steps:
-      - name: Require every selected gate to pass
+      - name: Verify selected checks
         run: |
           set -euo pipefail
           test "$CHANGES" = success || { echo "::error::Changes ended $CHANGES"; exit 1; }
@@ -728,7 +733,7 @@ jobs:
           done
 
   portal-publish:
-    name: Portal · scan · publish tested image
+    name: CD - Publish portal image
     if: github.event_name == 'push' && needs.changes.outputs.portal == 'true'
     needs: [changes, ci-gate]
     runs-on: ubuntu-latest
@@ -745,13 +750,13 @@ jobs:
       image: ${{ steps.push.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - name: Download the tested image
+      - name: Download tested image
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: portal-image-${{ github.sha }}
           path: /tmp/portal-image
 
-      - name: Load the tested image
+      - name: Load tested image
         run: |
           set -euo pipefail
           gunzip -c /tmp/portal-image/emisar-portal-image.tar.gz | docker load
@@ -768,16 +773,16 @@ jobs:
           tar -xzf "$artifact" trivy
           sudo install -m 0755 trivy /usr/local/bin/trivy
 
-      - name: Vulnerability scan (blocks publish)
+      - name: Scan image vulnerabilities
         run: trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed emisar/portal:ci
 
-      - name: Generate CycloneDX SBOM
+      - name: Generate SBOM
         run: trivy image --format cyclonedx --output /tmp/emisar-portal.cdx.json emisar/portal:ci
 
-      - name: Login to GHCR
+      - name: Sign in to GHCR
         run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Push immutable image, then latest
+      - name: Publish tested image
         id: push
         env:
           IMAGE: ghcr.io/andrewdryga/emisar
@@ -804,7 +809,7 @@ jobs:
             echo "- digest: \`${IMAGE}@${digest}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Attest build provenance
+      - name: Attest provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-name: ghcr.io/andrewdryga/emisar
@@ -819,8 +824,96 @@ jobs:
           sbom-path: /tmp/emisar-portal.cdx.json
           push-to-registry: true
 
+  packs-publish:
+    name: CD - Publish pack registry
+    if: github.event_name == 'push' && needs.changes.outputs.packs == 'true'
+    needs: [changes, ci-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: packs-publish
+      cancel-in-progress: false
+    environment:
+      name: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GOTOOLCHAIN: local
+      REGISTRY_BASE: https://storage.googleapis.com/emisar-pack-registry
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Build pack publisher
+        run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
+
+      - name: Fetch published catalog
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/previous.json -w '%{http_code}' "${REGISTRY_BASE}/v1/catalog.json")
+          case "$status" in
+            200) echo "using published catalog history" ;;
+            404)
+              echo "registry is empty; bootstrapping from the committed catalog"
+              cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json
+              ;;
+            *) echo "::error::Registry catalog returned HTTP ${status}"; exit 1 ;;
+          esac
+
+      - name: Build registry artifacts
+        run: |
+          /tmp/packctl catalog build \
+            --packs packs \
+            --out dist \
+            --previous /tmp/previous.json
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-pack-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish registry artifacts
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          /tmp/packctl catalog publish --dir dist | tee /tmp/publish.log
+          {
+            echo "### Pack registry published"
+            echo '```'
+            tail -20 /tmp/publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify published catalog
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 2 "${REGISTRY_BASE}/v1/catalog.json" -o /tmp/gcs-catalog.json
+          cmp dist/v1/catalog.json /tmp/gcs-catalog.json
+
+          if getent ahosts registry.emisar.dev >/dev/null; then
+            curl -fsS --retry 5 --retry-delay 2 \
+              "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
+            cmp dist/v1/catalog.json /tmp/canonical-catalog.json
+          else
+            echo "::warning::registry.emisar.dev is not delegated yet; verified the backing GCS registry only"
+          fi
+
   deployment-plan:
-    name: Production · Terraform plan
+    name: CD - Plan production
     if: >-
       always() &&
       github.event_name == 'push' &&
@@ -841,11 +934,12 @@ jobs:
       TFC_WORKSPACE: emisar
       PUBLISHED_IMAGE: ${{ needs.portal-publish.outputs.image }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - name: Verify workspace safety and select image
+      - name: Verify HCP workspace and select image
         id: image
         env:
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
@@ -855,7 +949,7 @@ jobs:
           auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
           workspace=$(curl -fsS "${auth[@]}" "${api}/organizations/${TF_CLOUD_ORGANIZATION}/workspaces/${TFC_WORKSPACE}")
           workspace_id=$(jq -er '.data.id' <<< "$workspace")
-          auto_apply=$(jq -er '.data.attributes["auto-apply"]' <<< "$workspace")
+          auto_apply=$(jq -r '.data.attributes["auto-apply"]' <<< "$workspace")
           test "$auto_apply" = false || {
             echo "::error::HCP Terraform workspace auto-apply must remain disabled"
             exit 1
@@ -879,7 +973,7 @@ jobs:
           printf 'TF_VAR_container_image=%s\n' "$(jq -cn --arg image "$image" '$image')" >> "$GITHUB_ENV"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
-      - name: Upload this SHA's Terraform configuration
+      - name: Upload Terraform configuration
         id: upload
         uses: hashicorp/tfc-workflows-github/actions/upload-configuration@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         env:
@@ -889,7 +983,7 @@ jobs:
           directory: ./infra
           speculative: false
 
-      - name: Create plan from the uploaded configuration
+      - name: Create HCP Terraform plan
         id: run
         uses: hashicorp/tfc-workflows-github/actions/create-run@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         env:
@@ -899,7 +993,7 @@ jobs:
           configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
           message: "main ${{ github.sha }} (@${{ github.actor }}, gh run ${{ github.run_id }})"
 
-      - name: Read plan result
+      - name: Read Terraform plan
         id: plan
         uses: hashicorp/tfc-workflows-github/actions/plan-output@8e08d1ba957673f5fbf971a22b3219639dc45661 # v1.3.2
         env:
@@ -907,7 +1001,7 @@ jobs:
         with:
           plan: ${{ steps.run.outputs.plan_id }}
 
-      - name: Record manual apply instructions
+      - name: Summarize manual apply
         env:
           RUN_PAYLOAD: ${{ steps.run.outputs.payload }}
           RUN_LINK: ${{ steps.run.outputs.run_link }}

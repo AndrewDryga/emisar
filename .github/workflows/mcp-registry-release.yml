@@ -50,16 +50,16 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
 
-      - name: Require CI Gate for the tagged commit
+      - name: Require successful CI for tagged commit
         run: |
           set -euo pipefail
           source_sha=$(git rev-parse HEAD)
           conclusion=$(gh api \
             -H 'Accept: application/vnd.github+json' \
             "repos/${GITHUB_REPOSITORY}/commits/${source_sha}/check-runs?per_page=100" \
-            --jq '[.check_runs[] | select(.name == "CI Gate" and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
+            --jq '[.check_runs[] | select(.name == "Required - CI" and .status == "completed")] | sort_by(.completed_at) | last | .conclusion // "missing"')
           test "$conclusion" = success || {
-            echo "::error::tagged commit has no successful CI Gate (got '$conclusion')"
+            echo "::error::tagged commit has no successful Required - CI check (got '$conclusion')"
             exit 1
           }
 

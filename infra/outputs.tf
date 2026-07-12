@@ -40,7 +40,7 @@ output "dnssec_ds_record" {
 }
 
 output "packs_workload_identity_provider" {
-  description = "Full WIF provider resource name the CD · Packs workflow authenticates against (google-github-actions/auth `workload_identity_provider`)."
+  description = "Full WIF provider resource name the main CI/CD workflow authenticates against for pack publishing (google-github-actions/auth `workload_identity_provider`)."
   value       = google_iam_workload_identity_pool_provider.github.name
 }
 
@@ -71,7 +71,7 @@ output "pack_registry_godaddy_records" {
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Merge through the required «CI Gate». CI publishes the exact tested
+    1. Merge through the required «Required - CI» check. CI publishes the exact tested
        portal image, uploads this commit's infra configuration to HCP Terraform,
        and produces the reviewable plan. FIRST publish only: flip the GHCR
        package to Public, or the unauthenticated instance pull 403s.

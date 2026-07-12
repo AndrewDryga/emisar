@@ -1,8 +1,8 @@
 # ── Keyless GitHub Actions → GCP federation (packs publishing only) ───────────
 # GitHub's OIDC token exchanges at this pool, so no service-account key exists
-# anywhere (AGENTS.md §2). Its ONE consumer is the "CD · Packs" workflow, which
-# impersonates the pack-registry publisher (packs_registry.tf) to upload
-# artifacts.
+# anywhere (AGENTS.md §2). Its ONE consumer is the pack-publish job in the
+# main CI/CD workflow, which impersonates the pack-registry publisher
+# (packs_registry.tf) to upload artifacts.
 #
 # Deliberately NOT used for app deploys: a deploy IS a Terraform run — the
 # CI uploads the exact infra configuration it tested and queues an HCP
@@ -11,8 +11,8 @@
 # automated apply credential exists in CI.
 #
 # Trust is pinned twice: the provider admits only the release-environment job
-# in the packs publisher workflow on main, and the publisher SA binding trusts
-# only this repository's principalSet.
+# in the main workflow on main, and the publisher SA binding trusts only this
+# repository's principalSet.
 
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-actions"
@@ -41,7 +41,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   attribute_condition = join(" && ", [
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.ref == \"refs/heads/main\"",
-    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/packs-cd.yml@refs/heads/main\"",
+    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/ci.yml@refs/heads/main\"",
     "assertion.environment == \"release\"",
   ])
 }

@@ -83,7 +83,7 @@ resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
   member = "serviceAccount:${google_service_account.pack_publisher.email}"
 }
 
-# Let the repo's "CD · Packs" workflow impersonate the publisher through the
+# Let the main workflow's pack-publish job impersonate the publisher through the
 # keyless GitHub WIF pool (deploy.tf) — the publish job mints a short-lived
 # access token for packctl; no key exists anywhere.
 resource "google_service_account_iam_member" "pack_publisher_wif" {

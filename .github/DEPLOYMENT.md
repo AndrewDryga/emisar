@@ -4,7 +4,7 @@ Workflow files are public. Store only secret **names**, never values, in the
 repository. Production delivery runs from `.github/workflows/ci.yml` after a
 push to `main`:
 
-1. `CI Gate` completes for the exact commit.
+1. `Required - CI` completes for the exact commit.
 2. The already-smoke-tested portal image is scanned, published by digest, and
    attested. No second image build occurs.
 3. The same commit's `infra/` directory is uploaded as an HCP Terraform
@@ -20,26 +20,25 @@ Configure these environments with deployment branches restricted to `main`:
 
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
-| `production-plan` | Required reviewer | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; the environment gate and manual HCP apply are compensating controls. |
+| `production-plan` | Protected `main`, no reviewer | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; HCP workspace auto-apply stays disabled and apply remains manual. |
 | `release` | Required reviewer | `MCP_PRIVATE_KEY` | MCP Registry HTTP signing key. GCP pack publishing uses short-lived OIDC and has no stored cloud credential. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
-has no team RBAC; CI cannot apply runs and the token is exposed only after a
-reviewer approves the protected `production-plan` environment.
+has no team RBAC; the workflow never calls the apply API, and the environment
+exposes the token only to protected `main`. Review and apply the saved plan in
+HCP Terraform.
 
 ## Repository rules
 
-Protect `main` with pull requests and the single required check `CI Gate`.
+Protect `main` with pull requests and the single required check `Required - CI`.
 Require signed commits, linear history, resolved conversations, and include
 administrators. Force pushes and branch deletion stay disabled. This personal
 repository currently has one collaborator, so the PR approval count is zero;
 raise it to one and require approval of the latest push when a second maintainer
 is added. Do not require area-specific jobs: unchanged areas intentionally
-report `skipped`, while `CI Gate` is stable and always reports a conclusion.
-
-These rules are already active. The change introducing `CI Gate` must therefore
-land through a pull request; its `pull_request` run provides the required check.
+report `skipped`, while `Required - CI` is stable and always reports a
+conclusion.
 
 ## Release tags
 
