@@ -10,7 +10,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/apache-httpd",
       "content_hash": "sha256:fdead40ebbcc797a0e50972a2322ab2ac7064096297cba39d9b87e372d15b52d",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/apache-httpd/0.1.5/fdead40ebbcc797a0e50972a2322ab2ac7064096297cba39d9b87e372d15b52d/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/apache-httpd/0.1.5/fdead40ebbcc797a0e50972a2322ab2ac7064096297cba39d9b87e372d15b52d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -166,7 +166,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-cloudwatch",
       "content_hash": "sha256:330aed09b29ac5a46a4b3a27ccf876429fdce84ab8ddfe80dff282b62dcb760c",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-cloudwatch/0.1.2/330aed09b29ac5a46a4b3a27ccf876429fdce84ab8ddfe80dff282b62dcb760c/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-cloudwatch/0.1.2/330aed09b29ac5a46a4b3a27ccf876429fdce84ab8ddfe80dff282b62dcb760c/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -311,7 +311,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-cost",
       "content_hash": "sha256:316a5685d9733bae33cf8bbdd9ff16b8b274203d4883943d43ae27500d0c72d4",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-cost/0.1.3/316a5685d9733bae33cf8bbdd9ff16b8b274203d4883943d43ae27500d0c72d4/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-cost/0.1.3/316a5685d9733bae33cf8bbdd9ff16b8b274203d4883943d43ae27500d0c72d4/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -404,7 +404,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-ec2",
       "content_hash": "sha256:485aeeeb372b5f441b12d1b4419dfd00a094fcd1bb2091e7b6dd3ed19826179a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-ec2/0.1.3/485aeeeb372b5f441b12d1b4419dfd00a094fcd1bb2091e7b6dd3ed19826179a/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-ec2/0.1.3/485aeeeb372b5f441b12d1b4419dfd00a094fcd1bb2091e7b6dd3ed19826179a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -610,7 +610,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-iam",
       "content_hash": "sha256:62e9a24cf314ac855c8441a1e2002d39f9463904a14efa71bb97d8f6ab3f10eb",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-iam/0.1.5/62e9a24cf314ac855c8441a1e2002d39f9463904a14efa71bb97d8f6ab3f10eb/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-iam/0.1.5/62e9a24cf314ac855c8441a1e2002d39f9463904a14efa71bb97d8f6ab3f10eb/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -823,7 +823,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-rds",
       "content_hash": "sha256:319a4ad087d9eeba19c8c09902f8fb2e92bca4ab8f5b3022ec71bd07a21df663",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-rds/0.1.2/319a4ad087d9eeba19c8c09902f8fb2e92bca4ab8f5b3022ec71bd07a21df663/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-rds/0.1.2/319a4ad087d9eeba19c8c09902f8fb2e92bca4ab8f5b3022ec71bd07a21df663/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -981,7 +981,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/aws-s3",
       "content_hash": "sha256:737ffd831b6387ae3a8e6ac7f90dbe6e6f40383ce4fc76e02834b7784e90a814",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/aws-s3/0.1.3/737ffd831b6387ae3a8e6ac7f90dbe6e6f40383ce4fc76e02834b7784e90a814/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/aws-s3/0.1.3/737ffd831b6387ae3a8e6ac7f90dbe6e6f40383ce4fc76e02834b7784e90a814/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -1136,7 +1136,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/bind",
       "content_hash": "sha256:58e39adad92e4e736d07973856cb86393729fb2d0b8c4db70b84be2fee9b325b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bind/0.1.6/58e39adad92e4e736d07973856cb86393729fb2d0b8c4db70b84be2fee9b325b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/bind/0.1.6/58e39adad92e4e736d07973856cb86393729fb2d0b8c4db70b84be2fee9b325b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -1301,7 +1301,7 @@
         {
           "version": "0.1.5",
           "content_hash": "sha256:5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bind/0.1.5/5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/bind/0.1.5/5bc015b4eea2eb1f5c41da3bc6425ea526db6b9a551a46b44f97cc05bc2046a9/pack.tar.gz"
         }
       ]
     },
@@ -1314,7 +1314,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/bonding",
       "content_hash": "sha256:4a14e761267488e26cb5d47d1c73671283fe6ea3d57207c4504d767c195d4eaa",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/bonding/0.1.1/4a14e761267488e26cb5d47d1c73671283fe6ea3d57207c4504d767c195d4eaa/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/bonding/0.1.1/4a14e761267488e26cb5d47d1c73671283fe6ea3d57207c4504d767c195d4eaa/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -1381,7 +1381,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/caddy",
       "content_hash": "sha256:67b7b8e59ddeb947987978f65dbcd9a060778620626b79b7953600b72b0b94f2",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/caddy/0.1.9/67b7b8e59ddeb947987978f65dbcd9a060778620626b79b7953600b72b0b94f2/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/caddy/0.1.9/67b7b8e59ddeb947987978f65dbcd9a060778620626b79b7953600b72b0b94f2/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -1546,7 +1546,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/cassandra",
       "content_hash": "sha256:5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/cassandra/0.4.8/5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/cassandra/0.4.8/5f04e74317ed58448bf64d9c365dd0e452cb61a28aa22528457d7a0012a945af/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -2143,7 +2143,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/clickhouse",
       "content_hash": "sha256:721817e6dbccefab19e026124316f239aa64b501c50baa5482d9963357d8731b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/clickhouse/0.2.5/721817e6dbccefab19e026124316f239aa64b501c50baa5482d9963357d8731b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/clickhouse/0.2.5/721817e6dbccefab19e026124316f239aa64b501c50baa5482d9963357d8731b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -2591,7 +2591,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/cloud-init",
       "content_hash": "sha256:bb8a5b7a0a07326871e8b286aaab3c1c5daf48bd20497b8b191faedf2ec8af7a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/cloud-init/0.1.7/bb8a5b7a0a07326871e8b286aaab3c1c5daf48bd20497b8b191faedf2ec8af7a/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/cloud-init/0.1.7/bb8a5b7a0a07326871e8b286aaab3c1c5daf48bd20497b8b191faedf2ec8af7a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -2922,7 +2922,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/cloudflare",
       "content_hash": "sha256:c325b3e7a6eff922a587be63c341466656f9f8da9fc00aae2fe69ea9f0b3022e",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/cloudflare/0.1.4/c325b3e7a6eff922a587be63c341466656f9f8da9fc00aae2fe69ea9f0b3022e/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/cloudflare/0.1.4/c325b3e7a6eff922a587be63c341466656f9f8da9fc00aae2fe69ea9f0b3022e/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -3091,7 +3091,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/cockroach",
       "content_hash": "sha256:3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/cockroach/0.1.2/3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/cockroach/0.1.2/3e35471ca174a81481cf72251d04e60a8dc2006415d5413198d3d811dcce1959/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -3461,7 +3461,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/consul",
       "content_hash": "sha256:6d2e2f32fbfff3ba64edc25c4a2b42234d3ff741031f1f26dfa699bb1923c2e0",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/consul/0.2.17/6d2e2f32fbfff3ba64edc25c4a2b42234d3ff741031f1f26dfa699bb1923c2e0/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/consul/0.2.17/6d2e2f32fbfff3ba64edc25c4a2b42234d3ff741031f1f26dfa699bb1923c2e0/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4087,7 +4087,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/debian",
       "content_hash": "sha256:dde50fb2f3e63b0080a1778d2366d2e8b2cc5d12ca7a3afeda24a35730b17faf",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debian/0.1.4/dde50fb2f3e63b0080a1778d2366d2e8b2cc5d12ca7a3afeda24a35730b17faf/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/debian/0.1.4/dde50fb2f3e63b0080a1778d2366d2e8b2cc5d12ca7a3afeda24a35730b17faf/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4237,7 +4237,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/debugging",
       "content_hash": "sha256:94c5c94553e8a408410a4692e2c7427f265bf3944a18ece7f7b18114c7491d22",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debugging/0.2.7/94c5c94553e8a408410a4692e2c7427f265bf3944a18ece7f7b18114c7491d22/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/debugging/0.2.7/94c5c94553e8a408410a4692e2c7427f265bf3944a18ece7f7b18114c7491d22/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4666,7 +4666,7 @@
         {
           "version": "0.2.6",
           "content_hash": "sha256:f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/debugging/0.2.6/f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/debugging/0.2.6/f687c72c8c1e78750c655b0d6f04b63c2cd6d04a15e560961969e62fe70aa7e3/pack.tar.gz"
         }
       ]
     },
@@ -4679,7 +4679,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/dell-idrac",
       "content_hash": "sha256:0213e6059cfec7667704382641d1185acca69e9a4d3ef1dce97d96dc834971e2",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/dell-idrac/0.1.0/0213e6059cfec7667704382641d1185acca69e9a4d3ef1dce97d96dc834971e2/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/dell-idrac/0.1.0/0213e6059cfec7667704382641d1185acca69e9a4d3ef1dce97d96dc834971e2/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4795,7 +4795,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/dell-ipmi",
       "content_hash": "sha256:b592ffe241b05b9f77a4506f31cca020f639e741846fbb700e09979ad101a1cc",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/dell-ipmi/0.1.0/b592ffe241b05b9f77a4506f31cca020f639e741846fbb700e09979ad101a1cc/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/dell-ipmi/0.1.0/b592ffe241b05b9f77a4506f31cca020f639e741846fbb700e09979ad101a1cc/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -4913,7 +4913,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/dnf-rpm",
       "content_hash": "sha256:741fb702dfa9c4846b57b8ffcf669e8de33dec8d5472d4028e8b0c72bfea04a6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/dnf-rpm/0.1.6/741fb702dfa9c4846b57b8ffcf669e8de33dec8d5472d4028e8b0c72bfea04a6/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/dnf-rpm/0.1.6/741fb702dfa9c4846b57b8ffcf669e8de33dec8d5472d4028e8b0c72bfea04a6/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -5112,7 +5112,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/docker",
       "content_hash": "sha256:94ead8a686fb83fe8a19cf7c2a6a38efd0f7a7570a2e64a4aec9b3f53df4bb7b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/docker/0.2.6/94ead8a686fb83fe8a19cf7c2a6a38efd0f7a7570a2e64a4aec9b3f53df4bb7b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/docker/0.2.6/94ead8a686fb83fe8a19cf7c2a6a38efd0f7a7570a2e64a4aec9b3f53df4bb7b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -5485,7 +5485,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/elasticsearch",
       "content_hash": "sha256:7d3aada9cedeabebadb2ce8cf1ae9a6f8ae623437d01e5ad207ae5523ae608ed",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/elasticsearch/0.1.7/7d3aada9cedeabebadb2ce8cf1ae9a6f8ae623437d01e5ad207ae5523ae608ed/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/elasticsearch/0.1.7/7d3aada9cedeabebadb2ce8cf1ae9a6f8ae623437d01e5ad207ae5523ae608ed/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -5786,7 +5786,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/elixir-beam",
       "content_hash": "sha256:7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/elixir-beam/0.1.0/7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/elixir-beam/0.1.0/7f37c4c59853b7f37e41b1c3e48857d10198a6ffc0b2233cc1eb23fcca55bc7e/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6012,7 +6012,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/envoy",
       "content_hash": "sha256:dece1f45f21bad649ba63c57ff24ca28984106e90100ec3b9449ab9dd6397368",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/envoy/0.1.6/dece1f45f21bad649ba63c57ff24ca28984106e90100ec3b9449ab9dd6397368/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/envoy/0.1.6/dece1f45f21bad649ba63c57ff24ca28984106e90100ec3b9449ab9dd6397368/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6227,7 +6227,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/fail2ban",
       "content_hash": "sha256:754816325b3229335585709e322c64162d12d16b1f336197d690ddcad442032f",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/fail2ban/0.1.6/754816325b3229335585709e322c64162d12d16b1f336197d690ddcad442032f/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/fail2ban/0.1.6/754816325b3229335585709e322c64162d12d16b1f336197d690ddcad442032f/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6365,7 +6365,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/firewall",
       "content_hash": "sha256:438f96c9711cc49487224cec7ba9210b38a9b9a5e7b849c72528f3507a02b6cb",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/firewall/0.1.6/438f96c9711cc49487224cec7ba9210b38a9b9a5e7b849c72528f3507a02b6cb/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/firewall/0.1.6/438f96c9711cc49487224cec7ba9210b38a9b9a5e7b849c72528f3507a02b6cb/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6554,7 +6554,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/frr",
       "content_hash": "sha256:10d44915dd07d4a57de04f06d5a780c98dd567260912c2a9359184a0084f3ea3",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/frr/0.1.3/10d44915dd07d4a57de04f06d5a780c98dd567260912c2a9359184a0084f3ea3/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/frr/0.1.3/10d44915dd07d4a57de04f06d5a780c98dd567260912c2a9359184a0084f3ea3/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6666,7 +6666,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/fs-search",
       "content_hash": "sha256:5fa6dcb62c5b370cd4147a2a5f8d0dff2beaf62a4158377e3d4763208196052a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/fs-search/0.1.5/5fa6dcb62c5b370cd4147a2a5f8d0dff2beaf62a4158377e3d4763208196052a/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/fs-search/0.1.5/5fa6dcb62c5b370cd4147a2a5f8d0dff2beaf62a4158377e3d4763208196052a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -6971,7 +6971,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/git-local",
       "content_hash": "sha256:ceea2909f3d374d43fd8e51dec3d812fc7c38716790d9c907ada1f1717c2bec0",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/git-local/0.1.3/ceea2909f3d374d43fd8e51dec3d812fc7c38716790d9c907ada1f1717c2bec0/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/git-local/0.1.3/ceea2909f3d374d43fd8e51dec3d812fc7c38716790d9c907ada1f1717c2bec0/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7103,7 +7103,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/github-cli",
       "content_hash": "sha256:08d6548d27e3b21c8bdf8ecd3a2f10525bb60c1eb318080de910a8826f2b0e34",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/github-cli/0.1.6/08d6548d27e3b21c8bdf8ecd3a2f10525bb60c1eb318080de910a8826f2b0e34/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/github-cli/0.1.6/08d6548d27e3b21c8bdf8ecd3a2f10525bb60c1eb318080de910a8826f2b0e34/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7444,7 +7444,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/grafana",
       "content_hash": "sha256:03d816554d2d60510af17bb1a5428557b1cd19a1b069ec88e3a4e5382e2cdbb7",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/grafana/0.1.9/03d816554d2d60510af17bb1a5428557b1cd19a1b069ec88e3a4e5382e2cdbb7/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/grafana/0.1.9/03d816554d2d60510af17bb1a5428557b1cd19a1b069ec88e3a4e5382e2cdbb7/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7603,7 +7603,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/haproxy",
       "content_hash": "sha256:2dcc08be79212f29b41eb07ab3165ed1f77d4db1e60954be5496cbf7506181b1",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/haproxy/0.1.5/2dcc08be79212f29b41eb07ab3165ed1f77d4db1e60954be5496cbf7506181b1/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/haproxy/0.1.5/2dcc08be79212f29b41eb07ab3165ed1f77d4db1e60954be5496cbf7506181b1/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7787,7 +7787,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/iperf3",
       "content_hash": "sha256:4a80767927aaa86d9a4883735afcc2d8a03b745031451f7a0c68244c65d99349",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/iperf3/0.1.0/4a80767927aaa86d9a4883735afcc2d8a03b745031451f7a0c68244c65d99349/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/iperf3/0.1.0/4a80767927aaa86d9a4883735afcc2d8a03b745031451f7a0c68244c65d99349/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7866,7 +7866,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/iscsi",
       "content_hash": "sha256:e583967e045d2a88a652056407db619e40447e4dfea0cfd343de384a9f27fa59",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/iscsi/0.1.2/e583967e045d2a88a652056407db619e40447e4dfea0cfd343de384a9f27fa59/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/iscsi/0.1.2/e583967e045d2a88a652056407db619e40447e4dfea0cfd343de384a9f27fa59/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -7950,7 +7950,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/java-jvm",
       "content_hash": "sha256:0a6dc0afb1b6993592fc43f0c60ce1c9369511bca17ef74e58a4fd9d8f1a7bfa",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/java-jvm/0.1.10/0a6dc0afb1b6993592fc43f0c60ce1c9369511bca17ef74e58a4fd9d8f1a7bfa/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/java-jvm/0.1.10/0a6dc0afb1b6993592fc43f0c60ce1c9369511bca17ef74e58a4fd9d8f1a7bfa/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -8209,7 +8209,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/kafka",
       "content_hash": "sha256:776ab82468147c1d45c71543af1efdb70db4cbcf14cd7bb09d1ce7fad670ae54",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/kafka/0.1.3/776ab82468147c1d45c71543af1efdb70db4cbcf14cd7bb09d1ce7fad670ae54/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/kafka/0.1.3/776ab82468147c1d45c71543af1efdb70db4cbcf14cd7bb09d1ce7fad670ae54/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -8499,7 +8499,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/kubernetes",
       "content_hash": "sha256:bf096a4bf51f22b62a96b2535a3cad1368bb88ca2e8a0036555955e3a37e6e8d",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/kubernetes/0.2.1/bf096a4bf51f22b62a96b2535a3cad1368bb88ca2e8a0036555955e3a37e6e8d/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/kubernetes/0.2.1/bf096a4bf51f22b62a96b2535a3cad1368bb88ca2e8a0036555955e3a37e6e8d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9086,7 +9086,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/linux-core",
       "content_hash": "sha256:e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/linux-core/0.3.16/e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/linux-core/0.3.16/e864da692bd1c7d4e0b5cf2bc1de4bbe288237feabc895760f3c10a478e4111f/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9581,7 +9581,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/memcached",
       "content_hash": "sha256:d930b616eb5929a01f5771a010a09feb7a80374be61f9a1fb48af1b45916b147",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/memcached/0.1.4/d930b616eb5929a01f5771a010a09feb7a80374be61f9a1fb48af1b45916b147/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/memcached/0.1.4/d930b616eb5929a01f5771a010a09feb7a80374be61f9a1fb48af1b45916b147/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9702,7 +9702,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/minio",
       "content_hash": "sha256:782740d114f55d43b51d864e001f269f565a2d971904cb473318683f6d96d31b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/minio/0.1.8/782740d114f55d43b51d864e001f269f565a2d971904cb473318683f6d96d31b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/minio/0.1.8/782740d114f55d43b51d864e001f269f565a2d971904cb473318683f6d96d31b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -9905,7 +9905,7 @@
         {
           "version": "0.1.7",
           "content_hash": "sha256:bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/minio/0.1.7/bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/minio/0.1.7/bc84c8cf5513b92727fb394395088ab39e60114dbc4dc6cca4e31c9b11b2e5e4/pack.tar.gz"
         }
       ]
     },
@@ -9918,7 +9918,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/mongodb",
       "content_hash": "sha256:35cc074fef55878a847a32b74eabb96b0acfb76df7e8be6dea60f2a83e91d24b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/mongodb/0.3.1/35cc074fef55878a847a32b74eabb96b0acfb76df7e8be6dea60f2a83e91d24b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/mongodb/0.3.1/35cc074fef55878a847a32b74eabb96b0acfb76df7e8be6dea60f2a83e91d24b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -10405,7 +10405,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/multipath",
       "content_hash": "sha256:406e7d3bbdeb3f931e74048ba2249878470739826d7689e27be26702fd77a2dc",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/multipath/0.1.1/406e7d3bbdeb3f931e74048ba2249878470739826d7689e27be26702fd77a2dc/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/multipath/0.1.1/406e7d3bbdeb3f931e74048ba2249878470739826d7689e27be26702fd77a2dc/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -10486,7 +10486,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/mysql",
       "content_hash": "sha256:8f542b9d4cd9f2059cbf64e856a6b63a2db75e1f7eb1148bd5da4d5cf3da57ca",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/mysql/0.1.4/8f542b9d4cd9f2059cbf64e856a6b63a2db75e1f7eb1148bd5da4d5cf3da57ca/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/mysql/0.1.4/8f542b9d4cd9f2059cbf64e856a6b63a2db75e1f7eb1148bd5da4d5cf3da57ca/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -10844,7 +10844,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/network-tls",
       "content_hash": "sha256:afa64ac7a0b6d6766fdb5c48543ccc67823e90c6de0446683d4ab9eb4620f56c",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/network-tls/0.1.7/afa64ac7a0b6d6766fdb5c48543ccc67823e90c6de0446683d4ab9eb4620f56c/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/network-tls/0.1.7/afa64ac7a0b6d6766fdb5c48543ccc67823e90c6de0446683d4ab9eb4620f56c/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11055,7 +11055,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nfs",
       "content_hash": "sha256:fbc1087bba7743eb9c5ec4a17b3d4ebc43583fb620d10323753d0a9ca61007ea",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nfs/0.1.6/fbc1087bba7743eb9c5ec4a17b3d4ebc43583fb620d10323753d0a9ca61007ea/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nfs/0.1.6/fbc1087bba7743eb9c5ec4a17b3d4ebc43583fb620d10323753d0a9ca61007ea/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11194,7 +11194,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nginx",
       "content_hash": "sha256:64758a7085ee6fa1ca823f41dca7305cf9cc69f5c9b970e056dc3708fd829060",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nginx/0.2.8/64758a7085ee6fa1ca823f41dca7305cf9cc69f5c9b970e056dc3708fd829060/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nginx/0.2.8/64758a7085ee6fa1ca823f41dca7305cf9cc69f5c9b970e056dc3708fd829060/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11512,7 +11512,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nic",
       "content_hash": "sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nic/0.1.1/fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nic/0.1.1/fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11617,7 +11617,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nodejs-pm2",
       "content_hash": "sha256:9bf4fd1bbac8704548ea43b58a3d0564f3e991b5d913df11a5cf4182da498b55",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nodejs-pm2/0.1.6/9bf4fd1bbac8704548ea43b58a3d0564f3e991b5d913df11a5cf4182da498b55/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nodejs-pm2/0.1.6/9bf4fd1bbac8704548ea43b58a3d0564f3e991b5d913df11a5cf4182da498b55/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -11845,7 +11845,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/nomad",
       "content_hash": "sha256:eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/nomad/0.1.25/eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/nomad/0.1.25/eb4e1c6a8b9c3952145fe09399fd03d5bfb5f63e9a645c735ded7e68d2c879a6/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -12637,7 +12637,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/pfsense",
       "content_hash": "sha256:0857d187604a41ed1f9cb3be56f442c9e2abaa428f4b988b6cdd00e51ed6eadc",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pfsense/0.4.1/0857d187604a41ed1f9cb3be56f442c9e2abaa428f4b988b6cdd00e51ed6eadc/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/pfsense/0.4.1/0857d187604a41ed1f9cb3be56f442c9e2abaa428f4b988b6cdd00e51ed6eadc/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -12880,7 +12880,7 @@
         {
           "version": "0.4.0",
           "content_hash": "sha256:719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pfsense/0.4.0/719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/pfsense/0.4.0/719ef92ac57f7bbf845e6e6c62b8c1e83617f3e0f2ed3d18701ba3d86c5894a6/pack.tar.gz"
         }
       ]
     },
@@ -12893,7 +12893,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/php-fpm",
       "content_hash": "sha256:b3c099a5a81e101fade66fc62c3f31cef99362b082b7b862f85161f6c64ac566",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/php-fpm/0.1.5/b3c099a5a81e101fade66fc62c3f31cef99362b082b7b862f85161f6c64ac566/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/php-fpm/0.1.5/b3c099a5a81e101fade66fc62c3f31cef99362b082b7b862f85161f6c64ac566/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -13046,7 +13046,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/podman",
       "content_hash": "sha256:26c909c28ccaf6dda2bd3651c16fac77c9ddffda4fa7dd6c4b3ff707c8d2e02b",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/podman/0.1.4/26c909c28ccaf6dda2bd3651c16fac77c9ddffda4fa7dd6c4b3ff707c8d2e02b/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/podman/0.1.4/26c909c28ccaf6dda2bd3651c16fac77c9ddffda4fa7dd6c4b3ff707c8d2e02b/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -13240,7 +13240,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/postfix",
       "content_hash": "sha256:ea996fab8a00fe8fb5cd8147b4e3aa3b4a35bb9e233e5531dec7af8a578393b1",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/postfix/0.1.6/ea996fab8a00fe8fb5cd8147b4e3aa3b4a35bb9e233e5531dec7af8a578393b1/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/postfix/0.1.6/ea996fab8a00fe8fb5cd8147b4e3aa3b4a35bb9e233e5531dec7af8a578393b1/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -13440,7 +13440,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/postgres",
       "content_hash": "sha256:508bc3ad8e3304814d24ce4de6f4aa83e3a4c0be1b74d8749a9fa62273d84f3e",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/postgres/0.2.9/508bc3ad8e3304814d24ce4de6f4aa83e3a4c0be1b74d8749a9fa62273d84f3e/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/postgres/0.2.9/508bc3ad8e3304814d24ce4de6f4aa83e3a4c0be1b74d8749a9fa62273d84f3e/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14144,7 +14144,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/process-forensics",
       "content_hash": "sha256:ccc867a0d83c094d754cbc132ec2249d8de0c778989a4bc8fe1d52aa6cc22599",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/process-forensics/0.1.3/ccc867a0d83c094d754cbc132ec2249d8de0c778989a4bc8fe1d52aa6cc22599/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/process-forensics/0.1.3/ccc867a0d83c094d754cbc132ec2249d8de0c778989a4bc8fe1d52aa6cc22599/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14293,7 +14293,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/prometheus",
       "content_hash": "sha256:a78f6ba4c60920ec31db1558fa7091e5d98e019d376adc0bd9a5c867d8566951",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/prometheus/0.1.9/a78f6ba4c60920ec31db1558fa7091e5d98e019d376adc0bd9a5c867d8566951/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/prometheus/0.1.9/a78f6ba4c60920ec31db1558fa7091e5d98e019d376adc0bd9a5c867d8566951/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14507,7 +14507,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/pure-flasharray",
       "content_hash": "sha256:bf0978ad585451b1e4d8d81623114b820031af71ebb3ce376ba5d3acc88c3c58",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pure-flasharray/0.1.3/bf0978ad585451b1e4d8d81623114b820031af71ebb3ce376ba5d3acc88c3c58/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/pure-flasharray/0.1.3/bf0978ad585451b1e4d8d81623114b820031af71ebb3ce376ba5d3acc88c3c58/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14611,7 +14611,7 @@
         {
           "version": "0.1.2",
           "content_hash": "sha256:26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/pure-flasharray/0.1.2/26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/pure-flasharray/0.1.2/26eb8dce579dfc816fb1b16d7cfe20b31e41bfca8aea0d677e65002ae06811be/pack.tar.gz"
         }
       ]
     },
@@ -14624,7 +14624,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/python-app",
       "content_hash": "sha256:f0f36636fe741560b2112bf5ec0003ec2a68a0bb5352eeb2b41f3406fa9f65f2",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/python-app/0.1.4/f0f36636fe741560b2112bf5ec0003ec2a68a0bb5352eeb2b41f3406fa9f65f2/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/python-app/0.1.4/f0f36636fe741560b2112bf5ec0003ec2a68a0bb5352eeb2b41f3406fa9f65f2/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -14777,7 +14777,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/rabbitmq",
       "content_hash": "sha256:75a2c2dde972eaf243304081bab0ab6887b0a915632cc65a465d059f38dae102",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/rabbitmq/0.1.7/75a2c2dde972eaf243304081bab0ab6887b0a915632cc65a465d059f38dae102/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/rabbitmq/0.1.7/75a2c2dde972eaf243304081bab0ab6887b0a915632cc65a465d059f38dae102/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -15051,7 +15051,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/redis",
       "content_hash": "sha256:221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.3.4/221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/redis/0.3.4/221f4cf97feff23d68b04241f770bc804347a069288d37564f1156235fc581ae/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -15900,7 +15900,7 @@
         {
           "version": "0.3.3",
           "content_hash": "sha256:f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/redis/0.3.3/f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/redis/0.3.3/f3da26766dfe946c1d84951e0edb15ee378d6c625ed3c07583006747d04714f1/pack.tar.gz"
         }
       ]
     },
@@ -15913,7 +15913,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/rke2",
       "content_hash": "sha256:1809a6aea4df6f03697ee022e66473b67593e7d2329fe7f6baf3bc54cc683926",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/rke2/0.2.0/1809a6aea4df6f03697ee022e66473b67593e7d2329fe7f6baf3bc54cc683926/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/rke2/0.2.0/1809a6aea4df6f03697ee022e66473b67593e7d2329fe7f6baf3bc54cc683926/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16023,7 +16023,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/shell",
       "content_hash": "sha256:0884946aa3c313b3990a3539400d1cd2fb50051fc0efa717be738f6038593134",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/shell/0.1.0/0884946aa3c313b3990a3539400d1cd2fb50051fc0efa717be738f6038593134/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/shell/0.1.0/0884946aa3c313b3990a3539400d1cd2fb50051fc0efa717be738f6038593134/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16060,7 +16060,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/showcase",
       "content_hash": "sha256:74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/showcase/0.2.6/74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/showcase/0.2.6/74e083c4720b414037e0926fc8c935c3653804e771278f2a657539073f8deb85/pack.tar.gz",
       "requires": {
         "os": [],
         "binaries": []
@@ -16147,7 +16147,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/snmp",
       "content_hash": "sha256:751dd09d8deaf6834e3aa0f888a7eb42792945e8580cb4a7bbc0d468ee839427",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/snmp/0.2.1/751dd09d8deaf6834e3aa0f888a7eb42792945e8580cb4a7bbc0d468ee839427/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/snmp/0.2.1/751dd09d8deaf6834e3aa0f888a7eb42792945e8580cb4a7bbc0d468ee839427/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16213,7 +16213,7 @@
         {
           "version": "0.2.0",
           "content_hash": "sha256:4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/snmp/0.2.0/4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/snmp/0.2.0/4ee7484978e98ca2c6dec1651d8e33e93135fba60dd1e486ecad27d6a8e975d6/pack.tar.gz"
         }
       ]
     },
@@ -16226,7 +16226,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/ssl-local",
       "content_hash": "sha256:c13c30444dab16afb6a0740413bc35bcda00a9ebc54e139c7328067dad657009",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/ssl-local/0.1.6/c13c30444dab16afb6a0740413bc35bcda00a9ebc54e139c7328067dad657009/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/ssl-local/0.1.6/c13c30444dab16afb6a0740413bc35bcda00a9ebc54e139c7328067dad657009/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16358,7 +16358,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/systemd-deep",
       "content_hash": "sha256:3efb4faba9c8742105ac43e42233e389249c81fee5fb1b35afe41a68ca59a7de",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/systemd-deep/0.1.7/3efb4faba9c8742105ac43e42233e389249c81fee5fb1b35afe41a68ca59a7de/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/systemd-deep/0.1.7/3efb4faba9c8742105ac43e42233e389249c81fee5fb1b35afe41a68ca59a7de/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16707,7 +16707,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/tailscale",
       "content_hash": "sha256:7f9245b5987a0fa5415ac1bd3a3ecea22b07baef88571b6ccd323d1a8a9e8c4a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/tailscale/0.1.3/7f9245b5987a0fa5415ac1bd3a3ecea22b07baef88571b6ccd323d1a8a9e8c4a/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/tailscale/0.1.3/7f9245b5987a0fa5415ac1bd3a3ecea22b07baef88571b6ccd323d1a8a9e8c4a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16856,7 +16856,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/terraform-readonly",
       "content_hash": "sha256:005264d67ca430066e60d7680c10b6a3b3b31deda97cfcfd8f734fb8b013b175",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/terraform-readonly/0.1.5/005264d67ca430066e60d7680c10b6a3b3b31deda97cfcfd8f734fb8b013b175/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/terraform-readonly/0.1.5/005264d67ca430066e60d7680c10b6a3b3b31deda97cfcfd8f734fb8b013b175/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -16988,7 +16988,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/time-sync",
       "content_hash": "sha256:0a1459922f62ac9d0023fca69d99c70ee675eeef375fae2c253e42951d0afba5",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/time-sync/0.1.7/0a1459922f62ac9d0023fca69d99c70ee675eeef375fae2c253e42951d0afba5/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/time-sync/0.1.7/0a1459922f62ac9d0023fca69d99c70ee675eeef375fae2c253e42951d0afba5/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17102,7 +17102,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/traefik",
       "content_hash": "sha256:535763a96ef1e17886f5d37dfac1f7361be327be7377c594d2ac27aeb28977a7",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/traefik/0.1.6/535763a96ef1e17886f5d37dfac1f7361be327be7377c594d2ac27aeb28977a7/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/traefik/0.1.6/535763a96ef1e17886f5d37dfac1f7361be327be7377c594d2ac27aeb28977a7/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17264,7 +17264,7 @@
         {
           "version": "0.1.5",
           "content_hash": "sha256:2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/traefik/0.1.5/2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/traefik/0.1.5/2038c752ccb21d03ed6359e2d6f5e2818e5f00eadf073d8a9d83d39c429e94b6/pack.tar.gz"
         }
       ]
     },
@@ -17277,7 +17277,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/typesense",
       "content_hash": "sha256:09bc1dad3d391892787f901f6a335a8201e2d5bba7d78a2b34127ca10a38cd44",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/typesense/0.1.2/09bc1dad3d391892787f901f6a335a8201e2d5bba7d78a2b34127ca10a38cd44/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/typesense/0.1.2/09bc1dad3d391892787f901f6a335a8201e2d5bba7d78a2b34127ca10a38cd44/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17356,7 +17356,7 @@
         {
           "version": "0.1.1",
           "content_hash": "sha256:0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/typesense/0.1.1/0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/typesense/0.1.1/0dd380511e1ceb0515c3cb6f276b4ecef7ee6e90b12c1b3a9461e3ac0530af0e/pack.tar.gz"
         }
       ]
     },
@@ -17369,7 +17369,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/vault",
       "content_hash": "sha256:601457f5da82ce6a399d65d2df39b94dfaaab42ee05dbcd303f63e8d8a66f2c3",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/vault/0.1.5/601457f5da82ce6a399d65d2df39b94dfaaab42ee05dbcd303f63e8d8a66f2c3/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/vault/0.1.5/601457f5da82ce6a399d65d2df39b94dfaaab42ee05dbcd303f63e8d8a66f2c3/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17595,7 +17595,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/vector",
       "content_hash": "sha256:2bed6c9f93de2aa4d1c3757d5634b451a73dd1ead5945587b8de4316f3098f42",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/vector/0.1.2/2bed6c9f93de2aa4d1c3757d5634b451a73dd1ead5945587b8de4316f3098f42/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/vector/0.1.2/2bed6c9f93de2aa4d1c3757d5634b451a73dd1ead5945587b8de4316f3098f42/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17727,7 +17727,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/victorialogs",
       "content_hash": "sha256:b5f03ee99fe04d612a77de1388269c89907c7b018763edd10927d3445a5ad8c3",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victorialogs/0.1.3/b5f03ee99fe04d612a77de1388269c89907c7b018763edd10927d3445a5ad8c3/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/victorialogs/0.1.3/b5f03ee99fe04d612a77de1388269c89907c7b018763edd10927d3445a5ad8c3/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17796,7 +17796,7 @@
         {
           "version": "0.1.2",
           "content_hash": "sha256:b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victorialogs/0.1.2/b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/victorialogs/0.1.2/b7dea24a0ea6fa7146e0a483628f4d3f8cab0bb2be5431f6bc62113279f1328f/pack.tar.gz"
         }
       ]
     },
@@ -17809,7 +17809,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/victoriametrics",
       "content_hash": "sha256:672d43dc055a0954edf68b0e2673febcd56411439d13034b3b6e9cbc9a66ff83",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victoriametrics/0.1.3/672d43dc055a0954edf68b0e2673febcd56411439d13034b3b6e9cbc9a66ff83/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/victoriametrics/0.1.3/672d43dc055a0954edf68b0e2673febcd56411439d13034b3b6e9cbc9a66ff83/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -17885,7 +17885,7 @@
         {
           "version": "0.1.2",
           "content_hash": "sha256:8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/victoriametrics/0.1.2/8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/victoriametrics/0.1.2/8a5461db287f0e6088a1d8f429f2f56fb3ab0141efeca6d3e09eebaefe41790a/pack.tar.gz"
         }
       ]
     },
@@ -17898,7 +17898,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/wireguard",
       "content_hash": "sha256:8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/wireguard/0.1.5/8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/wireguard/0.1.5/8ab673bde0e33a1253ceacacae4c62c0943f845d6672711bc1f3935e0471056a/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18035,7 +18035,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zfs",
       "content_hash": "sha256:e0e18fac732f7ef3f7527df9f4e6e3a538d1d6abdc8e8b084eb5d4fe1c6eb179",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zfs/0.1.6/e0e18fac732f7ef3f7527df9f4e6e3a538d1d6abdc8e8b084eb5d4fe1c6eb179/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/zfs/0.1.6/e0e18fac732f7ef3f7527df9f4e6e3a538d1d6abdc8e8b084eb5d4fe1c6eb179/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18239,7 +18239,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zookeeper",
       "content_hash": "sha256:5081146ff6ad83ef059ea0db57bb1fab2ef652b70d640d4515c4769e45736aa8",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zookeeper/0.1.5/5081146ff6ad83ef059ea0db57bb1fab2ef652b70d640d4515c4769e45736aa8/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/zookeeper/0.1.5/5081146ff6ad83ef059ea0db57bb1fab2ef652b70d640d4515c4769e45736aa8/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18371,7 +18371,7 @@
       "homepage": "https://github.com/andrewdryga/emisar",
       "source_url": "https://github.com/andrewdryga/emisar/tree/main/packs/zot",
       "content_hash": "sha256:430b71e9d8e51bd20e2cf2914c82e76bd77a58ce5a7fb3a6c1aaa14780c05190",
-      "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zot/0.1.2/430b71e9d8e51bd20e2cf2914c82e76bd77a58ce5a7fb3a6c1aaa14780c05190/pack.tar.gz",
+      "tarball_url": "https://registry.emisar.dev/v1/packs/zot/0.1.2/430b71e9d8e51bd20e2cf2914c82e76bd77a58ce5a7fb3a6c1aaa14780c05190/pack.tar.gz",
       "requires": {
         "os": [
           "linux"
@@ -18437,7 +18437,7 @@
         {
           "version": "0.1.1",
           "content_hash": "sha256:8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec",
-          "tarball_url": "https://storage.googleapis.com/emisar-pack-registry/v1/packs/zot/0.1.1/8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec/pack.tar.gz"
+          "tarball_url": "https://registry.emisar.dev/v1/packs/zot/0.1.1/8354666fe8f7d3959759fa31f8defeba2066cef91498cf691fe381c67a43abec/pack.tar.gz"
         }
       ]
     }

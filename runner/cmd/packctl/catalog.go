@@ -12,9 +12,12 @@ import (
 )
 
 // defaultRegistryBaseURL is the public HTTPS base pack artifacts are served
-// from (the GCS bucket, infra output pack_registry_base_url). Tarball URLs
-// in the built catalog join paths onto it.
-const defaultRegistryBaseURL = "https://storage.googleapis.com/emisar-pack-registry"
+// from — the vendor-neutral serving domain (infra: an LB host rule fronts the
+// GCS bucket, packs_registry.tf). Tarball URLs in the built catalog join paths
+// onto it. The bucket still serves the SAME bytes at
+// storage.googleapis.com/emisar-pack-registry, so old published URLs keep
+// resolving; override with --base-url to build against a different base.
+const defaultRegistryBaseURL = "https://registry.emisar.dev"
 
 func packCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{

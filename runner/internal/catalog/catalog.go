@@ -132,7 +132,7 @@ type Command struct {
 // BuildOptions parameterizes catalog construction.
 type BuildOptions struct {
 	// BaseURL is the public HTTPS base the tarball URLs join onto, e.g.
-	// https://storage.googleapis.com/emisar-pack-registry. Required.
+	// https://registry.emisar.dev. Required.
 	BaseURL string
 	// RepoURL is the source repo for source_url links. Defaults to
 	// DefaultRepoURL when empty.

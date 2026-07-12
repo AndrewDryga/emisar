@@ -150,35 +150,39 @@ gcloud storage cat gs://emisar-pack-registry/v1/catalog.json#<generation> \
 
 ## Serving domain (registry.emisar.dev)
 
-The bucket is also served at **`https://registry.emisar.dev`** — the shared
-HTTPS LB routes that host straight to the bucket (`infra/packs_registry.tf` +
-the host rule in `infra/lb.tf`), so the same object paths resolve on both
-bases (`…/v1/catalog.json`). The alias is read-side only and additive:
-`storage.googleapis.com` URLs already baked into immutable artifacts keep
-working forever, and `packctl catalog publish` keeps writing through the
-authenticated GCS API endpoint regardless of the serving base.
+The pack registry's canonical base is **`https://registry.emisar.dev`** — the
+vendor-neutral serving domain. The shared HTTPS LB routes that host straight to
+the same bucket (`infra/packs_registry.tf` + the host rule in `infra/lb.tf`), so
+every object path resolves identically at both bases (`…/v1/catalog.json`).
+`packctl` bakes `registry.emisar.dev` tarball URLs into the catalog it builds
+(`defaultRegistryBaseURL`), and the portal refreshes + pins against the same base
+(`EMISAR_PACK_CATALOG_URL` / the `runtime.exs` default). The old
+`storage.googleapis.com/emisar-pack-registry` base still serves the SAME bytes,
+so every URL ever published there keeps resolving; `packctl catalog publish`
+still WRITES through the authenticated GCS API endpoint (`DefaultGCSEndpoint`) —
+only the read/serve base moved.
 
-Go-live (works BEFORE the emisar.dev NS cutover — the host migrates
-independently): `terraform apply` (TFC) → add the GoDaddy records
-(`terraform output pack_registry_godaddy_records`: A/AAAA + the cert
-DNS-auth CNAME) → wait for the `emisar-cert-registry` cert to be ACTIVE →
-verify `curl -fsSL https://registry.emisar.dev/v1/catalog.json | jq .schema_version`.
+**Deploy gate — the domain must serve BEFORE the flip ships.** The code now
+defaults to `registry.emisar.dev`; do not deploy the portal (or run
+`packctl catalog publish` on the new base) until the domain resolves and its
+cert is ACTIVE, or the portal 302s installers to a dead host and the next
+publish bakes not-yet-live URLs into an immutable catalog. Go-live (works BEFORE
+the emisar.dev NS cutover — the host migrates independently):
 
-**Flipping the canonical base** (do this ONLY after the verify above passes —
-flipping early bakes dead URLs into the next publish):
+1. `terraform apply` (TFC) — creates the backend bucket, cert, and DNS-auth.
+2. Add the GoDaddy records: `terraform output pack_registry_godaddy_records`
+   (A/AAAA → the LB IPs + the cert DNS-auth CNAME).
+3. Wait for the `emisar-cert-registry` managed cert to be ACTIVE, then verify:
+   `curl -fsSL https://registry.emisar.dev/v1/catalog.json | jq .schema_version`.
+4. Deploy the portal and publish the catalog on the new base. Carried
+   `previous_versions` history re-homes automatically — the build REBUILDS
+   carried tarball URLs from the current base (content-addressed: version+hash
+   pin the path), so there is never a mixed-host catalog to hand-edit.
 
-1. `runner/cmd/packctl/catalog.go`: `defaultRegistryBaseURL` →
-   `https://registry.emisar.dev`.
-2. The portal, SAME deploy: point `EMISAR_PACK_CATALOG_URL` (or the
-   `runtime.exs` default) at `https://registry.emisar.dev/v1/catalog.json` —
-   the registry cache pins remote `tarball_url`s to the base derived from
-   `catalog_url`, so the two must move together.
-3. Build + publish once on the new base. Carried `previous_versions` history
-   re-homes automatically — the build REBUILDS carried tarball URLs from the
-   current base (they are content-addressed, so version+hash pin the path) —
-   no mixed-host catalog, nothing to hand-edit.
-4. Regenerate the bundled catalog (gate step 2 in `AGENTS.md`) and run the
-   baseline/cache tests; deploy.
+Bridge option if you must deploy the code before the domain serves: set
+`EMISAR_PACK_CATALOG_URL=https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json`
+so the portal keeps refreshing from (and pinning to) the GCS base until
+`registry.emisar.dev` is live, then drop the override.
 
 ## Rollback
 

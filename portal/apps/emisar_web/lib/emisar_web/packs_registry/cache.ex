@@ -99,8 +99,8 @@ defmodule EmisarWeb.PacksRegistry.Cache do
   # 302s installers to these URLs, so a poisoned REMOTE catalog naming an
   # off-base tarball could redirect an install to another host or bucket
   # (supply chain). The bundled boot parse deliberately skips this — it
-  # ships the canonical GCS URLs while a self-hoster overrides catalog_url,
-  # so the pin is the remote path's alone.
+  # ships our canonical serving-domain URLs while a self-hoster overrides
+  # catalog_url, so the pin is the remote path's alone.
   defp pin_tarballs(packs, base) do
     case find_off_base_tarball(packs, base) do
       nil ->
