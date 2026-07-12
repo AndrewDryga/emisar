@@ -1,4 +1,4 @@
-name: Release · runner
+name: Release · Runner
 
 run-name: Release ${{ inputs.ref || github.ref_name }}
 
