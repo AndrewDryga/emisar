@@ -3,7 +3,7 @@
 # Host-side signed-dispatch end-to-end check. Brings up the enforcing runner
 # (runner-signed) + its key-minting init (signing-init) under the `test` profile,
 # waits for the runner to connect, then drives the REAL MCP bridge to prove a
-# signed dispatch runs and an unsigned one is refused. Stdlib Python 3 only.
+# signed dispatch runs and an unsigned one is refused. Stdlib Go only (tools/cmd/signing-e2e).
 #
 #   docker compose up -d            # the base stack (db, portal, seeder, runners)
 #   ./dev/signing/e2e/run.sh
@@ -33,4 +33,4 @@ docker compose exec -T db psql -U postgres emisar_dev -c \
 
 PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
   MCP_KEY="${MCP_KEY:-emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD}" \
-  exec python3 dev/signing/e2e/signed_dispatch_e2e.py
+  exec go run ./tools/cmd/signing-e2e

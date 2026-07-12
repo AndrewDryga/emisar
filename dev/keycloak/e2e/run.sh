@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Host-side SSO end-to-end check. Runs sso_e2e.py against the PUBLISHED localhost
-# ports (portal localhost:4010, Keycloak localhost:8443) — the exact path a host
-# browser takes, so a green run proves the host-browser SSO flow works. Stdlib
-# Python 3 only; no deps. Run after the stack is up:
+# Host-side SSO end-to-end check. Runs tools/cmd/sso-e2e against the PUBLISHED
+# localhost ports (portal localhost:4010, Keycloak localhost:8443) — the exact
+# path a host browser takes, so a green run proves the host-browser SSO flow
+# works. Stdlib Go only; no deps. Run after the stack is up:
 #
 #   docker compose up -d db keycloak portal seeder
 #   ./dev/keycloak/e2e/run.sh
@@ -22,4 +22,4 @@ PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
   KC_USER="${KC_USER:-alice}" \
   KC_PASS="${KC_PASS:-Sleep-tight-1234}" \
   ALICE_KC_ID="${ALICE_KC_ID:-a11ce000-0000-4000-8000-000000000001}" \
-  exec python3 dev/keycloak/e2e/sso_e2e.py
+  exec go run ./tools/cmd/sso-e2e
