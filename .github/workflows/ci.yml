@@ -80,11 +80,11 @@ jobs:
             files=$(git diff --name-only "$BASE" HEAD)
           fi
 
-          portal=false; runner=false; mcp=false; packs=false; infra=false; deps=false; workflows=false
+          portal=false; runner=false; mcp=false; tools=false; packs=false; infra=false; deps=false; workflows=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
-              __run_all__) portal=true; runner=true; mcp=true; packs=true; infra=true; deps=true; workflows=true ;;
+              __run_all__) portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true; workflows=true ;;
             esac
             # install.sh + packs/** are real source inputs to the portal
             # release (InstallController embeds install.sh; PacksRegistry
@@ -95,13 +95,14 @@ jobs:
             esac
             case "$f" in runner/*|install.sh|go.work|go.work.sum) runner=true ;; esac
             case "$f" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
+            case "$f" in tools/*|go.work|go.work.sum) tools=true ;; esac
             # Packs re-validate when the packs change OR the validator does.
             case "$f" in
               packs/*|runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs=true ;;
             esac
             case "$f" in infra/*|.tool-versions) infra=true ;; esac
             case "$f" in
-              portal/mix.lock|runner/go.mod|mcp/go.mod|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|dev/test-packs/requirements.txt|.dep-age-allow|.agent/scripts/dep-age-gate.py) deps=true ;;
+              portal/mix.lock|runner/go.mod|mcp/go.mod|portal/.agent/scripts/package-lock.json|portal/.agent/scripts/package.json|.dep-age-allow|tools/cmd/depgate/*) deps=true ;;
             esac
             case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
           done <<< "$files"
@@ -109,14 +110,14 @@ jobs:
           # A workflow/dependabot change re-gates every area — the old
           # "own workflow file" trigger, generalized to the shared file.
           if [ "$workflows" = "true" ]; then
-            portal=true; runner=true; mcp=true; packs=true; infra=true; deps=true
+            portal=true; runner=true; mcp=true; tools=true; packs=true; infra=true; deps=true
           fi
 
-          modules="[]"
-          if [ "$runner" = "true" ] && [ "$mcp" = "true" ]; then modules='["runner","mcp"]'
-          elif [ "$runner" = "true" ]; then modules='["runner"]'
-          elif [ "$mcp" = "true" ]; then modules='["mcp"]'
-          fi
+          mods=()
+          if [ "$runner" = "true" ]; then mods+=('"runner"'); fi
+          if [ "$mcp" = "true" ]; then mods+=('"mcp"'); fi
+          if [ "$tools" = "true" ]; then mods+=('"tools"'); fi
+          modules="[$(IFS=,; echo "${mods[*]-}")]"
 
           {
             echo "portal=$portal"
@@ -135,6 +136,7 @@ jobs:
             echo "| Portal | $(mark "$portal") |"
             echo "| Go · runner | $(mark "$runner") |"
             echo "| Go · mcp | $(mark "$mcp") |"
+            echo "| Go · tools | $(mark "$tools") |"
             echo "| Packs | $(mark "$packs") |"
             echo "| Infra | $(mark "$infra") |"
             echo "| Dependency age | $(mark "$deps") |"
@@ -360,7 +362,21 @@ jobs:
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: true
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          # Glob: tools/ is deliberately dependency-free (no go.sum).
+          cache-dependency-path: ${{ matrix.module }}/go.*
+
+      - name: client-module purity (runner/mcp ship only what hosts need)
+        # runner/ and mcp/ are CLIENT-SHIPPED modules (self-hosters build and
+        # audit them) — repo tooling lives in tools/, never there. packctl is
+        # the one sanctioned exception (pack-hash parity; runner/AGENTS.md).
+        # Extending either list is a deliberate, reviewed act.
+        if: matrix.module != 'tools'
+        run: |
+          set -euo pipefail
+          test "$(ls runner/cmd)" = "packctl" || {
+            echo "::error::runner/cmd must contain exactly packctl — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
+          test ! -d mcp/cmd || {
+            echo "::error::mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
 
       - name: go vet
         working-directory: ${{ matrix.module }}
@@ -392,7 +408,9 @@ jobs:
 
       - name: shellcheck install script
         # The install script is a permanent part of the module's install
-        # surface; if it's gone, that's a regression CI must flag.
+        # surface; if it's gone, that's a regression CI must flag. tools/ is
+        # internal — it has no install surface.
+        if: matrix.module != 'tools'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck "$INSTALL_SCRIPT"
@@ -439,7 +457,9 @@ jobs:
 
       - name: cross-build (all release platforms)
         # One loop instead of a 4-leg matrix: proves every release target
-        # still compiles without burning four runners per module.
+        # still compiles without burning four runners per module. tools/ is
+        # never shipped, so it has no release platforms to prove.
+        if: matrix.module != 'tools'
         working-directory: ${{ matrix.module }}
         env:
           CGO_ENABLED: "0"
@@ -575,17 +595,24 @@ jobs:
           # Need the base commit in history to diff lockfile versions against.
           fetch-depth: 0
 
-      - name: Self-test (offline fixtures — reject-too-fresh / allow-old-enough)
-        run: python3 .agent/scripts/dep-age-gate.py self-test
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
 
-      - name: Enforce dependency release age
+      - name: Enforce dependency release age (depgate)
         # Supply-chain enforcement: reject a bump to a version published more
         # recently than its release-age window. Dependabot's cooldown only
         # throttles Dependabot's own PRs; this gate covers ANY lockfile change.
-        # PR: diff against the PR base. Push to main: diff against the prior tip.
+        # PR: diff against the PR base. Push to main: diff against the prior
+        # tip. The gate's own logic is tested by the Go · tools job whenever
+        # tools/cmd/depgate changes.
+        working-directory: tools
         env:
           DEP_AGE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: python3 .agent/scripts/dep-age-gate.py check
+          GOTOOLCHAIN: local
+        run: go run ./cmd/depgate check
 
   actionlint:
     name: Workflow lint
