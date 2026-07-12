@@ -2,8 +2,9 @@
 
 Terraform for running emisar on **Google Cloud** to a **SOC 2 Type II** posture
 (compute + Cloud SQL + LB + DNS + secrets + monitoring), adapted from
-`../onlytty/infra`. **Prepared, not applied** — emisar serves from Fly today;
-applying this is a deliberate Fly→GCP migration. Read `README.md` for the shape and
+`../onlytty/infra`. **LIVE — this is production** since the Fly→GCP cutover on
+2026-07-12 (NS delegated to Cloud DNS; DNSSEC DS publication pending NS
+propagation; Fly stays up only until traffic drains). Read `README.md` for the shape and
 `.agent/COMPLIANCE.md` (internal, git-ignored) for the control mapping; this file
 is the rules.
 

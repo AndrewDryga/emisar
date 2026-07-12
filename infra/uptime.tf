@@ -4,8 +4,8 @@
 # alert path in one stroke. Better Stack probes from independent infrastructure,
 # runs the on-call escalation, and hosts the public status page — so detection,
 # paging, and customer communication all survive the outage they report on. It
-# also monitors the PUBLIC hostname, which means it watches the Fly deployment
-# today and follows traffic to GCP at cutover with no change here.
+# monitors the PUBLIC hostname — which is how it watched the Fly deployment
+# and rode the 2026-07-12 Fly→GCP cutover without a change here.
 #
 # The account predates this config, so the pre-existing resources are adopted
 # via import blocks (no-ops after the first apply) instead of being recreated —
@@ -141,14 +141,13 @@ resource "betteruptime_monitor" "portal" {
   remember_cookies = false
   verify_ssl       = true
 
-  # The GCP-side cert-renewal alert (monitoring.tf) only observes traffic after
-  # cutover; these watch expiry on whatever is actually serving the domain.
+  # Independent of the GCP-side cert-renewal alert (monitoring.tf): these watch
+  # expiry on whatever is actually serving the domain, from outside.
   ssl_expiration    = 7
   domain_expiration = 14
 }
 
-# The unauthenticated `emisar pack install` path — live ahead of the main
-# cutover (the registry went public independently, per the runbook).
+# The unauthenticated `emisar pack install` path.
 resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
   monitor_type = "status"
@@ -166,10 +165,9 @@ resource "betteruptime_monitor" "pack_registry" {
 }
 
 # ── Public status page ────────────────────────────────────────────────────────
-# status.<domain> CNAMEs to Better Stack in dns.tf, and var.caa_issuers already
-# allows Let's Encrypt for it. The custom domain activates once the zone is
-# authoritative (or earlier via the same CNAME at the current registrar); until
-# then the page serves at https://emisar.betteruptime.com.
+# status.<domain> CNAMEs to Better Stack in dns.tf (resolving since the zone
+# went authoritative), and var.caa_issuers already allows Let's Encrypt for it;
+# the page also serves at https://emisar.betteruptime.com.
 resource "betteruptime_status_page" "emisar" {
   company_name = "Emisar"
   company_url  = "https://${var.domain}"
