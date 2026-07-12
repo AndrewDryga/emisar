@@ -71,8 +71,12 @@ variable "instance_count" {
 
 variable "container_image" {
   type        = string
-  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). Deploys are TERRAFORM RUNS: CD · Portal sets this to the freshly pushed immutable `sha-<sha>` tag in the TFC workspace and queues an apply — the template replace rolls the fleet, and state always records exactly what runs. Rollback = redeploy a previous tag."
-  default     = "ghcr.io/andrewdryga/emisar:latest"
+  description = "Fully-qualified portal image on public GHCR, pinned by digest or immutable `sha-<sha>` tag — NEVER a floating tag like `:latest` (a mutable tag means the registry, not Terraform state, decides what boots on the next auto-heal or scale-out). No default on purpose: CD · Portal sets this workspace variable to the freshly pushed digest and queues the apply; rollback = redeploy a previous digest."
+
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$|:sha-[0-9a-f]+$", var.container_image))
+    error_message = "container_image must be pinned — a @sha256:<digest> reference or an immutable :sha-<sha> tag, never a floating tag."
+  }
 }
 
 variable "app_port" {

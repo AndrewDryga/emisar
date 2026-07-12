@@ -8,6 +8,15 @@
 # Dollar-brace placeholders are Terraform interpolation; $NAME (no braces) is shell.
 
 write_files:
+  # Cloud SQL's per-instance server CA. The app verifies the DB's TLS cert
+  # against exactly this CA (DATABASE_SSL_CACERTFILE below) — no public CA can
+  # vouch for a Cloud SQL cert, and pinning the instance-specific CA is
+  # stronger than a public-store check anyway.
+  - path: /etc/emisar/db-server-ca.pem
+    permissions: "0444"
+    content: |
+      ${indent(6, db_server_ca)}
+
   - path: /var/lib/emisar/start.sh
     permissions: "0755"
     content: |
@@ -65,6 +74,7 @@ write_files:
         printf 'PORT=%s\n' "${app_port}"
         printf 'FORCE_SSL=true\n'
         printf 'DATABASE_SSL=1\n'
+        printf 'DATABASE_SSL_CACERTFILE=/etc/emisar/db-server-ca.pem\n'
         printf 'NODE_IP=%s\n' "$NODE_IP"
         printf 'EMISAR_CLUSTER_PROJECT=%s\n' "${project_id}"
         printf 'EMISAR_CLUSTER_VALUE=%s\n' "${cluster_value}"
@@ -81,10 +91,14 @@ write_files:
 
       # Migrations first — Ecto's advisory lock serializes concurrent instances, so
       # only one runs them and the rest wait, then all boot.
-      docker run --rm --network host --env-file "$ENV_FILE" ${container_image} /app/bin/migrate
+      docker run --rm --network host --env-file "$ENV_FILE" \
+        -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
+        ${container_image} /app/bin/migrate
 
       docker rm -f emisar 2>/dev/null || true
-      exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" ${container_image}
+      exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
+        -v /etc/emisar/db-server-ca.pem:/etc/emisar/db-server-ca.pem:ro \
+        ${container_image}
 
   - path: /etc/systemd/system/emisar.service
     permissions: "0644"
