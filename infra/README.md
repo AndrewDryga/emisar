@@ -32,7 +32,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /r
 | Area | Resources | SOC 2 relevance |
 |---|---|---|
 | Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; DB/compute private (the only public read is the pack bucket) |
-| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; DB-independent auto-heal; one reserved surge VM and zero-unavailable rolling updates; `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
+| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; DB-independent auto-heal; reserved steady-state fleet and zero-unavailable rolling updates with on-demand surge; `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
 | Database | Cloud SQL Postgres 18 (latest major) — private IP, PITR backups, SSL-required, deletion-protected; `db_availability_type = "REGIONAL"` runs a synchronous standby with automatic failover | availability, durability/DR, confidentiality |
 | TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
 | Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
