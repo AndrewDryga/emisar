@@ -11,7 +11,7 @@ backups/DR, monitoring).
                  ┌─ IPv4/IPv6 anycast ─┐
 DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /healthz) ─► regional MIG
 (Cloud DNS,      │  Certificate Manager)│                              (COS, portal
- DNSSEC-signed)  └─ :80 → :443 redirect ┘                               container, 2+ nodes)
+ DNSSEC-signed)  └─ :80 → :443 redirect ┘                               container, 1+ nodes)
                                                                              │
    Secret Manager (runtime secrets, from TFC vars) ── public GHCR (image)   │
                                                                              ▼
@@ -19,20 +19,21 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /h
                           (flow logs)      (egress)     regional HA, PITR backups)
 ```
 
-> **This is prepared, not applied.** Per the task that created it, the code is
-> ready to `terraform apply` but has not been run. emisar currently serves from
-> Fly.io; the previously-applied state in this module is just the Cloud DNS zone.
-> Applying this stack is a deliberate **Fly → GCP migration** (the apex A/AAAA move
-> from Fly to the GCP LB, the cert becomes Google-managed). Nothing here touches
-> the live domain until you apply *and* delegate the nameservers.
+> **Applied 2026-07-11 — NOT LIVE.** The stack exists in GCP, but emisar still
+> serves from Fly.io: the live nameservers are GoDaddy's, so the zone edits here
+> (apex A/AAAA → the GCP LB, CAA + `pki.goog`) are invisible until NS delegation.
+> The move to GCP is the **Cutover runbook** below, walked in order — the data
+> import and cert pre-provisioning come BEFORE any traffic change. Environment
+> sizing (machine type, node count, DB tier/availability) and the alert address
+> are Terraform Cloud workspace variables, not committed values.
 
 ## What's in it
 
 | Area | Resources | SOC 2 relevance |
 |---|---|---|
 | Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; DB/compute private (the only public read is the pack bucket) |
-| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates | availability; host integrity |
-| Database | Cloud SQL Postgres 18 (latest major) — private IP, regional HA, PITR backups, SSL-required, deletion-protected | availability, durability/DR, confidentiality |
+| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; auto-heal + rolling updates; `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
+| Database | Cloud SQL Postgres 18 (latest major) — private IP, PITR backups, SSL-required, deletion-protected; `db_availability_type = "REGIONAL"` runs a synchronous standby with automatic failover | availability, durability/DR, confidentiality |
 | TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
 | Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
 | Image | public GHCR — prod runs the exact artifact self-hosters pull; pin digests | supply-chain transparency |
@@ -64,8 +65,12 @@ already public source in `packs/` plus their metadata), and install trust doesn'
 rest on the transport — snippets pin `--hash sha256:...` and the runner rejects any
 tampered tarball. History is preserved by **object versioning** (no lifecycle
 delete rule; the bucket is `prevent_destroy`), and the CI publisher SA
-(`emisar-pack-publisher`) holds **`objectCreator` only** — it can append new
-artifacts but cannot delete or mutate history. Outputs: `pack_registry_bucket` and
+(`emisar-pack-publisher`) holds bucket-scoped **`objectUser`** (objects
+create/get/list/delete — no bucket config, no IAM). It can't be create-only:
+republishing the mutable pointers (`catalog.json`, `suggest.json`) *replaces* the
+live object, and GCS requires `storage.objects.delete` for an overwrite even with
+versioning on — `objectCreator` would 403 the second publish. Every replaced
+generation stays fetchable. Outputs: `pack_registry_bucket` and
 `pack_registry_base_url`. Recover an accidentally-overwritten mutable object (the
 latest `catalog.json` pointer) from a prior generation:
 
@@ -84,34 +89,75 @@ only when `EMISAR_CLUSTER_PROJECT` is set (the instance template sets it) — th
 path is untouched. This is what lets `instance_count > 1` form one BEAM cluster so
 PubSub/Presence span nodes and runs don't strand in `:sent`.
 
-## Deploy runbook (when you do apply)
+## Environment sizing
+
+Machine type, MIG size, database tier/availability, and the alert address are
+**Terraform Cloud workspace variables** (org `Dryga` / workspace `emisar`), not
+committed values — the repo's defaults are a reference configuration. Adjust an
+environment in the workspace, then apply; the dials are `machine_type`,
+`instance_count`, `db_tier`, `db_availability_type`, `db_disk_size_gb`, and
+`alert_email`.
+
+## Cutover runbook (Fly → GCP, in this order)
+
+The order is the point: the cert can't provision and the data isn't there until
+you make both happen — flipping DNS first means an outage on an empty database.
 
 ```bash
-# 0. Bootstrap the base APIs once (Terraform can't enable services without these):
-gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=<project>
+# 0. Once: bootstrap APIs Terraform can't enable itself. TFC (org Dryga →
+#    workspace emisar) already holds WIF creds + the sensitive secret vars;
+#    SECRET_KEY_BASE and the DB password are generated by the apply.
+gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=emisar
 
-# 1. Terraform Cloud (org Dryga → project emisar → workspace emisar) is ALREADY
-#    configured (2026-07-09): WIF dynamic credentials (four TFC_GCP_* env vars →
-#    pool terraform-cloud / provider emisar-workspace / SA terraform@emisar.iam,
-#    no stored key), the six sensitive secret vars, and project_id. The existing
-#    Cloud DNS zone + records are imported into the workspace state. Nothing to
-#    paste. SECRET_KEY_BASE and the DB password are generated by the apply.
-#    (A new secret later = a sensitive workspace variable; see COMPLIANCE.md.)
+# 1. Publish the portal image: Actions → "Portal image" (or push a v* tag).
+#    FIRST publish only: GHCR creates the package PRIVATE — flip it to Public in
+#    the package settings or the unauthenticated instance pull 403s. Then pin the
+#    digest (printed in the workflow summary) in the TFC workspace:
+#    container_image = "ghcr.io/andrewdryga/emisar@sha256:…"
 
-# 2. Publish the portal image to PUBLIC GHCR (ghcr.io/andrewdryga/emisar:<tag>) —
-#    self-hosters pull the same artifact. Pin container_image to a digest for a
-#    reproducible rollout. (The publish workflow is an open item; see COMPLIANCE.md.)
+# 2. Full apply. Blocks until the MIG boots the release, migrates the (empty)
+#    Cloud SQL, and serves /healthz.
+terraform apply
 
-# 3. Full apply (VPC, Cloud SQL, MIG, LB, cert, DNS zone). Blocks until the MIG is healthy.
-terraform login && terraform init && terraform apply
+# 3. Import production data — the portal serves an EMPTY schema until this runs.
+#    Stop writers on both sides first: fly scale count 0 (freezes prod), and
+#    gcloud compute instance-groups managed resize emisar-mig --region=us-central1 --size=0
+#    (recurrent jobs on the GCP side would fight the import).
+#    Dump through the Fly Managed Postgres tunnel (`fly mpg proxy`, then pg_dump
+#    against the local port it prints):
+pg_dump --format=custom --no-owner --no-privileges "$FLY_DATABASE_URL" > emisar.dump
+#    Restore from inside the VPC (the DB has no public IP): IAP-SSH into a MIG VM
+#    and pg_restore --clean --if-exists there (boot already created the schema),
+#    or plain-SQL dump → gcloud storage cp → gcloud sql import sql --user=emisar.
+#    Then resize the MIG back to var.instance_count.
+#    Optional (keeps operator sessions alive across the cutover): store Fly's
+#    SECRET_KEY_BASE as the newest version — instances read versions/latest:
+printf '%s' "$FLY_SECRET_KEY_BASE" | gcloud secrets versions add emisar-secret-key-base --data-file=-
 
-# 4. Delegate + finish DNSSEC (see `terraform output next_steps`):
-terraform output nameservers          # set at the registrar
-terraform output dnssec_ds_record     # add at the registrar LAST, after NS resolves
+# 4. Pre-provision the cert while GoDaddy still serves the live DNS — the cert's
+#    DNS-auth records exist only in the (not yet authoritative) Cloud DNS zone,
+#    and the live CAA doesn't allow Google's CA yet:
+terraform state show 'google_certificate_manager_dns_authorization.emisar'      # + .www / .mta_sts
+#    → at GoDaddy add those three _acme-challenge CNAMEs AND a CAA record:
+#      0 issue "pki.goog"   (keep the letsencrypt.org one — Fly renews with it)
+#    Wait for the cert to go ACTIVE, then prove the stack end-to-end:
+curl --resolve emisar.dev:443:$(terraform output -raw lb_ipv4) https://emisar.dev/healthz
+
+# 5. Converge traffic at GoDaddy FIRST. NS propagation takes up to 48 h — two
+#    providers answering different IPs means writes split across two databases.
+#    Lower the A/AAAA TTLs, then point A → lb_ipv4 and AAAA → lb_ipv6 at GoDaddy.
+#    Both DNS providers now answer the same IPs; watch runners reconnect and
+#    runs flow on GCP before touching NS.
+
+# 6. Delegate: set NS at GoDaddy to `terraform output nameservers` — now a
+#    zero-traffic change. scripts/verify-cutover.sh <new-ns> compares the zone
+#    against live records first.
+
+# 7. LAST, after NS resolves everywhere: publish the DNSSEC DS at the registrar
+#    (`terraform output dnssec_ds_record`) — a DS ahead of working delegation
+#    takes the domain offline. Keep Fly running until traffic drains, then
+#    decommission it (MAILER_FROM_EMAIL parity is already var.mailer_from_email).
 ```
-
-`scripts/verify-cutover.sh <new-ns>` compares the zone against the live records
-before you flip nameservers.
 
 ## Email posture (DMARC / MTA-STS)
 

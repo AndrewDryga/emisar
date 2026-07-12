@@ -59,14 +59,18 @@ resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
   member = "allUsers"
 }
 
-# ── Publisher identity — least-privilege, CREATE-ONLY (no delete) ─────────────
-# The CI/publishing job writes artifacts as this SA. It gets `objectCreator`, NOT
-# `objectAdmin` or a project-wide storage role: create-only means the publisher
-# can append new immutable tarballs and cut a new catalog generation, but CANNOT
-# delete or mutate history — the "preserve every published version" guarantee is
-# enforced by IAM, not just by convention. Reads for post-publish verification go
-# through the public objectViewer binding above (IAM is additive), so the
-# publisher needs no read role of its own.
+# ── Publisher identity — least-privilege, objects only ───────────────────────
+# The CI/publishing job writes artifacts as this SA. It gets `objectUser`
+# (objects create/get/list/delete), NOT `objectAdmin` or a project-wide storage
+# role. It can't be create-only: republishing the mutable pointers
+# (catalog.json / suggest.json) REPLACES the live object, and GCS requires
+# `storage.objects.delete` for an overwrite even with versioning on — a
+# create-only `objectCreator` 403s the second publish. History still survives a
+# replace: versioning archives the prior live generation and there is no
+# lifecycle delete rule. Accepted residual: this SA *could* explicitly delete
+# archived generations — install trust rests on the pinned `--hash` in the
+# snippets, not on the registry. Reads for post-publish verification go through
+# the public objectViewer binding above (IAM is additive).
 resource "google_service_account" "pack_publisher" {
   account_id   = "emisar-pack-publisher"
   display_name = "emisar pack registry publisher"
@@ -75,6 +79,6 @@ resource "google_service_account" "pack_publisher" {
 
 resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
   bucket = google_storage_bucket.pack_registry.name
-  role   = "roles/storage.objectCreator"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.pack_publisher.email}"
 }

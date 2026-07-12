@@ -48,13 +48,13 @@ variable "pack_registry_location" {
 # ── Compute ───────────────────────────────────────────────────────────────────
 variable "machine_type" {
   type        = string
-  description = "Compute Engine machine type for the portal instances."
+  description = "Compute Engine machine type for the portal instances. Environment sizing is set per-workspace (Terraform Cloud variable); this default is the reference configuration."
   default     = "e2-standard-2"
 }
 
 variable "instance_count" {
   type        = number
-  description = "MIG size. >1 forms one BEAM cluster via the GCE libcluster strategy (Emisar.Cluster.GCE), so PubSub/Presence span nodes and runs don't strand. Default 2 for HA."
+  description = "MIG size, set per-workspace. 2+ forms one BEAM cluster via the GCE libcluster strategy (Emisar.Cluster.GCE), so PubSub/Presence span nodes and runs don't strand; at 1 auto-healing replaces a failed node."
   default     = 2
 
   validation {
@@ -95,6 +95,12 @@ variable "disable_billing" {
   type        = bool
   description = "Set EMISAR_DISABLE_BILLING=1 in the release (ship the Paddle stub) instead of requiring the paddle-* secrets. Use for an internal/staging tier."
   default     = false
+}
+
+variable "mailer_from_email" {
+  type        = string
+  description = "From address for outbound product mail (MAILER_FROM_EMAIL). Prod parity: the Fly deployment sends hello@emisar.dev; unset, the release falls back to no-reply@emisar.dev."
+  default     = "hello@emisar.dev"
 }
 
 # ── Secrets (SENSITIVE Terraform Cloud workspace variables) ───────────────────
@@ -156,8 +162,19 @@ variable "mixpanel_token" {
 # ── Database ──────────────────────────────────────────────────────────────────
 variable "db_tier" {
   type        = string
-  description = "Cloud SQL machine tier. A shared-core tier (db-g1-small) can't run REGIONAL HA; use a db-custom-* tier."
+  description = "Cloud SQL machine tier, set per-workspace. Shared-core tiers (db-f1-micro / db-g1-small) don't support REGIONAL HA or Query Insights; db-custom-* tiers support both."
   default     = "db-custom-1-3840"
+}
+
+variable "db_availability_type" {
+  type        = string
+  description = "Cloud SQL availability type, set per-workspace. REGIONAL runs a synchronous standby with automatic failover and requires a db-custom-* db_tier; ZONAL is single-zone (backups + PITR still apply)."
+  default     = "REGIONAL"
+
+  validation {
+    condition     = contains(["ZONAL", "REGIONAL"], var.db_availability_type)
+    error_message = "db_availability_type must be ZONAL or REGIONAL."
+  }
 }
 
 variable "db_disk_size_gb" {
@@ -169,8 +186,7 @@ variable "db_disk_size_gb" {
 # ── Monitoring ────────────────────────────────────────────────────────────────
 variable "alert_email" {
   type        = string
-  description = "Email address that receives monitoring alerts (uptime, DB CPU/disk)."
-  default     = "ops@emisar.dev"
+  description = "Email address that receives monitoring alerts (uptime, DB CPU/disk). No default on purpose — set per-workspace (Terraform Cloud variable), and make sure the mailbox actually exists: alerts to an unprovisioned alias silently bounce."
 }
 
 # ── DNS records (email posture) ───────────────────────────────────────────────

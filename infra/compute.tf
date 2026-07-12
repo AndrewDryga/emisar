@@ -1,12 +1,13 @@
 locals {
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml", {
-    container_image = var.container_image
-    project_id      = var.project_id
-    domain          = var.domain
-    app_port        = var.app_port
-    cluster_value   = "emisar"
-    disable_billing = var.disable_billing
-    app_secrets     = local.app_secrets
+    container_image   = var.container_image
+    project_id        = var.project_id
+    domain            = var.domain
+    app_port          = var.app_port
+    mailer_from_email = var.mailer_from_email
+    cluster_value     = "emisar"
+    disable_billing   = var.disable_billing
+    app_secrets       = local.app_secrets
   })
 }
 

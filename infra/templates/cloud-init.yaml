@@ -61,6 +61,7 @@ write_files:
       # excluded so the plain-HTTP LB probe still gets 200.
       {
         printf 'PHX_HOST=%s\n' "${domain}"
+        printf 'MAILER_FROM_EMAIL=%s\n' "${mailer_from_email}"
         printf 'PORT=%s\n' "${app_port}"
         printf 'FORCE_SSL=true\n'
         printf 'DATABASE_SSL=1\n'

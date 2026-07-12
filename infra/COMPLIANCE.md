@@ -1,7 +1,8 @@
 # infra — SOC 2 Type II control mapping
 
 Scope: the emisar-on-GCP infrastructure in this module (compute, database,
-network, TLS, secrets, DNS, monitoring). It is **prepared, not applied**.
+network, TLS, secrets, DNS, monitoring). First applied 2026-07-11; not serving
+traffic until the README's cutover runbook completes.
 
 **Honest framing.** SOC 2 Type II is an *organizational* attestation that controls
 operated effectively over a period — auditors examine policies, people, and
@@ -18,8 +19,8 @@ outside this repo (📋).
 |---|---|---|
 | No public database surface | ✅ | Cloud SQL private IP only (`db.tf`, VPC peering) |
 | Public data surface, scoped + justified | ⚙️ | ONE public-read GCS bucket for pack artifacts (`packs_registry.tf`) — unauthenticated `emisar pack install` requires it; no secret/account data ever written there; `objectViewer` to `allUsers` on objects only |
-| Pack artifact integrity + retention | ✅ | object versioning on, no lifecycle delete, `prevent_destroy`; publisher SA `objectCreator` only (append, never delete); install trust is the pinned `--hash`, not the transport |
-| Database HA (failover) | ✅ | `availability_type = "REGIONAL"` |
+| Pack artifact integrity + retention | ✅ | object versioning on, no lifecycle delete, `prevent_destroy`; publisher SA bucket-scoped `objectUser` (objects only — replacing the mutable catalog pointer needs `objects.delete`; every replaced generation stays fetchable); install trust is the pinned `--hash`, not the transport |
+| Database HA (failover) | ⚙️ | `db_availability_type` (workspace-set): `REGIONAL` = synchronous standby + automatic failover (requires a db-custom tier); `ZONAL` relies on backups + PITR |
 | Database backups + PITR | ✅ | automated backups, `point_in_time_recovery_enabled`, 30 retained |
 | Database deletion protection | ✅ | `deletion_protection` + Terraform `prevent_destroy` |
 | Encryption in transit (edge) | ✅ | HTTPS LB, `RESTRICTED` SSL policy (TLS 1.2+), HTTP→HTTPS redirect |
@@ -33,7 +34,7 @@ outside this repo (📋).
 | Image supply chain | ⚙️/📋 | public GHCR **by design** — prod runs the artifact self-hosters pull; pin digests; scanning is CI-side (below) |
 | Cloud Audit Logs (admin + data) | ✅ | `google_project_iam_audit_config` ADMIN_READ/DATA_READ/DATA_WRITE |
 | Network flow logs | ✅ | subnet `log_config` + LB request logging |
-| Availability: multi-node app | ✅ | regional MIG (2+), auto-healing, GCE clustering (`Emisar.Cluster.GCE`) |
+| Availability: multi-node app | ⚙️ | regional MIG, auto-healing, rolling updates; `instance_count` (workspace-set) — 2+ forms the BEAM cluster (`Emisar.Cluster.GCE`), 1 relies on auto-heal replacement |
 | Monitoring & alerting | ✅ | uptime check + DB CPU/disk + unreachable → email channel |
 | DNS integrity | ✅ | DNSSEC (ECDSA), CAA; email auth (SPF/DKIM/DMARC/TLS-RPT/MTA-STS) |
 | Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
@@ -50,7 +51,8 @@ outside this repo (📋).
   public surface is the pack-registry bucket (`packs_registry.tf`) — public **read**
   of pack artifacts only, no write, no listing, and nothing sensitive is ever
   stored there; its publisher SA (`emisar-pack-publisher`) is bucket-scoped
-  `objectCreator` (append-only, cannot delete history).
+  `objectUser` (objects only — replace archives the prior generation under
+  versioning; it cannot touch bucket config or IAM).
 - **CC6.1 / CC6.7 Data at rest & in transit** — TLS 1.2+ at the edge (managed cert,
   RESTRICTED policy) and required to the database; at rest via Google-managed keys
   (CMEK optional). **DNSSEC** + **CAA** make DNS answers tamper-evident and constrain
@@ -64,10 +66,12 @@ outside this repo (📋).
   infra CI gate (fmt/validate/tflint, no creds), is human-reviewed, then applied by
   an authorized operator; the versioned GCS state records each apply. No console
   edits (they'd drift from and be overwritten by the code).
-- **A1 Availability** — a regional MIG (≥2 nodes, auto-healing, rolling updates) with
-  GCE clustering behind an anycast HTTPS LB; **Cloud SQL regional HA** (synchronous
-  standby + automatic failover). DR: automated backups + PITR (RPO minutes) and the
-  whole platform as code (re-apply rebuilds it).
+- **A1 Availability** — a regional MIG (auto-healing, rolling updates) behind an
+  anycast HTTPS LB; `instance_count` is workspace-set, and 2+ nodes form one
+  BEAM cluster (`Emisar.Cluster.GCE`). Cloud SQL availability per
+  `db_availability_type` (`REGIONAL` = synchronous standby + automatic
+  failover). DR: automated backups + PITR (RPO minutes) and the whole platform
+  as code (re-apply rebuilds it).
 - **C1 Confidentiality** — the database is private-IP only; instances read secrets
   from Secret Manager (per-secret least-priv), never from code or metadata. Secret
   *custody* is Terraform Cloud by decision — sensitive workspace variables and
@@ -84,10 +88,12 @@ outside this repo (📋).
   registry role (the image is public GHCR). It uses the metadata token — no
   long-lived key.
 - **Pack publisher service account** (`emisar-pack-publisher`): exactly
-  `roles/storage.objectCreator` on the pack-registry bucket — nothing else. Create
-  (append) only: it cannot delete or overwrite-away historical pack versions, and
-  it has no project-wide storage role. Post-publish reads go through the bucket's
-  public `objectViewer` binding (IAM is additive), so it needs no read grant.
+  `roles/storage.objectUser` on the pack-registry bucket — nothing else. Objects
+  only (create/get/list/delete — required because republishing the mutable
+  `catalog.json` pointer is a replace, and GCS overwrites need `objects.delete`
+  even with versioning); it has no bucket-config/IAM permission and no
+  project-wide storage role. Versioning archives every generation it replaces;
+  install trust rests on the pinned `--hash`, not the registry.
 - **Humans**: grant `roles/dns.admin` / project roles to the infra team only; MFA on
   all GCP accounts; SSH via `gcloud compute ssh --tunnel-through-iap` (no keys on the
   box).

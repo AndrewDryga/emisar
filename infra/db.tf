@@ -1,8 +1,9 @@
 # ── Cloud SQL for PostgreSQL — the portal's database ─────────────────────────
 # onlytty is DB-less; emisar is a control plane with real state, so this is the
-# central emisar-specific addition. SOC 2 posture, all on by default here:
+# central emisar-specific addition. SOC 2 posture:
 #   • PRIVATE IP only (no public surface) — reachable solely over the VPC peering.
-#   • Regional HA (synchronous standby, automatic failover) — availability.
+#   • Availability per var.db_availability_type (workspace-set): REGIONAL runs a
+#     synchronous standby with automatic failover; ZONAL relies on backups/PITR.
 #   • Automated backups + point-in-time recovery — durability / DR (RPO minutes).
 #   • Encryption in transit required (ENCRYPTED_ONLY) and at rest (Google-managed;
 #     swap in CMEK via `encryption_key_name` if key custody is required).
@@ -21,7 +22,7 @@ resource "google_sql_database_instance" "emisar" {
 
   settings {
     tier              = var.db_tier
-    availability_type = "REGIONAL"
+    availability_type = var.db_availability_type
     disk_type         = "PD_SSD"
     disk_size         = var.db_disk_size_gb
     disk_autoresize   = true
@@ -50,7 +51,9 @@ resource "google_sql_database_instance" "emisar" {
     }
 
     insights_config {
-      query_insights_enabled = true
+      # Shared-core tiers don't support Query Insights; enabled automatically on
+      # db-custom-* tiers.
+      query_insights_enabled = startswith(var.db_tier, "db-custom-")
     }
 
     database_flags {
@@ -67,6 +70,12 @@ resource "google_sql_database_instance" "emisar" {
 
   lifecycle {
     prevent_destroy = true
+
+    # Catch the invalid combo at plan time, not after a ten-minute create attempt.
+    precondition {
+      condition     = var.db_availability_type == "ZONAL" || startswith(var.db_tier, "db-custom-")
+      error_message = "REGIONAL HA requires a db-custom-* db_tier — shared-core tiers (db-f1-micro / db-g1-small) are ZONAL-only."
+    }
   }
 }
 
