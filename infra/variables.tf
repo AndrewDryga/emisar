@@ -211,6 +211,17 @@ variable "betterstack_api_token" {
   sensitive   = true
 }
 
+variable "oncall_emails" {
+  type        = list(string)
+  description = "Better Stack on-call rotation, in order — account emails of the people who take incidents (each must already be a Better Stack team member; invites happen out of band). SENSITIVE workspace variable on purpose: the roster AND its size stay out of the public repo. No default — set it in the workspace."
+  sensitive   = true
+
+  validation {
+    condition     = length(var.oncall_emails) >= 1
+    error_message = "oncall_emails needs at least one address — an empty rotation pages no one."
+  }
+}
+
 # ── DNS records (email posture) ───────────────────────────────────────────────
 variable "dmarc_policy" {
   type        = string

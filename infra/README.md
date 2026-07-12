@@ -40,7 +40,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /r
 | Pack registry | GCS bucket, **public-read** (the one deliberate public surface), object-versioned, create-only publisher SA; serves catalog/suggest/schema + immutable pack tarballs | integrity; supply-chain transparency |
 | IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
 | DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
-| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel; independent external probes + public status page via Better Stack (`uptime.tf`) | detection; customer communication |
+| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel; independent external probes, on-call rotation + escalation, and public status page via Better Stack (`uptime.tf`) | detection; incident response; customer communication |
 
 Normal image rollouts create a replacement, wait until it has reached readiness,
 and only then drain the old VM. Because old and new application versions overlap,
@@ -87,15 +87,22 @@ gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catal
 gcloud storage cp gs://<bucket>/v1/catalog.json#<generation> gs://<bucket>/v1/catalog.json # restore one
 ```
 
-## External uptime & status page (Better Stack)
+## External uptime, on-call & status page (Better Stack)
 
 `monitoring.tf` watches from inside Google; `uptime.tf` watches from outside it.
-Better Stack probes the **public hostname** from independent infrastructure and
-hosts the public status page — so detection and customer communication survive
-an incident in the serving cloud, and the monitors already watch the Fly
-deployment today (they follow traffic at cutover with no change). The provider
-credential is `betterstack_api_token`, a **sensitive TFC workspace variable**
-(same custody rule as every secret here). The status page serves at
+Better Stack probes the **public hostname** from independent infrastructure,
+runs the **on-call escalation** (notify → wake with a phone call → wake
+everyone, repeating), and hosts the public status page — so detection, paging,
+and customer communication survive an incident in the serving cloud. The
+monitors already watch the Fly deployment today (they follow traffic at
+cutover with no change). Two **sensitive TFC workspace variables** feed it:
+`betterstack_api_token` (the provider credential) and `oncall_emails` (the
+rotation roster — sensitive on purpose, so this public repo reveals neither
+who is on call nor how many people that is; team invites happen in the Better
+Stack UI, never as per-person Terraform resources). The account predates this
+config, so the pre-existing status page, apex monitor (with its uptime
+history), and default on-call calendar are adopted via `import` blocks — no-ops
+after the first apply. The status page serves at
 `https://emisar.betteruptime.com` immediately; `status.emisar.dev` (CNAME in
 `dns.tf`, Let's Encrypt already in `var.caa_issuers`) activates at NS
 delegation — or earlier by adding the same CNAME at GoDaddy, which needs no CAA
