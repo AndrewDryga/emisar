@@ -43,7 +43,8 @@ Flags:
   --yes               Skip the confirmation prompt.
   --help              This message.
 
-Env vars accepted: VERSION, INSTALL_DIR, EMISAR_REPO, ASSUME_YES.
+Env vars accepted: VERSION, INSTALL_DIR, EMISAR_REPO, EMISAR_GITHUB_TOKEN,
+ASSUME_YES.
 USAGE
 }
 
@@ -71,9 +72,18 @@ log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
+github_api() {
+  local auth_args=()
+  if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
+    auth_args=(-H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}")
+  fi
+  curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "${auth_args[@]}" "$@"
+}
+
 require_immutable_release() {
   local version="$1" release
-  release=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+  release=$(github_api \
     "https://api.github.com/repos/${REPO}/releases/tags/${version}") \
     || die "could not verify release metadata for ${version}"
   grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' <<<"$release" || \
@@ -123,7 +133,7 @@ log "install target: ${OS}/${ARCH} → ${INSTALL_DIR}/emisar-mcp"
 if [ -z "${VERSION}" ]; then
   log "querying latest mcp-v* release"
   VERSION=$(
-    curl -fsSL -H 'Accept: application/vnd.github+json' \
+    github_api \
       "https://api.github.com/repos/${REPO}/releases?per_page=100" \
       | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
       | head -1 \

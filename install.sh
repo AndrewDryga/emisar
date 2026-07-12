@@ -94,8 +94,8 @@ Flags:
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
-NO_SERVICE, EMISAR_REPO, EMISAR_URL, EMISAR_AUTH_KEY, RUNNER_GROUP,
-RUNNER_ROLE, RUNNER_ENVIRONMENT.
+NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
+EMISAR_AUTH_KEY, RUNNER_GROUP, RUNNER_ROLE, RUNNER_ENVIRONMENT.
 
 EMISAR_URL + EMISAR_AUTH_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
@@ -524,17 +524,27 @@ EOF
 # Version resolution + download
 # -----------------------------------------------------------------------
 
+github_api() {
+  local auth_args=()
+  if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
+    auth_args=(-H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}")
+  fi
+  curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "${auth_args[@]}" "$@"
+}
+
 resolve_latest_version() {
   # The runner ships under the `runner-v*` tag prefix; the MCP bridge
   # uses `mcp-v*` and shouldn't be picked up here. We use the GitHub
-  # releases API (anonymous, 60 req/hr per IP — fine for install
-  # scripts) and grep the first matching tag. The /releases/latest
+  # releases API and grep the first matching tag. Callers that share an
+  # egress IP can provide EMISAR_GITHUB_TOKEN to avoid anonymous API
+  # rate limits. The /releases/latest
   # redirect would only work if we made the runner the "latest" via
   # `make_latest: legacy`, which we do, BUT the bridge release stream
   # might still claim it temporarily — filtering by prefix is more
   # robust than trusting the Latest pointer.
   local out
-  out=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+  out=$(github_api \
     "https://api.github.com/repos/${REPO}/releases?per_page=100") \
     || die "could not query GitHub releases API"
   printf '%s\n' "$out" \
@@ -580,7 +590,7 @@ download_release() {
 
 require_immutable_release() {
   local version="$1" release
-  release=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+  release=$(github_api \
     "https://api.github.com/repos/${REPO}/releases/tags/${version}") \
     || die "could not verify release metadata for ${version}"
   grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' <<<"$release" || \

@@ -485,6 +485,8 @@ jobs:
         # surface; if it's gone, that's a regression CI must flag. tools/ is
         # internal — it has no install surface.
         if: matrix.module != 'tools'
+        env:
+          EMISAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck "$INSTALL_SCRIPT"
