@@ -9,8 +9,10 @@ name: CD · Portal
 # self-hosters pull the same artifact (infra/COMPLIANCE.md: supply-chain
 # transparency). Deploy then rolls the GCP MIG: instances re-run cloud-init's
 # `docker pull :latest`, so the roll IS the deploy. A `v*` tag publishes the
-# image but never deploys — cutting a release and shipping it are separate
-# decisions.
+# image AND refreshes the MCP registry listing (server.json describes the
+# HOSTED remote server, so its version rides the product tag — the mcp-v*
+# bridge binary is a separate stream) but never deploys — cutting a release
+# and shipping it are separate decisions.
 #
 # Guardrails:
 #   * The publish job gates on the `release` environment (required
@@ -152,6 +154,55 @@ jobs:
             echo '```'
             echo "Freeze an environment by setting the TFC \`container_image\` variable to a \`sha-\` tag or the digest."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  registry-listing:
+    name: Publish MCP registry listing
+    # Product tags only — never a CD dispatch. The listing advertises the
+    # hosted remote server (https://emisar.dev/api/mcp/rpc), so its version IS
+    # the product version; the mcp-v* bridge releases don't touch it.
+    # Independent of the image publish on purpose (no `needs:`) — a failed
+    # image build shouldn't hold the listing hostage, and vice versa. Its own
+    # `release` environment gate guards MCP_PRIVATE_KEY exactly as before.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: release
+    permissions:
+      contents: read
+    env:
+      MCP_PUBLISHER_VERSION: "1.7.9"
+      MCP_PUBLISHER_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set registry version from the product tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          jq --arg version "$version" '.version = $version' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Install verified mcp-publisher
+        run: |
+          set -euo pipefail
+          artifact="mcp-publisher_linux_amd64.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${artifact}" \
+            --output "$artifact"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$artifact" | sha256sum --check --
+          tar --extract --gzip --file "$artifact" mcp-publisher
+
+      - name: Validate server.json against the registry schema
+        run: ./mcp-publisher validate server.json
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login http --domain emisar.dev --private-key "${{ secrets.MCP_PRIVATE_KEY }}"
+
+      - name: Publish listing
+        run: ./mcp-publisher publish server.json
 
   deploy:
     name: Deploy · roll the fleet
