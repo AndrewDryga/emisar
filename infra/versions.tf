@@ -3,9 +3,8 @@
 # Container-Optimized OS instances running the portal image from public GHCR,
 # backed by private-IP Cloud SQL Postgres, with Secret Manager, least-priv IAM,
 # audit logging, monitoring, and the authoritative Cloud DNS zone (DNSSEC).
-# Adapted from ../onlytty/infra. LIVE — serving production since the Fly→GCP
-# cutover on 2026-07-12 (README «Cutover runbook» is the record; the DNSSEC DS
-# publication is the one remaining step, gated on NS propagation).
+# Adapted from ../onlytty/infra. LIVE production infrastructure; DNSSEC DS
+# publication remains a registrar action gated on resolver convergence.
 
 terraform {
   required_version = ">= 1.10" # `project` in the cloud{} workspaces block

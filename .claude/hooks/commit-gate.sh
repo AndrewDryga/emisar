@@ -4,8 +4,8 @@
 # problem so it can never wedge commits. Four scoped, fast checks:
 #
 #   1. Frozen migrations — refuse a commit that MODIFIES or DELETES a migration
-#      already in git. The control plane is deployed (Fly `release_command` runs
-#      each migration exactly once); a committed migration is permanent history,
+#      already in git. The production release runs each migration exactly once;
+#      a committed migration is permanent history,
 #      so editing the file never re-applies and prod's schema silently drifts from
 #      the code → outages. Add a NEW forward migration instead. (IL-11 / portal
 #      AGENTS.md §8 / .agent/rules/migrations-frozen.md.)

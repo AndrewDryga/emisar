@@ -17,7 +17,7 @@ defmodule EmisarWeb.Endpoint do
   # `:peer_data` + `:user_agent` + `:x_headers` are surfaced so the LiveView
   # boundary (`EmisarWeb.RequestContext.from_socket/1`) can build the caller's
   # `%RequestContext{}` at mount and stamp it onto the subject. `:x_headers`
-  # carries `x-forwarded-for` so the real client IP (not Fly's LB peer) reaches
+  # carries `x-forwarded-for` so the real client IP (not the GCP proxy peer) reaches
   # audit + analytics. Without these, mounts behind LV land with no
   # conn-equivalent metadata.
   socket "/live", Phoenix.LiveView.Socket,

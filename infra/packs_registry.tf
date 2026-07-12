@@ -125,7 +125,7 @@ resource "google_compute_backend_bucket" "pack_registry" {
 }
 
 # Its OWN managed cert, not a new SAN on the emisar cert (lb.tf): adding a SAN
-# re-provisions the existing cert, briefly risking apex TLS mid-migration for a
+# re-provisions the existing cert, briefly risking apex TLS during replacement for a
 # hostname that has nothing to do with the console. The shared certificate map
 # selects certs purely by SNI, so an independent cert + map entry is the
 # isolation-preserving way to add a served hostname.

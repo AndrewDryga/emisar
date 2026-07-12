@@ -3,7 +3,7 @@
 ============================================================ --%>
 <.legal_page
   title="Privacy Policy"
-  updated="June 24, 2026"
+  updated="July 12, 2026"
   summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and you can export or delete it any time."
   toc={[
     {"collect", "1. What we collect"},
@@ -69,11 +69,11 @@
 
   <h2 id="location">3. Where it lives</h2>
   <p>
-    Production data lives in a managed PostgreSQL database hosted in the United
-    States. All connections between your browser, your runners, the control plane,
-    and the database are encrypted in transit with TLS 1.2 or higher (TLS 1.3 where
-    the client supports it). Backups are encrypted at rest with AES-256 and stored
-    in the same US region.
+    Production data is processed and stored on Google Cloud in the United States,
+    including a private managed PostgreSQL database. Connections between your browser,
+    your runners, the control plane, and the database are encrypted in transit with
+    TLS 1.2 or higher (TLS 1.3 where the client supports it). Compute storage,
+    database storage, and backups use provider-managed encryption at rest.
   </p>
 
   <h2 id="subprocessors">4. Subprocessors</h2>
@@ -91,7 +91,10 @@
       <strong>Postmark</strong>
       — transactional email (sign-up confirmation, magic links, approval notifications).
     </li>
-    <li><strong>Fly.io</strong> — application hosting and managed PostgreSQL.</li>
+    <li>
+      <strong>Google Cloud Platform</strong>
+      — application hosting, networking, managed PostgreSQL, and backups in the United States.
+    </li>
     <li>
       <strong>Mixpanel</strong>
       — product & usage analytics (which features are used, and how people reach us).

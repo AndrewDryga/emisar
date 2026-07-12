@@ -21,10 +21,10 @@ defmodule EmisarWeb.RequestContextTest do
       assert context.mcp_session_id == "sess_1"
     end
 
-    test "trusts the first x-forwarded-for hop, trimmed" do
+    test "uses GCP's right-anchored client IP and ignores a forged prefix" do
       context =
         conn()
-        |> put_req_header("x-forwarded-for", "203.0.113.9, 10.0.0.1")
+        |> put_req_header("x-forwarded-for", "forged, 203.0.113.9, 8.233.97.247")
         |> Builder.from_conn()
 
       assert context.ip_address == "203.0.113.9"
@@ -35,10 +35,20 @@ defmodule EmisarWeb.RequestContextTest do
       assert context.ip_address == "198.51.100.4"
     end
 
+    test "does not trust a forwarded header without GCP's two-value tail" do
+      context =
+        conn()
+        |> Map.put(:remote_ip, {198, 51, 100, 4})
+        |> put_req_header("x-forwarded-for", "203.0.113.9")
+        |> Builder.from_conn()
+
+      assert context.ip_address == "198.51.100.4"
+    end
+
     test "strips the ::ffff: IPv4-mapped wrapper an IPv6 listener surfaces" do
       context =
         conn()
-        |> put_req_header("x-forwarded-for", "::ffff:192.0.2.5")
+        |> put_req_header("x-forwarded-for", "::ffff:192.0.2.5, 8.233.97.247")
         |> Builder.from_conn()
 
       assert context.ip_address == "192.0.2.5"

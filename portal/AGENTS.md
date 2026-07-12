@@ -155,7 +155,7 @@ Project skills live in **`../.claude/skills/`** (repo root, so they're found fro
 | `/recurrent-jobs` | Building or reviewing a recurrent job / scheduled sweep in context-owned `jobs/` (idempotent durable-row work — IL-13). |
 | `/testing` | Writing ExUnit tests the house way — `DataCase`, `fixtures.ex`, the happy/denial/cross-account paths (§7). |
 | `/deps-audit` | Vetting hex dependencies for supply-chain risk before adding one or before a release. |
-| `/deploy` | Pre-deploy checklist + release sanity for the Fly.io control plane (does not run the deploy). |
+| `/deploy` | Pre-deploy checklist + release sanity for the GCP control plane (does not apply). |
 | `/product-manager` | Deciding *what* to build / cut / sequence; writing the smallest valuable slice. |
 | `/ux-designer` | Designing an operator flow or screen — clarity, trust, error states. |
 | `/frontend` | Building the LiveView/HEEx/Tailwind — smallest component, `core_components` first. |
@@ -437,7 +437,7 @@ This codebase is MVP, pre-release — for **code** there is no legacy to preserv
 
 When refactoring: rip out the old shape, update every caller in the same change, run tests.
 
-**Migrations are NOT greenfield — they are append-only history.** The codebase is deployed (Fly app `emisar`, `release_command = "/app/bin/migrate"` runs each migration **exactly once**). A migration that has run is permanent: editing the file never re-applies, so prod's schema silently diverges from what the code expects. That divergence is how we have taken prod down — an `undefined_column` 500 on a read path, and an `Ecto.Enum` load crash from a value removed without migrating its rows (see the memory: enum-value removal, Fly release-command recovery).
+**Migrations are NOT greenfield — they are append-only history.** The production release runs `/app/bin/migrate` before each instance boots, and each migration applies **exactly once**. A migration that has run is permanent: editing the file never re-applies, so prod's schema silently diverges from what the code expects. That divergence is how we have taken prod down — an `undefined_column` 500 on a read path, and an `Ecto.Enum` load crash from a value removed without migrating its rows.
 
 The rule needs no judgment call about whether prod ran it:
 - **A migration is FROZEN the moment it is committed.** Edit a migration file freely *only while it is new and uncommitted in the change you're making now*. Once it is in any commit, treat it as shipped — **never edit or delete it; write a NEW migration** that moves the schema forward. The commit-gate hook (`.claude/hooks/commit-gate.sh`) refuses a commit that modifies or deletes an already-committed migration; if it fires, `git checkout -- <file>` to restore the original and add a new migration.

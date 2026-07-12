@@ -26,10 +26,9 @@ defmodule EmisarWeb.Telemetry do
   end
 
   # Prometheus exporter on a sibling port from the main endpoint so a
-  # private scrape (fly's metrics network, kubelet, vmagent) can hit
+  # private scrape (VPC collector, kubelet, vmagent) can hit
   # `/metrics` without being routable from the public internet. The
-  # port mirrors `fly.toml [metrics] port=9091`; tweak via `METRICS_PORT`
-  # if running outside fly.
+  # port is separate from the application listener; tweak via `METRICS_PORT`.
   #
   # Disabled in :test (the in-process port collision breaks the suite).
   # In :dev the metrics are still useful for local Grafana — set the

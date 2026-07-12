@@ -115,7 +115,7 @@ variable "github_repository" {
 
 variable "mailer_from_email" {
   type        = string
-  description = "From address for outbound product mail (MAILER_FROM_EMAIL). Prod parity: the Fly deployment sends hello@emisar.dev; unset, the release falls back to no-reply@emisar.dev."
+  description = "From address for outbound product mail (MAILER_FROM_EMAIL); unset, the release falls back to no-reply@emisar.dev."
   default     = "hello@emisar.dev"
 }
 

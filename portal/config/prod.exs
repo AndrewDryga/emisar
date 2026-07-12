@@ -9,7 +9,7 @@ import Config
 # over plain HTTP on internal hosts — the host browser via `localhost`, the e2e
 # runners/mcp/seeder via the `portal` service name — so force_ssl must let those
 # hosts through without a 301-to-HTTPS. Its image build sets
-# EMISAR_DEV_HOST_EXCLUDES=1; a real Fly build never does, so prod enforces HTTPS
+# EMISAR_DEV_HOST_EXCLUDES=1; a production build never does, so prod enforces HTTPS
 # for EVERY request host and the config carries no dev-host TLS hole for a pentest
 # to flag. Read at BUILD time — force_ssl is an `Application.compile_env`, so this
 # env is consumed during `mix compile`/`mix release`, not at runtime.
@@ -26,8 +26,8 @@ config :emisar_web, EmisarWeb.Endpoint,
   # Force HTTPS in production (this also sets the HSTS header). Phoenix 1.8
   # reads `:force_ssl` via `Application.compile_env`, so it MUST be set at
   # compile time here — setting it in runtime.exs aborts release boot with
-  # `validate_compile_env`. `rewrite_on` trusts fly-proxy's `x-forwarded-proto`
-  # (it terminates TLS and forwards plain HTTP), so real requests get HSTS
+  # `validate_compile_env`. `rewrite_on` trusts the GCP load balancer's
+  # `x-forwarded-proto`, so real requests get HSTS
   # instead of a 301 loop; `exclude` always lets the plain-HTTP liveness and
   # readiness probes through, plus the dev-only hosts above only when this is
   # the docker build.
@@ -49,7 +49,7 @@ config :emisar_web, EmisarWeb.Endpoint,
 # Dev-only routes (/dev/mailbox magic-link preview + /dev/dashboard) — compiled
 # in ONLY when the docker-compose dev stack's build passes EMISAR_DEV_ROUTES=1.
 # dev_routes is read via Application.compile_env in the router, so this is a
-# BUILD-time decision; a real Fly build never sets it, so prod never mounts
+# BUILD-time decision; a production build never sets it, so prod never mounts
 # /dev/*. The matching in-memory mailer is switched on at runtime (runtime.exs).
 config :emisar_web, dev_routes: System.get_env("EMISAR_DEV_ROUTES") == "1"
 

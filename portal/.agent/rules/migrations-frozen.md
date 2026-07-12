@@ -7,15 +7,15 @@ you are making now*; once it is in any commit, **never edit or delete it — wri
 a NEW migration** that moves the schema forward. "Committed = frozen" is the
 whole test: you do **not** have to reason about whether prod has run it.
 
-**Why.** The control plane is deployed (Fly app `emisar`,
-`release_command = "/app/bin/migrate"` runs each migration **exactly once**). A
-migration that has run is permanent history. Editing the file changes nothing in
+**Why.** The production release runs `/app/bin/migrate` before boot and each
+migration applies **exactly once**. A migration that has run is permanent
+history. Editing the file changes nothing in
 any database that already ran it — so prod's schema silently diverges from what
 the new code expects, and the divergence surfaces as a production outage:
 
 - a fetch path hits a column the migration "added" but prod never got →
-  `undefined_column` 500 (see memory: Fly release-command recovery, the
-  prod-vs-fresh-test-DB `comm` schema-diff method);
+  `undefined_column` 500 (the prod-vs-fresh-test-DB `comm` schema-diff method
+  exposes the mismatch);
 - a removed/renamed `Ecto.Enum` value left in existing rows →
   `ArgumentError cannot load "X"` on every load of that table (one orphan row
   DoSes the read path — see memory: enum-value removal needs a data migration).

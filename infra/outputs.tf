@@ -15,7 +15,7 @@ output "lb_ipv6" {
 }
 
 output "url" {
-  description = "Public URL once DNS resolves and the managed cert provisions."
+  description = "Public production URL."
   value       = "https://${var.domain}"
 }
 
@@ -30,7 +30,7 @@ output "db_private_ip" {
 }
 
 output "nameservers" {
-  description = "Set these as emisar.dev's NS records at the registrar (GoDaddy) to delegate DNS to Cloud DNS."
+  description = "Authoritative Cloud DNS nameservers configured at the registrar."
   value       = google_dns_managed_zone.emisar.name_servers
 }
 
@@ -55,36 +55,11 @@ output "pack_registry_base_url" {
 }
 
 output "pack_registry_backing_url" {
-  description = "Direct GCS backing URL for storage administration and cutover diagnostics; customer-facing catalogs and installers use pack_registry_base_url."
+  description = "Direct GCS backing URL for storage administration; customer-facing catalogs and installers use pack_registry_base_url."
   value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
 }
 
-output "pack_registry_godaddy_records" {
-  description = "Records to add at GoDaddy while it is still the live DNS, so registry.<domain> works BEFORE the NS cutover. The dns.tf copies take over once the zone is authoritative."
-  value = {
-    a         = "registry  A     ${google_compute_global_address.ipv4.address}"
-    aaaa      = "registry  AAAA  ${google_compute_global_address.ipv6.address}"
-    cert_auth = "${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].name} ${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].type} ${google_certificate_manager_dns_authorization.registry.dns_resource_record[0].data}"
-  }
-}
-
 output "status_page_url" {
-  description = "Public status page (Better Stack). The custom domain resolves once the zone is authoritative — or earlier by adding `status CNAME statuspage.betteruptime.com` at the current registrar; until then the page serves at https://<subdomain>.betteruptime.com."
+  description = "Public status page served by Better Stack on the custom domain."
   value       = "https://status.${var.domain}"
-}
-
-output "next_steps" {
-  description = "What remains after the 2026-07-12 Fly→GCP cutover, in order."
-  value       = <<-EOT
-    Cutover executed 2026-07-12 (README «Cutover runbook» is the record).
-    Remaining:
-    1. After NS delegation resolves everywhere (up to 48 h — verify with
-       `dig +trace ${var.domain} NS`): publish the DNSSEC DS at the registrar
-       (terraform output dnssec_ds_record); `dig +dnssec ${var.domain}` then
-       shows AD. A DS ahead of working delegation takes the domain offline.
-    2. Once traffic and email flows are confirmed drained off Fly:
-       decommission the Fly app (its database was imported at cutover).
-    3. Ongoing: ramp DMARC (var.dmarc_policy none → quarantine → reject) and
-       MTA-STS (testing → enforce) on clean reports — dns.tf comments.
-  EOT
 }

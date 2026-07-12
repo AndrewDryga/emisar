@@ -165,7 +165,8 @@ submission time, see [§9](#9-tool-metadata-inventory).
 - **What it does not do:** no client-side trackers, no third-party analytics SDK,
   cookieless first-party analytics only. Full card numbers are never seen or stored
   (Paddle handles payment).
-- **Subprocessors:** Fly.io (app hosting + managed PostgreSQL, US region), Paddle
+- **Subprocessors:** Google Cloud Platform (compute, networking, managed
+  PostgreSQL, and backups in a US region), Paddle
   (payments), Postmark (transactional email), Mixpanel (server-side, cookieless
   marketing/growth analytics — never runner data). Canonical list on `/trust` and
   `/privacy`.

@@ -29,12 +29,12 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     assert rejected.resp_body =~ "rate_limited"
   end
 
-  test "keys by fly-client-ip, so different clients get separate windows", %{conn: conn} do
+  test "keys by GCP's client IP, so different clients get separate windows", %{conn: conn} do
     enable_rate_limiting()
     opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :ip)
 
-    first = put_req_header(conn, "fly-client-ip", "203.0.113.1")
-    second = put_req_header(conn, "fly-client-ip", "203.0.113.2")
+    first = put_req_header(conn, "x-forwarded-for", "forged, 203.0.113.1, 8.233.97.247")
+    second = put_req_header(conn, "x-forwarded-for", "forged, 203.0.113.2, 8.233.97.247")
 
     assert %{halted: false} = RateLimit.call(first, opts)
     assert %{halted: true} = RateLimit.call(first, opts)
@@ -53,7 +53,7 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     # Same token from a "different IP" still hits the same bucket.
     assert %{halted: true} =
              with_token
-             |> put_req_header("fly-client-ip", "198.51.100.7")
+             |> put_req_header("x-forwarded-for", "198.51.100.7, 8.233.97.247")
              |> RateLimit.call(opts)
 
     # No bearer falls back to the IP bucket — independent of the token's.

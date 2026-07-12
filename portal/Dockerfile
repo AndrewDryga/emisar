@@ -37,8 +37,8 @@ ENV MIX_ENV="prod"
 
 # Optional dev-only build flag: the docker-compose dev/e2e stack passes
 # EMISAR_DEV_HOST_EXCLUDES=1 so config/prod.exs lets its plain-HTTP internal
-# hosts (localhost / 127.0.0.1 / the `portal` service) through force_ssl. A real
-# Fly build leaves it empty, so prod enforces HTTPS for every request host.
+# hosts (localhost / 127.0.0.1 / the `portal` service) through force_ssl. A
+# production build leaves it empty, so prod enforces HTTPS for every request host.
 # force_ssl is a compile_env, so this must be set before `mix compile` below.
 ARG EMISAR_DEV_HOST_EXCLUDES=""
 ENV EMISAR_DEV_HOST_EXCLUDES=${EMISAR_DEV_HOST_EXCLUDES}
@@ -47,7 +47,7 @@ ENV EMISAR_DEV_HOST_EXCLUDES=${EMISAR_DEV_HOST_EXCLUDES}
 # EMISAR_DEV_ROUTES=1 so config/prod.exs compiles in the /dev routes — the
 # /dev/mailbox magic-link preview (passwordless sign-in needs it locally) and
 # /dev/dashboard. dev_routes is a compile_env read by the router, so it must be
-# set before `mix compile`. A real Fly build leaves it empty, so prod never
+# set before `mix compile`. A production build leaves it empty, so prod never
 # mounts /dev/*. The matching in-memory mailer is switched on at runtime.
 ARG EMISAR_DEV_ROUTES=""
 ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}

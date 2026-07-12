@@ -1,214 +1,152 @@
-# infra — emisar on GCP
+# infra - emisar on Google Cloud
 
-Terraform for running the emisar control plane on **Google Cloud**, built to a
-**SOC 2 Type II** posture. Adapted from `../onlytty/infra` (same LB + MIG + managed
-cert + Secret Manager + public-GHCR shape) and extended for emisar: a **Cloud SQL**
-database, emisar's full secret set (via Terraform Cloud variables), GCE
-**clustering**, and the SOC 2 control layer (audit logs, private networking,
-backups/DR, monitoring).
+This directory is the production Terraform configuration for the emisar control
+plane. HCP Terraform workspace `Dryga/emisar` owns state and applies. GitHub CD
+uploads reviewed configurations and creates saved plans; it never applies them.
 
-```
-                 ┌─ IPv4/IPv6 anycast ─┐
-DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /readyz) ─► regional MIG
-(Cloud DNS,      │  Certificate Manager)│                              (COS, portal
- DNSSEC-signed)  └─ :80 → :443 redirect ┘                               container, 1+ nodes)
-                                                                             │
-   Secret Manager (runtime secrets, from TFC vars) ── public GHCR (image)   │
-                                                                             ▼
-                          dedicated VPC ── Cloud NAT ── Cloud SQL Postgres (private IP,
-                          (flow logs)      (egress)     regional HA, PITR backups)
+```text
+Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
+                         |-> regional MIG of private COS instances
+                         |      |-> Secret Manager
+                         |      |-> Cloud SQL PostgreSQL over private IP
+                         |      `-> Cloud Logging and Monitoring
+                         `-> public-read, versioned pack registry in GCS
+
+Private instances -> Cloud NAT for controlled egress
+Operators -> IAP + OS Login for SSH
+Better Stack -> external probes, on-call escalation, public status page
 ```
 
-> **LIVE — production since 2026-07-12.** The Fly→GCP cutover is done: the apex
-> serves from the GCP LB and NS is delegated to Cloud DNS. Two tail steps
-> remain from the runbook below: publish the **DNSSEC DS** at the registrar
-> once NS has propagated everywhere (step 7 — a DS ahead of working delegation
-> takes the domain offline), and decommission Fly once traffic has fully
-> drained. Environment sizing (machine type, node count, DB tier/availability)
-> and the alert address are Terraform Cloud workspace variables, not committed
-> values.
+## Production controls
 
-## What's in it
+| Area | Configuration |
+|---|---|
+| Compute | Regional managed instance group, Shielded VM, no external VM IPs, zero-unavailable rolling updates |
+| Database | Cloud SQL PostgreSQL 18, private IP, TLS required, PITR, automated backups, deletion protection |
+| Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH |
+| TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
+| Secrets | HCP Terraform sensitive variables feed Secret Manager; VM access is per-secret and read-only |
+| Supply chain | Production runs an immutable GHCR digest built and tested by CI; pack artifacts are versioned in GCS |
+| DNS | Authoritative Cloud DNS zone with DNSSEC signing and the complete web and email record set |
+| Monitoring | Google Cloud alerts plus independent Better Stack probes, escalation, and status page |
 
-| Area | Resources | SOC 2 relevance |
-|---|---|---|
-| Network | dedicated VPC + subnet (flow logs), Cloud Router + NAT, private service access | segmentation; DB/compute private (the only public read is the pack bucket) |
-| Compute | regional MIG of Container-Optimized OS running the portal image; Shielded VM; DB-independent auto-heal; reserved steady-state fleet and zero-unavailable rolling updates with on-demand surge; `instance_count` 2+ forms one BEAM cluster | availability; host integrity |
-| Database | Cloud SQL Postgres 18 (latest major) — private IP, PITR backups, SSL-required, deletion-protected; `db_availability_type = "REGIONAL"` runs a synchronous standby with automatic failover | availability, durability/DR, confidentiality |
-| TLS | Certificate Manager managed cert (DNS-auth; apex + www + mta-sts SANs), RESTRICTED SSL policy (TLS 1.2+) | encryption in transit |
-| Secrets | TFC workspace variables → Secret Manager versions; per-secret least-priv access; machine secrets generated in-config | secret management |
-| Image | public GHCR — prod runs the exact artifact self-hosters pull; pin digests | supply-chain transparency |
-| Pack registry | GCS bucket, **public-read** (the one deliberate public surface), object-versioned, create-only publisher SA; serves catalog/suggest/schema + immutable pack tarballs | integrity; supply-chain transparency |
-| IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
-| DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
-| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel; independent external probes, on-call rotation + escalation, and public status page via Better Stack (`uptime.tf`) | detection; incident response; customer communication |
+Environment sizing and contacts are HCP Terraform workspace variables. Do not
+commit production scale, spend, contact addresses, or secrets.
 
-Normal image rollouts create a replacement, wait until it has reached readiness,
-and only then drain the old VM. Because old and new application versions overlap,
-database migrations in a normal rollout must use an expand/contract sequence that
-both versions can run against; a destructive one-release schema change is not a
-zero-downtime deployment.
+## Delivery
 
-## Files
+Every main-branch delivery reuses the exact CI workflow that tested the commit.
+For portal changes, CD publishes that tested image to GHCR by immutable digest.
+For portal or infrastructure changes, CD then:
 
-`network.tf` · `compute.tf` · `db.tf` · `lb.tf` · `secrets.tf` · `iam.tf`
-(SA + audit) · `packs_registry.tf` (public pack bucket + publisher SA) ·
-`monitoring.tf` · `uptime.tf` (Better Stack external probes + status page) ·
-`dns.tf` · `main.tf` (TFC backend + provider +
-APIs) · `variables.tf` · `outputs.tf` · `versions.tf` ·
-`templates/cloud-init.yaml` · `scripts/verify-cutover.sh`.
+1. Verifies the commit is still current `main`.
+2. Uploads `infra/` as a provisional HCP Terraform configuration.
+3. Creates a saved plan with the tested image digest.
+4. Stops and links the complete plan in the GitHub job summary.
 
-## Pack registry (the one public-read surface)
+Review every resource action and the run's commit before selecting **Confirm &
+Apply** in HCP Terraform. Workspace auto-apply must remain disabled. A replaced
+or stale saved plan is discarded instead of applying against changed state.
 
-Everything else here is private by default. `packs_registry.tf` is the deliberate,
-documented exception: `emisar pack install <id>` runs **unauthenticated**, so the
-published pack artifacts — `catalog.json`, `suggest.json`, the JSON schemas, and
-the immutable pack tarballs — live in a **public-read** GCS bucket
-(`var.pack_registry_bucket`, default `emisar-pack-registry`). The safety argument:
-nothing secret or account-scoped is ever written there (only pack bytes that are
-already public source in `packs/` plus their metadata), and install trust doesn't
-rest on the transport — snippets pin `--hash sha256:...` and the runner rejects any
-tampered tarball. Anonymous access is limited to GET by exact object path; the
-bucket root is intentionally not a directory listing. History is preserved by
-**object versioning** (no lifecycle
-delete rule; the bucket is `prevent_destroy`), and the CI publisher SA
-(`emisar-pack-publisher`) holds bucket-scoped **`objectUser`** (objects
-create/get/list/delete — no bucket config, no IAM). It can't be create-only:
-republishing the mutable pointers (`catalog.json`, `suggest.json`) *replaces* the
-live object, and GCS requires `storage.objects.delete` for an overwrite even with
-versioning on — `objectCreator` would 403 the second publish. Every replaced
-generation stays fetchable. The canonical customer-facing output is
-`pack_registry_base_url` (`https://registry.emisar.dev`); the direct GCS endpoint
-is exposed separately as `pack_registry_backing_url` for storage administration
-and cutover diagnostics. Recover an accidentally-overwritten mutable object (the
-latest `catalog.json` pointer) from a prior generation:
+Normal image rollouts create one replacement VM, wait for `/readyz`, and only
+then drain an old VM. Old and new application versions overlap, so schema
+changes use expand/contract sequencing. Rollback is another reviewed plan that
+sets `container_image` to a previously published digest.
 
-```bash
-gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catalog.json   # list generations
-gcloud storage cp gs://<bucket>/v1/catalog.json#<generation> gs://<bucket>/v1/catalog.json # restore one
+## Runtime shape
+
+Cloud-init writes the release environment from Secret Manager, assigns the
+instance's internal IP to `NODE_IP`, runs Ecto migrations under their advisory
+lock, and starts the container. `Emisar.Cluster.GCE` discovers running peers by
+the `cluster_name` label through the Compute API. Erlang distribution is limited
+to tagged application instances on TCP 4369 and 9100-9105.
+
+The load balancer uses DB-independent `/healthz` for auto-healing and DB-aware
+`/readyz` for traffic eligibility. Backend HTTP accepts only Google proxy and
+health-check source ranges. Public traffic terminates TLS at the load balancer.
+
+## Secrets
+
+Externally issued credentials are sensitive HCP Terraform workspace variables.
+Machine credentials such as the database password and initial
+`SECRET_KEY_BASE` are generated in Terraform and stored as Secret Manager
+versions. Adding a secret requires:
+
+1. A sensitive variable in `variables.tf` when the value is externally issued.
+2. An `app_secrets` entry in `secrets.tf`.
+3. An `optional_secret_values` entry when the application can boot without it.
+4. The minimum per-secret IAM binding for the instance service account.
+
+Never place values in git, defaults, command history, or `.tfvars` files.
+
+## DNS and DNSSEC
+
+`dns.tf` is the complete authoritative zone. Add durable records there before
+expecting them to resolve publicly. Cloud DNS supplies the apex NS and SOA
+records itself.
+
+DNSSEC signing is enabled in Cloud DNS. The registrar DS is deliberately a
+manual final step because publishing a DS while recursive resolvers still use a
+different delegation makes the domain fail validation. Before publishing it:
+
+```sh
+dig +trace emisar.dev NS
+dig @1.1.1.1 emisar.dev NS +short
+dig @8.8.8.8 emisar.dev NS +short
+dig @9.9.9.9 emisar.dev NS +short
+terraform output -raw dnssec_ds_record
 ```
 
-## External uptime, on-call & status page (Better Stack)
+All traces and public resolvers must return the four Cloud DNS nameservers. Add
+the exact DS output at the registrar, then verify:
 
-`monitoring.tf` watches from inside Google; `uptime.tf` watches from outside it.
-Better Stack probes the **public hostname** from independent infrastructure,
-runs the **on-call escalation** (notify → wake with a phone call → wake
-everyone, repeating), and hosts the public status page — so detection, paging,
-and customer communication survive an incident in the serving cloud. The
-monitors watch the public hostname, which is how they rode the Fly→GCP
-cutover unchanged. Two **sensitive TFC workspace variables** feed it:
-`betterstack_api_token` (the provider credential) and `oncall_emails` (the
-rotation roster — sensitive on purpose, so this public repo reveals neither
-who is on call nor how many people that is; team invites happen in the Better
-Stack UI, never as per-person Terraform resources). The account predates this
-config, so the pre-existing status page, apex monitor (with its uptime
-history), and default on-call calendar are adopted via `import` blocks — no-ops
-after the first apply. The status page serves at
-`https://emisar.betteruptime.com` immediately; `status.emisar.dev` (CNAME in
-`dns.tf`, Let's Encrypt already in `var.caa_issuers`) activates at NS
-delegation (done 2026-07-12 — the CNAME resolves; Better Stack provisions the
-domain cert on first use). Both monitors are live.
-
-## Clustering (emisar-specific vs onlytty)
-
-On Fly, emisar clusters via `dns_cluster` (`<app>.internal`). GCP MIGs have no such
-DNS name, so on GCP emisar uses **libcluster's GCE strategy** (`Emisar.Cluster.GCE`
-+ `…/gce/client.ex`): it lists the MIG's RUNNING instances via the Compute API (by
-the `cluster_name=emisar` label) and connects `emisar@<internal-ip>`. It activates
-only when `EMISAR_CLUSTER_PROJECT` is set (the instance template sets it) — the Fly
-path is untouched. This is what lets `instance_count > 1` form one BEAM cluster so
-PubSub/Presence span nodes and runs don't strand in `:sent`.
-
-## Environment sizing
-
-Machine type, MIG size, database tier/availability, and the alert address are
-**Terraform Cloud workspace variables** (org `Dryga` / workspace `emisar`), not
-committed values — the repo's defaults are a reference configuration. Adjust an
-environment in the workspace, then apply; the dials are `machine_type`,
-`instance_count`, `db_tier`, `db_availability_type`, `db_disk_size_gb`, and
-`alert_email`.
-
-## Cutover runbook (Fly → GCP, in this order)
-
-> **Executed 2026-07-12** (kept as the record and as the template for any
-> future migration). Remaining: step 7's DS publication after NS propagation,
-> then Fly decommissioning.
-
-The order is the point: the cert can't provision and the data isn't there until
-you make both happen — flipping DNS first means an outage on an empty database.
-
-```bash
-# 0. Once: bootstrap APIs Terraform can't enable itself. TFC (org Dryga →
-#    workspace emisar) already holds WIF creds + the sensitive secret vars;
-#    SECRET_KEY_BASE and the DB password are generated by the apply.
-gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=emisar
-
-# 1. Merge through the required `Required - CI` check. Main-only CD reuses that
-#    exact CI workflow, publishes the image it smoke-tested, uploads this commit's
-#    infra configuration, and creates an HCP Terraform plan using the immutable
-#    digest. FIRST publish only: GHCR
-#    creates the package PRIVATE — flip it to Public or instance pulls 403.
-
-# 2. Review the complete saved plan in HCP Terraform, then click
-#    `Confirm & Apply` there. CD has no automated apply step. The run blocks
-#    until the MIG is updated and stable; the LB routes only /readyz-healthy VMs.
-
-# 3. Import production data — the portal serves an EMPTY schema until this runs.
-#    Stop writers on both sides first: fly scale count 0 (freezes prod), and
-#    gcloud compute instance-groups managed resize emisar --region=us-central1 --size=0
-#    (recurrent jobs on the GCP side would fight the import).
-#    Dump through the Fly Managed Postgres tunnel (`fly mpg proxy`, then pg_dump
-#    against the local port it prints):
-pg_dump --format=custom --no-owner --no-privileges "$FLY_DATABASE_URL" > emisar.dump
-#    Restore from inside the VPC (the DB has no public IP): IAP-SSH into a MIG VM
-#    and pg_restore --clean --if-exists there (boot already created the schema),
-#    or plain-SQL dump → gcloud storage cp → gcloud sql import sql --user=emisar.
-#    Then resize the MIG back to var.instance_count.
-#    Optional (keeps operator sessions alive across the cutover): store Fly's
-#    SECRET_KEY_BASE as the newest version — instances read versions/latest:
-printf '%s' "$FLY_SECRET_KEY_BASE" | gcloud secrets versions add emisar-secret-key-base --data-file=-
-
-# 4. Pre-provision the cert while GoDaddy still serves the live DNS — the cert's
-#    DNS-auth records exist only in the (not yet authoritative) Cloud DNS zone,
-#    and the live CAA doesn't allow Google's CA yet:
-terraform state show 'google_certificate_manager_dns_authorization.emisar'      # + .www / .mta_sts
-#    → at GoDaddy add those three _acme-challenge CNAMEs AND a CAA record:
-#      0 issue "pki.goog"   (keep the letsencrypt.org one — Fly renews with it)
-#    Wait for the cert to go ACTIVE, then prove the stack end-to-end:
-curl --resolve emisar.dev:443:$(terraform output -raw lb_ipv4) https://emisar.dev/readyz
-
-# 5. Converge traffic at GoDaddy FIRST. NS propagation takes up to 48 h — two
-#    providers answering different IPs means writes split across two databases.
-#    Lower the A/AAAA TTLs, then point A → lb_ipv4 and AAAA → lb_ipv6 at GoDaddy.
-#    Both DNS providers now answer the same IPs; watch runners reconnect and
-#    runs flow on GCP before touching NS.
-
-# 6. Delegate: set NS at GoDaddy to `terraform output nameservers` — now a
-#    zero-traffic change. scripts/verify-cutover.sh <new-ns> compares the zone
-#    against live records first.
-
-# 7. LAST, after NS resolves everywhere: publish the DNSSEC DS at the registrar
-#    (`terraform output dnssec_ds_record`) — a DS ahead of working delegation
-#    takes the domain offline. Keep Fly running until traffic drains, then
-#    decommission it (MAILER_FROM_EMAIL parity is already var.mailer_from_email).
+```sh
+dig +dnssec emisar.dev A
+dig @1.1.1.1 +dnssec emisar.dev A
 ```
 
-## Email posture (DMARC / MTA-STS)
+The response must contain the `ad` flag. A DNSSEC key rotation follows the same
+parent/child ordering discipline; never replace the parent DS speculatively.
 
-These records are provider-independent and carry over from the DNS work: DMARC
-starts at `p=none` and ramps (`var.dmarc_policy`); MTA-STS ships in `mode: testing`
-(the portal serves `/.well-known/mta-sts.txt`) and flips to enforce after TLS-RPT
-reports are clean. See the record comments in `dns.tf`.
+## Pack registry
 
-## Validate locally (does not apply)
+`registry.emisar.dev` terminates at the same load balancer and routes directly
+to the public-read GCS backend bucket. Publisher credentials are create-only;
+published objects are versioned. Customer-facing URLs always use the registry
+domain, while the backing URL is for administration.
 
-```bash
+```sh
+curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
+gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catalog.json
+```
+
+Pack publication has a separate GitHub environment approval and is serialized
+so an active publication cannot be canceled halfway through.
+
+## Operations
+
+Use [the operations runbook](../docs/operations.md) for incident commands,
+backups, restore drills, and production access. Useful outputs:
+
+```sh
+terraform output url
+terraform output lb_ipv4
+terraform output lb_ipv6
+terraform output nameservers
+terraform output status_page_url
+terraform output pack_registry_base_url
+```
+
+## Validation
+
+Run from this directory:
+
+```sh
 terraform fmt -check -recursive
-terraform init -backend=false && terraform validate
+terraform init -backend=false
+terraform validate
 tflint
 ```
 
-CI (the `infra` job in `.github/workflows/ci.yml`) runs the same with no cloud credentials.
-State and the sensitive secret variables live in the Terraform Cloud workspace
-(org `Dryga` / project `emisar`) — encrypted at rest, RBAC-gated, audit-logged;
-treat workspace membership as production access.
+These checks are credential-free. A live plan or apply is a separate,
+credentials-gated production action performed through HCP Terraform.

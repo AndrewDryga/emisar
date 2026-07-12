@@ -15,7 +15,7 @@ can't silently drift from the code.
 
 The portal runs a Prometheus exporter (`TelemetryMetricsPrometheus`) on a sibling
 port to the main endpoint — `METRICS_PORT`, default **9091** — so a private scrape
-(Fly's metrics network, a kubelet, vmagent) can reach `/metrics` without it being
+(a VPC collector, a kubelet, or vmagent) can reach `/metrics` without it being
 publicly routable. Point a scrape job at `:9091/metrics`.
 
 The names map from `Telemetry.Metrics` dotted names to Prometheus form: dots

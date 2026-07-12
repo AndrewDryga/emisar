@@ -9,10 +9,10 @@ defmodule EmisarWeb.RequestContext do
   the request metadata) or passed explicitly on a pre-auth path. Nothing
   below the boundary ever sees a `Plug.Conn`.
 
-  Behind a proxy, `x-forwarded-for` is trusted for the client IP; without
-  one we fall back to the socket peer. (`Plug.RemoteIp` is not in the
-  pipeline, so a spoofable header is the documented trade-off — audit IPs
-  are advisory, not an access-control input.)
+  Production accepts HTTP only from the GCP load balancer. Google appends the
+  client and forwarding-rule addresses to `x-forwarded-for`, so the client is
+  read from the second-to-last value; attacker-supplied leading values are
+  ignored. Direct connections fall back to the socket peer.
   """
   import Plug.Conn, only: [get_req_header: 2, get_resp_header: 2]
   alias Emisar.RequestContext
@@ -22,12 +22,15 @@ defmodule EmisarWeb.RequestContext do
   @doc "Request context for an HTTP request (`%Plug.Conn{}`)."
   def from_conn(conn) do
     RequestContext.new(%{
-      ip_address: normalize_ip(forwarded_for(conn) || peer_ip(conn)),
+      ip_address: client_ip(conn),
       user_agent: List.first(get_req_header(conn, "user-agent")),
       request_id: List.first(get_resp_header(conn, "x-request-id")),
       mcp_session_id: mcp_session_id(conn)
     })
   end
+
+  @doc "Client IP from the trusted GCP forwarding tail, or the direct socket peer."
+  def client_ip(conn), do: normalize_ip(forwarded_for(conn) || peer_ip(conn))
 
   @doc "The bounded MCP session id from the request, or nil when absent or oversized."
   def mcp_session_id(conn) do
@@ -45,8 +48,7 @@ defmodule EmisarWeb.RequestContext do
   Request context for a LiveView socket, from its connect info. Carries
   IP + user agent only — request id and MCP session are HTTP-request
   concerns the socket doesn't have. Like `from_conn/1`, the client IP comes
-  from `x-forwarded-for` (Fly's LB is the socket's only peer, so without it
-  the audit/geo IP would be the load balancer). Requires `:peer_data`,
+  from the GCP-appended tail of `x-forwarded-for`. Requires `:peer_data`,
   `:user_agent`, and `:x_headers` in the endpoint's `socket "/live"`
   `connect_info`.
   """
@@ -61,7 +63,7 @@ defmodule EmisarWeb.RequestContext do
 
   defp forwarded_for(conn) do
     case get_req_header(conn, "x-forwarded-for") do
-      [val | _] -> first_forwarded(val)
+      [value | _] -> forwarded_client_ip(value)
       [] -> nil
     end
   end
@@ -70,7 +72,7 @@ defmodule EmisarWeb.RequestContext do
     case Phoenix.LiveView.get_connect_info(socket, :x_headers) do
       headers when is_list(headers) ->
         case List.keyfind(headers, "x-forwarded-for", 0) do
-          {_name, val} -> first_forwarded(val)
+          {_name, value} -> forwarded_client_ip(value)
           nil -> nil
         end
 
@@ -79,7 +81,17 @@ defmodule EmisarWeb.RequestContext do
     end
   end
 
-  defp first_forwarded(val), do: val |> String.split(",") |> List.first() |> String.trim()
+  # GCP emits `[untrusted-prefix,]client-ip,load-balancer-ip`. The production
+  # firewall admits backend HTTP only from Google proxy ranges, so anchoring at
+  # the right ignores any caller-controlled prefix without trusting a hop count.
+  defp forwarded_client_ip(value) do
+    parts = String.split(value, ",", trim: true)
+
+    case Enum.reverse(parts) do
+      [_load_balancer_ip, client_ip | _untrusted_prefix] -> String.trim(client_ip)
+      _ -> nil
+    end
+  end
 
   defp peer_ip(%{remote_ip: ip}) when is_tuple(ip),
     do: ip |> :inet_parse.ntoa() |> to_string()

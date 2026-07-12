@@ -162,33 +162,25 @@ the same bucket (`infra/packs_registry.tf` + the host rule in `infra/lb.tf`), so
 every object path resolves identically at both bases (`…/v1/catalog.json`).
 `packctl` bakes `registry.emisar.dev` tarball URLs into the catalog it builds
 (`defaultRegistryBaseURL`), and the portal refreshes + pins against the same base
-(`EMISAR_PACK_CATALOG_URL` / the `runtime.exs` default). The old
-`storage.googleapis.com/emisar-pack-registry` base still serves the SAME bytes,
-so every URL ever published there keeps resolving; `packctl catalog publish`
-still WRITES through the authenticated GCS API endpoint (`DefaultGCSEndpoint`) —
-only the read/serve base moved.
+(`EMISAR_PACK_CATALOG_URL` / the `runtime.exs` default). The direct
+`storage.googleapis.com/emisar-pack-registry` URL is an administration backing
+endpoint, not a customer-facing catalog base. `packctl catalog publish` writes
+through the authenticated GCS API endpoint (`DefaultGCSEndpoint`).
 
-**Deploy gate — the domain must serve BEFORE the flip ships.** The code now
-defaults to `registry.emisar.dev`; do not deploy the portal (or run
-`packctl catalog publish` on the new base) until the domain resolves and its
-cert is ACTIVE, or the portal 302s installers to a dead host and the next
-publish bakes not-yet-live URLs into an immutable catalog. Go-live (works BEFORE
-the emisar.dev NS cutover — the host migrates independently):
+**Availability gate.** Do not publish unless the authoritative DNS records,
+managed certificate, load-balancer host rule, and bucket are healthy. A publish
+bakes the canonical base into immutable tarball URLs, so verify first:
 
-1. `terraform apply` (TFC) — creates the backend bucket, cert, and DNS-auth.
-2. Add the GoDaddy records: `terraform output pack_registry_godaddy_records`
-   (A/AAAA → the LB IPs + the cert DNS-auth CNAME).
-3. Wait for the `emisar-cert-registry` managed cert to be ACTIVE, then verify:
-   `curl -fsSL https://registry.emisar.dev/v1/catalog.json | jq .schema_version`.
-4. Deploy the portal and publish the catalog on the new base. Carried
-   `previous_versions` history re-homes automatically — the build REBUILDS
-   carried tarball URLs from the current base (content-addressed: version+hash
-   pin the path), so there is never a mixed-host catalog to hand-edit.
+```bash
+dig registry.emisar.dev A +short
+dig registry.emisar.dev AAAA +short
+curl -fsSL https://registry.emisar.dev/v1/catalog.json | jq .schema_version
+```
 
-Bridge option if you must deploy the code before the domain serves: set
-`EMISAR_PACK_CATALOG_URL=https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json`
-so the portal keeps refreshing from (and pinning to) the GCS base until
-`registry.emisar.dev` is live, then drop the override.
+The A/AAAA and Certificate Manager authorization records live in `infra/dns.tf`.
+The certificate must be ACTIVE before publication. Carried `previous_versions`
+history is rebuilt against the canonical base from content-addressed paths; do
+not hand-edit catalog URLs.
 
 ## Rollback
 

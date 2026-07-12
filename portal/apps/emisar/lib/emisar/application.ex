@@ -10,15 +10,13 @@ defmodule Emisar.Application do
       Emisar.Repo,
 
       # Cluster, PubSub, presence, and shared HTTP client
-      {DNSCluster, query: Application.get_env(:emisar, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Emisar.PubSub.Server},
       Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
 
       # BEAM clustering on GCP MIGs: libcluster's GCE strategy discovers peers via
       # the Compute API (Emisar.Cluster.GCE, which uses Emisar.Finch above). Empty
-      # topologies — Fly (dns_cluster handles it), dev, test, single-node — start no
-      # strategy, so this is inert unless EMISAR_CLUSTER_PROJECT is set (runtime.exs).
+      # topologies keep local and single-node releases inert.
       {Cluster.Supervisor,
        [Application.get_env(:emisar, :cluster_topologies, []), [name: Emisar.ClusterSupervisor]]},
 
