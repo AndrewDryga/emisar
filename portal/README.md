@@ -19,7 +19,6 @@ rel/               release overlays (bin/server, bin/migrate)
 docs/              deploy + operator guides
 Dockerfile         multi-stage release build
 docker-compose.yml local-dev postgres
-fly.toml           fly.io deploy
 ```
 
 ## Getting started
@@ -35,7 +34,8 @@ Seed login: `demo@emisar.dev` / `Sleep-tight-1234`. The seed prints a reusable a
 
 ## Deploying
 
-See [../docs/deploy.md](../docs/deploy.md). TL;DR — set `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, then `docker build && docker run` (or `fly deploy`).
+See [../docs/deploy.md](../docs/deploy.md). Production publishes the exact
+CI-tested image and deploys it through a reviewed HCP Terraform plan.
 
 ## Testing
 

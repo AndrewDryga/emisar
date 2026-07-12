@@ -4,8 +4,7 @@
 # alert path in one stroke. Better Stack probes from independent infrastructure,
 # runs the on-call escalation, and hosts the public status page — so detection,
 # paging, and customer communication all survive the outage they report on. It
-# monitors the PUBLIC hostname — which is how it watched the Fly deployment
-# and rode the 2026-07-12 Fly→GCP cutover without a change here.
+# monitors the public hostname rather than a provider-internal endpoint.
 #
 # The account predates this config, so the pre-existing resources are adopted
 # via import blocks (no-ops after the first apply) instead of being recreated —

@@ -23,11 +23,9 @@ import Config
 #                            published host port); only applies when FORCE_SSL=false
 #   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
 #   POOL_SIZE              — Ecto pool size (default 10)
-#   ECTO_IPV6              — "1" / "true" to dial Postgres over IPv6
 #   DATABASE_SSL           — "1" / "true" to require TLS to Postgres
 #   DATABASE_SSL_CACERTFILE — PEM file to verify the server cert against
 #                            (Cloud SQL / private-CA Postgres); implies TLS
-#   DNS_CLUSTER_QUERY      — libcluster DNS query for multi-node deploys
 #   POSTMARK_API_TOKEN     — mailer adapter (Postmark)
 #   MAILGUN_API_KEY        — mailer adapter (Mailgun); requires MAILGUN_DOMAIN
 #   SMTP_HOST              — mailer adapter (SMTP); use SMTP_USERNAME/PASSWORD/PORT
@@ -79,8 +77,6 @@ if config_env() == :prod do
     System.get_env("DATABASE_URL") ||
       raise "DATABASE_URL is missing (example: ecto://USER:PASS@HOST/DATABASE)"
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
-
   # Cloud SQL (and any private-CA Postgres) signs its server cert with an
   # instance-specific CA that no public trust store carries, so `ssl: true`'s
   # public-CA verification can never pass (unknown_ca). With a CA file we pin
@@ -105,7 +101,6 @@ if config_env() == :prod do
   config :emisar, Emisar.Repo,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6,
     ssl: database_ssl
 
   secret_key_base =
@@ -141,15 +136,8 @@ if config_env() == :prod do
   endpoint_opts = [
     url: [host: host, port: url_port, scheme: url_scheme],
     http: [
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
-      port: String.to_integer(System.get_env("PORT") || "4000"),
-      # Bind the IPv6 wildcard as DUAL-STACK so the single socket also
-      # accepts IPv4. Fly's kernel sets net.ipv6.bindv6only=1, and OTP's
-      # socket backend honors it — without this override the listener is
-      # IPv6-only, so fly-proxy (which reaches the app over IPv4) reports
-      # "not listening on 0.0.0.0:4000" and the deploy fails its health
-      # check. Restores the pre-OTP-28 dual-stack behavior.
-      thousand_island_options: [transport_options: [ipv6_v6only: false]]
+      ip: {0, 0, 0, 0},
+      port: String.to_integer(System.get_env("PORT") || "4000")
     ],
     secret_key_base: secret_key_base,
     server: true
@@ -163,13 +151,11 @@ if config_env() == :prod do
   # http://localhost can still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
-  config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   # BEAM clustering on GCP MIGs. When EMISAR_CLUSTER_PROJECT is set (the instance
   # template sets it), libcluster's GCE strategy lists the project's RUNNING portal
   # instances via the Compute API and connects them as `emisar@<internal-ip>`
-  # (rel/env.sh.eex names the node). Unset — Fly (dns_cluster above), dev, test,
-  # single-node — leaves the topology empty so the cluster supervisor is inert.
+  # (rel/env.sh.eex names the node). Unset in local and single-node releases, the
+  # topology stays empty and the cluster supervisor is inert.
   cluster_topologies =
     case System.get_env("EMISAR_CLUSTER_PROJECT") do
       project when is_binary(project) and project != "" ->

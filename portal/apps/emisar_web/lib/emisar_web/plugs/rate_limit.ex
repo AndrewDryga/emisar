@@ -10,8 +10,8 @@ defmodule EmisarWeb.Plugs.RateLimit do
 
   `:by` chooses the bucket key:
 
-    * `:ip` — the client IP (honors `x-forwarded-for` from the trusted
-      fly-proxy, falling back to `remote_ip`). Use for unauthenticated routes.
+    * `:ip` — the client IP from the trusted GCP forwarding tail, falling back
+      to `remote_ip` for direct connections. Use for unauthenticated routes.
     * `:bearer` — a SHA-256 of the `Authorization: Bearer` token, so a leaked
       key is capped across IPs. Falls back to the IP when no bearer is present.
 
@@ -23,6 +23,7 @@ defmodule EmisarWeb.Plugs.RateLimit do
   @behaviour Plug
 
   import Plug.Conn
+  alias EmisarWeb.RequestContext
 
   @impl Plug
   def init(opts) do
@@ -61,22 +62,9 @@ defmodule EmisarWeb.Plugs.RateLimit do
   defp key_for(conn, :bearer) do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token | _] -> "key:" <> Emisar.Crypto.hash_hex(token)
-      _ -> client_ip(conn)
+      _ -> RequestContext.client_ip(conn)
     end
   end
 
-  defp key_for(conn, :ip), do: client_ip(conn)
-
-  # The app sits behind fly-proxy, which stamps the true client IP into
-  # `Fly-Client-IP` (and overwrites any client-supplied value, so it can't be
-  # forged). We deliberately do NOT trust `X-Forwarded-For`: fly *appends* the
-  # real client to it, so its leftmost entry is attacker-controlled — keying on
-  # that would let a caller rotate the bucket and walk straight past the limit.
-  # Fall back to the socket peer for dev / direct connections.
-  defp client_ip(conn) do
-    case get_req_header(conn, "fly-client-ip") do
-      [ip | _] -> ip
-      [] -> conn.remote_ip |> :inet.ntoa() |> to_string()
-    end
-  end
+  defp key_for(conn, :ip), do: RequestContext.client_ip(conn)
 end

@@ -5,6 +5,5 @@ set -eu
 # pod so the previous version keeps serving — exactly what we want.
 "$(dirname "$0")/migrate"
 
-# Start the release in the foreground; this is what Kubernetes /
-# systemd / fly.io invokes.
+# Start the release in the foreground for the container runtime or systemd.
 exec "$(dirname "$0")/emisar" start

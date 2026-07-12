@@ -8,9 +8,8 @@ defmodule Emisar.Cluster.GCE do
   matching the node name set in `rel/env.sh.eex`. The Compute/metadata HTTP lives
   in `Emisar.Cluster.GCE.Client` (the vendor seam); tests inject `:discover_fn`.
 
-  This is the GCP counterpart to the DNSCluster used on Fly: on GCP a MIG has no
-  single DNS name resolving to all instances, so we ask the Compute API instead.
-  Both are wired mutually-exclusively by env — see `application.ex` + `runtime.exs`.
+  A MIG has no single DNS name resolving to all instances, so discovery uses the
+  Compute API. The strategy is enabled by runtime configuration in `runtime.exs`.
 
   Topology `:config` keys:
 

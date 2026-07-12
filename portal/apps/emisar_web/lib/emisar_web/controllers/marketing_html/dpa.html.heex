@@ -5,7 +5,7 @@
 ============================================================ --%>
 <.legal_page
   title="Data Processing Addendum"
-  updated="June 24, 2026"
+  updated="July 12, 2026"
   summary="The plain version: when emisar processes personal data on your behalf, we act only on your instructions, we never sell it or train on it, our subprocessors are a short named list, and we delete it when you leave. This is the standard DPA we'll sign — email support@emisar.dev for an executable copy."
   toc={[
     {"roles", "1. Roles and scope"},
@@ -84,7 +84,8 @@
   </p>
   <ul>
     <li>
-      <strong>Fly.io</strong> — application hosting and managed PostgreSQL (United States region).
+      <strong>Google Cloud Platform</strong>
+      — application hosting, networking, managed PostgreSQL, and backups (United States region).
     </li>
     <li>
       <strong>Paddle</strong>
@@ -112,7 +113,8 @@
   </p>
   <ul>
     <li>
-      Encryption in transit (TLS 1.2+, 1.3 where supported) and AES-256 at rest for backups.
+      Encryption in transit (TLS 1.2+, 1.3 where supported) and provider-managed
+      encryption at rest for compute storage, database storage, and backups.
     </li>
     <li>
       Least-privilege access, enforced multi-factor authentication, and role-based access control.

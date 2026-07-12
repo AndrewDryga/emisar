@@ -23,7 +23,7 @@ Five top-level areas, each with its own `AGENTS.md`:
 | `runner/` | Go | the on-host runner that executes actions | `runner/AGENTS.md` |
 | `mcp/` | Go | the stdio↔HTTP MCP bridge for LLM clients | `mcp/AGENTS.md` |
 | `packs/` | YAML | the action-pack catalog — what runners may execute | `packs/AGENTS.md` |
-| `infra/` | Terraform | the Google Cloud DNS zone for `emisar.dev` (compute is on Fly) | `infra/AGENTS.md` |
+| `infra/` | Terraform | the Google Cloud production stack (compute, Cloud SQL, LB, DNS, secrets, monitoring) | `infra/AGENTS.md` |
 
 ---
 

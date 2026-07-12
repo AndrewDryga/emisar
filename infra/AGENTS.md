@@ -2,9 +2,9 @@
 
 Terraform for running emisar on **Google Cloud** to a **SOC 2 Type II** posture
 (compute + Cloud SQL + LB + DNS + secrets + monitoring), adapted from
-`../onlytty/infra`. **LIVE — this is production** since the Fly→GCP cutover on
-2026-07-12 (NS delegated to Cloud DNS; DNSSEC DS publication pending NS
-propagation; Fly stays up only until traffic drains). Read `README.md` for the shape and
+`../onlytty/infra`. **LIVE — this is production.** Cloud DNS is authoritative;
+DNSSEC DS publication remains gated on recursive-resolver convergence. Read
+`README.md` for the shape and
 `.agent/COMPLIANCE.md` (internal, git-ignored) for the control mapping; this file
 is the rules.
 
@@ -43,12 +43,12 @@ the separate, creds-gated deploy step.
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
    to it is production access. A new secret = a sensitive variable + an
    `app_secrets` entry + (if optional) an `optional_secret_values` entry.
-5. **The zone is authoritative — replicate before cutover.** Only records in `dns.tf`
-   resolve once delegated. **DNSSEC DS is published LAST**, after NS delegation
-   resolves — a DS ahead of working delegation takes the domain offline.
-6. **Clustering is flag-gated — never break the Fly path.** `Emisar.Cluster.GCE`
-   activates only when `EMISAR_CLUSTER_PROJECT` is set; Fly keeps using `dns_cluster`.
-   Any change here must leave the Fly deployment's clustering untouched.
+5. **The zone is authoritative.** Every durable public record belongs in `dns.tf`.
+   **DNSSEC DS is published LAST**, after NS delegation resolves everywhere; a DS
+   ahead of working delegation takes the domain offline.
+6. **Clustering is flag-gated.** `Emisar.Cluster.GCE` activates only when
+   `EMISAR_CLUSTER_PROJECT` is set. Local and single-node releases leave the
+   topology empty.
 7. **DMARC / MTA-STS ramp, never jump.** `none → quarantine → reject` and
    `testing → enforce`, gated on clean reports.
 8. **Migrations run on boot under Ecto's advisory lock** (cloud-init), so concurrent

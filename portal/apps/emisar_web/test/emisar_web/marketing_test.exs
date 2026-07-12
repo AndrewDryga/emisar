@@ -1041,7 +1041,7 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # the date pins the right page (Refund is the only one on June 5).
       for {route, date} <- [
-            {"/privacy", "June 24, 2026"},
+            {"/privacy", "July 12, 2026"},
             {"/terms", "June 4, 2026"},
             {"/refund-policy", "June 5, 2026"}
           ] do
@@ -1072,7 +1072,7 @@ defmodule EmisarWeb.MarketingTest do
       # The four real subprocessors must be named...
       assert html =~ "Paddle"
       assert html =~ "Postmark"
-      assert html =~ "Fly.io"
+      assert html =~ "Google Cloud Platform"
       assert html =~ "Mixpanel"
 
       # ...and Paddle Retain (ProfitWell), the checkout-page analytics vendor, must be

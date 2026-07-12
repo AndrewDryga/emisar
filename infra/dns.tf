@@ -1,18 +1,12 @@
 # ── emisar public DNS — the authoritative Cloud DNS zone for emisar.dev ───────
 #
-# Delegating the registrar (GoDaddy) nameservers to this zone makes Cloud DNS
-# authoritative, so ONLY the records defined here resolve.
+# Cloud DNS is authoritative, so only records defined here resolve.
 #
 # The apex A/AAAA point at the Google HTTPS load balancer (lb.tf); the Certificate
 # Manager DNS-auth CNAME proves domain control for the Google-managed cert. The
 # email records (MX / SPF / two DKIM / Postmark Return-Path / DMARC / CAA / TLS-RPT
-# / MTA-STS) are provider-independent and carry over unchanged — a spoofable domain
+# / MTA-STS) are managed together — a spoofable domain
 # is an account-takeover phishing vector for a magic-link product.
-#
-# Dropped on purpose:
-#   • NS / SOA at the apex — Cloud DNS serves its own (see the `nameservers` output).
-#   • the old Fly `_acme-challenge` / `_fly-ownership` records — replaced by the
-#     Certificate Manager DNS authorization above; emisar's TLS is the GCP LB now.
 
 resource "google_dns_managed_zone" "emisar" {
   name        = "emisar"
@@ -86,7 +80,7 @@ resource "google_dns_record_set" "www" {
 # Proves domain control so the Google-managed cert (lb.tf) provisions. One record
 # per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
 # ride the same cert). Published into our own zone, so the cert goes ACTIVE minutes
-# after the NS delegation.
+# while these records remain authoritative.
 resource "google_dns_record_set" "cert_auth" {
   name         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].name
   managed_zone = google_dns_managed_zone.emisar.name
@@ -112,9 +106,8 @@ resource "google_dns_record_set" "cert_auth_mta_sts" {
 }
 
 # ── Pack registry host → the same LB anycast IPs ─────────────────────────────
-# A/AAAA on purpose, not a CNAME to the apex: pre-cutover the apex still points
-# at Fly (GoDaddy), and registry.<domain> must reach the GCP LB regardless of
-# where the apex lives — the two hosts migrate independently.
+# A/AAAA on purpose, not a CNAME to the apex: the registry host is an independent
+# serving surface even though both frontends currently use the same anycast IPs.
 resource "google_dns_record_set" "registry_a" {
   name         = "registry.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -166,9 +159,9 @@ resource "google_dns_record_set" "txt_apex" {
   ]
 }
 
-# The SPF-flattening subdomain the apex SPF `include:`s (kept verbatim from
-# GoDaddy). Postmark is NOT in the apex SPF on purpose — it authenticates on its
-# own Return-Path (`pm-bounces`, below), which relaxed-aligns to the domain.
+# The SPF-flattening subdomain the apex SPF `include:`s. Postmark is NOT in the
+# apex SPF on purpose — it authenticates on its own Return-Path (`pm-bounces`,
+# below), which relaxed-aligns to the domain.
 resource "google_dns_record_set" "txt_spf_include" {
   name         = "dc-aa8e722993._spfm.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
@@ -222,8 +215,8 @@ resource "google_dns_record_set" "pm_bounces" {
 }
 
 # ── DMARC ─────────────────────────────────────────────────────────────────────
-# Was absent at GoDaddy. adkim/aspf=r (relaxed) is required so Postmark's
-# subdomain Return-Path aligns. Start at p=none and ramp — see var.dmarc_policy.
+# adkim/aspf=r (relaxed) is required so Postmark's subdomain Return-Path aligns.
+# Start at p=none and ramp — see var.dmarc_policy.
 resource "google_dns_record_set" "dmarc" {
   name         = "_dmarc.${var.domain}."
   managed_zone = google_dns_managed_zone.emisar.name

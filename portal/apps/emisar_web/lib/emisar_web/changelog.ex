@@ -144,7 +144,7 @@ defmodule EmisarWeb.Changelog do
       title: "Fleet operability and the operator-experience overhaul",
       tag: "v0.8.0",
       summary:
-        "Multi-machine clustering so dispatch and Presence span Fly nodes, stale runs that re-dispatch to an online runner instead of stranding, and runbooks that honor a per-step runner target. A deep operator-experience sweep runs through runs, runbooks, approvals, the dashboard, team, and audit: streaming output, offline affordances, blast radius shown before dispatch, a live execution that rehydrates on refresh, recovery-code download, role-change confirms, and an escape hatch for an MFA lockout. The audit log gains actor, date-range, outcome, and free-text filters, the first shared component system lands, and the pack catalog reaches 73 packs and 1,096 actions."
+        "Multi-machine clustering so dispatch and Presence span control-plane nodes, stale runs that re-dispatch to an online runner instead of stranding, and runbooks that honor a per-step runner target. A deep operator-experience sweep runs through runs, runbooks, approvals, the dashboard, team, and audit: streaming output, offline affordances, blast radius shown before dispatch, a live execution that rehydrates on refresh, recovery-code download, role-change confirms, and an escape hatch for an MFA lockout. The audit log gains actor, date-range, outcome, and free-text filters, the first shared component system lands, and the pack catalog reaches 73 packs and 1,096 actions."
     },
     %{
       date: ~D[2026-06-12],
