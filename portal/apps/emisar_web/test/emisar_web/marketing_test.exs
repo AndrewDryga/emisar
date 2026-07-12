@@ -561,6 +561,31 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "sha256sum -c SHA256SUMS"
     end
 
+    test "the /trust page states the current compliance and insurance limits precisely", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/trust") |> html_response(200)
+
+      assert html =~ "does not yet have a SOC 2 Type II report"
+      assert html =~ "the independent audit and report remain ahead"
+      assert html =~ "certificate of insurance is available on request"
+      assert html =~ "Team and Enterprise plans"
+      refute html =~ "SOC 2 certified"
+    end
+
+    test "the /trust page documents production and delivery controls", %{conn: conn} do
+      html = conn |> get(~p"/trust") |> html_response(200)
+
+      assert html =~ "Production infrastructure"
+      assert html =~ "Application instances have no public IP addresses"
+      assert html =~ "point-in-time recovery"
+      assert html =~ "Change control &amp; software delivery"
+      assert html =~ "Pull requests run with read-only permissions"
+      assert html =~ "CycloneDX SBOM"
+      assert html =~ "immutable digest"
+      assert html =~ "Confirm\n            &amp; Apply"
+    end
+
     test "the zero-trust page maps concrete controls and stays honest about scope",
          %{conn: conn} do
       html = conn |> get(~p"/zero-trust") |> html_response(200)
