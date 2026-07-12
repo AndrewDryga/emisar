@@ -12,7 +12,7 @@ is the rules.
 ```bash
 terraform fmt -check -recursive
 terraform init -backend=false && terraform validate
-tflint --init && tflint
+tflint
 ```
 
 All three green before commit; CI (the `infra` job in `.github/workflows/ci.yml`) runs the same

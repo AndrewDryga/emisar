@@ -67,8 +67,10 @@ create/get/list/delete — no bucket config, no IAM). It can't be create-only:
 republishing the mutable pointers (`catalog.json`, `suggest.json`) *replaces* the
 live object, and GCS requires `storage.objects.delete` for an overwrite even with
 versioning on — `objectCreator` would 403 the second publish. Every replaced
-generation stays fetchable. Outputs: `pack_registry_bucket` and
-`pack_registry_base_url`. Recover an accidentally-overwritten mutable object (the
+generation stays fetchable. The canonical customer-facing output is
+`pack_registry_base_url` (`https://registry.emisar.dev`); the direct GCS endpoint
+is exposed separately as `pack_registry_backing_url` for storage administration
+and cutover diagnostics. Recover an accidentally-overwritten mutable object (the
 latest `catalog.json` pointer) from a prior generation:
 
 ```bash

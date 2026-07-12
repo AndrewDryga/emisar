@@ -43,7 +43,7 @@ packctl catalog build --packs ./packs --out ./dist
 # Enforce the "preserve every version/hash" guarantee: fetch the currently
 # published catalog first and pass it as --previous. The build FAILS if any
 # pack changed bytes for an already-published id+version — bump the version.
-curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
+curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
 packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
 ```
 
@@ -75,7 +75,7 @@ conventional.
 ```bash
 # The published content hash for a pack must equal its local validate hash.
 emisar pack validate ./packs/redis          # prints "hash: sha256:…"
-curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json \
+curl -fsS https://registry.emisar.dev/v1/catalog.json \
   | jq -r '.packs[] | select(.id=="redis") | .content_hash'
 
 # Round-trip the published tarball back to the same hash.
@@ -108,7 +108,7 @@ retired_below: 0.2.4   # 0.2.3 and earlier are now retired
 #    the build refuses to LOWER or DROP an already-published retired_below) and
 #    publish. Old tarballs stay installable — retirement blocks dispatch, not
 #    installation.
-curl -fsS https://storage.googleapis.com/emisar-pack-registry/v1/catalog.json -o ./current-catalog.json
+curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
 packctl catalog build --packs ./packs --out ./dist --previous ./current-catalog.json
 packctl catalog publish --dir ./dist --bucket emisar-pack-registry
 
