@@ -50,12 +50,23 @@ resource "google_storage_bucket" "pack_registry" {
   }
 }
 
-# Public read for artifact objects — the reason the bucket exists. `objectViewer`
-# grants GET on objects only (not bucket config, not writes, not listing the
-# bucket via allUsers), which is exactly what `emisar pack install` needs.
+# Public read for artifact objects — the reason the bucket exists. The built-in
+# `roles/storage.objectViewer` also grants `storage.objects.list`, which exposes
+# an anonymous bucket index. Use a project custom role with only GET so every
+# published object remains fetchable by its exact URL while the bucket root is
+# not a discovery surface.
+resource "google_project_iam_custom_role" "pack_registry_public_reader" {
+  project     = var.project_id
+  role_id     = "packRegistryPublicReader"
+  title       = "Pack Registry Public Object Reader"
+  description = "Anonymous GET access to published pack-registry objects without bucket listing."
+  permissions = ["storage.objects.get"]
+  stage       = "GA"
+}
+
 resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
   bucket = google_storage_bucket.pack_registry.name
-  role   = "roles/storage.objectViewer"
+  role   = google_project_iam_custom_role.pack_registry_public_reader.name
   member = "allUsers"
 }
 
@@ -70,7 +81,7 @@ resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
 # lifecycle delete rule. Accepted residual: this SA *could* explicitly delete
 # archived generations — install trust rests on the pinned `--hash` in the
 # snippets, not on the registry. Reads for post-publish verification go through
-# the public objectViewer binding above (IAM is additive).
+# the public GET-only binding above (IAM is additive).
 resource "google_service_account" "pack_publisher" {
   account_id   = "emisar-pack-publisher"
   display_name = "emisar pack registry publisher"

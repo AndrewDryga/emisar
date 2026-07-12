@@ -40,7 +40,7 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /r
 | Pack registry | GCS bucket, **public-read** (the one deliberate public surface), object-versioned, create-only publisher SA; serves catalog/suggest/schema + immutable pack tarballs | integrity; supply-chain transparency |
 | IAM | dedicated least-priv service account; Data Access audit logging | logical access; audit trail |
 | DNS | Cloud DNS zone (DNSSEC ECDSA) + full email posture (SPF/DKIM/DMARC/CAA/TLS-RPT/MTA-STS) | integrity; anti-spoofing |
-| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel | detection |
+| Monitoring | uptime check + alert policies (unreachable, LB 5xx ratio, cert renewal failing, MIG below target, NAT exhaustion, DB CPU/memory/disk/txid-wraparound) → email channel; independent external probes, on-call rotation + escalation, and public status page via Better Stack (`uptime.tf`) | detection; incident response; customer communication |
 
 Normal image rollouts create a replacement, wait until it has reached readiness,
 and only then drain the old VM. Because old and new application versions overlap,
@@ -52,7 +52,8 @@ zero-downtime deployment.
 
 `network.tf` · `compute.tf` · `db.tf` · `lb.tf` · `secrets.tf` · `iam.tf`
 (SA + audit) · `packs_registry.tf` (public pack bucket + publisher SA) ·
-`monitoring.tf` · `dns.tf` · `main.tf` (TFC backend + provider +
+`monitoring.tf` · `uptime.tf` (Better Stack external probes + status page) ·
+`dns.tf` · `main.tf` (TFC backend + provider +
 APIs) · `variables.tf` · `outputs.tf` · `versions.tf` ·
 `templates/cloud-init.yaml` · `scripts/verify-cutover.sh`.
 
@@ -66,7 +67,9 @@ the immutable pack tarballs — live in a **public-read** GCS bucket
 nothing secret or account-scoped is ever written there (only pack bytes that are
 already public source in `packs/` plus their metadata), and install trust doesn't
 rest on the transport — snippets pin `--hash sha256:...` and the runner rejects any
-tampered tarball. History is preserved by **object versioning** (no lifecycle
+tampered tarball. Anonymous access is limited to GET by exact object path; the
+bucket root is intentionally not a directory listing. History is preserved by
+**object versioning** (no lifecycle
 delete rule; the bucket is `prevent_destroy`), and the CI publisher SA
 (`emisar-pack-publisher`) holds bucket-scoped **`objectUser`** (objects
 create/get/list/delete — no bucket config, no IAM). It can't be create-only:
@@ -83,6 +86,29 @@ latest `catalog.json` pointer) from a prior generation:
 gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catalog.json   # list generations
 gcloud storage cp gs://<bucket>/v1/catalog.json#<generation> gs://<bucket>/v1/catalog.json # restore one
 ```
+
+## External uptime, on-call & status page (Better Stack)
+
+`monitoring.tf` watches from inside Google; `uptime.tf` watches from outside it.
+Better Stack probes the **public hostname** from independent infrastructure,
+runs the **on-call escalation** (notify → wake with a phone call → wake
+everyone, repeating), and hosts the public status page — so detection, paging,
+and customer communication survive an incident in the serving cloud. The
+monitors already watch the Fly deployment today (they follow traffic at
+cutover with no change). Two **sensitive TFC workspace variables** feed it:
+`betterstack_api_token` (the provider credential) and `oncall_emails` (the
+rotation roster — sensitive on purpose, so this public repo reveals neither
+who is on call nor how many people that is; team invites happen in the Better
+Stack UI, never as per-person Terraform resources). The account predates this
+config, so the pre-existing status page, apex monitor (with its uptime
+history), and default on-call calendar are adopted via `import` blocks — no-ops
+after the first apply. The status page serves at
+`https://emisar.betteruptime.com` immediately; `status.emisar.dev` (CNAME in
+`dns.tf`, Let's Encrypt already in `var.caa_issuers`) activates at NS
+delegation — or earlier by adding the same CNAME at GoDaddy, which needs no CAA
+change (the runbook keeps `letsencrypt.org` for Fly). Both monitors are live:
+`registry.emisar.dev` already resolves publicly (it went live independently,
+ahead of the traffic cutover).
 
 ## Clustering (emisar-specific vs onlytty)
 

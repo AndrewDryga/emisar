@@ -205,6 +205,23 @@ variable "alert_email" {
   description = "Email address that receives monitoring alerts (uptime, DB CPU/disk). No default on purpose — set per-workspace (Terraform Cloud variable), and make sure the mailbox actually exists: alerts to an unprovisioned alias silently bounce."
 }
 
+variable "betterstack_api_token" {
+  type        = string
+  description = "Better Stack (BetterUptime) API token — the provider credential for the external uptime monitors + public status page (uptime.tf). Same custody as the app secrets: a SENSITIVE Terraform Cloud workspace variable, never a committed value. No default on purpose — the workspace must hold it before any plan runs."
+  sensitive   = true
+}
+
+variable "oncall_emails" {
+  type        = list(string)
+  description = "Better Stack on-call rotation, in order — account emails of the people who take incidents (each must already be a Better Stack team member; invites happen out of band). SENSITIVE workspace variable on purpose: the roster AND its size stay out of the public repo. No default — set it in the workspace."
+  sensitive   = true
+
+  validation {
+    condition     = length(var.oncall_emails) >= 1
+    error_message = "oncall_emails needs at least one address — an empty rotation pages no one."
+  }
+}
+
 # ── DNS records (email posture) ───────────────────────────────────────────────
 variable "dmarc_policy" {
   type        = string

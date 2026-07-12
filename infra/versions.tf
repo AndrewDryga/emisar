@@ -18,5 +18,9 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    betteruptime = {
+      source  = "BetterStackHQ/better-uptime"
+      version = "~> 0.21"
+    }
   }
 }

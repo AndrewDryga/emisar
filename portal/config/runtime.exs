@@ -42,24 +42,38 @@ import Config
 #   MIXPANEL_GROUPS        — "1"/"true" to also write Mixpanel Group profiles (paid add-on)
 
 if config_env() == :prod do
-  # Structured JSON logs for the fly log drain: every Logger metadata
-  # key ships as a queryable JSON field (no more curated key list to
-  # drift), minus the huge per-request structs. Belt-and-suspenders
-  # redaction of secret-shaped keys — the app never logs raw secrets,
-  # but a future `inspect(changeset)` must not become an incident.
+  # Google Cloud's structured payload recognizes severity, request context,
+  # source locations, traces, and Error Reporting events. The project ID is
+  # injected by the GCE instance template as EMISAR_CLUSTER_PROJECT.
+  gcp_project_id =
+    System.get_env("GOOGLE_CLOUD_PROJECT") ||
+      System.get_env("GOOGLE_PROJECT_ID") ||
+      System.get_env("GCLOUD_PROJECT") ||
+      System.get_env("EMISAR_CLUSTER_PROJECT")
+
+  # Keep application metadata queryable, but never serialize the request and
+  # socket structs. GoogleCloud handles :crash_reason separately so caught
+  # exceptions are sent in the shape Google Cloud Error Reporting recognizes.
   config :logger,
     level: :info,
     handle_otp_reports: true
 
   config :logger, :default_handler,
     formatter:
-      {LoggerJSON.Formatters.Basic,
-       metadata: {:all_except, [:conn, :socket, :crash_reason]},
-       redactors: [
-         LoggerJSON.Redactors.RedactKeys.new(
-           ~w[password token secret authorization api_key key_hash token_hash]
-         )
-       ]}
+      LoggerJSON.Formatters.GoogleCloud.new(
+        project_id: gcp_project_id,
+        service_context: %{
+          service: "emisar",
+          version: System.get_env("RELEASE_VSN") || "unknown"
+        },
+        reported_levels: [:emergency, :alert, :critical, :error],
+        metadata: {:all_except, [:conn, :socket, :crash_reason]},
+        redactors: [
+          LoggerJSON.Redactors.RedactKeys.new(
+            ~w[password token secret authorization api_key key_hash token_hash]
+          )
+        ]
+      )
 
   database_url =
     System.get_env("DATABASE_URL") ||
