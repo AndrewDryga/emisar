@@ -82,3 +82,12 @@ resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
   role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.pack_publisher.email}"
 }
+
+# Let the repo's "CD · Packs" workflow impersonate the publisher through the
+# same keyless GitHub WIF pool as the deployer (deploy.tf) — the publish job
+# mints a short-lived access token for packctl; no key exists anywhere.
+resource "google_service_account_iam_member" "pack_publisher_wif" {
+  service_account_id = google_service_account.pack_publisher.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+}
