@@ -50,13 +50,13 @@ output "pack_registry_bucket" {
 }
 
 output "pack_registry_base_url" {
-  description = "Public HTTPS base URL for pack artifacts — install snippets and the portal catalog loader join paths onto this (e.g. <base>/v1/catalog.json)."
-  value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
+  description = "Canonical public HTTPS base URL for pack artifacts — install snippets and the portal catalog loader join paths onto this (e.g. <base>/v1/catalog.json)."
+  value       = "https://registry.${var.domain}"
 }
 
-output "pack_registry_domain_url" {
-  description = "Vendor-neutral serving domain for the same artifacts (shared LB → backend bucket). Live once its cert is ACTIVE and DNS resolves — GoDaddy records pre-cutover (see pack_registry_godaddy_records), dns.tf after. Flip packctl's --base-url default + EMISAR_PACK_CATALOG_URL to this base only AFTER verifying it serves."
-  value       = "https://registry.${var.domain}"
+output "pack_registry_backing_url" {
+  description = "Direct GCS backing URL for storage administration and cutover diagnostics; customer-facing catalogs and installers use pack_registry_base_url."
+  value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
 }
 
 output "pack_registry_godaddy_records" {
