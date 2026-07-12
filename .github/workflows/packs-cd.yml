@@ -1,0 +1,128 @@
+name: CD · Packs
+
+# Continuous delivery for the public pack registry (the GCS bucket
+# `emisar pack install` reads unauthenticated):
+#
+#   packs/** merges to main  →  approve the run  →  catalog built → published
+#   (or Actions → "CD · Packs" → Run workflow, e.g. to retire old versions)
+#
+# The catalog is ALWAYS built against the currently-published catalog.json
+# (`--previous`): version history carries forward (the K-previous window +
+# retirement watermark), and a version/hash drift on an already-published
+# pack fails the build instead of silently rewriting an immutable artifact.
+# packctl publishes immutable tarballs BEFORE flipping the mutable pointers
+# (catalog.json / suggest.json), so a half-finished upload never dangles a
+# pointer at a missing artifact; runs are serialized (concurrency below) so
+# two publishes can't race the pointers.
+#
+# Auth is keyless: the job's OIDC token exchanges at the `github-actions`
+# WIF pool (infra/deploy.tf) for `emisar-pack-publisher`, whose only power
+# is bucket-scoped objectUser on the registry bucket
+# (infra/packs_registry.tf). Install trust never rests on this pipeline —
+# snippets pin `--hash sha256:…` and the runner rejects tampered tarballs.
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Packs · publish · by @{0}', github.actor) || 'Packs · publish' }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # The packs themselves, plus everything that shapes the built artifacts:
+      # the loader (hash parity), the shared spec types, and the catalog
+      # builder/publisher.
+      - "packs/**"
+      - "runner/internal/packs/**"
+      - "runner/internal/catalog/**"
+      - "runner/cmd/packctl/**"
+      - "runner/pkg/packspec/**"
+      - "runner/pkg/actionspec/**"
+      - ".github/workflows/packs-cd.yml"
+  workflow_dispatch:
+    inputs:
+      retire_older:
+        description: "Pack ids to retire all older versions of (space-separated)"
+        required: false
+        type: string
+
+# One publish at a time, queued — never cancelled mid-upload: concurrent runs
+# could interleave the mutable-pointer flips.
+concurrency:
+  group: packs-cd
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build · publish registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: release
+    permissions:
+      contents: read
+      # OIDC token for the keyless WIF exchange.
+      id-token: write
+    env:
+      GOTOOLCHAIN: local
+      REGISTRY_BASE: https://storage.googleapis.com/emisar-pack-registry
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Build packctl
+        run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
+
+      - name: Fetch the currently-published catalog
+        # Fail loudly if it's unreachable: building WITHOUT --previous would
+        # drop the carried version history and the retirement watermark. (The
+        # registry has been live since 2026-07-09 — a 404 here means it's
+        # broken, not first-publish.)
+        run: curl -fsS "${REGISTRY_BASE}/v1/catalog.json" -o /tmp/previous.json
+
+      - name: Build the artifact tree
+        env:
+          # Env indirection — a dispatch input never lands raw in shell.
+          RETIRE_OLDER: ${{ inputs.retire_older || '' }}
+        run: |
+          set -euo pipefail
+          retire_flags=()
+          for id in $RETIRE_OLDER; do
+            retire_flags+=(--retire-older "$id")
+          done
+          /tmp/packctl catalog build \
+            --packs packs \
+            --out dist \
+            --previous /tmp/previous.json \
+            ${retire_flags[@]+"${retire_flags[@]}"}
+
+      - name: Authenticate to GCP (keyless, WIF)
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-pack-publisher@emisar.iam.gserviceaccount.com
+          # packctl's hand-rolled GCS client takes a raw OAuth2 token
+          # (GOOGLE_OAUTH_ACCESS_TOKEN) — no gcloud, no SDK.
+          token_format: access_token
+
+      - name: Publish to the registry bucket
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          /tmp/packctl catalog publish --dir dist | tee /tmp/publish.log
+          {
+            echo "### 📦 Pack registry published"
+            echo '```'
+            tail -20 /tmp/publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
