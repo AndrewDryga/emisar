@@ -62,7 +62,7 @@ output "pack_registry_base_url" {
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Publish the portal image (Actions → «CD · portal» → Run workflow); FIRST
+    1. Publish the portal image (Actions → «CD · Portal» → Run workflow); FIRST
        publish only: flip the GHCR package to Public, or the unauthenticated
        instance pull 403s. container_image tracks :latest by design (one-click
        CD rolls it); the per-build sha-<sha> tags are the rollback pointers.

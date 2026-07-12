@@ -1,8 +1,8 @@
-name: CD · portal
+name: CD · Portal
 
 # One-click continuous delivery for the portal:
 #
-#   Actions → "CD · portal" → Run workflow  →  build → scan → publish → deploy
+#   Actions → "CD · Portal" → Run workflow  →  build → scan → publish → deploy
 #
 # Publish builds the release image from portal/Dockerfile and pushes it to
 # PUBLIC GHCR (ghcr.io/andrewdryga/emisar) — the production deployment and
@@ -27,7 +27,7 @@ name: CD · portal
 #   docker pull ghcr.io/andrewdryga/emisar:sha-<old>
 #   docker tag  ghcr.io/andrewdryga/emisar:sha-<old> ghcr.io/andrewdryga/emisar:latest
 #   docker push ghcr.io/andrewdryga/emisar:latest
-#   → Actions → "CD · portal" → Run workflow
+#   → Actions → "CD · Portal" → Run workflow
 #
 # FIRST publish only: GHCR creates the package PRIVATE. Flip it to Public in
 # the package settings (Packages → emisar → Package settings → Change
