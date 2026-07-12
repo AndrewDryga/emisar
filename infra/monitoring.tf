@@ -252,7 +252,7 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
       duration        = "300s"
       aggregations {
         alignment_period   = "300s"
-        per_series_aligner = "ALIGN_MAX"
+        per_series_aligner = "ALIGN_COUNT_TRUE"
       }
     }
   }
