@@ -40,6 +40,7 @@ jobs:
   verify:
     name: verify (vet + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,6 +59,7 @@ jobs:
   build:
     name: build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [verify]
     # `release` environment gate at BUILD so the Sigstore OIDC token
     # used to sign the attestation isn't minted until a maintainer
@@ -176,6 +178,7 @@ jobs:
   publish:
     name: publish GitHub release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build]
     # Build is already env-gated; one approval covers the run, so
     # don't add a second `environment:` here. See runner-release.yml.

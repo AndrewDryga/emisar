@@ -174,7 +174,7 @@ terraform init -backend=false && terraform validate
 tflint --init && tflint
 ```
 
-CI (`.github/workflows/infra-ci.yml`) runs the same with no cloud credentials.
+CI (the `infra` job in `.github/workflows/ci.yml`) runs the same with no cloud credentials.
 State and the sensitive secret variables live in the Terraform Cloud workspace
 (org `Dryga` / project `emisar`) — encrypted at rest, RBAC-gated, audit-logged;
 treat workspace membership as production access. See `COMPLIANCE.md`.

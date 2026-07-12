@@ -9,7 +9,7 @@
 # Invoked by docker-compose as `build: { context: ., dockerfile: portal/Dockerfile }`.
 
 # Toolchain defaults track /.tool-versions (the repo-root single source of
-# truth). portal-ci overrides ELIXIR_VERSION/OTP_VERSION via --build-arg derived
+# truth). CI's portal job overrides ELIXIR_VERSION/OTP_VERSION via --build-arg derived
 # from that file; docker-compose and local builds use these defaults — keep them
 # in sync when .tool-versions bumps. (ELIXIR_VERSION drops the asdf `-otp-NN`
 # suffix; the hexpm image tag doesn't carry it.)

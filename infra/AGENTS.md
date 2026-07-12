@@ -14,7 +14,7 @@ terraform init -backend=false && terraform validate
 tflint --init && tflint
 ```
 
-All three green before commit; CI (`.github/workflows/infra-ci.yml`) runs the same
+All three green before commit; CI (the `infra` job in `.github/workflows/ci.yml`) runs the same
 with no cloud credentials. The app-side clustering (`Emisar.Cluster.GCE` +
 `…/gce/client.ex`, `application.ex`, `runtime.exs`, `rel/env.sh.eex`, `mix.exs`)
 lives in `portal/` and is gated by the portal loop (`mix compile --warnings-as-errors

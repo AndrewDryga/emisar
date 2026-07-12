@@ -16,6 +16,7 @@ jobs:
   publish:
     name: publish remote MCP listing
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: release
     env:

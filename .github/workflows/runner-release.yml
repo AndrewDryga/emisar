@@ -47,6 +47,7 @@ jobs:
   verify:
     name: verify (vet + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -70,6 +71,7 @@ jobs:
     # PR closed could slip a regression past that gate. Defense in depth.
     name: validate packs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -110,6 +112,7 @@ jobs:
   build:
     name: build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [verify, validate-packs]
     # `release` environment gate at BUILD (not just publish) so the
     # Sigstore OIDC token used for attestation isn't minted until a
@@ -236,6 +239,7 @@ jobs:
   publish:
     name: publish GitHub release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build]
     # No `environment:` block here — the `build` job is already gated
     # by `environment: release`, and GitHub Actions prompts for an

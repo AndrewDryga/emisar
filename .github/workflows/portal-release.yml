@@ -43,6 +43,7 @@ jobs:
   build-push:
     name: build + push ghcr.io/andrewdryga/emisar
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment:
       name: release
     permissions:
@@ -92,6 +93,23 @@ jobs:
           for tag in ${{ steps.meta.outputs.tags }}; do
             docker tag "${{ steps.meta.outputs.image }}:latest" "$tag"
           done
+
+      - name: vulnerability scan (trivy, blocks the publish)
+        # COMPLIANCE.md lists image scanning as the CI-side control for the
+        # public-GHCR supply chain: refuse to publish an image with known
+        # fixable HIGH/CRITICAL vulns. Pinned + checksum-verified like the
+        # other external tools (same pattern as the CI infra job).
+        env:
+          TRIVY_VERSION: "0.72.0"
+          TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+        run: |
+          set -euo pipefail
+          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
+          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" trivy
+          ./trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            "${{ steps.meta.outputs.image }}:latest"
 
       - name: login to GHCR
         run: printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

@@ -1,0 +1,584 @@
+name: CI
+
+# ONE workflow for every per-area gate — portal, the two Go modules, packs,
+# infra, dependency age, and workflow lint. It replaces the six per-area
+# workflows (portal-ci, runner-ci, mcp-ci, packs-ci, infra-ci, dep-age): the
+# `changes` job computes which areas the diff touches with plain git (no
+# third-party path-filter action to trust), and each area job runs only when
+# its flag is set.
+#
+# Two properties this buys over per-workflow `paths:` filters:
+#
+#   * A skipped area REPORTS as a skipped job, so if a check is ever marked
+#     required under branch protection, an untouched area satisfies it —
+#     with `paths:` the workflow never runs and the required check hangs
+#     "Expected" forever.
+#   * One file owns the CI security posture instead of six copies.
+#
+# Security posture (carried over from the workflows this replaces):
+#
+#   * Default GITHUB_TOKEN is read-only; no CI job opts into write scopes
+#     beyond artifact upload — publishing lives in the tag-triggered,
+#     `release`-environment-gated release workflows.
+#   * `actions/checkout` always runs with `persist-credentials: false`.
+#   * Third-party actions are SHA-pinned; first-party `actions/*` track
+#     major-version tags (GitHub owns that namespace).
+#   * External tools (terraform, tflint, actionlint) are installed at a
+#     pinned version AND checksum-verified before use; Go tools are
+#     version-pinned `go install`s.
+#   * Caches key on lockfiles; a PR's cache writes are ref-scoped by GitHub
+#     Actions, so a malicious PR can't poison what main restores.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      portal: ${{ steps.detect.outputs.portal }}
+      packs: ${{ steps.detect.outputs.packs }}
+      infra: ${{ steps.detect.outputs.infra }}
+      deps: ${{ steps.detect.outputs.deps }}
+      workflows: ${{ steps.detect.outputs.workflows }}
+      go_modules: ${{ steps.detect.outputs.go_modules }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # Full history: PR diffs use the merge-base, push diffs the
+          # pushed-over commit.
+          fetch-depth: 0
+
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # An unknown base (first push to a branch, force-push, rewritten
+          # history) FAILS OPEN: run every area rather than silently skip a
+          # gate.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            files="__run_all__"
+          elif [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD)
+          else
+            files=$(git diff --name-only "$BASE" HEAD)
+          fi
+
+          portal=false; runner=false; mcp=false; packs=false; infra=false; deps=false; workflows=false
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              __run_all__) portal=true; runner=true; mcp=true; packs=true; infra=true; deps=true; workflows=true ;;
+            esac
+            # install.sh + packs/** are real source inputs to the portal
+            # release (InstallController embeds install.sh; PacksRegistry
+            # compile-scans packs/); .tool-versions is the single toolchain
+            # source of truth for both the test job and the release image.
+            case "$f" in
+              portal/*|.agent/scripts/check-portal-test-output.sh|install.sh|packs/*|.tool-versions) portal=true ;;
+            esac
+            case "$f" in runner/*|install.sh|go.work|go.work.sum) runner=true ;; esac
+            case "$f" in mcp/*|install-mcp.sh|go.work|go.work.sum) mcp=true ;; esac
+            # Packs re-validate when the packs change OR the validator does.
+            case "$f" in
+              packs/*|runner/internal/packs/*|runner/pkg/packspec/*|runner/pkg/actionspec/*|runner/pack.go|runner/main.go|runner/go.mod|runner/go.sum|go.work|go.work.sum) packs=true ;;
+            esac
+            case "$f" in infra/*|.tool-versions) infra=true ;; esac
+            case "$f" in
+              portal/mix.lock|runner/go.mod|mcp/go.mod|.dep-age-allow|.agent/scripts/dep-age-gate.py) deps=true ;;
+            esac
+            case "$f" in .github/workflows/*|.github/dependabot.yml) workflows=true ;; esac
+          done <<< "$files"
+
+          # A workflow/dependabot change re-gates every area — the old
+          # "own workflow file" trigger, generalized to the shared file.
+          if [ "$workflows" = "true" ]; then
+            portal=true; runner=true; mcp=true; packs=true; infra=true; deps=true
+          fi
+
+          modules="[]"
+          if [ "$runner" = "true" ] && [ "$mcp" = "true" ]; then modules='["runner","mcp"]'
+          elif [ "$runner" = "true" ]; then modules='["runner"]'
+          elif [ "$mcp" = "true" ]; then modules='["mcp"]'
+          fi
+
+          {
+            echo "portal=$portal"
+            echo "packs=$packs"
+            echo "infra=$infra"
+            echo "deps=$deps"
+            echo "workflows=$workflows"
+            echo "go_modules=$modules"
+          } >> "$GITHUB_OUTPUT"
+          echo "portal=$portal runner=$runner mcp=$mcp packs=$packs infra=$infra deps=$deps workflows=$workflows"
+
+  portal:
+    name: portal
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        # Track prod's Cloud SQL major (POSTGRES_18, infra/db.tf) so the
+        # suite and the migrate smoke run against what production runs.
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: emisar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: portal
+
+    env:
+      MIX_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost/emisar_test
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          # Pinned in /.tool-versions (repo root) — the single source of
+          # truth shared with local asdf, so CI can't drift from dev.
+          # setup-beam resolves version-file against GITHUB_WORKSPACE and
+          # requires version-type: strict.
+          version-file: .tool-versions
+          version-type: strict
+
+      - name: Restore deps cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            portal/deps
+            portal/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('portal/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Install hex + rebar
+        run: mix local.hex --force && mix local.rebar --force
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Credo (Iron Laws)
+        # The mechanical IL-20 gate: the custom Emisar.Checks.* AST checks
+        # (.credo.exs, strict) + stock UnsafeToAtom/NoProcessDictionary —
+        # the same `mix credo` an agent runs locally.
+        run: mix credo
+
+      - name: Dependency audit (mix_audit)
+        # emisar is a security product — fail the build on a known
+        # advisory in any dependency. GHSA-g2wm-735q-3f56 (cowlib, low)
+        # has no upstream patch yet; ignore it explicitly and revisit
+        # when cowlib ships a fix.
+        run: mix deps.audit --ignore-advisory-ids GHSA-g2wm-735q-3f56
+
+      - name: Security scan (Sobelow)
+        # Static analysis of the Phoenix surface (XSS, SQLi, command
+        # injection, CSRF, insecure config). Threshold + ignores live in
+        # apps/emisar_web/.sobelow-conf.
+        run: mix sobelow --root apps/emisar_web --config
+
+      - name: Compile-cycle budget
+        # Keep the xref budget gate without dumping the known cycle into
+        # normal CI output; print the report only when the budget breaks.
+        run: |
+          if ! output="$(cd apps/emisar && mix xref.cycles 2>&1)"; then
+            echo "$output"
+            exit 1
+          fi
+
+      - name: Test output gate (clean ExUnit output)
+        # Runs both portal test suites and fails if the output contains
+        # compiler warnings, Logger warning/error lines, or async DB teardown
+        # noise. Dirty test output is a regression: fix the source, don't hide it.
+        run: ../.agent/scripts/check-portal-test-output.sh
+
+      - name: Docker build (release image)
+        # Build context must be the REPO ROOT (the Dockerfile pulls in
+        # ../install.sh and ../packs). Toolchain --build-args come from
+        # /.tool-versions so the release image compiles with the same
+        # Erlang/Elixir as the test job — one source of truth, no drift.
+        # The smoke image also gets the dev-host force_ssl excludes so
+        # plain-HTTP localhost probes can hit more than `/healthz`.
+        working-directory: ${{ github.workspace }}
+        run: |
+          elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
+          otp_version=$(awk '$1=="erlang"{print $2}' .tool-versions)
+          if [ -z "$elixir_version" ] || [ -z "$otp_version" ]; then
+            echo "::error::could not parse Elixir/OTP from .tool-versions"
+            exit 1
+          fi
+          echo "building portal image with Elixir ${elixir_version} / OTP ${otp_version}"
+          docker build -f portal/Dockerfile \
+            --build-arg ELIXIR_VERSION="${elixir_version}" \
+            --build-arg OTP_VERSION="${otp_version}" \
+            --build-arg EMISAR_DEV_HOST_EXCLUDES=1 \
+            -t emisar/portal:ci .
+
+      - name: Docker smoke (release boots + runs migrations + serves /healthz)
+        # `docker build` passing only proves the Dockerfile compiles — not
+        # that the image boots. Three checks: Emisar.Release.migrate()
+        # (runtime.exs + migrator), /app/bin/server serving /healthz
+        # (supervision-tree crashes), and a clean `docker stop` (hung
+        # terminate/2). `--network host` reaches the postgres service.
+        working-directory: ${{ github.workspace }}
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost/emisar_smoke
+          SECRET_KEY_BASE: smoke-key-base-64-chars-of-non-secret-text-aaaaaaaaaaaaaaaaaaaaaaa
+          PHX_HOST: localhost
+          PORT: "4000"
+          # runtime.exs raises in :prod if neither PADDLE_API_KEY nor
+          # EMISAR_DISABLE_BILLING is set — use the stub, no key in CI.
+          EMISAR_DISABLE_BILLING: "1"
+          # FORCE_SSL=false disables the secure-cookie pin; HTTPS redirects
+          # are compile-time, hence EMISAR_DEV_HOST_EXCLUDES=1 above.
+          FORCE_SSL: "false"
+        run: |
+          set -euo pipefail
+
+          # Fresh DB next to the running postgres service. `|| true` is fine —
+          # the migrate step below fails loudly if the DB really isn't there.
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -c 'CREATE DATABASE emisar_smoke;' || true
+
+          docker run --rm --network host \
+            -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
+            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            emisar/portal:ci /app/bin/emisar eval 'Emisar.Release.migrate()'
+
+          cid=$(docker run -d --network host \
+            -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
+            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            emisar/portal:ci)
+
+          # Always dump tail on exit so a boot failure is debuggable from
+          # the CI log without re-running.
+          trap 'docker logs "$cid" 2>&1 | tail -80; docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4000/healthz >/dev/null; then
+              echo "healthz OK after ~${i}s"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "::error::release container failed to serve /healthz within 60s"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # The pack registry endpoint must serve a real gzip tarball from
+          # the running image — catches a missing compile-time bake or a
+          # broken route before it reaches an install script.
+          ctype=$(curl -fsS -o /tmp/pack.tgz -w '%{content_type}' \
+            http://localhost:4000/packs/linux-core/pack.tar.gz)
+          echo "pack tarball content-type: ${ctype}"
+          gzip -t /tmp/pack.tgz || { echo "::error::/packs/linux-core/pack.tar.gz is not valid gzip"; exit 1; }
+          curl -fsS http://localhost:4000/packs.json | grep -q '"linux-core"' \
+            || { echo "::error::/packs.json missing linux-core"; exit 1; }
+          echo "pack registry endpoints OK"
+
+          docker stop --time 15 "$cid"
+
+  go:
+    name: go (${{ matrix.module }})
+    needs: changes
+    if: needs.changes.outputs.go_modules != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.changes.outputs.go_modules) }}
+    env:
+      # runner ships install.sh; the mcp bridge ships install-mcp.sh.
+      INSTALL_SCRIPT: ${{ matrix.module == 'runner' && 'install.sh' || 'install-mcp.sh' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: true
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: gofmt -s check
+        run: |
+          diff=$(gofmt -d -s ${{ matrix.module }}/ | head -200)
+          if [ -n "$diff" ]; then
+            echo "::error::gofmt diff (run 'gofmt -w -s ${{ matrix.module }}/'):"
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: go mod verify
+        # Verifies hashes in go.sum match the on-disk module bytes; a
+        # tampered cache won't pass.
+        working-directory: ${{ matrix.module }}
+        run: go mod verify
+
+      - name: go mod tidy is up to date
+        working-directory: ${{ matrix.module }}
+        run: |
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error::${{ matrix.module }}/go.mod or go.sum are not tidy. Run 'cd ${{ matrix.module }} && go mod tidy' and commit."
+            exit 1
+          fi
+
+      - name: shellcheck install script
+        # The install script is a permanent part of the module's install
+        # surface; if it's gone, that's a regression CI must flag.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck "$INSTALL_SCRIPT"
+          bash -n "$INSTALL_SCRIPT"
+
+      - name: govulncheck
+        # Informational by design — a same-day CVE in a transitive dep
+        # shouldn't block unrelated PRs. Surface as a warning, exit 0.
+        # Pinned version so a govulncheck behavior change can't rebreak CI.
+        working-directory: ${{ matrix.module }}
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+          if ! govulncheck ./...; then
+            echo "::warning::govulncheck reported findings — review and update deps"
+          fi
+
+      - name: staticcheck
+        # Blocking (unlike govulncheck): dead code / SA findings fail CI so
+        # the Go audit's clean reading can't silently regress. Pinned.
+        working-directory: ${{ matrix.module }}
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          staticcheck ./...
+
+      - name: go test (race + coverage)
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: coverage summary
+        if: always()
+        working-directory: ${{ matrix.module }}
+        run: go tool cover -func=coverage.out | tail -50
+
+      - name: upload coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.module }}-coverage
+          path: ${{ matrix.module }}/coverage.out
+          retention-days: 7
+
+      - name: cross-build (all release platforms)
+        # One loop instead of a 4-leg matrix: proves every release target
+        # still compiles without burning four runners per module.
+        working-directory: ${{ matrix.module }}
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -ldflags "-s -w" -o /dev/null .
+            echo "ok: $target"
+          done
+
+  packs:
+    name: validate packs
+    needs: changes
+    if: needs.changes.outputs.packs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: build emisar CLI
+        run: |
+          cd runner
+          go build -trimpath -o /tmp/emisar .
+          /tmp/emisar version
+
+      - name: validate every pack
+        # Collect failures so the report names every bad pack instead of
+        # bailing on the first — faster PR triage. `nullglob` + an explicit
+        # floor: an empty packs/ must fail loudly, not masquerade as green.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packs=(packs/*/)
+          if [ ${#packs[@]} -lt 1 ]; then
+            echo "::error::no packs found under packs/ — did the layout change?"
+            exit 1
+          fi
+
+          failures=()
+          for pack in "${packs[@]}"; do
+            pack="${pack%/}"
+            name="$(basename "$pack")"
+            printf '\n\033[1m==> %s\033[0m\n' "$name"
+            if ! /tmp/emisar pack validate "$pack"; then
+              failures+=("$name")
+            fi
+          done
+
+          if [ ${#failures[@]} -gt 0 ]; then
+            printf '\n\033[1;31m✗ packs failed validation:\033[0m\n'
+            printf '   - %s\n' "${failures[@]}"
+            exit 1
+          fi
+
+          printf '\n\033[1;32m✓ all %d packs valid\033[0m\n' "${#packs[@]}"
+
+  infra:
+    name: infra (fmt + validate + tflint)
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TFLINT_VERSION: v0.61.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform (version from .tool-versions, checksum-verified)
+        run: |
+          ver="$(awk '/^terraform /{print $2}' .tool-versions)"
+          test -n "$ver" || { echo "::error::no terraform pin in .tool-versions"; exit 1; }
+          tmp="$(mktemp -d)" && cd "$tmp"
+          base="https://releases.hashicorp.com/terraform/${ver}"
+          curl -fsSLO "${base}/terraform_${ver}_linux_amd64.zip"
+          curl -fsSLO "${base}/terraform_${ver}_SHA256SUMS"
+          grep " terraform_${ver}_linux_amd64.zip$" "terraform_${ver}_SHA256SUMS" | sha256sum -c -
+          unzip -q "terraform_${ver}_linux_amd64.zip"
+          sudo install -m 0755 terraform /usr/local/bin/terraform
+          terraform version
+
+      - name: Install TFLint (pinned, checksum-verified)
+        run: |
+          tmp="$(mktemp -d)" && cd "$tmp"
+          base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
+          curl -fsSLO "${base}/tflint_linux_amd64.zip"
+          curl -fsSLO "${base}/checksums.txt"
+          grep " tflint_linux_amd64.zip$" checksums.txt | sha256sum -c -
+          unzip -q tflint_linux_amd64.zip
+          sudo install -m 0755 tflint /usr/local/bin/tflint
+          tflint --version
+
+      - name: terraform fmt
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate (no backend, no credentials)
+        working-directory: infra
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: tflint
+        working-directory: infra
+        run: |
+          tflint --init
+          tflint
+
+  dep-age:
+    name: dependency age gate
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # Need the base commit in history to diff lockfile versions against.
+          fetch-depth: 0
+
+      - name: Self-test (offline fixtures — reject-too-fresh / allow-old-enough)
+        run: python3 .agent/scripts/dep-age-gate.py self-test
+
+      - name: Enforce dependency release age
+        # Supply-chain enforcement: reject a bump to a version published more
+        # recently than its release-age window. Dependabot's cooldown only
+        # throttles Dependabot's own PRs; this gate covers ANY lockfile change.
+        # PR: diff against the PR base. Push to main: diff against the prior tip.
+        env:
+          DEP_AGE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 .agent/scripts/dep-age-gate.py check
+
+  actionlint:
+    name: lint workflows
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: actionlint (pinned, checksum-verified)
+        # The workflows ARE the supply chain's front door — lint them like
+        # code: expression injection, wrong event fields, invalid globs.
+        run: |
+          set -euo pipefail
+          artifact="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${artifact}"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" actionlint
+          ./actionlint -color
