@@ -39,6 +39,16 @@ output "dnssec_ds_record" {
   value       = try(data.google_dns_keys.emisar.key_signing_keys[0].ds_record, "(pending — re-run after the zone's keys generate)")
 }
 
+output "deploy_workload_identity_provider" {
+  description = "Full WIF provider resource name the CD workflow authenticates against (google-github-actions/auth `workload_identity_provider`)."
+  value       = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "deploy_service_account" {
+  description = "Service account the CD workflow impersonates to roll the MIG."
+  value       = google_service_account.deployer.email
+}
+
 output "pack_registry_bucket" {
   description = "GCS bucket holding the published pack-registry artifacts (the publisher and portal write/read here)."
   value       = google_storage_bucket.pack_registry.name
@@ -52,9 +62,10 @@ output "pack_registry_base_url" {
 output "next_steps" {
   description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
   value       = <<-EOT
-    1. Publish the portal image (Actions → «Portal image»); FIRST publish only:
-       flip the GHCR package to Public, or the unauthenticated instance pull 403s.
-       Pin container_image to the pushed digest for the cutover.
+    1. Publish the portal image (Actions → «CD · portal» → Run workflow); FIRST
+       publish only: flip the GHCR package to Public, or the unauthenticated
+       instance pull 403s. container_image tracks :latest by design (one-click
+       CD rolls it); the per-build sha-<sha> tags are the rollback pointers.
     2. terraform apply — blocks until the MIG serves /healthz.
     3. BEFORE any traffic move (README has the commands):
          a. import the Fly database into Cloud SQL (freeze Fly writes first);

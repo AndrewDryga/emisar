@@ -31,7 +31,7 @@ outside this repo (📋).
 | Host integrity | ✅ | Shielded VM (secure boot + vTPM + integrity monitoring) |
 | Least-privilege service account | ✅ | dedicated SA, scoped roles (`iam.tf`), no Owner/Editor |
 | Secret management | ✅/⚙️ | TFC workspace vars (sensitive) → Secret Manager; machine secrets generated in-config; per-secret accessor |
-| Image supply chain | ⚙️/📋 | public GHCR **by design** — prod runs the artifact self-hosters pull; pin digests; scanning is CI-side (below) |
+| Image supply chain | ⚙️/📋 | public GHCR **by design** — prod runs the artifact self-hosters pull; immutable `sha-<sha>` tags published per build for pinning/rollback; trivy blocks fixable HIGH/CRITICAL at publish (portal-cd.yml) |
 | Cloud Audit Logs (admin + data) | ✅ | `google_project_iam_audit_config` ADMIN_READ/DATA_READ/DATA_WRITE |
 | Network flow logs | ✅ | subnet `log_config` + LB request logging |
 | Availability: multi-node app | ⚙️ | regional MIG, auto-healing, rolling updates; `instance_count` (workspace-set) — 2+ forms the BEAM cluster (`Emisar.Cluster.GCE`), 1 relies on auto-heal replacement |
@@ -40,7 +40,7 @@ outside this repo (📋).
 | Change management gate | ✅ | infra CI (fmt/validate/tflint) + PR review + human `terraform apply` |
 | Reproducible infra (IaC) | ✅ | whole stack; `git log` is the change record |
 | State + secret custody | ⚙️ | Terraform Cloud (org Dryga / project emisar) — encrypted at rest, workspace RBAC, audit log; **workspace access = prod-secret access** |
-| Keyless deploy identity (WIF) | ✅/⚙️ | pool `terraform-cloud` / provider `emisar-workspace` pinned to `organization:Dryga:project:emisar:workspace:emisar` → SA `terraform@emisar.iam` — no stored key anywhere |
+| Keyless deploy identities (WIF) | ✅/⚙️ | two, no stored key anywhere: pool `terraform-cloud` / provider `emisar-workspace` pinned to `organization:Dryga:project:emisar:workspace:emisar` → SA `terraform@emisar.iam` (applies); pool `github-actions` pinned to this repository → SA `emisar-deployer` with a custom MIG-rolling-replace-only role (deploy.tf, CD) |
 
 ## SOC 2 Trust Services Criteria — how the platform maps
 

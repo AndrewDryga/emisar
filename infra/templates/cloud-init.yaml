@@ -74,7 +74,9 @@ write_files:
 %{ endif ~}
 
       # Public GHCR pull, no credentials — prod runs the exact artifact
-      # self-hosters pull. Pin var.container_image to a digest for reproducibility.
+      # self-hosters pull. `latest` here is what makes one-click CD work (a MIG
+      # rolling replace re-runs this); the per-build `sha-<sha>` tags are the
+      # immutable pointers for pinning or rollback.
       docker pull ${container_image}
 
       # Migrations first — Ecto's advisory lock serializes concurrent instances, so

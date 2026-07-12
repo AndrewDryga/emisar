@@ -65,7 +65,7 @@ variable "instance_count" {
 
 variable "container_image" {
   type        = string
-  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). Pin a version tag or digest for a reproducible rollout; `latest` is the mutable default."
+  description = "Fully-qualified portal image on public GHCR — self-hosters pull the same artifact, so the prod deployment does too (no private registry to drift from). `latest` is what one-click CD rolls (the MIG replace re-pulls it); every publish also pushes an immutable `sha-<sha>` tag — set one here (or a digest) to freeze an environment."
   default     = "ghcr.io/andrewdryga/emisar:latest"
 }
 
@@ -95,6 +95,12 @@ variable "disable_billing" {
   type        = bool
   description = "Set EMISAR_DISABLE_BILLING=1 in the release (ship the Paddle stub) instead of requiring the paddle-* secrets. Use for an internal/staging tier."
   default     = false
+}
+
+variable "github_repository" {
+  type        = string
+  description = "owner/repo whose GitHub Actions runs may assume the deploy identity (WIF attribute condition + SA binding in deploy.tf)."
+  default     = "AndrewDryga/emisar"
 }
 
 variable "mailer_from_email" {
