@@ -23,7 +23,8 @@ Configure these environments with deployment branches restricted to `main`:
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
 | `production-plan` | Protected `main`, no reviewer | `TFC_PLAN_TOKEN` | Dedicated `Dryga` owners-team automation token used only to upload configuration and create the plan. HCP Free cannot make it plan-only; HCP workspace auto-apply stays disabled and apply remains manual. |
-| `pack-registry` | Required reviewer | None | Main-branch pack publishing through short-lived GCP WIF credentials. |
+| `pack-registry` | Required reviewer | None | Cancellable approval-only gate. A newer selected pack release supersedes an older waiting approval. |
+| `pack-registry-publish` | Protected `main`, no reviewer | None | Non-cancellable serialized publication through short-lived GCP WIF credentials; starts only after `pack-registry` approval succeeds. |
 | `release` | Required reviewer | `MCP_PRIVATE_KEY` | Signed tag releases. The MCP Registry listing uses the HTTP signing key; binary releases use keyless Sigstore. |
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
