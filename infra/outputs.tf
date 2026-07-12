@@ -74,38 +74,17 @@ output "status_page_url" {
 }
 
 output "next_steps" {
-  description = "The remaining path to production, in order. Full commands: README «Cutover runbook»."
+  description = "What remains after the 2026-07-12 Fly→GCP cutover, in order."
   value       = <<-EOT
-    1. Merge through the required «Required - CI» check. Main-only CD reuses that
-       exact CI workflow, publishes its tested portal image, uploads this commit's
-       infra configuration to HCP Terraform, and produces the reviewable plan.
-       FIRST publish only: flip the GHCR
-       package to Public, or the unauthenticated instance pull 403s.
-    2. Review the complete saved plan and click «Confirm & Apply» in HCP
-       Terraform. CD never calls apply. The run blocks until the MIG is updated
-       and stable; the LB routes only /readyz-healthy VMs. Rollback is another
-       reviewed plan using a previous digest.
-    3. BEFORE any traffic move (README has the commands):
-         a. import the Fly database into Cloud SQL (freeze Fly writes first);
-         b. optional: add Fly's SECRET_KEY_BASE as a NEW secret version so
-            operator sessions survive the cutover;
-         c. at GoDaddy (still the live DNS): add the FOUR cert DNS-auth CNAMEs
-            (apex, www, mta-sts, registry) + CAA `0 issue "pki.goog"`, wait for
-            the certs to be ACTIVE, then
-            verify: curl --resolve ${var.domain}:443:<lb_ipv4> https://${var.domain}/readyz
-         d. registry.${var.domain} can go live INDEPENDENTLY, before any traffic
-            move: add its A/AAAA at GoDaddy (terraform output
-            pack_registry_godaddy_records), verify
-            https://registry.${var.domain}/v1/catalog.json, then flip the
-            catalog base (packctl --base-url default + EMISAR_PACK_CATALOG_URL —
-            see packs/PUBLISHING.md «Serving domain»)
-    4. Converge traffic at GoDaddy FIRST (avoids a two-database split-brain
-       while NS propagates): lower the A/AAAA TTLs, point A → lb_ipv4 and
-       AAAA → lb_ipv6, watch runners reconnect.
-    5. Delegate NS at the registrar (now a zero-traffic change):
-         ${join("\n         ", google_dns_managed_zone.emisar.name_servers)}
-    6. LAST, after NS resolves everywhere: publish the DNSSEC DS
-       (terraform output dnssec_ds_record); `dig +dnssec ${var.domain}` shows AD.
-       Keep Fly running until traffic drains, then decommission it.
+    Cutover executed 2026-07-12 (README «Cutover runbook» is the record).
+    Remaining:
+    1. After NS delegation resolves everywhere (up to 48 h — verify with
+       `dig +trace ${var.domain} NS`): publish the DNSSEC DS at the registrar
+       (terraform output dnssec_ds_record); `dig +dnssec ${var.domain}` then
+       shows AD. A DS ahead of working delegation takes the domain offline.
+    2. Once traffic and email flows are confirmed drained off Fly:
+       decommission the Fly app (its database was imported at cutover).
+    3. Ongoing: ramp DMARC (var.dmarc_policy none → quarantine → reject) and
+       MTA-STS (testing → enforce) on clean reports — dns.tf comments.
   EOT
 }

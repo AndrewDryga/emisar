@@ -19,13 +19,14 @@ DNS A/AAAA ──────┤  HTTPS LB (TLS via   ├─► backend (HTTP /r
                           (flow logs)      (egress)     regional HA, PITR backups)
 ```
 
-> **Applied 2026-07-11 — NOT LIVE.** The stack exists in GCP, but emisar still
-> serves from Fly.io: the live nameservers are GoDaddy's, so the zone edits here
-> (apex A/AAAA → the GCP LB, CAA + `pki.goog`) are invisible until NS delegation.
-> The move to GCP is the **Cutover runbook** below, walked in order — the data
-> import and cert pre-provisioning come BEFORE any traffic change. Environment
-> sizing (machine type, node count, DB tier/availability) and the alert address
-> are Terraform Cloud workspace variables, not committed values.
+> **LIVE — production since 2026-07-12.** The Fly→GCP cutover is done: the apex
+> serves from the GCP LB and NS is delegated to Cloud DNS. Two tail steps
+> remain from the runbook below: publish the **DNSSEC DS** at the registrar
+> once NS has propagated everywhere (step 7 — a DS ahead of working delegation
+> takes the domain offline), and decommission Fly once traffic has fully
+> drained. Environment sizing (machine type, node count, DB tier/availability)
+> and the alert address are Terraform Cloud workspace variables, not committed
+> values.
 
 ## What's in it
 
@@ -94,8 +95,8 @@ Better Stack probes the **public hostname** from independent infrastructure,
 runs the **on-call escalation** (notify → wake with a phone call → wake
 everyone, repeating), and hosts the public status page — so detection, paging,
 and customer communication survive an incident in the serving cloud. The
-monitors already watch the Fly deployment today (they follow traffic at
-cutover with no change). Two **sensitive TFC workspace variables** feed it:
+monitors watch the public hostname, which is how they rode the Fly→GCP
+cutover unchanged. Two **sensitive TFC workspace variables** feed it:
 `betterstack_api_token` (the provider credential) and `oncall_emails` (the
 rotation roster — sensitive on purpose, so this public repo reveals neither
 who is on call nor how many people that is; team invites happen in the Better
@@ -105,10 +106,8 @@ history), and default on-call calendar are adopted via `import` blocks — no-op
 after the first apply. The status page serves at
 `https://emisar.betteruptime.com` immediately; `status.emisar.dev` (CNAME in
 `dns.tf`, Let's Encrypt already in `var.caa_issuers`) activates at NS
-delegation — or earlier by adding the same CNAME at GoDaddy, which needs no CAA
-change (the runbook keeps `letsencrypt.org` for Fly). Both monitors are live:
-`registry.emisar.dev` already resolves publicly (it went live independently,
-ahead of the traffic cutover).
+delegation (done 2026-07-12 — the CNAME resolves; Better Stack provisions the
+domain cert on first use). Both monitors are live.
 
 ## Clustering (emisar-specific vs onlytty)
 
@@ -130,6 +129,10 @@ environment in the workspace, then apply; the dials are `machine_type`,
 `alert_email`.
 
 ## Cutover runbook (Fly → GCP, in this order)
+
+> **Executed 2026-07-12** (kept as the record and as the template for any
+> future migration). Remaining: step 7's DS publication after NS propagation,
+> then Fly decommissioning.
 
 The order is the point: the cert can't provision and the data isn't there until
 you make both happen — flipping DNS first means an outage on an empty database.

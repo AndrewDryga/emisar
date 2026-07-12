@@ -3,8 +3,9 @@
 # Container-Optimized OS instances running the portal image from public GHCR,
 # backed by private-IP Cloud SQL Postgres, with Secret Manager, least-priv IAM,
 # audit logging, monitoring, and the authoritative Cloud DNS zone (DNSSEC).
-# Adapted from ../onlytty/infra; PREPARED, NOT APPLIED — emisar serves from
-# Fly.io today, and applying this is the deliberate Fly→GCP migration (README).
+# Adapted from ../onlytty/infra. LIVE — serving production since the Fly→GCP
+# cutover on 2026-07-12 (README «Cutover runbook» is the record; the DNSSEC DS
+# publication is the one remaining step, gated on NS propagation).
 
 terraform {
   required_version = ">= 1.10" # `project` in the cloud{} workspaces block
