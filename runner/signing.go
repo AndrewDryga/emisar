@@ -39,7 +39,7 @@ func generateEd25519(id, prefix string) (outID, pubHex, seedHex string, err erro
 }
 
 // parseCASeed decodes the offline CA private key (a hex Ed25519 seed) supplied
-// to `cert new`. It never leaves the operator's machine.
+// to `signing new-cert`. It never leaves the operator's machine.
 func parseCASeed(seedHex string) (ed25519.PrivateKey, error) {
 	seed, err := hex.DecodeString(strings.TrimSpace(seedHex))
 	if err != nil {
@@ -133,27 +133,20 @@ func mintCert(caPriv ed25519.PrivateKey, caID, keyID, leafPubHex string, scope a
 	return cert, nil
 }
 
-// caCmd is the certificate-authority command group (`emisar ca …`).
-func caCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "ca", Short: "Manage the offline signing certificate authority"}
-	cmd.AddCommand(caInitCmd())
-	return cmd
-}
-
-// caInitCmd mints a CA keypair. The PUBLIC key goes in every runner's
+// signingNewCACmd mints a CA keypair. The PUBLIC key goes in every runner's
 // signing.trusted_cas (safe to commit); the PRIVATE key is stored OFFLINE and
-// used only by `emisar cert new` to mint operator certs.
-func caInitCmd() *cobra.Command {
+// used only by `emisar signing new-cert` to mint operator certs.
+func signingNewCACmd() *cobra.Command {
 	var caID string
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Mint an offline CA keypair for signed dispatch",
-		Long: `ca init mints an Ed25519 certificate-authority keypair.
+		Use:   "new-ca",
+		Short: "Mint just the offline CA keypair (the root of trust; rarely)",
+		Long: `signing new-ca mints an Ed25519 certificate-authority keypair.
 
 The PUBLIC key goes in every runner's config under signing.trusted_cas (safe to
 commit). The PRIVATE key stays OFFLINE — keep it on an operator's machine or a
 vault, never on a runner and never on the control plane. You sign short-lived
-operator certs with it via "emisar cert new --ca-key <private-key>".`,
+operator certs with it via "emisar signing new-cert --ca-key <private-key>".`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			id, pubHex, seedHex, err := generateEd25519(caID, "ca-")
 			if err != nil {
@@ -176,7 +169,7 @@ operator certs with it via "emisar cert new --ca-key <private-key>".`,
 			fmt.Print("2. CA PRIVATE key — store this OFFLINE (never on a runner or the control plane):\n\n")
 			fmt.Printf("   %s\n\n", seedHex)
 			fmt.Print("Mint operator certs with:\n")
-			fmt.Printf("   emisar cert new --ca-id %s --ca-key <the-private-key-above> --key-id <operator> --scope group=<g> --ttl 24h\n", id)
+			fmt.Printf("   emisar signing new-cert --ca-id %s --ca-key <the-private-key-above> --key-id <operator> --scope group=<g> --ttl 24h\n", id)
 			return nil
 		},
 	}
@@ -184,25 +177,18 @@ operator certs with it via "emisar cert new --ca-key <private-key>".`,
 	return cmd
 }
 
-// certCmd is the certificate command group (`emisar cert …`).
-func certCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "cert", Short: "Mint operator signing certificates"}
-	cmd.AddCommand(certNewCmd())
-	return cmd
-}
-
-// certNewCmd signs a cert for a leaf key. If --pubkey is omitted it also mints
-// the leaf keypair and prints the seed for EMISAR_SIGNING_KEY. The cert JSON is
-// the EMISAR_SIGNING_CERT value the MCP client carries.
-func certNewCmd() *cobra.Command {
+// signingNewCertCmd signs a cert for a leaf key. If --pubkey is omitted it also
+// mints the leaf keypair and prints the seed for EMISAR_SIGNING_KEY. The cert
+// JSON is the EMISAR_SIGNING_CERT value the MCP client carries.
+func signingNewCertCmd() *cobra.Command {
 	var caID, caKey, keyID, scopeStr, ttlStr, pubkey string
 	cmd := &cobra.Command{
-		Use:   "new",
-		Short: "Sign a short-lived operator certificate with the offline CA",
-		Long: `cert new signs an Ed25519 leaf key with the offline CA private key, producing
-a short-lived (optionally scoped) certificate the MCP client carries as
-EMISAR_SIGNING_CERT. If --pubkey is omitted, a leaf keypair is also minted and
-its private seed printed for EMISAR_SIGNING_KEY.
+		Use:   "new-cert",
+		Short: "Mint a short-lived operator certificate (routinely, as certs expire)",
+		Long: `signing new-cert signs an Ed25519 leaf key with the offline CA private key,
+producing a short-lived (optionally scoped) certificate the MCP client carries
+as EMISAR_SIGNING_CERT. If --pubkey is omitted, a leaf keypair is also minted
+and its private seed printed for EMISAR_SIGNING_KEY.
 
 The CA private key is read locally from --ca-key and used only to sign; it is
 never transmitted. Prefer short --ttl values (24h) — a long TTL (e.g. 1y) is for
@@ -273,7 +259,7 @@ rotate the CA to revoke).`,
 		},
 	}
 	cmd.Flags().StringVar(&caID, "ca-id", "", "CA id (must match the runner's trusted_cas ca_id) [required]")
-	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key (hex seed) from `ca init` [required]")
+	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key (hex seed) from `signing new-ca` [required]")
 	cmd.Flags().StringVar(&keyID, "key-id", "", "leaf key id (default: op-<random>)")
 	cmd.Flags().StringVar(&scopeStr, "scope", "", "cert scope, e.g. group=edge,env=prod (empty = any runner)")
 	cmd.Flags().StringVar(&ttlStr, "ttl", "24h", "validity duration: 24h, 30d, 1y")
@@ -282,10 +268,21 @@ rotate the CA to revoke).`,
 	return cmd
 }
 
-// signingCmd is the quickstart command group (`emisar signing …`).
+// signingCmd is the signed-dispatch command group (`emisar signing …`): the
+// one-shot `init` on-ramp plus the granular `new-ca` / `new-cert` operations
+// for CA rotation and routine cert renewal.
 func signingCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "signing", Short: "Signed-dispatch quickstart"}
+	cmd := &cobra.Command{
+		Use:   "signing",
+		Short: "Set up client-attested (signed) dispatch",
+		Long: `Signed dispatch lets an enforcing runner require a CA-signed certificate on
+every action, so a compromised control plane can relay but never mint a
+dispatch. "signing init" is the one-shot on-ramp; "new-ca" and "new-cert" are
+the granular operations for CA rotation and routine cert renewal.`,
+	}
 	cmd.AddCommand(signingInitCmd())
+	cmd.AddCommand(signingNewCACmd())
+	cmd.AddCommand(signingNewCertCmd())
 	return cmd
 }
 
@@ -295,10 +292,11 @@ func signingInitCmd() *cobra.Command {
 	var caID, scopeStr, ttlStr string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "One-shot: mint a CA, a leaf key, and a cert; print everything to wire up",
+		Short: "Set up signed dispatch in one shot (CA + cert + config)",
 		Long: `signing init mints a CA, a leaf keypair, and a certificate in one step and
 prints the full runner config block, the offline CA private key to store, and
-the two MCP env vars. The simplest on-ramp to client-attested dispatch.`,
+the two MCP env vars. The simplest on-ramp to client-attested dispatch — after
+this, mint fresh certs as they expire with "emisar signing new-cert".`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			scope, err := parseScope(scopeStr)
 			if err != nil {

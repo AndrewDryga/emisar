@@ -147,8 +147,12 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 			if code != 0 {
 				t.Errorf("exit = %d, want 0; stderr=%q", code, stderr)
 			}
-			// The help must enumerate the subcommands (the operator's map of the CLI).
-			for _, want := range []string{"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "ca", "cert", "signing", "state", "version"} {
+			// The help must enumerate the subcommands (the operator's map of the
+			// CLI) and the category headers that group them.
+			for _, want := range []string{
+				"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "signing", "state", "version",
+				"Serve:", "Actions & packs:", "Diagnose & audit:", "Signed dispatch:",
+			} {
 				if !strings.Contains(stdout, want) {
 					t.Errorf("root help missing %q:\n%s", want, stdout)
 				}
@@ -228,7 +232,7 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 		{name: "state", args: []string{"--config", cfg, "state"}, wantOut: `"runner_state"`},
 		{name: "events cat", args: []string{"--config", cfg, "events", "cat"}, wantOut: "linux.ping"},
 		{name: "audit verify", args: []string{"--config", cfg, "audit", "verify"}, wantOut: "chain intact"},
-		{name: "ca init", args: []string{"ca", "init"}, wantOut: "public_key"},
+		{name: "signing new-ca", args: []string{"signing", "new-ca"}, wantOut: "public_key"},
 		// `doctor` and `connect` are intentionally omitted: doctor exits non-zero
 		// here (no cloud/token to satisfy its preflight checks — its dispatch is
 		// covered by TestDoctorCmd_* in-process), and connect needs a live socket.

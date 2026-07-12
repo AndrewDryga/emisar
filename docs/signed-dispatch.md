@@ -112,7 +112,7 @@ the CA **private** key to store offline, and the two MCP env vars.
   change at all.
 
   ```sh
-  emisar cert new --ca-id ca-1a2b3c4d --ca-key <CA private key> \
+  emisar signing new-cert --ca-id ca-1a2b3c4d --ca-key <CA private key> \
     --key-id op-alice --scope group=prod --ttl 24h
   ```
 
@@ -124,7 +124,7 @@ the CA **private** key to store offline, and the two MCP env vars.
   Every operator holding a CA-issued certificate in that runner's scope can
   already reach it.
 
-- **`emisar ca init`** mints just the CA, when you want to generate it once and
+- **`emisar signing new-ca`** mints just the CA, when you want to generate it once and
   certify leaf keys separately from standing up the first runner.
 
 ## Scope — restricting where a certificate is valid
@@ -146,7 +146,7 @@ otherwise trade away.
 
 Certificates are short-lived, so the normal path is **re-issue, not reconfigure**:
 
-1. **Renew.** Before a certificate expires, mint a fresh one (`emisar cert new …`)
+1. **Renew.** Before a certificate expires, mint a fresh one (`emisar signing new-cert …`)
    and update the operator's `EMISAR_SIGNING_CERT`. Automate it on a schedule
    shorter than `--ttl`.
 2. **Revoke an operator.** Stop re-issuing their certificate; once the current
@@ -199,9 +199,9 @@ cause. The runner's refusal codes:
 | --- | --- | --- |
 | `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP client isn't configured to sign). | Run it from an MCP client with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
 | `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
-| `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar cert new`); check host clocks (NTP). |
+| `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
 | `cert_scope` | The certificate's scope (group/labels) isn't satisfied by this runner's local `group`/`labels`. | Issue the certificate with a scope matching this runner (or an empty scope), or dispatch to a runner in scope. |
 | `stale` | The attestation's timestamp is outside `±max_attestation_age` (clock skew, a long-queued run, or a slow approval). | Re-issue the run; check host clocks; widen `max_attestation_age` if approvals are the cause. |
-| `bad_signature` | The signature doesn't verify against the action, args, nonce, and time under the certificate's leaf key. | Wrong key/certificate pair — re-mint with `emisar cert new`. (The MCP client refuses to start if the key and certificate don't match.) |
+| `bad_signature` | The signature doesn't verify against the action, args, nonce, and time under the certificate's leaf key. | Wrong key/certificate pair — re-mint with `emisar signing new-cert`. (The MCP client refuses to start if the key and certificate don't match.) |
 | `replayed` | This nonce was already used. | The client double-sent; re-issue with a fresh dispatch. |
 | `nonce_store_unavailable` | The runner couldn't durably record the nonce (the replay cache is unwritable). | Fix the runner's data-dir permissions/disk; the runner refuses rather than risk a replay after a restart. |

@@ -32,6 +32,17 @@ func main() {
 operations. Commands arrive from a control plane over an outbound websocket;
 the runner re-validates, executes, redacts, and journals locally. Policy
 authoring, approval workflow, and audit storage live in the cloud.`,
+		Example: `  # Serve the control plane (the long-running daemon)
+  emisar connect
+
+  # Run a read-only action locally against this host
+  emisar action run linux.uptime --reason "check load"
+
+  # Validate a pack before trusting it
+  emisar pack validate ./packs/linux-core
+
+  # Set up client-attested (signed) dispatch in one shot
+  emisar signing init`,
 		// SilenceErrors: main prints the error itself (below); without this
 		// cobra prints it too, so a failing command shows the error twice.
 		SilenceUsage:  true,
@@ -42,16 +53,26 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
 	root.PersistentFlags().BoolVar(&flagJSONOut, "json", false, "emit JSON output where applicable")
 
-	root.AddCommand(connectCmd())
-	root.AddCommand(packCmd())
-	root.AddCommand(actionCmd())
-	root.AddCommand(stateCmd())
-	root.AddCommand(doctorCmd())
-	root.AddCommand(eventsCmd())
-	root.AddCommand(auditCmd())
-	root.AddCommand(caCmd())
-	root.AddCommand(certCmd())
-	root.AddCommand(signingCmd())
+	// Command groups so `emisar --help` reads by category, not one flat wall.
+	root.AddGroup(
+		&cobra.Group{ID: "serve", Title: "Serve:"},
+		&cobra.Group{ID: "actions", Title: "Actions & packs:"},
+		&cobra.Group{ID: "diag", Title: "Diagnose & audit:"},
+		&cobra.Group{ID: "signing", Title: "Signed dispatch:"},
+	)
+	add := func(groupID string, c *cobra.Command) {
+		c.GroupID = groupID
+		root.AddCommand(c)
+	}
+	add("serve", connectCmd())
+	add("actions", actionCmd())
+	add("actions", packCmd())
+	add("diag", doctorCmd())
+	add("diag", stateCmd())
+	add("diag", eventsCmd())
+	add("diag", auditCmd())
+	add("signing", signingCmd())
+	// version + the built-in help/completion stay ungrouped ("Additional Commands").
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {

@@ -155,20 +155,20 @@ func TestMintCertVerifiesUnderCA(t *testing.T) {
 	}
 }
 
-func TestCaInitCmd_JSONShape(t *testing.T) {
+func TestSigningNewCACmd_JSONShape(t *testing.T) {
 	withJSONOut(t, true)
-	cmd := caInitCmd()
+	cmd := signingNewCACmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
 	cmd.SetArgs([]string{"--ca-id", "ca-ci"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
 	if runErr != nil {
-		t.Fatalf("ca init --json: %v", runErr)
+		t.Fatalf("signing new-ca --json: %v", runErr)
 	}
 	var got map[string]string
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("ca init --json must emit a JSON object, got %q: %v", out, err)
+		t.Fatalf("signing new-ca --json must emit a JSON object, got %q: %v", out, err)
 	}
 	if got["ca_id"] != "ca-ci" {
 		t.Errorf("ca_id = %q, want ca-ci", got["ca_id"])
@@ -181,42 +181,43 @@ func TestCaInitCmd_JSONShape(t *testing.T) {
 	}
 }
 
-func TestCaInitCmd_HumanOutput(t *testing.T) {
+func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 	withJSONOut(t, false)
-	cmd := caInitCmd()
+	cmd := signingNewCACmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
 	cmd.SetArgs([]string{"--ca-id", "ca-prod"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
 	if runErr != nil {
-		t.Fatalf("ca init: %v", runErr)
+		t.Fatalf("signing new-ca: %v", runErr)
 	}
-	for _, want := range []string{"enforce_signatures: true", "trusted_cas:", "ca_id: ca-prod", "OFFLINE", "emisar cert new"} {
+	for _, want := range []string{"enforce_signatures: true", "trusted_cas:", "ca_id: ca-prod", "OFFLINE", "emisar signing new-cert"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("ca init guide missing %q\n--- output ---\n%s", want, out)
+			t.Errorf("signing new-ca guide missing %q\n--- output ---\n%s", want, out)
 		}
 	}
 }
 
-// cert new mints a leaf + a cert; the printed EMISAR_SIGNING_CERT must parse and
-// verify under the CA, vouching for the printed EMISAR_SIGNING_KEY's public key.
-func TestCertNewCmd_MintsVerifiableCert(t *testing.T) {
+// signing new-cert mints a leaf + a cert; the printed EMISAR_SIGNING_CERT must
+// parse and verify under the CA, vouching for the printed EMISAR_SIGNING_KEY's
+// public key.
+func TestSigningNewCertCmd_MintsVerifiableCert(t *testing.T) {
 	withJSONOut(t, true)
 	_, caPubHex, caSeed, _ := generateEd25519("ca-x", "ca-")
 
-	cmd := certNewCmd()
+	cmd := signingNewCertCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
 	cmd.SetArgs([]string{"--ca-id", "ca-x", "--ca-key", caSeed, "--key-id", "op-z", "--scope", "group=edge,env=prod", "--ttl", "12h"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
 	if runErr != nil {
-		t.Fatalf("cert new: %v", runErr)
+		t.Fatalf("signing new-cert: %v", runErr)
 	}
 	var got map[string]string
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("cert new --json must emit a JSON object, got %q: %v", out, err)
+		t.Fatalf("signing new-cert --json must emit a JSON object, got %q: %v", out, err)
 	}
 
 	var cert attest.Cert
@@ -245,16 +246,16 @@ func TestCertNewCmd_MintsVerifiableCert(t *testing.T) {
 	}
 }
 
-// cert new with --ca-key set but missing --ca-id errors (the cert's ca_id must
-// match the runner's trusted_cas).
-func TestCertNewCmd_RequiresCAID(t *testing.T) {
+// signing new-cert with --ca-key set but missing --ca-id errors (the cert's
+// ca_id must match the runner's trusted_cas).
+func TestSigningNewCertCmd_RequiresCAID(t *testing.T) {
 	withJSONOut(t, true)
 	_, _, caSeed, _ := generateEd25519("ca-x", "ca-")
-	cmd := certNewCmd()
+	cmd := signingNewCertCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
 	cmd.SetArgs([]string{"--ca-key", caSeed})
 	if err := cmd.Execute(); err == nil {
-		t.Fatal("cert new without --ca-id must error")
+		t.Fatal("signing new-cert without --ca-id must error")
 	}
 }
 
