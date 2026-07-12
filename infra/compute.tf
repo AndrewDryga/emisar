@@ -55,26 +55,34 @@ resource "google_compute_health_check" "readiness" {
   depends_on = [google_project_service.apis]
 }
 
-# ── Capacity reservation: base fleet plus one rollout surge ──────────────────
-# Rollouts and auto-healing fail when the zone happens to be out of capacity at
-# the moment a replacement instance is created. Reserve the base fleet plus the
-# single surge slot required by the zero-unavailable update policy. The extra
-# slot bills while idle, but without it a zonal stockout can turn the availability
-# guarantee into a stuck rollout.
+# ── Capacity reservation: steady-state fleet ─────────────────────────────────
+# Guarantee capacity for the serving fleet without paying continuously for a
+# rollout-only VM. The one-VM surge remains zero-unavailable but uses ordinary
+# on-demand capacity, so a zonal stockout can delay a rollout without reducing
+# the already-running serving capacity.
 resource "google_compute_reservation" "emisar" {
-  name = "emisar"
+  name = "emisar-base"
   zone = var.zone
 
-  # Only instances that explicitly target this reservation consume it — a
-  # stray VM in the project can't silently eat the fleet's slots.
-  specific_reservation_required = true
+  specific_reservation_required = false
 
+  # The provider calls the reserved machine shape "specific_reservation" even
+  # when consumption is automatic. Matching VMs may consume these slots.
   specific_reservation {
-    count = var.instance_count + 1
+    count = var.instance_count
     instance_properties {
       machine_type = var.machine_type
     }
   }
+
+  # Changing a specifically targeted reservation to automatic consumption
+  # requires replacement. Create the new base reservation before rolling the
+  # template, then release the old reservation after its VMs are gone.
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [google_project_service.apis]
 }
 
 # ── Instance template: Container-Optimized OS running the portal container ────
@@ -116,13 +124,10 @@ resource "google_compute_instance_template" "emisar" {
     enable_integrity_monitoring = true
   }
 
-  # Every fleet and surge instance consumes the dedicated reservation above.
+  # Base instances automatically consume the matching reservation above. Once
+  # those slots are full, a rollout surge can still use on-demand capacity.
   reservation_affinity {
-    type = "SPECIFIC_RESERVATION"
-    specific_reservation {
-      key    = "compute.googleapis.com/reservation-name"
-      values = [google_compute_reservation.emisar.name]
-    }
+    type = "ANY_RESERVATION"
   }
 
   metadata = {
@@ -143,7 +148,10 @@ resource "google_compute_instance_template" "emisar" {
     create_before_destroy = true
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_compute_reservation.emisar,
+  ]
 }
 
 # ── Regional Managed Instance Group: auto-healing + rolling updates ──────────
@@ -157,9 +165,9 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   region                           = var.region
   target_size                      = var.instance_count
   distribution_policy_target_shape = "BALANCED"
-  # Pinned to the reservation's zone so every instance can consume it. Zone
-  # redundancy at 2+ instances = more zones with a per-zone reservation each —
-  # a deliberate change (see var.zone).
+  # Pinned to the base reservation's zone so every steady-state instance can
+  # consume it. Zone redundancy at 2+ instances = more zones with a per-zone
+  # reservation each — a deliberate change (see var.zone).
   distribution_policy_zones = [var.zone]
 
   # Block `terraform apply` until the rollout is healthy, so a broken deploy FAILS
