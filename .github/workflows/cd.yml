@@ -405,7 +405,9 @@ jobs:
               "https://app.terraform.io/api/v2/runs/${RUN_ID}")
             status=$(jq -er '.data.attributes.status' <<< "$run")
             case "$status" in
-              planned_and_saved) break ;;
+              # HCP saves a reviewable plan when changes exist and finishes a
+              # no-op immediately. Both are successful terminal plan states.
+              planned_and_saved|planned_and_finished) break ;;
               errored|canceled|discarded|force_canceled)
                 echo "::error::HCP Terraform run ended ${status}"
                 exit 1
