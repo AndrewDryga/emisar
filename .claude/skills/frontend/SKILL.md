@@ -2,6 +2,7 @@
 name: frontend
 description: Put on the pragmatic front-end hat for the emisar Phoenix UI and marketing HEEx — build correct LiveView/operator UI with CoreComponents and LiveTable, or execute public marketing pages from creative direction with server-rendered HEEx + Tailwind. Use when implementing or changing a LiveView, HEEx template, component, operator UI, or controllers/marketing_html page in apps/emisar_web.
 effort: medium
+argument-hint: "[LiveView, HEEx, or marketing surface]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 

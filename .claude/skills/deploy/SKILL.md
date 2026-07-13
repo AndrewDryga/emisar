@@ -2,6 +2,7 @@
 name: deploy
 description: Pre-deploy checklist and release sanity for the GCP portal control plane - migrations, secrets, image build, HCP Terraform plan, and health. Use before deploying or when changing the Dockerfile, release config, runtime config, or infra delivery path. Does not apply infrastructure.
 effort: medium
+argument-hint: "[commit or deployment change]"
 allowed-tools: Read, Grep, Glob, Bash
 ---
 

@@ -2,6 +2,7 @@
 name: product-manager
 description: Put on the product-manager hat for emisar — decide what to build, what to cut, and what order; define the smallest valuable slice and what "done" means. Use when a request is vague or oversized, when scoping a feature, prioritizing, or deciding whether something is worth building at all. Pairs with /spec.
 effort: medium
+argument-hint: "[request or feature]"
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -16,7 +17,7 @@ is the main move.
 emisar = **AI-safe infrastructure actions.** A Go runner on the host runs a curated,
 declared, journaled set of ops actions; this portal is the cloud control plane —
 operator console + MCP API for LLMs + policy/approval/audit + billing. Stage: early
-(v0.2, local-runner solid; cloud control plane being built out). Two users:
+product, with a solid runner and an evolving cloud control plane. Two users:
 - **Operators / platform & SRE teams** — want to let agents/LLMs touch infra without
   handing over shell, with approvals and an audit trail.
 - **LLMs** (via MCP) — call actions; must be constrained and legible.

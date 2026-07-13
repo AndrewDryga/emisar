@@ -2,6 +2,7 @@
 name: security-engineer
 description: Put on the security-engineer hat for emisar — threat-model and harden anything touching auth, runner trust, MCP, policies, approvals, audit, or untrusted input. Use when reviewing or building auth/session/MFA, the runner socket, the MCP API, policy evaluation, approval flows, audit logging, secret handling, or any code that ingests runner/LLM input. emisar IS a security product — this hat is mandatory there.
 effort: high
+argument-hint: "[auth, trust, or untrusted-input surface]"
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -18,8 +19,9 @@ bug — it's the product failing. Lead with the abuse case.
 - **Declared actions only.** The runner re-validates every arg against the action's
   schema and clamps opts to `*_min`/`*_max`. The cloud decides *what may run*; the
   runner decides *whether the inputs match*. Keep both gates.
-- **argv arrays, never shell strings.** No code path may build a shell command from
-  input. No `System.cmd` with a string, no interpolation into a command.
+- **No cloud/LLM-controlled shell code.** Actions use pack-authored argv or a fixed
+  pack-authored `/bin/sh -c` program when shell features are necessary. Never build
+  shell code from untrusted input; every interpolated argument must be schema-bounded.
 - **Cloud is the audit system of record.** Every action attempt → an audit row.
   A mutation that isn't audited is a hole.
 

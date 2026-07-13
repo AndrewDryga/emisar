@@ -65,6 +65,18 @@ check_manual_text() {
   rm -f "$findings"
 }
 
+check_skill_text() {
+  local findings
+  findings="$(rg -n -i '(/code-review|/security-review)|v0\.2|never shells out|never-a-shell|argv arrays, never shell strings' .claude/skills || true)"
+
+  if [[ -n "$findings" ]]; then
+    printf '%s\n' "$findings" >&2
+    fail "skills still mention retired review commands or stale product/security wording"
+  else
+    ok "skills use current review commands and product/security wording"
+  fi
+}
+
 check_coop() {
   local help
   help="$(coop tasks --help)"
@@ -99,20 +111,28 @@ check_task_dirs() {
 }
 
 check_skills() {
-  local file dir expected name description
+  local file dir expected name description effort allowed_tools
 
   while IFS= read -r file; do
     dir="$(basename "$(dirname "$file")")"
     expected="$dir"
     name="$(extract_frontmatter_value "$file" name)"
     description="$(extract_frontmatter_value "$file" description)"
+    effort="$(extract_frontmatter_value "$file" effort)"
+    allowed_tools="$(extract_frontmatter_value "$file" allowed-tools)"
 
     [[ -n "$name" ]] || fail "$file missing frontmatter name"
     [[ -n "$description" ]] || fail "$file missing frontmatter description"
+    [[ -n "$effort" ]] || fail "$file missing frontmatter effort"
+    [[ -n "$allowed_tools" ]] || fail "$file missing frontmatter allowed-tools"
+    case "$effort" in
+      low | medium | high | max) ;;
+      *) fail "$file effort '$effort' must be low, medium, high, or max" ;;
+    esac
     [[ "$name" == "$expected" ]] || fail "$file name is '$name', expected '$expected'"
   done < <(find .claude/skills -mindepth 2 -maxdepth 2 -name SKILL.md | sort)
 
-  ok "skill frontmatter has matching name/description"
+  ok "skill frontmatter has matching name/description/effort/allowed-tools"
 }
 
 for project in . infra mcp packs portal runner; do
@@ -122,6 +142,7 @@ done
 expect_link .codex/skills ../.claude/skills
 
 check_manual_text
+check_skill_text
 check_coop
 check_task_dirs
 check_skills

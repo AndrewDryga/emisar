@@ -1,6 +1,9 @@
 ---
 name: content-director
 description: "Write and review top-tier marketing website content for emisar: positioning, page narrative, homepage and landing-page copy, proof sections, SEO intent, conversion flow, objection handling, and anti-AI voice. Use with creative-director when redesigning public marketing pages, and with seo-marketing when copy must rank, convert, and sound professionally written rather than generic, templated, overcomplicated, or AI-generated."
+effort: high
+argument-hint: "[page or surface]"
+allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
 # Content Director

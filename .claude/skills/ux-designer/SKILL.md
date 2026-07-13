@@ -2,6 +2,7 @@
 name: ux-designer
 description: Put on the senior product/UI/UX designer hat for emisar's operator console and SaaS-style web app surfaces — design or critique flows/screens for top-tier minimalist UX, information architecture, usability, visual hierarchy, graphic restraint, trust, and complete states. Use when adding or changing a LiveView screen (dashboard, runners, runs, approvals, audit, policies, runbooks, billing, onboarding), a settings/onboarding/admin flow, an approval/confirmation flow, or any operator-facing interaction. Pair with creative-director when a broader visual direction exists, frontend for HEEx/Tailwind implementation, and design-review after screenshots.
 effort: medium
+argument-hint: "[screen or flow]"
 allowed-tools: Read, Grep, Glob, Bash
 ---
 

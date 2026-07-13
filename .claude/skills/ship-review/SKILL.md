@@ -1,6 +1,6 @@
 ---
 name: ship-review
-description: Review a portal/ diff before merge through the product hats AND the Iron Laws in parallel — PM, UX, frontend, security, SEO/design (as relevant) plus iron-review, synthesized into one verdict. Use before opening a PR or when the user asks for a product/multi-hat/pre-ship review. Complements /code-review (bugs) and /iron-review (laws).
+description: Review a portal/ diff before merge through the product hats AND the Iron Laws in parallel — PM, UX, frontend, security, SEO/design (as relevant) plus iron-review, synthesized into one verdict. Use before opening a PR or when the user asks for a product/multi-hat/pre-ship review. Complements /iron-review (laws) and /review-board (the heavyweight whole-PR panel).
 effort: high
 argument-hint: "[git ref, default = working tree vs main]"
 allowed-tools: Read, Grep, Glob, Bash, Agent
@@ -26,7 +26,7 @@ a pure context change. Mapping:
 | `lib/emisar_web/live/**`, `components/**`, `.heex` | **ux-designer** + **frontend** |
 | `controllers/marketing_html/**`, docs, copy, meta | **seo-marketing** + **design-review** |
 | new user-facing capability, scope, or flow | **product-manager** |
-| logic / correctness risk | suggest `/code-review` (this skill is product-level, not a line-by-line bug hunt) |
+| logic / correctness risk | suggest `/review-board` when the risk spans multiple surfaces; this skill is product-level, not a line-by-line bug hunt |
 
 ## 2. Fan out (parallel subagents)
 

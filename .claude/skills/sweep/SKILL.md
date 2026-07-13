@@ -68,14 +68,14 @@ Now **announce the cleaned queue**: open `00_todo/` count, anything unblocked, a
    **House rules first — this comes before the hats and is non-negotiable:**
    - **portal/:** `/iron-review` standalone (the dedicated IL-1…IL-20 checker — cite the law
      each finding breaks) **+** the House-opinions index and every `portal/.agent/rules/*.md`.
-     Then `/ship-review` (PM · UX · security · frontend · SEO synthesized) **and** `/code-review`
-     (correctness bugs).
+     Then `/ship-review` (PM · UX · security · frontend · SEO synthesized); use `/review-board`
+     when correctness risk spans multiple surfaces, and inspect touched callers/tests directly.
    - **Go (runner/mcp):** check the diff against the AGENTS.md **Security posture** (the runner's
-     Iron-Law equivalent: never-a-shell · validate-everything · pinned pack trust · contained
+     security equivalent: no cloud/LLM-controlled shell · validate-everything · pinned pack trust · contained
      paths) **+ Go house style** (slog, `%w` wraps, stdlib table-driven tests, no new deps) + any
-     `.agent/rules/`; then `/security-engineer` (it runs commands on hosts) + `/code-review` + the
-     gate's vet/staticcheck.
-   - **packs:** the `packs/AGENTS.md` conventions (argv-not-shell, bare binary paths, bound args,
+     `.agent/rules/`; then `/security-engineer` (it runs commands on hosts) + `/review-board` when
+     the change warrants a multi-hat pass + the gate's vet check.
+   - **packs:** the `packs/AGENTS.md` conventions (pack-authored argv or bounded fixed-shell programs, bare binary paths, bound args,
      honest risk) + `/security-engineer` (every action is attack surface) + `emisar pack validate`.
    - **then, proportional to what changed:** security (what's the abuse case?), tests (happy +
      denial + cross-account present — a write isn't done without its denial test), docs (is the

@@ -1,6 +1,6 @@
 ---
 name: review-board
-description: The full pre-merge review — convene a board of expert hats (pragmatic staff engineer, domain expert, security, UX, UI, PM, marketing, sales) as parallel review subagents, then synthesize ONE ranked verdict and a prioritized plan to fix everything. Supersedes running /security-review + /code-review + /ship-review separately — it's all of them, more hats, plus a fix plan you can hand to /sweep. Works on a PR, a branch/ref, a commit or range, or your uncommitted local changes — use before landing anything, or whenever you want a thorough multi-perspective review.
+description: The full pre-merge review — convene a board of expert hats (pragmatic staff engineer, domain expert, security, UX, UI, PM, marketing, sales) as parallel review subagents, then synthesize ONE ranked verdict and a prioritized plan to fix everything. Use for a PR, branch, commit range, or uncommitted work when a thorough multi-perspective review is warranted; it combines correctness, security, product, and UX lenses in one pass.
 effort: max
 argument-hint: "[nothing = local changes · commit hash · a..b range · branch/ref · PR number · -- pathspec]"
 allowed-tools: Read, Grep, Glob, Bash, Agent
@@ -11,8 +11,8 @@ allowed-tools: Read, Grep, Glob, Bash, Agent
 Convene a board of expert hats; each reviews the change through ONE lens **in parallel**;
 then YOU (the parent) synthesize one ranked verdict and an ordered plan to fix everything.
 This is the heavyweight, on-demand review — point it at a PR, a branch, a commit/range, or your
-uncommitted local changes. It subsumes `/security-review`, `/code-review`,
-and `/ship-review`'s product hats into one panel, across **all** areas (portal/runner/mcp/packs).
+uncommitted local changes. It combines the staff-correctness, security, and
+`/ship-review` product lenses into one panel, across **all** areas (portal/runner/mcp/packs).
 **Read-only: the board reviews; it never edits.** The deliverable is a *fix plan*, not just notes.
 
 ## 1. Scope the change — PR, branch, commit, range, or local edits
@@ -32,7 +32,7 @@ For **intent** on a non-PR scope, read the commit message(s) in range, or — fo
 
 ## 2. Convene the board (the hats the change earns)
 **Standing hats — always, for any code change:**
-- **Pragmatic staff engineer** — correctness & edge cases, the simplest thing that works, over-engineering, maintainability, "would I approve this PR?" (the `/code-review` lens + the creed).
+- **Pragmatic staff engineer** — correctness & edge cases, the simplest thing that works, over-engineering, maintainability, "would I approve this PR?" (the staff-correctness lens + the creed).
 - **Domain expert** — does it fit emisar's architecture + trust model? Load the touched project's `AGENTS.md`: portal → the Iron Laws (`/iron-review`); runner/mcp → the security posture; packs → the conventions. emisar is an AI-safe infra control plane — flag anything that bends the model.
 - **Security engineer** — lead with the abuse case. **Mandatory — emisar IS a security product** (`/security-engineer`).
 
@@ -88,4 +88,4 @@ Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the f
 **Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `/sweep` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
 
 ## Relationship to the focused reviews
-`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/iron-review` (laws), `/code-review` (bugs), `/security-engineer`, `/ux-designer`, etc. `/ship-review` is the lighter, proportional *in-loop* self-review `/sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.
+`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/iron-review` (laws), `/security-engineer`, `/investigate` (failures), `/ux-designer`, etc. `/ship-review` is the lighter, proportional *in-loop* self-review `/sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.

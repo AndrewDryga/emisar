@@ -2,6 +2,7 @@
 name: seo-marketing
 description: Put on the SEO/marketing hat for the emisar marketing site and positioning — clear honest value prop, crawlable server-rendered pages, titles/meta/structured data, internal linking, and sitemap. Use when editing controllers/marketing_html (home, pricing, security, use-cases, compare, docs, packs), writing positioning/copy, or improving how pages rank and convert.
 effort: medium
+argument-hint: "[page or positioning change]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 

@@ -1,6 +1,8 @@
 ---
 name: recurrent-jobs
 description: Build or review a recurrent background job / scheduled sweep in portal/ the emisar way - context-owned jobs/, supervised by the owning context, idempotent durable-row work, testable. Use when adding/changing a recurrent job or debugging job ticks.
+effort: medium
+argument-hint: "[job or context]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 

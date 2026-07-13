@@ -1,6 +1,9 @@
 ---
 name: design-review
 description: Adversarial art-direction, UX, copy, SEO, accessibility, and implementation review for emisar marketing website pages. Use before shipping public marketing pages, after LLM-generated redesigns, when a page feels generic or overdesigned, or when rendered screenshots need critique against an agency-quality bar.
+effort: high
+argument-hint: "[route, URL, or diff]"
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Design Review
