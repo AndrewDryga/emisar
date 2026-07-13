@@ -78,8 +78,8 @@ env var can be unset after the first successful connect.`,
 				return fmt.Errorf("signing: %w", err)
 			}
 			// connect owns this store for the process lifetime and shares it with
-			// every verifier. It needs no Close: persistence opens, atomically
-			// replaces, and closes the state file within each nonce consumption.
+			// every verifier. It needs no Close: each journal append opens, syncs,
+			// and closes its own descriptor.
 			verifier, err := buildVerifier(rt.cfg, externalID, nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
@@ -187,6 +187,9 @@ env var can be unset after the first successful connect.`,
 // the runner's local group/labels (the cert-scope identity). Every build receives
 // the same process-owned nonce store; only immutable policy is replaced.
 func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
+	if cfg.Signing.EnforceSignatures && !nonceStore.Durable() {
+		return nil, fmt.Errorf("signing: enforcement requires durable replay state")
+	}
 	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
 	for i, ca := range cfg.Signing.TrustedCAs {
 		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
@@ -197,10 +200,10 @@ func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.No
 }
 
 func openNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
-	storePath := ""
-	if cfg.Paths.DataDir != "" {
-		storePath = filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
+	if cfg.Paths.DataDir == "" {
+		return signing.NewMemoryNonceStore(), nil
 	}
+	storePath := filepath.Join(cfg.Paths.DataDir, "signing", "nonce-cache.json")
 	return signing.OpenNonceStore(storePath, cfg.Signing.MaxAttestationAge.Std())
 }
 

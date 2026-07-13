@@ -726,11 +726,12 @@ func BenchmarkCheck(b *testing.B) {
 	atts := make([]*Attestation, b.N)
 	for i := range atts {
 		targets := []string{testRunnerID}
-		sig, err := attest.Sign(priv, attest.Claim{ActionID: "docker.restart", Args: args, Targets: targets, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow})
+		nonce := testNonce(fmt.Sprintf("n%d", i))
+		sig, err := attest.Sign(priv, attest.Claim{ActionID: "docker.restart", Args: args, Targets: targets, Nonce: nonce, IssuedAt: fixedNow})
 		if err != nil {
 			b.Fatalf("Sign: %v", err)
 		}
-		atts[i] = &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow, Cert: &cert}
+		atts[i] = &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: fixedNow, Cert: &cert}
 	}
 
 	b.ResetTimer()
@@ -829,16 +830,10 @@ func TestNonceCacheCorruptStoreFailsClosed(t *testing.T) {
 	}
 }
 
-// TestNonceCacheUnwritableFailsClosed: when a consumed nonce can't be durably
-// recorded, Check must refuse rather than allow a dispatch that could replay
-// after a restart. Skipped under root, which bypasses the directory write bit.
-func TestNonceCacheUnwritableFailsClosed(t *testing.T) {
+func TestNonceJournalUnwritableFailsStartupClosed(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses the directory write bit this test relies on")
 	}
-	cas, priv := persistCAs(t)
-	// A read-only parent dir: the file doesn't exist yet (load is a clean no-op),
-	// but the atomic write into it is denied.
 	roDir := t.TempDir()
 	if err := os.Chmod(roDir, 0o500); err != nil {
 		t.Fatal(err)
@@ -846,22 +841,7 @@ func TestNonceCacheUnwritableFailsClosed(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(roDir, 0o700) }) // let TempDir cleanup remove it
 	store := filepath.Join(roDir, "nonce-cache.json")
 
-	nonces, err := OpenNonceStore(store, time.Hour)
-	if err != nil {
-		t.Fatalf("OpenNonceStore: %v", err)
-	}
-	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), nonces)
-	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
-	}
-	args := map[string]any{"x": 1}
-	att := sign(t, priv, "a.b", args, "nonce-unwritable", time.Now().UTC().Format(time.RFC3339))
-
-	d := v.Check("a.b", args, att)
-	if d.Allowed {
-		t.Fatal("an unpersistable nonce must be refused (fail closed), got Allowed")
-	}
-	if d.Code != "nonce_store_unavailable" {
-		t.Fatalf("refused with %q, want \"nonce_store_unavailable\"", d.Code)
+	if _, err := OpenNonceStore(store, time.Hour); err == nil {
+		t.Fatal("an unwritable replay journal must fail startup")
 	}
 }

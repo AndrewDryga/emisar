@@ -320,10 +320,12 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <span class="flex-none text-zinc-600">—</span>
           <span>
             <strong class="text-zinc-200">Replay survives a restart.</strong>
-            The nonce cache is persisted to disk and reloaded on startup and on every reload that
-            rebuilds the verifier, so a captured, still-in-window signature can't replay across a
-            restart — and if the runner can't durably record a nonce, it refuses the dispatch rather
-            than risk it. The cache stays bounded by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>.
+            Enforcement requires a data directory. Every accepted nonce is appended and synced
+            before dispatch, and expired records are compacted atomically. The journal refuses new
+            work rather than evicting a fresh nonce when its 100,000-entry or 16 MiB bound is reached.
+            Its persisted freshness horizon also prevents an unsafe
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            increase from reopening replay after old records were compacted.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -395,9 +397,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</pre>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stale</code>
             — the timestamp is outside the freshness window (clock skew, a long-queued run, or a
-            slow approval). Re-issue the run, check host clocks (NTP), or widen
+            slow approval). Re-issue the run or check host clocks (NTP). Increasing
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
-            if approvals are the cause.
+            beyond the journal's original horizon requires rotating every trusted CA, stopping the
+            runner, resetting replay state, and restarting.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

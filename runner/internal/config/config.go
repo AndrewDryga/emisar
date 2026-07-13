@@ -37,7 +37,7 @@ type Config struct {
 // The runner ALSO advertises this to the cloud, which then disables its own
 // (operator/runbook) dispatch to this runner.
 //
-// Each v2 attestation binds the exact durable runner-id set the operator selected;
+// Each v3 attestation binds the exact durable runner-id set the operator selected;
 // the runner checks its local id is present. A cert's offline-CA-authored scope is
 // an independent group/label ceiling. Trusting one CA instead of every leaf key
 // makes onboarding an operator one signature and zero runner-config edits.
@@ -252,6 +252,10 @@ func (c *Config) Validate() error {
 // it's rejected. CA ids must be present and unique; the public-key bytes are
 // parsed and length-checked when the verifier is built at connect.
 func (c *Config) validateSigning() error {
+	if c.Signing.EnforceSignatures && strings.TrimSpace(c.Paths.DataDir) == "" {
+		return fmt.Errorf(
+			"config: signing.enforce_signatures requires paths.data_dir for durable replay protection")
+	}
 	if c.Signing.EnforceSignatures && len(c.Signing.TrustedCAs) == 0 {
 		return fmt.Errorf(
 			"config: signing.enforce_signatures is on but signing.trusted_cas is empty — " +

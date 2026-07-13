@@ -74,6 +74,7 @@ func validConfig() *Config {
 		SchemaVersion: SchemaVersion,
 		Runner:        Runner{Group: "g"},
 		Cloud:         Cloud{URL: "wss://cloud.example.com/runner", AuthKeyEnv: "EMISAR_AUTH_KEY"},
+		Paths:         Paths{DataDir: "/var/lib/emisar"},
 		Events:        Events{JSONLPath: "/tmp/events.jsonl"},
 	}
 }
@@ -226,9 +227,24 @@ func TestValidate_Signing(t *testing.T) {
 	}
 }
 
+func TestValidate_SigningEnforcementRequiresDataDir(t *testing.T) {
+	cfg := validConfig()
+	cfg.Paths.DataDir = ""
+	cfg.Signing = Signing{
+		EnforceSignatures: true,
+		TrustedCAs: []TrustedCA{{
+			CAID:      "acme",
+			PublicKey: "1111111111111111111111111111111111111111111111111111111111111111",
+		}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("signature enforcement without paths.data_dir must be rejected")
+	}
+}
+
 // TestValidate_MaxAttestationAgeDefault confirms the 24h default the signing
 // validator applies when max_attestation_age is unset (config.go:240-242) —
-// the bound that caps replay exposure and the nonce cache.
+// the bound that caps replay exposure and defines the journal retention horizon.
 func TestValidate_MaxAttestationAgeDefault(t *testing.T) {
 	cfg := validConfig()
 	if err := cfg.Validate(); err != nil {

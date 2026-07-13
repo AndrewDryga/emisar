@@ -179,15 +179,21 @@ Be clear-eyed about what this does and doesn't guarantee:
   the human-readable names shown beside them. A compromised portal can lie while
   presenting an id/name mapping before the call is signed. Use narrow certificate
   scopes, and verify stable ids out of band for the highest-trust workflows.
-- **Replay cache durability.** The seen-nonce cache is persisted under the
-  runner's data dir. The runner opens it once at boot and every verifier shares
-  that live store; `SIGHUP` swaps only immutable CA/scope/freshness policy. A
-  nonce accepted by the old verifier during the reload window is therefore
-  already consumed when the replacement becomes active. A restart reloads the
-  same state from disk. The runner **fails closed**: if that store can't be read
-  at startup it refuses to start, and if a nonce can't be durably recorded at
-  dispatch time the dispatch is refused (`nonce_store_unavailable`) rather than
-  risk a post-restart replay.
+- **Replay journal durability.** Enforcement requires `paths.data_dir`. The
+  runner appends and fsyncs each accepted nonce under that directory before it
+  admits the dispatch; every hot-reloaded verifier shares the same live store.
+  Expired records are periodically compacted with a synced atomic rename. The
+  journal is capped at 100,000 fresh nonces and 16 MiB; reaching either bound
+  refuses new dispatches without evicting a still-fresh nonce. A restart reloads
+  the same state. Unreadable, corrupt, torn, full, or unwritable state fails
+  closed with `nonce_store_unavailable` rather than reopening replay.
+- **Choose the freshness horizon up front.** The journal persists the largest
+  `max_attestation_age` it may safely protect. Narrowing and later restoring that
+  value is safe because records remain for the persisted horizon; increasing it
+  beyond that horizon is rejected on reload and restart. To increase it, rotate
+  every trusted CA first, stop the runner, remove the nonce journal, update the
+  value, and restart. Rotating trust makes every attestation from the discarded
+  replay history unverifiable.
 - **Queued-while-offline.** A dispatch that sits queued (runner offline) longer
   than `max_attestation_age` — or past the certificate's `valid_until` — is
   refused and must be re-issued.
@@ -215,7 +221,7 @@ cause. The runner's refusal codes:
 | `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
 | `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
 | `cert_scope` | The certificate's scope (group/labels) isn't satisfied by this runner's local `group`/`labels`. | Issue the certificate with a scope matching this runner (or an empty scope), or dispatch to a runner in scope. |
-| `stale` | The attestation's timestamp is outside `±max_attestation_age` (clock skew, a long-queued run, or a slow approval). | Re-issue the run; check host clocks; widen `max_attestation_age` if approvals are the cause. |
+| `stale` | The attestation's timestamp is outside `±max_attestation_age` (clock skew, a long-queued run, or a slow approval). | Re-issue the run; check host clocks; if approvals routinely exceed the configured window, follow the CA-rotation procedure above before increasing it. |
 | `bad_signature` | The signature doesn't verify against the action, exact args, target set, nonce, and time under the certificate's leaf key. | Refresh tools and re-submit with the matching key/certificate pair; re-mint with `emisar signing new-cert` if the pair is wrong. |
 | `replayed` | This nonce was already used. | The client double-sent; re-issue with a fresh dispatch. |
-| `nonce_store_unavailable` | The runner couldn't durably record the nonce (the replay cache is unwritable). | Fix the runner's data-dir permissions/disk; the runner refuses rather than risk a replay after a restart. |
+| `nonce_store_unavailable` | The runner couldn't safely retain the nonce (the replay journal is unavailable, corrupt, or at capacity). | Fix the runner's data-dir permissions/disk or capacity; the runner refuses rather than risk a replay after a restart. |

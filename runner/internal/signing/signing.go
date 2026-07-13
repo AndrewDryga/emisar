@@ -107,6 +107,11 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, g
 	if enforce && runnerID == "" {
 		return nil, fmt.Errorf("signing: enforcement is on with no runner id")
 	}
+	if enforce {
+		if err := nonces.bindRetention(maxAge); err != nil {
+			return nil, err
+		}
+	}
 
 	return &Verifier{
 		enforce:  enforce,
@@ -240,7 +245,7 @@ func (v *Verifier) Check(actionID string, args map[string]any, att *Attestation)
 			"signature does not match the dispatched action, args, targets, nonce, or time")
 	}
 	// 10. The nonce must not have been seen — consuming it on success.
-	ok, err = v.nonces.consume(att.Nonce, issued, v.now().Add(-v.maxAge))
+	ok, err = v.nonces.consume(att.Nonce, issued, v.now())
 	if err != nil {
 		return refuse("nonce_store_unavailable",
 			"could not durably record the attestation nonce; refusing rather than risk a replay")

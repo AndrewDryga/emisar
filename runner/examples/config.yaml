@@ -86,7 +86,7 @@ execution: {}
 #
 # signing:
 #   enforce_signatures: true
-#   max_attestation_age: 24h   # also caps replay exposure + the nonce cache
+#   max_attestation_age: 24h   # choose the replay-journal horizon before first enforcement
 #   trusted_cas:
 #     - ca_id: acme-2026
 #       public_key: e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0

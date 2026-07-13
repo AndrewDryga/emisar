@@ -283,7 +283,7 @@ func TestSigningInitCmd_OutputIsValidEnforcingConfig(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 	yaml := "schema_version: 1\n" +
 		"runner:\n  group: edge\n" +
-		"paths:\n  packs:\n    - " + filepath.Join(dir, "packs") + "\n" +
+		"paths:\n  data_dir: " + filepath.Join(dir, "data") + "\n  packs:\n    - " + filepath.Join(dir, "packs") + "\n" +
 		"events:\n  jsonl_path: " + filepath.Join(dir, "events.jsonl") + "\n" +
 		"signing:\n" +
 		"  enforce_signatures: true\n" +
