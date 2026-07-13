@@ -8,9 +8,11 @@ defmodule EmisarWeb.Telemetry do
 
   @impl true
   def init(_arg) do
-    children = poller_children() ++ reporter_children()
+    # Keep the listener behind its reporter. If the reporter dies, rest_for_one
+    # replaces both so the still-listening endpoint cannot scrape stale state.
+    children = reporter_children() ++ poller_children()
 
-    Supervisor.init(children, strategy: :one_for_one)
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 
   # Telemetry poller — runs `periodic_measurements/0` every 10s so gauge-style
@@ -35,17 +37,21 @@ defmodule EmisarWeb.Telemetry do
   # env var or leave the 9091 default.
   defp reporter_children do
     # Defaults to on; `config/test.exs` flips it off because the in-process
-    # Cowboy port collides with anything else trying to use 9091. `Mix.env/0`
+    # listener collides with anything else trying to use 9091. `Mix.env/0`
     # isn't available in a release, so the default value can't reference it.
     if Application.get_env(:emisar_web, :enable_prometheus_exporter, true) do
       port = String.to_integer(System.get_env("METRICS_PORT") || "9091")
-      [{TelemetryMetricsPrometheus, metrics: metrics(), port: port}]
+
+      [
+        {TelemetryMetricsPrometheus.Core, metrics: metrics()},
+        {Bandit, plug: EmisarWeb.MetricsPlug, port: port}
+      ]
     else
       []
     end
   end
 
-  # TelemetryMetricsPrometheus only supports counter / sum / last_value /
+  # TelemetryMetricsPrometheus.Core only supports counter / sum / last_value /
   # distribution — not summary. Phoenix's generated boilerplate uses
   # summary for everything, which silently drops in Prometheus mode.
   # Map latency-shaped metrics to distribution with reasonable web/db

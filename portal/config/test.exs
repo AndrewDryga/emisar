@@ -82,7 +82,7 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
-# Skip the Prometheus exporter in tests — the in-process Cowboy port
+# Skip the Prometheus exporter in tests — the in-process Bandit port
 # binds 9091 globally, which (a) collides with anything else trying
 # to use it and (b) is dead weight for the suite.
 config :emisar_web, enable_prometheus_exporter: false
