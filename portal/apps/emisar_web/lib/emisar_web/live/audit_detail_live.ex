@@ -110,7 +110,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <.local_time
                 value={@event.occurred_at}
                 mode={:forensic}
-                class="tabular-nums text-zinc-200"
+                class="text-sm leading-5 tabular-nums text-zinc-300"
               />
             </.meta_field>
             <%!-- The event's own id — its permalink identity. It used to hide in the
@@ -120,33 +120,31 @@ defmodule EmisarWeb.AuditDetailLive do
              the full row and wraps so it never clips (and its copy button never
              shears off the cell edge). --%>
             <.meta_field label="Event ID" wrap>
-              <.copyable_id value={@event.id} class="text-xs text-zinc-300" />
+              <.copyable_id value={@event.id} class="text-sm leading-5 text-zinc-300" />
             </.meta_field>
             <.meta_field label="IP address">
               <.copyable_id
                 :if={@event.ip_address}
                 value={@event.ip_address}
-                class="text-xs text-zinc-300"
+                class="text-sm leading-5 text-zinc-300"
               />
-              <span :if={!@event.ip_address} class="text-zinc-500">—</span>
+              <span :if={!@event.ip_address} class="text-sm leading-5 text-zinc-500">—</span>
             </.meta_field>
-            <.meta_field label="Request ID">
+            <.meta_field label="Request ID" wrap>
               <.copyable_id
                 :if={@event.request_id}
                 value={@event.request_id}
-                class="text-xs text-zinc-400"
+                class="text-sm leading-5 text-zinc-300"
               />
-              <span :if={!@event.request_id} class="text-zinc-500">—</span>
+              <span :if={!@event.request_id} class="text-sm leading-5 text-zinc-500">—</span>
             </.meta_field>
           </div>
 
-          <%!-- Actor → Target, NAKED clusters (no cards): the arrow still
-               draws the relationship ("user X acted ON runner Y") between
-               the two field-key columns. The actor track hugs its content
-               (max-content, shrinkable under pressure) so the arrow sits
-               BETWEEN the clusters — a 1fr left column left it hanging
-               mid-page in empty space. --%>
-          <div class="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-[minmax(0,max-content)_auto_minmax(0,1fr)] sm:items-start sm:gap-x-10">
+          <%!-- Actor → Target, NAKED clusters (no cards): the arrow draws the
+               relationship between two aligned record stacks. The actor track
+               is bounded so a long MCP posture row cannot push the arrow across
+               the page; below lg the records stack instead of becoming cramped. --%>
+          <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(18rem,24rem)_auto_minmax(0,1fr)] lg:items-start lg:gap-x-12">
             <.entity_card
               role="Actor"
               kind={@event.actor_kind}
@@ -162,7 +160,7 @@ defmodule EmisarWeb.AuditDetailLive do
               mcp_client_host={if posture.bridge?, do: posture.host}
               mcp_client_os={if posture.bridge?, do: posture.os}
             />
-            <div class="hidden flex-none items-center pt-6 sm:flex">
+            <div class="hidden flex-none items-center pt-7 lg:flex">
               <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
             </div>
             <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
@@ -335,11 +333,9 @@ defmodule EmisarWeb.AuditDetailLive do
     """
   end
 
-  # Actor/Subject card — name (linked when possible) up top with a
-  # subdued role label, ID underneath. Side-by-side with an arrow
-  # between them so the reader sees "this acted on that" at a glance.
-  # The Actor card optionally renders the User-Agent (the actor's
-  # device); the Subject card doesn't take one.
+  # Actor/Target record — identity first, then one aligned definition list for
+  # every forensic fact. Side-by-side with an arrow at lg+ so the reader sees
+  # "this acted on that" without letting long provenance dictate the tracks.
   attr :role, :string, required: true
   attr :current_account, :map, required: true
   attr :self?, :boolean, default: false
@@ -359,9 +355,9 @@ defmodule EmisarWeb.AuditDetailLive do
 
   defp entity_card(%{self?: true} = assigns) do
     ~H"""
-    <div class="min-w-0">
-      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
-      <p class="mt-1.5 text-sm text-zinc-400">
+    <div class="min-w-0" data-audit-entity={@role}>
+      <.entity_heading role={@role} kind={@kind} />
+      <p class="mt-2 text-sm text-zinc-400">
         same as actor <span class="text-zinc-600">(self)</span>
       </p>
     </div>
@@ -370,18 +366,27 @@ defmodule EmisarWeb.AuditDetailLive do
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
-    <div class="min-w-0">
-      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
-      <p class="mt-1.5 text-sm text-zinc-500">— (not recorded)</p>
+    <div class="min-w-0" data-audit-entity={@role}>
+      <.entity_heading role={@role} />
+      <p class="mt-2 text-sm text-zinc-500">— (not recorded)</p>
     </div>
     """
   end
 
   defp entity_card(assigns) do
+    device = device_label(assigns.user_agent)
+
+    mcp_client =
+      [assigns.mcp_client, assigns.mcp_client_host, assigns.mcp_client_os]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.join(" · ")
+
+    assigns = assign(assigns, device: device, mcp_client_label: mcp_client)
+
     ~H"""
-    <div class="min-w-0">
-      <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
-      <div class="mt-1.5 text-sm">
+    <div class="min-w-0" data-audit-entity={@role}>
+      <.entity_heading role={@role} kind={@kind} />
+      <div class="mt-2">
         <EmisarWeb.AuditLive.ref
           kind={@kind}
           id={@id}
@@ -391,81 +396,111 @@ defmodule EmisarWeb.AuditDetailLive do
           current_account={@current_account}
         />
       </div>
-      <div :if={@id} class="mt-1 flex items-center gap-1.5 text-[10px] text-zinc-500">
-        <span class="font-semibold uppercase tracking-wider">id</span>
-        <.copyable_id value={@id} class="text-[10px] text-zinc-400" />
-      </div>
-      <%!-- Runner line — which host an action_run executed on (historical rows
-           whose target is the run). No icon — just `runner: name (group)
-           version`. --%>
-      <p :if={@runner} class="mt-1 text-[11px] text-zinc-400">
-        <span class="text-zinc-500">runner:</span>
-        <.link
-          navigate={~p"/app/#{@current_account}/runners/#{@runner.id}"}
-          class="text-brand-300 hover:text-brand-200"
-        >
-          {runner_label(@runner)}
-        </.link>
-      </p>
-      <%!-- Run line — the inverse: current run events target the RUNNER and
-           carry the run in the payload; link back to what actually ran. --%>
-      <p :if={@run} class="mt-1 text-[11px] text-zinc-400">
-        <span class="text-zinc-500">run:</span>
-        <.link
-          navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-          class="text-brand-300 hover:text-brand-200"
-        >
-          {@run.action_id}
-        </.link>
-      </p>
-      <%!-- Device line — what the ACTOR was using. Browser/OS for human
-           users, "MCP bridge" for LLM clients. Hidden for the runner's
-           bare Go HTTP client (it's not a device worth showing — the
-           runner appears under the Subject when relevant). The full UA
-           string is one click away via the `title=` tooltip. --%>
-      <% device = device_label(@user_agent) %>
-      <p
-        :if={device}
-        class="mt-2 flex items-center gap-1.5 truncate text-[11px] text-zinc-500"
-        title={@user_agent}
+      <%!-- One label/value grid owns every secondary fact. Every cell has a
+           20px minimum row with a 4px gap; copy buttons can no longer make the
+           ID row taller than the text-only rows below it. --%>
+      <dl
+        :if={
+          @id || @runner || @run || @device || @auth_method || @mcp_client_label != "" || @mcp_session
+        }
+        class="mt-3 grid grid-cols-[5.25rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
+        data-audit-facts
       >
-        <.icon name={UserAgent.icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
-        <span class="truncate">{device}</span>
-      </p>
-      <%!-- How the human actor authenticated this session + whether a second
-           factor was verified (provenance — decision 6). Absent for API keys
-           and runners (the credential IS the actor). So an auditor can see, on
-           any action, the sign-in method and 2FA state without opening JSON. --%>
-      <p :if={@auth_method} class="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-500">
-        <.icon name="hero-finger-print" class="h-3 w-3 shrink-0 text-zinc-600" />
-        <span>via <span class="text-zinc-300">{auth_method_label(@auth_method)}</span></span>
-        <.chip :if={@mfa == true} tone={:brand}>2FA</.chip>
-        <.chip :if={@mfa == false}>no 2FA</.chip>
-      </p>
-      <%!-- MCP coordinates for this actor: the client the LLM connected
-           through (bridge only) and the session it was on. They belong to
-           the actor, so they live here rather than in the event meta strip. --%>
-      <div
-        :if={@mcp_client || @mcp_session}
-        class="mt-2 space-y-1 border-t border-zinc-800/70 pt-2 text-[11px]"
-      >
-        <p :if={@mcp_client} class="flex items-center gap-1.5 truncate text-zinc-400">
-          <.icon name="hero-cpu-chip" class="h-3 w-3 shrink-0 text-zinc-600" />
-          <span class="truncate" title={@mcp_client_host}>
-            MCP client: {@mcp_client}<span :if={@mcp_client_host} class="text-zinc-500">
-              · {@mcp_client_host}</span>
-            <span :if={@mcp_client_os} class="text-zinc-500">
-              · {@mcp_client_os}
-            </span>
-          </span>
-        </p>
-        <p :if={@mcp_session} class="truncate font-mono text-[10px] text-zinc-500">
-          MCP session <span class="text-zinc-400">{@mcp_session}</span>
-        </p>
-      </div>
+        <dt :if={@id} class={entity_fact_label_class()}>ID</dt>
+        <dd :if={@id} class={entity_fact_value_class()}>
+          <.copyable_id value={@id} class="text-xs leading-5 text-zinc-300" />
+        </dd>
+
+        <dt :if={@runner} class={entity_fact_label_class()}>Runner</dt>
+        <dd :if={@runner} class={entity_fact_value_class()}>
+          <.link
+            navigate={~p"/app/#{@current_account}/runners/#{@runner.id}"}
+            class="text-brand-300 hover:text-brand-200"
+          >
+            {runner_label(@runner)}
+          </.link>
+        </dd>
+
+        <dt :if={@run} class={entity_fact_label_class()}>Run</dt>
+        <dd :if={@run} class={entity_fact_value_class()}>
+          <.link
+            navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
+            class="text-brand-300 hover:text-brand-200"
+          >
+            {@run.action_id}
+          </.link>
+        </dd>
+
+        <dt :if={@device} class={entity_fact_label_class()}>User agent</dt>
+        <dd :if={@device} class={[entity_fact_value_class(), "truncate"]} title={@user_agent}>
+          {@device}
+        </dd>
+
+        <dt :if={@auth_method} class={entity_fact_label_class()}>Sign-in</dt>
+        <dd :if={@auth_method} class={entity_fact_centered_value_class()}>
+          <span>{auth_method_label(@auth_method)}</span>
+          <.chip :if={@mfa == true} tone={:brand}>2FA</.chip>
+          <.chip :if={@mfa == false}>no 2FA</.chip>
+        </dd>
+
+        <dt :if={@mcp_client_label != ""} class={entity_fact_label_class()}>MCP client</dt>
+        <dd
+          :if={@mcp_client_label != ""}
+          class={[entity_fact_value_class(), "truncate"]}
+          title={@mcp_client_label}
+        >
+          {@mcp_client_label}
+        </dd>
+
+        <dt :if={@mcp_session} class={entity_fact_label_class()}>MCP session</dt>
+        <dd
+          :if={@mcp_session}
+          class={[entity_fact_value_class(), "truncate font-mono"]}
+          title={@mcp_session}
+        >
+          {@mcp_session}
+        </dd>
+      </dl>
     </div>
     """
   end
+
+  attr :role, :string, required: true
+  attr :kind, :string, default: nil
+
+  defp entity_heading(assigns) do
+    assigns = assign(assigns, :kind_label, entity_kind_label(assigns.kind))
+
+    ~H"""
+    <div
+      class="flex items-center gap-1.5 text-xs uppercase leading-4 tracking-wider"
+      data-audit-entity-heading
+    >
+      <span :if={@kind_label} class="font-semibold text-zinc-400" data-audit-entity-kind>
+        {@kind_label}
+      </span>
+      <span :if={@kind_label} aria-hidden="true" class="text-zinc-700">·</span>
+      <span
+        class={["font-medium", if(@kind_label, do: "text-zinc-600", else: "text-zinc-500")]}
+        data-audit-entity-role
+      >
+        {@role}
+      </span>
+    </div>
+    """
+  end
+
+  defp entity_kind_label(nil), do: nil
+  defp entity_kind_label(kind), do: String.replace(kind, "_", " ")
+
+  defp entity_fact_label_class,
+    do: "flex min-h-5 items-start font-normal text-zinc-500"
+
+  defp entity_fact_value_class,
+    do: "flex min-h-5 min-w-0 items-start text-zinc-300"
+
+  defp entity_fact_centered_value_class,
+    do: "flex min-h-5 min-w-0 items-center gap-2 text-zinc-300"
 
   defp auth_method_label("magic_link"), do: "Magic link"
   defp auth_method_label("sso"), do: "SSO"

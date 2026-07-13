@@ -117,15 +117,24 @@ defmodule EmisarWeb.TimeHelpersTest do
   end
 
   describe "run_actor/1" do
-    test "composes the one-line label, human first, channel second" do
+    test "returns only the accountable person's name, falling back to email" do
       assert run_actor(%{
                source: :mcp,
                requested_by: %{full_name: "Jordan", email: "j@x.co"},
                api_key: %{name: "Claude Code", created_by: %{email: "j@x.co"}}
-             }) == "Jordan via Claude Code"
+             }) == "Jordan"
 
       assert run_actor(%{source: :operator, requested_by: %{full_name: "Maya", email: "m@x.co"}}) ==
                "Maya"
+
+      assert run_actor(%{
+               source: :mcp,
+               requested_by: nil,
+               api_key: %{
+                 name: "Claude Code",
+                 created_by: %{full_name: "  ", email: "owner@x.co"}
+               }
+             }) == "owner@x.co"
 
       assert run_actor(%{source: :mcp, requested_by: nil, api_key: %{name: "ci-bot"}}) == "ci-bot"
       assert run_actor(%{}) == "—"

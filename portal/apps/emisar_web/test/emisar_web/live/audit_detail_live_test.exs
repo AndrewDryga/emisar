@@ -38,9 +38,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    # Runner is a subject property: name (group) version. The "runner:" label is
+    # Runner is a target property: name (group) version. The "Runner" label is
     # plain; only the name links to the runner. The subject's id renders too.
-    assert html =~ "runner:"
+    assert html =~ ">Runner<"
     assert html =~ "web-01 (frontend) 0.7.4"
     assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
     assert html =~ run.id
@@ -69,15 +69,23 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, event} = Audit.record(Audit.run_event_changeset(%{run | status: :success}))
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # Target = WHERE it executed (the runner, by name)…
     assert html =~ "web-02"
     assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
     # …and the card links back to WHAT ran.
-    assert html =~ "run:"
+    assert html =~ ">Run<"
     assert html =~ "caddy.access_log_tail"
     assert html =~ ~p"/app/#{account}/runs/#{run.id}"
+
+    target_heading =
+      lv
+      |> element(~s([data-audit-entity="Target"] [data-audit-entity-heading]))
+      |> render()
+
+    assert target_heading =~
+             ~r/data-audit-entity-kind[^>]*>\s*runner\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
   end
 
   test "surfaces self-reported client metadata from the run payload, labeled as such", %{
@@ -106,7 +114,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ "not verified device posture"
   end
 
-  test "the actor card leads with the human behind an api_key/MCP actor", %{conn: conn} do
+  test "the actor card stacks the human above the api_key/client", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
 
@@ -127,11 +135,44 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, event} =
       Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: key.id)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    # The Actor card names the owner; the key trails as "· via Claude Code".
-    assert html =~ "Jordan Vale"
-    assert html =~ "via Claude Code"
+    primary =
+      lv
+      |> element(~s([data-audit-entity="Actor"] [data-audit-primary]))
+      |> render()
+
+    secondary =
+      lv
+      |> element(~s([data-audit-entity="Actor"] [data-audit-secondary]))
+      |> render()
+
+    heading =
+      lv
+      |> element(~s([data-audit-entity="Actor"] [data-audit-entity-heading]))
+      |> render()
+
+    facts =
+      lv
+      |> element(~s([data-audit-entity="Actor"] [data-audit-facts]))
+      |> render()
+
+    assert heading =~ "text-xs"
+    assert heading =~ "leading-4"
+    assert heading =~ "font-semibold text-zinc-400"
+
+    assert heading =~
+             ~r/data-audit-entity-kind[^>]*>\s*api key\s*<.*data-audit-entity-role[^>]*>\s*Actor\s*</s
+
+    refute primary =~ "api_key:"
+    assert primary =~ "Jordan Vale"
+    refute primary =~ "Claude Code"
+    assert secondary =~ "Claude Code"
+    refute secondary =~ "via"
+    assert facts =~ "grid-cols-[5.25rem_minmax(0,1fr)]"
+    assert facts =~ "gap-y-1"
+    assert facts =~ "text-xs"
+    assert facts =~ "leading-5"
   end
 
   test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
@@ -146,8 +187,8 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    # "via SSO" with a 2FA badge — answerable at a glance, not buried in JSON.
-    assert html =~ "via"
+    # Sign-in method with a 2FA badge — answerable at a glance, not buried in JSON.
+    assert html =~ "Sign-in"
     assert html =~ "SSO"
     assert html =~ "2FA"
   end
@@ -232,7 +273,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     # The subject-gated run fetch returns nil cross-account → the runner line
     # is simply hidden; the foreign runner's name/group never reach the page.
     refute html =~ "foreign-secret-runner"
-    refute html =~ "runner:"
+    refute html =~ ">Runner<"
   end
 
   # when the action_run subject has been deleted since the
@@ -308,10 +349,18 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         target_id: user.id
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     assert html =~ "same as actor"
     assert html =~ "(self)"
+
+    target_heading =
+      lv
+      |> element(~s([data-audit-entity="Target"] [data-audit-entity-heading]))
+      |> render()
+
+    assert target_heading =~
+             ~r/data-audit-entity-kind[^>]*>\s*user\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
   end
 
   test "the event id is a first-class copyable meta field; payload copy says Copy JSON",
@@ -329,6 +378,20 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute html =~ "event:#{event.id}"
     # The payload copy names what it grabs.
     assert html =~ "Copy JSON"
+  end
+
+  test "event metadata peers use one value tone", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    context = %RequestContext{ip_address: "203.0.113.7", request_id: "req_same_tone"}
+    {:ok, event} = Audit.log(account.id, "audit.bare_event", context: context)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert html =~ "text-sm leading-5 tabular-nums text-zinc-300"
+    assert length(String.split(html, "text-sm leading-5 text-zinc-300")) >= 4
+    refute html =~ "text-sm leading-5 tabular-nums text-zinc-200"
+    refute html =~ "text-sm leading-5 text-zinc-400"
   end
 
   # payload rendering covers the edges: a nil payload shows
@@ -446,17 +509,17 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         user_agent: "Go-http-client/1.1"
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # The bare Go HTTP client is not rendered as a device, and not parsed into
     # an MCP posture block — the UA string never appears on the actor card.
     refute html =~ "Go-http-client"
-    refute html =~ "MCP client:"
+    refute has_element?(lv, "[data-audit-facts] dt", "MCP client")
   end
 
   # an opaque UA with no `client=`/`host=` posture block is
   # NOT mislabeled as the MCP bridge: parse_client_posture/1 only treats a UA as
-  # a bridge when it actually parsed a structured posture field, so "MCP client:"
+  # a bridge when it actually parsed a structured posture field, so "MCP client"
   # never shows for an arbitrary string (it's just shown as a device instead).
   test "an opaque non-bridge UA is not labeled as the MCP bridge", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -468,10 +531,10 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         user_agent: "python-requests/2.31.0"
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # No parsed posture → no MCP attribution. (The device line may still show a
     # short token, but the bridge-only cells stay hidden.)
-    refute html =~ "MCP client:"
+    refute has_element?(lv, "[data-audit-facts] dt", "MCP client")
   end
 end

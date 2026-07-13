@@ -29,7 +29,7 @@ defmodule EmisarWeb.AuditLiveTest do
         })
         |> Repo.insert()
 
-      {:ok, _event} =
+      {:ok, event} =
         Audit.log(account.id, "runner.connected",
           actor_kind: "runner",
           actor_id: runner.id,
@@ -41,7 +41,7 @@ defmodule EmisarWeb.AuditLiveTest do
           user_agent: "emisar-runner/0.1.0"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       # ONE identity per row — the human label; the machine code lives on the
       # detail page. The meta fragment carries the actor by name + the IP; a
@@ -51,10 +51,20 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "10.0.5.12"
       assert html =~ "db-prod-01"
       refute html =~ "db-prod-01 · → db-prod-01"
-      # The whole row is the one link — into the EVENT detail.
-      event =
-        Repo.all(Emisar.Audit.Event) |> Enum.find(&(&1.event_type == "runner.connected"))
+      event_primary = lv |> element("#event-#{event.id} [data-audit-event-primary]") |> render()
+      actor_primary = lv |> element("#event-#{event.id} [data-audit-primary]") |> render()
 
+      target_primary =
+        lv
+        |> element("#event-#{event.id} [data-audit-cell-primary]", "self")
+        |> render()
+
+      for primary <- [event_primary, actor_primary, target_primary] do
+        assert primary =~ "text-sm"
+        assert primary =~ "leading-5"
+      end
+
+      # The whole row is the one link — into the EVENT detail.
       assert html =~ ~p"/app/#{account}/audit/#{event.id}"
       # No day bands (relative times carry recency; the exact stamp rides each
       # row's tooltip) — the column header is the list's first row.
@@ -113,7 +123,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "renamed-prod"
     end
 
-    test "an api_key/MCP actor reads human-first: owner leads, key as via", %{conn: conn} do
+    test "an api_key/MCP actor stacks the owner above the key", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
 
@@ -131,15 +141,21 @@ defmodule EmisarWeb.AuditLiveTest do
           created_by_id: owner.id
         )
 
-      {:ok, _} =
+      {:ok, event} =
         Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: key.id)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
       # A wall of generically-named keys stays legible: the accountable human
-      # leads, the key name trails as "via" context.
-      assert html =~ "Jordan Vale"
-      assert html =~ "via Claude Code"
+      # leads in the normal-value tier and the key gets its own muted line.
+      primary = lv |> element("#event-#{event.id} [data-audit-primary]") |> render()
+      secondary = lv |> element("#event-#{event.id} [data-audit-secondary]") |> render()
+
+      assert has_element?(lv, ~s(#event-#{event.id} > a[class~="xl:items-start"]))
+      assert primary =~ "Jordan Vale"
+      refute primary =~ "Claude Code"
+      assert secondary =~ "Claude Code"
+      refute secondary =~ "via"
     end
 
     test "rows name the actor, and the date filters render in the facet panel",

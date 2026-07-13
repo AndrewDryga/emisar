@@ -23,6 +23,15 @@ defmodule Emisar.Users.User.Query do
   `{id, label_field}` tuples. Plain SQL composition for label lookup
   fan-out; not paginated.
   """
+  def select_labels(queryable, ids, :display_name) do
+    queryable
+    |> where([users: u], u.id in ^ids)
+    |> select(
+      [users: u],
+      {u.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+    )
+  end
+
   def select_labels(queryable, ids, field) do
     queryable
     |> where([users: u], u.id in ^ids)

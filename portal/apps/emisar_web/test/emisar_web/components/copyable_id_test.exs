@@ -3,7 +3,8 @@ defmodule EmisarWeb.Components.CopyableIdTest do
   Renders `EmisarWeb.CoreComponents.copyable_id/1` — the ONE inline copy
   affordance for machine identifiers. Asserts the value renders mono, the copy
   button carries the literal value (CSP-safe `data-copy-text`, not a selector),
-  the id never free-space-truncates, and interpolated values are escaped
+  the button cannot inherit and expand a surrounding row's line height, the id
+  never free-space-truncates, and interpolated values are escaped
   (IL-16: hostnames/ids carry attacker-influenceable text).
   """
   use ExUnit.Case, async: true
@@ -21,6 +22,7 @@ defmodule EmisarWeb.Components.CopyableIdTest do
       assert html =~ "font-mono"
       assert html =~ ~s(data-copy-text="api-iad-3")
       assert html =~ ~s(aria-label="Copy")
+      assert html =~ "leading-none"
     end
 
     test "the value wraps, never free-space-truncates" do

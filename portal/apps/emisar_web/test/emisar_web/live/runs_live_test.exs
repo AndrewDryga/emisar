@@ -1,16 +1,16 @@
 defmodule EmisarWeb.RunsLiveTest do
   @moduledoc """
-  The runs list names the accountable HUMAN of each run first — the requesting
-  operator, or an MCP/LLM key's owner — with the API key/client as secondary
-  "via" context, never replacing the human.
+  The runs list names the accountable HUMAN of each run — the requesting
+  operator, or an MCP/LLM key's owner — with an origin icon and no redundant
+  channel prose.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
 
-  test "leads with the human and shows the key as via context", %{conn: conn} do
+  test "shows only the accountable person's name beside the source icon", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
-    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+    owner = Fixtures.Users.create_user(full_name: "Jordan Vale", email: "jordan@example.test")
 
     _ =
       Fixtures.Memberships.create_membership(
@@ -48,9 +48,13 @@ defmodule EmisarWeb.RunsLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
-    # The human owns the "Dispatched by" cell; the key trails as "via …".
-    assert html =~ "Jordan Vale"
-    assert html =~ "via Claude Code"
+    # The source icon already says how the run arrived; the cell only names the
+    # accountable person and does not spend width repeating the API key.
+    assert html =~ ~s(title="Jordan Vale")
+    assert html =~ "hero-bolt"
+    assert html =~ ~s(aria-label="Dispatched via MCP")
+    refute html =~ owner.email
+    refute html =~ "via Claude Code"
     # Secondary columns (Source/Duration) collapse below lg so the table fits
     # a phone in an incident.
     assert html =~ "hidden lg:table-cell"
@@ -58,6 +62,42 @@ defmodule EmisarWeb.RunsLiveTest do
     # consistent with the rest of the app — not a raw server-UTC string.
     assert html =~ ~s(phx-hook="LocalTime")
     assert html =~ ~s(data-format="relative")
+  end
+
+  test "falls back to the accountable person's email when no name exists", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    owner = Fixtures.Users.create_user(full_name: nil, email: "owner@example.test")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        name: "Claude Code",
+        created_by_id: owner.id
+      )
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+    {:ok, _run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        api_key_id: key.id,
+        args: %{}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+    assert html =~ ~s(title="#{owner.email}")
+    refute html =~ "via Claude Code"
   end
 
   test "a deep-linked api_key_id scopes runs to that agent and reads active in the Agent filter",

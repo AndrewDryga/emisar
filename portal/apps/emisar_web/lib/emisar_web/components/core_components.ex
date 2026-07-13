@@ -2152,7 +2152,11 @@ defmodule EmisarWeb.CoreComponents do
   with `run_actor/1`. The caller caps the width (`max-w-*`) where the column is
   tight; the label always stays one line.
 
-      <.source_badge source={run.source} label={run_actor(run)} class="max-w-[12rem] text-xs" />
+      <.source_badge
+        source={run.source}
+        label={run_actor(run)}
+        class="max-w-[12rem] text-xs"
+      />
   """
   attr :source, :any,
     required: true,
@@ -2162,10 +2166,18 @@ defmodule EmisarWeb.CoreComponents do
   attr :class, :string, default: nil
 
   def source_badge(assigns) do
+    assigns = assign(assigns, :source_tooltip, source_tooltip(assigns.source))
+
     ~H"""
-    <span class={["inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]} title={@label}>
-      <.icon name={source_icon(@source)} class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-      <span class="truncate">{@label}</span>
+    <span class={["inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]}>
+      <.tooltip
+        text={@source_tooltip}
+        aria_label={@source_tooltip}
+        class="shrink-0"
+      >
+        <.icon name={source_icon(@source)} class="h-3.5 w-3.5 text-zinc-500" />
+      </.tooltip>
+      <span class="truncate" title={@label}>{@label}</span>
     </span>
     """
   end
@@ -2174,6 +2186,11 @@ defmodule EmisarWeb.CoreComponents do
   defp source_icon(:runbook), do: "hero-book-open"
   defp source_icon(:scheduled), do: "hero-clock"
   defp source_icon(_operator), do: "hero-user"
+
+  defp source_tooltip(:mcp), do: "Dispatched via MCP"
+  defp source_tooltip(:runbook), do: "Dispatched by a runbook"
+  defp source_tooltip(:scheduled), do: "Dispatched by a schedule"
+  defp source_tooltip(_operator), do: "Dispatched by an operator"
 
   @doc """
   The ONE status dot — the colored circle every live-state indicator composes
@@ -2806,7 +2823,7 @@ defmodule EmisarWeb.CoreComponents do
         data-copy-label-copied="✓"
         aria-label="Copy"
         title="Copy"
-        class="shrink-0 rounded p-0.5 text-zinc-600 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+        class="shrink-0 rounded p-0.5 leading-none text-zinc-600 transition hover:text-zinc-200 focus-visible:text-zinc-200"
       >
         <.icon name="hero-clipboard-document" class="h-3.5 w-3.5" />
       </button>
@@ -3520,8 +3537,11 @@ defmodule EmisarWeb.CoreComponents do
     * **Dismissable** — the `Tooltip` hook hides the bubble on `Escape` while
       keeping focus on the trigger, re-arming on the next hover/focus.
 
-  Pass an explicit `id` when the same tip renders more than once on a page (a
-  per-row lock) to keep the trigger + bubble ids unique.
+  Pass an explicit `id` when the same described tip renders more than once on a
+  page (a per-row lock) to keep the trigger + bubble ids unique. An icon-only
+  trigger instead passes `aria_label`: it uses the same visual hover/focus bubble
+  without ids or a hook, so a responsive component may duplicate the slot safely;
+  the accessible name already carries the tooltip text.
 
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
@@ -3530,21 +3550,29 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :id, :string, default: nil, doc: "bubble id — override when the same tip repeats on a page"
   attr :text, :string, required: true
+  attr :aria_label, :string, default: nil, doc: "accessible name for an icon-only trigger"
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
   def tooltip(assigns) do
-    assigns =
-      assign(assigns, :tooltip_id, assigns.id || "tooltip-#{:erlang.phash2(assigns.text)}")
+    tooltip_id =
+      cond do
+        assigns.id -> assigns.id
+        assigns.aria_label -> nil
+        true -> "tooltip-#{:erlang.phash2(assigns.text)}"
+      end
+
+    assigns = assign(assigns, :tooltip_id, tooltip_id)
 
     ~H"""
     <span
-      id={"#{@tooltip_id}-tt"}
+      id={@tooltip_id && "#{@tooltip_id}-tt"}
       class={["group/tooltip relative inline-flex", @class]}
       tabindex="0"
+      aria-label={@aria_label}
       aria-describedby={@tooltip_id}
-      phx-hook="Tooltip"
+      phx-hook={@tooltip_id && "Tooltip"}
     >
       {render_slot(@inner_block)}
       <%!-- Revealed, the bubble is pointer-interactive and a transparent `before`

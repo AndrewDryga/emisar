@@ -283,7 +283,10 @@ defmodule Emisar.Runs.ActionRun.Query do
     queryable
     |> join(:inner, [runs: r], u in assoc(r, :requested_by), as: :requested_by)
     |> distinct(true)
-    |> select([requested_by: u], {u.id, coalesce(u.full_name, u.email)})
+    |> select(
+      [requested_by: u],
+      {u.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+    )
   end
 
   @doc """

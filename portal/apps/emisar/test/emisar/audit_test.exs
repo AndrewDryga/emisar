@@ -991,8 +991,8 @@ defmodule Emisar.AuditTest do
       account: account,
       subject: subject
     } do
-      alice = Fixtures.Users.create_user(email: "alice@example.com")
-      bob = Fixtures.Users.create_user(email: "bob@example.com")
+      alice = Fixtures.Users.create_user(email: "alice@example.com", full_name: "Alice")
+      bob = Fixtures.Users.create_user(email: "bob@example.com", full_name: "Bob")
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: alice.id)
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: bob.id)
 
@@ -1002,7 +1002,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
       {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
 
-      assert {:ok, [{alice_id, "alice@example.com"}, {bob_id, "bob@example.com"}]} =
+      assert {:ok, [{alice_id, "Alice"}, {bob_id, "Bob"}]} =
                Audit.list_actor_options("user", subject)
 
       assert alice_id == alice.id
@@ -1014,13 +1014,13 @@ defmodule Emisar.AuditTest do
       subject: subject
     } do
       # A member who has never acted — not in the log, so absent by default.
-      quiet = Fixtures.Users.create_user(email: "quiet@example.com")
+      quiet = Fixtures.Users.create_user(email: "quiet@example.com", full_name: "Quiet User")
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: quiet.id)
 
       assert {:ok, []} = Audit.list_actor_options("user", subject)
 
       # ensure them in so the picker SELECTS them instead of falling back to All.
-      assert {:ok, [{id, "quiet@example.com"}]} =
+      assert {:ok, [{id, "Quiet User"}]} =
                Audit.list_actor_options("user", subject, ensure: quiet.id)
 
       assert id == quiet.id
@@ -1158,7 +1158,8 @@ defmodule Emisar.AuditTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      member = Fixtures.Users.create_user(email: "departing@example.com")
+      member =
+        Fixtures.Users.create_user(email: "departing@example.com", full_name: "Departing User")
 
       membership =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
@@ -1167,7 +1168,7 @@ defmodule Emisar.AuditTest do
         Audit.log(account.id, "user.invited", target_kind: "user", target_id: member.id)
 
       # While the member is in the account, the picker offers them.
-      assert {:ok, [{id, "departing@example.com"}]} =
+      assert {:ok, [{id, "Departing User"}]} =
                Audit.list_target_options("user", subject)
 
       assert id == member.id
@@ -1418,7 +1419,7 @@ defmodule Emisar.AuditTest do
 
       refs = Audit.resolve_references([e_user, e_runner, e_key])
 
-      assert refs["user"][user.id] == user.email
+      assert refs["user"][user.id] == user.full_name
       assert refs["runner"][runner.id] == "db-prod-01"
       assert refs["api_key"][api_key.id] == api_key.name
     end
@@ -1442,6 +1443,33 @@ defmodule Emisar.AuditTest do
 
       assert refs["api_key"][api_key.id] == api_key.name
       assert refs["api_key_owner"][api_key.id] == (user.full_name || user.email)
+    end
+
+    test "falls back to email when an actor or key owner has no nonblank name", %{
+      account: account
+    } do
+      user = Fixtures.Users.create_user(full_name: "  ")
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      {_raw, api_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, event} =
+        Audit.log(account.id, "action.dispatched", actor_kind: "user", actor_id: user.id)
+
+      {:ok, key_event} =
+        Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: api_key.id)
+
+      refs = Audit.resolve_references([event, key_event])
+
+      assert refs["user"][user.id] == user.email
+      assert refs["api_key_owner"][api_key.id] == user.email
     end
 
     test "an api_key owner in another account does not resolve (account-scoped)" do

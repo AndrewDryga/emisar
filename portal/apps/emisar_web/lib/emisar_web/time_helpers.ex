@@ -243,20 +243,24 @@ defmodule EmisarWeb.TimeHelpers do
   defp run_via(%{source: :scheduled}), do: "schedule"
   defp run_via(_run), do: nil
 
-  defp user_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
+  defp user_display_name(%{full_name: name, email: email}) when is_binary(name) do
+    if String.trim(name) == "", do: email, else: name
+  end
+
   defp user_display_name(%{email: email}), do: email
 
   @doc """
-  The single-line attribution label leading with the human — "Maya Chen via
-  Claude Code" — for `source_badge`'s one truncating line (the icon already
-  carries the origin). Composed from `run_who_via/1`.
+  The single-line accountable actor label for `source_badge`: a nonblank human
+  name, falling back to email. When no human resolves (runbook, schedule, or a
+  deleted key owner), the dispatch channel is the useful fallback. The icon
+  already communicates the source, so a resolved human is never followed by
+  redundant `via <channel>` text.
   """
   def run_actor(run) do
     case run_who_via(run) do
       {nil, nil} -> "—"
-      {who, nil} -> who
       {nil, via} -> via
-      {who, via} -> "#{who} via #{via}"
+      {who, _via} -> who
     end
   end
 

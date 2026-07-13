@@ -451,32 +451,41 @@ defmodule EmisarWeb.AuditLive do
                  meta line. From xl: the forensic COLUMNS a reviewer scans down —
                  Actor (who did it), Target (what it acted on), Source IP (from
                  where) — with the payload pairs staying under the event label.
-                 Time is relative for humans; the hook's tooltip carries the
-                 absolute stamp with timezone for the record. --%>
+                 Event/Actor/Target share 14/20 type; supporting IP/When use
+                 12/20, preserving the common line box without competing with
+                 the identities. Every secondary line shares 12/16. Time is
+                 relative for humans; the hook's tooltip carries the absolute
+                 stamp with timezone for the record. --%>
             <.link
               navigate={~p"/app/#{@current_account}/audit/#{event.id}"}
-              class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04] xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:items-center xl:gap-4"
+              class="-mx-2 flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-white/[0.04] xl:grid xl:grid-cols-[minmax(0,1fr)_11rem_11rem_7.5rem_5.5rem] xl:items-start xl:gap-4"
             >
               <div class="flex min-w-0 flex-1 items-start gap-3 xl:flex-auto">
                 <.status_dot tone={outcome_tone(event.event_type)} size={:md} class="mt-1" />
                 <div class="min-w-0 flex-1">
-                  <div class={["text-sm leading-5", event_title_class(event.event_type)]}>
+                  <div
+                    class={["truncate text-sm leading-5", event_title_class(event.event_type)]}
+                    data-audit-event-primary
+                  >
                     {format_event_type(event.event_type)}
                   </div>
-                  <div class="truncate text-xs text-zinc-500 xl:hidden">
+                  <div class="mt-0.5 truncate text-xs leading-4 text-zinc-500 xl:hidden">
                     {event_meta(event, @refs)}
                   </div>
                   <div
                     :if={pairs_text(event) != ""}
-                    class="hidden truncate text-xs text-zinc-500 xl:block"
+                    class="mt-0.5 hidden truncate text-xs leading-4 text-zinc-500 xl:block"
                   >
                     {pairs_text(event)}
                   </div>
                 </div>
               </div>
-              <.audit_cell value={
-                actor_label_text(event.actor_kind, event.actor_id, event.actor_label, @refs)
-              } />
+              <.audit_actor_cell
+                kind={event.actor_kind}
+                id={event.actor_id}
+                label={event.actor_label}
+                refs={@refs}
+              />
               <.audit_cell
                 value={target_text(event, @refs)}
                 placeholder={if self_event?(event), do: "self", else: "—"}
@@ -566,12 +575,55 @@ defmodule EmisarWeb.AuditLive do
     <div class="hidden min-w-0 xl:block">
       <span
         :if={@value}
-        class={["block truncate text-xs text-zinc-400", @mono && "font-mono tabular-nums"]}
+        class={[
+          "block truncate leading-5 text-zinc-400",
+          if(@mono, do: "font-mono text-xs tabular-nums", else: "text-sm")
+        ]}
+        data-audit-cell-primary
         title={@value}
       >
         {@value}
       </span>
-      <span :if={!@value} class="text-xs text-zinc-600">{@placeholder}</span>
+      <span :if={!@value} class="block text-sm leading-5 text-zinc-600" data-audit-cell-primary>
+        {@placeholder}
+      </span>
+    </div>
+    """
+  end
+
+  attr :kind, :string, default: nil
+  attr :id, :any, default: nil
+  attr :label, :string, default: nil
+  attr :refs, :map, default: %{}
+
+  # Actor accountability is a hierarchy, not a sentence: the human leads and
+  # an API key/client sits beneath it as quieter credential context. Keeping
+  # each on its own line lets both survive the fixed forensic column width.
+  defp audit_actor_cell(assigns) do
+    {who, credential} = actor_who_via(assigns.kind, assigns.id, assigns.label, assigns.refs)
+
+    title =
+      case {who, credential} do
+        {nil, _credential} -> nil
+        {who, nil} -> who
+        {who, credential} -> "#{who} via #{credential}"
+      end
+
+    assigns = assign(assigns, who: who, credential: credential, title: title)
+
+    ~H"""
+    <div class="hidden min-w-0 xl:block" data-audit-actor title={@title}>
+      <span :if={@who} class="block truncate text-sm leading-5 text-zinc-400" data-audit-primary>
+        {@who}
+      </span>
+      <span
+        :if={@credential}
+        class="mt-0.5 block truncate text-xs leading-4 text-zinc-500"
+        data-audit-secondary
+      >
+        {@credential}
+      </span>
+      <span :if={!@who} class="block text-sm leading-5 text-zinc-600" data-audit-primary>—</span>
     </div>
     """
   end
@@ -646,7 +698,8 @@ defmodule EmisarWeb.AuditLive do
 
   defp actor_who_via(kind, id, label, refs), do: {party_text(kind, id, label, refs), nil}
 
-  # The single-string actor label for the list's meta line + forensic column.
+  # The single-string actor label for the folded list's narrative meta line.
+  # The xl forensic column uses `audit_actor_cell/1`'s two-level hierarchy.
   defp actor_label_text(kind, id, label, refs) do
     case actor_who_via(kind, id, label, refs) do
       {nil, _via} -> nil
@@ -666,11 +719,11 @@ defmodule EmisarWeb.AuditLive do
   # actor's own resource page. Used for the actor column.
   attr :audit_link?, :boolean, default: false
   # When true, render human-first: an api_key/MCP actor leads with its owner
-  # and shows "· via <key>" as secondary context (the Actor card, not targets).
+  # and shows the key/client on a second muted line (the Actor card, not targets).
   attr :actor?, :boolean, default: false
   attr :current_account, :map, required: true
 
-  def ref(%{kind: nil} = assigns), do: ~H[<span class="text-xs text-zinc-500">—</span>]
+  def ref(%{kind: nil} = assigns), do: ~H[<span class="text-sm leading-5 text-zinc-500">—</span>]
 
   # System/scheduler/runbook actors don't have an identifying row in
   # another table — render them as a clean label without a colon-id
@@ -679,7 +732,7 @@ defmodule EmisarWeb.AuditLive do
     assigns = assign(assigns, :label_text, kindless_label(kind))
 
     ~H"""
-    <span class="text-xs text-zinc-300">{@label_text}</span>
+    <span class="text-sm leading-5 text-zinc-300">{@label_text}</span>
     """
   end
 
@@ -693,23 +746,28 @@ defmodule EmisarWeb.AuditLive do
     assigns = assign(assigns, text: text, via: via, title: title, href: ref_href(assigns))
 
     ~H"""
-    <%!-- One truncating line: a short actor (email/name) shows in full; a long
-         unresolved value (e.g. an approval_request UUID) ellipsis-clips instead of
-         wrapping to 2-3 lines. The full value is on hover via title. --%>
-    <span class="block max-w-[16rem] truncate text-xs text-zinc-400" title={@title}>
-      <%!-- The "kind:" prefix is a plain label — only the value links. --%>
-      <span class="text-zinc-500">{@kind}:</span>
-      <%= if @href do %>
-        <%!-- Neutral value, emerald on hover — emerald is the pass/accent token,
-             not a generic link color, so a green value always means "succeeded". --%>
-        <.link navigate={@href} class="text-zinc-300 hover:text-brand-300">{@text}</.link>
-      <% else %>
-        {@text}
-      <% end %>
-      <%!-- The credential the human acted through — secondary context after the
-           human leads (an api_key/MCP actor). --%>
-      <span :if={@via} class="text-zinc-500">· via {@via}</span>
-    </span>
+    <%!-- The accountable identity owns the first line. For an api_key actor,
+         its key/client gets a second muted line instead of competing inside the
+         same truncating sentence. The full forensic relationship stays in the
+         hover title. Targets have no secondary line and retain the compact shape. --%>
+    <div class="min-w-0 max-w-full" title={@title}>
+      <span class="block break-words text-sm leading-5 text-zinc-300" data-audit-primary>
+        <%= if @href do %>
+          <%!-- Neutral value, emerald on hover — emerald is the pass/accent token,
+               not a generic link color, so a green value always means "succeeded". --%>
+          <.link navigate={@href} class="text-zinc-300 hover:text-brand-300">{@text}</.link>
+        <% else %>
+          {@text}
+        <% end %>
+      </span>
+      <span
+        :if={@via}
+        class="mt-0.5 block break-words text-xs leading-4 text-zinc-500"
+        data-audit-secondary
+      >
+        {@via}
+      </span>
+    </div>
     """
   end
 

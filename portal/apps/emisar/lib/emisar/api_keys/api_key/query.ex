@@ -108,7 +108,10 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     queryable
     |> where([api_keys: k], k.id in ^ids)
     |> join(:inner, [api_keys: k], u in assoc(k, :created_by), as: :owner)
-    |> select([api_keys: k, owner: u], {k.id, coalesce(u.full_name, u.email)})
+    |> select(
+      [api_keys: k, owner: u],
+      {k.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+    )
   end
 
   @doc """

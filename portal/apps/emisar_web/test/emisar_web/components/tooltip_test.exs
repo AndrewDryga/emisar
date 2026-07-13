@@ -53,6 +53,20 @@ defmodule EmisarWeb.Components.TooltipTest do
       assert html =~ ~s(aria-describedby="role-lock-42")
     end
 
+    test "an icon-only trigger can carry an accessible name" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Dispatched via MCP" aria_label="Dispatched via MCP">
+          <span aria-hidden="true">icon</span>
+        </CoreComponents.tooltip>
+        """)
+
+      assert html =~ ~s(aria-label="Dispatched via MCP")
+      assert html =~ ~s(role="tooltip")
+    end
+
     test "placement bottom opens the bubble downward" do
       assigns = %{}
 

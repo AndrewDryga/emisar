@@ -574,7 +574,7 @@ defmodule Emisar.Audit do
           Emisar.Users.User.Query,
           ids_by_kind,
           "user",
-          :email,
+          :display_name,
           &Emisar.Users.User.Query.members_of_account(&1, account_id)
         ),
       "runner" =>

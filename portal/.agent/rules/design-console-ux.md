@@ -234,6 +234,45 @@ The danger reads from the icon + the button + the consequence copy — the surfa
    enroll/confirm, email step-up) uses the boxes; a plain text field for a code is a bug.
 10. **Secrets reveal once, through `secret_reveal`** (or its recovery-codes variant) —
     one shape for "copy this now, it won't be shown again", never a bespoke amber box.
+11. **Compound identities use two type tiers when the field has vertical room.** The
+    accountable person is the primary line in the normal value color, using a
+    nonblank full name and falling back to email; the API key, client, or channel is
+    a second muted line. Do not spend fixed-column width on connective prose such as
+    `via` when position and color already express the relationship. A compact source
+    badge shows icon + accountable person only because its icon already carries the
+    channel; channel text is only the fallback when no person resolves.
+12. **Dense entity facts share one aligned spacing grammar.** Once the primary
+    identity is established, secondary forensic facts use one label/value grid, one
+    label track, text tier, line height, minimum row height, and row gap. Copy and icon
+    buttons fit inside that height instead of making their row taller. Labels top-align
+    when a value wraps; only an intrinsically centered control row opts into centering.
+    Do not alternate icon-only rows, prose rows, ad-hoc margins, and an internal divider
+    inside one compact record. Bound long provenance values so they cannot set the
+    width of a relationship track.
+13. **Mixed-density table rows align the scan line, then preserve hierarchy.** The
+    row grid uses `items-start`; Event/Actor/Target primary values share one font size
+    and line height, while supporting IP/When metadata may use a smaller font on the
+    same line height. Every secondary line shares one smaller metric pair. Alignment
+    comes from the common top edge and line box, not from making every column equally
+    loud.
+14. **One metadata group has one value typography and tone contract.** Labels may
+    use a smaller label tier and machine values may change font family, but every
+    peer value in one header strip or fact group keeps the same font size, line
+    height, and foreground tone. Use a muted tone only for genuinely secondary or
+    missing content; a copy button or monospace ID does not invent hierarchy.
+15. **An icon that carries unrepeated meaning always explains itself.** When adjacent
+    text names a person/resource but the icon alone encodes source, mode, risk, or an
+    action, wrap that icon in the shared hover/focus tooltip with an accessible name.
+    Described tooltips use stable unique ids; icon-only tooltips inside responsive
+    slots that duplicate markup use the component's idless `aria_label` mode. A parent
+    `title`, color, or visual convention is not a substitute; a decorative icon beside
+    text that already says the same thing stays decorative.
+16. **Relationship eyebrows lead with the variable entity kind.** In an Actor-to-Target
+    detail, position and the arrow already establish the fixed structural roles; `user`,
+    `API key`, `runner`, or `policy` is the information that changes. Render
+    `USER · ACTOR` / `RUNNER · TARGET`, with the kind first and brighter and the role
+    second and quieter. When no kind was recorded, retain the role alone so the empty
+    state still has context.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 
