@@ -97,6 +97,6 @@ docker compose up -d         # the base stack
 ./dev/signing/e2e/run.sh     # builds current runner/mcp images, then asserts
 ```
 
-`run.sh` is host-side (stdlib Python 3, like the SSO e2e) — it reaches the
+`run.sh` is host-side (stdlib Go, via `tools/cmd/signing-e2e`) — it reaches the
 portal over the published `localhost:4010` and the bridge over the in-network
 `portal:4000`, so signing happens in the bridge exactly as on a real client.

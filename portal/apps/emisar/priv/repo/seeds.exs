@@ -72,15 +72,11 @@ clear_seeded_mfa = fn
     updated
 end
 
-pack_versions = %{
-  "caddy" => "0.1.6",
-  "linux-core" => "0.3.14",
-  "postgres" => "0.2.7",
-  "systemd-deep" => "0.1.5"
-}
-
 pack_descriptor = fn pack_id ->
-  version = Map.fetch!(pack_versions, pack_id)
+  version =
+    PackBaseline.current_version(pack_id) ||
+      raise "missing shipped pack baseline for #{pack_id}"
+
   hash = PackBaseline.lookup(pack_id, version)
 
   if is_nil(hash) do
@@ -690,12 +686,7 @@ agent_key_attrs = %{
   name: agent_key_name,
   description:
     "MCP bridge used by the on-call engineer for read-only triage and " <>
-      "approval-gated remediation.",
-  scopes: ["actions:read", "actions:execute"],
-  # "signed-iad" is the enforcing runner the signed-dispatch e2e brings up
-  # (dev/signing/e2e/) — keep it in the on-call key's visible groups so the e2e
-  # can dispatch to it. The other groups mirror the seeded demo runners.
-  runner_group_filter: ["edge-web", "app-api", "data-postgres", "signed-iad"]
+      "approval-gated remediation."
 }
 
 agent_key =
@@ -707,35 +698,62 @@ agent_key =
       nil
   end
 
-agent_key =
-  case agent_key do
+fixed_agent_key =
+  case System.get_env("EMISAR_DEV_FIXED_MCP_KEY") do
     nil ->
-      case System.get_env("EMISAR_DEV_FIXED_MCP_KEY") do
-        # Build the row the way create_key does — Crypto.mint's prefix is the
-        # first 12 chars (ApiKeys @prefix_size) and the hash is Crypto.hash(raw),
-        # which is exactly what peek_api_key_by_secret recomputes on lookup.
-        # §7: seeds build rows directly rather than via a seed-only context fn.
-        fixed when is_binary(fixed) and byte_size(fixed) >= 12 ->
-          {:ok, key} =
-            ApiKeys.ApiKey.Changeset.create(
-              account.id,
-              user.id,
-              owner_membership.id,
-              String.slice(fixed, 0, 12),
-              Emisar.Crypto.hash(fixed),
-              agent_key_attrs
-            )
-            |> Repo.insert()
+      nil
 
-          key
-
-        _ ->
-          {:ok, _raw_agent, key} = ApiKeys.create_key(agent_key_attrs, owner_subject)
-          key
+    "emk-" <> encoded = fixed ->
+      case Base.url_decode64(encoded, padding: false) do
+        {:ok, secret} when byte_size(secret) == 32 -> fixed
+        _ -> raise "EMISAR_DEV_FIXED_MCP_KEY must be an emk- key with 32 random bytes"
       end
 
-    key ->
+    _ ->
+      raise "EMISAR_DEV_FIXED_MCP_KEY must be an emk- key with 32 random bytes"
+  end
+
+agent_key =
+  case {agent_key, fixed_agent_key} do
+    {nil, nil} ->
+      {:ok, _raw_agent, key} = ApiKeys.create_key(agent_key_attrs, owner_subject)
       key
+
+    {nil, fixed} ->
+      # Build the row the way create_key does — Crypto.mint's prefix is the
+      # first 12 chars (ApiKeys @prefix_size) and the hash is Crypto.hash(raw),
+      # which is exactly what peek_api_key_by_secret recomputes on lookup.
+      # §7: seeds build rows directly rather than via a seed-only context fn.
+      {:ok, key} =
+        ApiKeys.ApiKey.Changeset.create(
+          account.id,
+          user.id,
+          owner_membership.id,
+          String.slice(fixed, 0, 12),
+          Emisar.Crypto.hash(fixed),
+          agent_key_attrs
+        )
+        |> Repo.insert()
+
+      key
+
+    {%ApiKeys.ApiKey{} = key, nil} ->
+      key
+
+    {%ApiKeys.ApiKey{} = key, fixed} ->
+      # A repeated dev seed must converge the persisted row with Compose's
+      # fixed secret, even after a rotation or the default expiry elapsed.
+      key
+      |> Ecto.Changeset.change(
+        key_prefix: String.slice(fixed, 0, 12),
+        key_hash: Emisar.Crypto.hash(fixed),
+        expires_at: DateTime.add(now.(), 30 * 86_400, :second),
+        revoked_at: nil,
+        revoked_by_id: nil,
+        replaces_id: nil,
+        rotated_to_id: nil
+      )
+      |> Repo.update!()
   end
   |> Ecto.Changeset.change(
     last_used_at: mins_ago.(9),
@@ -749,9 +767,8 @@ IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.
 #
 # Mirrors the "Mint export token" button on the audit page so a
 # freshly-seeded demo account already shows what the SIEM workflow
-# looks like — a separate row on the agents page, scoped to
-# `audit:read` and nothing else, with no runner restrictions because
-# the audit endpoint doesn't dispatch to runners.
+# looks like — a separate token on the audit page whose `:audit_export`
+# kind can reach only the read-only audit endpoint.
 
 export_key_name = "SIEM export - Datadog intake"
 
@@ -773,7 +790,7 @@ case export_key do
           description:
             "Streams audit events as NDJSON to the security team's SIEM. " <>
               "Read-only; no dispatch rights.",
-          scopes: ["audit:read"]
+          kind: :audit_export
         },
         owner_subject
       )
@@ -1665,9 +1682,7 @@ case ApiKeys.list_api_keys_for_account(bc_subject, page: [limit: 10]) do
       ApiKeys.create_key(
         %{
           name: "Claude Code",
-          description: "MCP client for triage",
-          scopes: ["actions:read", "actions:execute"],
-          runner_group_filter: []
+          description: "MCP client for triage"
         },
         bc_subject
       )

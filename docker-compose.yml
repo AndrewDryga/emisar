@@ -221,7 +221,8 @@ services:
       # ("Claude Code - on-call") with this exact raw value so the `mcp`
       # service below can drive the bridge with no manual key minting. Must
       # start with `emk-` and stay in sync with the mcp service's EMISAR_API_KEY.
-      EMISAR_DEV_FIXED_MCP_KEY: "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      # This is the public base64url encoding of 32 zero bytes, never a secret.
+      EMISAR_DEV_FIXED_MCP_KEY: "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
       # DEV-ONLY Keycloak OIDC + SCIM seed values. The OIDC secret matches the
       # client secret in dev/keycloak/realm.json; the SCIM token is the fixed
       # bearer the sso-e2e driver presents. The seed creates an enabled
@@ -325,7 +326,7 @@ services:
         condition: service_healthy
     environment:
       EMISAR_URL: "http://portal:4000"
-      EMISAR_API_KEY: "emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+      EMISAR_API_KEY: "emk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
       # The bridge fails closed on cleartext http:// to a non-loopback host;
       # opt in for the in-network portal:4000 (same as the runners' allow_insecure).
       EMISAR_ALLOW_INSECURE: "1"

@@ -32,15 +32,6 @@ import (
 	"time"
 )
 
-var refusalCodes = []string{
-	"runner_requires_attestation",
-	"signature_required",
-	"cert_untrusted",
-	"cert_expired",
-	"cert_scope",
-	"bad_signature",
-}
-
 func logf(format string, args ...any) {
 	fmt.Printf("[signed-dispatch-e2e] "+format+"\n", args...)
 }
@@ -106,9 +97,14 @@ func findRunner(v any, group string) map[string]any {
 	return nil
 }
 
+type runnerTarget struct {
+	name       string
+	externalID string
+}
+
 // waitForEnforcingRunner polls the MCP runners list until the enforcing
-// runner is connected, returning its name.
-func waitForEnforcingRunner(portalURL, mcpKey, group string, deadline time.Time) string {
+// runner is connected, returning both its display name and durable identity.
+func waitForEnforcingRunner(portalURL, mcpKey, group string, deadline time.Time) runnerTarget {
 	client := &http.Client{Timeout: 10 * time.Second}
 	last := ""
 	for time.Now().Before(deadline) {
@@ -138,21 +134,25 @@ func waitForEnforcingRunner(portalURL, mcpKey, group string, deadline time.Time)
 		}
 		if runner := findRunner(body, group); runner != nil {
 			name, _ := runner["name"].(string)
+			externalID, _ := runner["id"].(string)
 			status := strings.ToLower(fmt.Sprintf("%v", runner["status"]))
 			if status == "<nil>" {
 				status = ""
 			}
-			if strings.Contains(status, "connect") || status == "online" || status == "up" || status == "" {
-				return name
+			if name == "" || externalID == "" {
+				last = fmt.Sprintf("runner in group %s has no name or durable id", group)
+			} else if strings.Contains(status, "connect") || status == "online" || status == "up" || status == "" {
+				return runnerTarget{name: name, externalID: externalID}
+			} else {
+				last = fmt.Sprintf("runner %s present but status=%q", name, status)
 			}
-			last = fmt.Sprintf("runner %s present but status=%q", name, status)
 		} else {
 			last = fmt.Sprintf("no runner in group %s yet", group)
 		}
 		time.Sleep(2 * time.Second)
 	}
 	fail("timed out waiting for an enforcing runner in group %s (%s)", group, last)
-	return ""
+	return runnerTarget{}
 }
 
 // readMaterial reads the freshly-minted leaf key + cert from the shared volume.
@@ -170,16 +170,16 @@ func readMaterial() (leaf, cert string) {
 	return leaf, cert
 }
 
-func dispatchFrame(runnerName, action string) string {
+func dispatchFrame(runnerID, action, requestID string) string {
 	frame := map[string]any{
 		"jsonrpc": "2.0",
-		"id":      1,
+		"id":      requestID,
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name": action,
 			"arguments": map[string]any{
-				"runners": []string{runnerName},
-				"reason":  "signed-dispatch e2e",
+				"runners": []string{runnerID},
+				"reason":  "signed-dispatch e2e " + requestID,
 				"wait":    "30s",
 			},
 		},
@@ -207,13 +207,47 @@ func runBridge(frame string, signingEnv map[string]string) string {
 	return out
 }
 
-func refusalIn(text string) string {
-	for _, code := range refusalCodes {
-		if strings.Contains(text, code) {
-			return code
+type bridgeResult struct {
+	isError bool
+	text    string
+}
+
+func decodeBridgeResult(output string) (bridgeResult, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 0 || lines[len(lines)-1] == "" {
+		return bridgeResult{}, errors.New("empty bridge response")
+	}
+
+	var response struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Result *struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError *bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &response); err != nil {
+		return bridgeResult{}, fmt.Errorf("decode JSON-RPC response: %w", err)
+	}
+	if response.Error != nil {
+		return bridgeResult{}, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
+	}
+	if response.Result == nil || response.Result.IsError == nil {
+		return bridgeResult{}, errors.New("response has no MCP tool result with isError")
+	}
+
+	texts := make([]string, 0, len(response.Result.Content))
+	for _, block := range response.Result.Content {
+		if block.Type == "text" && block.Text != "" {
+			texts = append(texts, block.Text)
 		}
 	}
-	return ""
+	return bridgeResult{isError: *response.Result.IsError, text: strings.Join(texts, "\n")}, nil
 }
 
 func main() {
@@ -230,34 +264,39 @@ func main() {
 	deadline := time.Now().Add(timeout)
 
 	logf("waiting for an enforcing runner in group %s...", group)
-	runnerName := waitForEnforcingRunner(portalURL, mcpKey, group, deadline)
-	logf("enforcing runner connected: %s", runnerName)
+	runner := waitForEnforcingRunner(portalURL, mcpKey, group, deadline)
+	logf("enforcing runner connected: %s (%s)", runner.name, runner.externalID)
 
 	leaf, cert := readMaterial()
 	logf("read leaf key + cert from the shared volume")
 
-	frame := dispatchFrame(runnerName, action)
+	requestBase := fmt.Sprintf("signing-e2e-%d", time.Now().UnixNano())
+	signedFrame := dispatchFrame(runner.externalID, action, requestBase+"-signed")
 
 	// 1. SIGNED dispatch must RUN.
-	logf("dispatching SIGNED %s -> %s", action, runnerName)
-	signed := runBridge(frame, map[string]string{"EMISAR_SIGNING_KEY": leaf, "EMISAR_SIGNING_CERT": cert})
-	if refusal := refusalIn(signed); refusal != "" {
-		fail("a SIGNED dispatch was refused (%s):\n%s", refusal, head(signed, 600))
+	logf("dispatching SIGNED %s -> %s", action, runner.name)
+	signed := runBridge(signedFrame, map[string]string{"EMISAR_SIGNING_KEY": leaf, "EMISAR_SIGNING_CERT": cert})
+	signedResult, err := decodeBridgeResult(signed)
+	if err != nil {
+		fail("signed dispatch returned an invalid response: %v\n%s", err, head(signed, 600))
 	}
-	lines := strings.Split(signed, "\n")
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &parsed); err != nil {
-		fail("signed dispatch returned no JSON-RPC response:\n%s", head(signed, 600))
+	if signedResult.isError {
+		fail("signed dispatch returned a tool error:\n%s", head(signed, 600))
 	}
-	if _, ok := parsed["result"]; !ok {
-		fail("signed dispatch returned no result:\n%s", head(signed, 600))
+	if !strings.Contains(signedResult.text, "status=success") ||
+		!strings.Contains(signedResult.text, "exit_code=0") {
+		fail("signed dispatch did not reach terminal success:\n%s", head(signed, 600))
 	}
-	logf("signed dispatch ran (result returned, no refusal) ✓")
+	logf("signed dispatch reached status=success with exit_code=0 ✓")
 
 	// 2. The SAME dispatch UNSIGNED must be refused.
-	logf("dispatching UNSIGNED %s -> %s (expect refusal)", action, runnerName)
-	unsigned := runBridge(frame, nil)
-	if !strings.Contains(unsigned, "runner_requires_attestation") {
+	logf("dispatching UNSIGNED %s -> %s (expect refusal)", action, runner.name)
+	unsigned := runBridge(dispatchFrame(runner.externalID, action, requestBase+"-unsigned"), nil)
+	unsignedResult, err := decodeBridgeResult(unsigned)
+	if err != nil {
+		fail("unsigned dispatch returned an invalid response: %v\n%s", err, head(unsigned, 600))
+	}
+	if !unsignedResult.isError || !strings.Contains(unsignedResult.text, "runner_requires_attestation") {
 		fail("an UNSIGNED dispatch to an enforcing runner was NOT refused with runner_requires_attestation:\n%s", head(unsigned, 600))
 	}
 	logf("unsigned dispatch refused with runner_requires_attestation ✓")

@@ -25,12 +25,6 @@ docker compose --profile test build runner-signed mcp
 echo "[signed-dispatch-e2e] bringing up signing-init + runner-signed (profile: test)..."
 docker compose --profile test up -d signing-init runner-signed
 
-# The on-call demo key must be able to see the enforcing runner's group. The seed
-# grants this on a fresh stack (seeds.exs); this idempotent UPDATE also covers a
-# stack whose portal image predates that seed change, so the e2e stays robust.
-docker compose exec -T db psql -U postgres emisar_dev -c \
-  "UPDATE api_keys SET runner_group_filter = array_append(runner_group_filter, 'signed-iad') WHERE name = 'Claude Code - on-call' AND NOT ('signed-iad' = ANY(runner_group_filter));" >/dev/null
-
 PORTAL_URL="${PORTAL_URL:-http://localhost:4010}" \
   MCP_KEY="${MCP_KEY:-emk-mcp-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD}" \
   exec go run ./tools/cmd/signing-e2e
