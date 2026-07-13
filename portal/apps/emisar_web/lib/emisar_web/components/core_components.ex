@@ -167,7 +167,7 @@ defmodule EmisarWeb.CoreComponents do
       <div class="space-y-5">
         {render_slot(@inner_block, f)}
         <%!-- Grouped, not justify-between: a primary + its quiet cancel stay
-             associated (console-ux — one create-flow footer). A single
+             associated (design-console-ux — one create-flow footer). A single
              w-full button still spans naturally. --%>
         <div :for={action <- @actions} class="flex items-center gap-3 pt-2">
           {render_slot(action, f)}
@@ -180,7 +180,7 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Renders a button.
 
-  `variant` is STRUCTURE (console-ux §2): `:primary` (filled, the default),
+  `variant` is STRUCTURE (design-console-ux §2): `:primary` (filled, the default),
   `:secondary` (bordered), `:ghost` (text-only). `tone` is the hue atom that
   carries MEANING at the call site — `:brand` (affirmative/primary action),
   `:neutral`, `:amber` (attention-worthy, e.g. trusting a pack's new
@@ -919,10 +919,10 @@ defmodule EmisarWeb.CoreComponents do
   (default slot), and an optional right-aligned `:action`. Every console
   banner, warning box, and heads-up renders through this, or through a thin
   domain wrapper that only maps domain state → tone/copy (`<.offline_notice>`,
-  `<.subscription_banner>`) — never a fresh class table (console-ux §1). The
+  `<.subscription_banner>`) — never a fresh class table (design-console-ux §1). The
   message renders escaped through HEEx (IL-16).
 
-  Tones are the house hue atoms (console-ux §2), meaning assigned at the call
+  Tones are the house hue atoms (design-console-ux §2), meaning assigned at the call
   site: `:brand` informational/affirmative, `:amber` caution/pending, `:rose`
   danger/error, `:neutral` quiet note. Variants: `:boxed` (default) is the
   rounded bordered box; `:strip` is the flush full-width row with a bottom
@@ -1382,7 +1382,7 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The auth pages' footer switch-line — one muted centered paragraph with a
   brand link ("New to emisar? Create an account"). One shape for the whole
-  auth family (console-ux §3; the hand-rolled copies drifted mt-6/mt-8 and
+  auth family (design-console-ux §3; the hand-rolled copies drifted mt-6/mt-8 and
   dropped classes). The lead-in rides the `:lead` slot, the link label is the
   default slot, and exactly one of `navigate`/`href` picks the link mode.
 
@@ -2177,7 +2177,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The ONE status dot — the colored circle every live-state indicator composes
-  (console-ux §1): posture-line stats, the status badge, connection dots,
+  (design-console-ux §1): posture-line stats, the status badge, connection dots,
   audit outcome dots, SCIM sync health, wait-room pings. Tones are the house
   hue atoms; `pulse` is the gentle in-progress fade (a running run), `ping`
   the radiating "live/waiting" ring (a connected runner, a wait-room). Extra
@@ -2239,7 +2239,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_bg(:rose), do: "bg-rose-400"
 
   @doc """
-  Initial-letter avatar — the ONE identity disc (console-ux §1): a person or
+  Initial-letter avatar — the ONE identity disc (design-console-ux §1): a person or
   workspace rendered as the first letter of its name. `:circle` for people
   (the shell user block, the team roster), `:square` for workspaces (the
   account switcher rows).
@@ -2394,11 +2394,11 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The ONE `<details>` disclosure — a bordered box whose summary row toggles a
-  bordered body, with the chevron affordance (console-ux §6: advanced or
+  bordered body, with the chevron affordance (design-console-ux §6: advanced or
   optional content collapses behind this). `:sm` is the quiet inline helper
   ("Can't scan? Use a setup URI"); `:md` the prominent option block.
 
-  LiveView strips browser-set open state on re-render (console-ux §7.6) —
+  LiveView strips browser-set open state on re-render (design-console-ux §7.6) —
   when the content must stay open across re-renders, own the state
   server-side and pass `open`.
 
@@ -2458,7 +2458,7 @@ defmodule EmisarWeb.CoreComponents do
   The ONE radio choice-card group — a deliberate pick between a few options,
   each a full-card `<label>` (optional meaning-icon disc, title, one-line
   rationale) wrapping an sr-only radio. Selection is NEUTRAL by design
-  (console-ux: a chosen risky option must never wear the safe brand hue);
+  (design-console-ux: a chosen risky option must never wear the safe brand hue);
   the check icon marks the current pick. Values compare as strings.
 
       <.choice_cards name="invite[role]" value={@form[:role].value}>
@@ -2817,7 +2817,7 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The ONE framed code surface — an eyebrow-labeled header (optional
   `annotation`, optional copy button, `:badge` extras) over a mono `<pre>`.
-  Every static code/JSON/argv/snippet block composes this (console-ux §1).
+  Every static code/JSON/argv/snippet block composes this (design-console-ux §1).
   The code rides the `code` ATTR, not a slot, so the formatter can never leak
   indentation into the whitespace-significant `<pre>`. The run-output
   terminal (streamed spans) is the sanctioned hand-rolled exception.
@@ -4010,7 +4010,7 @@ defmodule EmisarWeb.CoreComponents do
   (no typed token, no page wiring — fully client-side); on confirm it runs
   `on_confirm` and closes. For the rare irreversible + high-blast-radius action
   (delete runner, remove member, revoke agent key, reject pack), reach for the
-  typed `<.confirm_dialog>` directly instead (console-ux §5).
+  typed `<.confirm_dialog>` directly instead (design-console-ux §5).
 
       <.confirm_button
         id={"disable-runner"}

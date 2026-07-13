@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.CodePanelTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.code_panel/1` — the ONE framed code
-  surface (console-ux §1). Asserts the header contract (label, annotation,
+  surface (design-console-ux §1). Asserts the header contract (label, annotation,
   copy), the `$` prompt, the scroll clamp, and that the code renders escaped
   (IL-16: argv/JSON/snippets carry attacker-influenceable text).
   """

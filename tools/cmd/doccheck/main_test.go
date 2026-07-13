@@ -65,12 +65,12 @@ func TestForbiddenVersionedPath(t *testing.T) {
 	reviewerDoc := "docs/distribution/" + "reviewer-tenant.md"
 	salesDoc := "docs/" + "sales/battlecard.md"
 	cases := map[string]bool{
-		".agent/project.yaml":                 false,
-		agentReview:                           true,
-		reviewerDoc:                           true,
-		salesDoc:                              true,
-		"docs/security-model.md":              false,
-		"portal/.agent/rules/doc-contract.md": false,
+		".agent/project.yaml":    false,
+		agentReview:              true,
+		reviewerDoc:              true,
+		salesDoc:                 true,
+		"docs/security-model.md": false,
+		"portal/.agent/rules/elixir-doc-contract.md":          false,
 		"portal/.agent/scripts/capture-console-audit.mjs":     false,
 		"portal/.agent/secrets/reviewer.env":                  true,
 		"portal/.agent/tasks/00_todo/example/task.md":         true,

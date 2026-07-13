@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.CalloutTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.callout/1` — the ONE tinted callout every
-  console banner/heads-up composes (console-ux §1), and the two thin domain
+  console banner/heads-up composes (design-console-ux §1), and the two thin domain
   wrappers over it (`offline_notice`, `subscription_banner`). Asserts the tone
   ramps, both variants, the navigate link form, and that the message is
   escaped (IL-16: callouts carry interpolated, attacker-influenceable text).

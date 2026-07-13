@@ -110,6 +110,20 @@ check_task_dirs() {
   ok "task queues use expected state names"
 }
 
+check_rule_names() {
+  local file base
+
+  while IFS= read -r file; do
+    base="$(basename "$file")"
+    case "$base" in
+      design-*.md | content-*.md | elixir-*.md | runner-*.md | mcp-*.md | packs-*.md | infra-*.md | shared-*.md) ;;
+      *) fail "$file must use a domain prefix (design-, content-, elixir-, runner-, mcp-, packs-, infra-, or shared-)" ;;
+    esac
+  done < <(find . -type f -path '*/.agent/rules/*.md' | sort)
+
+  ok "rule filenames use domain prefixes"
+}
+
 check_skills() {
   local file dir expected name description effort allowed_tools
 
@@ -145,6 +159,7 @@ check_manual_text
 check_skill_text
 check_coop
 check_task_dirs
+check_rule_names
 check_skills
 
 if [[ "$failures" -gt 0 ]]; then

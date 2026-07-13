@@ -83,5 +83,5 @@ pack-row (a stream `<li>` wrapping a nested version list — can't be a `<div>`
 chunk spans into its `<pre>`, which `<.code_panel>`'s static `code` attr can't).
 
 The page-level layer on top of this rule — archetypes, the ONE tone vocabulary, the
-confirm ladder, density budgets — is `.agent/rules/console-ux.md`; this file is the
+confirm ladder, density budgets — is `.agent/rules/design-console-ux.md`; this file is the
 shape→component map it leans on.

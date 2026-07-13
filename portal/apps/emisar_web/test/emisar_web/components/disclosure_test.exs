@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.DisclosureTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.disclosure/1` — the ONE `<details>`
-  disclosure (console-ux §6/§7.6). Asserts the summary/body contract, the
+  disclosure (design-console-ux §6/§7.6). Asserts the summary/body contract, the
   chevron affordance, both sizes, and the server-owned `open` state.
   """
   use ExUnit.Case, async: true
@@ -31,7 +31,7 @@ defmodule EmisarWeb.Components.DisclosureTest do
       refute html =~ ~s( open)
     end
 
-    test "open renders the details expanded (server-owned state, console-ux §7.6)" do
+    test "open renders the details expanded (server-owned state, design-console-ux §7.6)" do
       assigns = %{}
 
       html =

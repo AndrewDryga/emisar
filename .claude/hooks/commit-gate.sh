@@ -8,7 +8,7 @@
 #      a committed migration is permanent history,
 #      so editing the file never re-applies and prod's schema silently drifts from
 #      the code → outages. Add a NEW forward migration instead. (IL-11 / portal
-#      AGENTS.md §8 / .agent/rules/migrations-frozen.md.)
+#      AGENTS.md §8 / .agent/rules/elixir-migrations-frozen.md.)
 #   2. Cross-impl hash golden — refuse a commit that changes redis/ or cassandra/
 #      bytes without refreshing the content_hash golden in packs_test.exs; a stale
 #      golden turns the portal build RED silently. Fails open if emisar can't run.
@@ -44,7 +44,7 @@ if [[ -n "$frozen" ]]; then
     echo "A committed migration has run in prod and never re-applies, so editing it"
     echo "diverges prod's schema from the code and takes prod down. Restore it"
     echo "(git checkout -- <file>) and add a NEW forward migration instead."
-    echo "See portal AGENTS.md §8 + .agent/rules/migrations-frozen.md."
+    echo "See portal AGENTS.md §8 + .agent/rules/elixir-migrations-frozen.md."
   } >&2
   exit 2
 fi

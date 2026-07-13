@@ -431,7 +431,7 @@ defmodule EmisarWeb.RunDetailLive do
         <%!-- Output stream — the main event, in the code_panel ARTIFACT frame
              (island fill + solid zinc-800 edge + 16px title) but hand-rolled:
              it streams chunk spans into the <pre>, which code_panel's static
-             `code` attr can't (the one sanctioned hand-roll, console-ux §1).
+             `code` attr can't (the one sanctioned hand-roll, design-console-ux §1).
              Hidden for statuses where the panel would just be blank. --%>
         <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned: the run terminal frame (the sanctioned hand-rolled code_panel) --%>
         <div

@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.AvatarTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.avatar/1` — the ONE initial-letter
-  identity disc (console-ux §1). Asserts the initial derivation, the
+  identity disc (design-console-ux §1). Asserts the initial derivation, the
   circle/square shapes, the size ramp, and that the letter is escaped.
   """
   use ExUnit.Case, async: true

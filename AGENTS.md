@@ -90,11 +90,11 @@ When the loop is interrupted:
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 
 1. **Fix** the flagged instance.
-2. **Record** the rule **as a general shape — the pattern to recognize plus the fix — never a description of the one function you just fixed.** A rule pinned to a single function (`fetch_and_lock_account does X`) teaches nothing transferable and can't drive step 3; the same rule stated generally (*single-row reads return their tuple via `Repo.fetch`, never `Repo.one` + a hand-rolled nil-check*) both stops you writing it again anywhere and names exactly what to grep for. State the abuse case, give a sweep target. A one-line entry in the project `AGENTS.md` rule index, plus — when it needs worked examples — a `rules/<slug>.md` file (*rule · why · ✅ good · ❌ bad · how it's enforced*).
+2. **Record** the rule **as a general shape — the pattern to recognize plus the fix — never a description of the one function you just fixed.** A rule pinned to a single function (`fetch_and_lock_account does X`) teaches nothing transferable and can't drive step 3; the same rule stated generally (*single-row reads return their tuple via `Repo.fetch`, never `Repo.one` + a hand-rolled nil-check*) both stops you writing it again anywhere and names exactly what to grep for. State the abuse case, give a sweep target. A one-line entry in the project `AGENTS.md` rule index, plus — when it needs worked examples — a domain-prefixed `rules/<domain>-<slug>.md` file (*rule · why · ✅ good · ❌ bad · how it's enforced*).
 3. **Sweep** the codebase for other instances of the old shape and fix them too — the generally-stated rule from step 2 is what makes this a mechanical pass rather than a guess.
 4. **Graduate** it: if the rule is mechanically checkable, add an automated check so it can't regress — portal → an `Emisar.Checks.*` Credo check (wired into `.credo.exs`, fixture-verified to fire); Go → `go vet` / a linter / a hook.
 
-A correction that only fixes the flagged line *will* be repeated. This pipeline exists to prevent exactly that.
+A correction that only fixes the flagged line *will* be repeated. This pipeline exists to prevent exactly that. Rule filenames are namespaced for discovery: `design-*` for visual/UX rules, `content-*` for writing/content rules, `elixir-*` for portal Elixir conventions, and `runner-*`, `mcp-*`, `packs-*`, `infra-*`, or `shared-*` for those domains. Never add a new bare rule filename.
 
 ---
 
@@ -117,6 +117,6 @@ Two kinds:
 - **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/spec`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
 - **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/recurrent-jobs`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
-For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan — it supersedes running `/security-review`, `/code-review`, and `/ship-review` separately, and the fix plan can be queued straight into `.agent/tasks/00_todo/` for `/sweep`.
+For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan. Use `/ship-review` for a lighter proportional review; the fix plan can be queued straight into `.agent/tasks/00_todo/` for `/sweep`.
 
 Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share the **same** skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo).

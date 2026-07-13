@@ -218,7 +218,7 @@ The danger reads from the icon + the button + the consequence copy — the surfa
    applied (no highlight, no clear-×). Model `default` on the `%Filter{}`; value ==
    default is baseline.
 5. **Inline form errors.** A fixable submission error renders at the input, never
-   redirect+flash (`.agent/rules/inline-form-errors.md`). This includes OTP/code entry —
+   redirect+flash (`.agent/rules/elixir-inline-form-errors.md`). This includes OTP/code entry —
    a wrong code is an inline `code_input` error, not a flash.
 6. **Browser-owned element state is server-owned in LiveView.** `<details open>`,
    dialog visibility, panel collapse — own it in an assign and always re-render, or the

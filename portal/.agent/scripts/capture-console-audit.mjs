@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Console screenshot audit — walks EVERY authenticated console page (plus the
 // signed-out auth pages) on the :4010 compose stack and writes full-page
-// desktop + mobile PNGs for the doctrine grading pass (console-ux.md).
+// desktop + mobile PNGs for the doctrine grading pass (design-console-ux.md).
 //
 // Login is passwordless: submits the seeded demo email on /sign_in, then pulls
 // the magic-link URL out of the dev mailbox (/dev/mailbox/json — enabled by
