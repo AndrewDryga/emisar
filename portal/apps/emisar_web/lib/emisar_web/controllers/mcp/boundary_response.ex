@@ -2,7 +2,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
   @moduledoc """
   Shapes JSON-RPC errors raised before MCP method dispatch.
 
-  A parsed request's string or numeric id is safe to echo. A valid notification
+  A parsed request's string or integer id is safe to echo. A valid notification
   has no id and must receive no response body, even when the HTTP status is an
   error. Callers handling malformed or oversized input opt out of inspecting the
   body because no request id can be trusted at that point.
@@ -52,7 +52,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
   defp notification?(_request), do: false
 
   defp request_id(%{"jsonrpc" => "2.0", "method" => method, "id" => id}, true)
-       when is_binary(method) and (is_binary(id) or is_number(id)),
+       when is_binary(method) and (is_binary(id) or is_integer(id)),
        do: id
 
   defp request_id(_request, _inspect_body?), do: nil

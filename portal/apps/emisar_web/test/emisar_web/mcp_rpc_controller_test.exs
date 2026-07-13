@@ -152,7 +152,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert body["error"]["code"] == -32001
     end
 
-    test "echoes an exact large numeric id but not an untrusted id", %{conn: conn} do
+    test "echoes an exact large integer id but not invalid ids", %{conn: conn} do
       large_id = 9_007_199_254_740_993
 
       assert %{"id" => ^large_id} =
@@ -160,12 +160,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
                |> rpc("ping", %{}, large_id)
                |> json_response(401)
 
-      invalid_id = %{"nested" => "not a JSON-RPC request id"}
-
-      assert %{"id" => nil} =
-               conn
-               |> rpc("ping", %{}, invalid_id)
-               |> json_response(401)
+      for invalid_id <- [1.5, %{"nested" => "not a JSON-RPC request id"}] do
+        assert %{"id" => nil} =
+                 conn
+                 |> rpc("ping", %{}, invalid_id)
+                 |> json_response(401)
+      end
     end
   end
 
@@ -445,19 +445,42 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       |> response(202)
     end
 
-    test "a notification carrying an id is still dropped (prefix match wins)",
+    test "every absent-id outcome is HTTP 202 with an empty body", %{raw: raw} do
+      for payload <- [
+            %{jsonrpc: "2.0", method: "ping", params: %{}},
+            %{jsonrpc: "2.0", method: "unknown/method", params: %{}},
+            %{jsonrpc: "2.0", method: "ping", params: ["invalid"]}
+          ] do
+        conn =
+          build_conn()
+          |> put_req_header("authorization", "Bearer " <> raw)
+          |> put_req_header("content-type", "application/json")
+          |> post(~p"/api/mcp/rpc", Jason.encode!(payload))
+
+        assert response(conn, 202) == ""
+      end
+    end
+
+    test "a notifications/* method carrying an id is a request and has no side effects",
          %{conn: conn, raw: raw} do
-      # An id on a notifications/* frame doesn't promote it to a request — the
-      # method prefix decides, so it's a no-reply 202 with an empty body.
       payload = %{jsonrpc: "2.0", id: 99, method: "notifications/initialized"}
 
-      conn =
+      body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> put_req_header("content-type", "application/json")
         |> post(~p"/api/mcp/rpc", Jason.encode!(payload))
+        |> json_response(200)
 
-      assert response(conn, 202) == ""
+      assert body == %{
+               "jsonrpc" => "2.0",
+               "id" => 99,
+               "error" => %{
+                 "code" => -32601,
+                 "message" => "method not found",
+                 "data" => "notifications/initialized"
+               }
+             }
     end
 
     test "authentication and metadata failures keep notifications bodyless",
@@ -574,7 +597,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> rpc("initialize", %{
-          "protocolVersion" => "2025-06-18",
+          "protocolVersion" => "2025-11-25",
           "capabilities" => %{},
           "clientInfo" => %{"name" => "ChatGPT", "version" => "dev"}
         })
@@ -582,9 +605,22 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert body["jsonrpc"] == "2.0"
       assert body["id"] == 1
-      assert body["result"]["protocolVersion"] == "2025-06-18"
+      assert body["result"]["protocolVersion"] == "2025-11-25"
       assert body["result"]["serverInfo"]["name"] == "emisar"
       assert get_in(body, ["result", "capabilities", "tools", "listChanged"]) == false
+    end
+
+    test "retains 2025-06-18 for clients that explicitly negotiate it",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("initialize", %{"protocolVersion" => "2025-06-18"})
+        |> json_response(200)
+
+      assert body["result"]["protocolVersion"] == "2025-06-18"
     end
 
     test "returns 2024-11-05 when an older client explicitly negotiates it",
@@ -714,7 +750,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> rpc("initialize")
         |> json_response(200)
 
-      assert body["result"]["protocolVersion"] == "2025-06-18"
+      assert body["result"]["protocolVersion"] == "2025-11-25"
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
       assert reloaded.last_client_info == %{}
     end
@@ -898,6 +934,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert get_in(wait_tool, ["inputSchema", "properties", "timeout", "description"]) =~
                "Defaults to 5m"
+
+      assert get_in(action_tool, ["inputSchema", "properties", "wait", "description"]) =~
+               "Omit to wait up to 60s"
     end
 
     test "two runners advertising the same action at different risk describe the worst case",
@@ -2172,6 +2211,21 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         params: %{requestId: "wait-before-rotation"}
       }
 
+      request_shaped_body = body |> Map.put(:id, 77) |> Jason.encode!()
+
+      request_shaped =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> successor_raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-session-id", "rotated-cancel-session")
+        |> put_req_header("x-emisar-mcp-cancel-token", "predecessor-request")
+        |> post(~p"/api/mcp/rpc", request_shaped_body)
+        |> json_response(200)
+
+      assert request_shaped["id"] == 77
+      assert request_shaped["error"]["code"] == -32601
+      assert Process.alive?(task.pid)
+
       cancel_conn =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> successor_raw)
@@ -2545,6 +2599,22 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert duplicate["result"]["isError"] == true
       assert content_text(duplicate) =~ "Duplicate runners"
 
+      alias_duplicate =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runners" => [runner.external_id, runner.name],
+            "reason" => "same runner under two aliases",
+            "wait" => "0"
+          }
+        })
+        |> json_response(200)
+
+      assert alias_duplicate["result"]["isError"] == true
+      assert content_text(alias_duplicate) =~ "Duplicate runners"
+
       malformed =
         build_conn()
         |> put_req_header("authorization", "Bearer " <> raw)
@@ -2860,7 +2930,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       body = init_with_client_info(conn, raw, "not-a-map")
 
       # Handshake still succeeds.
-      assert body["result"]["protocolVersion"] == "2025-06-18"
+      assert body["result"]["protocolVersion"] == "2025-11-25"
 
       # Nothing recorded — the field stays at its empty default (never written).
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
@@ -3344,6 +3414,44 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert body == %{"jsonrpc" => "2.0", "id" => "abc", "result" => %{}}
     end
 
+    test "string, negative, and arbitrarily large integer ids round-trip exactly",
+         %{account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      for id <- ["007", -42, 9_007_199_254_740_993_123_456_789] do
+        body =
+          build_conn()
+          |> put_req_header("authorization", "Bearer " <> raw)
+          |> rpc("ping", %{}, id)
+          |> json_response(200)
+
+        assert body["id"] === id
+        assert body["result"] == %{}
+      end
+    end
+
+    test "null, boolean, fractional, array, and object ids are invalid requests",
+         %{account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      for id <- [nil, true, 1.5, [], %{"nested" => 1}] do
+        payload = %{jsonrpc: "2.0", id: id, method: "ping", params: %{}}
+
+        body =
+          build_conn()
+          |> put_req_header("authorization", "Bearer " <> raw)
+          |> put_req_header("content-type", "application/json")
+          |> post(~p"/api/mcp/rpc", Jason.encode!(payload))
+          |> json_response(400)
+
+        assert body == %{
+                 "jsonrpc" => "2.0",
+                 "id" => nil,
+                 "error" => %{"code" => -32600, "message" => "invalid request"}
+               }
+      end
+    end
+
     test "omitting `params` defaults to an empty map (no crash)",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)
@@ -3357,7 +3465,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> post(~p"/api/mcp/rpc", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "initialize"}))
         |> json_response(200)
 
-      assert body["result"]["protocolVersion"] == "2025-06-18"
+      assert body["result"]["protocolVersion"] == "2025-11-25"
     end
 
     test "a non-object params value returns invalid params instead of raising",
@@ -3917,15 +4025,28 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "wait_for_run"
     end
 
-    test "an unparseable wait is rejected by parse_wait (the handler then uses the full window)" do
-      # The RPC handle_tool_call maps an invalid `wait` to the full max_wait_ms
-      # (60s), NOT to 0 (fire-and-forget) — the LLM fumbling `wait` should still
-      # block for output. Assert the two halves of that fallback as CONSTANTS (no
-      # sleeping): parse_wait rejects the junk with :error, and the full window the
-      # handler falls back to is 60s.
-      assert Service.parse_wait("abc", Service.max_wait_ms()) == :error
-      assert Service.parse_wait("soon", Service.max_wait_ms()) == :error
-      assert Service.max_wait_ms() == 60_000
+    test "an unparseable wait returns an in-band tool error without dispatching",
+         %{conn: conn, account: account, user: user, runner: runner} do
+      raw = make_api_key!(account, user)
+      subject = subject_for(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runners" => [runner.external_id],
+            "reason" => "invalid wait must not dispatch",
+            "wait" => "soon"
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Bad wait"
+      assert content_text(body) =~ "500ms"
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
   end
 

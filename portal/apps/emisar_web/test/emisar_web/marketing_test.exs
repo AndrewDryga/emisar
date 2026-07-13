@@ -842,6 +842,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "eight requests"
       assert html =~ "330-second"
       assert html =~ "notifications/cancelled"
+      assert html =~ "2025-11-25"
+      assert html =~ "string or integer"
+      assert html =~ "array of stable ids"
+      assert html =~ "legacy display-name alias"
     end
 
     test "the teams-and-access page renders all four roles", %{conn: conn} do

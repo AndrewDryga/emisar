@@ -21,7 +21,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   ## Streamable HTTP transport
 
-  This is a stateless, JSON-only Streamable-HTTP (2025-06-18) server: POST
+  This is a stateless, JSON-only Streamable-HTTP (2025-11-25) server: POST
   handles JSON-RPC; a GET (SSE stream) and a DELETE (session termination) are
   answered `405 Method Not Allowed` — we offer neither. Transport conformance is
   enforced before dispatch (pure predicates live in `MCP.Transport`): a
@@ -45,8 +45,8 @@ defmodule EmisarWeb.MCPRpcController do
   alias EmisarWeb.MCP.{Idempotency, Instructions, Service, Transport}
   alias EmisarWeb.RequestContext
 
-  @latest_protocol_version "2025-06-18"
-  @supported_protocol_versions [@latest_protocol_version, "2024-11-05"]
+  @latest_protocol_version "2025-11-25"
+  @supported_protocol_versions [@latest_protocol_version, "2025-06-18", "2024-11-05"]
   @server_name "emisar"
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
@@ -71,47 +71,72 @@ defmodule EmisarWeb.MCPRpcController do
 
   # POST /api/mcp/rpc
   def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) when is_binary(method) do
-    id = Map.get(req, "id")
+    case envelope_kind(req) do
+      {:request, id} -> handle_message(conn, :request, method, Map.get(req, "params"), id)
+      :notification -> handle_message(conn, :notification, method, Map.get(req, "params"), nil)
+      :invalid -> invalid_request(conn)
+    end
+  end
 
-    case params_map(Map.get(req, "params")) do
+  def handle(conn, _bad_request), do: invalid_request(conn)
+
+  defp handle_message(conn, :request, "notifications/" <> _ = method, _raw_params, id) do
+    respond(conn, :request, id, {:error, -32601, "method not found", method})
+  end
+
+  defp handle_message(conn, kind, method, raw_params, id) do
+    case params_map(raw_params) do
       {:ok, params} ->
         conn = conn |> maybe_emit_session_id(method) |> maybe_acknowledge_rotation(method)
+        result = Cancellation.track(conn, method, id, &dispatch(&1, method, params))
+        respond(conn, kind, id, result)
 
-        case Cancellation.track(conn, method, id, &dispatch(&1, method, params)) do
-          :cancelled ->
-            send_resp(conn, 204, "")
-
-          :no_reply ->
-            # JSON-RPC notification — RFC says no response body.
-            send_resp(conn, 202, "")
-
-          {:ok, result} ->
-            json(conn, %{jsonrpc: "2.0", id: id, result: result})
-
-          {:error, code, message} ->
-            json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
-
-          {:error, code, message, data} ->
-            json(conn, %{
-              jsonrpc: "2.0",
-              id: id,
-              error: %{code: code, message: message, data: data}
-            })
-        end
-
-      :error ->
+      :error when kind == :request ->
         json(conn, %{
           jsonrpc: "2.0",
           id: id,
           error: %{code: -32602, message: "params must be an object"}
         })
+
+      :error ->
+        send_resp(conn, 202, "")
     end
   end
 
-  def handle(conn, _bad_request) do
+  defp respond(conn, :notification, _id, _result), do: send_resp(conn, 202, "")
+  defp respond(conn, :request, _id, :cancelled), do: send_resp(conn, 204, "")
+  defp respond(conn, :request, _id, :no_reply), do: send_resp(conn, 204, "")
+
+  defp respond(conn, :request, id, {:ok, result}),
+    do: json(conn, %{jsonrpc: "2.0", id: id, result: result})
+
+  defp respond(conn, :request, id, {:error, code, message}) do
+    json(conn, %{jsonrpc: "2.0", id: id, error: %{code: code, message: message}})
+  end
+
+  defp respond(conn, :request, id, {:error, code, message, data}) do
+    json(conn, %{
+      jsonrpc: "2.0",
+      id: id,
+      error: %{code: code, message: message, data: data}
+    })
+  end
+
+  defp invalid_request(conn) do
     conn
     |> put_status(:bad_request)
     |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32600, message: "invalid request"}})
+  end
+
+  defp envelope_kind(req) do
+    if Map.has_key?(req, "id") do
+      case req["id"] do
+        id when is_binary(id) or is_integer(id) -> {:request, id}
+        _invalid_id -> :invalid
+      end
+    else
+      :notification
+    end
   end
 
   # GET /api/mcp/rpc — a Streamable-HTTP client opens an SSE stream here; this
@@ -238,33 +263,35 @@ defmodule EmisarWeb.MCPRpcController do
     {runner_targets, reason, wait, attestation, action_args} = split_call_args(args)
     idempotency_key = Idempotency.resolve(conn, args)
 
-    # Omitting `wait` means "block for the result" — the default has to
-    # be the full window, not 0, or a tool call returns a bare
-    # status=sent with no output and the LLM has nothing to act on.
-    # `parse_wait(nil)` returns 0, so handle the omitted case explicitly
-    # here; an explicit `wait: "0"` from the caller still means
-    # fire-and-forget.
-    wait_ms =
-      case wait do
-        blank when blank in [nil, ""] ->
-          Service.max_wait_ms()
+    case action_wait_ms(wait) do
+      {:ok, wait_ms} ->
+        opts = %{
+          runner_targets: runner_targets,
+          reason: reason,
+          wait_ms: wait_ms,
+          idempotency_key: idempotency_key,
+          mcp_session_id: req_session_id(conn),
+          attestation: attestation
+        }
 
-        _ ->
-          case Service.parse_wait(wait, Service.max_wait_ms()) do
-            {:ok, ms} -> ms
-            :error -> Service.max_wait_ms()
-          end
-      end
+        dispatch_action(conn, name, action_args, opts)
 
-    opts = %{
-      runner_targets: runner_targets,
-      reason: reason,
-      wait_ms: wait_ms,
-      idempotency_key: idempotency_key,
-      mcp_session_id: req_session_id(conn),
-      attestation: attestation
-    }
+      :error ->
+        tool_error(
+          "Bad wait",
+          "Expected a duration like `500ms`, `30s`, or `1m` (max 1m), or `0` for " <>
+            "fire-and-forget."
+        )
+    end
+  end
 
+  # Omission uses the useful full wait. An explicit zero remains
+  # fire-and-forget; malformed input is an in-band tool error, never a silent
+  # coercion to either behavior.
+  defp action_wait_ms(blank) when blank in [nil, ""], do: {:ok, Service.max_wait_ms()}
+  defp action_wait_ms(wait), do: Service.parse_wait(wait, Service.max_wait_ms())
+
+  defp dispatch_action(conn, name, action_args, opts) do
     case Service.dispatch_tool(conn, name, action_args, opts) do
       {:error, :cancelled} ->
         :cancelled

@@ -12,6 +12,8 @@ defmodule EmisarWeb.MCP.ToolSchema do
       retargets as the fleet changes).
     * `idempotency_key` (optional) — LLM-controlled at-most-once retry
       (Layer 2). See `EmisarWeb.MCP.Idempotency` for the contract.
+    * `wait` (optional) — bounded result wait; omitted defaults to 60s and
+      zero is explicit fire-and-forget.
 
   Emisar's own arg types (`duration`, `string_array`, `integer_array`)
   don't exist in JSON Schema, so we widen to the underlying primitive
@@ -63,7 +65,11 @@ defmodule EmisarWeb.MCP.ToolSchema do
     {runners_prop, runners_required} = runners_property(normalize_runner_targets(runner_targets))
 
     properties =
-      %{"reason" => reason_property(), "idempotency_key" => idempotency_key_property()}
+      %{
+        "reason" => reason_property(),
+        "wait" => wait_property(),
+        "idempotency_key" => idempotency_key_property()
+      }
       |> put_if_present("runners", runners_prop)
 
     {properties, runners_required}
@@ -87,6 +93,17 @@ defmodule EmisarWeb.MCP.ToolSchema do
       description:
         "Why you are running this action — a short freeform sentence. " <>
           "Logged in the audit trail. Required."
+    }
+  end
+
+  defp wait_property do
+    %{
+      type: "string",
+      pattern: "^[0-9]{1,8}(ms|s|m)?$",
+      description:
+        "Optional result wait. Use a duration such as `500ms`, `30s`, or `1m`; a bare number " <>
+          "means seconds. Values above 60s are capped at 60s. Omit to wait up to 60s for the " <>
+          "action result, or set `0` for fire-and-forget and use `wait_for_run` later."
     }
   end
 

@@ -22,6 +22,15 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       refute "idempotency_key" in schema.required
     end
 
+    test "always describes the optional bounded wait argument" do
+      schema = ToolSchema.build(action(), ["only-runner"])
+
+      assert schema.properties["wait"].type == "string"
+      assert schema.properties["wait"].pattern == "^[0-9]{1,8}(ms|s|m)?$"
+      assert schema.properties["wait"].description =~ "Omit to wait up to 60s"
+      refute "wait" in schema.required
+    end
+
     test "exactly one runner → runners still REQUIRED (no auto-pick), enum locked to that id" do
       schema = ToolSchema.build(action(), ["solo"])
 
@@ -259,7 +268,8 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert Map.keys(schema.properties) |> Enum.sort() == [
                "idempotency_key",
                "reason",
-               "runners"
+               "runners",
+               "wait"
              ]
 
       assert schema.additionalProperties == true

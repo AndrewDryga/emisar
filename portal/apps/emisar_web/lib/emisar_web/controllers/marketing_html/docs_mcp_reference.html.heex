@@ -24,7 +24,10 @@
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
         <h2>Methods</h2>
         <p>
-          emisar speaks JSON-RPC 2.0 over MCP. Its primary request and notification methods are:
+          emisar speaks JSON-RPC 2.0 over MCP. The current negotiated protocol is <code>2025-11-25</code>; clients that request
+          <code>2025-06-18</code>
+          or <code>2024-11-05</code>
+          remain supported. Its primary request and notification methods are:
         </p>
         <ul>
           <li>
@@ -48,6 +51,17 @@
             — cancel the exact in-flight request generation. As an MCP notification, it receives no JSON-RPC response.
           </li>
         </ul>
+
+        <h2>JSON-RPC envelopes</h2>
+        <p>
+          A request has an explicit string or integer <code>id</code>; that exact value is returned
+          in its response. Null, fractional, boolean, array, and object ids are invalid. A frame
+          with no id is a notification and always receives HTTP 202 with an empty body, including
+          invalid-parameter and unknown-method outcomes. Conversely, adding an id to a
+          <code>notifications/*</code>
+          method makes it a request: emisar returns method-not-found
+          and does not execute notification side effects.
+        </p>
 
         <h2>The catalog is live, not static</h2>
         <p>
@@ -78,9 +92,9 @@
               <%= for {param, req, desc} <- [
                 {"reason", "Required", "An operator-facing audit string — one short sentence on why. It's recorded on the run for a human to audit later."},
                 {"<action args>", "Per the action", "The action's own typed arguments, re-validated against its declared schema on the runner."},
-                {"runners", "Required", "The target runner(s) to fan out to — an array of names (or a single runner string). Always required: emisar never auto-targets, even when exactly one runner advertises the action, so every call names its host explicitly."},
+                {"runners", "Required", "The target runner(s) to fan out to — an array of stable ids from tools/list. Always required: emisar never auto-targets, even when exactly one runner advertises the action. Each resolved runner must be unique; naming the same runner once by id and once by a legacy display-name alias is rejected."},
                 {"idempotency_key", "Optional", "Dedups a call you might retry, so the same intent runs once. (The bridge also mints a transport-level key automatically — see Idempotency.)"},
-                {"wait", "Optional", "Block until the run reaches a terminal state, up to 60 seconds, and return its result. Otherwise the call returns once the run is dispatched; poll with wait_for_run."}
+                {"wait", "Optional", "Block until the run reaches a terminal state, up to 60 seconds, and return its result. Omit it to use that 60-second default, or set 0 for fire-and-forget and poll with wait_for_run. Malformed durations return an in-band tool error and do not dispatch."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{param}</td>

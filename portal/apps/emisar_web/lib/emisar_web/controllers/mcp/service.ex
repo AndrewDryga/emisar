@@ -580,9 +580,17 @@ defmodule EmisarWeb.MCP.Service do
       end
     end)
     |> case do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
+      {:ok, list} -> unique_resolved_runners(Enum.reverse(list))
       err -> err
     end
+  end
+
+  defp unique_resolved_runners(runners) do
+    runner_ids = Enum.map(runners, fn {_name, runner_id, _external_id} -> runner_id end)
+
+    if MapSet.size(MapSet.new(runner_ids)) == length(runner_ids),
+      do: {:ok, runners},
+      else: {:error, :duplicate_runners}
   end
 
   # MCP tool schemas use the runner's durable external id because an enforcing
