@@ -17,16 +17,7 @@ Licensed Work:        emisar
                       Version 2.0 (see runner/LICENSE, mcp/LICENSE, and
                       packs/LICENSE).
 
-Additional Use Grant: You may make production use of the Licensed Work free of
-                      charge if the total gross annual revenue of your
-                      organization, together with its affiliates, is less than
-                      USD 1,000,000 (or the equivalent in other currencies) in
-                      your most recently completed fiscal year. Production use
-                      of the Licensed Work by or on behalf of an organization
-                      whose total gross annual revenue equals or exceeds that
-                      threshold requires a commercial license from the
-                      Licensor. In addition, and regardless of revenue, you
-                      may make production use of the Licensed Work to the
+Additional Use Grant: You may make production use of the Licensed Work to the
                       extent necessary to install, configure, integrate with,
                       or operate the separately licensed emisar components
                       (the runner/, mcp/, and packs/ directories, each under

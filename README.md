@@ -162,11 +162,11 @@ This repository is dual-licensed:
 - **Everything else**, including the `portal/` control plane, is
   source-available under the
   **[Business Source License 1.1](./LICENSE.md)**: free for any
-  non-production use, free production use under the Additional Use Grant
-  (organizations under USD 1M annual revenue, and anything needed to run the
-  Apache-licensed components or the hosted service), and **each version
-  converts to the Apache License 2.0 on its Change Date** — so the entire
-  codebase is guaranteed to become open source over time.
+  non-production use, with production use permitted only as needed to run the
+  Apache-licensed components or the hosted service under the Additional Use
+  Grant. All other production use requires a commercial license. **Each version
+  converts to the Apache License 2.0 on its Change Date**, so the entire codebase
+  is guaranteed to become open source over time.
 
 See:
 
