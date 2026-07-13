@@ -42,6 +42,62 @@ desktop clients and current CLI command forms.
 | `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private key (64-hex seed) used to sign each dispatch so signature-enforcing runners will run it. Keep it secret — never on the portal. See [`docs/signed-dispatch.md`](../docs/signed-dispatch.md). |
 | `EMISAR_SIGNING_CERT` | no | The CA-signed certificate (JSON) vouching for `EMISAR_SIGNING_KEY` — required with it. Minted by `emisar signing new-cert` / `emisar signing init`; the runner verifies it against its trusted CA before running the dispatch. |
 
+### Client compatibility
+
+The table below records a real production `recent_runs` call through the stdio
+bridge on 2026-07-13. It is version-specific compatibility evidence, not a claim
+that later client releases have identical catalog behavior.
+
+| Client | Tested version | 552-tool catalog | Result |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.206 | Unrestricted | Connected, discovered the catalog, and completed the call. |
+| Grok CLI | 0.2.93 | Unrestricted | Connected, discovered 552 tools, and completed the call. |
+| Gemini CLI | 0.49.0 | Unrestricted | Completed the call, but reported about 691,000 input tokens. Use `includeTools` for a bounded catalog. |
+| Codex CLI | 0.144.1 | Client allowlist required | The unrestricted catalog omitted `recent_runs`; the same production call completed with Codex's `enabled_tools` allowlist. |
+
+Emisar intentionally returns one strongly typed tool per action reachable by the
+key's minting operator, plus the six synthetic tools below. Large fleets and pack
+sets can therefore exceed a client's practical tool limit even though the MCP
+connection itself is healthy. Narrow the operator's runner scope to the hosts the
+agent needs, and use the client's tool allowlist for a task-specific action set.
+Do not treat a tool absent from a client as proof that Emisar denied access; check
+the unfiltered catalog when diagnosing authorization.
+
+For Codex, add `enabled_tools` to the existing server table. Keep the synthetic
+tools the workflow needs and list every action the client must dispatch:
+
+```toml
+[mcp_servers.emisar]
+command = "/usr/local/bin/emisar-mcp"
+enabled_tools = [
+  "recent_runs",
+  "wait_for_run",
+  "list_runbooks",
+  "get_runbook",
+  "linux.uptime",
+]
+```
+
+For Gemini CLI, add `includeTools` to the existing `emisar` server object (or
+pass the same comma-separated names to `gemini mcp add --include-tools`):
+
+```json
+{
+  "mcpServers": {
+    "emisar": {
+      "command": "/usr/local/bin/emisar-mcp",
+      "includeTools": [
+        "recent_runs",
+        "wait_for_run",
+        "list_runbooks",
+        "get_runbook",
+        "linux.uptime"
+      ]
+    }
+  }
+}
+```
+
 ## Auth
 
 Two credential types, both hashed at rest:
