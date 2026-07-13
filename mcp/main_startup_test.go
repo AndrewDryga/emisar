@@ -173,12 +173,14 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 	}
 
 	for _, setup := range []string{
+		"~/Library/Application Support/Claude/claude_desktop_config.json",
 		"claude mcp add emisar --scope user",
 		"~/.cursor/mcp.json",
 		"codex mcp add emisar",
 		"grok mcp add emisar",
+		`"EMISAR_CLIENT": "claude-desktop"`,
 		"EMISAR_CLIENT=claude-code",
-		"EMISAR_CLIENT=cursor",
+		`"EMISAR_CLIENT": "cursor"`,
 		"EMISAR_CLIENT=codex",
 		"EMISAR_CLIENT=grok",
 	} {

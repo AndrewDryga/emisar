@@ -158,6 +158,23 @@ CLIENT SETUP
   Replace emk-... below with a key from https://emisar.dev/app/agents.
   These examples assume the bridge is installed in /usr/local/bin.
 
+  Claude Desktop (macOS)
+    Add this to:
+    ~/Library/Application Support/Claude/claude_desktop_config.json
+
+    {
+      "mcpServers": {
+        "emisar": {
+          "command": "/usr/local/bin/emisar-mcp",
+          "env": {
+            "EMISAR_URL": "https://emisar.dev",
+            "EMISAR_API_KEY": "emk-...",
+            "EMISAR_CLIENT": "claude-desktop"
+          }
+        }
+      }
+    }
+
   Claude Code
     claude mcp add emisar --scope user \
       -e EMISAR_URL=https://emisar.dev \
@@ -166,9 +183,20 @@ CLIENT SETUP
       -- /usr/local/bin/emisar-mcp
 
   Cursor
-    Add an "emisar" stdio server to ~/.cursor/mcp.json. Set command to
-    /usr/local/bin/emisar-mcp and add EMISAR_URL, EMISAR_API_KEY, and
-    EMISAR_CLIENT=cursor under env. The Agents page provides the exact JSON.
+    Add this to ~/.cursor/mcp.json:
+
+    {
+      "mcpServers": {
+        "emisar": {
+          "command": "/usr/local/bin/emisar-mcp",
+          "env": {
+            "EMISAR_URL": "https://emisar.dev",
+            "EMISAR_API_KEY": "emk-...",
+            "EMISAR_CLIENT": "cursor"
+          }
+        }
+      }
+    }
 
   Codex
     codex mcp add emisar \

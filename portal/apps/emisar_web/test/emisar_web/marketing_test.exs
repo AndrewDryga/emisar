@@ -640,6 +640,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "claude mcp add emisar"
       assert html =~ ".gemini/settings.json"
       assert html =~ "mcp_servers.emisar"
+      assert html =~ "grok mcp add emisar"
+      assert html =~ "EMISAR_CLIENT=claude-code"
+      assert html =~ "EMISAR_CLIENT=grok"
+      assert html =~ ~s("EMISAR_CLIENT": "claude-desktop")
+      assert html =~ ~s("EMISAR_CLIENT": "cursor")
+      assert html =~ ~s(EMISAR_CLIENT = "codex")
     end
 
     test "the changelog renders its entries and the feed links", %{conn: conn} do

@@ -44,7 +44,42 @@ case "$module" in
     ;;
   mcp)
     bash install-mcp.sh --yes --install-dir "$tmp/bin" >/dev/null
-    [[ "$("$tmp/bin/emisar-mcp" --version)" =~ ^emisar-mcp\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+    installed=$("$tmp/bin/emisar-mcp" --version)
+    [[ "$installed" =~ ^emisar-mcp\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+    version=${installed#emisar-mcp }
+
+    for flag in --version --install-dir; do
+      set +e
+      output=$(bash install-mcp.sh "$flag" 2>&1)
+      status=$?
+      set -e
+      test "$status" -eq 2
+      grep -Fq "flag ${flag} requires a value" <<<"$output"
+      grep -Fq "Usage: install-mcp.sh" <<<"$output"
+    done
+
+    set +e
+    output=$(bash install-mcp.sh --version --yes 2>&1)
+    status=$?
+    set -e
+    test "$status" -eq 2
+    grep -Fq "flag --version requires a value" <<<"$output"
+
+    real_mv=$(command -v mv)
+    mkdir -p "$tmp/fake-bin"
+    printf "#!/usr/bin/env bash\nset -e\n\"%s\" \"\$@\"\nkill -KILL \"\$PPID\"\n" "$real_mv" \
+      >"$tmp/fake-bin/mv"
+    chmod +x "$tmp/fake-bin/mv"
+
+    set +e
+    PATH="$tmp/fake-bin:$PATH" bash install-mcp.sh --yes \
+      --version "mcp-v${version}" --install-dir "$tmp/bin" \
+      >"$tmp/interrupted-upgrade.log" 2>&1
+    status=$?
+    set -e
+    test "$status" -ne 0
+    test -x "$tmp/bin/emisar-mcp"
+    test "$("$tmp/bin/emisar-mcp" --version)" = "$installed"
     ;;
   *)
     echo "unknown installer module: $module" >&2

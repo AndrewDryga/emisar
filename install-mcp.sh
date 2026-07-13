@@ -50,6 +50,15 @@ USAGE
 
 ASSUME_YES="${ASSUME_YES:-0}"
 
+require_value() {
+  local flag="$1"
+  if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
+    printf 'flag %s requires a value\n' "$flag" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 normalize_version() {
   case "$1" in
     mcp-v*) printf '%s\n' "$1";;
@@ -60,8 +69,16 @@ normalize_version() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version)     VERSION="$(normalize_version "$2")"; shift 2;;
-    --install-dir) INSTALL_DIR="$2"; shift 2;;
+    --version)
+      require_value "$@"
+      VERSION="$(normalize_version "$2")"
+      shift 2
+      ;;
+    --install-dir)
+      require_value "$@"
+      INSTALL_DIR="$2"
+      shift 2
+      ;;
     --yes|-y)      ASSUME_YES=1; shift;;
     --help|-h)     usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
@@ -164,7 +181,7 @@ fi
 # ---------------------------------------------------------------------
 
 tmp="$(mktemp -d -t emisar-mcp-install.XXXXXX)"
-trap 'rm -rf "${tmp}"' EXIT
+trap 'rm -rf "${tmp}"; [ -z "${bin_staged:-}" ] || rm -f "${bin_staged}"' EXIT
 
 log "downloading ${TARBALL}"
 curl -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
@@ -207,7 +224,6 @@ fi
 bin_src="${tmp}/${TAR_NAME}/emisar-mcp"
 bin_dst="${INSTALL_DIR}/emisar-mcp"
 bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
-bin_backup="${INSTALL_DIR}/.emisar-mcp.previous.$$"
 
 if [ ! -x "${bin_src}" ]; then
   die "expected ${bin_src} inside tarball but it was missing"
@@ -221,14 +237,13 @@ expected_version="emisar-mcp ${VERSION_NUM}"
 [ "${staged_version}" = "${expected_version}" ] || \
   die "staged binary reported '${staged_version}', expected '${expected_version}'"
 
-if [ -e "${bin_dst}" ]; then
-  mv "${bin_dst}" "${bin_backup}"
+# The staged file is already on the destination filesystem, so this is one
+# atomic rename: interruption leaves either the complete old or complete new
+# executable at bin_dst, never a missing active path.
+if ! mv -f "${bin_staged}" "${bin_dst}"; then
+  die "could not atomically activate the new binary; the previous installation is unchanged"
 fi
-if ! mv "${bin_staged}" "${bin_dst}"; then
-  [ ! -e "${bin_backup}" ] || mv "${bin_backup}" "${bin_dst}"
-  die "could not activate the new binary; restored the previous installation"
-fi
-rm -f "${bin_backup}"
+bin_staged=""
 
 # ---------------------------------------------------------------------
 # Done

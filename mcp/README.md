@@ -28,9 +28,9 @@ install). The bridge is configured per client via env vars in the
 launcher's JSON/TOML config — the portal's **/app/agents** page
 generates the exact snippet per client:
 
-Run `emisar-mcp --help` for compact registration instructions for Claude Code,
-Cursor, Codex, and Grok, including the current CLI command forms and Cursor's
-global config path.
+Run `emisar-mcp --help` for compact registration instructions for Claude
+Desktop, Claude Code, Cursor, Codex, and Grok, including complete JSON for the
+desktop clients and current CLI command forms.
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
@@ -137,9 +137,11 @@ key expiring within 7 days, rotation uses a crash-safe two-phase exchange:
    remains usable until the successor's first authenticated request proves the
    swap, at which point the portal retires the replaced key chain.
 
-The raw successor never crosses the portal boundary. Lost requests, lost
-responses, process restarts, and persistence failures therefore leave at least
-one recoverable credential. The rotation is recorded as
+The raw successor is absent from the rotation proposal and acknowledgement. It
+first reaches the portal later as the ordinary Authorization bearer after the
+bridge has durably activated it. Lost requests, lost responses, process
+restarts, and persistence failures therefore leave at least one recoverable
+credential. The rotation is recorded as
 `api_key.auto_rotated`; retirement is recorded separately as
 `api_key.retired_by_rotation`.
 
