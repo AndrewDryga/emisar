@@ -138,31 +138,50 @@ func TestMatchingJSONRPCID_PreservesTypeAndNumericValue(t *testing.T) {
 	}
 }
 
-func TestCheckEndpointScheme(t *testing.T) {
+func TestParseEndpoint(t *testing.T) {
 	cases := []struct {
 		base          string
 		allowInsecure bool
-		ok            bool
+		want          string
 	}{
-		{"https://emisar.dev", false, true},
-		{"https://example.com:8443", false, true},
-		{"http://localhost:4000", false, true},
-		{"http://127.0.0.1:4000", false, true},
-		{"http://[::1]:4000", false, true},
-		{"http://emisar.dev", false, false},   // cleartext to public host → reject
-		{"http://192.168.1.10", false, false}, // private LAN is still non-loopback
-		{"http://emisar.dev", true, true},     // explicit override
-		{"ws://emisar.dev", false, false},     // wrong scheme for an HTTP POST
-		{"ftp://emisar.dev", false, false},    // nonsense scheme
-		{"://bad", false, false},              // unparseable
+		{"https://emisar.dev", false, "https://emisar.dev"},
+		{"https://emisar.dev/", false, "https://emisar.dev"},
+		{"HTTPS://example.com:8443", false, "https://example.com:8443"},
+		{"http://localhost:4000/", false, "http://localhost:4000"},
+		{"http://127.0.0.1:4000", false, "http://127.0.0.1:4000"},
+		{"http://[::1]:4000", false, "http://[::1]:4000"},
+		{"http://emisar.dev", false, ""},
+		{"http://192.168.1.10", false, ""},
+		{"http://emisar.dev", true, "http://emisar.dev"},
+		{"ws://emisar.dev", false, ""},
+		{"ftp://emisar.dev", false, ""},
+		{"://bad", false, ""},
+		{"https://", false, ""},
+		{"https:///api", false, ""},
+		{"//emisar.dev", false, ""},
+		{"https://user:secret@emisar.dev", false, ""},
+		{"https://emisar.dev/api", false, ""},
+		{"https://emisar.dev//", false, ""},
+		{"https://emisar.dev/%2F", false, ""},
+		{"https://emisar.dev?region=us", false, ""},
+		{"https://emisar.dev?", false, ""},
+		{"https://emisar.dev/#setup", false, ""},
+		{"https://emisar.dev:", false, ""},
+		{"https://emisar.dev:0", false, ""},
+		{"https://emisar.dev:65535", false, "https://emisar.dev:65535"},
+		{"https://emisar.dev:65536", false, ""},
+		{"https://emisar.dev:99999", false, ""},
 	}
 	for _, c := range cases {
-		err := checkEndpointScheme(c.base, c.allowInsecure)
-		if c.ok && err != nil {
-			t.Errorf("%q (allowInsecure=%v): want ok, got %v", c.base, c.allowInsecure, err)
+		got, err := parseEndpoint(c.base, c.allowInsecure)
+		if c.want != "" && err != nil {
+			t.Errorf("%q (allowInsecure=%v): want %q, got %v", c.base, c.allowInsecure, c.want, err)
 		}
-		if !c.ok && err == nil {
+		if c.want == "" && err == nil {
 			t.Errorf("%q (allowInsecure=%v): want error, got nil", c.base, c.allowInsecure)
+		}
+		if got != c.want {
+			t.Errorf("%q (allowInsecure=%v): got %q, want %q", c.base, c.allowInsecure, got, c.want)
 		}
 	}
 }
@@ -685,15 +704,15 @@ func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 	}
 }
 
-// -- checkEndpointScheme: case-insensitive loopback -----------------
+// -- parseEndpoint: case-insensitive loopback -----------------------
 
 // the loopback allowance for cleartext http is case-insensitive on
 // the host: http://LOCALHOST is accepted exactly like http://localhost
 // (isLoopbackHost uses strings.EqualFold), so casing can't accidentally trip the
 // cleartext refusal for a legit local dev endpoint.
-func TestCheckEndpointScheme_LoopbackCaseInsensitive(t *testing.T) {
+func TestParseEndpoint_LoopbackCaseInsensitive(t *testing.T) {
 	for _, base := range []string{"http://LOCALHOST:4000", "http://LocalHost:4000", "http://localhost:4000"} {
-		if err := checkEndpointScheme(base, false); err != nil {
+		if _, err := parseEndpoint(base, false); err != nil {
 			t.Errorf("%q should be allowed (case-insensitive loopback), got %v", base, err)
 		}
 	}
@@ -824,7 +843,7 @@ func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
 // a request-build failure (http.NewRequest) is surfaced to the
 // caller (serve then maps it to -32603). An endpoint with an embedded control
 // character fails url.Parse inside http.NewRequest. (forward is exercised in
-// isolation here; the startup checkEndpointScheme would normally reject such a
+// isolation here; the startup parseEndpoint would normally reject such a
 // URL first.)
 func TestForward_RequestBuildErrorSurfaced(t *testing.T) {
 	b := &bridge{
@@ -1841,7 +1860,11 @@ func TestParseClientMetadata_FailsClosed(t *testing.T) {
 		{"top-level array", `["a"]`, "must be a JSON object"},
 		{"top-level string", `"x"`, "must be a JSON object"},
 		{"top-level number", `5`, "must be a JSON object"},
+		{"top-level null", `null`, "must be a non-null JSON object"},
 		{"trailing data", `{"a":"1"} {"b":"2"}`, "single JSON object"},
+		{"trailing array", `{"a":"1"} []`, "single JSON object"},
+		{"trailing scalar", `{"a":"1"} true`, "single JSON object"},
+		{"trailing garbage", `{"a":"1"} nope`, "single JSON object"},
 		{"too many keys", elevenKeyObject(), "the maximum is 10"},
 		{"key too long", `{"` + strings.Repeat("k", 129) + `":"v"}`, "exceeds 128 characters"},
 		{"string value too long", `{"a":"` + strings.Repeat("v", 513) + `"}`, "exceeds 512 characters"},

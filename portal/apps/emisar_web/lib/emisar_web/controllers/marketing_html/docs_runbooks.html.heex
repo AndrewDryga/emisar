@@ -139,7 +139,7 @@
         Dispatch it with a reason and each group step fans out in parallel waves — one execution row
         per node per step, with that node's output, exit code, and duration. Publish it once and the
         whole sweep is a single click for the on-call, or a single
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
         for an agent triaging a live alert. Swap a read for a remediation later — a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.unit_restart</code>
         for a unit you found dead — and that one step stops for approval while the read-only ones
@@ -150,18 +150,21 @@
         Runbooks and your LLM
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        Connected agents see two extra tools:
+        Connected agents see four runbook tools:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
         (published
         runbooks with their descriptions) and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
         (one runbook's
-        ordered steps, targets resolved to current runner names). The cloud deliberately does
-        <strong class="text-zinc-200">not</strong>
-        auto-execute a runbook for the model — the
-        agent dispatches each step itself, in order, through the normal action tools. That keeps
-        every step inside the same policy, approval, and audit machinery, and lets the agent
-        stop, reassess, or escalate between steps the way a human operator would.
+        ordered steps, targets resolved to current runner names).
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
+        sends a published runbook through the governed end-to-end path; every step still passes
+        its normal policy, approval, target, and audit checks.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
+        validates an agent's proposed plan and saves it for human review, but never publishes it.
+        An agent can still use
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
+        and dispatch steps itself when it needs to stop, reassess, or escalate between them.
       </p>
 
       <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">

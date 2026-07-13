@@ -73,12 +73,14 @@ warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
 github_api() {
-  local auth_args=()
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
-    auth_args=(-H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}")
+    curl -fsSL -H 'Accept: application/vnd.github+json' \
+      -H "Authorization: Bearer ${EMISAR_GITHUB_TOKEN}" "$@"
+  else
+    # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
+    # unbound under `set -u`, so keep the no-token path array-free.
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
-  curl -fsSL -H 'Accept: application/vnd.github+json' \
-    "${auth_args[@]}" "$@"
 }
 
 require_immutable_release() {

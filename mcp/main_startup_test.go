@@ -119,6 +119,14 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 			t.Errorf("%s: unexpected stderr %q", flag, stderr)
 		}
 	}
+	for _, command := range []string{"emisar signing init", "emisar signing new-cert"} {
+		if !strings.Contains(helpText, command) {
+			t.Errorf("help does not name the real command %q", command)
+		}
+	}
+	if strings.Contains(helpText, "emisar cert new") {
+		t.Error("help names the nonexistent `emisar cert new` command")
+	}
 }
 
 // an unknown flag is rejected: stderr names the argument and the
@@ -137,8 +145,8 @@ func TestMain_UnknownFlagExitsTwo(t *testing.T) {
 	}
 }
 
-// / / — a missing EMISAR_URL or
-// EMISAR_API_KEY (or both) is fatal: fatalln to stderr, exit 1. The check is
+// A missing EMISAR_URL or EMISAR_API_KEY (or both) is fatal: fatalln to
+// stderr, exit 1. The check is
 // "both must be set", so url-only and key-only both fail the same way.
 func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 	cases := []struct {
@@ -165,11 +173,11 @@ func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 	}
 }
 
-// a failed endpoint-scheme check is fatal at startup: a cleartext
+// A failed endpoint-scheme check is fatal at startup: a cleartext
 // http:// URL to a public host (no EMISAR_ALLOW_INSECURE override) makes main()
 // fatalln and exit 1. The bridge never silently downgrades to shipping the
-// Bearer key over plaintext. (The pure checkEndpointScheme logic is covered by
-// TestCheckEndpointScheme; this pins that main wires the failure to a fatal.)
+// Bearer key over plaintext. (The pure parseEndpoint logic is covered by
+// TestParseEndpoint; this pins that main wires the failure to a fatal.)
 func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
 	stdout, stderr, code := runMain(t, "", nil, map[string]string{
 		"EMISAR_URL":     "http://emisar.dev",
@@ -183,6 +191,32 @@ func TestMain_CleartextPublicEndpointIsFatal(t *testing.T) {
 	}
 	if stdout != "" {
 		t.Errorf("a fatal scheme check should write nothing to stdout, got %q", stdout)
+	}
+}
+
+func TestMain_InvalidEndpointOriginIsFatal(t *testing.T) {
+	for _, endpoint := range []string{
+		"https://",
+		"https://user:secret@emisar.dev",
+		"https://emisar.dev/api",
+		"https://emisar.dev?region=us",
+		"https://emisar.dev/#setup",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			stdout, stderr, code := runMain(t, "", nil, map[string]string{
+				"EMISAR_URL":     endpoint,
+				"EMISAR_API_KEY": "emk-x",
+			})
+			if code != 1 {
+				t.Errorf("exit code = %d, want 1; stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stderr, "EMISAR_URL") {
+				t.Errorf("stderr should identify EMISAR_URL, got %q", stderr)
+			}
+			if stdout != "" {
+				t.Errorf("fatal startup wrote stdout %q", stdout)
+			}
+		})
 	}
 }
 
@@ -203,7 +237,7 @@ func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
 	}
 }
 
-// /T11 wired to startup — a malformed signing-key configuration
+// A malformed signing-key configuration
 // (only one of the pair, or a non-hex / wrong-length seed) is fatal at startup:
 // newSigner's error is surfaced via fatalln, exit 1. (newSigner's pure cases are
 // covered by TestNewSigner; this pins that main treats the error as fatal.)
@@ -306,17 +340,17 @@ func TestMain_ClientMetadataForwardedOnRequest(t *testing.T) {
 	}
 }
 
-// / — the endpoint is composed as `base + /api/mcp/rpc`,
-// and a trailing slash on EMISAR_URL is trimmed first (so `https://x/` and
+// The endpoint is composed as `base + /api/mcp/rpc`, and a trailing root slash
+// on EMISAR_URL is normalized first (so `https://x/` and
 // `https://x` produce the same endpoint). We point a started bridge at a real
 // capture server, feed one notification frame, and assert the POST landed on
 // exactly `/api/mcp/rpc`. The server answers 202 so the bridge writes nothing
 // and exits clean on EOF.
-func TestMain_EndpointComposedAndTrailingSlashTrimmed(t *testing.T) {
+func TestMain_EndpointComposedAndTrailingSlashNormalized(t *testing.T) {
 	for _, urlSuffix := range []string{"", "/"} {
 		name := "no trailing slash"
 		if urlSuffix == "/" {
-			name = "trailing slash trimmed"
+			name = "trailing slash normalized"
 		}
 		t.Run(name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -389,7 +423,7 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 	}
 }
 
-// / (transport-error half) — on a transport failure
+// On a transport failure
 // (connection refused), the client-facing JSON-RPC frame on STDOUT is the
 // generic `-32603 upstream transport error`. Untrusted transport details are
 // omitted from both streams, and the API key never appears on either stream. The

@@ -454,7 +454,9 @@ jobs:
 
       - name: Check attestation implementation parity
         if: matrix.module == 'runner' || matrix.module == 'mcp'
-        run: .github/scripts/check-attest-parity.sh
+        run: |
+          .github/scripts/test-check-attest-parity.sh
+          .github/scripts/check-attest-parity.sh
 
       - name: Run go vet
         working-directory: ${{ matrix.module }}

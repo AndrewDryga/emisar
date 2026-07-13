@@ -263,17 +263,6 @@ func (state credentialState) validate(bootstrapPrefix string) error {
 	}
 }
 
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("multiple JSON values")
-		}
-		return err
-	}
-	return nil
-}
-
 func syncCredentialDirectory(dir string) error {
 	if runtime.GOOS == "windows" {
 		return nil

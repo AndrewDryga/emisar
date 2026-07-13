@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+root=${EMISAR_ATTEST_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 mcp="$root/mcp/internal/attest"
 runner="$root/runner/internal/attest"
 

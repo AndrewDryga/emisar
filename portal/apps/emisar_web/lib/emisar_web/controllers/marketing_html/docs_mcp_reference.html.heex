@@ -24,12 +24,16 @@
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
         <h2>Methods</h2>
         <p>
-          emisar speaks JSON-RPC 2.0 over MCP. Three methods matter to a client:
+          emisar speaks JSON-RPC 2.0 over MCP. Its primary request and notification methods are:
         </p>
         <ul>
           <li>
             <code>initialize</code>
             — the MCP handshake; returns server capabilities and instructions.
+          </li>
+          <li>
+            <code>ping</code>
+            — a prompt liveness check, including while another request is waiting for approval or a run result.
           </li>
           <li>
             <code>tools/list</code>
@@ -38,6 +42,10 @@
           <li>
             <code>tools/call</code>
             — dispatch one action (or call a meta tool) by name with arguments.
+          </li>
+          <li>
+            <code>notifications/cancelled</code>
+            — cancel the exact in-flight request generation. As an MCP notification, it receives no JSON-RPC response.
           </li>
         </ul>
 
@@ -72,7 +80,7 @@
                 {"<action args>", "Per the action", "The action's own typed arguments, re-validated against its declared schema on the runner."},
                 {"runners", "Required", "The target runner(s) to fan out to — an array of names (or a single runner string). Always required: emisar never auto-targets, even when exactly one runner advertises the action, so every call names its host explicitly."},
                 {"idempotency_key", "Optional", "Dedups a call you might retry, so the same intent runs once. (The bridge also mints a transport-level key automatically — see Idempotency.)"},
-                {"wait", "Optional", "Block until the run reaches a terminal state, up to a ~60s cap, and return its result. Otherwise the call returns once the run is dispatched; poll with wait_for_run."}
+                {"wait", "Optional", "Block until the run reaches a terminal state, up to 60 seconds, and return its result. Otherwise the call returns once the run is dispatched; poll with wait_for_run."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{param}</td>
@@ -86,7 +94,7 @@
 
         <h2>Meta tools</h2>
         <p>
-          Alongside the action tools, <code>tools/list</code> includes a few helpers:
+          Alongside the action tools, <code>tools/list</code> includes six helpers:
         </p>
         <ul>
           <li>
@@ -103,11 +111,28 @@
           </li>
           <li>
             <code>get_runbook</code>
-            — one runbook's ordered steps. The cloud does
-            <strong class="font-semibold text-zinc-200">not</strong>
-            run a runbook for you: fetch it and dispatch each step yourself, in order, honoring each step's policy.
+            — one published runbook's ordered steps, with targets resolved for inspection or step-by-step dispatch.
+          </li>
+          <li>
+            <code>execute_runbook</code>
+            — run a published runbook through the governed end-to-end path. Every step still passes its normal policy, approval, target, and audit checks.
+          </li>
+          <li>
+            <code>create_runbook_draft</code>
+            — validate and save a proposed plan as a draft, then return its editor URL for human review. It never publishes the draft.
           </li>
         </ul>
+
+        <h2>Waits, concurrency, and cancellation</h2>
+        <p>
+          An action call's <code>wait</code>
+          is capped at 60 seconds. <code>wait_for_run</code>
+          is the longer status path: it defaults to and caps at five minutes. The local stdio bridge
+          keeps up to eight requests in flight, so pings and unrelated calls remain responsive, and
+          uses a 330-second HTTP deadline to leave bounded headroom over that five-minute portal wait.
+          Cancelling a request stops that exact generation locally and releases its matching portal
+          wait; a cancellation notification never produces a stdout response.
+        </p>
 
         <h2>Idempotency</h2>
         <p>

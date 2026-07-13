@@ -30,7 +30,7 @@ generates the exact snippet per client:
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
-| `EMISAR_URL` | yes | Portal base URL |
+| `EMISAR_URL` | yes | Absolute HTTP(S) portal origin, with no path, credentials, query, or fragment (for example `https://emisar.dev`) |
 | `EMISAR_API_KEY` | yes | Operator API key (`Bearer` on every request) |
 | `EMISAR_CLIENT` | no | Client label for audit attribution (`claude-code`, `cursor`, …) |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported client metadata as a JSON object of string keys to string/number values (e.g. `{"asset_tag":"LT-4417","device_id":"…"}`), snapshotted onto each MCP action run so activity can be correlated with your own MDM/EDR/inventory in the audit log + SIEM export. Limits: ≤10 keys, keys ≤128 / values ≤512 chars. Untrusted, self-reported enrichment — never used for authorization, posture, or approval. Invalid metadata is a startup error. |
@@ -59,17 +59,22 @@ ACLs additionally narrow which runners a key can even see.
 
 `tools/list` returns one tool per catalog action (grouped across the
 runners that advertise it, with a `runners` enum arg for fan-out) plus
-three synthetic tools:
+six synthetic tools:
 
 - `wait_for_run` — long-poll a run to terminal status. Accepts
   `run_id` + `timeout` (`"15s"`, `"1m"`, capped at 5m); resolves
   early on the run's pub/sub broadcast, re-checks status, and returns
   `waiting` (with current state) on timeout rather than erroring.
+- `recent_runs` — recent run summaries, optionally narrowed by scope,
+  runner, or action, so a new session can resume existing work.
 - `list_runbooks` — published runbooks with summaries.
 - `get_runbook` — one runbook's ordered steps, runner targets resolved
-  to current runner names. The cloud does NOT execute runbooks for the
-  LLM over MCP — the client dispatches each step itself, in order,
-  honoring each step's risk/approval.
+  to current runner names for inspection or step-by-step dispatch.
+- `execute_runbook` — dispatch a published runbook through the governed
+  end-to-end execution path. Every step still passes its normal policy,
+  approval, target, and audit checks.
+- `create_runbook_draft` — validate and save an LLM-proposed plan as a draft,
+  then return its editor URL for human review. It never publishes the draft.
 
 Every action call must include a `reason` string — it's recorded on
 the run and shown to operators in the audit log.

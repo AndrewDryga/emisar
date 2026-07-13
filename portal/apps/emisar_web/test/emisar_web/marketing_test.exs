@@ -825,6 +825,23 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/runbooks") |> html_response(200)
       assert html =~ "list_runbooks"
       assert html =~ "get_runbook"
+      assert html =~ "execute_runbook"
+      assert html =~ "create_runbook_draft"
+    end
+
+    test "the MCP reference pins the complete tool and transport contract", %{conn: conn} do
+      html = conn |> get(~p"/docs/mcp-reference") |> html_response(200)
+
+      for tool <-
+            ~w(wait_for_run recent_runs list_runbooks get_runbook execute_runbook create_runbook_draft) do
+        assert html =~ tool
+      end
+
+      assert html =~ "60 seconds"
+      assert html =~ "five minutes"
+      assert html =~ "eight requests"
+      assert html =~ "330-second"
+      assert html =~ "notifications/cancelled"
     end
 
     test "the teams-and-access page renders all four roles", %{conn: conn} do

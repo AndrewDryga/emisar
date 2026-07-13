@@ -48,6 +48,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -118,7 +119,8 @@ const helpText = `emisar-mcp — MCP stdio↔HTTP shim for emisar
   the operator's machine.
 
 Environment:
-  EMISAR_URL        Base URL of the control plane (required)
+  EMISAR_URL        HTTP(S) origin of the control plane (required; no path,
+                    credentials, query, or fragment)
                     e.g. https://emisar.dev
   EMISAR_API_KEY    Operator API key (required), e.g. emk-...
   EMISAR_CLIENT     Optional label that shows up in the audit log
@@ -182,10 +184,10 @@ func main() {
 		}
 	}
 
-	base := strings.TrimRight(os.Getenv("EMISAR_URL"), "/")
+	rawBase := os.Getenv("EMISAR_URL")
 	apiKey := os.Getenv("EMISAR_API_KEY")
 
-	if base == "" || apiKey == "" {
+	if rawBase == "" || apiKey == "" {
 		fatalln("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
 	}
 
@@ -193,7 +195,8 @@ func main() {
 	// ships the Bearer API key (and every request) in plaintext, inviting
 	// credential theft and MITM. Mirror the runner's cloud.allow_insecure
 	// opt-in so a localhost dev endpoint still works.
-	if err := checkEndpointScheme(base, os.Getenv("EMISAR_ALLOW_INSECURE") == "1"); err != nil {
+	base, err := parseEndpoint(rawBase, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+	if err != nil {
 		fatalln(err)
 	}
 
@@ -973,8 +976,11 @@ func parseClientMetadata(raw string) (string, error) {
 	if err := dec.Decode(&m); err != nil {
 		return "", fmt.Errorf("EMISAR_CLIENT_METADATA must be a JSON object: %w", err)
 	}
-	if dec.More() {
-		return "", fmt.Errorf("EMISAR_CLIENT_METADATA must be a single JSON object")
+	if m == nil {
+		return "", errors.New("EMISAR_CLIENT_METADATA must be a non-null JSON object")
+	}
+	if err := ensureJSONEOF(dec); err != nil {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA must be a single JSON object: %w", err)
 	}
 	if len(m) > maxClientMetadataKeys {
 		return "", fmt.Errorf("EMISAR_CLIENT_METADATA has %d keys, the maximum is %d", len(m), maxClientMetadataKeys)
@@ -1013,6 +1019,17 @@ func parseClientMetadata(raw string) (string, error) {
 	return string(canonical), nil
 }
 
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
 // buildUserAgent stamps every cloud request with structured client +
 // host + os posture. The portal's audit pipeline extracts these from the
 // User-Agent header so each audit row carries "client=claude-desktop;
@@ -1045,29 +1062,53 @@ func newSessionID(r io.Reader) (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// checkEndpointScheme refuses a cleartext (http) EMISAR_URL to a non-loopback
-// host, where the Bearer key would travel in plaintext — credential theft +
-// MITM. https is always fine; http is allowed only to localhost/127.0.0.1/::1,
-// or when EMISAR_ALLOW_INSECURE=1 opts in (mirrors the runner's
-// cloud.allow_insecure). Anything other than http/https is rejected — the
-// bridge POSTs over HTTP, not a websocket.
-func checkEndpointScheme(base string, allowInsecure bool) error {
-	u, err := url.Parse(base)
+// parseEndpoint accepts one absolute HTTP(S) origin and returns its canonical
+// no-trailing-slash form. Path, credentials, query, and fragment input are
+// rejected rather than silently changing where the bridge sends Bearer tokens.
+// Cleartext remains limited to loopback unless explicitly enabled.
+func parseEndpoint(raw string, allowInsecure bool) (string, error) {
+	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("EMISAR_URL %q is not a valid URL: %w", base, err)
+		return "", fmt.Errorf("EMISAR_URL %q is not a valid URL: %w", raw, err)
 	}
-	switch u.Scheme {
+	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" {
+		return "", fmt.Errorf("EMISAR_URL %q must be an absolute URL with a host", raw)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("EMISAR_URL %q must not contain user information", raw)
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return "", fmt.Errorf("EMISAR_URL %q must not contain a query", raw)
+	}
+	if u.Fragment != "" || strings.Contains(raw, "#") {
+		return "", fmt.Errorf("EMISAR_URL %q must not contain a fragment", raw)
+	}
+	if u.RawPath != "" || (u.Path != "" && u.Path != "/") {
+		return "", fmt.Errorf("EMISAR_URL %q must be an origin without a path", raw)
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return "", fmt.Errorf("EMISAR_URL %q has an empty port", raw)
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65_535 {
+			return "", fmt.Errorf("EMISAR_URL %q has an invalid port", raw)
+		}
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	switch scheme {
 	case "https":
-		return nil
+		return scheme + "://" + u.Host, nil
 	case "http":
 		if allowInsecure || isLoopbackHost(u.Hostname()) {
-			return nil
+			return scheme + "://" + u.Host, nil
 		}
-		return fmt.Errorf("EMISAR_URL %q uses cleartext http to a non-loopback host, "+
+		return "", fmt.Errorf("EMISAR_URL %q uses cleartext http to a non-loopback host, "+
 			"which sends the API key in plaintext; use https, or set "+
-			"EMISAR_ALLOW_INSECURE=1 to override", base)
+			"EMISAR_ALLOW_INSECURE=1 to override", raw)
 	default:
-		return fmt.Errorf("EMISAR_URL %q must be http or https, got scheme %q", base, u.Scheme)
+		return "", fmt.Errorf("EMISAR_URL %q must be http or https, got scheme %q", raw, u.Scheme)
 	}
 }
 
