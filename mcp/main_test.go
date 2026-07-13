@@ -47,8 +47,8 @@ func TestIdempotencyKey_StableForSameID(t *testing.T) {
 
 func TestIdempotencyKey_DiffersByID(t *testing.T) {
 	b := &bridge{sessionID: "deadbeef"}
-	a := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1}`))
-	c := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":2}`))
+	a := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	c := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`))
 	if a == c {
 		t.Errorf("distinct ids must not collide: both %q", a)
 	}
@@ -61,15 +61,15 @@ func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
 	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)); got != "" {
 		t.Errorf("missing id should yield empty key, got %q", got)
 	}
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":null}`)); got != "" {
+	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":null,"method":"ping"}`)); got != "" {
 		t.Errorf("null id should yield empty key, got %q", got)
 	}
 }
 
 func TestIdempotencyKey_DistinguishesStringAndNumericIDs(t *testing.T) {
 	b := &bridge{sessionID: "s"}
-	stringID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7"}`))
-	numericID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":7}`))
+	stringID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":"7","method":"ping"}`))
+	numericID := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}`))
 	if stringID == numericID {
 		t.Fatalf("string and numeric ids must not collide: both %q", stringID)
 	}
@@ -81,20 +81,20 @@ func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
 	// params (carrying its own "id"-ish content) serialized BEFORE the
 	// envelope id. A naive first-"id" byte-scan would latch onto the nested
 	// occurrence; the envelope id is the only correct key.
-	frame := []byte(`{"method":"tools/call","params":{"arguments":{"id":"nested"}},"id":42}`)
-	want := b.idempotencyKey([]byte(`{"id":42}`))
+	frame := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"id":"nested"}},"id":42}`)
+	want := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":42,"method":"tools/call"}`))
 	if got := b.idempotencyKey(frame); got != want {
 		t.Errorf("must key off the envelope id: got %q, want %q", got, want)
 	}
 
 	// A param value that is literally the string "id" must not be mistaken
 	// for the (absent) envelope id of a notification.
-	notif := []byte(`{"method":"tools/call","params":{"name":"id"}}`)
+	notif := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"id"}}`)
 	if got := b.idempotencyKey(notif); got != "" {
 		t.Errorf("notification with an \"id\" param value should yield no key, got %q", got)
 	}
 
-	// Malformed JSON yields no key (forwarded verbatim, just not deduped).
+	// Malformed JSON yields no key and is rejected before forwarding.
 	if got := b.idempotencyKey([]byte(`{not json`)); got != "" {
 		t.Errorf("malformed frame should yield no key, got %q", got)
 	}
@@ -108,12 +108,17 @@ func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
 		notification bool
 	}{
 		{"integer id", `{"jsonrpc":"2.0","id":9007199254740993,"method":"ping"}`, true, false},
-		{"integer-valued exponent id", `{"jsonrpc":"2.0","id":1e3,"method":"ping"}`, true, false},
+		{"exponent id", `{"jsonrpc":"2.0","id":1e3,"method":"ping"}`, false, false},
 		{"string id", `{"jsonrpc":"2.0","id":"7","method":"ping"}`, true, false},
 		{"notification", `{"jsonrpc":"2.0","method":"notifications/initialized"}`, true, true},
 		{"null id", `{"jsonrpc":"2.0","id":null,"method":"ping"}`, false, false},
 		{"fractional id", `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`, false, false},
 		{"object id", `{"jsonrpc":"2.0","id":{},"method":"ping"}`, false, false},
+		{"missing jsonrpc", `{"id":1,"method":"ping"}`, false, false},
+		{"wrong jsonrpc", `{"jsonrpc":"1.0","id":1,"method":"ping"}`, false, false},
+		{"missing method", `{"jsonrpc":"2.0","id":1}`, false, false},
+		{"null method", `{"jsonrpc":"2.0","id":1,"method":null}`, false, false},
+		{"non-string method", `{"jsonrpc":"2.0","id":1,"method":7}`, false, false},
 		{"malformed frame", `{not json`, false, false},
 	}
 	for _, tc := range tests {
@@ -127,8 +132,11 @@ func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
 }
 
 func TestMatchingJSONRPCID_PreservesTypeAndNumericValue(t *testing.T) {
-	if !matchingJSONRPCID(json.RawMessage(`1e3`), json.RawMessage(`1000`)) {
-		t.Error("mathematically equal integer ids should match across JSON encodings")
+	if !matchingJSONRPCID(json.RawMessage(`1000`), json.RawMessage(`1000`)) {
+		t.Error("equal integer ids should match")
+	}
+	if matchingJSONRPCID(json.RawMessage(`1e3`), json.RawMessage(`1000`)) {
+		t.Error("exponent-form ids are outside the supported integer grammar")
 	}
 	if !matchingJSONRPCID(json.RawMessage(`"\u0037"`), json.RawMessage(`"7"`)) {
 		t.Error("equivalent string ids should match across JSON escaping")
@@ -305,7 +313,7 @@ func TestForward_5xxBecomesError(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
+	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if err == nil {
 		t.Fatal("expected error on 5xx")
 	}
@@ -329,7 +337,7 @@ func TestForward_4xxIsReturnedVerbatim(t *testing.T) {
 	defer srv.Close()
 
 	b := newTestBridge(srv)
-	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if err != nil {
 		t.Fatalf("4xx should not become an error: %v", err)
 	}
@@ -494,7 +502,7 @@ func TestForward_RefusesRedirect(t *testing.T) {
 	defer redirector.Close()
 
 	b := newTestBridge(redirector)
-	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
+	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if err == nil {
 		t.Fatal("a redirect response must become a correlated transport error")
 	}
@@ -669,8 +677,8 @@ func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 // two bridges with different session ids derive different keys for the same
 // JSON-RPC id, so one process's id:1 never aliases another's run at the portal.
 func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
-	a := (&bridge{sessionID: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1}`))
-	b := (&bridge{sessionID: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1}`))
+	a := (&bridge{sessionID: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	b := (&bridge{sessionID: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if a == b {
 		t.Fatalf("different sessions must not alias the same id: both %q", a)
 	}
@@ -685,10 +693,10 @@ func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
 func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 	b := &bridge{sessionID: "s"}
 	cases := []string{
-		`{"id": 1,"method":"tools/call"}`,
-		`{"jsonrpc":"2.0","id":9007199254740993}`,
-		`{"jsonrpc":"2.0","id":"a-b_c"}`,
-		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", 10_000) + `"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`,
+		`{"jsonrpc":"2.0","id":9007199254740993,"method":"tools/call"}`,
+		`{"jsonrpc":"2.0","id":"a-b_c","method":"tools/call"}`,
+		`{"jsonrpc":"2.0","id":"` + strings.Repeat("x", 10_000) + `","method":"tools/call"}`,
 	}
 	seen := make(map[string]bool, len(cases))
 	for _, frame := range cases {
@@ -701,7 +709,7 @@ func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
 		}
 		seen[got] = true
 	}
-	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":12.5}`)); got != "" {
+	if got := b.idempotencyKey([]byte(`{"jsonrpc":"2.0","id":12.5,"method":"ping"}`)); got != "" {
 		t.Errorf("fractional MCP id must not produce an idempotency key, got %q", got)
 	}
 }
@@ -1346,47 +1354,43 @@ func TestServe_InitializeCannotBeCancelled(t *testing.T) {
 	}
 }
 
-func TestServe_DuplicateTypedIDIsRejectedWhileOriginalIsInflight(t *testing.T) {
-	started := make(chan struct{}, 1)
-	release := make(chan struct{})
+func TestServe_ExponentIDIsRejectedWithoutPortalAdmission(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
-		started <- struct{}{}
-		<-release
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1000,"result":{}}`))
 	}))
 	defer srv.Close()
 
-	reader, writer := io.Pipe()
-	output := newFrameWriter()
-	done := make(chan error, 1)
-	go func() { done <- newTestBridge(srv).serve(reader, output) }()
-
-	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1e3,"method":"tools/call"}`+"\n")
-	<-started
-	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1000,"method":"ping"}`+"\n")
-	duplicate := string(receiveFrame(t, output.writes))
-	if !strings.Contains(duplicate, `"id":1000`) || !strings.Contains(duplicate, "already used") {
-		t.Fatalf("duplicate response = %q", duplicate)
-	}
-
-	close(release)
-	_ = writer.Close()
-	if err := <-done; err != nil {
+	input := strings.NewReader(
+		`{"jsonrpc":"2.0","id":1e3,"method":"tools/call"}` + "\n" +
+			`{"jsonrpc":"2.0","id":1000,"method":"ping"}` + "\n",
+	)
+	var output bytes.Buffer
+	if err := newTestBridge(srv).serve(input, &output); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	if got := hits.Load(); got != 1 {
-		t.Errorf("portal requests = %d, want one", got)
+		t.Errorf("portal requests = %d, want only the lexical integer request", got)
+	}
+	if got := output.String(); !strings.Contains(got, `"id":null`) ||
+		!strings.Contains(got, `"code":-32600`) || !strings.Contains(got, `"id":1000`) {
+		t.Errorf("output = %q, want invalid exponent error and integer response", got)
 	}
 }
 
-func TestRequestIDKey_DistinguishesTypesAndCanonicalizesIntegers(t *testing.T) {
-	numericExponent := requestIDKey(parseRequestMeta([]byte(`{"id":1e3}`)))
-	numericDecimal := requestIDKey(parseRequestMeta([]byte(`{"id":1000}`)))
-	stringID := requestIDKey(parseRequestMeta([]byte(`{"id":"1000"}`)))
-	if numericExponent != numericDecimal {
-		t.Errorf("equivalent integer ids differ: %q vs %q", numericExponent, numericDecimal)
+func TestRequestIDKey_DistinguishesTypesAndRejectsExponentIDs(t *testing.T) {
+	numericExponent := requestIDKey(parseRequestMeta([]byte(
+		`{"jsonrpc":"2.0","id":1e3,"method":"ping"}`,
+	)))
+	numericDecimal := requestIDKey(parseRequestMeta([]byte(
+		`{"jsonrpc":"2.0","id":1000,"method":"ping"}`,
+	)))
+	stringID := requestIDKey(parseRequestMeta([]byte(
+		`{"jsonrpc":"2.0","id":"1000","method":"ping"}`,
+	)))
+	if numericExponent != "" {
+		t.Errorf("exponent id digest = %q, want empty", numericExponent)
 	}
 	if numericDecimal == stringID {
 		t.Errorf("numeric and string ids collide at %q", numericDecimal)
@@ -1422,6 +1426,153 @@ func TestHandleFrame_SessionIDCapFailsClosedWithoutAdmission(t *testing.T) {
 	}
 	if len(state.inflight) != 0 {
 		t.Fatal("over-cap request was admitted")
+	}
+}
+
+func TestHandleFrame_AggregateRequestBudgetFailsClosed(t *testing.T) {
+	state := serveState{
+		inflight:      make(map[string]*inflightRequest),
+		inflightBytes: maxInflightRequestBytes,
+		requestTokens: make(map[string]string),
+		seenIDs:       make(map[string]struct{}),
+	}
+	var output bytes.Buffer
+	err := (&bridge{}).handleFrame(
+		frameRead{line: []byte(`{"jsonrpc":"2.0","id":"over-budget","method":"ping"}`)},
+		&output,
+		&state,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("handleFrame: %v", err)
+	}
+	if got := output.String(); !strings.Contains(got, `"id":"over-budget"`) ||
+		!strings.Contains(got, "in-flight request byte limit reached") {
+		t.Fatalf("budget response = %q", got)
+	}
+	if len(state.inflight) != 0 || state.inflightBytes != maxInflightRequestBytes {
+		t.Fatal("over-budget request changed admission state")
+	}
+
+	output.Reset()
+	err = (&bridge{}).handleFrame(
+		frameRead{line: []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)},
+		&output,
+		&state,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("handle notification: %v", err)
+	}
+	if output.Len() != 0 {
+		t.Errorf("over-budget notification must remain silent, got %q", output.String())
+	}
+}
+
+func TestHandleFrame_CancellationBypassesAggregateRequestBudget(t *testing.T) {
+	requestFrame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
+	requestMeta := parseRequestMeta(requestFrame)
+	idKey := requestIDKey(requestMeta)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	state := serveState{
+		inflight: map[string]*inflightRequest{
+			"request-token": {
+				meta:       requestMeta,
+				idKey:      idKey,
+				frameBytes: maxInflightRequestBytes,
+				cancel:     cancel,
+			},
+		},
+		inflightBytes: maxInflightRequestBytes,
+		requestTokens: map[string]string{idKey: "request-token"},
+		seenIDs:       map[string]struct{}{idKey: {}},
+	}
+	cancelResults := make(chan struct{}, 1)
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "test",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusAccepted,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		})},
+	}
+	cancellation := []byte(
+		`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`,
+	)
+	var output bytes.Buffer
+	if err := b.handleFrame(
+		frameRead{line: cancellation},
+		&output,
+		&state,
+		nil,
+		cancelResults,
+	); err != nil {
+		t.Fatalf("handleFrame: %v", err)
+	}
+	select {
+	case <-cancelResults:
+	case <-time.After(time.Second):
+		t.Fatal("cancellation was blocked by the aggregate byte budget")
+	}
+	if output.Len() != 0 {
+		t.Errorf("cancellation must remain silent, got %q", output.String())
+	}
+	request := state.inflight["request-token"]
+	if !request.cancelled || !request.cancellationForwarded {
+		t.Fatal("target request was not cancelled and forwarded")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("target request context was not cancelled")
+	}
+}
+
+func TestHandleFrame_AggregateRequestBytesAreReleasedOnCompletion(t *testing.T) {
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	initialBytes := maxInflightRequestBytes - len(frame)
+	state := serveState{
+		inflight:      make(map[string]*inflightRequest),
+		inflightBytes: initialBytes,
+		requestTokens: make(map[string]string),
+		seenIDs:       make(map[string]struct{}),
+	}
+	results := make(chan forwardResult, 1)
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "test",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{}}`)),
+			}, nil
+		})},
+	}
+	if err := b.handleFrame(frameRead{line: frame}, io.Discard, &state, results, nil); err != nil {
+		t.Fatalf("handleFrame: %v", err)
+	}
+	if state.inflightBytes != maxInflightRequestBytes {
+		t.Fatalf("admitted bytes = %d, want exact budget %d", state.inflightBytes, maxInflightRequestBytes)
+	}
+
+	result := <-results
+	if request := state.completeRequest(result.token); request == nil {
+		t.Fatal("completed request was not tracked")
+	}
+	if state.inflightBytes != initialBytes {
+		t.Errorf("bytes after completion = %d, want %d", state.inflightBytes, initialBytes)
 	}
 }
 
@@ -1614,14 +1765,31 @@ func TestServe_MalformedEnvelopeIsRejectedLocally(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	for _, frame := range []string{`{not json`, `{"jsonrpc":"2.0","id":null,"method":"ping"}`, `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`} {
-		var out bytes.Buffer
-		if err := newTestBridge(srv).serve(strings.NewReader(frame+"\n"), &out); err != nil {
-			t.Fatalf("serve: %v", err)
-		}
-		if !strings.Contains(out.String(), `"id":null`) || !strings.Contains(out.String(), `"code":-32600`) {
-			t.Errorf("invalid envelope response = %q", out.String())
-		}
+	tests := []struct {
+		name     string
+		frame    string
+		wantID   string
+		wantCode int
+	}{
+		{"malformed JSON", `{not json`, `"id":null`, -32700},
+		{"null id", `{"jsonrpc":"2.0","id":null,"method":"ping"}`, `"id":null`, -32600},
+		{"fractional id", `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`, `"id":null`, -32600},
+		{"missing method", `{"jsonrpc":"2.0","id":7}`, `"id":7`, -32600},
+		{"null method", `{"jsonrpc":"2.0","id":8,"method":null}`, `"id":8`, -32600},
+		{"non-string method", `{"jsonrpc":"2.0","id":"method","method":7}`, `"id":"method"`, -32600},
+		{"wrong version", `{"jsonrpc":"1.0","id":9,"method":"ping"}`, `"id":9`, -32600},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := newTestBridge(srv).serve(strings.NewReader(tc.frame+"\n"), &out); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
+			if !strings.Contains(out.String(), tc.wantID) ||
+				!strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, tc.wantCode)) {
+				t.Errorf("invalid envelope response = %q", out.String())
+			}
+		})
 	}
 	if hits != 0 {
 		t.Errorf("invalid envelopes must not reach the portal, got %d POSTs", hits)
@@ -1703,11 +1871,14 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	if httpTimeout != 330*time.Second {
 		t.Errorf("httpTimeout = %v, want 330s", httpTimeout)
 	}
-	if maxResponseBytes != 32*1024*1024 {
-		t.Errorf("maxResponseBytes = %d, want 32 MiB", maxResponseBytes)
+	if maxResponseBytes != 8_000_000 {
+		t.Errorf("maxResponseBytes = %d, want 8,000,000", maxResponseBytes)
 	}
-	if maxFrameBytes != 16*1024*1024 {
-		t.Errorf("maxFrameBytes = %d, want 16 MiB", maxFrameBytes)
+	if maxFrameBytes != 8_000_000 {
+		t.Errorf("maxFrameBytes = %d, want 8,000,000", maxFrameBytes)
+	}
+	if maxInflightRequestBytes != 16_000_000 {
+		t.Errorf("maxInflightRequestBytes = %d, want 16,000,000", maxInflightRequestBytes)
 	}
 	if maxSessionRequestIDs != 65_536 {
 		t.Errorf("maxSessionRequestIDs = %d, want 65536", maxSessionRequestIDs)

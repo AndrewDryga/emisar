@@ -106,11 +106,14 @@ Request IDs are one-use within a bridge session, as MCP requires; a duplicate
 stdio request is rejected locally before it can create an ambiguous
 cancellation target. The portal answers notifications with 202 and methods
 with a JSON-RPC result/error.
-The bridge permits up to eight in-flight requests, so pings and unrelated calls
-remain responsive during a long wait. Its 330-second HTTP timeout leaves
-bounded headroom over the portal's five-minute cap. A client cancellation stops
-the exact request generation locally and releases the matching portal wait;
-cancellation notifications never write a response to stdout.
+The bridge permits up to eight in-flight requests within a 16,000,000-byte
+aggregate request budget, so pings and unrelated small calls remain responsive
+during a long wait without allowing concurrent large frames to exhaust client
+memory. Individual request and response objects are capped at the portal's
+8,000,000-byte boundary. Its 330-second HTTP timeout leaves bounded headroom
+over the portal's five-minute cap. A client cancellation stops the exact request
+generation locally and releases the matching portal wait; cancellation
+notifications bypass ordinary admission and never write a response to stdout.
 
 ## Attribution + audit
 
@@ -166,10 +169,10 @@ EMISAR_API_KEY=emk-... \
   ./bin/emisar-mcp
 ```
 
-The process reads one JSON-RPC frame per stdin line and writes only validated,
-request-correlated JSON-RPC to stdout. Diagnostics go to stderr. A network
-failure becomes a generic synthetic error carrying the original request id;
-notification failures remain silent.
+The process reads one JSON-RPC frame per stdin line, rejects malformed envelopes
+locally, and writes only validated, request-correlated JSON-RPC to stdout.
+Diagnostics go to stderr. A network failure becomes a generic synthetic error
+carrying the original request id; notification failures remain silent.
 
 The module gate is:
 

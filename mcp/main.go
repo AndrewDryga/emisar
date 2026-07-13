@@ -64,6 +64,7 @@ const httpTimeout = 330 * time.Second
 
 const (
 	maxConcurrentRequests      = 8
+	maxInflightRequestBytes    = 16_000_000
 	maxSessionRequestIDs       = 65_536
 	cancellationForwardTimeout = 5 * time.Second
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
@@ -72,13 +73,14 @@ const (
 
 // maxResponseBytes caps the portal response we'll buffer. The network is
 // untrusted and http.Client.Timeout bounds time, not bytes — without a cap a
-// hostile/MITM'd endpoint could stream gigabytes and OOM the bridge. Generous
-// vs the largest legit MCP frame (a full tools/list catalog).
-const maxResponseBytes = 32 * 1024 * 1024
+// hostile/MITM'd endpoint could stream gigabytes and OOM the bridge. Keep this
+// aligned with Plug's 8,000,000-byte request boundary.
+const maxResponseBytes = 8_000_000
 
 // maxFrameBytes caps a single inbound JSON-RPC line. An over-long frame is
-// rejected (the session kept alive), never allowed to kill the bridge.
-const maxFrameBytes = 16 * 1024 * 1024
+// rejected (the session kept alive), never allowed to kill the bridge. The
+// portal cannot accept a larger request body, so the bridge must not either.
+const maxFrameBytes = 8_000_000
 
 // Self-reported MCP client metadata: an operator-configured key/value map
 // (EMISAR_CLIENT_METADATA, a JSON object) the bridge validates once at startup
@@ -343,13 +345,9 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			}
 
 		case result := <-results:
-			request := state.inflight[result.token]
+			request := state.completeRequest(result.token)
 			if request == nil {
 				continue
-			}
-			delete(state.inflight, result.token)
-			if request.idKey != "" && state.requestTokens[request.idKey] == result.token {
-				delete(state.requestTokens, request.idKey)
 			}
 			if request.cancelled {
 				continue
@@ -376,6 +374,7 @@ type frameRead struct {
 type inflightRequest struct {
 	meta                  requestMeta
 	idKey                 string
+	frameBytes            int
 	protocolVersion       string
 	cancel                context.CancelFunc
 	cancelled             bool
@@ -397,10 +396,24 @@ type requestHeaders struct {
 
 type serveState struct {
 	inflight       map[string]*inflightRequest
+	inflightBytes  int
 	requestTokens  map[string]string
 	seenIDs        map[string]struct{}
 	sequence       uint64
 	cancelForwards int
+}
+
+func (s *serveState) completeRequest(token string) *inflightRequest {
+	request := s.inflight[token]
+	if request == nil {
+		return nil
+	}
+	delete(s.inflight, token)
+	s.inflightBytes -= request.frameBytes
+	if request.idKey != "" && s.requestTokens[request.idKey] == token {
+		delete(s.requestTokens, request.idKey)
+	}
+	return request
 }
 
 func readFrames(r io.Reader, frames chan<- frameRead, done <-chan struct{}) {
@@ -436,6 +449,9 @@ func (b *bridge) handleFrame(
 
 	meta := parseRequestMeta(frame.line)
 	if !meta.valid {
+		if !json.Valid(frame.line) {
+			return writeFrame(w, rpcErrorFrame(meta, -32700, "parse error"))
+		}
 		return writeFrame(w, rpcErrorFrame(meta, -32600, "invalid request"))
 	}
 	if meta.notification() && meta.method == "notifications/cancelled" {
@@ -458,6 +474,12 @@ func (b *bridge) handleFrame(
 		}
 		return writeFrame(w, rpcErrorFrame(meta, -32000, "too many in-flight requests"))
 	}
+	if len(frame.line) > maxInflightRequestBytes-state.inflightBytes {
+		if meta.notification() {
+			return nil
+		}
+		return writeFrame(w, rpcErrorFrame(meta, -32000, "in-flight request byte limit reached"))
+	}
 
 	state.sequence++
 	token := fmt.Sprintf("%s-%x", b.sessionID, state.sequence)
@@ -466,9 +488,11 @@ func (b *bridge) handleFrame(
 	state.inflight[token] = &inflightRequest{
 		meta:            meta,
 		idKey:           idKey,
+		frameBytes:      len(frame.line),
 		protocolVersion: protocolVersion,
 		cancel:          cancel,
 	}
+	state.inflightBytes += len(frame.line)
 	if idKey != "" {
 		state.requestTokens[idKey] = token
 		state.seenIDs[idKey] = struct{}{}
@@ -587,50 +611,66 @@ type requestMeta struct {
 // portal remains responsible for method and parameter validation.
 func parseRequestMeta(frame []byte) requestMeta {
 	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(frame, &envelope); err != nil || envelope == nil {
+	if !utf8.Valid(frame) || json.Unmarshal(frame, &envelope) != nil || envelope == nil {
 		return requestMeta{}
 	}
 
-	meta := requestMeta{valid: true}
-	if rawMethod, ok := envelope["method"]; ok {
-		_ = json.Unmarshal(rawMethod, &meta.method)
+	meta := requestMeta{}
+	validID := true
+	rawID, ok := envelope["id"]
+	if ok {
+		meta.hasID = true
+		meta.id = bytes.TrimSpace(rawID)
+		meta.idKind = jsonRPCIDKind(meta.id)
+		validID = meta.idKind != 0
 	}
 
-	rawID, ok := envelope["id"]
-	if !ok {
+	var version string
+	if json.Unmarshal(envelope["jsonrpc"], &version) != nil || version != "2.0" {
 		return meta
 	}
-	meta.hasID = true
-	meta.id = bytes.TrimSpace(rawID)
-	meta.idKind = jsonRPCIDKind(meta.id)
-	if meta.idKind == 0 || meta.idKind == '0' {
-		meta.valid = false
+	rawMethod := bytes.TrimSpace(envelope["method"])
+	if len(rawMethod) < 2 || rawMethod[0] != '"' || json.Unmarshal(rawMethod, &meta.method) != nil {
+		return meta
 	}
+
+	meta.valid = validID
 	return meta
 }
 
 func jsonRPCIDKind(id []byte) byte {
-	if bytes.Equal(id, []byte("null")) {
-		return '0'
-	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(id))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return 0
-	}
-	switch value := value.(type) {
-	case string:
+	var value string
+	if len(id) >= 2 && id[0] == '"' && json.Unmarshal(id, &value) == nil {
 		return 's'
-	case json.Number:
-		number, ok := new(big.Rat).SetString(value.String())
-		if ok && number.IsInt() {
-			return 'n'
-		}
-		return 0
-	default:
-		return 0
 	}
+	if validJSONInteger(id) {
+		return 'n'
+	}
+	return 0
+}
+
+func validJSONInteger(value []byte) bool {
+	if len(value) == 0 {
+		return false
+	}
+	if value[0] == '-' {
+		value = value[1:]
+		if len(value) == 0 {
+			return false
+		}
+	}
+	if value[0] == '0' {
+		return len(value) == 1
+	}
+	if value[0] < '1' || value[0] > '9' {
+		return false
+	}
+	for _, digit := range value[1:] {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (m requestMeta) notification() bool {
@@ -638,7 +678,7 @@ func (m requestMeta) notification() bool {
 }
 
 func (m requestMeta) responseID() json.RawMessage {
-	if m.valid && m.hasID {
+	if m.hasID && m.idKind != 0 {
 		return m.id
 	}
 	return json.RawMessage("null")
