@@ -9,6 +9,15 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
   alias Emisar.Fixtures
   alias Emisar.Repo
 
+  test "runs daily because retention horizons have day-level precision" do
+    assert %{
+             id: Retention,
+             start: {_executor, :start_link, [{Retention, interval, _config}]}
+           } = Retention.child_spec([])
+
+    assert interval == :timer.hours(24)
+  end
+
   test "execute/1 prunes events past the plan window and keeps fresh ones" do
     account = Fixtures.Accounts.create_account()
 
@@ -104,6 +113,57 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
 
     events = Repo.all(Emisar.Audit.Event)
     refute Enum.any?(events, &(&1.event_type == "audit.retention_swept"))
+  end
+
+  test "deletes an expired retention marker without replacing it" do
+    account = Fixtures.Accounts.create_account()
+    ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
+
+    {:ok, expired_marker} =
+      Audit.log(account.id, "audit.retention_swept",
+        actor_kind: "system",
+        target_kind: "audit_log",
+        occurred_at: ten_days_ago,
+        payload: %{count: 1}
+      )
+
+    assert :ok = Retention.execute([])
+
+    refute Repo.reload(expired_marker)
+
+    # The next scheduled tick remains silent too; the first pass did not seed a
+    # replacement marker for the job to perpetuate.
+    assert :ok = Retention.execute([])
+
+    refute Emisar.Audit.Event.Query.all()
+           |> Emisar.Audit.Event.Query.by_account_id(account.id)
+           |> Emisar.Audit.Event.Query.by_event_type("audit.retention_swept")
+           |> Repo.exists?()
+  end
+
+  test "an expired retention marker does not inflate a meaningful prune count" do
+    account = Fixtures.Accounts.create_account()
+    ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
+
+    {:ok, _expired_marker} =
+      Audit.log(account.id, "audit.retention_swept",
+        actor_kind: "system",
+        target_kind: "audit_log",
+        occurred_at: ten_days_ago,
+        payload: %{count: 9}
+      )
+
+    {:ok, _stale_event} =
+      Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
+
+    assert :ok = Retention.execute([])
+
+    assert [replacement] =
+             Emisar.Audit.Event
+             |> Repo.all()
+             |> Enum.filter(&(&1.event_type == "audit.retention_swept"))
+
+    assert replacement.payload["count"] == 1
   end
 
   # an account whose subscription carries an unknown /

@@ -441,6 +441,9 @@ defmodule Emisar.Audit.Event.Query do
   def by_ids(queryable \\ all(), ids) when is_list(ids),
     do: where(queryable, [events: e], e.id in ^ids)
 
+  def select_event_types(queryable \\ all()),
+    do: select(queryable, [events: e], e.event_type)
+
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [events: e], desc: e.occurred_at)
 

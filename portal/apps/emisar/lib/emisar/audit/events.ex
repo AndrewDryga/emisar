@@ -1200,7 +1200,7 @@ defmodule Emisar.Audit.Events do
 
   # -- Audit -----------------------------------------------------------
 
-  @doc "Internal — the retention worker logs each account's pruned-count so the log never shrinks invisibly."
+  @doc "Internal — the retention worker logs each account's meaningful pruned-count so the log never shrinks invisibly."
   def audit_retention_swept(account_id, count, %DateTime{} = swept_at)
       when is_binary(account_id) and is_integer(count) do
     Audit.changeset(account_id, "audit.retention_swept",

@@ -1,10 +1,10 @@
 defmodule Emisar.Audit.Jobs.Retention do
   @moduledoc """
-  Periodic sweep that prunes audit events past their per-row retention horizon.
+  Daily sweep that prunes audit events past their per-row retention horizon.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
-    every: :timer.hours(1),
+    every: :timer.hours(24),
     initial_delay: :timer.minutes(4),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
@@ -39,22 +39,34 @@ defmodule Emisar.Audit.Jobs.Retention do
 
   defp sweep_account(%Accounts.Account{} = account) do
     now = DateTime.utc_now()
-    count = delete_in_batches(account.id, 0)
+    auditable_count = delete_in_batches(account.id, 0)
 
-    if count > 0 do
-      Logger.info("audit retention: pruned #{count} events from account #{account.id}")
-      Audit.record(Audit.Events.audit_retention_swept(account.id, count, now))
+    if auditable_count > 0 do
+      Logger.info("audit retention: pruned #{auditable_count} events from account #{account.id}")
+      Audit.record(Audit.Events.audit_retention_swept(account.id, auditable_count, now))
     end
   end
 
-  defp delete_in_batches(account_id, total) do
+  defp delete_in_batches(account_id, auditable_total) do
     ids = account_id |> Audit.Event.Query.prunable_ids(@batch_size) |> Repo.all()
-    {count, _} = ids |> Audit.Event.Query.by_ids() |> Repo.delete_all()
+
+    {_deleted_count, event_types} =
+      ids
+      |> Audit.Event.Query.by_ids()
+      |> Audit.Event.Query.select_event_types()
+      |> Repo.delete_all()
+
+    # An expired retention marker is storage housekeeping, not a new operator
+    # event. Counting it would replace it with a fresh marker forever on an
+    # otherwise inactive account.
+    housekeeping_event_type = "audit.retention_swept"
+    auditable_count = Enum.count(event_types, &(&1 != housekeeping_event_type))
+    auditable_total = auditable_total + auditable_count
 
     if length(ids) < @batch_size do
-      total + count
+      auditable_total
     else
-      delete_in_batches(account_id, total + count)
+      delete_in_batches(account_id, auditable_total)
     end
   end
 end
