@@ -12,7 +12,7 @@ Convene a board of expert hats; each reviews the change through ONE lens **in pa
 then YOU (the parent) synthesize one ranked verdict and an ordered plan to fix everything.
 This is the heavyweight, on-demand review — point it at a PR, a branch, a commit/range, or your
 uncommitted local changes. It combines the staff-correctness, security, and
-`/ship-review` product lenses into one panel, across **all** areas (portal/runner/mcp/packs).
+`/review-ship` product lenses into one panel, across **all** areas (portal/runner/mcp/packs).
 **Read-only: the board reviews; it never edits.** The deliverable is a *fix plan*, not just notes.
 
 ## 1. Scope the change — PR, branch, commit, range, or local edits
@@ -33,16 +33,16 @@ For **intent** on a non-PR scope, read the commit message(s) in range, or — fo
 ## 2. Convene the board (the hats the change earns)
 **Standing hats — always, for any code change:**
 - **Pragmatic staff engineer** — correctness & edge cases, the simplest thing that works, over-engineering, maintainability, "would I approve this PR?" (the staff-correctness lens + the creed).
-- **Domain expert** — does it fit emisar's architecture + trust model? Load the touched project's `AGENTS.md`: portal → the Iron Laws (`/iron-review`); runner/mcp → the security posture; packs → the conventions. emisar is an AI-safe infra control plane — flag anything that bends the model.
+- **Domain expert** — does it fit emisar's architecture + trust model? Load the touched project's `AGENTS.md`: portal → the Iron Laws (`/elixir-iron-review`); runner/mcp → the security posture; packs → the conventions. emisar is an AI-safe infra control plane — flag anything that bends the model.
 - **Security engineer** — lead with the abuse case. **Mandatory — emisar IS a security product** (`/security-engineer`).
 
 **Earned hats — add when the diff touches their surface (lean toward MORE coverage; this is the thorough review):**
 
 | The diff touches… | Add |
 |---|---|
-| LiveView / HEEx / components (operator-facing) | **UX designer** (`/ux-designer`) + **UI/frontend** (`/frontend`) |
+| LiveView / HEEx / components (operator-facing) | **UX designer** (`/design-ux`) + **UI/design-frontend** (`/design-frontend`) |
 | a new capability, scope, or user flow | **PM** (`/product-manager` — right thing? smallest slice?) |
-| marketing site / positioning / docs that rank | **marketing/SEO** (`/seo-marketing`) + **design review** (`/design-review`) |
+| marketing site / positioning / docs that rank | **marketing/SEO** (`/content-seo`) + **design review** (`/design-review`) |
 | pricing, plans, plan-gating, billing, or a sellable/demoable capability | **sales** (no skill — lens: does it answer a buyer objection? is it demoable? is the plan-gating right? does it help close/expand a deal?) |
 
 ## 3. Fan out — one Agent per hat, in a single parallel batch
@@ -85,7 +85,7 @@ staff: … · domain: … · security: … · ux: … · pm: … · sales: …
 
 Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the few suggestions worth the reader's time. Never manufacture findings to look thorough, never bury a real blocker in nits.
 
-**Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `/sweep` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
+**Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `/workflow-sweep` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
 
 ## Relationship to the focused reviews
-`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/iron-review` (laws), `/security-engineer`, `/investigate` (failures), `/ux-designer`, etc. `/ship-review` is the lighter, proportional *in-loop* self-review `/sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.
+`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc. `/review-ship` is the lighter, proportional *in-loop* self-review `/workflow-sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.

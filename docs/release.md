@@ -5,7 +5,7 @@ signed git tag and a GitHub release. The goal is that **commit history, tags, an
 the changelog always line up**: every changelog entry has a tag, every tag points
 at the tip commit of that version's window, and every tag is signed.
 
-This is the canonical runbook. The `/release` skill is the order of operations on
+This is the canonical runbook. The `/ops-release` skill is the order of operations on
 top of it.
 
 ## Versioning

@@ -1,7 +1,7 @@
 defmodule Emisar.Umbrella.MixProject do
   use Mix.Project
 
-  # Single source of the product version: portal/VERSION. The /release skill
+  # Single source of the product version: portal/VERSION. The /ops-release skill
   # bumps that one file; the umbrella, both apps, the OTP release, and the
   # marketing footer (Application.spec(:emisar_web, :vsn)) all read it.
   @version "VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()

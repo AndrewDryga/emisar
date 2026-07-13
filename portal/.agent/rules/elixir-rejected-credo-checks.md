@@ -9,7 +9,7 @@ The bar (`portal/AGENTS.md` → Enforcement): "Adding a rule = adding its check"
 applies to a rule that is *mechanically decidable with low false-positives*. A
 candidate that fires mostly on correct code trains people to ignore it or
 sprinkle `# credo:disable`, which is worse than no check — those belong to
-`/iron-review` judgment, not a standing AST check.
+`/elixir-iron-review` judgment, not a standing AST check.
 
 ---
 
@@ -37,7 +37,7 @@ An AST check **cannot** distinguish a *reachable, mishandled* error path (the
 specific bugs the audit found, since fixed) from an *invariant-OK* post-gate
 read without dataflow/semantic analysis. The team's code shows
 `{:ok, …} = Context.read(subject)` is the deliberate convention, so there is no
-clean rule to encode. **Verdict: `/iron-review` judgment, not a Credo check.**
+clean rule to encode. **Verdict: `/elixir-iron-review` judgment, not a Credo check.**
 
 ## 2. A context fn counting (`length`/`Enum.count`) over a `Repo.list/3` result
 

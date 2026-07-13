@@ -5424,7 +5424,7 @@ defmodule EmisarWeb.CoreComponents do
   #  Marketing "gate" kit
   #
   #  The brand mark is an emerald gate (images/brand/emisar-icon.svg); these
-  #  primitives carry it across the marketing site (see creative-director):
+  #  primitives carry it across the marketing site (see design-creative-director):
   #  `gate_mark` is the logo icon, `scan_line` marks the decision point, and
   #  `state_chip` shows what the gate decided. The accent is `brand-*` (the
   #  exact logo green); pass/pending/deny stay emerald/amber/rose so they

@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MixProject do
   use Mix.Project
 
-  # Product version — single source: portal/VERSION (bumped by /release).
+  # Product version — single source: portal/VERSION (bumped by /ops-release).
   @version "../../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
 
   def project do

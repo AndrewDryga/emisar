@@ -1,6 +1,6 @@
 ---
 name: content-director
-description: "Write and review top-tier marketing website content for emisar: positioning, page narrative, homepage and landing-page copy, proof sections, SEO intent, conversion flow, objection handling, and anti-AI voice. Use with creative-director when redesigning public marketing pages, and with seo-marketing when copy must rank, convert, and sound professionally written rather than generic, templated, overcomplicated, or AI-generated."
+description: "Write and review top-tier marketing website content for emisar: positioning, page narrative, homepage and landing-page copy, proof sections, SEO intent, conversion flow, objection handling, and anti-AI voice. Use with design-creative-director when redesigning public marketing pages, and with content-seo when copy must rank, convert, and sound professionally written rather than generic, templated, overcomplicated, or AI-generated."
 effort: high
 argument-hint: "[page or surface]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
@@ -17,9 +17,9 @@ precise, credible, useful, and memorable.
 
 ## Coordinate The Hats
 
-- Use `creative-director` for creative territories, visual concept, page rhythm,
+- Use `design-creative-director` for creative territories, visual concept, page rhythm,
   and art direction.
-- Use `seo-marketing` for search intent, crawlability, metadata, schema,
+- Use `content-seo` for search intent, crawlability, metadata, schema,
   internal links, and sitemap impact.
 - Use `security-engineer` for claims about trust, approvals, audit, runners,
   SSH, MCP, policies, secrets, and infrastructure access.

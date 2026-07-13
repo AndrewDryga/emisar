@@ -8,7 +8,7 @@ and the **return-shape tuple**, matching the real code. A context module's
 domain; a Query/Changeset/Schema gets one line (their role is already fixed by the
 conventions). §1.4 internal helpers get `@doc "Internal — <who calls it>"`; a truly
 private/uninteresting function gets `@doc false` or nothing. Document **as you
-write** the function (`/context-fn`, `/new-context`), not in a later pass.
+write** the function (`/elixir-context-fn`, `/elixir-new-context`), not in a later pass.
 
 **Why.** The contract — which permission gates it, what shape it returns — is the
 one thing the next caller can't read off the head, and the thing a `with` pipeline
@@ -39,10 +39,10 @@ def archive_runbook(id, %Subject{} = subject)
 (Narrates the body, omits the permission and the error shape, and goes stale the
 moment the implementation changes.)
 
-**Enforced.** Judgment — review and `/iron-review`. `mix compile
+**Enforced.** Judgment — review and `/elixir-iron-review`. `mix compile
 --warnings-as-errors` (IL-20) catches a `@doc` attached to a private or undefined
 function; the rest — is it a contract or narration, is the stated permission /
 return shape actually true — is a read a static check can't make, so it's caught in
 review and the per-function audit, and applied at the point of writing by
-`/context-fn` and `/new-context`. No "new/refactored version" notes (IL-11); no
+`/elixir-context-fn` and `/elixir-new-context`. No "new/refactored version" notes (IL-11); no
 examples that aren't real/tested.

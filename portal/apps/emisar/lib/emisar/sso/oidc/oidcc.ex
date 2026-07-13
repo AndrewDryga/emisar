@@ -12,7 +12,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   / `client_secret` are read fresh from the provider on each request, not baked
   into the worker, so those edits take effect immediately. Outbound
   discovery/JWKS/token requests go over OTP `httpc` with TLS peer + hostname
-  verification against the system CA store (the /deps-audit caveat — httpc does
+  verification against the system CA store (the /security-deps-audit caveat — httpc does
   not verify by default, and a MITM on the JWKS/token endpoint would forge
   tokens).
 

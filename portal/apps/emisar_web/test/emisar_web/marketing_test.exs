@@ -672,7 +672,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/") |> html_response(200)
 
       # The footer reads the running app's version (single source: portal/VERSION,
-      # bumped by /release), so assert the shape, not a pinned number.
+      # bumped by /ops-release), so assert the shape, not a pinned number.
       assert html =~ ~r/v\d+\.\d+\.\d+/u
       # A per-request render timestamp (forensic_time shape) — behind a CDN it
       # freezes at cache time, so a stale edge copy is visible in the footer.

@@ -1,7 +1,7 @@
 defmodule Emisar.MixProject do
   use Mix.Project
 
-  # Product version — single source: portal/VERSION (bumped by /release).
+  # Product version — single source: portal/VERSION (bumped by /ops-release).
   @version "../../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
 
   def project do
@@ -60,7 +60,7 @@ defmodule Emisar.MixProject do
       {:nimble_totp, "~> 1.0"},
       # OIDC relying-party (SSO). OpenID-certified Erlang lib (EEF
       # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
-      # `jose` (JWT/JWKS) transitively. /deps-audit cleared 2026-06-15.
+      # `jose` (JWT/JWKS) transitively. /security-deps-audit cleared 2026-06-15.
       {:oidcc, "~> 3.7"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs
       # server-side as SVG so the profile MFA setup doesn't need a

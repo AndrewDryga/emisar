@@ -67,7 +67,7 @@ check_manual_text() {
 
 check_skill_text() {
   local findings
-  findings="$(rg -n -i '(/code-review|/security-review)|v0\.2|never shells out|never-a-shell|argv arrays, never shell strings' .claude/skills || true)"
+  findings="$(rg -n -i '(/code-review|/security-review)|v0\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`' .claude/skills || true)"
 
   if [[ -n "$findings" ]]; then
     printf '%s\n' "$findings" >&2
@@ -144,9 +144,13 @@ check_skills() {
       *) fail "$file effort '$effort' must be low, medium, high, or max" ;;
     esac
     [[ "$name" == "$expected" ]] || fail "$file name is '$name', expected '$expected'"
+    case "$name" in
+      content-* | debug-* | design-* | elixir-* | go-* | ops-* | product-* | review-* | security-* | tooling-* | workflow-*) ;;
+      *) fail "$file name '$name' must use a recognized domain prefix" ;;
+    esac
   done < <(find .claude/skills -mindepth 2 -maxdepth 2 -name SKILL.md | sort)
 
-  ok "skill frontmatter has matching name/description/effort/allowed-tools"
+  ok "skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes"
 }
 
 for project in . infra mcp packs portal runner; do

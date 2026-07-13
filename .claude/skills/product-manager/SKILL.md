@@ -1,6 +1,6 @@
 ---
 name: product-manager
-description: Put on the product-manager hat for emisar — decide what to build, what to cut, and what order; define the smallest valuable slice and what "done" means. Use when a request is vague or oversized, when scoping a feature, prioritizing, or deciding whether something is worth building at all. Pairs with /spec.
+description: Put on the product-manager hat for emisar — decide what to build, what to cut, and what order; define the smallest valuable slice and what "done" means. Use when a request is vague or oversized, when scoping a feature, prioritizing, or deciding whether something is worth building at all. Pairs with /workflow-spec.
 effort: medium
 argument-hint: "[request or feature]"
 allowed-tools: Read, Grep, Glob, Bash
@@ -59,4 +59,4 @@ Sequence: <step order + the riskiest-first rationale>
 Done = <behavior + success signal + guarded failure>
 Open questions: <the decisions that need the user>
 ```
-Be willing to say "don't build this yet, because …". Then hand the slice to `/spec`.
+Be willing to say "don't build this yet, because …". Then hand the slice to `/workflow-spec`.

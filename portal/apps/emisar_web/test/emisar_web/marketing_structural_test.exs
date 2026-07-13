@@ -106,7 +106,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # hierarchy), a skip-to-content link, a lang attribute, navigable chrome (nav +
     # footer), and alt text on every image. This is the testable UX/a11y floor — it
     # catches the regressions that hurt real users and SEO (not a substitute for
-    # design review, which is the marketing loop's + ux-designer's domain).
+    # design review, which is the marketing loop's + design-ux's domain).
     for route <- @indexable_routes do
       test "GET #{route} meets the UX/a11y baseline", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)

@@ -492,7 +492,7 @@ func runCheck(baseRef string) int {
 		fmt.Println("::error::dep-age-gate: added/changed non-registry dependency source(s) — cannot age-verify, needs review:")
 		fmt.Println(strings.Join(nonreg, "\n"))
 		fmt.Println("\nA :git/:path (hex), replace (go), or link/git (npm) dependency bypasses release-age enforcement. " +
-			"Vet it (/deps-audit), then add `<eco> <name> nonregistry <reason>` to " + allowlistPath + ".")
+			"Vet it (/security-deps-audit), then add `<eco> <name> nonregistry <reason>` to " + allowlistPath + ".")
 		return 1
 	}
 

@@ -360,7 +360,7 @@ genuinely missing (then it's shared, not one-off).
   with a `group-hover:translate-x-0.5` arrow.
 - **States are part of the component, not a later pass:** every list/panel/form
   ships empty, loading, error, and (where relevant) offline states. The
-  `/ux-designer` hat will ask for them.
+  `/design-ux` hat will ask for them.
 - **Verify EVERY surface at three data volumes — new / partial / power — with
   RENDERED pixels, not just the happy one.** A design that only looks right full
   of data is half-built. For each page screenshot: a **new account** (zero of
@@ -486,7 +486,7 @@ site — emerald, type, semantics, crafted detail — while staying a calm tool.
    `emerald-400` accents are fine; document any kept emerald with a why).
 
 ### 7.2 Component craft pass (the "feels like the same team" work)
-Run the `make-interfaces-feel-better` micro-craft on the console shells: concentric
+Run the `design-interface-polish` micro-craft on the console shells: concentric
 radii, tabular-nums on every live count (runs, runners, audit), real hit areas
 (≥40px), specific transitions (not `transition-all`), calm row hover, handled
 empty/loading/error/offline states. Reuse the shared `stat`/`summary_band`/
@@ -605,6 +605,6 @@ after being taught, so every one is checked EVERY time, mechanically:
   system, confirm ladder, state matrix, density budgets:** `.agent/rules/design-console-ux.md`.
   This file is the visual layer; that one is the structural layer. Read both before any
   console change.
-- **The frontend execution hat:** `/frontend` skill (LiveView/HEEx/Tailwind
-  rules + the make-interfaces-feel-better pass). **Art direction:**
-  `/creative-director`.
+- **The frontend execution hat:** `/design-frontend` skill (LiveView/HEEx/Tailwind
+  rules + the design-interface-polish pass). **Art direction:**
+  `/design-creative-director`.

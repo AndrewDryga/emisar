@@ -30,7 +30,7 @@ fn account, id ->
 end
 ```
 
-**Enforced.** Judgment — review and `/iron-review`. Whether a condition is
+**Enforced.** Judgment — review and `/elixir-iron-review`. Whether a condition is
 pattern-matchable (safe to convert) vs. genuinely computed is a call a regex
 can't make, so this is not a Credo check; it's caught in review and the
 per-function audit. The taste-pipeline endpoint for a judgment rule is the

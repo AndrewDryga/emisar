@@ -3,7 +3,7 @@ name: Release - Runner
 run-name: Release ${{ github.ref_name }}
 
 # Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`
-# (the /release skill cuts the signed tag). Re-running a release is a re-run
+# (the /ops-release skill cuts the signed tag). Re-running a release is a re-run
 # of that tag's run from the Actions UI — no separate manual trigger. The
 # first attempt requires current main; a rerun preserves the original SHA/ref
 # and therefore needs only the signed tag's continuing ancestry on main.
