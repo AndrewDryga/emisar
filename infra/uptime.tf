@@ -172,10 +172,10 @@ resource "betteruptime_status_page" "emisar" {
   company_url  = "https://${var.domain}"
   contact_url  = "mailto:support@${var.domain}"
 
-  # The logo pair uploaded to Better Stack's CDN from the account (a page-level
-  # asset, not a secret); dark_logo_url serves visitors in dark mode.
-  logo_url      = "https://d1lppblt9t2x15.cloudfront.net/logos/1d18b688f85b4624a44534cd4c7b2110.png"
-  dark_logo_url = "https://d1lppblt9t2x15.cloudfront.net/logos/dc8aa6774ce3e880b99263776c9dad28.png"
+  # Better Stack renders this lockup inside a 200x29 box. Use the compact
+  # horizontal status-page variants rather than shrinking the square app icon.
+  logo_url      = "https://${var.domain}/images/brand/emisar-status-logo-light.png"
+  dark_logo_url = "https://${var.domain}/images/brand/emisar-status-logo-dark.png"
 
   # UTC on purpose: operators are global, and a locale here would leak into the
   # public repo (house rule — no personal/locale tells in committed values).
@@ -201,6 +201,10 @@ resource "betteruptime_status_page" "emisar" {
   design = "v2"
   theme  = "light"
   layout = "vertical"
+
+  # A combined portal + infra rollout must serve the new assets before Better
+  # Stack ingests their URLs and copies them to its image CDN.
+  depends_on = [google_compute_region_instance_group_manager.emisar]
 }
 
 resource "betteruptime_status_page_section" "control_plane" {

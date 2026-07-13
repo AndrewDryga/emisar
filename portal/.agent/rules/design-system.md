@@ -77,6 +77,7 @@ passing the gate). Plus a **custom geometric wordmark** "emisar".
 | Wordmark | `images/brand/emisar-wordmark.svg` | wordmark-only contexts |
 | Lockup (icon+wordmark) | `images/brand/emisar-logo.svg` | nav, default `<.brand>` |
 | Lockup PNG (dark bg) | `images/brand/emisar-logo.png` | JSON-LD `logo` (SERP-safe) |
+| Status lockups | `images/brand/emisar-status-logo-{light,dark}.png` | Better Stack's 200x29 header slot; never substitute the square icon |
 | Favicon glyph (tile) | `/favicon.svg`, `/favicon.ico` | browser tab |
 | App icons | `/apple-touch-icon.png`, `/android-chrome-{192,512}.png` | iOS/Android/PWA |
 | OG card | `images/og/emisar-og.webp` | social share |
