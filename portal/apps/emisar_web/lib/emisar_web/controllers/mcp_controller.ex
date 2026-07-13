@@ -97,11 +97,11 @@ defmodule EmisarWeb.MCPController do
 
       {:ok, wait_ms} ->
         opts = %{
-          runner_names: normalize_runner_input(params),
+          runner_targets: normalize_runner_input(params),
           reason: params["reason"],
           wait_ms: wait_ms,
           idempotency_key: Idempotency.resolve(conn, params),
-          attestation: Attestation.normalize(params["attestation"])
+          attestation: Attestation.extract(params)
         }
 
         case Service.dispatch_tool(conn, action_id, action_args, opts) do
@@ -126,7 +126,7 @@ defmodule EmisarWeb.MCPController do
               error: "runner_required",
               message:
                 "This action needs an explicit target — emisar never auto-picks a runner, " <>
-                  "even when only one advertises it. Retry with `runners: [\"name\"]` in the " <>
+                  "even when only one advertises it. Retry with a stable id from `candidates` " <>
                   "body, choosing from `candidates` below. Call `/runners` first if you need " <>
                   "to check which ones are online.",
               candidates: candidates
@@ -137,7 +137,7 @@ defmodule EmisarWeb.MCPController do
             |> put_status(:bad_request)
             |> json(%{
               error: "invalid_runner_targets",
-              message: "`runners` must be an array of runner-name strings."
+              message: "`runners` must be an array of stable runner-id strings."
             })
 
           {:error, :duplicate_runners} ->
@@ -155,9 +155,8 @@ defmodule EmisarWeb.MCPController do
               error: "runner_not_found",
               runner: name,
               message:
-                "No runner named `#{name}` exists in this account. Call `GET /api/mcp/runners` " <>
-                  "to see the actual names — they're case-sensitive and likely contain the " <>
-                  "environment / host (e.g. `db-prod-01`)."
+                "No runner matching `#{name}` exists in this account. Call `GET /api/mcp/runners` " <>
+                  "to see the current stable runner ids and display names."
             })
 
           {:error, :runner_not_allowed, name, why} ->
@@ -171,6 +170,26 @@ defmodule EmisarWeb.MCPController do
                 "Runner `#{name}` exists, but this API key can't dispatch to it (#{why}). " <>
                   "Either pick a runner from `GET /api/mcp/runners` (which only lists runners " <>
                   "you can reach) or ask an admin to widen the key's scope on the API keys page."
+            })
+
+          {:error, :invalid_attestation} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{
+              error: "invalid_attestation",
+              message:
+                "The supplied attestation is malformed or exceeds its bounds. " <>
+                  "Submit a fresh request from a current emisar MCP bridge."
+            })
+
+          {:error, :attestation_targets_mismatch} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{
+              error: "attestation_targets_mismatch",
+              message:
+                "The attestation was not signed for the exact runner ids selected by this call. " <>
+                  "Refresh the tool list and submit a fresh signed request."
             })
 
           {:error, :no_runner_available, :unknown_action} ->

@@ -126,8 +126,8 @@
           <strong>Client-attested dispatch (the strongest cloud-compromise defense).</strong>
           With <code>signing.enforce_signatures</code>
           on, the runner runs a
-          dispatch only if it carries a valid Ed25519 signature over the action,
-          args, nonce, and timestamp — from a leaf key vouched for by a
+          dispatch only if it carries a valid v2 Ed25519 signature over the action,
+          exact args, durable runner-id set, nonce, and timestamp — from a leaf key vouched for by a
           certificate the host's trusted certificate authority signed, inside the
           cert's validity window and a freshness window, with a nonce it hasn't
           seen. The leaf private key lives only in the operator's local MCP
@@ -140,9 +140,10 @@
           dispatch (this guarantees integrity, not availability); the
           replay-nonce cache is persisted to disk, so it survives a restart; and
           a request queued past <code>max_attestation_age</code>
-          or the cert's window is refused as stale. The runner-target binding is
-          the cert's scope, asserted by the offline CA — so a scoped cert can't
-          be redirected to a host it wasn't issued for. See
+          or the cert's window is refused as stale. Each call's exact runner-id set
+          is signed; the cert's scope is a separate, coarser CA-authored group/label
+          ceiling. Human-readable names remain discovery metadata, so narrow scope
+          and out-of-band id verification are prudent for the highest-trust workflows. See
           <.link
             navigate={~p"/docs/signed-dispatch"}
             class="text-brand-400 hover:text-brand-300"

@@ -1,6 +1,7 @@
 package attest
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -33,21 +34,21 @@ func vectorClaims() []struct {
 	}{
 		{
 			name:  "empty args",
-			claim: Claim{ActionID: "linux.uptime", Args: map[string]any{}, Nonce: "nonce-1", IssuedAt: "2026-06-17T12:00:00Z"},
-			bytes: "emisar-attestation-v1\nlinux.uptime\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\nnonce-1\n2026-06-17T12:00:00Z",
-			sig:   "b47006e2ebb9154f6d31155acc8409d69bb039f2d5432e30341679f24c758ec202442e7e92848033c5f9bdc5fd8032afbf1db85d9c246342dce7d7ff14e4830b",
+			claim: Claim{ActionID: "linux.uptime", Args: map[string]any{}, Targets: []string{"runner-a"}, Nonce: "nonce-1", IssuedAt: "2026-06-17T12:00:00Z"},
+			bytes: "emisar-attestation-v2\nlinux.uptime\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\nf8c0981f12f5dcdd9528c68f097d72c518bf908ffb137cc0a7d352273524e6dd\nnonce-1\n2026-06-17T12:00:00Z",
+			sig:   "4e7de9136d2cc5a6cdcfcc822bed01f2d85b6619923fb3ca2036e2cea64044a7beeb58f028c67b8b438be44d571b397ee30d486ad75a73606eb43ccad5ad0d07",
 		},
 		{
 			name:  "mixed scalar args (sorted keys)",
-			claim: Claim{ActionID: "docker.restart", Args: map[string]any{"container": "web", "force": true, "signal": float64(15)}, Nonce: "nonce-2", IssuedAt: "2026-06-17T12:05:00Z"},
-			bytes: "emisar-attestation-v1\ndocker.restart\nb8119ee468effeab897d29e97bb44f5d3318b6b5d7dc5308fe5bb7526784a3da\nnonce-2\n2026-06-17T12:05:00Z",
-			sig:   "9c871495cf4a45bcf7c242ea0a270e401a3234a86811f581d2108e1c1b0d4796ec722f443d47326378fc8cc11d20c6a547da049ffa9c60cc8f171f45d2d64101",
+			claim: Claim{ActionID: "docker.restart", Args: map[string]any{"container": "web", "force": true, "signal": float64(15)}, Targets: []string{"runner-b", "runner-a"}, Nonce: "nonce-2", IssuedAt: "2026-06-17T12:05:00Z"},
+			bytes: "emisar-attestation-v2\ndocker.restart\nb8119ee468effeab897d29e97bb44f5d3318b6b5d7dc5308fe5bb7526784a3da\n7e47da3e9f953ce82de6a7e630a10cc82e1dbaa6dd8f3ea651c906de29dfb8c0\nnonce-2\n2026-06-17T12:05:00Z",
+			sig:   "b9b209fe8c2796f2594d899db20c64e40959a612cbacbba9f344bde8421b9719316fb66583fc9c56fc28d7acf37192118d4e8293d5cbf53529d02f77e7cdfa00",
 		},
 		{
 			name:  "nested map + array (keys sorted, array order kept)",
-			claim: Claim{ActionID: "x.y", Args: map[string]any{"names": []any{"b", "a"}, "opts": map[string]any{"z": float64(1), "a": float64(2)}}, Nonce: "n3", IssuedAt: "2026-06-17T12:10:00Z"},
-			bytes: "emisar-attestation-v1\nx.y\n492e23689996160b37c27461bafd6e137c129e9eb9650d62250914e2072949b4\nn3\n2026-06-17T12:10:00Z",
-			sig:   "2fb6c0cdd53ecc3596232b67e3080d2f2d439471ad6d03e2e8b34cdcbfc8eac1f077229182416d015dfce51c506d245539ffed5854045ec29792b1d9c8b2c002",
+			claim: Claim{ActionID: "x.y", Args: map[string]any{"names": []any{"b", "a"}, "opts": map[string]any{"z": float64(1), "a": float64(2)}}, Targets: []string{"runner-c"}, Nonce: "n3", IssuedAt: "2026-06-17T12:10:00Z"},
+			bytes: "emisar-attestation-v2\nx.y\n492e23689996160b37c27461bafd6e137c129e9eb9650d62250914e2072949b4\n055fc237f0963735210d02d64c0bbcf5b7081b628546543b67d15e95486ce51f\nn3\n2026-06-17T12:10:00Z",
+			sig:   "c950f0351e267c0449842401c07d9815f8fc41bb13c2b5a9e376ec858cf94b68dda73f82344d3f10a008c119c708dd328cec98b942477814bfb0689b71b7f307",
 		},
 	}
 }
@@ -150,6 +151,92 @@ func TestVerifyMalformedSignature(t *testing.T) {
 	}
 }
 
+func TestSigningBytesPreservesExactJSONNumbers(t *testing.T) {
+	claim := func(number any) Claim {
+		return Claim{
+			ActionID: "cockroach.pause_job",
+			Args: map[string]any{
+				"job_id": number,
+			},
+			Targets:  []string{"runner-db-1"},
+			Nonce:    "n",
+			IssuedAt: "2026-06-17T12:00:00Z",
+		}
+	}
+
+	var equivalent []byte
+	for _, spelling := range []string{"1000", "1e3", "1000.0", "1.000e+3"} {
+		got, err := SigningBytes(claim(json.Number(spelling)))
+		if err != nil {
+			t.Fatalf("SigningBytes(%s): %v", spelling, err)
+		}
+		if equivalent == nil {
+			equivalent = got
+		} else if !bytes.Equal(got, equivalent) {
+			t.Fatalf("equivalent number %s changed the canonical bytes", spelling)
+		}
+	}
+
+	exact, err := SigningBytes(claim(json.Number("9007199254740993")))
+	if err != nil {
+		t.Fatalf("SigningBytes(exact): %v", err)
+	}
+	rounded, err := SigningBytes(claim(float64(9007199254740993)))
+	if err != nil {
+		t.Fatalf("SigningBytes(rounded): %v", err)
+	}
+	if bytes.Equal(exact, rounded) {
+		t.Fatal("an exact integer above 2^53 collapsed to its float64-rounded neighbour")
+	}
+
+	huge, err := SigningBytes(claim(json.Number("1e999999999999999999999")))
+	if err != nil {
+		t.Fatalf("SigningBytes(huge exponent): %v", err)
+	}
+	if len(huge) > 512 {
+		t.Fatalf("huge exponent expanded into an unbounded signing payload: %d bytes", len(huge))
+	}
+
+	if _, err := SigningBytes(claim(json.Number("01"))); err == nil {
+		t.Fatal("invalid JSON number with a leading zero must be rejected")
+	}
+}
+
+func TestSigningBytesCanonicalizesAndBindsTargets(t *testing.T) {
+	base := Claim{ActionID: "linux.uptime", Args: map[string]any{}, Targets: []string{"runner-b", "runner-a"}, Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z"}
+	reordered := base
+	reordered.Targets = []string{"runner-a", "runner-b"}
+	a, err := SigningBytes(base)
+	if err != nil {
+		t.Fatalf("SigningBytes(base): %v", err)
+	}
+	b, err := SigningBytes(reordered)
+	if err != nil {
+		t.Fatalf("SigningBytes(reordered): %v", err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Fatal("target order must not change the signed claim")
+	}
+
+	changed := base
+	changed.Targets = []string{"runner-a", "runner-c"}
+	c, err := SigningBytes(changed)
+	if err != nil {
+		t.Fatalf("SigningBytes(changed): %v", err)
+	}
+	if bytes.Equal(a, c) {
+		t.Fatal("changing a runner target did not change the signed claim")
+	}
+
+	for _, targets := range [][]string{{""}, {"runner-a", "runner-a"}} {
+		invalid := base
+		invalid.Targets = targets
+		if _, err := SigningBytes(invalid); err == nil {
+			t.Fatalf("invalid targets %#v must be rejected", targets)
+		}
+	}
+}
+
 // args that cannot be JSON-marshaled surface as a (false,
 // error) from both Sign and Verify — never a silent false that a caller might
 // read as "validly signed but mismatched". A channel value is the simplest
@@ -229,14 +316,14 @@ func TestDelimiterCannotBeSmuggledViaArgValue(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	// The signing bytes must have exactly the 5 documented fields — the embedded
-	// newlines in the arg value are absorbed into the single digest field.
+	// The signing bytes must have exactly the 6 documented fields — embedded
+	// newlines in values are absorbed into the fixed-width digest fields.
 	bytes, err := SigningBytes(hostile)
 	if err != nil {
 		t.Fatalf("SigningBytes: %v", err)
 	}
-	if got := strings.Count(string(bytes), "\n"); got != 4 {
-		t.Fatalf("signing bytes have %d newlines, want 4 (a value cannot inject delimiters)", got)
+	if got := strings.Count(string(bytes), "\n"); got != 5 {
+		t.Fatalf("signing bytes have %d newlines, want 5 (a value cannot inject delimiters)", got)
 	}
 
 	// The crafted "attacker.action" claim the value was trying to impersonate
@@ -264,7 +351,7 @@ func TestDelimiterCannotBeSmuggledViaArgValue(t *testing.T) {
 // signature made under one format revision cannot be replayed as another. A
 // verifier whose layout is built with a different version yields different
 // signing bytes and rejects the signature — preventing format-confusion across
-// a future v2.
+// a future v3.
 func TestVersionPrefixPreventsFormatConfusion(t *testing.T) {
 	priv, pub := vectorKey(t)
 	claim := Claim{ActionID: "a.b", Args: map[string]any{"x": float64(1)}, Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z"}
@@ -274,8 +361,8 @@ func TestVersionPrefixPreventsFormatConfusion(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	// Reconstruct the signing bytes as a hypothetical v2 would (different version
-	// prefix, same fields) and confirm the v1 signature does not verify over it.
+	// Reconstruct the signing bytes as a hypothetical v3 would (different version
+	// prefix, same fields) and confirm the v2 signature does not verify over it.
 	msg, err := SigningBytes(claim)
 	if err != nil {
 		t.Fatalf("SigningBytes: %v", err)
@@ -283,14 +370,14 @@ func TestVersionPrefixPreventsFormatConfusion(t *testing.T) {
 	if !strings.HasPrefix(string(msg), Version+"\n") {
 		t.Fatalf("signing bytes must lead with the version line, got %q", string(msg))
 	}
-	v2Msg := []byte("emisar-attestation-v2" + strings.TrimPrefix(string(msg), Version))
+	v3Msg := []byte("emisar-attestation-v3" + strings.TrimPrefix(string(msg), Version))
 
 	rawSig, err := hex.DecodeString(sig)
 	if err != nil {
 		t.Fatalf("decode sig: %v", err)
 	}
-	if ed25519.Verify(pub, v2Msg, rawSig) {
-		t.Fatal("a v1 signature verified against v2-prefixed bytes — version is not binding")
+	if ed25519.Verify(pub, v3Msg, rawSig) {
+		t.Fatal("a v2 signature verified against v3-prefixed bytes — version is not binding")
 	}
 }
 
@@ -376,13 +463,13 @@ func TestEmptyAndNilArgsStableDigest(t *testing.T) {
 // encoding drifts from the recorded bytes — but the single most likely silent
 // divergence is a Version bump applied to one module's attest.go and not the
 // other. This pins the wire-contract invariant explicitly: Version is exactly
-// "emisar-attestation-v1", and that exact string is the leading line of every
+// "emisar-attestation-v2", and that exact string is the leading line of every
 // documented vector's signing bytes. If a change bumps Version here without
 // regenerating the vectors (and updating the mcp twin in the same change), this
 // fails with a message that names the cross-impl obligation — a guard the vector
 // table provides only incidentally and without explanation.
 func TestVersionIsTheCrossImplWireContract(t *testing.T) {
-	const wireContract = "emisar-attestation-v1"
+	const wireContract = "emisar-attestation-v2"
 	if Version != wireContract {
 		t.Fatalf("Version=%q, want %q — this string is the cross-impl wire contract; "+
 			"a bump must be applied to BOTH runner and mcp attest.go in the same change, "+

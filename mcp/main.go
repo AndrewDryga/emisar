@@ -132,7 +132,7 @@ Environment:
   EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
                          (with EMISAR_SIGNING_CERT), the bridge signs each
                          tools/call so runners that enforce signatures will run
-                         it. Get the key+cert pair from 'emisar cert new' (or
+                         it. Get the key+cert pair from 'emisar signing new-cert' (or
                          'emisar signing init') on the operator host. Keep this
                          secret — never put it on the control plane.
   EMISAR_SIGNING_CERT    The CA-signed certificate JSON that vouches for the

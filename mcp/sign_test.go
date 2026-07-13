@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestSignFrameProducesRunnerVerifiableAttestation(t *testing.T) {
 
 	frame := `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{` +
 		`"name":"docker.restart","arguments":{"container":"web","force":true,` +
-		`"runner":"prod-1","reason":"rotate","wait":"0"}}}`
+		`"runner":"runner-prod-1","reason":"rotate","wait":"0"}}}`
 
 	signed := s.signFrame([]byte(frame))
 
@@ -135,6 +136,9 @@ func TestSignFrameProducesRunnerVerifiableAttestation(t *testing.T) {
 	if _, ok := att["cert"].(map[string]any); !ok {
 		t.Fatalf("no cert attached to the attestation: %#v", att)
 	}
+	if att["version"] != attest.Version {
+		t.Fatalf("attestation version = %#v, want %q", att["version"], attest.Version)
+	}
 
 	// Reconstruct the action args exactly as the portal/runner do.
 	actionArgs := map[string]any{}
@@ -154,6 +158,7 @@ func TestSignFrameProducesRunnerVerifiableAttestation(t *testing.T) {
 	claim := attest.Claim{
 		ActionID: parsed.Params.Name,
 		Args:     actionArgs,
+		Targets:  []string{"runner-prod-1"},
 		Nonce:    att["nonce"].(string),
 		IssuedAt: att["issued_at"].(string),
 	}
@@ -163,6 +168,108 @@ func TestSignFrameProducesRunnerVerifiableAttestation(t *testing.T) {
 	}
 	if !valid {
 		t.Fatal("the bridge's signature did not verify under the runner's reconstruction")
+	}
+}
+
+func TestSignFramePreservesExactLargeInteger(t *testing.T) {
+	s, pub := testSigner(t)
+	const jobID = "891234567890123456"
+	frame := []byte(`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{` +
+		`"name":"cockroach.pause_job","arguments":{"job_id":` + jobID + `,"runner":"runner-db-1"}}}`)
+
+	signed := s.signFrame(frame)
+	if !bytes.Contains(signed, []byte(`"job_id":`+jobID)) {
+		t.Fatalf("large integer changed while signing:\n in:  %s\n out: %s", frame, signed)
+	}
+
+	var parsed struct {
+		Params struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		} `json:"params"`
+	}
+	if err := decodeExactJSON(signed, &parsed); err != nil {
+		t.Fatalf("decode signed frame: %v", err)
+	}
+	if got, ok := parsed.Params.Arguments["job_id"].(json.Number); !ok || got.String() != jobID {
+		t.Fatalf("job_id = %#v, want exact json.Number(%s)", parsed.Params.Arguments["job_id"], jobID)
+	}
+	att := parsed.Params.Arguments["attestation"].(map[string]any)
+	claim := attest.Claim{
+		ActionID: parsed.Params.Name,
+		Args:     map[string]any{"job_id": json.Number(jobID)},
+		Targets:  []string{"runner-db-1"},
+		Nonce:    att["nonce"].(string),
+		IssuedAt: att["issued_at"].(string),
+	}
+	valid, err := attest.Verify(pub, claim, att["sig"].(string))
+	if err != nil || !valid {
+		t.Fatalf("exact large-integer claim did not verify: valid=%v err=%v", valid, err)
+	}
+}
+
+func TestSignFrameCanonicalizesTargetSet(t *testing.T) {
+	s, pub := testSigner(t)
+	frame := []byte(`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{` +
+		`"name":"linux.uptime","arguments":{"runners":["runner-b","runner-a"]}}}`)
+
+	signed := s.signFrame(frame)
+	var parsed struct {
+		Params struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		} `json:"params"`
+	}
+	if err := decodeExactJSON(signed, &parsed); err != nil {
+		t.Fatalf("decode signed frame: %v", err)
+	}
+	att := parsed.Params.Arguments["attestation"].(map[string]any)
+	if got, want := att["targets"], []any{"runner-a", "runner-b"}; !slices.Equal(got.([]any), want) {
+		t.Fatalf("signed targets = %#v, want %#v", got, want)
+	}
+	claim := attest.Claim{
+		ActionID: parsed.Params.Name,
+		Args:     map[string]any{},
+		Targets:  []string{"runner-a", "runner-b"},
+		Nonce:    att["nonce"].(string),
+		IssuedAt: att["issued_at"].(string),
+	}
+	valid, err := attest.Verify(pub, claim, att["sig"].(string))
+	if err != nil || !valid {
+		t.Fatalf("sorted target-set claim did not verify: valid=%v err=%v", valid, err)
+	}
+}
+
+func TestSignFrameRejectsAmbiguousTargets(t *testing.T) {
+	s, _ := testSigner(t)
+	for _, frame := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runner":""}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runners":[]}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runners":["runner-a","runner-a"]}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runners":["runner-a",7]}}}`,
+	} {
+		if got := s.signFrame([]byte(frame)); !bytes.Equal(got, []byte(frame)) {
+			t.Fatalf("ambiguous targets must remain unsigned:\n in:  %s\n out: %s", frame, got)
+		}
+	}
+}
+
+func TestSignFrameLeavesOversizedTargetSetUnsigned(t *testing.T) {
+	s, _ := testSigner(t)
+	targets := make([]string, maxSignedTargets+1)
+	for i := range targets {
+		targets[i] = "runner-" + strconv.Itoa(i)
+	}
+	rawTargets, err := json.Marshal(targets)
+	if err != nil {
+		t.Fatalf("marshal targets: %v", err)
+	}
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"svc.act","arguments":{"runners":` +
+		string(rawTargets) + `}}}`)
+
+	if got := s.signFrame(frame); !bytes.Equal(got, frame) {
+		t.Fatal("oversized target set must remain unsigned for the portal to reject")
 	}
 }
 
@@ -198,7 +305,7 @@ func TestNonceIsRandomHex(t *testing.T) {
 func TestSignFramePreservesEnvelopeFieldValues(t *testing.T) {
 	s, _ := testSigner(t)
 	frame := []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{` +
-		`"name":"docker.restart","arguments":{"container":"web"}}}`)
+		`"name":"docker.restart","arguments":{"container":"web","runner":"runner-prod-1"}}}`)
 
 	signed := s.signFrame(frame)
 
@@ -223,17 +330,26 @@ func TestSignFramePreservesEnvelopeFieldValues(t *testing.T) {
 	}
 }
 
-// a tools/call with NO `arguments` key is treated as an empty args
-// map and still gets an attestation injected (signFrame defaults a nil Arguments
-// to {} before signing), so a no-arg action is still client-attested.
-func TestSignFrameAbsentArgumentsGetsAttestation(t *testing.T) {
-	s, pub := testSigner(t)
+// A signed dispatch must name its exact runner targets. Without a selector the
+// bridge leaves the frame unsigned, so an enforcing runner fails closed rather
+// than accepting a signature that the portal could redirect.
+func TestSignFrameAbsentArgumentsStaysUnsigned(t *testing.T) {
+	s, _ := testSigner(t)
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime"}}`)
 
 	signed := s.signFrame(frame)
-	if bytes.Equal(signed, frame) {
-		t.Fatal("frame with a tool name but no arguments should be signed, not passed through")
+	if !bytes.Equal(signed, frame) {
+		t.Fatalf("dispatch without explicit targets must remain unsigned:\n in:  %s\n out: %s", frame, signed)
 	}
+}
+
+// A no-arg action can still be signed: its arguments contain only the runner
+// control selector, which is excluded from the action-argument digest.
+func TestSignFrameNoActionArgumentsGetsAttestation(t *testing.T) {
+	s, pub := testSigner(t)
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runner":"runner-prod-1"}}}`)
+
+	signed := s.signFrame(frame)
 
 	var parsed struct {
 		Params struct {
@@ -248,14 +364,15 @@ func TestSignFrameAbsentArgumentsGetsAttestation(t *testing.T) {
 	if !ok {
 		t.Fatalf("no attestation injected over empty args: %#v", parsed.Params.Arguments)
 	}
-	// The only key is the attestation — the action args were the empty map.
-	if len(parsed.Params.Arguments) != 1 {
-		t.Errorf("expected only the injected attestation key, got %v", parsed.Params.Arguments)
+	// Only the runner control selector and attestation remain; action args are empty.
+	if len(parsed.Params.Arguments) != 2 {
+		t.Errorf("expected runner selector plus injected attestation, got %v", parsed.Params.Arguments)
 	}
 	// And it verifies as a claim over empty action args.
 	claim := attest.Claim{
 		ActionID: parsed.Params.Name,
 		Args:     map[string]any{},
+		Targets:  []string{"runner-prod-1"},
 		Nonce:    att["nonce"].(string),
 		IssuedAt: att["issued_at"].(string),
 	}
@@ -274,7 +391,7 @@ func TestSignFrameAbsentArgumentsGetsAttestation(t *testing.T) {
 func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
 	s, pub := testSigner(t)
 	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{` +
-		`"name":"docker.restart","arguments":{"container":"web",` +
+		`"name":"docker.restart","arguments":{"container":"web","runner":"runner-prod-1",` +
 		`"attestation":{"key_id":"forged","sig":"deadbeef","nonce":"replayed","issued_at":"1999-01-01T00:00:00Z"}}}}`)
 
 	signed := s.signFrame(frame)
@@ -315,6 +432,7 @@ func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
 	claim := attest.Claim{
 		ActionID: parsed.Params.Name,
 		Args:     actionArgs,
+		Targets:  []string{"runner-prod-1"},
 		Nonce:    att["nonce"].(string),
 		IssuedAt: att["issued_at"].(string),
 	}
@@ -331,7 +449,7 @@ func TestSignFrameStripsAndReplacesPreexistingAttestation(t *testing.T) {
 // "Z"), matching the canonical encoding the runner re-signs.
 func TestSignFrameIssuedAtIsRFC3339UTC(t *testing.T) {
 	s, _ := testSigner(t)
-	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{}}}`)
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"linux.uptime","arguments":{"runner":"runner-prod-1"}}}`)
 
 	signed := s.signFrame(frame)
 	var parsed struct {

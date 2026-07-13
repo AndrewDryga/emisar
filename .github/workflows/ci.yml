@@ -452,6 +452,10 @@ jobs:
           test ! -d mcp/cmd || {
             echo "::error::mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)"; exit 1; }
 
+      - name: Check attestation implementation parity
+        if: matrix.module == 'runner' || matrix.module == 'mcp'
+        run: .github/scripts/check-attest-parity.sh
+
       - name: Run go vet
         working-directory: ${{ matrix.module }}
         run: go vet ./...

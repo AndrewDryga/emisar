@@ -18,6 +18,7 @@ const (
 	testCAID      = "ca-test"
 	testCASeedHex = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	testLeafSeed  = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	testRunnerID  = "runner-test-1"
 	testGroup     = "test-grp"
 )
 
@@ -83,7 +84,7 @@ func validCert(t *testing.T) attest.Cert {
 func newTestVerifier(t *testing.T) (*Verifier, ed25519.PrivateKey) {
 	t.Helper()
 	cas, _ := testCA(t)
-	v, err := NewVerifier(true, cas, time.Hour, testGroup, testLabels(), "")
+	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -96,26 +97,35 @@ func newTestVerifier(t *testing.T) (*Verifier, ed25519.PrivateKey) {
 // any-scope valid cert — for the given dispatch at issuedAt.
 func sign(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[string]any, nonce, issuedAt string) *Attestation {
 	t.Helper()
-	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Nonce: nonce, IssuedAt: issuedAt})
+	return signForTargets(t, priv, actionID, args, []string{testRunnerID}, nonce, issuedAt)
+}
+
+func signForTargets(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[string]any, targets []string, nonce, issuedAt string) *Attestation {
+	t.Helper()
+	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Targets: targets, Nonce: nonce, IssuedAt: issuedAt})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
 	cert := validCert(t)
-	return &Attestation{Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert}
+	return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert}
 }
 
 func TestNewVerifierRejectsBadKeys(t *testing.T) {
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "zz"}}, time.Hour, "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "zz"}}, time.Hour, testRunnerID, "", nil, ""); err == nil {
 		t.Fatal("expected error for non-hex public key")
 	}
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "00"}}, time.Hour, "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "00"}}, time.Hour, testRunnerID, "", nil, ""); err == nil {
 		t.Fatal("expected error for wrong-length public key")
 	}
-	if _, err := NewVerifier(true, nil, time.Hour, "", nil, ""); err == nil {
+	if _, err := NewVerifier(true, nil, time.Hour, testRunnerID, "", nil, ""); err == nil {
 		t.Fatal("expected error for enforcement with no CAs")
 	}
-	if _, err := NewVerifier(false, nil, time.Hour, "", nil, ""); err != nil {
+	if _, err := NewVerifier(false, nil, time.Hour, "", "", nil, ""); err != nil {
 		t.Fatalf("non-enforcing verifier with no CAs should be fine: %v", err)
+	}
+	cas, _ := testCA(t)
+	if _, err := NewVerifier(true, cas, time.Hour, "", "", nil, ""); err == nil {
+		t.Fatal("expected error for enforcement with no durable runner id")
 	}
 }
 
@@ -129,7 +139,7 @@ func TestVerifierCAIDsSortedAndMaxAge(t *testing.T) {
 	v, err := NewVerifier(true, []CAConfig{
 		{CAID: "c2", PublicKeyHex: hex.EncodeToString(pub2)},
 		{CAID: "c1", PublicKeyHex: hex.EncodeToString(pub1)},
-	}, 2*time.Hour, "", nil, "")
+	}, 2*time.Hour, testRunnerID, "", nil, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -143,7 +153,7 @@ func TestVerifierCAIDsSortedAndMaxAge(t *testing.T) {
 }
 
 func TestCheckEnforcementOffAlwaysAllows(t *testing.T) {
-	v, err := NewVerifier(false, nil, time.Hour, "", nil, "")
+	v, err := NewVerifier(false, nil, time.Hour, "", "", nil, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -159,6 +169,41 @@ func TestCheckHappyPath(t *testing.T) {
 	if d := v.Check("docker.restart", args, att); !d.Allowed {
 		t.Fatalf("valid signed dispatch refused: %+v", d)
 	}
+}
+
+func TestCheckBindsExactTargetSet(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{"container": "web"}
+
+	t.Run("local runner in fanout", func(t *testing.T) {
+		att := signForTargets(t, priv, "docker.restart", args, []string{"runner-peer", testRunnerID}, "fanout", fixedNow)
+		if d := v.Check("docker.restart", args, att); !d.Allowed {
+			t.Fatalf("signed fanout containing this runner was refused: %+v", d)
+		}
+	})
+
+	t.Run("local runner absent", func(t *testing.T) {
+		att := signForTargets(t, priv, "docker.restart", args, []string{"runner-peer"}, "redirect", fixedNow)
+		if d := v.Check("docker.restart", args, att); d.Allowed || d.Code != "target_mismatch" {
+			t.Fatalf("dispatch redirected outside its signed targets must be refused, got %+v", d)
+		}
+	})
+
+	t.Run("targets changed after signing", func(t *testing.T) {
+		att := signForTargets(t, priv, "docker.restart", args, []string{testRunnerID}, "tampered", fixedNow)
+		att.Targets = []string{testRunnerID, "runner-injected"}
+		if d := v.Check("docker.restart", args, att); d.Allowed || d.Code != "bad_signature" {
+			t.Fatalf("target-set tampering must invalidate the signature, got %+v", d)
+		}
+	})
+
+	t.Run("wrong version", func(t *testing.T) {
+		att := sign(t, priv, "docker.restart", args, "version", fixedNow)
+		att.Version = "emisar-attestation-v1"
+		if d := v.Check("docker.restart", args, att); d.Allowed || d.Code != "attestation_version" {
+			t.Fatalf("unsupported attestation version must be refused, got %+v", d)
+		}
+	})
 }
 
 func TestCheckRefusals(t *testing.T) {
@@ -223,11 +268,12 @@ func TestCheckCertRefusals(t *testing.T) {
 	// signedAtt carries a VALID leaf signature + the given cert, so any refusal is
 	// from the cert gates (which run before the leaf check).
 	signedAtt := func(cert attest.Cert) *Attestation {
-		sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: action, Args: args, Nonce: "n", IssuedAt: fixedNow})
+		targets := []string{testRunnerID}
+		sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: action, Args: args, Targets: targets, Nonce: "n", IssuedAt: fixedNow})
 		if err != nil {
 			t.Fatalf("Sign: %v", err)
 		}
-		return &Attestation{Signature: sig, Nonce: "n", IssuedAt: fixedNow, Cert: &cert}
+		return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "n", IssuedAt: fixedNow, Cert: &cert}
 	}
 	mkCert := func(caP ed25519.PrivateKey, caID string, scope attest.Scope, from, until string) attest.Cert {
 		cert := attest.Cert{CAID: caID, KeyID: "op", PublicKey: leafPub, ValidFrom: from, ValidUntil: until, Scope: scope, Serial: "01CERTREFUSE000000000000000"}
@@ -276,11 +322,12 @@ func TestCheckCertScopeMatchAllowed(t *testing.T) {
 	_, caPriv := testCA(t)
 	args := map[string]any{"x": float64(1)}
 	cert := certWith(t, caPriv, attest.Scope{Group: testGroup, Labels: map[string]string{"env": "test"}}, "2026-01-01T00:00:00Z", "2030-01-01T00:00:00Z")
-	sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: "a.b", Args: args, Nonce: "scoped", IssuedAt: fixedNow})
+	targets := []string{testRunnerID}
+	sig, err := attest.Sign(leafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: "scoped", IssuedAt: fixedNow})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	att := &Attestation{Signature: sig, Nonce: "scoped", IssuedAt: fixedNow, Cert: &cert}
+	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "scoped", IssuedAt: fixedNow, Cert: &cert}
 	if d := v.Check("a.b", args, att); !d.Allowed {
 		t.Fatalf("a cert scoped to this runner's group+labels must be allowed: %+v", d)
 	}
@@ -305,11 +352,12 @@ func TestCheckLeafKeyMustMatchCert(t *testing.T) {
 	cert.Sig = csig
 
 	testLeafPriv, _ := testLeaf(t)
-	sig, err := attest.Sign(testLeafPriv, attest.Claim{ActionID: "a.b", Args: args, Nonce: "mm", IssuedAt: fixedNow})
+	targets := []string{testRunnerID}
+	sig, err := attest.Sign(testLeafPriv, attest.Claim{ActionID: "a.b", Args: args, Targets: targets, Nonce: "mm", IssuedAt: fixedNow})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	att := &Attestation{Signature: sig, Nonce: "mm", IssuedAt: fixedNow, Cert: &cert}
+	att := &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: "mm", IssuedAt: fixedNow, Cert: &cert}
 	if d := v.Check("a.b", args, att); d.Allowed || d.Code != "bad_signature" {
 		t.Fatalf("a leaf signature not matching cert.public_key must be bad_signature, got %+v", d)
 	}
@@ -385,7 +433,7 @@ func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
 
 	for _, maxAge := range []time.Duration{0, -time.Second, -time.Hour} {
 		t.Run(maxAge.String(), func(t *testing.T) {
-			if _, err := NewVerifier(true, cas, maxAge, "", nil, ""); err == nil {
+			if _, err := NewVerifier(true, cas, maxAge, testRunnerID, "", nil, ""); err == nil {
 				t.Fatalf("maxAge %v must be rejected", maxAge)
 			}
 		})
@@ -625,7 +673,7 @@ func BenchmarkCheck(b *testing.B) {
 	priv := ed25519.NewKeyFromSeed(leafSeed)
 	leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey))
 
-	v, err := NewVerifier(true, []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, time.Hour, testGroup, testLabels(), "")
+	v, err := NewVerifier(true, []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, time.Hour, testRunnerID, testGroup, testLabels(), "")
 	if err != nil {
 		b.Fatalf("NewVerifier: %v", err)
 	}
@@ -650,11 +698,12 @@ func BenchmarkCheck(b *testing.B) {
 	// dispatch (no replay short-circuit, no signing cost in the measured loop).
 	atts := make([]*Attestation, b.N)
 	for i := range atts {
-		sig, err := attest.Sign(priv, attest.Claim{ActionID: "docker.restart", Args: args, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow})
+		targets := []string{testRunnerID}
+		sig, err := attest.Sign(priv, attest.Claim{ActionID: "docker.restart", Args: args, Targets: targets, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow})
 		if err != nil {
 			b.Fatalf("Sign: %v", err)
 		}
-		atts[i] = &Attestation{Signature: sig, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow, Cert: &cert}
+		atts[i] = &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow, Cert: &cert}
 	}
 
 	b.ResetTimer()
@@ -687,7 +736,7 @@ func TestNonceCachePersistsAcrossRestart(t *testing.T) {
 	issuedAt := time.Now().UTC().Format(time.RFC3339)
 	att := sign(t, priv, "a.b", args, "nonce-restart", issuedAt)
 
-	v1, err := NewVerifier(true, cas, time.Hour, testGroup, testLabels(), store)
+	v1, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
 	if err != nil {
 		t.Fatalf("NewVerifier v1: %v", err)
 	}
@@ -696,7 +745,7 @@ func TestNonceCachePersistsAcrossRestart(t *testing.T) {
 	}
 
 	// A brand-new verifier over the same store = a restart / SIGHUP rebuild.
-	v2, err := NewVerifier(true, cas, time.Hour, testGroup, testLabels(), store)
+	v2, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
 	if err != nil {
 		t.Fatalf("NewVerifier v2 (restart): %v", err)
 	}
@@ -715,7 +764,7 @@ func TestNonceCacheCorruptStoreFailsClosed(t *testing.T) {
 	if err := os.WriteFile(store, []byte("{ not valid json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewVerifier(true, cas, time.Hour, testGroup, testLabels(), store); err == nil {
+	if _, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store); err == nil {
 		t.Fatal("a corrupt nonce cache must fail construction (fail closed), got nil error")
 	}
 }
@@ -737,7 +786,7 @@ func TestNonceCacheUnwritableFailsClosed(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(roDir, 0o700) }) // let TempDir cleanup remove it
 	store := filepath.Join(roDir, "nonce-cache.json")
 
-	v, err := NewVerifier(true, cas, time.Hour, testGroup, testLabels(), store)
+	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testGroup, testLabels(), store)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}

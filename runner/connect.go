@@ -73,7 +73,7 @@ env var can be unset after the first successful connect.`,
 			// enforcing, the runner advertises it (cloud disables its own
 			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
 			// it so a rotated/revoked key takes effect without a restart.
-			verifier, err := buildVerifier(rt.cfg)
+			verifier, err := buildVerifier(rt.cfg, externalID)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
@@ -148,7 +148,7 @@ env var can be unset after the first successful connect.`,
 						// Pack reload succeeded; refresh signing keys independently
 						// so a key-only edit (rotation/revocation) takes effect, and
 						// still re-advertise the packs even if the signing reload fails.
-						if verifier, err := reloadVerifier(); err != nil {
+						if verifier, err := reloadVerifier(externalID); err != nil {
 							logger.Error("signing_reload_failed", "error", err)
 						} else {
 							client.SetVerifier(verifier)
@@ -178,7 +178,7 @@ env var can be unset after the first successful connect.`,
 // trusted CAs, whether enforcement is on, the attestation freshness window, and
 // the runner's local group/labels (the cert-scope identity). Used at connect
 // start and on every SIGHUP rebuild.
-func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
+func buildVerifier(cfg *config.Config, externalID string) (*signing.Verifier, error) {
 	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
 	for i, ca := range cfg.Signing.TrustedCAs {
 		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
@@ -192,12 +192,12 @@ func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
 	}
 	return signing.NewVerifier(
 		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
-		cfg.Runner.Group, cfg.Runner.Labels, storePath)
+		externalID, cfg.Runner.Group, cfg.Runner.Labels, storePath)
 }
 
 // reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP
 // picks up a rotated or revoked trusted key without a runner restart.
-func reloadVerifier() (*signing.Verifier, error) {
+func reloadVerifier(externalID string) (*signing.Verifier, error) {
 	cfgPath, err := resolveConfigPath()
 	if err != nil {
 		return nil, fmt.Errorf("config path: %w", err)
@@ -206,7 +206,7 @@ func reloadVerifier() (*signing.Verifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return buildVerifier(cfg)
+	return buildVerifier(cfg, externalID)
 }
 
 // resolveExternalID returns the runner's durable identity. Precedence:

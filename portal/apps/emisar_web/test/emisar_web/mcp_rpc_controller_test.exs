@@ -87,6 +87,26 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     action
   end
 
+  defp attestation_for(runner) do
+    %{
+      "version" => "emisar-attestation-v2",
+      "sig" => "cryptographically-bogus-but-bounded",
+      "nonce" => "nonce-#{unique()}",
+      "issued_at" => "2026-06-17T12:00:00Z",
+      "targets" => [runner.external_id],
+      "cert" => %{
+        "ca_id" => "ca-acme",
+        "key_id" => "operator-key-1",
+        "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+        "valid_from" => "2026-06-25T00:00:00Z",
+        "valid_until" => "2026-06-26T00:00:00Z",
+        "scope" => %{"group" => "edge"},
+        "serial" => "01J0CERT0000000000000000A",
+        "sig" => "also-not-real-but-right-shape"
+      }
+    }
+  end
+
   defp make_api_key!(account, user, opts \\ []) do
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
@@ -898,28 +918,14 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       raw = make_api_key!(account, user)
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-      attestation = %{
-        "sig" => "deadbeef",
-        "nonce" => "n1",
-        "issued_at" => "2026-06-17T12:00:00Z",
-        "cert" => %{
-          "ca_id" => "ca-acme",
-          "key_id" => "op-1",
-          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
-          "valid_from" => "2026-06-25T00:00:00Z",
-          "valid_until" => "2026-06-26T00:00:00Z",
-          "scope" => %{"group" => "edge", "labels" => %{"env" => "prod"}},
-          "serial" => "01J0CERT0000000000000000A",
-          "sig" => "cafebabe"
-        }
-      }
+      attestation = attestation_for(runner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
       |> rpc("tools/call", %{
         "name" => "linux.uptime",
         "arguments" => %{
-          "runner" => "host-1",
+          "runner" => runner.external_id,
           "reason" => "smoke",
           "wait" => "0",
           "attestation" => attestation
@@ -934,76 +940,177 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       refute Map.has_key?(run.args, "attestation")
     end
 
-    test "a malformed attestation is dropped to nil (enforcing runner then refuses)",
+    test "preserves an integer above 2^53 through JSON decode and JSONB persistence",
          %{conn: conn, account: account, user: user} do
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      runner = make_runner!(account, name: "db-1")
+
+      advertise_action!(runner,
+        action_id: "cockroach.pause_job",
+        risk: "low",
+        args_schema: %{
+          "args" => [%{"name" => "job_id", "type" => "integer", "required" => true}]
+        }
+      )
+
       raw = make_api_key!(account, user)
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      job_id = 891_234_567_890_123_456
 
-      conn
-      |> put_req_header("authorization", "Bearer " <> raw)
-      |> rpc("tools/call", %{
-        "name" => "linux.uptime",
-        # The cert is missing required fields — not a well-formed envelope, so the
-        # whole attestation degrades to nil and an enforcing runner refuses.
-        "arguments" => %{
-          "runner" => "host-1",
-          "reason" => "smoke",
-          "wait" => "0",
-          "attestation" => %{
-            "sig" => "x",
-            "nonce" => "n1",
-            "issued_at" => "2026-06-17T12:00:00Z",
-            "cert" => %{"ca_id" => "ca-acme", "sig" => "cafe"}
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "cockroach.pause_job",
+          "arguments" => %{
+            "runner" => runner.external_id,
+            "reason" => "pause the selected job",
+            "wait" => "0",
+            "job_id" => job_id,
+            "attestation" => attestation_for(runner)
           }
-        }
-      })
-      |> json_response(200)
+        })
+        |> json_response(200)
 
-      {:ok, [run], _meta} = Runs.list_runs(subject)
-      assert run.attestation == nil
-      refute Map.has_key?(run.args, "attestation")
+      assert body["result"]["isError"] == false
+      assert {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.args["job_id"] == job_id
     end
 
-    test "an oversized cert field is rejected (dropped to nil)",
+    test "rejects a signed target set that differs from the resolved runners",
          %{conn: conn, account: account, user: user} do
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-      conn
-      |> put_req_header("authorization", "Bearer " <> raw)
-      |> rpc("tools/call", %{
-        "name" => "linux.uptime",
-        # A 9 KB public_key inside the cert — far over the 512-byte field cap, the
-        # multi-MB-blob abuse a key-blind relay must still bound.
-        "arguments" => %{
-          "runner" => "host-1",
-          "reason" => "smoke",
-          "wait" => "0",
-          "attestation" => %{
-            "sig" => "deadbeef",
-            "nonce" => "n1",
-            "issued_at" => "2026-06-17T12:00:00Z",
-            "cert" => %{
-              "ca_id" => "ca-acme",
-              "key_id" => "op-1",
-              "public_key" => String.duplicate("a", 9_000),
-              "valid_from" => "2026-06-25T00:00:00Z",
-              "valid_until" => "2026-06-26T00:00:00Z",
-              "scope" => %{},
-              "serial" => "01J0CERT0000000000000000A",
-              "sig" => "cafebabe"
+      mismatched = put_in(attestation_for(runner), ["targets"], [Ecto.UUID.generate()])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runner" => runner.external_id,
+            "reason" => "smoke",
+            "wait" => "0",
+            "attestation" => mismatched
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Signed targets do not match"
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "accepts the exact signed fan-out set regardless of selector order",
+         %{conn: conn, account: account, user: user} do
+      runner_a = make_runner!(account, name: "host-a")
+      runner_b = make_runner!(account, name: "host-b")
+      advertise_action!(runner_a, action_id: "linux.uptime", risk: "low")
+      advertise_action!(runner_b, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      attestation =
+        put_in(attestation_for(runner_a), ["targets"], [
+          runner_a.external_id,
+          runner_b.external_id
+        ])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runners" => [runner_b.external_id, runner_a.external_id],
+            "reason" => "fleet smoke",
+            "wait" => "0",
+            "attestation" => attestation
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+      assert {:ok, runs, _meta} = Runs.list_runs(subject)
+      assert length(runs) == 2
+      assert Enum.all?(runs, &(&1.attestation == attestation))
+    end
+
+    test "a malformed supplied attestation is rejected before dispatch",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runner" => runner.external_id,
+            "reason" => "smoke",
+            "wait" => "0",
+            "attestation" => %{
+              "sig" => "x",
+              "nonce" => "n1",
+              "issued_at" => "2026-06-17T12:00:00Z",
+              "cert" => %{"ca_id" => "ca-acme", "sig" => "cafe"}
             }
           }
-        }
-      })
-      |> json_response(200)
+        })
+        |> json_response(200)
 
-      {:ok, [run], _meta} = Runs.list_runs(subject)
-      assert run.attestation == nil
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "Invalid attestation"
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "an oversized cert field is rejected before dispatch",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          # A 9 KB public_key inside the cert — far over the 512-byte field cap, the
+          # multi-MB-blob abuse a key-blind relay must still bound.
+          "arguments" => %{
+            "runner" => runner.external_id,
+            "reason" => "smoke",
+            "wait" => "0",
+            "attestation" => %{
+              "version" => "emisar-attestation-v2",
+              "targets" => [runner.external_id],
+              "sig" => "deadbeef",
+              "nonce" => "n1",
+              "issued_at" => "2026-06-17T12:00:00Z",
+              "cert" => %{
+                "ca_id" => "ca-acme",
+                "key_id" => "op-1",
+                "public_key" => String.duplicate("a", 9_000),
+                "valid_from" => "2026-06-25T00:00:00Z",
+                "valid_until" => "2026-06-26T00:00:00Z",
+                "scope" => %{},
+                "serial" => "01J0CERT0000000000000000A",
+                "sig" => "cafebabe"
+              }
+            }
+          }
+        })
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
     end
 
     test "unknown action returns isError content block",
@@ -2801,61 +2908,40 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "extra keys (top-level and in the cert) are stripped; only the known fields are kept",
          %{conn: conn, account: account, user: user} do
-      # normalize_attestation builds the relayed envelope from the KNOWN fields
-      # only (top-level sig/nonce/issued_at/cert; the cert's own seven strings +
-      # scope), so an unexpected key at either level is silently dropped rather
-      # than rejected. (Only a MISSING field or an oversized one → nil.)
+      # The relay rebuilds the envelope from known fields, so unexpected keys at
+      # either level are stripped while the signed v2 facts remain intact.
       runner = make_runner!(account, name: "host-1")
       advertise_action!(runner, action_id: "linux.uptime", risk: "low")
       raw = make_api_key!(account, user)
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      supplied_attestation =
+        runner
+        |> attestation_for()
+        |> Map.put("extra", "x")
+        |> put_in(["cert", "extra_cert"], "y")
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
       |> rpc("tools/call", %{
         "name" => "linux.uptime",
         "arguments" => %{
-          "runner" => "host-1",
+          "runner" => runner.external_id,
           "reason" => "smoke",
           "wait" => "0",
-          "attestation" => %{
-            "sig" => "deadbeef",
-            "nonce" => "n1",
-            "issued_at" => "2026-06-17T12:00:00Z",
-            "extra" => "x",
-            "cert" => %{
-              "ca_id" => "ca-acme",
-              "key_id" => "op-1",
-              "public_key" => "ab",
-              "valid_from" => "2026-06-25T00:00:00Z",
-              "valid_until" => "2026-06-26T00:00:00Z",
-              "scope" => %{},
-              "serial" => "01X",
-              "sig" => "cafe",
-              "extra_cert" => "y"
-            }
-          }
+          "attestation" => supplied_attestation
         }
       })
       |> json_response(200)
 
       {:ok, [run], _meta} = Runs.list_runs(subject)
       # The unexpected keys are gone at both levels; only the known fields remain.
-      assert run.attestation == %{
-               "sig" => "deadbeef",
-               "nonce" => "n1",
-               "issued_at" => "2026-06-17T12:00:00Z",
-               "cert" => %{
-                 "ca_id" => "ca-acme",
-                 "key_id" => "op-1",
-                 "public_key" => "ab",
-                 "valid_from" => "2026-06-25T00:00:00Z",
-                 "valid_until" => "2026-06-26T00:00:00Z",
-                 "scope" => %{},
-                 "serial" => "01X",
-                 "sig" => "cafe"
-               }
-             }
+      expected =
+        supplied_attestation
+        |> Map.delete("extra")
+        |> update_in(["cert"], &Map.delete(&1, "extra_cert"))
+
+      assert run.attestation == expected
 
       refute Map.has_key?(run.args, "attestation")
     end
@@ -2991,7 +3077,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert desc =~ "reboots the machine"
       assert desc =~ "drops all sessions"
       # ... the live (list-time) runner status for the single advertiser ...
-      assert desc =~ "Runs on: only-host (connected)"
+      assert desc =~ "Runs on: only-host — #{runner.external_id} (connected)"
       # ... and the action's risk tier as a trailing Risk line.
       assert desc =~ "Risk: critical"
       assert_oauth_required(tool)
@@ -3216,12 +3302,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           "reason" => "strip",
           "wait" => "0",
           "idempotency_key" => "k-#{unique()}",
-          "attestation" => %{
-            "key_id" => "k1",
-            "sig" => "x",
-            "nonce" => "n",
-            "issued_at" => "2026-06-17T12:00:00Z"
-          },
+          "attestation" => attestation_for(runner),
           "path" => "/tmp/marker"
         }
       })
@@ -3392,7 +3473,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "the portal relays a well-formed attestation verbatim without verifying it",
-         %{conn: conn, account: account, user: user} do
+         %{conn: conn, account: account, user: user, runner: runner} do
       # The portal can't verify Ed25519 — the runner does. So even a signature
       # the portal has no way to check is stored byte-for-byte on the run (for
       # audit + relay), never forged or rejected portal-side. We give a
@@ -3400,28 +3481,14 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       raw = make_api_key!(account, user)
       subject = subject_for(account, user)
 
-      bogus_but_well_formed = %{
-        "sig" => "not-a-real-signature-but-the-right-shape",
-        "nonce" => "nonce-123",
-        "issued_at" => "2026-06-17T12:00:00Z",
-        "cert" => %{
-          "ca_id" => "ca-acme",
-          "key_id" => "operator-key-1",
-          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
-          "valid_from" => "2026-06-25T00:00:00Z",
-          "valid_until" => "2026-06-26T00:00:00Z",
-          "scope" => %{"group" => "edge"},
-          "serial" => "01J0CERT0000000000000000A",
-          "sig" => "also-not-real-but-right-shape"
-        }
-      }
+      bogus_but_well_formed = attestation_for(runner)
 
       conn
       |> put_req_header("authorization", "Bearer " <> raw)
       |> rpc("tools/call", %{
         "name" => "linux.uptime",
         "arguments" => %{
-          "runner" => "host-1",
+          "runner" => runner.external_id,
           "reason" => "relay",
           "wait" => "0",
           "attestation" => bogus_but_well_formed

@@ -27,15 +27,16 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   @doc """
   Returns the full `inputSchema` map (already shaped for JSON encoding)
-  for one action, given the list of runner names that advertise it.
+  for one action, given the stable id + display name of each runner that
+  advertises it.
   """
-  def build(action, runner_names) do
+  def build(action, runner_targets) do
     args = action_args(action)
 
     arg_properties = Map.new(args, &{&1["name"], arg_property(&1)})
     arg_required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
-    {control_properties, runners_required} = control_properties(runner_names)
+    {control_properties, runners_required} = control_properties(runner_targets)
 
     required =
       ["reason" | arg_required]
@@ -52,14 +53,14 @@ defmodule EmisarWeb.MCP.ToolSchema do
   `additionalProperties` — the runner the caller selects re-validates the
   real arguments on dispatch. Fail-closed: never a misleading arg contract.
   """
-  def build_ambiguous(runner_names) do
-    {control_properties, runners_required} = control_properties(runner_names)
+  def build_ambiguous(runner_targets) do
+    {control_properties, runners_required} = control_properties(runner_targets)
     required = if runners_required, do: ["runners", "reason"], else: ["reason"]
     schema_object(control_properties, required, true)
   end
 
-  defp control_properties(runner_names) do
-    {runners_prop, runners_required} = runners_property(runner_names)
+  defp control_properties(runner_targets) do
+    {runners_prop, runners_required} = runners_property(normalize_runner_targets(runner_targets))
 
     properties =
       %{"reason" => reason_property(), "idempotency_key" => idempotency_key_property()}
@@ -115,23 +116,37 @@ defmodule EmisarWeb.MCP.ToolSchema do
   # single runner advertises the action. Implicit targeting is a footgun:
   # it carries no audit-visible intent about WHICH host the operator meant
   # and silently retargets as the fleet changes. The enum still narrows the
-  # choice (one name when only one advertises), but naming it is mandatory —
+  # choice (one stable id when only one advertises), but selecting it is mandatory —
   # no `default`, no "safe to omit".
-  defp runners_property(runner_names) do
+  defp runners_property(runner_targets) do
+    runner_ids = Enum.map(runner_targets, & &1.id)
+
+    choices =
+      Enum.map_join(runner_targets, "\n", fn target ->
+        "- `#{target.id}` — #{target.name}"
+      end)
+
     {%{
        type: "array",
-       items: %{type: "string", enum: runner_names},
+       items: %{type: "string", enum: runner_ids},
        minItems: 1,
-       maxItems: min(length(runner_names), @max_runner_fan_out),
+       maxItems: min(length(runner_ids), @max_runner_fan_out),
        uniqueItems: true,
        description:
-         "REQUIRED — name the target runner(s) explicitly; emisar never picks for you. " <>
-           "One or more names from the `enum`. The call fans out and each runner runs " <>
-           "independently. Pass `[\"runner-1\"]` for a single host, or " <>
-           ~s(`["runner-1","runner-2"]` for multiple. ) <>
+         "REQUIRED — select the target runner(s) explicitly; emisar never picks for you. " <>
+           "Use one or more stable ids from the `enum`; the labels below identify the hosts. " <>
+           "The signed dispatch binds these ids, so the control plane cannot redirect or widen " <>
+           "the selected set. The call fans out and each runner runs independently. " <>
            "Each returned run carries its own status — some may succeed immediately " <>
-           "while others need approval."
+           "while others need approval.\n\nRunner ids:\n" <> choices
      }, true}
+  end
+
+  defp normalize_runner_targets(targets) do
+    Enum.map(targets, fn
+      %{id: id, name: name} -> %{id: id, name: name}
+      name when is_binary(name) -> %{id: name, name: name}
+    end)
   end
 
   # -- Per-action arg properties ---------------------------------------

@@ -37,12 +37,10 @@ type Config struct {
 // The runner ALSO advertises this to the cloud, which then disables its own
 // (operator/runbook) dispatch to this runner.
 //
-// The runner-target binding is the cert's SCOPE, asserted by the OFFLINE CA and
-// matched only against this runner's local runner.group/runner.labels — never a
-// value the control plane supplies. Trusting one CA instead of every leaf key
-// makes onboarding an operator one signature and zero runner-config edits; a
-// scoped cert gives redirect protection, an empty-scope cert is the explicit
-// weaker "valid on any runner that trusts the CA" mode.
+// Each v2 attestation binds the exact durable runner-id set the operator selected;
+// the runner checks its local id is present. A cert's offline-CA-authored scope is
+// an independent group/label ceiling. Trusting one CA instead of every leaf key
+// makes onboarding an operator one signature and zero runner-config edits.
 type Signing struct {
 	EnforceSignatures bool        `yaml:"enforce_signatures,omitempty"`
 	TrustedCAs        []TrustedCA `yaml:"trusted_cas,omitempty"`

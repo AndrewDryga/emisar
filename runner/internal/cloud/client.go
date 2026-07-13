@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -277,7 +278,9 @@ func (c *Client) dispatch(parent context.Context, raw []byte) {
 	switch mt {
 	case MsgRunAction:
 		var m RunActionMsg
-		if err := json.Unmarshal(raw, &m); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&m); err != nil {
 			c.opts.Logger.Warn("cloud.bad_run_action", "error", err)
 			return
 		}
@@ -517,9 +520,11 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 	var att *signing.Attestation
 	if m.Attestation != nil {
 		att = &signing.Attestation{
+			Version:   m.Attestation.Version,
 			Signature: m.Attestation.Signature,
 			Nonce:     m.Attestation.Nonce,
 			IssuedAt:  m.Attestation.IssuedAt,
+			Targets:   m.Attestation.Targets,
 			Cert:      m.Attestation.Cert,
 		}
 	}

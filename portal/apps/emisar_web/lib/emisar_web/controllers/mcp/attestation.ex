@@ -8,21 +8,42 @@ defmodule EmisarWeb.MCP.Attestation do
 
   @max_field_bytes 512
   @max_scope_labels 32
+  @max_targets 16
+  @version "emisar-attestation-v2"
 
   @doc "Returns a bounded attestation envelope, or nil when the input is malformed."
   @spec normalize(term()) :: map() | nil
   def normalize(%{} = attestation) do
+    version = attestation["version"]
     sig = attestation["sig"]
     nonce = attestation["nonce"]
     issued_at = attestation["issued_at"]
+    targets = attestation["targets"]
     cert = normalize_cert(attestation["cert"])
 
-    if bounded_string?(sig) and bounded_string?(nonce) and bounded_string?(issued_at) and cert do
-      %{"sig" => sig, "nonce" => nonce, "issued_at" => issued_at, "cert" => cert}
+    if version == @version and bounded_string?(sig) and bounded_string?(nonce) and
+         bounded_string?(issued_at) and valid_targets?(targets) and cert do
+      %{
+        "version" => version,
+        "sig" => sig,
+        "nonce" => nonce,
+        "issued_at" => issued_at,
+        "targets" => targets,
+        "cert" => cert
+      }
     end
   end
 
   def normalize(_), do: nil
+
+  @doc "Extracts an optional envelope, distinguishing absence from malformed input."
+  @spec extract(map()) :: map() | nil | :invalid
+  def extract(%{} = params) do
+    case Map.fetch(params, "attestation") do
+      :error -> nil
+      {:ok, value} -> normalize(value) || :invalid
+    end
+  end
 
   # The certificate is key-blind here: the runner verifies the CA signature.
   # Restrict fields, shape, and size before persisting or relaying it.
@@ -67,6 +88,14 @@ defmodule EmisarWeb.MCP.Attestation do
   end
 
   defp valid_scope?(_), do: false
+
+  defp valid_targets?(targets) when is_list(targets) do
+    targets != [] and length(targets) <= @max_targets and
+      Enum.all?(targets, &(bounded_string?(&1) and &1 != "")) and
+      MapSet.size(MapSet.new(targets)) == length(targets)
+  end
+
+  defp valid_targets?(_), do: false
 
   defp bounded_string?(value), do: is_binary(value) and byte_size(value) <= @max_field_bytes
 end

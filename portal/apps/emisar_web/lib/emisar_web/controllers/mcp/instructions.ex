@@ -55,8 +55,9 @@ defmodule EmisarWeb.MCP.Instructions do
   it. This is an access grant, not a transient state — ask an admin to grant runner access. \
   Retrying won't help.
   - "Runner required": emisar always requires an explicit target, even when only one runner \
-  advertises the action. Re-call with `runners: ["name"]` (candidates are listed in the error).
-  - "Invalid runner targets" / "Duplicate runners": use a list of distinct runner-name strings. \
+  advertises the action. Re-call with `runners: ["stable-id"]` from the tool schema (candidates \
+  are listed in the error).
+  - "Invalid runner targets" / "Duplicate runners": use a list of distinct stable runner ids. \
   Fix the target list and retry; emisar creates no partial fan-out.
   - "Denied by policy": an account policy blocked it; the reason is the rule that fired — show it \
   to the user verbatim. Won't change on retry; it needs a policy edit or an approval grant.

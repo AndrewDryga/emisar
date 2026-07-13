@@ -25,10 +25,10 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # is paid before that rejection.
   @max_args_bytes 262_144
   @max_reason_length 255
-  # An honest attestation is ~300 bytes serialized (key_id + 128-hex sig + nonce
-  # + timestamp); 8 KB is generous headroom while bounding the jsonb row + the
-  # relayed wire envelope. The MCP boundary (normalize_attestation) already caps
-  # each field; this backstops any other writer.
+  # A normal v2 attestation is comfortably below 2 KB (cert, signature, nonce,
+  # timestamp, and up to 16 runner ids); 8 KB is generous headroom while bounding
+  # the jsonb row + relayed wire envelope. The MCP boundary already caps every
+  # known field; this backstops any other writer.
   @max_attestation_bytes 8_192
   # Self-reported MCP client metadata is bounded at the MCP boundary (≤10 keys,
   # keys ≤128 / values ≤512 chars ≈ 6 KB); 8 KB backstops any other writer.

@@ -5,9 +5,9 @@ enforced, it executes an action only if the dispatch carries a valid Ed25519
 signature a real person produced in their own MCP client — and that signature is
 vouched for by a **certificate** issued by a trusted, offline certificate
 authority. The control plane **relays** the signature and the certificate; it
-holds no private key, so it can neither forge, alter, redirect, nor replay one,
-and it cannot originate a run at all. The signature, not the cloud, is the
-authority.
+holds no private key, so it cannot forge or alter one, widen its signed runner
+set, or replay it on a selected runner. It cannot originate a run at all. The
+signature, not the cloud, is the authority.
 
 This is the strongest defense emisar offers against a compromised control plane.
 It is **opt-in per runner** and a deliberate trade: while it's on, the portal,
@@ -39,25 +39,29 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 ## How it works
 
-1. The MCP client signs a canonical message — the action id, its arguments, a
-   one-time nonce, and a timestamp — with an Ed25519 **leaf** private key that
-   never leaves the operator's machine, and attaches the **certificate** the CA
-   issued for that key.
-2. The portal stores and relays both verbatim. It can't change the action or args
-   without invalidating the signature, can't alter the CA-signed certificate, and
-   has no key to mint either.
+1. The MCP client signs a canonical v2 message — the action id, exact JSON
+   arguments, the sorted set of durable runner ids selected from the tool schema,
+   a one-time nonce, and a timestamp — with an Ed25519 **leaf** private key that
+   never leaves the operator's machine. Integers are canonicalized without a
+   `float64` conversion, including values above `2^53`.
+2. The portal bounds and stores the known envelope fields, resolves the selected
+   ids, requires that exact set to match the signed targets, and relays the facts.
+   It can't change the action, args, or target set without invalidating the
+   signature, can't alter the CA-signed certificate, and has no key to mint either.
 3. The runner verifies, in order: the certificate is signed by a CA it trusts →
-   the certificate is inside its validity window → the certificate's **scope**
-   matches this runner's own group/labels → the attestation is inside the
+   the certificate is inside its validity window → this runner's durable local id
+   is in the signed target set → the certificate's **scope** matches this runner's
+   own group/labels → the attestation is inside the
    freshness window → the attestation signature verifies under the **leaf key the
    certificate vouches for** → the nonce hasn't been seen. Only then does it run.
    Anything else is refused.
 
-The **runner-target binding is the certificate's scope**, asserted by the offline
-CA and matched only against this runner's own local `group`/`labels` — never any
-value the control plane supplies. A scoped certificate (`group=prod`) can't be
-relayed to a runner outside that scope; an empty-scope certificate is the
-explicit "valid on any runner that trusts the CA" mode.
+The v2 signature binds the **exact runner set** by each runner's durable external
+id. A compromised relay cannot add a runner after the operator signs. The
+certificate's scope is an independent, coarser ceiling asserted by the offline CA
+and matched against each runner's local `group`/`labels`. A scoped certificate
+(`group=prod`) still cannot run outside that scope; an empty-scope certificate
+means the signed target set may contain any runner that trusts the CA.
 
 The certificate's validity window and the attestation's freshness window are
 **independent gates** — a long-lived certificate never widens the replay window.
@@ -137,10 +141,10 @@ the CA **private** key to store offline, and the two MCP env vars.
 - empty (the default if `--scope` is omitted) — valid on any runner that trusts
   the CA.
 
-The runner matches scope against its **own** configured group/labels, so a
-compromised portal can't redirect a certified dispatch to a runner the CA didn't
-scope it for. This is the redirect protection a single fleet-wide key would
-otherwise trade away.
+The runner first requires its durable id in the per-call signed target set, then
+matches certificate scope against its **own** configured group/labels. Scope is
+defense in depth and a useful blast-radius ceiling; it no longer substitutes for
+binding the operator's exact selection.
 
 ## Rotating and revoking
 
@@ -170,6 +174,10 @@ Be clear-eyed about what this does and doesn't guarantee:
 - **Integrity, not availability.** A compromised control plane can still
   *withhold* or refuse to relay a signed dispatch. Signing stops it from
   *forging* one; it does not force it to deliver yours.
+- **Discovery labels come from the portal.** The signature binds durable ids, not
+  the human-readable names shown beside them. A compromised portal can lie while
+  presenting an id/name mapping before the call is signed. Use narrow certificate
+  scopes, and verify stable ids out of band for the highest-trust workflows.
 - **Replay cache durability.** The seen-nonce cache is persisted under the
   runner's data dir, so a restart or `SIGHUP` rebuild keeps refusing a replayed
   nonce rather than forgetting it. The runner **fails closed**: if that store
@@ -198,10 +206,12 @@ cause. The runner's refusal codes:
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP client isn't configured to sign). | Run it from an MCP client with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
+| `attestation_version` | The envelope is not the supported `emisar-attestation-v2` format. | Upgrade the MCP bridge and submit a fresh call. |
+| `target_mismatch` | This runner's durable local id is not in the signed target set. | Refresh the tool list and submit a fresh call for the intended runner id. |
 | `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
 | `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
 | `cert_scope` | The certificate's scope (group/labels) isn't satisfied by this runner's local `group`/`labels`. | Issue the certificate with a scope matching this runner (or an empty scope), or dispatch to a runner in scope. |
 | `stale` | The attestation's timestamp is outside `±max_attestation_age` (clock skew, a long-queued run, or a slow approval). | Re-issue the run; check host clocks; widen `max_attestation_age` if approvals are the cause. |
-| `bad_signature` | The signature doesn't verify against the action, args, nonce, and time under the certificate's leaf key. | Wrong key/certificate pair — re-mint with `emisar signing new-cert`. (The MCP client refuses to start if the key and certificate don't match.) |
+| `bad_signature` | The signature doesn't verify against the action, exact args, target set, nonce, and time under the certificate's leaf key. | Refresh tools and re-submit with the matching key/certificate pair; re-mint with `emisar signing new-cert` if the pair is wrong. |
 | `replayed` | This nonce was already used. | The client double-sent; re-issue with a fresh dispatch. |
 | `nonce_store_unavailable` | The runner couldn't durably record the nonce (the replay cache is unwritable). | Fix the runner's data-dir permissions/disk; the runner refuses rather than risk a replay after a restart. |

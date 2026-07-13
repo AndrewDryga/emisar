@@ -22,7 +22,7 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       refute "idempotency_key" in schema.required
     end
 
-    test "exactly one runner → runners still REQUIRED (no auto-pick), enum locked to that name" do
+    test "exactly one runner → runners still REQUIRED (no auto-pick), enum locked to that id" do
       schema = ToolSchema.build(action(), ["solo"])
 
       runners = schema.properties["runners"]
@@ -44,6 +44,19 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert runners.minItems == 1
       assert runners.maxItems == 3
       assert "runners" in schema.required
+    end
+
+    test "runner choices expose stable ids with human names only as labels" do
+      schema =
+        ToolSchema.build(action(), [
+          %{id: "runner-id-b", name: "db-prod-02"},
+          %{id: "runner-id-a", name: "db-prod-01"}
+        ])
+
+      runners = schema.properties["runners"]
+      assert runners.items.enum == ["runner-id-b", "runner-id-a"]
+      assert runners.description =~ "`runner-id-a` — db-prod-01"
+      refute "db-prod-01" in runners.items.enum
     end
 
     test "no runners advertise this action → runners property is omitted" do

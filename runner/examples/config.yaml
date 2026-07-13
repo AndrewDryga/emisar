@@ -68,18 +68,20 @@ execution: {}
 #
 # The trust boundary is the CA: the runner trusts a few offline CA public keys,
 # not every leaf key, so onboarding an operator is one signature and zero
-# runner-config edits. The runner-target binding is the cert's SCOPE, asserted
-# by the offline CA and matched only against this runner's own group/labels —
-# a scoped cert can't be redirected to a runner the CA didn't scope it to.
+# runner-config edits. Every v2 call also signs the exact durable runner-id set.
+# The cert's SCOPE is a second, coarser CA-authored group/label ceiling matched
+# only against this runner's local identity.
 #
 # Bootstrap with `emisar signing init` (offline — it mints a CA, a leaf, and a
 # cert, prints this trusted_cas block, the CA PRIVATE key to keep offline, and
 # the MCP client's EMISAR_SIGNING_KEY + EMISAR_SIGNING_CERT). The CA private key
-# stays offline and signs new operator certs as they expire (`emisar cert new`).
+# stays offline and signs new operator certs as they expire
+# (`emisar signing new-cert`).
 #
 # Changing anything under `signing` (enabling enforcement, rotating or revoking
 # a CA) takes effect on the next SIGHUP — the runner rebuilds the verifier and
-# re-advertises — or on a full restart. A rebuild resets the in-memory nonce cache.
+# re-advertises — or on a full restart. The durable nonce cache is reloaded, so a
+# still-fresh captured dispatch cannot replay across either transition.
 #
 # signing:
 #   enforce_signatures: true

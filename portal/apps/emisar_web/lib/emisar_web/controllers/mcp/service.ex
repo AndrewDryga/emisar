@@ -21,6 +21,7 @@ defmodule EmisarWeb.MCP.Service do
   # behavior matches whether the LLM hits /api/mcp/tools/:id or the
   # JSON-RPC equivalent.
   @max_runners_per_call 16
+  @max_runner_target_bytes 512
   @max_wait_ms 60_000
   # Approval decisions commonly take longer than an action-result wait. Give the
   # dedicated `wait_for_run` tool one useful approval window; action dispatches
@@ -88,6 +89,7 @@ defmodule EmisarWeb.MCP.Service do
     |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
     |> Enum.map(fn runner ->
       %{
+        id: runner.external_id,
         name: runner.name,
         hostname: runner.hostname,
         group: runner.group,
@@ -366,10 +368,12 @@ defmodule EmisarWeb.MCP.Service do
   # -- Dispatch --------------------------------------------------------
 
   @type dispatch_opts :: %{
-          optional(:runner_names) => term(),
+          optional(:runner_targets) => term(),
           optional(:reason) => String.t() | nil,
           optional(:wait_ms) => non_neg_integer(),
-          optional(:idempotency_key) => String.t() | nil
+          optional(:idempotency_key) => String.t() | nil,
+          optional(:mcp_session_id) => String.t() | nil,
+          optional(:attestation) => map() | nil | :invalid
         }
 
   @type dispatch_error ::
@@ -379,6 +383,8 @@ defmodule EmisarWeb.MCP.Service do
           | {:error, :duplicate_runners}
           | {:error, :runner_not_found, String.t()}
           | {:error, :runner_not_allowed, String.t(), String.t()}
+          | {:error, :invalid_attestation}
+          | {:error, :attestation_targets_mismatch}
           | {:error, :no_runner_available, :unknown_action | :scope_blocked}
           | {:error, :too_many_runners, pos_integer()}
 
@@ -395,7 +401,7 @@ defmodule EmisarWeb.MCP.Service do
     api_key = conn.assigns.api_key
     subject = conn.assigns.current_subject
 
-    runner_names = Map.get(opts, :runner_names, [])
+    runner_targets = Map.get(opts, :runner_targets, [])
     reason = Map.get(opts, :reason)
     idempotency_key = Map.get(opts, :idempotency_key)
     wait_ms = Map.get(opts, :wait_ms, 0)
@@ -403,11 +409,12 @@ defmodule EmisarWeb.MCP.Service do
     attestation = Map.get(opts, :attestation)
 
     with :ok <- validate_reason(reason),
-         {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
-      runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
+         {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_targets),
+         :ok <- validate_attestation_targets(attestation, resolved) do
+      runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id, _} -> id end))
 
       results =
-        Enum.map(resolved, fn {name, runner_id} ->
+        Enum.map(resolved, fn {name, runner_id, _external_id} ->
           per_runner_key = Idempotency.per_runner(idempotency_key, runner_id)
 
           attrs = %{
@@ -523,41 +530,47 @@ defmodule EmisarWeb.MCP.Service do
 
       # `runners` is always required — emisar never auto-targets, even when
       # exactly one runner advertises the action. Absent/empty `runners` fails
-      # closed with the candidate names so the caller names the host explicitly
-      # (audit-visible intent; no silent retarget as the fleet shifts).
+      # closed with candidate durable ids so the caller selects the host
+      # explicitly (audit-visible intent; no silent retarget as the fleet shifts).
       candidates ->
-        {:error, :runner_required, Enum.map(candidates, & &1.name)}
+        {:error, :runner_required, Enum.map(candidates, & &1.external_id)}
     end
   end
 
-  defp resolve_runners(_subject, _api_key, _action_id, names) when not is_list(names),
+  defp resolve_runners(_subject, _api_key, _action_id, targets) when not is_list(targets),
     do: {:error, :invalid_runner_targets}
 
-  defp resolve_runners(subject, api_key, action_id, names) do
+  defp resolve_runners(subject, api_key, action_id, targets) do
     cond do
-      Enum.any?(names, &(not is_binary(&1))) ->
+      Enum.any?(targets, &(not valid_runner_target?(&1))) ->
         {:error, :invalid_runner_targets}
 
-      length(names) > @max_runners_per_call ->
+      length(targets) > @max_runners_per_call ->
         {:error, :too_many_runners, @max_runners_per_call}
 
-      MapSet.size(MapSet.new(names)) != length(names) ->
+      MapSet.size(MapSet.new(targets)) != length(targets) ->
         {:error, :duplicate_runners}
 
       true ->
-        resolve_named_runners(subject, api_key, action_id, names)
+        resolve_target_runners(subject, api_key, action_id, targets)
     end
   end
 
-  defp resolve_named_runners(subject, api_key, action_id, names) do
+  defp valid_runner_target?(target),
+    do: is_binary(target) and target != "" and byte_size(target) <= @max_runner_target_bytes
+
+  defp resolve_target_runners(subject, api_key, action_id, targets) do
     allowed = allowed_runners_for_action(subject, api_key, action_id)
     {:ok, all} = Runners.list_all_runners_for_account(subject)
     scopes = membership_scopes(api_key)
 
-    Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
-      case resolve_one(allowed, all, api_key, scopes, name) do
-        {:ok, runner_id} -> {:cont, {:ok, [{name, runner_id} | acc]}}
-        err -> {:halt, err}
+    Enum.reduce_while(targets, {:ok, []}, fn target, {:ok, acc} ->
+      case resolve_one(allowed, all, api_key, scopes, target) do
+        {:ok, runner} ->
+          {:cont, {:ok, [{runner.name, runner.id, runner.external_id} | acc]}}
+
+        err ->
+          {:halt, err}
       end
     end)
     |> case do
@@ -566,23 +579,47 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  # Names are unique among live runners (enforced at register time + by a
-  # partial unique index), so at most one allowed runner matches a name.
-  defp resolve_one(allowed, all, api_key, scopes, name) do
-    case Enum.find(allowed, &(&1.name == name)) do
-      %{id: id} ->
-        {:ok, id}
+  # MCP tool schemas use the runner's durable external id because an enforcing
+  # runner can verify that identity locally. Display-name matching remains for
+  # unsigned older/direct callers, but a signed call is rejected below unless
+  # its target set equals the resolved external ids.
+  defp resolve_one(allowed, all, api_key, scopes, target) do
+    case find_runner(allowed, target) do
+      %_{} = runner ->
+        {:ok, runner}
 
       nil ->
-        case Enum.find(all, &(&1.name == name)) do
+        case find_runner(all, target) do
           nil ->
-            {:error, :runner_not_found, name}
+            {:error, :runner_not_found, target}
 
           %_{} = runner ->
-            {:error, :runner_not_allowed, name, deny_reason(runner, api_key, scopes)}
+            {:error, :runner_not_allowed, target, deny_reason(runner, api_key, scopes)}
         end
     end
   end
+
+  # Prefer the security identity over the display alias across the whole set.
+  # A name may legally equal a different runner's external id; that ambiguity
+  # must not turn an exact-id selection into a name match on list order.
+  defp find_runner(runners, target) do
+    Enum.find(runners, &(&1.external_id == target)) || Enum.find(runners, &(&1.name == target))
+  end
+
+  defp validate_attestation_targets(nil, _resolved), do: :ok
+
+  defp validate_attestation_targets(:invalid, _resolved),
+    do: {:error, :invalid_attestation}
+
+  defp validate_attestation_targets(%{"targets" => targets}, resolved) do
+    expected =
+      resolved |> Enum.map(fn {_name, _id, external_id} -> external_id end) |> Enum.sort()
+
+    if Enum.sort(targets) == expected, do: :ok, else: {:error, :attestation_targets_mismatch}
+  end
+
+  defp validate_attestation_targets(_attestation, _resolved),
+    do: {:error, :invalid_attestation}
 
   defp deny_reason(runner, _api_key, scopes) do
     cond do
@@ -641,13 +678,16 @@ defmodule EmisarWeb.MCP.Service do
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{runner_status_rank(&1), &1.name})
 
-    runner_names = runners |> Enum.map(& &1.name) |> Enum.uniq()
+    runner_targets =
+      runners
+      |> Enum.map(&%{id: &1.external_id, name: &1.name})
+      |> Enum.uniq_by(& &1.id)
 
     %{
       name: first.action_id,
       title: ToolMetadata.group_title(group),
       description: tool_description(group, runners),
-      inputSchema: group_input_schema(group, runner_names),
+      inputSchema: group_input_schema(group, runner_targets),
       annotations: ToolMetadata.group_annotations(group)
     }
     |> ToolMetadata.auth_required()
@@ -658,10 +698,10 @@ defmodule EmisarWeb.MCP.Service do
   # Identical arg schemas across the group → describe them precisely. When
   # they diverge, fall back to the control-fields-only descriptor rather
   # than advertising one arbitrary runner's arg contract for all of them.
-  defp group_input_schema([first | _] = group, runner_names) do
+  defp group_input_schema([first | _] = group, runner_targets) do
     if uniform?(group, & &1.args_schema),
-      do: ToolSchema.build(first, runner_names),
-      else: ToolSchema.build_ambiguous(runner_names)
+      do: ToolSchema.build(first, runner_targets),
+      else: ToolSchema.build_ambiguous(runner_targets)
   end
 
   defp uniform?(group, fun), do: group |> Enum.map(fun) |> Enum.uniq() |> length() == 1
@@ -683,17 +723,19 @@ defmodule EmisarWeb.MCP.Service do
           ""
 
         [only] ->
-          "\n\nRuns on: #{only.name} (#{runner_status_label(only)})"
+          "\n\nRuns on: #{only.name} — #{only.external_id} (#{runner_status_label(only)})"
 
         many ->
           lines =
             Enum.map_join(
               many,
               "\n",
-              &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")")
+              &("- " <>
+                  &1.name <>
+                  " — " <> &1.external_id <> " (" <> runner_status_label(&1) <> ")")
             )
 
-          "\n\nAvailable runners (pick one or more by name):\n" <> lines
+          "\n\nAvailable runners (select one or more by stable id):\n" <> lines
       end
 
     risk_line = "\n\nRisk: #{ToolMetadata.worst_risk(group)}"
@@ -1012,8 +1054,8 @@ defmodule EmisarWeb.MCP.Service do
       status: "error",
       error: "runner_required",
       message:
-        "This action runs on multiple runners. Pass `runners: [\"name\"]` in the body " <>
-          "with one or more names from /tools."
+        "This action needs an explicit target. Pass `runners: [\"stable-id\"]` in the body " <>
+          "with one or more ids from the tool schema."
     }
 
   defp error_payload(name, :runner_not_found),
@@ -1023,7 +1065,7 @@ defmodule EmisarWeb.MCP.Service do
       error: "runner_not_found",
       message:
         "The cloud couldn't resolve `#{name}` to a runner in this account. Re-fetch " <>
-          "/runners to get the current name list."
+          "/runners to get the current stable ids and display names."
     }
 
   defp error_payload(name, :action_not_found),

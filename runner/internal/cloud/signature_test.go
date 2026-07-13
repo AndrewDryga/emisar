@@ -16,6 +16,7 @@ const (
 	sigTestCAID     = "ca1"
 	sigTestCASeed   = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	sigTestLeafSeed = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	sigTestRunnerID = "runner-cloud-test"
 )
 
 func keyFromSeed(t *testing.T, seedHex string) (ed25519.PrivateKey, string) {
@@ -51,7 +52,7 @@ func sigCert(t *testing.T, caPriv ed25519.PrivateKey, caID, leafPubHex string) a
 func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey) {
 	t.Helper()
 	_, caPubHex := keyFromSeed(t, sigTestCASeed)
-	v, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: sigTestCAID, PublicKeyHex: caPubHex}}, time.Hour, "", nil, "")
+	v, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: sigTestCAID, PublicKeyHex: caPubHex}}, time.Hour, sigTestRunnerID, "", nil, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -78,12 +79,13 @@ func attestationFor(t *testing.T, priv ed25519.PrivateKey, actionID string, args
 func attestationCertifiedBy(t *testing.T, priv, caPriv ed25519.PrivateKey, caID, leafPubHex, nonce, actionID string, args map[string]any) *Attestation {
 	t.Helper()
 	issuedAt := time.Now().UTC().Format(time.RFC3339)
-	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Nonce: nonce, IssuedAt: issuedAt})
+	targets := []string{sigTestRunnerID}
+	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Targets: targets, Nonce: nonce, IssuedAt: issuedAt})
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
 	cert := sigCert(t, caPriv, caID, leafPubHex)
-	return &Attestation{Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert}
+	return &Attestation{Version: attest.Version, Targets: targets, Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert}
 }
 
 func sendRunActionWithAttestation(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, att *Attestation) {
@@ -159,6 +161,25 @@ func TestClient_SignatureGate_RefusesTamperedArgs(t *testing.T) {
 	}
 }
 
+// A JSON integer larger than float64 can represent exactly must survive the
+// websocket decode without changing the signed claim. The extra arg is
+// deliberately unknown to t.echo, so reaching schema validation proves the
+// signature gate accepted the exact number.
+func TestClient_SignatureGate_PreservesExactLargeInteger(t *testing.T) {
+	conn, priv := runEnforcingClient(t)
+	args := map[string]any{
+		"msg":    "ok",
+		"job_id": json.Number("891234567890123456"),
+	}
+	att := attestationFor(t, priv, "t.echo", args)
+
+	sendRunActionWithAttestation(t, conn, "req_large_integer", "t.echo", args, att)
+	res := waitForResult(t, conn, "req_large_integer", 3*time.Second)
+	if res["status"] != "validation_failed" {
+		t.Fatalf("status=%v reason=%v, want validation_failed after the signature gate", res["status"], res["reason"])
+	}
+}
+
 // SetVerifier swaps the gate live: rotating the trusted CA in config + SIGHUP
 // stops verifying certs from the old CA immediately, with no reconnect. This is
 // the security point of live CA rotation/revocation.
@@ -183,7 +204,7 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 	// no longer trusts ca1.
 	seed2, _ := hex.DecodeString("3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
 	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, "", nil, "")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, sigTestRunnerID, "", nil, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -214,7 +235,7 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 
 	// Build the rotated-in verifier: trusts ONLY ca2 (a different CA keypair).
 	ca2Priv, ca2PubHex := keyFromSeed(t, "3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: ca2PubHex}}, time.Hour, "", nil, "")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: ca2PubHex}}, time.Hour, sigTestRunnerID, "", nil, "")
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}

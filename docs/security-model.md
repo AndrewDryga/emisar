@@ -62,15 +62,16 @@
    a privileged attacker can still delete or rewrite the entire file.
 13. **Client-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid Ed25519 signature
-    — over the action, args, nonce, and timestamp — from a leaf key vouched for
-    by a still-valid, in-scope certificate signed by a trusted, offline
-    certificate authority, inside a freshness window, with a nonce it hasn't
-    seen. The runner trusts the CA, not individual leaf keys; the runner-target
-    binding is the certificate's CA-asserted scope, matched only against this
-    runner's local group/labels. The leaf private key lives only in the
+    — over the action, exact JSON args, durable runner-id set, nonce, and
+    timestamp — from a leaf key vouched for by a still-valid, in-scope
+    certificate signed by a trusted, offline certificate authority, inside a
+    freshness window, with a nonce it hasn't seen. The runner requires its local
+    durable id in the signed target set; the certificate's CA-asserted scope is
+    a second group/label ceiling. The leaf private key lives only in the
     operator's MCP client and the CA private key stays offline; the control
     plane holds neither, so it can relay a user-signed action but never forge,
-    alter, replay, redirect, or originate one. The runner advertises enforcement
+    alter, widen its signed targets, replay it on a selected runner, or originate
+    one. The runner advertises enforcement
     and the cloud then disables its own (operator/runbook/API) dispatch to that
     host. See [`docs/signed-dispatch.md`](signed-dispatch.md).
 
@@ -137,7 +138,7 @@ its actions from itself:
 | Inbound surface attacked                 | There is none.                                                |
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A compiled-baseline pack's risk is inside the trusted hash; a TOFU pack (no baseline) has no such anchor. Pin risk at trust-time if you need it author-independent. |
-| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner runs only a dispatch carrying a valid Ed25519 client signature under a leaf key vouched for by a trusted, offline CA's certificate, inside a freshness window, with an unused nonce. The cloud holds neither the leaf nor the CA key, so it can't forge one; the nonce + window bound replay, and the cert's CA-asserted scope stops a signed dispatch being redirected to a runner it wasn't issued for. The replay-nonce cache is persisted to disk (atomic temp+rename), so seen nonces survive a runner *restart* or a `SIGHUP` verifier rebuild. Limitations: a dispatch queued past `max_attestation_age` (or the cert's validity window) is refused as stale; and the cloud can still *withhold* a signed dispatch (integrity, not availability). See `docs/signed-dispatch.md`. |
+| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v2 Ed25519 client signature over the action, exact args, durable runner-id set, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the nonce + freshness window bound replay, and CA scope adds a group/label ceiling. The replay cache persists to disk. Limitations: the cloud can withhold a call or lie about the human-readable id/name mapping during discovery, and a queued call can become stale. Verify ids out of band and use narrow cert scopes for the highest-trust workflows. See `docs/signed-dispatch.md`. |
 
 ## Threats *not* considered (yet)
 

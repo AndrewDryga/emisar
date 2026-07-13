@@ -221,7 +221,7 @@ defmodule EmisarWeb.MCPRpcController do
   # -- Tool call ------------------------------------------------------
 
   defp handle_tool_call(conn, name, args) do
-    {runner_names, reason, wait, attestation, action_args} = split_call_args(args)
+    {runner_targets, reason, wait, attestation, action_args} = split_call_args(args)
     idempotency_key = Idempotency.resolve(conn, args)
 
     # Omitting `wait` means "block for the result" — the default has to
@@ -243,7 +243,7 @@ defmodule EmisarWeb.MCPRpcController do
       end
 
     opts = %{
-      runner_names: runner_names,
+      runner_targets: runner_targets,
       reason: reason,
       wait_ms: wait_ms,
       idempotency_key: idempotency_key,
@@ -269,7 +269,7 @@ defmodule EmisarWeb.MCPRpcController do
       {:error, :runner_required, candidates} ->
         msg =
           "This action needs an explicit target — emisar never auto-picks a runner, even " <>
-            "when only one advertises it. Retry with `runners: [\"name\"]`, choosing from " <>
+            "when only one advertises it. Retry with a stable id from `candidates`, choosing from " <>
             "the candidates: " <> Enum.join(candidates, ", ")
 
         {content, _} = ContentBlocks.error_content("Runner required", msg)
@@ -279,7 +279,7 @@ defmodule EmisarWeb.MCPRpcController do
         {content, _} =
           ContentBlocks.error_content(
             "Invalid runner targets",
-            "`runners` must be an array of runner-name strings."
+            "`runners` must be an array of stable runner-id strings."
           )
 
         {:ok, %{content: content, isError: true}}
@@ -297,13 +297,33 @@ defmodule EmisarWeb.MCPRpcController do
         {content, _} =
           ContentBlocks.error_content(
             "Runner not found",
-            "No runner named `#{runner}` in this account."
+            "No runner matching `#{runner}` in this account."
           )
 
         {:ok, %{content: content, isError: true}}
 
       {:error, :runner_not_allowed, runner, why} ->
         {content, _} = ContentBlocks.error_content("Runner not allowed", "`#{runner}`: #{why}")
+        {:ok, %{content: content, isError: true}}
+
+      {:error, :attestation_targets_mismatch} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Signed targets do not match",
+            "The attestation was not signed for the exact runner ids selected by this call. " <>
+              "Re-call tools/list and submit a fresh signed request using its current runner ids."
+          )
+
+        {:ok, %{content: content, isError: true}}
+
+      {:error, :invalid_attestation} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Invalid attestation",
+            "The supplied attestation is malformed or exceeds its bounds. " <>
+              "Submit a fresh request from a current emisar MCP bridge."
+          )
+
         {:ok, %{content: content, isError: true}}
 
       {:error, :no_runner_available, :unknown_action} ->
@@ -627,7 +647,7 @@ defmodule EmisarWeb.MCPRpcController do
   # we don't forward them to the runner as if they were arg values.
   # Default `wait` (when omitted) is the full max_wait_ms (60s).
   defp split_call_args(args) do
-    runner_names =
+    runner_targets =
       cond do
         Map.has_key?(args, "runners") -> args["runners"]
         Map.has_key?(args, "runner") -> [args["runner"]]
@@ -636,12 +656,12 @@ defmodule EmisarWeb.MCPRpcController do
 
     reason = args["reason"]
     wait = args["wait"]
-    attestation = Attestation.normalize(args["attestation"])
+    attestation = Attestation.extract(args)
 
     action_args =
       Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key", "attestation"])
 
-    {runner_names, reason, wait, attestation, action_args}
+    {runner_targets, reason, wait, attestation, action_args}
   end
 
   # -- Streamable HTTP transport --------------------------------------

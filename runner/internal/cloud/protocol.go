@@ -80,9 +80,11 @@ type RunActionMsg struct {
 // relays this — it holds no key and cannot forge or alter it. See internal/attest
 // for the canonical encoding shared with the mcp signer.
 type Attestation struct {
+	Version   string       `json:"version"`
 	Signature string       `json:"sig"`
 	Nonce     string       `json:"nonce"`
 	IssuedAt  string       `json:"issued_at"`
+	Targets   []string     `json:"targets"`
 	Cert      *attest.Cert `json:"cert,omitempty"`
 }
 

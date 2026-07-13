@@ -652,8 +652,9 @@ defmodule Emisar.Runs do
   # runner that advertises it enforces client signatures. The runner would
   # reject an unsigned run anyway; blocking here means no run row is created and
   # the caller gets a clear reason. A signed MCP dispatch carries an
-  # `:attestation` and passes — the portal only RELAYS it (it can't forge one),
-  # and the runner verifies the Ed25519 signature. This portal flag is the
+  # `:attestation` and passes. The MCP boundary has already validated its shape
+  # and exact selected-target match; the runner remains the cryptographic
+  # authority that verifies the Ed25519 signature. This portal flag is the
   # UX/backstop gate; the runner's signature check is the real one.
   defp check_attestation(attrs, runner_id, account_id) do
     cond do

@@ -4,9 +4,11 @@ defmodule EmisarWeb.MCP.AttestationTest do
 
   defp valid_attestation(scope \\ %{}) do
     %{
+      "version" => "emisar-attestation-v2",
       "sig" => "dispatch-signature",
       "nonce" => "nonce-1",
       "issued_at" => "2026-07-09T12:00:00Z",
+      "targets" => ["runner-1"],
       "cert" => %{
         "ca_id" => "ca-acme",
         "key_id" => "operator-1",
@@ -47,5 +49,12 @@ defmodule EmisarWeb.MCP.AttestationTest do
   test "rejects fields beyond the relay bound" do
     attestation = put_in(valid_attestation(), ["cert", "public_key"], String.duplicate("a", 513))
     assert Attestation.normalize(attestation) == nil
+  end
+
+  test "extract distinguishes an absent envelope from malformed supplied input" do
+    assert Attestation.extract(%{}) == nil
+    assert Attestation.extract(%{"attestation" => valid_attestation()}) == valid_attestation()
+    assert Attestation.extract(%{"attestation" => %{}}) == :invalid
+    assert Attestation.extract(%{"attestation" => nil}) == :invalid
   end
 end

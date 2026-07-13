@@ -66,7 +66,7 @@ defmodule EmisarWeb.MCPControllerTest do
       Runner.Changeset.register(%{
         account_id: account.id,
         name: name,
-        external_id: Ecto.UUID.generate(),
+        external_id: opts[:external_id] || Ecto.UUID.generate(),
         group: opts[:group] || "default",
         hostname: opts[:hostname] || "host-#{unique()}",
         labels: opts[:labels] || %{},
@@ -104,6 +104,26 @@ defmodule EmisarWeb.MCPControllerTest do
       |> Repo.insert()
 
     action
+  end
+
+  defp attestation_for(runner) do
+    %{
+      "version" => "emisar-attestation-v2",
+      "sig" => "deadbeef",
+      "nonce" => "n1",
+      "issued_at" => "2026-06-17T12:00:00Z",
+      "targets" => [runner.external_id],
+      "cert" => %{
+        "ca_id" => "ca-acme",
+        "key_id" => "op-1",
+        "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+        "valid_from" => "2026-06-25T00:00:00Z",
+        "valid_until" => "2026-06-26T00:00:00Z",
+        "scope" => %{"group" => "edge", "labels" => %{"env" => "prod"}},
+        "serial" => "01J0CERT0000000000000000A",
+        "sig" => "cafebabe"
+      }
+    }
   end
 
   defp make_api_key!(account, user, opts \\ []) do
@@ -145,6 +165,7 @@ defmodule EmisarWeb.MCPControllerTest do
 
       by_name = Map.new(runners, &{&1["name"], &1})
 
+      assert by_name["db-prod-01"]["id"] == runner_a.external_id
       assert by_name["db-prod-01"]["hostname"] == "10.0.5.12"
       assert by_name["db-prod-01"]["status"] == "connected"
 
@@ -187,13 +208,16 @@ defmodule EmisarWeb.MCPControllerTest do
       assert shared["inputSchema"]["properties"]["runners"]["type"] == "array"
 
       assert shared["inputSchema"]["properties"]["runners"]["items"]["enum"] ==
-               ["db-prod-01", "db-prod-02"]
+               [runner_a.external_id, runner_b.external_id]
 
       assert shared["inputSchema"]["properties"]["runners"]["maxItems"] == 2
       assert "runners" in shared["inputSchema"]["required"]
 
       solo = tools_by_name["solo.action"]
-      assert solo["inputSchema"]["properties"]["runners"]["items"]["enum"] == ["db-prod-01"]
+
+      assert solo["inputSchema"]["properties"]["runners"]["items"]["enum"] ==
+               [runner_a.external_id]
+
       assert solo["inputSchema"]["properties"]["runners"]["maxItems"] == 1
       # Single advertiser is still REQUIRED — no auto-pick, no default.
       refute Map.has_key?(solo["inputSchema"]["properties"]["runners"], "default")
@@ -432,15 +456,17 @@ defmodule EmisarWeb.MCPControllerTest do
         |> json_response(400)
 
       # Even with exactly one advertiser, emisar never auto-targets — the
-      # caller must name it. The lone candidate is offered so they can retry.
+      # caller must identify it. The stable id is offered so a signed retry is
+      # bound to the same durable runner even if its display name changes.
       assert body["error"] == "runner_required"
-      assert body["candidates"] == [runner.name]
+      assert body["candidates"] == [runner.external_id]
     end
 
     test "400 when multiple runners advertise + `runners` omitted", %{
       conn: conn,
       account: account,
-      user: user
+      user: user,
+      runner: runner
     } do
       other = make_runner!(account, name: "db-prod-02")
       advertise_action!(other, action_id: "linux.uptime")
@@ -454,7 +480,9 @@ defmodule EmisarWeb.MCPControllerTest do
         |> json_response(400)
 
       assert body["error"] == "runner_required"
-      assert Enum.sort(body["candidates"]) == ["db-prod-01", "db-prod-02"]
+
+      assert Enum.sort(body["candidates"]) ==
+               Enum.sort([other.external_id, runner.external_id])
     end
 
     test "400 when too many runners are requested in one call", %{
@@ -1217,27 +1245,13 @@ defmodule EmisarWeb.MCPControllerTest do
     } do
       raw = make_api_key!(account, user)
 
-      attestation = %{
-        "sig" => "deadbeef",
-        "nonce" => "n1",
-        "issued_at" => "2026-06-17T12:00:00Z",
-        "cert" => %{
-          "ca_id" => "ca-acme",
-          "key_id" => "op-1",
-          "public_key" => "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
-          "valid_from" => "2026-06-25T00:00:00Z",
-          "valid_until" => "2026-06-26T00:00:00Z",
-          "scope" => %{"group" => "edge", "labels" => %{"env" => "prod"}},
-          "serial" => "01J0CERT0000000000000000A",
-          "sig" => "cafebabe"
-        }
-      }
+      attestation = attestation_for(runner)
 
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
         |> post(~p"/api/mcp/tools/linux.touch", %{
-          "runners" => [runner.name],
+          "runners" => [runner.external_id],
           "reason" => "x",
           "wait" => "0",
           "path" => "/tmp/marker",
@@ -1256,6 +1270,62 @@ defmodule EmisarWeb.MCPControllerTest do
       assert run.attestation == attestation
       refute Map.has_key?(run.args, "attestation")
       assert run.args["path"] == "/tmp/marker"
+    end
+
+    test "an exact stable id wins over another runner's colliding display name", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      target_id = Ecto.UUID.generate()
+      target = make_runner!(account, name: "zz-exact-id", external_id: target_id)
+      display_collision = make_runner!(account, name: target_id)
+      advertise_action!(target, action_id: "linux.touch")
+      advertise_action!(display_collision, action_id: "linux.touch")
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.touch", %{
+          "runners" => [target_id],
+          "reason" => "verify stable target precedence",
+          "wait" => "0",
+          "path" => "/tmp/marker",
+          "attestation" => attestation_for(target)
+        })
+        |> json_response(202)
+
+      [entry] = body["runs"]
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      assert {:ok, run} = Emisar.Runs.fetch_run_by_id(run_id_of(entry), subject)
+      assert run.runner_id == target.id
+    end
+
+    test "rejects a malformed supplied attestation without creating a run", %{
+      conn: conn,
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.touch", %{
+          "runners" => [runner.external_id],
+          "reason" => "x",
+          "wait" => "0",
+          "path" => "/tmp/marker",
+          "attestation" => %{"sig" => "incomplete"}
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_attestation"
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      assert {:ok, [], _meta} = Emisar.Runs.list_runs(subject)
     end
   end
 

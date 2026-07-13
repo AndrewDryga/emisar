@@ -83,6 +83,7 @@ jobs:
         working-directory: mcp
         run: |
           set -euo pipefail
+          ../.github/scripts/check-attest-parity.sh
           files=$(gofmt -l -s .)
           test -z "$files" || { echo "::error::gofmt required for: $files"; exit 1; }
           go vet ./...

@@ -1,7 +1,10 @@
 package validation
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -71,6 +74,12 @@ func coerce(a actionspec.Arg, v any) (any, error) {
 		}
 		return n, nil
 	case actionspec.ArgNumber:
+		if number, ok := v.(json.Number); ok {
+			if _, valid := toFloat(number); !valid {
+				return nil, newError(a.Name, "type", "expected number")
+			}
+			return number, nil
+		}
 		n, ok := toFloat(v)
 		if !ok {
 			return nil, newError(a.Name, "type", "expected number")
@@ -454,11 +463,15 @@ func toInt(v any) (int64, bool) {
 	case int64:
 		return n, true
 	case uint:
-		return int64(n), true
+		if uint64(n) <= math.MaxInt64 {
+			return int64(n), true
+		}
 	case uint32:
 		return int64(n), true
 	case uint64:
-		return int64(n), true
+		if n <= math.MaxInt64 {
+			return int64(n), true
+		}
 	case float64:
 		if float64(int64(n)) == n {
 			return int64(n), true
@@ -472,6 +485,8 @@ func toInt(v any) (int64, bool) {
 		if err == nil {
 			return i, true
 		}
+	case json.Number:
+		return exactJSONInteger(n.String())
 	}
 	return 0, false
 }
@@ -488,6 +503,11 @@ func toFloat(v any) (float64, bool) {
 		return float64(n), true
 	case float64:
 		return n, true
+	case json.Number:
+		f, err := n.Float64()
+		if err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
+			return f, true
+		}
 	case string:
 		f, err := strconv.ParseFloat(n, 64)
 		if err == nil {
@@ -495,6 +515,58 @@ func toFloat(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// exactJSONInteger accepts every JSON spelling whose mathematical value is an
+// int64 (including 1e3 and 1000.0) without evaluating it through float64.
+func exactJSONInteger(raw string) (int64, bool) {
+	sign := ""
+	if strings.HasPrefix(raw, "-") {
+		sign = "-"
+		raw = raw[1:]
+	}
+	mantissa, exponentText, hasExponent := strings.Cut(raw, "e")
+	if !hasExponent {
+		mantissa, exponentText, hasExponent = strings.Cut(raw, "E")
+	}
+	exponent := new(big.Int)
+	if hasExponent {
+		exponentText = strings.TrimPrefix(exponentText, "+")
+		if _, ok := exponent.SetString(exponentText, 10); !ok {
+			return 0, false
+		}
+	}
+	integer, fraction, _ := strings.Cut(mantissa, ".")
+	digits := strings.TrimLeft(integer+fraction, "0")
+	if digits == "" {
+		return 0, true
+	}
+
+	scale := new(big.Int).Sub(exponent, big.NewInt(int64(len(fraction))))
+	if scale.Sign() < 0 {
+		places := new(big.Int).Neg(scale)
+		if !places.IsInt64() || places.Int64() > int64(len(digits)) {
+			return 0, false
+		}
+		count := int(places.Int64())
+		if count > 0 && strings.Trim(digits[len(digits)-count:], "0") != "" {
+			return 0, false
+		}
+		digits = digits[:len(digits)-count]
+	} else if scale.Sign() > 0 {
+		// Any non-zero coefficient with more than 19 decimal digits cannot fit
+		// int64. Check that bound before expanding an attacker-sized exponent.
+		if !scale.IsInt64() || scale.Int64() > int64(19-len(digits)) {
+			return 0, false
+		}
+		digits += strings.Repeat("0", int(scale.Int64()))
+	}
+
+	value, ok := new(big.Int).SetString(sign+digits, 10)
+	if !ok || !value.IsInt64() {
+		return 0, false
+	}
+	return value.Int64(), true
 }
 
 func toAnyArray(v any) ([]any, error) {
