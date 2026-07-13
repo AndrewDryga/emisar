@@ -95,28 +95,20 @@ maintenance and is not part of ordinary deployment.
 expecting them to resolve publicly. Cloud DNS supplies the apex NS and SOA
 records itself.
 
-DNSSEC signing is enabled in Cloud DNS. The registrar DS is deliberately a
-manual final step because publishing a DS while recursive resolvers still use a
-different delegation makes the domain fail validation. Before publishing it:
+DNSSEC is complete: Cloud DNS signs the zone and the registrar publishes the
+current key-signing DS, so validating resolvers authenticate the chain from
+`.dev` to `emisar.dev`. Verify the live chain with:
 
 ```sh
-dig +trace emisar.dev NS
-dig @1.1.1.1 emisar.dev NS +short
-dig @8.8.8.8 emisar.dev NS +short
-dig @9.9.9.9 emisar.dev NS +short
-terraform output -raw dnssec_ds_record
-```
-
-All traces and public resolvers must return the four Cloud DNS nameservers. Add
-the exact DS output at the registrar, then verify:
-
-```sh
-dig +dnssec emisar.dev A
+dig +short DS emisar.dev
 dig @1.1.1.1 +dnssec emisar.dev A
+dig @8.8.8.8 +dnssec emisar.dev A
 ```
 
-The response must contain the `ad` flag. A DNSSEC key rotation follows the same
-parent/child ordering discipline; never replace the parent DS speculatively.
+The DS must match `terraform output -raw dnssec_ds_record`; both resolver
+responses must contain the `ad` flag. A future DNSSEC key rotation follows the
+same parent/child ordering discipline: publish the replacement DS only after the
+new child key is active, and remove the old DS only after resolver convergence.
 
 ## Pack registry
 

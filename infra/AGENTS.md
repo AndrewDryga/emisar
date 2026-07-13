@@ -2,11 +2,10 @@
 
 Terraform for running emisar on **Google Cloud** to a **SOC 2 Type II** posture
 (compute + Cloud SQL + LB + DNS + secrets + monitoring), adapted from
-`../onlytty/infra`. **LIVE — this is production.** Cloud DNS is authoritative;
-DNSSEC DS publication remains gated on recursive-resolver convergence. Read
-`README.md` for the shape and
-`.agent/COMPLIANCE.md` (internal, git-ignored) for the control mapping; this file
-is the rules.
+`../onlytty/infra`. **LIVE — this is production.** Cloud DNS is authoritative
+and the registrar DS completes a validating DNSSEC chain. Read `README.md` for
+the shape and `.agent/COMPLIANCE.md` (internal, git-ignored) for the control
+mapping; this file is the rules.
 
 ## Gate
 
@@ -44,9 +43,10 @@ the separate, creds-gated deploy step.
    workspace (org `Dryga` / project `emisar`) is the only entry point, and access
    to it is production access. A new secret = a sensitive variable + an
    `app_secrets` entry + (if optional) an `optional_secret_values` entry.
-5. **The zone is authoritative.** Every durable public record belongs in `dns.tf`.
-   **DNSSEC DS is published LAST**, after NS delegation resolves everywhere; a DS
-   ahead of working delegation takes the domain offline.
+5. **The zone is authoritative and DNSSEC-validating.** Every durable public
+   record belongs in `dns.tf`. Keep the registrar DS aligned with
+   `dnssec_ds_record`; a future key rotation must activate the child key before
+   adding its parent DS and retain the old DS until resolver convergence.
 6. **Clustering is flag-gated.** `Emisar.Cluster.GCE` activates only when
    `EMISAR_CLUSTER_PROJECT` is set. Local and single-node releases leave the
    topology empty.

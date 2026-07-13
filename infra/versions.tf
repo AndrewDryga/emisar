@@ -3,8 +3,8 @@
 # Container-Optimized OS instances running the portal image from public GHCR,
 # backed by private-IP Cloud SQL Postgres, with Secret Manager, least-priv IAM,
 # audit logging, monitoring, and the authoritative Cloud DNS zone (DNSSEC).
-# Adapted from ../onlytty/infra. LIVE production infrastructure; DNSSEC DS
-# publication remains a registrar action gated on resolver convergence.
+# Adapted from ../onlytty/infra. LIVE production infrastructure; the registrar
+# DS is published and the DNSSEC chain validates publicly.
 
 terraform {
   # Keep exact parity with /.tool-versions and the HCP workspace. A broader

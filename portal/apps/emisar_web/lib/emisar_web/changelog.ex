@@ -11,6 +11,14 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-13],
+      slug: "delivery-trust-and-mcp-discovery",
+      title: "Stronger delivery controls and clearer trust evidence",
+      tag: "v0.24.1",
+      summary:
+        "Delivery now rejects stale or incomplete plans, authenticates installer release metadata, narrows production credentials, and keeps published images and packs tied to tested bytes. The Trust Center leads with current controls and a live DNSSEC chain, while the official MCP Registry description explains emisar in plain language for people who discover it outside the website."
+    },
+    %{
       date: ~D[2026-07-12],
       slug: "release-integrity-and-pack-registry",
       title: "Hardened hosting, safer releases, and a public status page",

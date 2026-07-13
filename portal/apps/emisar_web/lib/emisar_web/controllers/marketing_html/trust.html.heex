@@ -2,13 +2,12 @@
   Trust & compliance — the procurement-facing "trust center": one page a
   security or procurement reviewer can forward. Consolidates the controls
   already documented across /security, /privacy, and the docs into a
-  tick-the-boxes reference, plus an HONEST compliance, subprocessor, and
-  production-infrastructure and delivery posture.
+  reviewable reference for product controls, production infrastructure,
+  delivery, subprocessors, assurance, and commercial coverage.
 
-  Every claim here is verifiable in the product or those pages. Per the
-  resolved compliance-claims decision: SOC 2 is stated as a roadmap item (not
-  held), a DPA is offered, and the SLA targets + US data residency are
-  published. We assert no report or certification we don't hold.
+  Every claim here is verifiable in the product or those pages. The operating
+  controls lead; independent assurance is stated accurately in its own section.
+  We assert no report or certification we don't hold.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:trust} />
@@ -22,13 +21,13 @@
         scale={:display}
         class="mt-2 !text-4xl/[1.1] sm:!text-5xl/[1.1] md:!text-6xl/[1.1]"
       >
-        The controls are operating. The audit comes next.
+        Security controls you can verify.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-        emisar does not yet have a SOC 2 Type II report. We have built the hosted service around
-        the controls a serious review expects: private production infrastructure, least-privilege
-        access, durable audit, recovery controls, and a delivery path that separates validation from
-        deployment. This page states what is operating today, what we can evidence, and what remains.
+        emisar sits between AI assistants and production systems. We keep that authority narrow:
+        runners connect out, agents get declared actions instead of shell access, risky changes stop
+        for a person, and every decision leaves evidence. This page covers the controls operating
+        today and the documents available for review.
       </p>
       <div class="mt-8 flex flex-wrap gap-4">
         <.marketing_button href={EmisarWeb.MailTo.sales()} icon="hero-arrow-right">
@@ -122,7 +121,12 @@
             States</strong>. Application instances have no public IP addresses; production traffic
           reaches them through a Google Cloud HTTPS load balancer with managed certificates and a
           TLS 1.2 minimum. The Cloud SQL database is private-addressed, requires TLS, and has
-          automated backups, point-in-time recovery, and deletion protection.
+          automated backups, point-in-time recovery, and deletion protection. The public DNS zone is
+          signed with DNSSEC, with a validating chain of trust from the signed
+          <code class="font-mono
+            text-zinc-300">.dev</code>
+          parent zone to <code class="font-mono
+            text-zinc-300">emisar.dev</code>.
         </p>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Secrets live in Secret Manager and workload identities receive access only to the secrets
@@ -199,23 +203,21 @@
       </div>
 
       <div>
-        <h2 class="text-2xl font-bold text-white">Certifications & compliance</h2>
+        <h2 class="text-2xl font-bold text-white">Security review &amp; procurement</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          emisar <strong class="text-zinc-200">does not yet have a SOC 2 Type II report or ISO
-            27001 certification</strong>. Preparing for a SOC 2 Type II audit is on our roadmap;
-          the independent audit and report remain ahead. The operating controls in place today
-          include least-privilege access, enforced MFA, change separation, vulnerability scanning,
-          monitored production infrastructure, recovery controls, a searchable audit with a
-          hash-chained host journal, encryption in transit and at rest, and documented retention and
-          deletion. We offer a
+          <strong class="text-zinc-200">Security review material is available now.</strong>
+          We complete security questionnaires and can provide supporting material for access
+          control, change management, vulnerability management, monitoring, backup and recovery,
+          retention, and deletion. SOC 2 Type II audit preparation is underway; the independent
+          examination is not complete. We also offer a
           <.link
             navigate={~p"/dpa"}
             class="font-medium text-brand-300 hover:text-brand-200"
           >
             Data Processing Addendum you can sign
           </.link>
-          (email support@emisar.dev for an executable copy), and we'll complete a security
-          questionnaire on request. Production data stays in the United States.
+          (email support@emisar.dev for an executable copy). Production data stays in the United
+          States.
         </p>
       </div>
 
@@ -290,8 +292,8 @@
   </section>
 
   <.marketing_cta
-    headline="Bring your security team's questions."
-    subcopy="A walkthrough on your own infrastructure, with straight answers on the trust model and your compliance requirements."
+    headline="Review emisar with your security team."
+    subcopy="We'll walk through the trust boundary, production controls, available evidence, DPA, and the requirements specific to your environment."
     secondary_label="Email security@emisar.dev"
     secondary_path={EmisarWeb.MailTo.security()}
   />

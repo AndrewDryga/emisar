@@ -561,16 +561,18 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "sha256sum -c SHA256SUMS"
     end
 
-    test "the /trust page states the current compliance and insurance limits precisely", %{
+    test "the /trust page states assurance and insurance limits precisely", %{
       conn: conn
     } do
       html = conn |> get(~p"/trust") |> html_response(200)
 
-      assert html =~ "does not yet have a SOC 2 Type II report"
-      assert html =~ "the independent audit and report remain ahead"
+      assert html =~ "Security controls you can verify"
+      assert html =~ "Security review material is available now"
+      assert html =~ "SOC 2 Type II audit preparation is underway"
+      assert html =~ "examination is not complete"
       assert html =~ "certificate of insurance is available on request"
       assert html =~ "Team and Enterprise plans"
-      refute html =~ "SOC 2 certified"
+      refute html =~ "emisar is SOC 2 certified"
     end
 
     test "the /trust page documents production and delivery controls", %{conn: conn} do
@@ -578,6 +580,8 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "Production infrastructure"
       assert html =~ "Application instances have no public IP addresses"
+      assert html =~ "validating chain of trust"
+      assert html =~ "emisar.dev"
       assert html =~ "point-in-time recovery"
       assert html =~ "Change control &amp; software delivery"
       assert html =~ "Pull requests run with read-only permissions"
@@ -648,10 +652,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "More reliable background work and a cleaner runner setup"
       assert html =~ "Annual billing, Team-owned SSO, and safer input handling"
       assert html =~ "Hardened hosting, safer releases, and a public status page"
+      assert html =~ "Stronger delivery controls and clearer trust evidence"
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"
       assert html =~ "v0.24.0"
+      assert html =~ "v0.24.1"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

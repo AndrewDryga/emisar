@@ -172,11 +172,13 @@ submission time, see [§9](#9-tool-metadata-inventory).
   `/privacy`.
 - **Data residency:** production data stays in the United States.
 - **Encryption:** in transit (TLS) and at rest; credentials hashed at rest.
-- **Compliance posture (state it plainly):** emisar does **not yet** hold SOC 2 or
-  ISO 27001 (SOC 2 Type II is on the roadmap). In place today: least-privilege
-  access, enforced MFA, a searchable audit with a hash-chained host journal, a
-  signable DPA, and a security questionnaire on request. Insurance:
-  professional-indemnity USD $1M, general-liability USD $2M.
+- **Compliance posture:** SOC 2 Type II audit preparation is underway; the
+  independent examination is not complete and no report has been issued. Lead
+  with what buyers can inspect today: least-privilege access, enforced MFA,
+  hardened delivery, monitored private infrastructure, recovery controls, a
+  searchable audit with a hash-chained host journal, a signable DPA, and a
+  security questionnaire on request. Insurance: professional-indemnity USD $1M,
+  general-liability USD $2M, available for hosted use on Team and Enterprise.
 - **Deletion:** account data deletion on request to `support@emisar.dev`; see
   `/privacy`.
 
@@ -188,22 +190,20 @@ Approved strings. Trim to each platform's length limit rather than rewording off
 the facts above.
 
 - **Name:** `emisar`
-- **Tagline (≤ 60 chars):** `Governed MCP for real infrastructure actions`
+- **Tagline (≤ 60 chars):** `Controlled server access for AI — without SSH`
 - **Short description (≤ 100 chars, fits the MCP Registry limit):**
-  `One governed MCP endpoint for infrastructure actions — gated by policy, approval, and audit.`
+  `Let AI operate servers without SSH. Choose actions, approve risky changes, and audit every step.`
 - **Category / tags:** `DevOps`, `Infrastructure`, `Security`, `Automation`,
   `Approvals & audit`
 - **Long description (Claude / ChatGPT / Cursor):**
 
-  > emisar is a control plane that lets an LLM run real infrastructure actions on
-  > your fleet — safely. Instead of handing an agent raw SSH, you point it at one
-  > MCP endpoint that exposes an approved catalog of actions. Every call is checked
-  > against your policy (read-only actions run immediately; risky ones pause for a
-  > human to approve; anything outside the catalog is denied by default), attributed
-  > to the accountable operator, and written to a tamper-evident audit log. The tool
-  > list is per-account and reflects exactly what your policy and runner scope allow
-  > — nothing more. Connect over OAuth (paste one URL, no keys to manage) or a
-  > static key for local clients.
+  > emisar lets AI assistants inspect and operate servers without SSH or shell
+  > access. Your team chooses the allowed actions. Read-only checks can run
+  > immediately; risky changes pause for a person; anything else is denied. Every
+  > request is tied to an operator and recorded in the cloud audit and a
+  > tamper-evident journal on the host. Runners connect out, so you do not open an
+  > inbound port. Connect remote MCP clients over OAuth, or use a scoped key for
+  > local clients.
 
 - **What the connector can do (consent-screen summary):** run the infrastructure
   actions your policy already permits, attributed to you; risky actions still wait
@@ -299,21 +299,19 @@ Field constraints from the live schema:
 - `remotes[]`: `type` ∈ {`streamable-http`, `sse`} + `url` (both required); optional `headers`.
 - `icons[]`: `src` required; optional `mimeType`, `sizes`, `theme`.
 
-**Namespace + ownership.** Two options — pick one at publish time:
+**Namespace + ownership.** The live namespace is `dev.emisar/emisar`, verified
+through the public `https://emisar.dev/.well-known/mcp-registry-auth` proof.
+Published version metadata is immutable; any description or other metadata
+change requires a new unique product version.
 
-1. `io.github.andrewdryga/emisar` — verified by GitHub OAuth as the repo owner.
-   Simplest; recommended.
-2. `dev.emisar/emisar` — a custom-domain namespace verified by a DNS TXT record on
-   `emisar.dev`. Use only if we want the branded namespace; adds a DNS step.
-
-**Proposed `server.json`** (fill `version` to the current `mcp-v*` release tag):
+**Proposed `server.json`** (fill `version` to the current product `v*` release):
 
 ```json
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.andrewdryga/emisar",
+  "name": "dev.emisar/emisar",
   "title": "emisar",
-  "description": "Governed MCP for real infrastructure actions — gated, approved, audited.",
+  "description": "Let AI operate servers without SSH. Choose actions, approve risky changes, and audit every step.",
   "version": "0.0.0",
   "websiteUrl": "https://emisar.dev",
   "repository": {
@@ -331,15 +329,21 @@ Field constraints from the live schema:
 
 **Field-by-field checklist**
 
-- [ ] `description` ≤ 100 chars (the string above is 72).
+- [ ] `description` ≤ 100 chars (the string above is 96).
 - [ ] `title` ≤ 100 chars.
-- [ ] `version` set to the current release (see the latest `mcp-v*` tag; the registry rejects a re-publish of an existing version).
+- [ ] `version` set to the current product release (the registry rejects a
+  re-publish of an existing version).
 - [ ] `remotes[0].url` = `https://emisar.dev/api/mcp/rpc`, type `streamable-http`.
 - [ ] Icon URL returns `200` and is square PNG (512×512 asset confirmed present).
-- [ ] Namespace verified (GitHub OAuth for `io.github.andrewdryga`, or DNS TXT for `dev.emisar`).
+- [ ] Namespace verified through the public
+  `https://emisar.dev/.well-known/mcp-registry-auth` proof.
 - [ ] Tool-name check: the registry validates `server.json`, not tool names, so the dotted action-tool names are fine here.
 
-**Human-owned:** run `mcp-publisher login` (GitHub) → `mcp-publisher publish`; confirm the record appears in `GET /v0/servers`.
+**Publication:** the signed product tag triggers
+`mcp-registry-release.yml`. After the `mcp-registry-publication` environment is
+approved, the workflow verifies the live domain proof, authenticates with the
+publisher seed, and publishes the tag's `server.json`. Confirm the version in
+`GET /v0/servers`.
 
 ---
 

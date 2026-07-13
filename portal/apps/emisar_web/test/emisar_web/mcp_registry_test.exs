@@ -23,7 +23,7 @@ defmodule EmisarWeb.MCPRegistryTest do
     assert descriptor["title"] == "emisar"
 
     assert descriptor["description"] ==
-             "Governed MCP for real infrastructure actions — gated, approved, audited."
+             "Let AI operate servers without SSH. Choose actions, approve risky changes, and audit every step."
 
     assert String.length(descriptor["description"]) <= 100
 

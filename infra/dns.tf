@@ -19,10 +19,8 @@ resource "google_dns_managed_zone" "emisar" {
   # DNSSEC with modern elliptic-curve signing (ECDSA P-256 / SHA-256): smaller,
   # faster-to-validate signatures than the RSA default, and Cloud DNS rotates the
   # keys for us. NSEC3 answers denial-of-existence without exposing the zone to
-  # trivial walking. We publish only the resulting DS at the registrar (see the
-  # `dnssec_ds_record` output) — do that step LAST, after the nameserver
-  # delegation is confirmed resolving, or a DS pointing at a zone resolvers can't
-  # yet reach takes the domain down.
+  # trivial walking. The registrar publishes the resulting key-signing DS (see
+  # `dnssec_ds_record`), completing the live chain of trust from .dev.
   dnssec_config {
     state         = "on"
     non_existence = "nsec3"
