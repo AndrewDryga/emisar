@@ -447,6 +447,7 @@ defmodule EmisarWeb.MCP.ContentBlocks do
     stdout = string_field(run, ["stdout"])
     stderr = string_field(run, ["stderr"])
     err_msg = string_field(run, ["error_message"])
+    reason = string_field(run, ["reason"])
     {exit_code, has_exit} = numeric_field(run, "exit_code")
     {duration, has_dur} = numeric_field(run, "duration_ms")
 
@@ -471,6 +472,9 @@ defmodule EmisarWeb.MCP.ContentBlocks do
         if(headerline != "", do: text_block(headerline)),
         if(output_truncated?(run),
           do: text_block("Output preview is truncated; do not treat it as complete evidence.")
+        ),
+        if(status == "cancelled" and reason != "",
+          do: text_block("Cancellation reason: " <> reason)
         ),
         if(stdout != "", do: text_block(stdout)),
         if(stderr != "", do: text_block("stderr:\n" <> stderr)),

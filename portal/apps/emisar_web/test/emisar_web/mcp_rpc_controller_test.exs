@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   use EmisarWeb.ConnCase, async: true
   import Ecto.Query
-  alias Emisar.{Accounts, ApiKeys, Crypto, Policies, Repo, Runners, Runs, Users}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Crypto, Policies, Repo, Runners, Runs, Users}
   alias Emisar.Accounts.Account
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Catalog.RunnerAction
@@ -4138,16 +4138,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
-  describe "inline wait does not block on a pending_approval run" do
-    test "a require_approval dispatch with a long wait returns immediately with the tip",
-         %{conn: conn, account: account, user: user} do
-      # maybe_poll_to_terminal only polls runs that came back `:running`; a
-      # `:pending_approval` run is never inline-waited (a human gate could take
-      # minutes). So even a full-window `wait` returns at once with the wait_for_run
-      # tip — proven here by the call completing well under the wait it requested.
-      runner = make_runner!(account, name: "host-1")
-      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
-      raw = make_api_key!(account, user)
+  describe "approval-gated MCP runs" do
+    setup %{account: account, user: user} do
+      make_runner!(account, name: "host-1")
+      |> advertise_action!(action_id: "linux.uptime", risk: "low")
+
       subject = subject_for(account, user)
 
       {:ok, _} =
@@ -4165,6 +4160,15 @@ defmodule EmisarWeb.MCPRpcControllerTest do
           subject
         )
 
+      {:ok, raw: make_api_key!(account, user), subject: subject}
+    end
+
+    test "a require_approval dispatch with a long wait returns immediately with the tip",
+         %{conn: conn, raw: raw} do
+      # maybe_poll_to_terminal only polls runs that came back `:running`; a
+      # `:pending_approval` run is never inline-waited (a human gate could take
+      # minutes). So even a full-window `wait` returns at once with the wait_for_run
+      # tip — proven here by the call completing well under the wait it requested.
       {elapsed_us, body} =
         :timer.tc(fn ->
           conn
@@ -4183,6 +4187,93 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "wait_for_run"
       # Returned far under the requested 60s window — it never blocked on the gate.
       assert elapsed_us < 5_000_000
+    end
+
+    test "wait_for_run returns the operator's exact approval denial reason",
+         %{conn: conn, raw: raw, subject: subject} do
+      dispatch =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "linux.uptime",
+          "arguments" => %{
+            "runner" => "host-1",
+            "reason" => "check availability",
+            "wait" => "0"
+          }
+        })
+        |> json_response(200)
+
+      assert dispatch["result"]["isError"] == false
+      assert content_text(dispatch) =~ "pending approval"
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      {:ok, request} = Approvals.fetch_approval_request_by_run_id(run.id, subject)
+      denial = "maintenance freeze until 22:00 UTC"
+
+      assert {:ok, {_request, cancelled}} = Approvals.deny_request(request, subject, denial)
+      assert cancelled.status == :cancelled
+      assert cancelled.reason_text == "approval denied: #{denial}"
+
+      result =
+        conn
+        |> recycle()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "wait_for_run",
+          "arguments" => %{"run_id" => run.id, "timeout" => ""}
+        })
+        |> json_response(200)
+
+      assert result["result"]["isError"] == true
+      assert content_text(result) =~ "Cancellation reason: approval denied: #{denial}"
+
+      default_dispatch =
+        conn
+        |> recycle()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc(
+          "tools/call",
+          %{
+            "name" => "linux.uptime",
+            "arguments" => %{
+              "runner" => "host-1",
+              "reason" => "check availability again",
+              "wait" => "0"
+            }
+          },
+          "default-denial-dispatch"
+        )
+        |> json_response(200)
+
+      assert default_dispatch["result"]["isError"] == false
+
+      {:ok, runs, _meta} = Runs.list_runs(subject)
+      default_run = Enum.find(runs, &(&1.status == :pending_approval))
+      assert default_run
+      {:ok, default_request} = Approvals.fetch_approval_request_by_run_id(default_run.id, subject)
+
+      assert {:ok, {_request, default_cancelled}} =
+               Approvals.deny_request(default_request, subject)
+
+      assert default_cancelled.reason_text == "approval denied"
+
+      default_result =
+        conn
+        |> recycle()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc(
+          "tools/call",
+          %{
+            "name" => "wait_for_run",
+            "arguments" => %{"run_id" => default_run.id, "timeout" => ""}
+          },
+          "default-denial-wait"
+        )
+        |> json_response(200)
+
+      assert default_result["result"]["isError"] == true
+      assert content_text(default_result) =~ "Cancellation reason: approval denied"
     end
   end
 

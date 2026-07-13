@@ -96,6 +96,38 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
 
       assert is_error
     end
+
+    test "a cancelled run surfaces the exact human approval denial reason" do
+      reason = "approval denied: maintenance freeze until 22:00 UTC"
+
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{id: "run-denied", status: "cancelled", reason: reason}
+        ])
+
+      assert text(blocks) =~ "Cancellation reason: #{reason}"
+      assert is_error
+    end
+
+    test "a cancelled run surfaces the default approval denial reason" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{id: "run-denied-default", status: "cancelled", reason: "approval denied"}
+        ])
+
+      assert text(blocks) =~ "Cancellation reason: approval denied"
+      assert is_error
+    end
+
+    test "a successful run does not expose its dispatch justification as a cancellation reason" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{id: "run-ok", status: "success", exit_code: 0, reason: "routine maintenance"}
+        ])
+
+      refute text(blocks) =~ "routine maintenance"
+      refute is_error
+    end
   end
 
   describe "from_runs/1 — approval gate" do
