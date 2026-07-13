@@ -2111,6 +2111,79 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert Task.await(task) == :cancelled
     end
 
+    test "a rotation successor cancels a predecessor request through the MCP endpoint", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      encoded_hash = Base.encode16(hash, case: :lower)
+
+      {:ok, raw, source_key} =
+        ApiKeys.create_key(
+          %{name: "cancel-rotation-#{unique()}", kind: :mcp, expires_at: soon},
+          subject
+        )
+
+      initialize_conn =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/9.9 (client=test; host=h; os=darwin)")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
+        |> rpc("initialize")
+
+      assert %{"result" => _} = json_response(initialize_conn, 200)
+
+      request_conn =
+        conn
+        |> assign(:api_key, source_key)
+        |> assign(:current_subject, subject)
+        |> put_req_header("mcp-session-id", "rotated-cancel-session")
+        |> put_req_header("x-emisar-mcp-request-token", "predecessor-request")
+
+      parent = self()
+
+      task =
+        Task.async(fn ->
+          Cancellation.track(
+            request_conn,
+            "tools/call",
+            "wait-before-rotation",
+            fn _tracked_conn ->
+              send(parent, :predecessor_tracking)
+
+              receive do
+                {:mcp_request_cancelled, _topic} = cancellation ->
+                  send(self(), cancellation)
+                  :finished
+              end
+            end
+          )
+        end)
+
+      assert_receive :predecessor_tracking
+
+      body = %{
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: %{requestId: "wait-before-rotation"}
+      }
+
+      cancel_conn =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> successor_raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-session-id", "rotated-cancel-session")
+        |> put_req_header("x-emisar-mcp-cancel-token", "predecessor-request")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+
+      assert response(cancel_conn, 202) == ""
+      assert Task.await(task) == :cancelled
+    end
+
     test "a cancellation notification receives 202 and no JSON-RPC body", %{
       conn: conn,
       raw: raw

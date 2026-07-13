@@ -2,10 +2,11 @@ defmodule EmisarWeb.MCP.Cancellation do
   @moduledoc """
   Request-scoped MCP cancellation over the existing distributed PubSub.
 
-  A cancellation target is bound to the authenticated account and API key, the
-  MCP session, and either the bridge's generation token or the request's typed
-  JSON-RPC id. This prevents one key or session from cancelling another and
-  prevents a late bridge notification from cancelling a reused id.
+  A cancellation target is bound to the authenticated account and request API
+  key, the MCP session, and either the bridge's generation token or the
+  request's typed JSON-RPC id. A rotation successor may also target its
+  immediate predecessor so a peer-promoted bridge can cancel work admitted
+  before rotation. No broader lineage is accepted.
   """
 
   import Plug.Conn, only: [get_req_header: 2, put_private: 3]
@@ -48,13 +49,24 @@ defmodule EmisarWeb.MCP.Cancellation do
   @doc "Broadcast a best-effort cancellation for a notification's target."
   @spec cancel(Plug.Conn.t(), map()) :: :ok
   def cancel(conn, params) do
-    case cancellation_topic(conn, params) do
-      nil ->
-        :ok
+    conn
+    |> cancellation_topics(params)
+    |> Enum.each(fn topic ->
+      :ok = CancellationRegistry.record(topic)
+      :ok = PubSub.broadcast(topic, {:mcp_request_cancelled, topic})
+    end)
 
-      topic ->
-        :ok = CancellationRegistry.record(topic)
-        PubSub.broadcast(topic, {:mcp_request_cancelled, topic})
+    :ok
+  end
+
+  defp request_topic(_conn, "initialize", _request_id), do: nil
+
+  defp request_topic(conn, _method, request_id) do
+    token = bounded_header(conn, @request_token_header) || typed_request_id(request_id)
+
+    case conn.assigns[:api_key] do
+      %{id: api_key_id} -> scoped_topic(conn, api_key_id, token)
+      _ -> nil
     end
   end
 
@@ -62,23 +74,32 @@ defmodule EmisarWeb.MCP.Cancellation do
   @spec topic(Plug.Conn.t()) :: String.t() | nil
   def topic(conn), do: Map.get(conn.private, @topic_private)
 
-  defp request_topic(_conn, "initialize", _request_id), do: nil
-
-  defp request_topic(conn, _method, request_id) do
-    token = bounded_header(conn, @request_token_header) || typed_request_id(request_id)
-    scoped_topic(conn, token)
-  end
-
-  defp cancellation_topic(conn, params) do
+  defp cancellation_topics(conn, params) do
     token = bounded_header(conn, @cancel_token_header) || typed_request_id(params["requestId"])
-    scoped_topic(conn, token)
+
+    case conn.assigns[:api_key] do
+      %{id: api_key_id, replaces_id: replaces_id} ->
+        [api_key_id, replaces_id]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+        |> Enum.map(&scoped_topic(conn, &1, token))
+        |> Enum.reject(&is_nil/1)
+
+      %{id: api_key_id} ->
+        case scoped_topic(conn, api_key_id, token) do
+          nil -> []
+          topic -> [topic]
+        end
+
+      _ ->
+        []
+    end
   end
 
-  defp scoped_topic(_conn, nil), do: nil
+  defp scoped_topic(_conn, _api_key_id, nil), do: nil
 
-  defp scoped_topic(conn, token) do
-    with %{id: api_key_id} <- conn.assigns[:api_key],
-         %{account: %{id: account_id}} <- conn.assigns[:current_subject],
+  defp scoped_topic(conn, api_key_id, token) do
+    with %{account: %{id: account_id}} <- conn.assigns[:current_subject],
          session when is_binary(session) <- RequestContext.mcp_session_id(conn) do
       digest =
         [to_string(account_id), to_string(api_key_id), session, token]

@@ -146,7 +146,9 @@ func TestParseEndpoint(t *testing.T) {
 	}{
 		{"https://emisar.dev", false, "https://emisar.dev"},
 		{"https://emisar.dev/", false, "https://emisar.dev"},
+		{"HTTPS://EMISAR.DEV:443", false, "https://emisar.dev"},
 		{"HTTPS://example.com:8443", false, "https://example.com:8443"},
+		{"http://LOCALHOST:80", false, "http://localhost"},
 		{"http://localhost:4000/", false, "http://localhost:4000"},
 		{"http://127.0.0.1:4000", false, "http://127.0.0.1:4000"},
 		{"http://[::1]:4000", false, "http://[::1]:4000"},
@@ -887,9 +889,8 @@ func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	}
 }
 
-// an OAuth `emo-*` bearer is carried identically to any other key:
-// the bridge does no token-type logic, it just attaches `Authorization: Bearer
-// <key>` verbatim.
+// An OAuth `emo-*` bearer bypasses local API-key rotation state but is carried
+// by the transport identically: `Authorization: Bearer <token>` verbatim.
 func TestForward_OAuthBearerCarriedVerbatim(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1171,7 +1172,7 @@ func TestServe_CancellationStopsExactRequestAndStaysSilent(t *testing.T) {
 	}
 }
 
-func TestServe_CancellationUsesTargetCredentialAcrossRotation(t *testing.T) {
+func TestServe_CancellationRefreshesPeerPromotedCredential(t *testing.T) {
 	targetStarted := make(chan string, 1)
 	targetCancelled := make(chan struct{}, 1)
 	cancelForwarded := make(chan string, 1)
@@ -1192,7 +1193,12 @@ func TestServe_CancellationUsesTargetCredentialAcrossRotation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := newTestBridge(srv)
+	current := testAPIKey(23)
+	configDir := t.TempDir()
+	storeA := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	b := newRotationTestBridge(storeB, current)
+	b.endpoint = srv.URL
 	originalAuthorization := "Bearer " + b.apiKey
 	reader, writer := io.Pipe()
 	done := make(chan error, 1)
@@ -1202,15 +1208,16 @@ func TestServe_CancellationUsesTargetCredentialAcrossRotation(t *testing.T) {
 	if authorization := <-targetStarted; authorization != originalAuthorization {
 		t.Fatalf("target authorization = %q, want %q", authorization, originalAuthorization)
 	}
-	b.stateMu.Lock()
-	b.apiKey = "rotated-key"
-	b.stateMu.Unlock()
+	peer := newRotationTestBridge(storeA, current)
+	_, acknowledgement := peer.rotationProposal("initialize")
+	peer.acknowledgeRotation(acknowledgement)
+	rotatedAuthorization := "Bearer " + peer.apiKey
 
 	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`+"\n")
 	_ = writer.Close()
 	<-targetCancelled
-	if authorization := <-cancelForwarded; authorization != originalAuthorization {
-		t.Errorf("cancellation authorization = %q, want target credential %q", authorization, originalAuthorization)
+	if authorization := <-cancelForwarded; authorization != rotatedAuthorization {
+		t.Errorf("cancellation authorization = %q, want peer-promoted credential %q", authorization, rotatedAuthorization)
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("serve: %v", err)

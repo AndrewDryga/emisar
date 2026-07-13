@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	credentialStateVersion  = 1
+	credentialStateVersion  = 2
 	maxCredentialStateBytes = 4 << 10
 	apiKeyPrefixLength      = 12
 	apiKeyRandomBytes       = 32
@@ -30,6 +30,7 @@ const (
 
 type credentialState struct {
 	Version         int    `json:"version"`
+	EndpointOrigin  string `json:"endpoint_origin"`
 	BootstrapPrefix string `json:"bootstrap_prefix"`
 	Current         string `json:"current"`
 	Pending         string `json:"pending,omitempty"`
@@ -50,6 +51,8 @@ type credentialFileOps struct {
 
 type credentialStore struct {
 	path            string
+	legacyPath      string
+	endpointOrigin  string
 	bootstrapPrefix string
 	random          io.Reader
 	ops             credentialFileOps
@@ -83,19 +86,24 @@ func defaultCredentialFileOps() credentialFileOps {
 	}
 }
 
-func newCredentialStore(bootstrapPrefix string) (*credentialStore, error) {
+func newCredentialStore(endpointOrigin, bootstrapPrefix string) (*credentialStore, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, err
 	}
-	return newCredentialStoreAt(configDir, bootstrapPrefix), nil
+	return newCredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix), nil
 }
 
-func newCredentialStoreAt(configDir, bootstrapPrefix string) *credentialStore {
-	digest := sha256.Sum256([]byte(bootstrapPrefix))
+func newCredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *credentialStore {
+	digest := sha256.Sum256([]byte(endpointOrigin + "\x00" + bootstrapPrefix))
+	legacyDigest := sha256.Sum256([]byte(bootstrapPrefix))
 	filename := hex.EncodeToString(digest[:]) + ".json"
+	legacyFilename := hex.EncodeToString(legacyDigest[:]) + ".json"
+	dir := filepath.Join(configDir, "emisar", "credentials")
 	return &credentialStore{
-		path:            filepath.Join(configDir, "emisar", "credentials", filename),
+		path:            filepath.Join(dir, filename),
+		legacyPath:      filepath.Join(dir, legacyFilename),
+		endpointOrigin:  endpointOrigin,
 		bootstrapPrefix: bootstrapPrefix,
 		random:          rand.Reader,
 		ops:             defaultCredentialFileOps(),
@@ -108,12 +116,20 @@ func (store *credentialStore) load(fallback string) (credentialState, error) {
 	}
 	data, err := store.ops.readFile(store.path)
 	if errors.Is(err, os.ErrNotExist) {
+		if _, legacyErr := os.Lstat(store.legacyPath); legacyErr == nil {
+			return credentialState{}, errors.New(
+				"unbound v1 credential state exists; set EMISAR_API_KEY to that file's current key, then remove the v1 file before retrying",
+			)
+		} else if !errors.Is(legacyErr, os.ErrNotExist) {
+			return credentialState{}, fmt.Errorf("inspect unbound v1 credential state: %w", legacyErr)
+		}
 		state := credentialState{
 			Version:         credentialStateVersion,
+			EndpointOrigin:  store.endpointOrigin,
 			BootstrapPrefix: store.bootstrapPrefix,
 			Current:         fallback,
 		}
-		return state, state.validate(store.bootstrapPrefix)
+		return state, state.validate(store.endpointOrigin, store.bootstrapPrefix)
 	}
 	if err != nil {
 		return credentialState{}, fmt.Errorf("read credential state: %w", err)
@@ -128,14 +144,14 @@ func (store *credentialStore) load(fallback string) (credentialState, error) {
 	if err := ensureJSONEOF(decoder); err != nil {
 		return credentialState{}, fmt.Errorf("decode credential state: %w", err)
 	}
-	if err := state.validate(store.bootstrapPrefix); err != nil {
+	if err := state.validate(store.endpointOrigin, store.bootstrapPrefix); err != nil {
 		return credentialState{}, err
 	}
 	return state, nil
 }
 
 func (store *credentialStore) persist(state credentialState) error {
-	if err := state.validate(store.bootstrapPrefix); err != nil {
+	if err := state.validate(store.endpointOrigin, store.bootstrapPrefix); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -246,10 +262,12 @@ func rejectUnsafeCredentialDirectory(path string) error {
 	return nil
 }
 
-func (state credentialState) validate(bootstrapPrefix string) error {
+func (state credentialState) validate(endpointOrigin, bootstrapPrefix string) error {
 	switch {
 	case state.Version != credentialStateVersion:
 		return fmt.Errorf("unsupported credential state version %d", state.Version)
+	case state.EndpointOrigin != endpointOrigin:
+		return errors.New("credential state endpoint origin does not match")
 	case state.BootstrapPrefix != bootstrapPrefix:
 		return errors.New("credential state bootstrap prefix does not match")
 	case !validAPIKey(state.Current):
@@ -291,6 +309,13 @@ func validAPIKey(key string) bool {
 	return err == nil && len(secret) == apiKeyRandomBytes
 }
 
+func newRotationStore(endpointOrigin, apiKey string) (*credentialStore, error) {
+	if !validAPIKey(apiKey) {
+		return nil, nil
+	}
+	return newCredentialStore(endpointOrigin, keyPrefix(apiKey))
+}
+
 func keyPrefix(key string) string {
 	if len(key) < apiKeyPrefixLength {
 		return key
@@ -301,6 +326,33 @@ func keyPrefix(key string) string {
 func rotationHash(key string) string {
 	digest := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(digest[:])
+}
+
+// refreshCredentialState adopts a peer process's durable transition before the
+// next HTTP request. Re-persisting changed state proves the observed rename and
+// its parent-directory entry durable before a proposal depends on its pending
+// secret or first use can retire the predecessor on the portal.
+func (b *bridge) refreshCredentialState() error {
+	if b.credentialStore == nil {
+		return nil
+	}
+
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	return b.credentialStore.withLock(func() error {
+		state, err := b.credentialStore.load(b.apiKey)
+		if err != nil {
+			return err
+		}
+		if state.Current != b.apiKey || state.Pending != b.pendingKey {
+			if err := b.credentialStore.persist(state); err != nil {
+				return fmt.Errorf("confirm peer credential state: %w", err)
+			}
+		}
+		b.apiKey = state.Current
+		b.pendingKey = state.Pending
+		return nil
+	})
 }
 
 func (b *bridge) rotationProposal(method string) (prefix, hash string) {
@@ -316,20 +368,21 @@ func (b *bridge) rotationProposal(method string) (prefix, hash string) {
 		if err != nil {
 			return err
 		}
-		// A prior acknowledgement may have renamed the promoted state before
-		// its directory sync failed. Re-sync that complete state before this
-		// process adopts it and lets first use retire the old credential.
-		if b.pendingKey != "" && state.Current == b.pendingKey && state.Pending == "" {
+		currentChanged := state.Current != b.apiKey
+		if currentChanged || state.Pending != b.pendingKey {
+			// A peer may have completed the rename before its directory sync
+			// failed. Re-sync any observed transition before this process relies
+			// on the pending secret or lets first use retire the old credential.
 			if err := b.credentialStore.persist(state); err != nil {
 				return err
 			}
-			b.apiKey = state.Current
-			b.pendingKey = ""
-			activatedDurably = true
-			return nil
 		}
 		b.apiKey = state.Current
 		b.pendingKey = state.Pending
+		if currentChanged && state.Pending == "" {
+			activatedDurably = true
+			return nil
+		}
 		if b.pendingKey != "" {
 			return nil
 		}

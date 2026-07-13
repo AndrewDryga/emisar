@@ -185,9 +185,11 @@ CLIENT SETUP
 KEY ROTATION
   The bridge prepares and durably stores a successor before asking the portal
   to rotate an expiring key. It activates that successor only after the portal
-  acknowledges the exact digest and the promoted state is durable. State lives
-  in owner-only files under <user-config-dir>/emisar/credentials/. Keep that
-  directory persistent. Without durable storage, automatic rotation is off.
+  acknowledges the exact digest and the promoted state is durable. State is
+  bound to the endpoint origin in owner-only files under
+  <user-config-dir>/emisar/credentials/. Keep that directory persistent.
+  OAuth and arbitrary Bearer tokens bypass this state. Without durable storage,
+  automatic rotation is off.
 
 FLAGS
   -h, --help
@@ -243,18 +245,9 @@ func main() {
 	// A durably promoted successor takes precedence over the bootstrap key in
 	// the client's config, which may have expired since. A pending successor is
 	// retried unchanged after a lost request, response, or process restart.
-	bootstrap := keyPrefix(apiKey)
-	var pendingKey string
-	credentialStore, credsErr := newCredentialStore(bootstrap)
+	credentialStore, credsErr := newRotationStore(base, apiKey)
 	if credsErr != nil {
 		fmt.Fprintf(os.Stderr, "emisar-mcp: no user config dir (%v); automatic key rotation disabled\n", credsErr)
-	} else {
-		state, err := credentialStore.load(apiKey)
-		if err != nil {
-			fatalln("credential state:", err)
-		}
-		apiKey = state.Current
-		pendingKey = state.Pending
 	}
 
 	// Self-reported client metadata: validated once at startup so a bad map is a
@@ -278,7 +271,9 @@ func main() {
 		signer:          sign,
 		clientMetadata:  clientMetadata,
 		credentialStore: credentialStore,
-		pendingKey:      pendingKey,
+	}
+	if err := b.refreshCredentialState(); err != nil {
+		fatalln("credential state:", err)
 	}
 
 	if err := b.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
@@ -381,7 +376,6 @@ type frameRead struct {
 type inflightRequest struct {
 	meta                  requestMeta
 	idKey                 string
-	apiKey                string
 	protocolVersion       string
 	cancel                context.CancelFunc
 	cancelled             bool
@@ -472,7 +466,6 @@ func (b *bridge) handleFrame(
 	state.inflight[token] = &inflightRequest{
 		meta:            meta,
 		idKey:           idKey,
-		apiKey:          apiKey,
 		protocolVersion: protocolVersion,
 		cancel:          cancel,
 	}
@@ -518,7 +511,6 @@ func (b *bridge) handleCancellation(
 		ctx, cancel := context.WithTimeout(context.Background(), cancellationForwardTimeout)
 		defer cancel()
 		_, _ = b.forwardRequestContext(ctx, frame, meta, requestHeaders{
-			apiKey:          request.apiKey,
 			protocolVersion: request.protocolVersion,
 			cancelToken:     token,
 		})
@@ -733,6 +725,9 @@ func (b *bridge) forwardRequestContext(
 	if !meta.valid {
 		return nil, errors.New("invalid JSON-RPC request envelope")
 	}
+	if err := b.refreshCredentialState(); err != nil {
+		return nil, fmt.Errorf("refresh credential state: %w", err)
+	}
 
 	// Sign a dispatch before it leaves the process (a no-op for non-tools/call
 	// frames, and when no key is configured).
@@ -746,7 +741,7 @@ func (b *bridge) forwardRequestContext(
 		return nil, err
 	}
 	apiKey, protocolVersion := headers.apiKey, headers.protocolVersion
-	if apiKey == "" || meta.method == "initialize" {
+	if b.credentialStore != nil || apiKey == "" || meta.method == "initialize" {
 		apiKey, protocolVersion = b.transportState()
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -1129,12 +1124,16 @@ func parseEndpoint(raw string, allowInsecure bool) (string, error) {
 	}
 
 	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Host)
+	if (scheme == "https" && u.Port() == "443") || (scheme == "http" && u.Port() == "80") {
+		host = strings.TrimSuffix(host, ":"+u.Port())
+	}
 	switch scheme {
 	case "https":
-		return scheme + "://" + u.Host, nil
+		return scheme + "://" + host, nil
 	case "http":
 		if allowInsecure || isLoopbackHost(u.Hostname()) {
-			return scheme + "://" + u.Host, nil
+			return scheme + "://" + host, nil
 		}
 		return "", fmt.Errorf("EMISAR_URL %q uses cleartext http to a non-loopback host, "+
 			"which sends the API key in plaintext; use https, or set "+

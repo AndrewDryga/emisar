@@ -18,6 +18,8 @@ import (
 	"testing/iotest"
 )
 
+const testEndpointOrigin = "https://example.test"
+
 func TestGenerateAPIKey_UsesPortalCompatibleShapeAndStrongRandomness(t *testing.T) {
 	random := bytes.NewReader(bytes.Repeat([]byte{0x5a}, apiKeyRandomBytes))
 	key, err := generateAPIKey(random)
@@ -39,7 +41,7 @@ func TestGenerateAPIKey_UsesPortalCompatibleShapeAndStrongRandomness(t *testing.
 func TestCredentialStore_PersistsAndLoadsOwnerOnlyState(t *testing.T) {
 	current := testAPIKey(1)
 	pending := testAPIKey(2)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	state := testCredentialState(current, pending)
 
 	if err := store.persist(state); err != nil {
@@ -71,9 +73,68 @@ func TestCredentialStore_PersistsAndLoadsOwnerOnlyState(t *testing.T) {
 	}
 }
 
+func TestCredentialStore_NamespacesStateByCanonicalEndpointOrigin(t *testing.T) {
+	configDir := t.TempDir()
+	current := testAPIKey(24)
+	state := testCredentialState(current, testAPIKey(25))
+	storeA := newCredentialStoreAt(configDir, "https://a.example", keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, "https://b.example", keyPrefix(current))
+	if storeA.path == storeB.path {
+		t.Fatal("different endpoint origins share a credential-state path")
+	}
+	state.EndpointOrigin = storeA.endpointOrigin
+	if err := storeA.persist(state); err != nil {
+		t.Fatalf("persist endpoint A: %v", err)
+	}
+
+	data, err := os.ReadFile(storeA.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storeB.path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeB.load(current); err == nil {
+		t.Fatal("credential state copied from another endpoint origin was accepted")
+	}
+}
+
+func TestCredentialStore_RejectsUnboundV1State(t *testing.T) {
+	current := testAPIKey(26)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"version":1,"bootstrap_prefix":"` + keyPrefix(current) +
+		`","current":"` + current + `"}`
+	if err := os.WriteFile(store.legacyPath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.load(current); err == nil || !strings.Contains(err.Error(), "unbound v1") {
+		t.Fatalf("unbound legacy state error = %v", err)
+	}
+	if _, err := os.Stat(store.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy refusal created endpoint-bound state: %v", err)
+	}
+}
+
+func TestNewRotationStore_BypassesNonRotatableBearers(t *testing.T) {
+	for _, bearer := range []string{
+		"emo-oauth-access-token",
+		"arbitrary-bearer",
+		"emk-malformed",
+	} {
+		store, err := newRotationStore(testEndpointOrigin, bearer)
+		if err != nil || store != nil {
+			t.Fatalf("newRotationStore(%q) = %#v, %v; want nil, nil", bearer, store, err)
+		}
+	}
+}
+
 func TestCredentialStore_RejectsCorruptStateWithoutOverwritingIt(t *testing.T) {
 	current := testAPIKey(3)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +157,7 @@ func TestCredentialStore_RejectsCorruptStateWithoutOverwritingIt(t *testing.T) {
 
 func TestCredentialStore_RejectsUnknownFieldsAndWrongBootstrap(t *testing.T) {
 	current := testAPIKey(4)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +189,7 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 
 	t.Run("broad file permissions", func(t *testing.T) {
 		current := testAPIKey(19)
-		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 		if err := store.persist(testCredentialState(current, "")); err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +203,7 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 
 	t.Run("broad directory permissions", func(t *testing.T) {
 		current := testAPIKey(21)
-		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 		if err := store.persist(testCredentialState(current, "")); err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +217,7 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 
 	t.Run("symlinked state file", func(t *testing.T) {
 		current := testAPIKey(20)
-		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 		if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -175,7 +236,7 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 
 	t.Run("oversized state file", func(t *testing.T) {
 		current := testAPIKey(22)
-		store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+		store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 		if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -227,7 +288,7 @@ func TestCredentialStore_FailureBoundariesLeaveACompleteOldOrNewState(t *testing
 		t.Run(stage.name, func(t *testing.T) {
 			current := testAPIKey(5)
 			pending := testAPIKey(6)
-			store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+			store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 			oldState := testCredentialState(current, "")
 			if err := store.persist(oldState); err != nil {
 				t.Fatalf("seed old state: %v", err)
@@ -258,7 +319,7 @@ func TestCredentialStore_FailureBoundariesLeaveACompleteOldOrNewState(t *testing
 
 func TestForward_RotationPersistsPendingBeforeRequestAndCurrentBeforeActivation(t *testing.T) {
 	current := testAPIKey(7)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	var proposalHash string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proposalHash = r.Header.Get(rotationHashHeader)
@@ -298,7 +359,7 @@ func TestForward_RotationPersistsPendingBeforeRequestAndCurrentBeforeActivation(
 
 func TestForward_LostRequestKeepsOldKeyAndRecoverablePending(t *testing.T) {
 	current := testAPIKey(8)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	b := newRotationTestBridge(store, current)
 	b.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("request lost")
@@ -312,7 +373,7 @@ func TestForward_LostRequestKeepsOldKeyAndRecoverablePending(t *testing.T) {
 
 func TestForward_LostResponseRetriesSamePendingAndRecoversAfterRestart(t *testing.T) {
 	current := testAPIKey(9)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	b := newRotationTestBridge(store, current)
 	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -368,7 +429,7 @@ func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
 	for _, stage := range stages {
 		t.Run(stage.name, func(t *testing.T) {
 			current := testAPIKey(10)
-			store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+			store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 			b := newRotationTestBridge(store, current)
 			_, hash := b.rotationProposal("initialize")
 			pending := b.pendingKey
@@ -402,7 +463,7 @@ func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
 
 func TestRotationProposal_GenerationFailureAndNoConfigStayOnOldKey(t *testing.T) {
 	current := testAPIKey(11)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	store.random = iotest.ErrReader(errors.New("entropy unavailable"))
 	b := newRotationTestBridge(store, current)
 	if prefix, hash := b.rotationProposal("initialize"); prefix != "" || hash != "" {
@@ -423,7 +484,7 @@ func TestRotationProposal_GenerationFailureAndNoConfigStayOnOldKey(t *testing.T)
 
 func TestAcknowledgeRotation_WrongAckIsIgnored(t *testing.T) {
 	current := testAPIKey(12)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	b := newRotationTestBridge(store, current)
 	_, _ = b.rotationProposal("initialize")
 	pending := b.pendingKey
@@ -437,8 +498,8 @@ func TestCredentialStore_DifferentPrefixesPersistConcurrently(t *testing.T) {
 	configDir := t.TempDir()
 	currentA := testAPIKey(13)
 	currentB := testAPIKey(14)
-	storeA := newCredentialStoreAt(configDir, keyPrefix(currentA))
-	storeB := newCredentialStoreAt(configDir, keyPrefix(currentB))
+	storeA := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(currentA))
+	storeB := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(currentB))
 	if storeA.path == storeB.path {
 		t.Fatal("different bootstrap prefixes share a credential file")
 	}
@@ -475,8 +536,8 @@ func TestCredentialStore_DifferentPrefixesPersistConcurrently(t *testing.T) {
 func TestRotationProposal_SamePrefixProcessesConvergeOnOnePendingKey(t *testing.T) {
 	configDir := t.TempDir()
 	current := testAPIKey(18)
-	storeA := newCredentialStoreAt(configDir, keyPrefix(current))
-	storeB := newCredentialStoreAt(configDir, keyPrefix(current))
+	storeA := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
 	storeA.random = bytes.NewReader(bytes.Repeat([]byte{0xa1}, apiKeyRandomBytes))
 	storeB.random = bytes.NewReader(bytes.Repeat([]byte{0xb2}, apiKeyRandomBytes))
 	bridgeA := newRotationTestBridge(storeA, current)
@@ -512,9 +573,39 @@ func TestRotationProposal_SamePrefixProcessesConvergeOnOnePendingKey(t *testing.
 	}
 }
 
+func TestForward_PeerPromotionRefreshesLiveBridge(t *testing.T) {
+	configDir := t.TempDir()
+	current := testAPIKey(27)
+	storeA := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	storeB := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	peer := newRotationTestBridge(storeA, current)
+	live := newRotationTestBridge(storeB, current)
+
+	_, acknowledgement := peer.rotationProposal("initialize")
+	if err := live.refreshCredentialState(); err != nil {
+		t.Fatalf("load pending peer state: %v", err)
+	}
+	peer.acknowledgeRotation(acknowledgement)
+
+	var authorization string
+	live.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorization = req.Header.Get("Authorization")
+		return jsonRPCResponse(""), nil
+	})}
+	if _, err := live.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward after peer promotion: %v", err)
+	}
+	if want := "Bearer " + peer.apiKey; authorization != want {
+		t.Fatalf("authorization = %q, want peer-promoted %q", authorization, want)
+	}
+	if live.apiKey != peer.apiKey || live.pendingKey != "" {
+		t.Fatal("live bridge did not adopt the peer-promoted credential state")
+	}
+}
+
 func TestForward_ProposalDoesNotTransmitPendingSecret(t *testing.T) {
 	current := testAPIKey(17)
-	store := newCredentialStoreAt(t.TempDir(), keyPrefix(current))
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
 	b := newRotationTestBridge(store, current)
 	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		loaded, err := store.load("unused")
@@ -545,6 +636,7 @@ func testAPIKey(fill byte) string {
 func testCredentialState(current, pending string) credentialState {
 	return credentialState{
 		Version:         credentialStateVersion,
+		EndpointOrigin:  testEndpointOrigin,
 		BootstrapPrefix: keyPrefix(current),
 		Current:         current,
 		Pending:         pending,

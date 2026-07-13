@@ -140,16 +140,20 @@ one recoverable credential. The rotation is recorded as
 `api_key.auto_rotated`; retirement is recorded separately as
 `api_key.retired_by_rotation`.
 
-Credential state lives in one 0600 file per bootstrap prefix under
+Credential state lives in one 0600 file per canonical endpoint origin and
+bootstrap prefix under
 `<user-config-dir>/emisar/credentials/`, protected by a 0700 directory,
 cross-process locking, atomic rename, and filesystem sync. The
 `EMISAR_API_KEY` in the client config is never edited; every launch resolves
-that bootstrap prefix to the current secret. A corrupt state file is a startup
-error. If no durable config directory is available, the bridge continues with
-the configured key but does not offer automatic rotation. Container users must
-mount `/config` persistently. Remote connectors, non-expiring quick-connect
-keys, and audit-export tokens do not auto-rotate. Operators can rotate a key
-manually from the Agents page at any time.
+that endpoint-bound bootstrap prefix to the current secret, and live bridge
+processes refresh peer promotions before every request. Corrupt state and the
+old endpoint-unbound v1 format are startup errors rather than reasons to send a
+stored secret to an unverified origin. If no durable config directory is
+available, the bridge continues with the configured key but does not offer
+automatic rotation. Container users must mount `/config` persistently. OAuth
+and arbitrary Bearer tokens bypass local rotation state; remote connectors,
+non-expiring quick-connect keys, and audit-export tokens do not auto-rotate.
+Operators can rotate a key manually from the Agents page at any time.
 
 ## Development
 

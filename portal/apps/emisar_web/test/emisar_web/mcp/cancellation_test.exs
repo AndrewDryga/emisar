@@ -59,6 +59,40 @@ defmodule EmisarWeb.MCP.CancellationTest do
     assert Task.await(task) == :cancelled
   end
 
+  test "a successor may cancel its immediate predecessor but not an ancestor", %{conn: conn} do
+    request_conn = scoped_conn(conn, "key-a", "session-a")
+    parent = self()
+
+    task =
+      Task.async(fn ->
+        Cancellation.track(request_conn, "tools/call", "rotating", fn _tracked_conn ->
+          send(parent, {:tracking, self()})
+
+          receive do
+            {:mcp_request_cancelled, _topic} = cancellation ->
+              send(self(), cancellation)
+              :finished
+          end
+        end)
+      end)
+
+    assert_receive {:tracking, task_pid}
+
+    :ok =
+      Cancellation.cancel(scoped_conn(conn, "key-c", "session-a", "key-b"), %{
+        "requestId" => "rotating"
+      })
+
+    assert Process.alive?(task_pid)
+
+    :ok =
+      Cancellation.cancel(scoped_conn(conn, "key-b", "session-a", "key-a"), %{
+        "requestId" => "rotating"
+      })
+
+    assert Task.await(task) == :cancelled
+  end
+
   test "initialize is never cancellable", %{conn: conn} do
     conn = scoped_conn(conn, "key-a", "session-a")
 
@@ -80,9 +114,9 @@ defmodule EmisarWeb.MCP.CancellationTest do
     end
   end
 
-  defp scoped_conn(conn, key_id, session_id) do
+  defp scoped_conn(conn, key_id, session_id, replaces_id \\ nil) do
     conn
-    |> assign(:api_key, %{id: key_id})
+    |> assign(:api_key, %{id: key_id, replaces_id: replaces_id})
     |> assign(:current_subject, %{account: %{id: "account-a"}})
     |> put_req_header("mcp-session-id", session_id)
   end
