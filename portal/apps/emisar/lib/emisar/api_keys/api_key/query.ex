@@ -21,6 +21,15 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_created_by_membership_id(queryable, membership_id),
     do: where(queryable, [api_keys: k], k.created_by_membership_id == ^membership_id)
 
+  def rotation_children(queryable, replaced_ids, rotated_to_ids)
+      when is_list(replaced_ids) and is_list(rotated_to_ids) do
+    where(
+      queryable,
+      [api_keys: k],
+      k.replaces_id in ^replaced_ids or k.id in ^rotated_to_ids
+    )
+  end
+
   def not_revoked(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.revoked_at))
 

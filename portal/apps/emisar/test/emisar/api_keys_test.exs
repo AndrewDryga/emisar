@@ -267,7 +267,7 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "create_key/3" do
+  describe "create_key/2" do
     test "returns raw + persisted key" do
       {user, account, subject} = owner_subject_pair()
 
@@ -397,6 +397,14 @@ defmodule Emisar.ApiKeysTest do
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
+    end
+
+    test "a revoked key cannot mint a late successor" do
+      {_owner, _account, subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "revoked"}, subject)
+
+      assert {:ok, %ApiKey{}} = ApiKeys.revoke_api_key(key, subject)
+      assert {:error, :revoked} = ApiKeys.rotate_api_key(key, subject)
     end
 
     test "an owner of account B cannot rotate account A's key (cross-account → :not_found)" do
@@ -701,6 +709,62 @@ defmodule Emisar.ApiKeysTest do
       assert Repo.reload!(key).revoked_at
     end
 
+    test "revokes every pending rotation descendant without touching unrelated keys" do
+      {user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, source_raw, source} =
+        ApiKeys.create_key(%{name: "source", expires_at: soon}, subject)
+
+      {pending_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert {:ok, pending} =
+               ApiKeys.install_auto_rotation_successor(
+                 prefix,
+                 hash,
+                 Subject.for_api_key(source, account)
+               )
+
+      # The forward link alone still declares the pending successor. A partial
+      # back-link must not let that credential escape an explicit revocation.
+      pending = pending |> Ecto.Changeset.change(replaces_id: nil) |> Repo.update!()
+
+      assert {:ok, leaf_raw, leaf} = ApiKeys.rotate_api_key(pending, subject)
+      assert {:ok, branch_raw, branch} = ApiKeys.rotate_api_key(source, subject)
+      assert {:ok, unrelated_raw, unrelated} = ApiKeys.create_key(%{name: "unrelated"}, subject)
+
+      assert {:ok, %ApiKey{id: source_id}} = ApiKeys.revoke_api_key(source, subject)
+      assert source_id == source.id
+
+      for key <- [source, pending, leaf, branch] do
+        revoked = Repo.reload!(key)
+        assert %DateTime{} = revoked.revoked_at
+        assert revoked.revoked_by_id == user.id
+      end
+
+      for raw <- [source_raw, pending_raw, leaf_raw, branch_raw] do
+        refute ApiKeys.peek_api_key_by_secret(raw)
+      end
+
+      assert %ApiKey{id: unrelated_id} = ApiKeys.peek_api_key_by_secret(unrelated_raw)
+      assert unrelated_id == unrelated.id
+      assert is_nil(Repo.reload!(unrelated).revoked_at)
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.revoked"]])
+
+      events_by_target = Map.new(events, &{&1.target_id, &1})
+
+      assert Map.keys(events_by_target) |> MapSet.new() ==
+               MapSet.new([source.id, pending.id, leaf.id, branch.id])
+
+      refute Map.has_key?(events_by_target[source.id].payload, "cascade_source_id")
+
+      for key <- [pending, leaf, branch] do
+        assert events_by_target[key.id].payload["cascade_source_id"] == source.id
+      end
+    end
+
     test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
@@ -913,13 +977,13 @@ defmodule Emisar.ApiKeysTest do
       assert length(events) == 1
     end
 
-    test "a hand-revoked replaced key gets no retirement audit; the successor still works" do
+    test "a hand-revoked replaced key denies its successor without a retirement audit" do
       {_user, account, subject} = owner_subject_pair()
       {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, new_raw, _successor} = ApiKeys.rotate_api_key(original, subject)
       {:ok, _revoked} = ApiKeys.revoke_api_key(original, subject)
 
-      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(new_raw)
+      refute ApiKeys.peek_api_key_by_secret(new_raw)
 
       {:ok, events, _} =
         Emisar.Audit.list_events(subject,

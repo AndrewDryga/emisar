@@ -153,11 +153,7 @@ defmodule Emisar.ApiKeys do
   """
   def change_key(attrs \\ %{}), do: ApiKey.Changeset.form(attrs)
 
-  # `opts` is internal (rotation threads `replaces_id:` through) — the web
-  # always calls this as `create_key(attrs, subject)`.
-  def create_key(attrs, subject, opts \\ [])
-
-  def create_key(attrs, %Subject{account: account} = subject, opts) do
+  def create_key(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -169,7 +165,7 @@ defmodule Emisar.ApiKeys do
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       changeset =
-        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs, opts)
+        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
 
       Multi.new()
       |> Multi.insert(:key, changeset)
@@ -194,10 +190,48 @@ defmodule Emisar.ApiKeys do
   `%Subject{}` needs `manage_api_keys`; returns `{:ok, raw_secret, new_key}`.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
-    # Re-fetch scoped to the subject so a caller can't rotate a key outside its
-    # account; `create_key/3` then re-gates on `manage_api_keys` and mints.
-    with {:ok, source} <- fetch_api_key_by_id(key.id, subject) do
-      create_key(successor_attrs(source), subject, replaces_id: source.id)
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_api_keys_permission()
+           ) do
+      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+
+      source_queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(key.id)
+        |> ApiKey.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+
+      Multi.new()
+      |> Multi.run(:source, fn repo, _changes ->
+        with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+             true <- is_nil(source.revoked_at) do
+          {:ok, source}
+        else
+          false -> {:error, :revoked}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.insert(:key, fn %{source: source} ->
+        ApiKey.Changeset.create(
+          source.account_id,
+          source.created_by_id,
+          source.created_by_membership_id,
+          prefix,
+          hash,
+          successor_attrs(source),
+          replaces_id: source.id
+        )
+      end)
+      |> Multi.insert(:audit, fn %{key: successor} ->
+        Audit.Events.api_key_created(subject, successor)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
+      |> case do
+        {:ok, %{key: successor}} -> {:ok, raw, successor}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -435,6 +469,11 @@ defmodule Emisar.ApiKeys do
     {:ok, evicted}
   end
 
+  @doc """
+  Explicitly revokes a key and every account-scoped rotation descendant in one
+  transaction. `%Subject{}` needs `manage_api_keys`; returns `{:ok, key}` or a
+  tagged authorization/not-found/write error.
+  """
   def revoke_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -443,14 +482,87 @@ defmodule Emisar.ApiKeys do
            ) do
       by_user_id = Subject.actor_id(subject)
 
-      ApiKey.Query.not_deleted()
-      |> ApiKey.Query.by_id(key.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(ApiKey.Query,
-        with: &ApiKey.Changeset.revoke(&1, by_user_id),
-        audit: &Audit.Events.api_key_revoked(subject, &1),
-        after_commit: &broadcast_api_key_revoked/1
+      source_queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(key.id)
+        |> ApiKey.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+
+      Multi.new()
+      |> Multi.run(:revocation, fn repo, _changes ->
+        revoke_key_chain(repo, source_queryable, subject, by_user_id)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{revocation: %{revoked: revoked}} ->
+          Enum.each(revoked, &broadcast_api_key_revoked/1)
+        end
       )
+      |> case do
+        {:ok, %{revocation: %{key: revoked}}} -> {:ok, revoked}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp revoke_key_chain(repo, source_queryable, subject, by_user_id) do
+    with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+         descendants = rotation_descendants(repo, source),
+         {:ok, revoked_source} <- revoke_and_audit(repo, source, subject, by_user_id, nil),
+         {:ok, revoked_descendants} <-
+           revoke_descendants(repo, descendants, source, subject, by_user_id) do
+      {:ok, %{key: revoked_source, revoked: [revoked_source | revoked_descendants]}}
+    end
+  end
+
+  defp rotation_descendants(repo, source) do
+    rotation_descendants(repo, source.account_id, [source], MapSet.new([source.id]), [])
+  end
+
+  defp rotation_descendants(_repo, _account_id, [], _visited, descendants),
+    do: Enum.reverse(descendants)
+
+  defp rotation_descendants(repo, account_id, frontier, visited, descendants) do
+    replaced_ids = Enum.map(frontier, & &1.id)
+    rotated_to_ids = frontier |> Enum.map(& &1.rotated_to_id) |> Enum.reject(&is_nil/1)
+
+    children =
+      ApiKey.Query.all()
+      |> ApiKey.Query.by_account_id(account_id)
+      |> ApiKey.Query.rotation_children(replaced_ids, rotated_to_ids)
+      |> ApiKey.Query.lock_for_update()
+      |> repo.all()
+      |> Enum.reject(&MapSet.member?(visited, &1.id))
+
+    visited = Enum.reduce(children, visited, &MapSet.put(&2, &1.id))
+    rotation_descendants(repo, account_id, children, visited, children ++ descendants)
+  end
+
+  defp revoke_descendants(repo, descendants, source, subject, by_user_id) do
+    Enum.reduce_while(descendants, {:ok, []}, fn descendant, {:ok, revoked} ->
+      if is_nil(descendant.deleted_at) and is_nil(descendant.revoked_at) do
+        case revoke_and_audit(repo, descendant, subject, by_user_id, source) do
+          {:ok, key} -> {:cont, {:ok, [key | revoked]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      else
+        {:cont, {:ok, revoked}}
+      end
+    end)
+    |> case do
+      {:ok, revoked} -> {:ok, Enum.reverse(revoked)}
+      error -> error
+    end
+  end
+
+  defp revoke_and_audit(repo, key, subject, by_user_id, cascade_source) do
+    audit_changeset =
+      if cascade_source,
+        do: Audit.Events.api_key_revoked(subject, key, cascade_source),
+        else: Audit.Events.api_key_revoked(subject, key)
+
+    with {:ok, revoked} <- repo.update(ApiKey.Changeset.revoke(key, by_user_id)),
+         {:ok, _event} <- repo.insert(audit_changeset) do
+      {:ok, revoked}
     end
   end
 
@@ -496,69 +608,79 @@ defmodule Emisar.ApiKeys do
       prefix = String.slice(raw, 0, @prefix_size)
       hash = Crypto.hash(raw)
 
-      # `key_prefix` is unique only among live rows. Excluding soft-deleted
-      # keys here keeps a reissued prefix a single-result lookup; `usable?/1`
-      # below remains the gate for revocation and expiry.
-      queryable = ApiKey.Query.not_deleted() |> ApiKey.Query.by_key_prefix(prefix)
+      # `key_prefix` is unique only among live rows. The row lock makes this
+      # usability check serialize with explicit revocation: once revoke returns,
+      # no stale pre-revocation lookup can authenticate afterward.
+      queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_key_prefix(prefix)
+        |> ApiKey.Query.lock_for_update()
 
-      with %ApiKey{} = key <- Repo.peek(queryable),
-           true <- Crypto.secure_compare(key.key_hash, hash),
-           true <- ApiKey.usable?(key) do
-        was_auto? = ApiKey.auto_unused?(key)
-        # nil→set happens exactly once, so first_use? — and the rotation-retire
-        # + the "agent connected" broadcast it gates — cost nothing on every
-        # later request with this key.
-        first_use? = is_nil(key.last_used_at)
-        completes_rotation? = first_use? and not is_nil(key.replaces_id)
+      multi =
+        Multi.new()
+        |> Multi.run(:candidate, fn repo, _changes ->
+          authenticate_candidate(repo, queryable, hash)
+        end)
+        |> Multi.update(:key, fn %{candidate: key} -> ApiKey.Changeset.usage(key) end)
+        |> Multi.run(:audit, &insert_bound_audit/2)
+        |> Multi.run(:retired, &retire_on_first_use/2)
 
-        multi =
-          Multi.new()
-          |> Multi.update(:key, ApiKey.Changeset.usage(key))
+      after_commit = fn changes ->
+        Enum.each(changes.retired, &broadcast_api_key_revoked/1)
 
-        multi =
-          if was_auto? do
-            Multi.insert(multi, :audit, fn %{key: updated} ->
-              Audit.Events.api_key_bound(updated)
-            end)
-          else
-            multi
-          end
+        # The first call proves the agent connected — reflow the agents list
+        # (its status badge) and the connect flow's "waiting" state live.
+        if is_nil(changes.candidate.last_used_at),
+          do: broadcast_api_key_first_used(changes.key)
 
-        multi =
-          if completes_rotation? do
-            Multi.run(multi, :retired, fn repo, %{key: updated} ->
-              retire_replaced_chain(repo, updated)
-            end)
-          else
-            multi
-          end
-
-        after_commit = fn changes ->
-          Enum.each(Map.get(changes, :retired, []), &broadcast_api_key_revoked/1)
-          # The first call proves the agent connected — reflow the agents list
-          # (its status badge) and the connect flow's "waiting" state live.
-          if first_use?, do: broadcast_api_key_first_used(changes.key)
-          # after_commit callbacks must return :ok (Repo.execute_changes_after_commit).
-          :ok
-        end
-
-        case Repo.commit_multi(multi, after_commit: after_commit) do
-          {:ok, %{key: updated}} ->
-            updated
-
-          # A VALID key, denied only because the usage-tracking write blipped.
-          # Fail closed, but log it — a silently-rejected good key is otherwise
-          # undiagnosable. The prefix correlates without exposing the secret.
-          {:error, reason} ->
-            Logger.warning(
-              "api key #{key.id} (prefix #{prefix}) rejected on a usage-write failure: #{inspect(reason)}"
-            )
-
-            nil
-        end
-      else
-        _ -> nil
+        # after_commit callbacks must return :ok (Repo.execute_changes_after_commit).
+        :ok
       end
+
+      case Repo.commit_multi(multi, after_commit: after_commit) do
+        {:ok, %{key: updated}} ->
+          updated
+
+        {:error, :invalid} ->
+          nil
+
+        # A valid key, denied only because a lifecycle write blipped. Fail
+        # closed, but log it: a silently-rejected good key is undiagnosable.
+        # The prefix correlates without exposing the bearer secret.
+        {:error, reason} ->
+          Logger.warning(
+            "api key prefix #{prefix} rejected on a lifecycle-write failure: #{inspect(reason)}"
+          )
+
+          nil
+      end
+    end
+  end
+
+  defp authenticate_candidate(repo, queryable, hash) do
+    with %ApiKey{} = key <- repo.peek(queryable),
+         true <- Crypto.secure_compare(key.key_hash, hash),
+         true <- ApiKey.usable?(key) do
+      {:ok, key}
+    else
+      _ -> {:error, :invalid}
+    end
+  end
+
+  defp insert_bound_audit(repo, %{candidate: candidate, key: updated}) do
+    if ApiKey.auto_unused?(candidate) do
+      audit = Audit.Events.api_key_bound(updated)
+      repo.insert(audit)
+    else
+      {:ok, nil}
+    end
+  end
+
+  defp retire_on_first_use(repo, %{candidate: candidate, key: updated}) do
+    if is_nil(candidate.last_used_at) and not is_nil(candidate.replaces_id) do
+      retire_replaced_chain(repo, updated)
+    else
+      {:ok, []}
     end
   end
 

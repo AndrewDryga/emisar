@@ -373,6 +373,29 @@ defmodule Emisar.Audit.Events do
   end
 
   def api_key_revoked(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
+    api_key_revoked_with_source_id(subject, key, nil)
+  end
+
+  def api_key_revoked(
+        %Subject{} = subject,
+        %ApiKeys.ApiKey{} = key,
+        %ApiKeys.ApiKey{} = cascade_source
+      ) do
+    api_key_revoked_with_source_id(subject, key, cascade_source.id)
+  end
+
+  defp api_key_revoked_with_source_id(
+         %Subject{} = subject,
+         %ApiKeys.ApiKey{} = key,
+         cascade_source_id
+       ) do
+    payload = %{prefix: key.key_prefix}
+
+    payload =
+      if cascade_source_id,
+        do: Map.put(payload, :cascade_source_id, cascade_source_id),
+        else: payload
+
     Audit.changeset(
       key.account_id,
       "api_key.revoked",
@@ -381,7 +404,7 @@ defmodule Emisar.Audit.Events do
           target_kind: "api_key",
           target_id: key.id,
           target_label: key.name,
-          payload: %{prefix: key.key_prefix}
+          payload: payload
         ]
     )
   end
