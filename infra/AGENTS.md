@@ -77,3 +77,11 @@ prose, or comments that reveal the deployment's scale, spend posture, or a
 personal email. When you change what the stack enforces, keep `.agent/COMPLIANCE.md`
 (the internal control mapping — git-ignored BY DECISION: candid gap notes are
 for us, not the public repo) honest and current in the same change.
+
+Operator-visible names are product copy. Private alerting objects use Title Case
+and an `Emisar:` prefix so they group clearly in vendor consoles. Monitor names
+must also read naturally when spoken by an automated call, so omit punctuation
+there (`Emisar Control Plane`). Public status-page resources use customer-facing
+product terms (`Control Plane`, `Action Pack Registry`), never CLI commands,
+Terraform identifiers, or lowercase implementation labels. Put related monitors
+in a named group instead of leaving them ungrouped.

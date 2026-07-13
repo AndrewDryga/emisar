@@ -3,7 +3,7 @@
 # access is granted per-secret in secrets.tf, not project-wide.
 resource "google_service_account" "vm" {
   account_id   = "emisar-vm"
-  display_name = "emisar portal instance"
+  display_name = "Emisar Control Plane Instances"
 }
 
 # Ship logs + metrics (observability / SOC 2 monitoring evidence).

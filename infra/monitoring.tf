@@ -2,7 +2,7 @@
 # A single email notification channel + a few high-signal alert policies. Add
 # more channels (PagerDuty, Slack) by extending var.alert_email into a list later.
 resource "google_monitoring_notification_channel" "email" {
-  display_name = "emisar on-call email"
+  display_name = "Emisar: On-Call Email"
   type         = "email"
   labels = {
     email_address = var.alert_email
@@ -12,7 +12,7 @@ resource "google_monitoring_notification_channel" "email" {
 
 # External readiness check proves the site and its database are serving.
 resource "google_monitoring_uptime_check_config" "https" {
-  display_name = "emisar https"
+  display_name = "Emisar: Control Plane Readiness"
   timeout      = "10s"
   period       = "60s"
 
@@ -35,11 +35,11 @@ resource "google_monitoring_uptime_check_config" "https" {
 }
 
 resource "google_monitoring_alert_policy" "uptime" {
-  display_name = "emisar unreachable (uptime check failing)"
+  display_name = "Emisar: Control Plane Unreachable"
   combiner     = "OR"
 
   conditions {
-    display_name = "uptime check failed"
+    display_name = "Uptime Check Failed"
     condition_threshold {
       filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id = \"${google_monitoring_uptime_check_config.https.uptime_check_id}\""
       comparison      = "COMPARISON_GT"
@@ -62,11 +62,11 @@ resource "google_monitoring_alert_policy" "uptime" {
 }
 
 resource "google_monitoring_alert_policy" "db_cpu" {
-  display_name = "emisar Cloud SQL CPU high"
+  display_name = "Emisar: Cloud SQL CPU High"
   combiner     = "OR"
 
   conditions {
-    display_name = "CPU > 90% for 5m"
+    display_name = "CPU Above 90% for 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\""
       comparison      = "COMPARISON_GT"
@@ -83,11 +83,11 @@ resource "google_monitoring_alert_policy" "db_cpu" {
 }
 
 resource "google_monitoring_alert_policy" "db_disk" {
-  display_name = "emisar Cloud SQL disk near full"
+  display_name = "Emisar: Cloud SQL Disk Near Full"
   combiner     = "OR"
 
   conditions {
-    display_name = "disk > 90% for 5m"
+    display_name = "Disk Above 90% for 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\""
       comparison      = "COMPARISON_GT"
@@ -104,11 +104,11 @@ resource "google_monitoring_alert_policy" "db_disk" {
 }
 
 resource "google_monitoring_alert_policy" "db_memory" {
-  display_name = "emisar Cloud SQL memory high"
+  display_name = "Emisar: Cloud SQL Memory High"
   combiner     = "OR"
 
   conditions {
-    display_name = "memory > 90% for 5m"
+    display_name = "Memory Above 90% for 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/memory/utilization\""
       comparison      = "COMPARISON_GT"
@@ -130,11 +130,11 @@ resource "google_monitoring_alert_policy" "db_memory" {
 # (long-lived transaction, abandoned replication slot) and needs a human
 # well before the 100% hard stop.
 resource "google_monitoring_alert_policy" "db_txid" {
-  display_name = "emisar Cloud SQL transaction-ID wraparound risk"
+  display_name = "Emisar: Cloud SQL Transaction ID Wraparound Risk"
   combiner     = "OR"
 
   conditions {
-    display_name = "txid utilization > 70% for 15m"
+    display_name = "Transaction ID Utilization Above 70% for 15 Minutes"
     condition_threshold {
       filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/postgresql/transaction_id_utilization\""
       comparison      = "COMPARISON_GT"
@@ -155,11 +155,11 @@ resource "google_monitoring_alert_policy" "db_txid" {
 # that real traffic is failing. Ratio, not count, so it doesn't scale with
 # traffic volume.
 resource "google_monitoring_alert_policy" "lb_5xx" {
-  display_name = "emisar LB 5xx ratio high"
+  display_name = "Emisar: Load Balancer 5xx Ratio High"
   combiner     = "OR"
 
   conditions {
-    display_name = "5xx > 5% of requests for 5m"
+    display_name = "5xx Responses Above 5% for 5 Minutes"
     condition_threshold {
       filter             = "resource.type = \"https_lb_rule\" AND metric.type = \"loadbalancing.googleapis.com/https/request_count\" AND metric.labels.response_code_class = 500"
       denominator_filter = "resource.type = \"https_lb_rule\" AND metric.type = \"loadbalancing.googleapis.com/https/request_count\""
@@ -188,11 +188,11 @@ resource "google_monitoring_alert_policy" "lb_5xx" {
 # (validate_ssl above), so it watches the cert actually served, not the one
 # Certificate Manager thinks it provisioned.
 resource "google_monitoring_alert_policy" "cert_expiry" {
-  display_name = "emisar TLS certificate expiring (renewal failing)"
+  display_name = "Emisar: TLS Certificate Expiring"
   combiner     = "OR"
 
   conditions {
-    display_name = "served cert expires in < 14 days"
+    display_name = "Served Certificate Expires Within 14 Days"
     condition_threshold {
       filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/time_until_ssl_cert_expires\" AND metric.label.check_id = \"${google_monitoring_uptime_check_config.https.uptime_check_id}\""
       comparison      = "COMPARISON_LT"
@@ -213,11 +213,11 @@ resource "google_monitoring_alert_policy" "cert_expiry" {
 # The zero-unavailable rollout should never put the MIG below target. Remaining
 # below target for 15m means repair or creation is genuinely stuck.
 resource "google_monitoring_alert_policy" "mig_below_target" {
-  display_name = "emisar instance group below target size"
+  display_name = "Emisar: Instance Group Below Target"
   combiner     = "OR"
 
   conditions {
-    display_name = "running instances < target for 15m"
+    display_name = "Running Instances Below Target for 15 Minutes"
     condition_threshold {
       filter          = "resource.type = \"instance_group\" AND resource.labels.instance_group_name = \"${google_compute_region_instance_group_manager.emisar.name}\" AND metric.type = \"compute.googleapis.com/instance_group/size\""
       comparison      = "COMPARISON_LT"
@@ -237,11 +237,11 @@ resource "google_monitoring_alert_policy" "mig_below_target" {
 # Paddle, Sentry) while ingress keeps working — nothing else surfaces it until
 # a rollout can't pull the image or emails stop sending.
 resource "google_monitoring_alert_policy" "nat_allocation" {
-  display_name = "emisar Cloud NAT allocation failing"
+  display_name = "Emisar: Cloud NAT Allocation Failure"
   combiner     = "OR"
 
   conditions {
-    display_name = "NAT port allocation failures"
+    display_name = "NAT Port Allocation Failures"
     condition_threshold {
       filter          = "resource.type = \"nat_gateway\" AND metric.type = \"router.googleapis.com/nat/nat_allocation_failed\""
       comparison      = "COMPARISON_GT"

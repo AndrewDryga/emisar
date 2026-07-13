@@ -46,7 +46,7 @@ import {
 # instance per person would put the headcount in the plan. People are invited
 # to Better Stack out of band; the rotation references them by account email.
 resource "betteruptime_on_call_calendar" "primary" {
-  name = "Primary on-call schedule"
+  name = "Emisar: Primary On-Call"
 
   on_call_rotation {
     users             = var.oncall_emails
@@ -62,7 +62,7 @@ resource "betteruptime_on_call_calendar" "primary" {
 
 # Two urgencies: a polite nudge, then one that cuts through Do-Not-Disturb.
 resource "betteruptime_severity" "notify" {
-  name = "Notify on-call"
+  name = "Emisar: Notify On-Call"
 
   email = true
   push  = true
@@ -73,7 +73,7 @@ resource "betteruptime_severity" "notify" {
 }
 
 resource "betteruptime_severity" "wake" {
-  name = "Wake on-call"
+  name = "Emisar: Wake On-Call"
 
   critical_alert = true
   call           = true
@@ -87,7 +87,7 @@ resource "betteruptime_severity" "wake" {
 # 3 minutes; at 10 minutes call EVERYONE. Repeats 3× so a missed first wave
 # does not end the paging.
 resource "betteruptime_policy" "incident" {
-  name = "emisar service down"
+  name = "Emisar: Production Incident"
 
   steps {
     type        = "escalation"
@@ -124,6 +124,11 @@ resource "betteruptime_policy" "incident" {
 }
 
 # ── Monitors ──────────────────────────────────────────────────────────────────
+resource "betteruptime_monitor_group" "production" {
+  name       = "Emisar Production"
+  sort_index = 0
+}
+
 # /readyz is DB-aware, so "up" attests the web tier AND its database — the same
 # contract the LB uses (compute.tf), verified from outside. Imported from the
 # manually-created apex monitor to keep its uptime history; the config moves it
@@ -132,9 +137,10 @@ resource "betteruptime_monitor" "portal" {
   url          = "https://${var.domain}/readyz"
   monitor_type = "status"
 
-  pronounceable_name = "emisar portal"
+  pronounceable_name = "Emisar Control Plane"
 
-  policy_id = betteruptime_policy.incident.id
+  monitor_group_id = betteruptime_monitor_group.production.id
+  policy_id        = betteruptime_policy.incident.id
 
   follow_redirects = false
   remember_cookies = false
@@ -151,9 +157,10 @@ resource "betteruptime_monitor" "pack_registry" {
   url          = "https://registry.${var.domain}/v1/catalog.json"
   monitor_type = "status"
 
-  pronounceable_name = "emisar pack registry"
+  pronounceable_name = "Emisar Action Pack Registry"
 
-  policy_id = betteruptime_policy.incident.id
+  monitor_group_id = betteruptime_monitor_group.production.id
+  policy_id        = betteruptime_policy.incident.id
 
   follow_redirects = false
   remember_cookies = false
@@ -199,7 +206,7 @@ resource "betteruptime_status_page" "emisar" {
   hide_from_search_engines = false
 
   design = "v2"
-  theme  = "light"
+  theme  = "dark"
   layout = "vertical"
 
   # A combined portal + infra rollout must serve the new assets before Better
@@ -209,7 +216,7 @@ resource "betteruptime_status_page" "emisar" {
 
 resource "betteruptime_status_page_section" "control_plane" {
   status_page_id = betteruptime_status_page.emisar.id
-  name           = "Control plane"
+  name           = "Platform"
   position       = 0
 }
 
@@ -217,8 +224,8 @@ resource "betteruptime_status_page_resource" "portal" {
   status_page_id         = betteruptime_status_page.emisar.id
   status_page_section_id = betteruptime_status_page_section.control_plane.id
 
-  public_name = "Portal, console & MCP API"
-  explanation = "The emisar web console, API, and MCP endpoint at ${var.domain}."
+  public_name = "Control Plane & MCP API"
+  explanation = "The hosted web console, API, and MCP endpoint at ${var.domain}."
 
   resource_type = "Monitor"
   resource_id   = betteruptime_monitor.portal.id
@@ -236,8 +243,8 @@ resource "betteruptime_status_page_resource" "pack_registry" {
   status_page_id         = betteruptime_status_page.emisar.id
   status_page_section_id = betteruptime_status_page_section.distribution.id
 
-  public_name = "Pack registry"
-  explanation = "Serves the public action-pack catalog and tarballs for `emisar pack install` at registry.${var.domain}."
+  public_name = "Action Pack Registry"
+  explanation = "The public action-pack catalog and downloads at registry.${var.domain}."
 
   resource_type = "Monitor"
   resource_id   = betteruptime_monitor.pack_registry.id

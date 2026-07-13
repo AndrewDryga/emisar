@@ -17,7 +17,7 @@
 
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-actions"
-  display_name              = "GitHub Actions"
+  display_name              = "Emisar: GitHub Actions"
   description               = "OIDC federation for the repo's CI/CD workflows"
   depends_on                = [google_project_service.apis]
 }
@@ -25,7 +25,7 @@ resource "google_iam_workload_identity_pool" "github" {
 resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
-  display_name                       = "GitHub OIDC"
+  display_name                       = "Emisar: GitHub OIDC"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

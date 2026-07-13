@@ -84,7 +84,7 @@ resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
 # the public GET-only binding above (IAM is additive).
 resource "google_service_account" "pack_publisher" {
   account_id   = "emisar-pack-publisher"
-  display_name = "emisar pack registry publisher"
+  display_name = "Emisar Action Pack Registry Publisher"
   project      = var.project_id
 }
 
