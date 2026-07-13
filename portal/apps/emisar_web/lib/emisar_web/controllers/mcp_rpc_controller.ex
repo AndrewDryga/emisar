@@ -40,7 +40,8 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat}
-  alias EmisarWeb.MCP.{Attestation, Auth, Cancellation, ClientMetadata, ContentBlocks}
+  alias EmisarWeb.MCP.{Attestation, Auth, BoundaryResponse, Cancellation, ClientMetadata}
+  alias EmisarWeb.MCP.ContentBlocks
   alias EmisarWeb.MCP.{Idempotency, Instructions, Service, Transport}
   alias EmisarWeb.RequestContext
 
@@ -50,7 +51,12 @@ defmodule EmisarWeb.MCPRpcController do
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
-  plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
+  plug EmisarWeb.Plugs.RateLimit,
+    bucket: "mcp",
+    limit: 300,
+    window_ms: 60_000,
+    by: :bearer,
+    on_reject: {EmisarWeb.MCP.BoundaryResponse, :rate_limited}
 
   # Transport conformance runs before auth: an out-of-spec frame is rejected at
   # the HTTP layer regardless of the bearer. `:handle` (POST) alone negotiates a
@@ -732,10 +738,7 @@ defmodule EmisarWeb.MCPRpcController do
   end
 
   defp reject(conn, status, message) do
-    conn
-    |> put_status(status)
-    |> json(%{error: message})
-    |> halt()
+    BoundaryResponse.send_error(conn, status, -32_600, message)
   end
 
   # -- Auth -----------------------------------------------------------
@@ -750,10 +753,7 @@ defmodule EmisarWeb.MCPRpcController do
         conn
 
       {:error, conn} ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32001, message: "unauthorized"}})
-        |> halt()
+        BoundaryResponse.send_error(conn, :unauthorized, -32_001, "unauthorized")
     end
   end
 
@@ -770,9 +770,7 @@ defmodule EmisarWeb.MCPRpcController do
         assign(conn, :current_subject, %{subject | context: context})
 
       {:error, message} ->
-        conn
-        |> json(%{jsonrpc: "2.0", id: nil, error: %{code: -32602, message: message}})
-        |> halt()
+        BoundaryResponse.send_error(conn, :ok, -32_602, message)
     end
   end
 

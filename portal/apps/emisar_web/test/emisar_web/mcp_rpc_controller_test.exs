@@ -144,11 +144,28 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "rejects missing bearer with JSON-RPC unauthorized", %{conn: conn} do
       body =
         conn
-        |> rpc("initialize")
+        |> rpc("initialize", %{}, "missing-bearer")
         |> json_response(401)
 
       assert body["jsonrpc"] == "2.0"
+      assert body["id"] == "missing-bearer"
       assert body["error"]["code"] == -32001
+    end
+
+    test "echoes an exact large numeric id but not an untrusted id", %{conn: conn} do
+      large_id = 9_007_199_254_740_993
+
+      assert %{"id" => ^large_id} =
+               conn
+               |> rpc("ping", %{}, large_id)
+               |> json_response(401)
+
+      invalid_id = %{"nested" => "not a JSON-RPC request id"}
+
+      assert %{"id" => nil} =
+               conn
+               |> rpc("ping", %{}, invalid_id)
+               |> json_response(401)
     end
   end
 
@@ -163,9 +180,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       conn =
         conn
         |> put_req_header("authorization", "Bearer " <> bogus)
-        |> rpc("initialize")
+        |> rpc("initialize", %{}, "invalid-api-key")
 
-      assert %{"error" => %{"code" => -32001}} = json_response(conn, 401)
+      assert %{"id" => "invalid-api-key", "error" => %{"code" => -32001}} =
+               json_response(conn, 401)
+
       assert [challenge] = get_resp_header(conn, "www-authenticate")
       assert challenge =~ "resource_metadata="
     end
@@ -310,13 +329,15 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         set: [access_expires_at: DateTime.add(DateTime.utc_now(), -60, :second)]
       )
 
-      body =
+      conn =
         conn
         |> put_req_header("authorization", "Bearer " <> emo)
-        |> rpc("initialize")
-        |> json_response(401)
+        |> rpc("initialize", %{}, "expired-oauth")
 
+      body = json_response(conn, 401)
       assert body["error"]["code"] == -32001
+      assert body["id"] == "expired-oauth"
+      assert [_challenge] = get_resp_header(conn, "www-authenticate")
     end
 
     test "an emo- token whose backing key was revoked is unauthorized",
@@ -375,12 +396,17 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("authorization", "Bearer " <> raw)
         # A boolean value is not a string/number → rejected at the boundary.
         |> put_req_header("emisar-client-metadata", ~s({"managed":true}))
-        |> rpc("tools/call", %{
-          "name" => "linux.uptime",
-          "arguments" => %{"runner" => "host-1", "reason" => "bad", "wait" => "0"}
-        })
+        |> rpc(
+          "tools/call",
+          %{
+            "name" => "linux.uptime",
+            "arguments" => %{"runner" => "host-1", "reason" => "bad", "wait" => "0"}
+          },
+          "invalid-metadata"
+        )
         |> json_response(200)
 
+      assert body["id"] == "invalid-metadata"
       assert body["error"]["code"] == -32602
       assert body["error"]["message"] =~ "must be a string or number"
 
@@ -433,6 +459,28 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
       assert response(conn, 202) == ""
     end
+
+    test "authentication and metadata failures keep notifications bodyless",
+         %{conn: conn, raw: raw} do
+      payload = %{jsonrpc: "2.0", method: "notifications/initialized"}
+
+      unauthenticated =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(payload))
+
+      assert response(unauthenticated, 401) == ""
+      assert [_challenge] = get_resp_header(unauthenticated, "www-authenticate")
+
+      invalid_metadata =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("emisar-client-metadata", ~s({"managed":true}))
+        |> post(~p"/api/mcp/rpc", Jason.encode!(payload))
+
+      assert response(invalid_metadata, 200) == ""
+    end
   end
 
   describe "rate limiting" do
@@ -447,9 +495,25 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
 
       bucket = "mcp-test-#{unique()}"
-      opts = RateLimit.init(bucket: bucket, limit: 2, window_ms: 60_000, by: :bearer)
 
-      key_a = put_req_header(conn, "authorization", "Bearer emk-aaaa")
+      opts =
+        RateLimit.init(
+          bucket: bucket,
+          limit: 2,
+          window_ms: 60_000,
+          by: :bearer,
+          on_reject: {EmisarWeb.MCP.BoundaryResponse, :rate_limited}
+        )
+
+      key_a =
+        conn
+        |> put_req_header("authorization", "Bearer emk-aaaa")
+        |> Map.put(:body_params, %{
+          "jsonrpc" => "2.0",
+          "method" => "ping",
+          "id" => "rate-limited"
+        })
+
       key_b = put_req_header(conn, "authorization", "Bearer emk-bbbb")
 
       assert %{halted: false} = RateLimit.call(key_a, opts)
@@ -459,11 +523,45 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert over.halted
       assert over.status == 429
       assert get_resp_header(over, "retry-after") == ["60"]
-      assert over.resp_body =~ "rate_limited"
+
+      assert %{
+               "id" => "rate-limited",
+               "error" => %{"code" => -32000, "message" => message}
+             } = Jason.decode!(over.resp_body)
+
+      assert message =~ "Retry in 60s"
 
       # A different bearer is a different bucket — its own budget is intact,
       # so the cap is per-key, not per-IP (both share the conn's IP here).
       assert %{halted: false} = RateLimit.call(key_b, opts)
+    end
+
+    test "an over-limit notification has no JSON-RPC response body", %{conn: conn} do
+      previous = Application.get_env(:emisar_web, :rate_limit_enabled, true)
+      Application.put_env(:emisar_web, :rate_limit_enabled, true)
+      on_exit(fn -> Application.put_env(:emisar_web, :rate_limit_enabled, previous) end)
+
+      opts =
+        RateLimit.init(
+          bucket: "mcp-notification-#{unique()}",
+          limit: 1,
+          window_ms: 60_000,
+          by: :ip,
+          on_reject: {EmisarWeb.MCP.BoundaryResponse, :rate_limited}
+        )
+
+      notification =
+        Map.put(conn, :body_params, %{
+          "jsonrpc" => "2.0",
+          "method" => "notifications/initialized"
+        })
+
+      assert %{halted: false} = RateLimit.call(notification, opts)
+
+      rejected = RateLimit.call(notification, opts)
+      assert rejected.status == 429
+      assert rejected.resp_body == ""
+      assert get_resp_header(rejected, "retry-after") == ["60"]
     end
   end
 
@@ -1769,7 +1867,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("origin", "https://evil.example.com")
         |> rpc("initialize")
 
-      assert json_response(conn, 403)["error"] =~ "Cross-origin"
+      assert %{"id" => 1, "error" => %{"code" => -32600, "message" => message}} =
+               json_response(conn, 403)
+
+      assert message =~ "Cross-origin"
     end
 
     test "a same-origin POST passes the Origin gate", %{conn: conn, account: account, user: user} do
@@ -1791,7 +1892,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("content-type", "text/plain")
         |> post(~p"/api/mcp/rpc", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: "ping"}))
 
-      assert json_response(conn, 415)["error"] =~ "application/json"
+      assert %{"id" => nil, "error" => %{"code" => -32600, "message" => message}} =
+               json_response(conn, 415)
+
+      assert message =~ "application/json"
     end
 
     test "an SSE-only Accept on POST is 406", %{conn: conn} do
@@ -1800,7 +1904,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("accept", "text/event-stream")
         |> rpc("initialize")
 
-      assert json_response(conn, 406)["error"] =~ "Accept"
+      assert %{"id" => 1, "error" => %{"code" => -32600, "message" => message}} =
+               json_response(conn, 406)
+
+      assert message =~ "Accept"
     end
 
     test "an Accept listing both JSON and event-stream passes",
@@ -1823,7 +1930,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("mcp-protocol-version", "1999-01-01")
         |> rpc("ping")
 
-      assert json_response(conn, 400)["error"] =~ "MCP-Protocol-Version"
+      assert %{"id" => 1, "error" => %{"code" => -32600, "message" => message}} =
+               json_response(conn, 400)
+
+      assert message =~ "MCP-Protocol-Version"
     end
 
     test "a supported MCP-Protocol-Version passes", %{conn: conn, account: account, user: user} do
@@ -2216,12 +2326,17 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       body =
         conn
         |> put_req_header("authorization", "Bearer " <> raw)
-        |> rpc("tools/call", %{
-          "name" => "wait_for_run",
-          "arguments" => %{"run_id" => b_run.id, "timeout" => ""}
-        })
+        |> rpc(
+          "tools/call",
+          %{
+            "name" => "wait_for_run",
+            "arguments" => %{"run_id" => b_run.id, "timeout" => ""}
+          },
+          "cross-account-run"
+        )
         |> json_response(200)
 
+      assert body["id"] == "cross-account-run"
       assert body["result"]["isError"] == true
       assert content_text(body) =~ "Run not found"
     end
@@ -3113,12 +3228,8 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
     test "a malformed JSON body is a JSON-RPC parse error (-32700)",
          %{conn: conn, account: account, user: user} do
-      # The controller moduledoc promises "Parse errors → -32700", but a malformed
-      # body is consumed by Plug.Parsers (endpoint-level) BEFORE the controller —
-      # it raises Plug.Parsers.ParseError, which Phoenix renders as a plain 400, not
-      # a JSON-RPC envelope. No handler maps the parse failure to -32700. Failing
-      # closed at 400 is safe, but an MCP client parsing for the envelope won't find
-      # it. Asserting the documented contract; skipped pending a parse-error handler.
+      # Plug.Parsers fails before a trustworthy top-level id exists, so the endpoint
+      # returns the parse-error envelope with id:null rather than scraping raw bytes.
       raw = make_api_key!(account, user)
 
       conn =
@@ -3127,7 +3238,22 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> put_req_header("content-type", "application/json")
         |> post(~p"/api/mcp/rpc", "{not valid json")
 
-      assert %{"error" => %{"code" => -32700}} = json_response(conn, 400)
+      assert %{"id" => nil, "error" => %{"code" => -32700}} = json_response(conn, 400)
+    end
+
+    test "an oversized body is rejected with an uncorrelated JSON-RPC error", %{conn: conn} do
+      # The endpoint parser's 8 MiB cap fires before the body can be trusted. Even
+      # though the raw prefix contains an id, the boundary must not recover it.
+      body =
+        ~s({"jsonrpc":"2.0","id":"do-not-trust","method":"ping","padding":") <>
+          String.duplicate("x", 8 * 1024 * 1024) <> ~s("})
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/mcp/rpc", body)
+
+      assert %{"id" => nil, "error" => %{"code" => -32600}} = json_response(conn, 413)
     end
 
     test "a non-1 `id` is echoed back verbatim",
