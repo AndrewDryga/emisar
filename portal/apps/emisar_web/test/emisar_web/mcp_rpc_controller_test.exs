@@ -12,7 +12,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   alias Emisar.Accounts.Account
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
-  alias EmisarWeb.MCP.Service
+  alias EmisarWeb.MCP.{Cancellation, Service}
   alias EmisarWeb.Plugs.RateLimit
 
   defp unique, do: System.unique_integer([:positive])
@@ -1904,6 +1904,110 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       body = json_response(conn, 200)
       assert get_in(body, ["result", "isError"]) == false
       assert content_text(body) =~ "exit_code=0"
+    end
+
+    test "a scoped cancellation releases the portal wait without a response payload", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, [])
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      {:ok, _raw, api_key} =
+        ApiKeys.create_key(%{name: "cancel-wait-#{unique()}", kind: :mcp}, subject)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{}
+        })
+
+      request_conn =
+        conn
+        |> assign(:api_key, api_key)
+        |> assign(:current_subject, subject)
+        |> put_req_header("mcp-session-id", "cancel-session")
+        |> put_req_header("x-emisar-mcp-request-token", "request-generation")
+
+      parent = self()
+
+      task =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Emisar.Repo, parent, self())
+
+          Cancellation.track(request_conn, "tools/call", "wait-1", fn tracked_conn ->
+            send(parent, :wait_tracking)
+            result = Service.fetch_run(tracked_conn, run.id, Service.max_get_run_wait_ms())
+            send(parent, {:wait_result, result})
+            result
+          end)
+        end)
+
+      assert_receive :wait_tracking
+
+      cancel_conn =
+        put_req_header(request_conn, "x-emisar-mcp-cancel-token", "request-generation")
+
+      :ok = Cancellation.cancel(cancel_conn, %{"requestId" => "wait-1"})
+      assert_receive {:wait_result, {:error, :cancelled}}
+      assert Task.await(task) == :cancelled
+    end
+
+    test "a cancellation notification receives 202 and no JSON-RPC body", %{
+      conn: conn,
+      raw: raw
+    } do
+      body = %{
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: %{requestId: "already-complete"}
+      }
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-session-id", "cancel-session")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+
+      assert response(conn, 202) == ""
+    end
+
+    test "a cancellation racing ahead of its request suppresses the target response", %{
+      conn: conn,
+      raw: raw
+    } do
+      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
+      session = &put_req_header(&1, "mcp-session-id", "cancel-race-session")
+
+      cancellation = %{
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: %{requestId: "late-request"}
+      }
+
+      cancelled =
+        conn
+        |> auth.()
+        |> session.()
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("x-emisar-mcp-cancel-token", "generation-before-request")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(cancellation))
+
+      assert response(cancelled, 202) == ""
+
+      target =
+        conn
+        |> auth.()
+        |> session.()
+        |> put_req_header("x-emisar-mcp-request-token", "generation-before-request")
+        |> rpc("ping", %{}, "late-request")
+
+      assert response(target, 204) == ""
     end
 
     test "a still-running run with zero wait reports waiting, not an error", %{

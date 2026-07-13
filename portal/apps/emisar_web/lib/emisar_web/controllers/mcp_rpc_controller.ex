@@ -40,7 +40,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat}
-  alias EmisarWeb.MCP.{Attestation, Auth, ClientMetadata, ContentBlocks}
+  alias EmisarWeb.MCP.{Attestation, Auth, Cancellation, ClientMetadata, ContentBlocks}
   alias EmisarWeb.MCP.{Idempotency, Instructions, Service, Transport}
   alias EmisarWeb.RequestContext
 
@@ -71,7 +71,10 @@ defmodule EmisarWeb.MCPRpcController do
       {:ok, params} ->
         conn = conn |> maybe_emit_session_id(method) |> maybe_offer_successor(method)
 
-        case dispatch(conn, method, params) do
+        case Cancellation.track(conn, method, id, &dispatch(&1, method, params)) do
+          :cancelled ->
+            send_resp(conn, 204, "")
+
           :no_reply ->
             # JSON-RPC notification — RFC says no response body.
             send_resp(conn, 202, "")
@@ -209,6 +212,11 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
+  defp dispatch(conn, "notifications/cancelled", params) do
+    :ok = Cancellation.cancel(conn, params)
+    :no_reply
+  end
+
   defp dispatch(_conn, "notifications/" <> _, _params), do: :no_reply
 
   defp dispatch(_conn, method, _params),
@@ -252,6 +260,9 @@ defmodule EmisarWeb.MCPRpcController do
     }
 
     case Service.dispatch_tool(conn, name, action_args, opts) do
+      {:error, :cancelled} ->
+        :cancelled
+
       {:ok, runs} ->
         {content, is_err} = ContentBlocks.from_runs(runs)
         {:ok, %{content: content, isError: is_err}}
@@ -383,6 +394,9 @@ defmodule EmisarWeb.MCPRpcController do
 
         {:ok, wait_ms} ->
           case Service.fetch_run(conn, run_id, wait_ms) do
+            {:error, :cancelled} ->
+              :cancelled
+
             {:ok, payload, :terminal} ->
               {content, is_err} = ContentBlocks.from_run(payload)
               {:ok, %{content: content, isError: is_err}}

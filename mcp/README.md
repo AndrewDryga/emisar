@@ -62,7 +62,7 @@ runners that advertise it, with a `runners` enum arg for fan-out) plus
 three synthetic tools:
 
 - `wait_for_run` — long-poll a run to terminal status. Accepts
-  `run_id` + `timeout` (`"15s"`, `"1m"`, capped at 90s); resolves
+  `run_id` + `timeout` (`"15s"`, `"1m"`, capped at 5m); resolves
   early on the run's pub/sub broadcast, re-checks status, and returns
   `waiting` (with current state) on timeout rather than erroring.
 - `list_runbooks` — published runbooks with summaries.
@@ -90,11 +90,18 @@ either immediate dispatch, an approval request (`pending_approval`
 content tells the LLM to wait or escalate), or a refusal.
 
 Idempotency: the bridge stamps every request that has a JSON-RPC `id`
-with `Idempotency-Key: <session>:<id>` (the session id is random per
-bridge process). Client retries collapse onto the same run row —
-different clients never alias. The portal answers notifications with
-202 and methods with a JSON-RPC result/error; the bridge's HTTP
-timeout (120s) leaves headroom over the portal's 90s long-poll cap.
+with a bounded digest over the random bridge session plus the id's exact
+JSON-RPC type and value. A duplicated downstream delivery collapses onto the
+same run row; numeric `7` and string `"7"`, and different clients, never alias.
+Request IDs are one-use within a bridge session, as MCP requires; a duplicate
+stdio request is rejected locally before it can create an ambiguous
+cancellation target. The portal answers notifications with 202 and methods
+with a JSON-RPC result/error.
+The bridge permits up to eight in-flight requests, so pings and unrelated calls
+remain responsive during a long wait. Its 330-second HTTP timeout leaves
+bounded headroom over the portal's five-minute cap. A client cancellation stops
+the exact request generation locally and releases the matching portal wait;
+cancellation notifications never write a response to stdout.
 
 ## Attribution + audit
 

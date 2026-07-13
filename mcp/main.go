@@ -33,6 +33,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -49,18 +50,25 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
 
 const bridgeName = "emisar-mcp"
 
-// Includes the long-poll window the portal applies on tools/call
-// (up to 90s, the portal's max_get_run_wait_ms) plus headroom. A
-// timeout equal to the poll cap would race the portal's graceful
-// "waiting" response at the boundary. Connections idle longer than
-// this shouldn't happen; if they do, fail visibly.
-const httpTimeout = 120 * time.Second
+// The portal permits wait_for_run to hold a request for five minutes. Keep 30
+// seconds of bounded transport headroom so its graceful "still waiting"
+// response wins the boundary race without allowing an indefinite connection.
+const httpTimeout = 330 * time.Second
+
+const (
+	maxConcurrentRequests      = 8
+	maxSessionRequestIDs       = 65_536
+	cancellationForwardTimeout = 5 * time.Second
+	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
+	cancelTokenHeader          = "X-Emisar-MCP-Cancel-Token"
+)
 
 // maxResponseBytes caps the portal response we'll buffer. The network is
 // untrusted and http.Client.Timeout bounds time, not bytes — without a cap a
@@ -241,10 +249,11 @@ type bridge struct {
 	apiKey    string
 	userAgent string
 	client    *http.Client
+	stateMu   sync.RWMutex
 	// sessionID identifies this bridge process. It doubles as the MCP
 	// session id (sent as Mcp-Session-Id) and the namespace for
-	// idempotency keys, so a session's runs correlate and resent frames
-	// collapse to one run.
+	// idempotency keys, so a session's runs correlate and any downstream
+	// transport replay collapses to one run.
 	sessionID string
 	// signer, when set, attaches a client attestation to each tools/call so an
 	// enforcing runner will run it. Nil = signing disabled.
@@ -256,81 +265,285 @@ type bridge struct {
 	// input.
 	clientMetadata string
 	// protocolVersion is the version negotiated by initialize. Streamable HTTP
-	// requires clients to echo it on subsequent requests, but not on initialize
-	// itself. serve is single-goroutine until request scheduling is introduced.
+	// requires clients to echo it on subsequent requests, but not on initialize.
 	protocolVersion string
 	// bootstrapPrefix identifies the ORIGINAL key from the client's config
 	// ("emk-" + the portal's 12-char prefix — non-secret); it stays the
 	// credentials-file lookup key across chained rotations. apiKey holds the
-	// CURRENT secret and is swapped in place by adoptSuccessor — serve is
-	// single-goroutine, so plain field mutation is safe.
+	// CURRENT secret and is swapped under stateMu by adoptSuccessor.
 	bootstrapPrefix string
 	// credsPath is the bridge-owned credentials file; "" when no user config
 	// dir exists (rotation then lasts only for the process).
 	credsPath string
 }
 
-// serve reads JSON-RPC frames one per line from r, forwards valid envelopes to
-// the portal, and writes validated correlated responses to w. Notifications are
-// always silent, including when the HTTP request fails.
+// serve has one scheduling goroutine and one stdout owner. HTTP work may finish
+// out of order, while frames and goroutines remain bounded. Cancellation is
+// handled before ordinary admission so a saturated session can still release a
+// long-running request.
 func (b *bridge) serve(r io.Reader, w io.Writer) error {
-	br := bufio.NewReaderSize(r, 64*1024)
+	frames := make(chan frameRead, 1)
+	results := make(chan forwardResult, maxConcurrentRequests)
+	cancelResults := make(chan struct{}, maxConcurrentRequests)
+	readerDone := make(chan struct{})
+	defer close(readerDone)
 
-	for {
-		raw, oversize, readErr := readFrameLine(br)
-		line := bytes.TrimSpace(raw)
+	go readFrames(r, frames, readerDone)
 
-		switch {
-		case oversize:
-			// An over-long frame rejects THIS line but keeps the session alive —
-			// the bridge is the LLM's only path to the cloud; one bad frame must
-			// not tear it down (the old Scanner ErrTooLong → os.Exit did exactly
-			// that). readFrameLine drains the over-long line without retaining it,
-			// so a newline-free flood can't OOM the bridge before we reach here.
-			fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
-			if err := writeFrame(w, rpcErrorFrame(requestMeta{}, -32600, "request frame too large")); err != nil {
+	state := serveState{
+		inflight:      make(map[string]*inflightRequest, maxConcurrentRequests),
+		requestTokens: make(map[string]string, maxConcurrentRequests),
+		seenIDs:       make(map[string]struct{}),
+	}
+
+	for frames != nil || len(state.inflight) > 0 || state.cancelForwards > 0 {
+		select {
+		case frame := <-frames:
+			if err := b.handleFrame(frame, w, &state, results, cancelResults); err != nil {
+				cancelInflight(state.inflight)
+				return err
+			}
+			if frame.err != nil {
+				if !errors.Is(frame.err, io.EOF) {
+					cancelInflight(state.inflight)
+					return frame.err
+				}
+				frames = nil
+			}
+
+		case result := <-results:
+			request := state.inflight[result.token]
+			if request == nil {
+				continue
+			}
+			delete(state.inflight, result.token)
+			if request.idKey != "" && state.requestTokens[request.idKey] == result.token {
+				delete(state.requestTokens, request.idKey)
+			}
+			if request.cancelled {
+				continue
+			}
+			if err := writeForwardResult(w, request.meta, result.response, result.err); err != nil {
+				cancelInflight(state.inflight)
 				return err
 			}
 
-		case len(line) == 0:
-			// blank line (or a bare EOF) — nothing to forward
-
-		default:
-			meta := parseRequestMeta(line)
-			if !meta.valid {
-				if err := writeFrame(w, rpcErrorFrame(meta, -32600, "invalid request")); err != nil {
-					return err
-				}
-				break
-			}
-			resp, err := b.forwardRequest(line, meta)
-			switch {
-			case err != nil:
-				// A notification never receives a response. Request failures are
-				// correlated locally without exposing response bodies, network
-				// details, or credentials to either protocol output or stderr.
-				if !meta.notification() {
-					if err := writeFrame(w, rpcErrorFrame(meta, -32603, "upstream transport error")); err != nil {
-						return err
-					}
-				}
-
-			case len(resp) == 0:
-				// 202-no-body — notification; nothing to write.
-
-			default:
-				if err := writeFrame(w, resp); err != nil {
-					return err
-				}
-			}
+		case <-cancelResults:
+			state.cancelForwards--
 		}
+	}
 
-		if readErr != nil {
-			if readErr == io.EOF {
-				return nil
-			}
-			return readErr
+	return nil
+}
+
+type frameRead struct {
+	line     []byte
+	oversize bool
+	err      error
+}
+
+type inflightRequest struct {
+	meta                  requestMeta
+	idKey                 string
+	apiKey                string
+	protocolVersion       string
+	cancel                context.CancelFunc
+	cancelled             bool
+	cancellationForwarded bool
+}
+
+type forwardResult struct {
+	token    string
+	response []byte
+	err      error
+}
+
+type requestHeaders struct {
+	apiKey          string
+	protocolVersion string
+	requestToken    string
+	cancelToken     string
+}
+
+type serveState struct {
+	inflight       map[string]*inflightRequest
+	requestTokens  map[string]string
+	seenIDs        map[string]struct{}
+	sequence       uint64
+	cancelForwards int
+}
+
+func readFrames(r io.Reader, frames chan<- frameRead, done <-chan struct{}) {
+	reader := bufio.NewReaderSize(r, 64*1024)
+	for {
+		raw, oversize, err := readFrameLine(reader)
+		frame := frameRead{line: bytes.TrimSpace(raw), oversize: oversize, err: err}
+		select {
+		case frames <- frame:
+		case <-done:
+			return
 		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (b *bridge) handleFrame(
+	frame frameRead,
+	w io.Writer,
+	state *serveState,
+	results chan<- forwardResult,
+	cancelResults chan<- struct{},
+) error {
+	if frame.oversize {
+		fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
+		return writeFrame(w, rpcErrorFrame(requestMeta{}, -32600, "request frame too large"))
+	}
+	if len(frame.line) == 0 {
+		return nil
+	}
+
+	meta := parseRequestMeta(frame.line)
+	if !meta.valid {
+		return writeFrame(w, rpcErrorFrame(meta, -32600, "invalid request"))
+	}
+	if meta.notification() && meta.method == "notifications/cancelled" {
+		b.handleCancellation(frame.line, meta, state, cancelResults)
+		return nil
+	}
+
+	idKey := requestIDKey(meta)
+	if idKey != "" {
+		if _, used := state.seenIDs[idKey]; used {
+			return writeFrame(w, rpcErrorFrame(meta, -32600, "request id was already used in this session"))
+		}
+		if len(state.seenIDs) >= maxSessionRequestIDs {
+			return writeFrame(w, rpcErrorFrame(meta, -32000, "session request id limit reached"))
+		}
+	}
+	if len(state.inflight) >= maxConcurrentRequests {
+		if meta.notification() {
+			return nil
+		}
+		return writeFrame(w, rpcErrorFrame(meta, -32000, "too many in-flight requests"))
+	}
+
+	state.sequence++
+	token := fmt.Sprintf("%s-%x", b.sessionID, state.sequence)
+	ctx, cancel := context.WithCancel(context.Background())
+	apiKey, protocolVersion := b.transportState()
+	state.inflight[token] = &inflightRequest{
+		meta:            meta,
+		idKey:           idKey,
+		apiKey:          apiKey,
+		protocolVersion: protocolVersion,
+		cancel:          cancel,
+	}
+	if idKey != "" {
+		state.requestTokens[idKey] = token
+		state.seenIDs[idKey] = struct{}{}
+	}
+
+	headers := requestHeaders{apiKey: apiKey, protocolVersion: protocolVersion}
+	if idKey != "" {
+		headers.requestToken = token
+	}
+	go func() {
+		response, err := b.forwardRequestContext(ctx, frame.line, meta, headers)
+		cancel()
+		results <- forwardResult{token: token, response: response, err: err}
+	}()
+	return nil
+}
+
+func (b *bridge) handleCancellation(
+	frame []byte,
+	meta requestMeta,
+	state *serveState,
+	cancelResults chan<- struct{},
+) {
+	idKey := cancellationTargetKey(frame)
+	token := state.requestTokens[idKey]
+	request := state.inflight[token]
+	if request == nil || request.meta.method == "initialize" {
+		return
+	}
+
+	request.cancelled = true
+	request.cancel()
+	if request.cancellationForwarded {
+		return
+	}
+	request.cancellationForwarded = true
+	state.cancelForwards++
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), cancellationForwardTimeout)
+		defer cancel()
+		_, _ = b.forwardRequestContext(ctx, frame, meta, requestHeaders{
+			apiKey:          request.apiKey,
+			protocolVersion: request.protocolVersion,
+			cancelToken:     token,
+		})
+		cancelResults <- struct{}{}
+	}()
+}
+
+func requestIDKey(meta requestMeta) string {
+	if !meta.valid || !meta.hasID {
+		return ""
+	}
+	if meta.idKind == 's' {
+		var id string
+		if json.Unmarshal(meta.id, &id) == nil {
+			return digestRequestID("s:" + id)
+		}
+		return ""
+	}
+	if meta.idKind == 'n' {
+		id, ok := new(big.Rat).SetString(string(meta.id))
+		if ok {
+			return digestRequestID("n:" + id.RatString())
+		}
+	}
+	return ""
+}
+
+func digestRequestID(canonical string) string {
+	digest := sha256.Sum256([]byte(canonical))
+	return string(digest[:])
+}
+
+func cancellationTargetKey(frame []byte) string {
+	var notification struct {
+		Params struct {
+			RequestID json.RawMessage `json:"requestId"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(frame, &notification) != nil {
+		return ""
+	}
+	id := bytes.TrimSpace(notification.Params.RequestID)
+	return requestIDKey(requestMeta{id: id, idKind: jsonRPCIDKind(id), hasID: true, valid: true})
+}
+
+func writeForwardResult(w io.Writer, meta requestMeta, response []byte, err error) error {
+	if err != nil {
+		if meta.notification() {
+			return nil
+		}
+		return writeFrame(w, rpcErrorFrame(meta, -32603, "upstream transport error"))
+	}
+	if len(response) == 0 {
+		return nil
+	}
+	return writeFrame(w, response)
+}
+
+func cancelInflight(inflight map[string]*inflightRequest) {
+	for _, request := range inflight {
+		request.cancel()
 	}
 }
 
@@ -472,6 +685,15 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 }
 
 func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) {
+	return b.forwardRequestContext(context.Background(), frame, meta, requestHeaders{})
+}
+
+func (b *bridge) forwardRequestContext(
+	ctx context.Context,
+	frame []byte,
+	meta requestMeta,
+	headers requestHeaders,
+) ([]byte, error) {
 	if !meta.valid {
 		return nil, errors.New("invalid JSON-RPC request envelope")
 	}
@@ -482,18 +704,28 @@ func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) 
 		frame = b.signer.signFrame(frame)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, b.endpoint, bytes.NewReader(frame))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.endpoint, bytes.NewReader(frame))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+b.apiKey)
+	apiKey, protocolVersion := headers.apiKey, headers.protocolVersion
+	if apiKey == "" {
+		apiKey, protocolVersion = b.transportState()
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	// Streamable HTTP clients advertise both response transports. The Emisar
 	// endpoint deliberately returns one buffered JSON response, never SSE.
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
-	if meta.method != "initialize" && b.protocolVersion != "" {
-		req.Header.Set("MCP-Protocol-Version", b.protocolVersion)
+	if meta.method != "initialize" && protocolVersion != "" {
+		req.Header.Set("MCP-Protocol-Version", protocolVersion)
+	}
+	if headers.requestToken != "" {
+		req.Header.Set(requestTokenHeader, headers.requestToken)
+	}
+	if headers.cancelToken != "" {
+		req.Header.Set(cancelTokenHeader, headers.cancelToken)
 	}
 
 	// MCP session id. One bridge process = one client session, so the
@@ -510,9 +742,10 @@ func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) 
 		req.Header.Set(clientMetadataHeader, b.clientMetadata)
 	}
 
-	// Idempotency key: stable per (process, request-id) so resends
-	// of the same JSON-RPC frame collapse to a single run on the
-	// portal. The portal honors `Idempotency-Key` against the
+	// Idempotency key: stable per (process, request-id) so a duplicated
+	// downstream delivery collapses to a single run on the portal. MCP request
+	// ids themselves are single-use within the bridge session. The portal honors
+	// `Idempotency-Key` against the
 	// `(api_key_id, idempotency_key)` unique index.
 	if k := b.idempotencyKeyFor(meta); k != "" {
 		req.Header.Set("Idempotency-Key", k)
@@ -565,7 +798,7 @@ func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) 
 			return nil, errors.New("initialize response has an invalid protocol version")
 		}
 		if hasResult {
-			b.protocolVersion = version
+			b.setProtocolVersion(version)
 		}
 	}
 
@@ -577,6 +810,18 @@ func (b *bridge) forwardRequest(frame []byte, meta requestMeta) ([]byte, error) 
 	}
 
 	return body, nil
+}
+
+func (b *bridge) transportState() (apiKey, protocolVersion string) {
+	b.stateMu.RLock()
+	defer b.stateMu.RUnlock()
+	return b.apiKey, b.protocolVersion
+}
+
+func (b *bridge) setProtocolVersion(version string) {
+	b.stateMu.Lock()
+	b.protocolVersion = version
+	b.stateMu.Unlock()
 }
 
 func validateRPCResponse(meta requestMeta, status int, body []byte) error {
@@ -767,7 +1012,12 @@ func loadStoredSuccessor(path, bootstrapPrefix string) (string, bool) {
 // persists it so the next launch resolves it from the bootstrap prefix. A
 // failed persist degrades to a process-lifetime swap, never a dead session.
 func (b *bridge) adoptSuccessor(s string) {
-	if !validSuccessor(s) || s == b.apiKey {
+	if !validSuccessor(s) {
+		return
+	}
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	if s == b.apiKey {
 		return
 	}
 	b.apiKey = s

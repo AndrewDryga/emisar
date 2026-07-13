@@ -14,7 +14,7 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Catalog, Runbooks, Runners, Runs}
-  alias EmisarWeb.MCP.{Idempotency, ToolMetadata, ToolSchema}
+  alias EmisarWeb.MCP.{Cancellation, Idempotency, ToolMetadata, ToolSchema}
   require Logger
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -385,6 +385,7 @@ defmodule EmisarWeb.MCP.Service do
           | {:error, :runner_not_allowed, String.t(), String.t()}
           | {:error, :invalid_attestation}
           | {:error, :attestation_targets_mismatch}
+          | {:error, :cancelled}
           | {:error, :no_runner_available, :unknown_action | :scope_blocked}
           | {:error, :too_many_runners, pos_integer()}
 
@@ -435,8 +436,10 @@ defmodule EmisarWeb.MCP.Service do
           {name, result, Map.get(runners_by_id, runner_id)}
         end)
 
-      maybe_poll_to_terminal(subject, results, wait_ms)
-      {:ok, Enum.map(results, &runner_result_to_json(&1, subject))}
+      case maybe_poll_to_terminal(subject, results, wait_ms, Cancellation.topic(conn)) do
+        :ok -> {:ok, Enum.map(results, &runner_result_to_json(&1, subject))}
+        :cancelled -> {:error, :cancelled}
+      end
     end
   end
 
@@ -448,7 +451,7 @@ defmodule EmisarWeb.MCP.Service do
   is `:terminal` or `:waiting` so the caller can choose a 200 vs 202.
   """
   @spec fetch_run(Plug.Conn.t(), String.t(), non_neg_integer()) ::
-          {:ok, map(), :terminal | :waiting} | {:error, :not_found | :invalid_wait}
+          {:ok, map(), :terminal | :waiting} | {:error, :cancelled | :not_found | :invalid_wait}
   def fetch_run(conn, id, wait_ms) when is_integer(wait_ms) and wait_ms >= 0 do
     subject = conn.assigns.current_subject
 
@@ -462,9 +465,12 @@ defmodule EmisarWeb.MCP.Service do
         else
           deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
 
-          case poll_to_terminal(subject, run.id, deadline) do
+          case poll_to_terminal(subject, run.id, deadline, Cancellation.topic(conn)) do
             {:terminal, final} ->
               {:ok, full_run_payload(final, subject), :terminal}
+
+            :cancelled ->
+              {:error, :cancelled}
 
             :timeout ->
               current =
@@ -825,9 +831,9 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Per-runner long-poll + result rendering ------------------------
 
-  defp maybe_poll_to_terminal(_subject, _results, 0), do: :ok
+  defp maybe_poll_to_terminal(_subject, _results, 0, _cancellation_topic), do: :ok
 
-  defp maybe_poll_to_terminal(subject, results, ms) do
+  defp maybe_poll_to_terminal(subject, results, ms, cancellation_topic) do
     polling_ids =
       for {_name, {:ok, :running, %{id: id}}, _runner} <- results, do: id
 
@@ -835,7 +841,7 @@ defmodule EmisarWeb.MCP.Service do
       :ok
     else
       deadline = System.monotonic_time(:millisecond) + ms
-      poll_all_to_terminal(subject, polling_ids, deadline)
+      poll_all_to_terminal(subject, polling_ids, deadline, cancellation_topic)
     end
   end
 
@@ -843,30 +849,33 @@ defmodule EmisarWeb.MCP.Service do
   # runner socket broadcasts `{:run_updated, _}` on each run's topic at every
   # state transition (Runs broadcasts on the run topic), so we subscribe and wake
   # on those instead of busy-polling; the recheck timer is the safety net.
-  defp poll_all_to_terminal(subject, ids, deadline) do
+  defp poll_all_to_terminal(subject, ids, deadline, cancellation_topic) do
     Enum.each(ids, &Runs.subscribe_run(subject.account.id, &1))
     schedule_recheck(deadline)
 
     try do
-      await_all_terminal(subject, ids, deadline)
+      await_all_terminal(subject, ids, deadline, cancellation_topic)
     after
       Enum.each(ids, &Runs.unsubscribe_run(subject.account.id, &1))
     end
   end
 
-  defp await_all_terminal(subject, ids, deadline) do
+  defp await_all_terminal(subject, ids, deadline, cancellation_topic) do
     remaining = Enum.reject(ids, &run_terminal?(&1, subject))
 
     if remaining == [] do
       :ok
     else
-      case wait_for_signal(deadline) do
+      case wait_for_signal(deadline, cancellation_topic) do
         :recheck ->
           schedule_recheck(deadline)
-          await_all_terminal(subject, remaining, deadline)
+          await_all_terminal(subject, remaining, deadline, cancellation_topic)
 
         {:run_updated, _run} ->
-          await_all_terminal(subject, remaining, deadline)
+          await_all_terminal(subject, remaining, deadline, cancellation_topic)
+
+        :cancelled ->
+          :cancelled
 
         :timeout ->
           :ok
@@ -887,18 +896,18 @@ defmodule EmisarWeb.MCP.Service do
 
   # Single-run variant of the above, returning the terminal run for the caller
   # to render. Same event-driven wait; one subscription instead of N.
-  defp poll_to_terminal(subject, run_id, deadline) do
+  defp poll_to_terminal(subject, run_id, deadline, cancellation_topic) do
     Runs.subscribe_run(subject.account.id, run_id)
     schedule_recheck(deadline)
 
     try do
-      await_terminal(subject, run_id, deadline)
+      await_terminal(subject, run_id, deadline, cancellation_topic)
     after
       Runs.unsubscribe_run(subject.account.id, run_id)
     end
   end
 
-  defp await_terminal(subject, run_id, deadline) do
+  defp await_terminal(subject, run_id, deadline, cancellation_topic) do
     case Runs.fetch_run_by_id(run_id, subject) do
       {:error, :not_found} ->
         :timeout
@@ -907,13 +916,16 @@ defmodule EmisarWeb.MCP.Service do
         if Runs.ActionRun.terminal?(status) do
           {:terminal, run}
         else
-          case wait_for_signal(deadline) do
+          case wait_for_signal(deadline, cancellation_topic) do
             :recheck ->
               schedule_recheck(deadline)
-              await_terminal(subject, run_id, deadline)
+              await_terminal(subject, run_id, deadline, cancellation_topic)
 
             {:run_updated, _run} ->
-              await_terminal(subject, run_id, deadline)
+              await_terminal(subject, run_id, deadline, cancellation_topic)
+
+            :cancelled ->
+              :cancelled
 
             :timeout ->
               :timeout
@@ -929,13 +941,21 @@ defmodule EmisarWeb.MCP.Service do
   # status, so re-querying on each would re-amplify DB load on a chatty run)
   # without resetting the deadline; a state change still arrives as
   # `{:run_updated, _}`, and the recheck timer backstops anything missed.
-  defp wait_for_signal(deadline) do
+  defp wait_for_signal(deadline, cancellation_topic) do
     timeout = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
-      :recheck -> :recheck
-      {:run_updated, run} -> {:run_updated, run}
-      {:run_event, _event} -> wait_for_signal(deadline)
+      :recheck ->
+        :recheck
+
+      {:run_updated, run} ->
+        {:run_updated, run}
+
+      {:run_event, _event} ->
+        wait_for_signal(deadline, cancellation_topic)
+
+      {:mcp_request_cancelled, ^cancellation_topic} when is_binary(cancellation_topic) ->
+        :cancelled
     after
       timeout -> :timeout
     end

@@ -18,6 +18,10 @@ defmodule EmisarWeb.Application do
       # Owns the ETS table for request rate limiting; must start before the
       # Endpoint so the table exists when the first request arrives.
       EmisarWeb.RateLimiter,
+      # Retains bounded, short-lived MCP cancellation tombstones on every
+      # cluster node so a cancellation cannot race ahead of its request's
+      # PubSub subscription.
+      EmisarWeb.MCP.CancellationRegistry,
       # Named Task.Supervisor for any web-layer detached work that needs
       # supervised shutdown (currently: the MCP long-poll test's
       # mid-poll DB flip, future async dispatch jobs).

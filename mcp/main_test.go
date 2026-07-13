@@ -3,14 +3,19 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -975,9 +980,9 @@ func TestServe_BodyAlreadyNewlineTerminatedNotDoubled(t *testing.T) {
 	}
 }
 
-// multiple frames over one session are relayed in input order, each
-// newline-delimited. The portal echoes each request's id so we can assert order.
-func TestServe_MultipleFramesRelayedInOrder(t *testing.T) {
+// Concurrent requests may complete out of order, but every response remains one
+// complete newline-delimited frame with its original id.
+func TestServe_MultipleFramesRemainWhole(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var env struct {
@@ -1002,10 +1007,409 @@ func TestServe_MultipleFramesRelayedInOrder(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("want 3 newline-delimited responses, got %d: %q", len(lines), out.String())
 	}
-	for i, want := range []string{`"id":1`, `"id":2`, `"id":3`} {
-		if !strings.Contains(lines[i], want) {
-			t.Errorf("response %d out of order: %q (want %s)", i, lines[i], want)
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{`"id":1`, `"id":2`, `"id":3`} {
+		if strings.Count(joined, want) != 1 {
+			t.Errorf("responses = %q, want exactly one %s", joined, want)
 		}
+	}
+}
+
+func TestServe_PingCompletesWhileAnotherRequestIsHeld(t *testing.T) {
+	heldStarted := make(chan struct{})
+	releaseHeld := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if string(request.ID) == "1" {
+			close(heldStarted)
+			<-releaseHeld
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	input := strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n" +
+			`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n",
+	)
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(input, output) }()
+
+	<-heldStarted
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":2`) {
+		t.Fatalf("first completed response = %q, want prompt ping id 2", frame)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("serve returned before held work completed: %v", err)
+	default:
+	}
+
+	close(releaseHeld)
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":1`) {
+		t.Fatalf("held response = %q, want id 1", frame)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+}
+
+func TestServe_ConcurrencyCapRejectsOverflowWithoutBufferingWork(t *testing.T) {
+	started := make(chan struct{}, maxConcurrentRequests+1)
+	release := make(chan struct{})
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		started <- struct{}{}
+		<-release
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	var input strings.Builder
+	for id := 1; id <= maxConcurrentRequests+1; id++ {
+		fmt.Fprintf(&input, `{"jsonrpc":"2.0","id":%d,"method":"tools/call"}`+"\n", id)
+	}
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(strings.NewReader(input.String()), output) }()
+
+	for range maxConcurrentRequests {
+		<-started
+	}
+	overload := string(receiveFrame(t, output.writes))
+	if !strings.Contains(overload, fmt.Sprintf(`"id":%d`, maxConcurrentRequests+1)) ||
+		!strings.Contains(overload, "too many in-flight requests") {
+		t.Fatalf("overflow response = %q", overload)
+	}
+	select {
+	case <-started:
+		t.Fatal("overflow request reached the portal")
+	default:
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := hits.Load(); got != maxConcurrentRequests {
+		t.Errorf("portal requests = %d, want cap %d", got, maxConcurrentRequests)
+	}
+}
+
+func TestServe_CancellationStopsExactRequestAndStaysSilent(t *testing.T) {
+	targetStarted := make(chan string, 1)
+	targetCancelled := make(chan struct{}, 1)
+	cancelForwarded := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if request.Method == "notifications/cancelled" {
+			cancelForwarded <- r.Header.Get(cancelTokenHeader)
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		targetStarted <- r.Header.Get(requestTokenHeader)
+		<-r.Context().Done()
+		targetCancelled <- struct{}{}
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"job-7","method":"tools/call"}`+"\n")
+	requestToken := <-targetStarted
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"job-7"}}`+"\n")
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"job-7"}}`+"\n")
+	_ = writer.Close()
+
+	<-targetCancelled
+	if cancelToken := <-cancelForwarded; cancelToken != requestToken || cancelToken == "" {
+		t.Errorf("cancel token = %q, request token = %q", cancelToken, requestToken)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if len(cancelForwarded) != 0 {
+		t.Errorf("duplicate cancellation was forwarded %d extra time(s)", len(cancelForwarded))
+	}
+	if got := output.String(); got != "" {
+		t.Errorf("cancelled request and cancellation notification must be silent, got %q", got)
+	}
+}
+
+func TestServe_CancellationUsesTargetCredentialAcrossRotation(t *testing.T) {
+	targetStarted := make(chan string, 1)
+	targetCancelled := make(chan struct{}, 1)
+	cancelForwarded := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if request.Method == "notifications/cancelled" {
+			cancelForwarded <- r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		targetStarted <- r.Header.Get("Authorization")
+		<-r.Context().Done()
+		targetCancelled <- struct{}{}
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	originalAuthorization := "Bearer " + b.apiKey
+	reader, writer := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- b.serve(reader, io.Discard) }()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n")
+	if authorization := <-targetStarted; authorization != originalAuthorization {
+		t.Fatalf("target authorization = %q, want %q", authorization, originalAuthorization)
+	}
+	b.stateMu.Lock()
+	b.apiKey = "rotated-key"
+	b.stateMu.Unlock()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`+"\n")
+	_ = writer.Close()
+	<-targetCancelled
+	if authorization := <-cancelForwarded; authorization != originalAuthorization {
+		t.Errorf("cancellation authorization = %q, want target credential %q", authorization, originalAuthorization)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+}
+
+func TestServe_CancellationBypassesFullConcurrencyCap(t *testing.T) {
+	started := make(chan string, maxConcurrentRequests)
+	targetCancelled := make(chan struct{}, 1)
+	cancelForwarded := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if request.Method == "notifications/cancelled" {
+			cancelForwarded <- struct{}{}
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		started <- string(request.ID)
+		if string(request.ID) == "1" {
+			<-r.Context().Done()
+			targetCancelled <- struct{}{}
+			return
+		}
+		<-release
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	for id := 1; id <= maxConcurrentRequests; id++ {
+		_, _ = fmt.Fprintf(writer, `{"jsonrpc":"2.0","id":%d,"method":"tools/call"}`+"\n", id)
+	}
+	for range maxConcurrentRequests {
+		<-started
+	}
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`+"\n")
+	<-targetCancelled
+	<-cancelForwarded
+	close(release)
+	_ = writer.Close()
+
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := strings.Count(output.String(), `"result"`); got != maxConcurrentRequests-1 {
+		t.Errorf("result frames = %d, want %d uncancelled requests", got, maxConcurrentRequests-1)
+	}
+}
+
+func TestServe_LateCancellationDoesNotReachPortalAndReusedIDIsRejected(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"reused","method":"ping"}`+"\n")
+	_ = receiveFrame(t, output.writes)
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"reused"}}`+"\n")
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":"reused","method":"ping"}`+"\n")
+	_ = writer.Close()
+
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":"reused"`) || !strings.Contains(frame, "already used") {
+		t.Fatalf("reused-id rejection = %q", frame)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("portal requests = %d, want only the original ping", got)
+	}
+}
+
+func TestServe_InitializeCannotBeCancelled(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		started <- struct{}{}
+		<-release
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`))
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1,"method":"initialize"}`+"\n")
+	<-started
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`+"\n")
+	close(release)
+	_ = writer.Close()
+
+	if frame := string(receiveFrame(t, output.writes)); !strings.Contains(frame, `"id":1`) {
+		t.Fatalf("initialize response = %q", frame)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("portal requests = %d, want initialize only", got)
+	}
+}
+
+func TestServe_DuplicateTypedIDIsRejectedWhileOriginalIsInflight(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		started <- struct{}{}
+		<-release
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1000,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	reader, writer := io.Pipe()
+	output := newFrameWriter()
+	done := make(chan error, 1)
+	go func() { done <- newTestBridge(srv).serve(reader, output) }()
+
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1e3,"method":"tools/call"}`+"\n")
+	<-started
+	_, _ = io.WriteString(writer, `{"jsonrpc":"2.0","id":1000,"method":"ping"}`+"\n")
+	duplicate := string(receiveFrame(t, output.writes))
+	if !strings.Contains(duplicate, `"id":1000`) || !strings.Contains(duplicate, "already used") {
+		t.Fatalf("duplicate response = %q", duplicate)
+	}
+
+	close(release)
+	_ = writer.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("portal requests = %d, want one", got)
+	}
+}
+
+func TestRequestIDKey_DistinguishesTypesAndCanonicalizesIntegers(t *testing.T) {
+	numericExponent := requestIDKey(parseRequestMeta([]byte(`{"id":1e3}`)))
+	numericDecimal := requestIDKey(parseRequestMeta([]byte(`{"id":1000}`)))
+	stringID := requestIDKey(parseRequestMeta([]byte(`{"id":"1000"}`)))
+	if numericExponent != numericDecimal {
+		t.Errorf("equivalent integer ids differ: %q vs %q", numericExponent, numericDecimal)
+	}
+	if numericDecimal == stringID {
+		t.Errorf("numeric and string ids collide at %q", numericDecimal)
+	}
+	if len(numericDecimal) != sha256.Size || len(stringID) != sha256.Size {
+		t.Errorf("request id digests must stay fixed at %d bytes", sha256.Size)
+	}
+}
+
+func TestHandleFrame_SessionIDCapFailsClosedWithoutAdmission(t *testing.T) {
+	state := serveState{
+		inflight:      make(map[string]*inflightRequest),
+		requestTokens: make(map[string]string),
+		seenIDs:       make(map[string]struct{}, maxSessionRequestIDs),
+	}
+	for id := range maxSessionRequestIDs {
+		state.seenIDs[fmt.Sprintf("seen-%d", id)] = struct{}{}
+	}
+
+	var output bytes.Buffer
+	err := (&bridge{}).handleFrame(
+		frameRead{line: []byte(`{"jsonrpc":"2.0","id":"new","method":"ping"}`)},
+		&output,
+		&state,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("handleFrame: %v", err)
+	}
+	if !strings.Contains(output.String(), "session request id limit reached") {
+		t.Fatalf("cap response = %q", output.String())
+	}
+	if len(state.inflight) != 0 {
+		t.Fatal("over-cap request was admitted")
+	}
+}
+
+func TestCancellationTargetKey_DistinguishesTypedIDs(t *testing.T) {
+	numeric := cancellationTargetKey([]byte(`{"params":{"requestId":7}}`))
+	stringID := cancellationTargetKey([]byte(`{"params":{"requestId":"7"}}`))
+	if numeric == "" || stringID == "" {
+		t.Fatalf("cancellation keys must be present: numeric=%q string=%q", numeric, stringID)
+	}
+	if numeric == stringID {
+		t.Errorf("numeric and string cancellation ids collide at %q", numeric)
+	}
+	if got := cancellationTargetKey([]byte(`{"params":{"requestId":null}}`)); got != "" {
+		t.Errorf("null cancellation id key = %q, want empty", got)
 	}
 }
 
@@ -1026,6 +1430,74 @@ func TestServe_WriteErrorIsFatal(t *testing.T) {
 	if !errors.Is(err, errWrite) {
 		t.Errorf("serve should return the underlying write error, got %v", err)
 	}
+}
+
+func TestServe_WriteErrorCancelsOtherInflightRequests(t *testing.T) {
+	blockedStarted := make(chan struct{})
+	blockedCancelled := make(chan struct{})
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "ua",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(req.Body)
+			var request struct {
+				ID int `json:"id"`
+			}
+			_ = json.Unmarshal(body, &request)
+			if request.ID == 1 {
+				close(blockedStarted)
+				<-req.Context().Done()
+				close(blockedCancelled)
+				return nil, req.Context().Err()
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"jsonrpc":"2.0","id":2,"result":{}}`)),
+			}, nil
+		})},
+	}
+
+	input := strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n" +
+			`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n",
+	)
+	err := b.serve(input, errWriter{})
+	if !errors.Is(err, errWrite) {
+		t.Fatalf("serve error = %v, want write failure", err)
+	}
+	<-blockedStarted
+	<-blockedCancelled
+}
+
+func TestServe_ReadErrorCancelsInflightRequestsWithoutDraining(t *testing.T) {
+	readFailure := errors.New("stdin failed")
+	requestStarted := make(chan struct{})
+	requestCancelled := make(chan struct{})
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "key",
+		userAgent: "ua",
+		sessionID: "session",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			close(requestStarted)
+			<-req.Context().Done()
+			close(requestCancelled)
+			return nil, req.Context().Err()
+		})},
+	}
+	input := io.MultiReader(
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"),
+		iotest.ErrReader(readFailure),
+	)
+
+	if err := b.serve(input, io.Discard); !errors.Is(err, readFailure) {
+		t.Fatalf("serve error = %v, want stdin failure", err)
+	}
+	<-requestStarted
+	<-requestCancelled
 }
 
 func TestWriteFrame_RejectsShortWriteAndNormalizesDelimiter(t *testing.T) {
@@ -1202,8 +1674,8 @@ func TestForward_UnboundedResponseStreamIsBounded(t *testing.T) {
 // hang the bridge or lift the OOM guard). Pin the exact values so a change is a
 // deliberate, reviewed edit to the constants.
 func TestTransportConstantsAreFixed(t *testing.T) {
-	if httpTimeout != 120*time.Second {
-		t.Errorf("httpTimeout = %v, want 120s", httpTimeout)
+	if httpTimeout != 330*time.Second {
+		t.Errorf("httpTimeout = %v, want 330s", httpTimeout)
 	}
 	if maxResponseBytes != 32*1024*1024 {
 		t.Errorf("maxResponseBytes = %d, want 32 MiB", maxResponseBytes)
@@ -1211,42 +1683,40 @@ func TestTransportConstantsAreFixed(t *testing.T) {
 	if maxFrameBytes != 16*1024*1024 {
 		t.Errorf("maxFrameBytes = %d, want 16 MiB", maxFrameBytes)
 	}
+	if maxSessionRequestIDs != 65_536 {
+		t.Errorf("maxSessionRequestIDs = %d, want 65536", maxSessionRequestIDs)
+	}
 }
 
-// a stalled portal that never responds is bounded by the client
-// timeout: client.Do returns a timeout error, forward surfaces it, and serve
-// maps it to a synthetic -32603 rather than hanging forever. We exercise the
-// MECHANISM with a short-timeout client against a handler that blocks until the
-// client gives up (the production cap is 120s, asserted separately by
-// TestTransportConstantsAreFixed — we don't wait two minutes here).
-func TestForward_ClientTimeoutBecomesError(t *testing.T) {
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		// Block until the client disconnects (its timeout fires) or the test
-		// tears the server down — never write a response.
-		select {
-		case <-r.Context().Done():
-		case <-release:
-		}
-	}))
-	defer srv.Close()
-	defer close(release)
-
-	b := newTestBridge(srv)
-	b.client = &http.Client{
-		Timeout:       50 * time.Millisecond,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+func TestForward_ContextCancellationStopsTransport(t *testing.T) {
+	started := make(chan struct{})
+	b := &bridge{
+		endpoint:  "https://example.test/api/mcp/rpc",
+		apiKey:    "k",
+		userAgent: "ua",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			close(started)
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		})},
+		sessionID: "sess",
 	}
 
-	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
-		t.Fatal("a stalled portal past the client timeout must surface an error")
-	}
-
-	// And serve maps that transport timeout to a -32603 frame (loop survives).
-	var out bytes.Buffer
-	_ = b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
-	if !strings.Contains(out.String(), "-32603") || !strings.Contains(out.String(), "upstream transport error") {
-		t.Errorf("a timed-out forward should yield a generic -32603 frame, got %q", out.String())
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.forwardRequestContext(
+			ctx,
+			[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`),
+			parseRequestMeta([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)),
+			requestHeaders{},
+		)
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("forward error = %v, want context.Canceled", err)
 	}
 }
 
@@ -1262,6 +1732,46 @@ func (errWriter) Write([]byte) (int, error) { return 0, errWrite }
 type shortWriter struct{}
 
 func (shortWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type frameWriter struct {
+	mu     sync.Mutex
+	frames [][]byte
+	writes chan []byte
+}
+
+func newFrameWriter() *frameWriter {
+	return &frameWriter{writes: make(chan []byte, maxConcurrentRequests*4)}
+}
+
+func (w *frameWriter) Write(p []byte) (int, error) {
+	frame := append([]byte(nil), p...)
+	w.mu.Lock()
+	w.frames = append(w.frames, frame)
+	w.mu.Unlock()
+	w.writes <- frame
+	return len(p), nil
+}
+
+func (w *frameWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(bytes.Join(w.frames, nil))
+}
+
+func receiveFrame(t *testing.T, writes <-chan []byte) []byte {
+	t.Helper()
+	select {
+	case frame := <-writes:
+		return frame
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for bridge output")
+		return nil
+	}
+}
 
 func newTestBridge(srv *httptest.Server) *bridge {
 	client := newHTTPClient()
